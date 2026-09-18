@@ -30,6 +30,7 @@ import type {
 import {
   createUnavailableFormationPeopleResponse,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
@@ -71,7 +72,7 @@ import {
 } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
-import { settleInBatches } from '../helpers/settle-in-batches.helper';
+import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -977,9 +978,14 @@ export class FormationService {
   /**
    * Fills `job_title` / `organization` (and `avatar`, when settings carry none) from the
    * auth-service user-metadata read, one request per person WITH a username — a pending,
-   * email-only entry has no account to look up. Bounded by `settleInBatches` so a long list never
-   * fans every request out at once, and best-effort: a rejected lookup is logged (username
-   * masked) and leaves that person's enrichment fields `null`; nothing here can fail the response.
+   * email-only entry has no account to look up. Bounded two ways by `settleInBatches`: batches of
+   * `FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE` so a long list never fans every request out at once,
+   * and a `FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS` wall-clock budget so a slow auth-service
+   * responder (each read can wait `NATS_CONFIG.REQUEST_TIMEOUT`) cannot stall the card for the
+   * whole list — once spent, no further batch starts and the rest render unenriched. Best-effort
+   * throughout: a rejected lookup is logged (username masked) and leaves that person's fields
+   * `null`; people the budget skipped are logged once, as a count; nothing here can fail the
+   * response.
    */
   private async enrichFormationPeople(req: Request, people: FormationPerson[]): Promise<FormationPerson[]> {
     const targets = people.filter((person): person is FormationPerson & { username: string } => !!person.username);
@@ -989,9 +995,12 @@ export class FormationService {
 
     logger.debug(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
 
-    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username));
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
 
     const metadataByUsername = new Map<string, UserMetadata>();
+    let skippedByBudget = 0;
     results.forEach((result, index) => {
       const username = targets[index].username;
       if (result.status === 'fulfilled') {
@@ -1001,11 +1010,24 @@ export class FormationService {
         return;
       }
 
+      if (result.reason instanceof BatchDeadlineExceededError) {
+        skippedByBudget += 1;
+        return;
+      }
+
       logger.warning(req, 'enrich_formation_people', 'User metadata lookup failed; leaving title and organization empty', {
         username: maskIdentifierForLogs(username),
         err: result.reason,
       });
     });
+
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_people', 'Enrichment budget exhausted; returning the remaining people unenriched', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        lookups: targets.length,
+        skipped: skippedByBudget,
+      });
+    }
 
     return people.map((person) => {
       const metadata = person.username ? metadataByUsername.get(person.username) : undefined;

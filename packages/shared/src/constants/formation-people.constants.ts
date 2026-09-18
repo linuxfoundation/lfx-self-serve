@@ -48,6 +48,14 @@ export const FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE = 8;
  */
 export const FORMATION_PEOPLE_METADATA_CACHE_TTL_MS = 5 * 60 * 1000;
 
+/**
+ * Wall-clock budget for the whole enrichment fan-out. Each metadata read can wait up to
+ * `NATS_CONFIG.REQUEST_TIMEOUT` when the auth-service responder is slow, so without a cap a long
+ * list could stall the sidebar card for many seconds; once the budget is spent no further batches
+ * are issued and the remaining people render unenriched (same pattern as `LOOKUP_BATCH_BUDGET_MS`).
+ */
+export const FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS = 4000;
+
 /** Hard cap on memoised user-metadata entries per process; the oldest entry is evicted once reached. */
 export const FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES = 2000;
 

@@ -13,6 +13,8 @@ import type {
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
 import {
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   LF_STAFF_EMAIL_DOMAIN,
@@ -456,6 +458,43 @@ describe('FormationService', () => {
       await service.getFormationPeople(buildReq(), 'live-project');
       expect(natsRequest).toHaveBeenCalledTimes(1);
       expect(natsRequest.mock.calls[0][1]).toBe('person0');
+    });
+
+    it('stops enriching once the wall-clock budget is spent and returns the rest unenriched, logging once', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        const writers = Array.from({ length: FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE + 2 }, (_, i) => ({
+          name: `Person ${String(i).padStart(2, '0')}`,
+          email: `person${i}@partner-corp.example`,
+          username: `person${i}`,
+        }));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+        natsRequest.mockImplementation(async () => {
+          // A slow responder: each read burns the whole budget, so only the first batch is issued.
+          vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS + 1));
+          return metadataReply({ job_title: 'Partner contact' });
+        });
+
+        const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+        expect(result.state).toBe('loaded');
+        expect(result.people).toHaveLength(writers.length);
+        expect(natsRequest).toHaveBeenCalledTimes(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === 'Partner contact')).toHaveLength(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === null)).toHaveLength(2);
+        // One summary line for the skipped people — not a warning per person.
+        expect(logger.warning).toHaveBeenCalledTimes(1);
+        expect(logger.warning).toHaveBeenCalledWith(
+          expect.anything(),
+          'enrich_formation_people',
+          expect.stringMatching(/budget/i),
+          expect.objectContaining({ skipped: 2 })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('returns an empty loaded list, with no metadata reads, for a formation nobody has been added to', async () => {
