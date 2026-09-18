@@ -1973,6 +1973,38 @@ describe('FormationService', () => {
       expect(result.state).toBe('complete');
     });
 
+    // #2734 review (Cursor Bugbot): the row's View item links into `/project/formation`, whose guard
+    // admits only Formation-stage projects. Production checklists stay `live` after a project goes
+    // Active (GH-2328), so gating items[] on lifecycle alone would hand out a link that bounces to
+    // the overview. The per-project read the can_write fan-out already makes carries the stage.
+    it('drops an open item whose project has left the Formation stage, so View item never links into a route its guard would bounce', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: 'Active' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow({ sub_stage: 'Active' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items).toEqual([]);
+      expect(result.state).toBe('complete');
+    });
+
+    it('keeps an open item on a Formation-stage project, including Confidential', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false, stage: 'Formation - Confidential' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+    });
+
+    it('keeps an open item whose stage is unknown because the project lookup failed, rather than hiding real work on a transient error', async () => {
+      getProjectById.mockRejectedValue(new Error('project lookup failed'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+    });
+
     it('excludes a Disengaged formation (the one terminal Formation sub-stage) but keeps a Confidential one visible to an assignee who holds access to it', async () => {
       mockQueryResources(
         [

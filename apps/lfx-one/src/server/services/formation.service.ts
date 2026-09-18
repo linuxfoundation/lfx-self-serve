@@ -666,6 +666,10 @@ export class FormationService {
     // must not turn one dashboard load into an unbounded burst against the project service.
     const distinctProjectUids = [...new Set(openItems.map((item) => item.project_uid))];
     const writerByProject = new Map<string, boolean>();
+    // The same read carries the project's stage, which gates `items[]` below (#2734 review) — so
+    // the fan-out is load-bearing for the row's link, not only for the unread write flags; #2735
+    // must source the stage elsewhere (the `formation` aggregate row) before dropping it.
+    const stageByProject = new Map<string, string>();
     // Caller-scoped, so one check covers every row — kicked off here so it overlaps the
     // per-project writer fan-out below instead of adding a serial round trip, and skipped
     // entirely when there is no row to stamp (the overwhelmingly common dashboard load has no
@@ -679,6 +683,7 @@ export class FormationService {
           try {
             const project = await this.projectService.getProjectById(req, projectUid, true);
             writerByProject.set(projectUid, project.writer === true);
+            if (typeof project.stage === 'string') stageByProject.set(projectUid, project.stage);
           } catch (error) {
             // Fail-closed: an item whose write access can't be confirmed never renders an
             // actionable Claim/Block button. Does not itself degrade `state` — nothing here is
@@ -690,7 +695,23 @@ export class FormationService {
     }
 
     const isFormationTeamMember = await teamMembershipPromise;
-    const items = openItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
+    // Stage gate on items[] (#2734 review, Cursor Bugbot): the row's View item links into
+    // `/project/formation`, whose `formationProjectEnabledGuard` admits only Formation-stage
+    // projects, and production checklists stay `lifecycle: live` after a project goes Active
+    // (GH-2328) — so lifecycle alone would hand out a link that bounces to the overview. Same
+    // `isFormationStageGate` the formations[] join applies below. An unknown stage (the lookup
+    // failed) keeps the row: hiding the caller's real work on a transient error is worse than a
+    // link that may redirect.
+    const stagedItems = openItems.filter((row) => {
+      const stage = stageByProject.get(row.project_uid);
+      return stage === undefined || isFormationStageGate(stage);
+    });
+    if (stagedItems.length !== openItems.length) {
+      logger.debug(req, 'get_my_formation_work', 'Dropped open items whose project has left the Formation stage', {
+        dropped: openItems.length - stagedItems.length,
+      });
+    }
+    const items = stagedItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
 
     // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
     // status rather than just the open subset above (summarizeMyFormationItems needs the
@@ -725,8 +746,8 @@ export class FormationService {
         // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
         // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
         // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
-        // Deliberately not applied to `items[]`: Pending Actions gates purely on checklist lifecycle
-        // (#2334), not project stage.
+        // `items[]` applies the same gate above, off the project read (#2734 review), so a row is
+        // never handed a checklist link its route guard would bounce.
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
