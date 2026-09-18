@@ -12,7 +12,7 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
-import { LF_STAFF_EMAIL_DOMAIN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import { FORMATION_PEOPLE_METADATA_CACHE_TTL_MS, LF_STAFF_EMAIL_DOMAIN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -367,6 +367,56 @@ describe('FormationService', () => {
       await service.getFormationPeople(buildReq(), 'live-project');
       await service.getFormationPeople(buildReq(), 'live-project');
       expect(natsRequest).toHaveBeenCalledTimes(6);
+    });
+
+    it('shares one in-flight lookup between concurrent requests for the same person', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      // SSR pre-render plus client hydration on first load: both miss an empty memo at once.
+      const [first, second] = await Promise.all([
+        service.getFormationPeople(buildReq(), 'live-project'),
+        service.getFormationPeople(buildReq(), 'live-project'),
+      ]);
+
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(first.people[0].job_title).toBe('Partner contact');
+      expect(second.people[0].job_title).toBe('Partner contact');
+    });
+
+    it('re-reads a person’s metadata once the memo TTL has elapsed', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        await service.getFormationPeople(buildReq(), 'live-project');
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS - 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(1);
+
+        vi.setSystemTime(new Date(Date.now() + 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns an empty loaded list, with no metadata reads, for a formation nobody has been added to', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith());
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'loaded', people: [] });
+      expect(natsRequest).not.toHaveBeenCalled();
     });
   });
 

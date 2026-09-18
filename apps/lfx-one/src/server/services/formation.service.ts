@@ -123,11 +123,14 @@ export class FormationService {
    * Process-wide, time-bounded memo for {@link readUserMetadata}, keyed by username (#2724). The
    * people card issues one metadata read per listed person on every mount, on both checklist
    * hosts, and a title/organization pair changes rarely — so a revisit inside
-   * `FORMATION_PEOPLE_METADATA_CACHE_TTL_MS` replays no NATS fan-out. A resolved miss (`null`) is
-   * cached like a hit; a transport failure is not, so it retries on the next read. Unlike the
-   * per-request WeakMaps above this must survive across requests — that is the point of it.
+   * `FORMATION_PEOPLE_METADATA_CACHE_TTL_MS` replays no NATS fan-out. The in-flight promise is
+   * what gets memoised, so two concurrent first-load requests for the same person (SSR pre-render
+   * plus client hydration) share one lookup instead of both missing an empty cache. A resolved
+   * miss (`null`) is cached like a hit; a transport failure evicts its entry, so the next read
+   * retries. Unlike the per-request WeakMaps above this must survive across requests — that is
+   * the point of it.
    */
-  private static readonly userMetadataCache = new Map<string, { value: UserMetadata | null; expiresAt: number }>();
+  private static readonly userMetadataCache = new Map<string, { value: Promise<UserMetadata | null>; expiresAt: number }>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -1017,26 +1020,39 @@ export class FormationService {
    * this caller never needs) nor `UserService` (its constructor stands up Snowflake and other
    * services this read has no use for).
    */
-  private async readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+  private readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
     const cached = FormationService.userMetadataCache.get(username);
     if (cached && Date.now() < cached.expiresAt) {
       return cached.value;
     }
 
+    const entry = {
+      value: this.fetchUserMetadata(req, username).catch((error: unknown) => {
+        // Not memoised: drop this entry (and only this one — a newer entry may have replaced it) so
+        // the next read retries rather than replaying a transport failure for the whole TTL.
+        if (FormationService.userMetadataCache.get(username) === entry) {
+          FormationService.userMetadataCache.delete(username);
+        }
+        throw error;
+      }),
+      expiresAt: Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+    };
+    FormationService.userMetadataCache.set(username, entry);
+    return entry.value;
+  }
+
+  /** The uncached half of {@link readUserMetadata}: one `USER_METADATA_READ` round trip. */
+  private async fetchUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
     const codec = this.natsService.getCodec();
     const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
     const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
 
-    let value: UserMetadata | null;
     if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
       logger.debug(req, 'enrich_formation_people', 'No user metadata for username', { username: maskIdentifierForLogs(username) });
-      value = null;
-    } else {
-      value = parsed.data ?? null;
+      return null;
     }
 
-    FormationService.userMetadataCache.set(username, { value, expiresAt: Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS });
-    return value;
+    return parsed.data ?? null;
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */

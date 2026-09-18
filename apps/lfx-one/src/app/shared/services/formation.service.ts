@@ -6,9 +6,9 @@ import { Injectable, inject } from '@angular/core';
 import type {
   FormationChecklistResponse,
   FormationItemDetail,
-  FormationPeopleResponse,
   FormationItemStatus,
   FormationItemWriteResult,
+  FormationPeopleResponse,
   FormationSubStage,
   FormationsQueueResponse,
   MyFormationWorkResponse,
