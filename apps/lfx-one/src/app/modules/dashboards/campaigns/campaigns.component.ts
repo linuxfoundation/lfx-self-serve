@@ -1168,7 +1168,12 @@ export class CampaignsComponent {
    */
   protected readonly emailBodyIsStageable = computed<boolean>(() => (this.emailCopy()?.body ?? '').trim() !== '');
 
-  protected readonly emailCtaLabel = computed<string>(() => (this.emailCtaIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''));
+  protected readonly emailCtaLabel = computed<string>(() =>
+    // Requires a stageable BODY too, not just a valid destination: the button is written by the
+    // same full-tree rebuild as the hero, so a button with no body drops the cloned template's
+    // body exactly as a hero would. Same data-loss path, different field.
+    this.emailCtaIsStageable() && this.emailBodyIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''
+  );
 
   /**
    * Whether a generated CTA will actually reach the staged draft.

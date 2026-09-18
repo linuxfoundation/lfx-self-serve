@@ -3,7 +3,6 @@
 
 import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
 
-import { MAX_SPONSORS } from '../helpers/event-hero-sponsors.helper';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -27,21 +26,22 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  MAX_BULK_KEYWORD_ACTIONS,
+  MAX_SPONSORS,
   META_GEO_CODE_PATTERN,
-  isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
-  CAMPAIGN_EMAIL_STAGES,
-  isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
-  MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  isCanonicalGoogleAdsResourceId,
+  isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -2235,9 +2235,20 @@ export class CampaignController {
       // cloned draft kept the template's own. The local field keeps its name; only the wire
       // key changes, which is the boundary this mapper exists to own.
       ...(preheader ? { previewText: preheader } : {}),
-      ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
-      ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
-      ...(sponsors.length > 0 ? { sponsors } : {}),
+      // Hero, button and sponsors require a NON-BLANK bodyHtml, for the same reason the A/B gate
+      // below requires both halves: the client gate stops the UI sending them without a body, but
+      // a direct campaign-manager request bypasses it entirely — and this one is DATA LOSS rather
+      // than a dropped field. campaign-service's RebuildEmailContent replaces the whole widget
+      // tree, so a rebuild carrying a hero and no body drops the cloned template's body
+      // (internal/dispatch/hubspot.go; TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone).
+      // `bodyHtml` is already trimmed above, so whitespace-only counts as absent.
+      ...(bodyHtml
+        ? {
+            ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
+            ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
+            ...(sponsors.length > 0 ? { sponsors } : {}),
+          }
+        : {}),
       // BOTH halves, matching `abTestIsStageable` on the client. This is the boundary that
       // actually matters: the client gate stops the UI from sending a half-filled variant, but a
       // direct campaign-manager request bypasses it entirely, and upstream reads an empty string

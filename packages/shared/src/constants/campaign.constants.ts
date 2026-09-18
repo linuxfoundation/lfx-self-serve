@@ -1374,3 +1374,12 @@ export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
  * wire validation.
  */
 export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+
+/**
+ * Most sponsor logos carried on a brief.
+ *
+ * Shared rather than helper-local because BOTH the scrape path and the controller's allow-list
+ * enforce it, and each entry is a server-side image fetch downstream — a cap that lives in one
+ * of the two can silently diverge from the other.
+ */
+export const MAX_SPONSORS = 10;

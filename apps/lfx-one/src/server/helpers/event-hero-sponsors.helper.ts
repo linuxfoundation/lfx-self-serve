@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import type { CampaignEventSponsor } from '@lfx-one/shared/interfaces';
+import { MAX_SPONSORS } from '@lfx-one/shared/constants';
 import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;
-export const MAX_SPONSORS = 10;
 const CONTEXT_WINDOW_CHARS = 400;
 
 function resolveUrl(candidate: string, baseUrl: string): string | null {

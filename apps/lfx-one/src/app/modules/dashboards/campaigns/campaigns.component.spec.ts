@@ -4083,6 +4083,31 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailBodyIsStageable()).toBe(false);
     });
 
+    it('withholds the CTA when the body is blank, even with a valid destination', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://events.example/register' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // A real CTA label and a valid destination -- only the BODY is blank.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '   ', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The button is written by the same full-tree rebuild as the hero, so a button with no body
+      // drops the cloned template's body exactly as a hero would -- the same data-loss path
+      // reached through a different field.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaLabel()).toBe('');
+    });
+
     it('withholds the hero and sponsors when no copy was generated', async () => {
       selectEmail();
       internals().emailBriefOutput.set({

@@ -1256,7 +1256,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     await controller.createCampaign(
       buildReq(
-        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl: 'http:example.com/hero.png' } },
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl: 'http:example.com/hero.png' } },
         { project: 'tlf', brief_id: 'b-1' }
       ),
       res,
@@ -1281,7 +1281,7 @@ describe('CampaignController.createCampaign cutover', () => {
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
-      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl } }, { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -1295,13 +1295,52 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['heroImageUrl']).toBeUndefined();
   });
 
+  it.each([
+    ['no body at all', {}],
+    ['a whitespace-only body', { bodyHtml: '   ' }],
+  ])('refuses to forward hero, button or sponsors with %s', async (_label, body) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            ...body,
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonText: 'Register',
+            buttonUrl: 'https://events.example/register',
+            sponsors: [{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The client gate stops the UI sending these without a body; a direct campaign-manager
+    // request bypasses it, and this route has no body validator. DATA LOSS rather than a dropped
+    // field: campaign-service's RebuildEmailContent replaces the whole widget tree, so a rebuild
+    // carrying a hero or button and no body drops the cloned template's body.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBeUndefined();
+    expect(sent['buttonUrl']).toBeUndefined();
+    expect(sent['buttonText']).toBeUndefined();
+    expect(sent['sponsors']).toBeUndefined();
+    // The clone itself still proceeds — this withholds content, it does not block staging.
+    expect(sent['sourceEmailId']).toBe('e-1');
+  });
+
   it('strips userinfo from a forwarded URL rather than carrying credentials into the email', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
 
     await controller.createCampaign(
       buildReq(
-        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl: 'https://user:secret@cdn.example.com/hero.png' } },
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', heroImageUrl: 'https://user:secret@cdn.example.com/hero.png' } },
         { project: 'tlf', brief_id: 'b-1' }
       ),
       res,
@@ -1324,7 +1363,7 @@ describe('CampaignController.createCampaign cutover', () => {
     ];
 
     await controller.createCampaign(
-      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
       res,
       next
     );
@@ -1353,6 +1392,9 @@ describe('CampaignController.createCampaign cutover', () => {
           platforms: ['hubspot'],
           hubspotConfig: {
             sourceEmailId: 'e-1',
+            // A body is required for hero/button/sponsors to be forwarded at all, so it is
+            // present here to reach the logo validation this test is about.
+            bodyHtml: '<p>b</p>',
             sponsors: [
               { name: 'Bad', logoUrl },
               { name: 'Good', logoUrl: 'https://cdn.example.com/good.png' },
