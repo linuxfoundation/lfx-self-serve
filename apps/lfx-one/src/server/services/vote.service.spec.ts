@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// Unit tests for vote.service.ts — upstream path encoding (GH-1568), poll budgets, and the
-// enableVote FGA-gap retry (GH-1637). All fixtures use synthetic placeholder identities — never
-// real user data.
+// Unit tests for vote.service.ts — upstream path encoding (GH-1568), X-Sync removal, poll budgets,
+// and the enableVote FGA-gap retry (GH-1637). All fixtures use synthetic placeholder identities —
+// never real user data.
 
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,7 +28,7 @@ const {
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   // Resolve immediately without invoking pollFn — the index-polling loop is pollEndpoint's own
-  // tested helper; these tests only pin the upstream path the vote methods build.
+  // tested helper; these suites pin the upstream paths plus the captured poll budgets/retry grids.
   pollEndpoint: vi.fn(() => Promise.resolve(true)),
   fetchEntityProject: vi.fn<(...args: unknown[]) => Promise<Record<string, unknown> | null>>(() => Promise.resolve(null)),
   toEntityProjectFields: vi.fn(),
@@ -82,7 +82,7 @@ import { MicroserviceError, ServiceValidationError } from '../errors';
 import type { PollEndpointOptions } from '../helpers/poll-endpoint.helper';
 import { VoteService } from './vote.service';
 
-describe('VoteService upstream path encoding', () => {
+describe('VoteService', () => {
   const req = {} as Request;
   // Synthetic uids: a canonical UUID, one carrying a raw path separator, and one pre-encoded —
   // Express hands the controller percent-decoded params, so both hostile shapes arrive decoded.
@@ -218,10 +218,22 @@ describe('VoteService upstream path encoding', () => {
     });
   });
 
+  describe('createVoteResponse', () => {
+    it('posts the ballot without an X-Sync header — exactly six proxy arguments', async () => {
+      const payload = { vote_uid: CANONICAL_UID, vote_response_uid: 'vr000000-0000-0000-0000-00000000d201' };
+
+      await service.createVoteResponse(req, payload as never);
+
+      // Exactly six args — a seventh would be the removed X-Sync header (GH-1637).
+      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload);
+    });
+  });
+
   // GH-1637: the create/delete/enable polls must keep their explicit fine-grid budgets and the
   // vote_uid filter predicate — `tags` can never match a vote by uid (vote documents are indexed
-  // without a vote-uid tag), so a regression there silently turns every poll into a fixed
-  // full-budget wait followed by the fallback.
+  // without a vote-uid tag). A regression there silently turns create/enable into a fixed
+  // full-budget wait followed by the fallback, and makes delete resolve instantly without
+  // confirming removal (delete's predicate is `resources.length === 0`).
   describe('poll budgets', () => {
     // pollEndpoint is stubbed with a no-arg signature, so type the captured options explicitly.
     const capturedPollOptions = (): PollEndpointOptions => {
@@ -229,7 +241,7 @@ describe('VoteService upstream path encoding', () => {
       return options;
     };
 
-    it('createVote polls with the explicit 10 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('createVote polls with the explicit 27 × 300 ms budget and the vote_uid filter predicate', async () => {
       const voteData = { name: 'New ballot' };
 
       await service.createVote(req, voteData as never);
@@ -237,20 +249,25 @@ describe('VoteService upstream path encoding', () => {
       // Exactly six args — a seventh would be the removed X-Sync header.
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'create_vote', maxRetries: 10, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'create_vote', maxRetries: 27, retryDelayMs: 300 });
 
       proxyRequest.mockResolvedValue({ resources: [] });
-      await options.pollFn();
+      await expect(options.pollFn()).resolves.toBe(false);
+
+      // Found in the index: resolves true (the boolean pins the found-path — a bare call would
+      // let an inverted `resources.length > 0` check pass while every create burns the full budget).
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'disabled' } }] });
+      await expect(options.pollFn()).resolves.toBe(true);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
     });
 
-    it('deleteVote polls with the explicit 10 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('deleteVote polls with the explicit 27 × 300 ms budget and the vote_uid filter predicate', async () => {
       proxyRequest.mockResolvedValue(undefined);
 
       await service.deleteVote(req, CANONICAL_UID);
 
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'delete_vote', maxRetries: 10, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'delete_vote', maxRetries: 27, retryDelayMs: 300 });
 
       // The fixed predicate must keep returning false while the record still exists and true
       // once it is gone — drive both cases directly.
@@ -262,21 +279,54 @@ describe('VoteService upstream path encoding', () => {
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
     });
 
-    it('enableVote polls with the explicit 15 × 400 ms budget and the vote_uid filter predicate', async () => {
+    it('deleteVote awaits the de-index poll before returning', async () => {
+      // A dropped `await` here returns before the vote leaves the index — the client's refetch
+      // still shows the deleted vote (the GH-1637 symptom). create/enable's awaits are pinned by
+      // their typed return paths; delete's void return needs this settlement-ordering check.
+      proxyRequest.mockResolvedValue(undefined);
+      let resolvePoll!: (value: boolean) => void;
+      pollEndpoint.mockReturnValueOnce(
+        new Promise<boolean>((resolve) => {
+          resolvePoll = resolve;
+        })
+      );
+
+      let settled = false;
+      const pending = service.deleteVote(req, CANONICAL_UID).then(() => {
+        settled = true;
+      });
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(settled).toBe(false);
+
+      resolvePoll(true);
+      await pending;
+      expect(settled).toBe(true);
+    });
+
+    it('enableVote polls with the explicit 40 × 300 ms budget and the vote_uid filter predicate', async () => {
       await service.enableVote(req, CANONICAL_UID);
 
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 15, retryDelayMs: 400 });
+      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 40, retryDelayMs: 300 });
 
       proxyRequest.mockResolvedValue({ resources: [] });
       await expect(options.pollFn()).resolves.toBe(false);
+
+      // Still disabled in the index: keep polling.
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'disabled' } }] });
+      await expect(options.pollFn()).resolves.toBe(false);
+
+      // Active: resolves — pins the `status === 'active'` gate against deletion.
+      proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'active' } }] });
+      await expect(options.pollFn()).resolves.toBe(true);
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
     });
   });
 
   // GH-1637: the enable PUT is authorized on `vote:{uid}` (Heimdall openfga_check), and a freshly
-  // created vote's FGA tuple lags index visibility — the voting service publishes the indexer
-  // message before the fga-sync one. With the create poll resolving at index-visibility, an
+  // created vote's FGA tuple lags index visibility — the voting service is observed to publish
+  // the indexer message before the fga-sync one (verified in lfx-v2-voting-service). With the
+  // create poll resolving at index-visibility, an
   // immediate enable can 403 inside that replication gap; enableVote retries only that signature
   // on a bounded 3-attempt / 600 ms grid.
   describe('enableVote FGA-gap retry', () => {
@@ -319,8 +369,10 @@ describe('VoteService upstream path encoding', () => {
       expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
     });
 
-    it('does not retry non-microservice errors', async () => {
-      proxyRequestWithResponse.mockRejectedValue(new Error('socket hangup'));
+    it('does not retry non-microservice errors, even one carrying a 403 statusCode', async () => {
+      // A 403-bearing non-MicroserviceError discriminates the instanceof half of the retry gate —
+      // a plain Error carries no statusCode, so dropping `instanceof MicroserviceError` would pass.
+      proxyRequestWithResponse.mockRejectedValue(Object.assign(new Error('socket hangup'), { statusCode: 403 }));
 
       await expect(service.enableVote(req, CANONICAL_UID)).rejects.toThrow('socket hangup');
       expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
