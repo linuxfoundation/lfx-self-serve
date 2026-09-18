@@ -10,6 +10,7 @@ import type {
   FormationItemWriteState,
   FormationPeopleResponse,
   FormationPerson,
+  FormationPersonMetadata,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
@@ -24,7 +25,6 @@ import type {
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
-  UserMetadata,
   UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -133,9 +133,12 @@ export class FormationService {
    * expired entries, then the oldest one if `FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES` is still
    * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
    * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
-   * across requests — that is the point of it.
+   * across requests — that is the point of it. Values are the projected
+   * {@link FormationPersonMetadata} (title, organization, picture), never the raw profile: the
+   * auth-service reply also carries address, phone and other PII this card never renders, and
+   * nothing that isn't rendered is retained.
    */
-  private static readonly userMetadataCache = new Map<string, { value: Promise<UserMetadata | null>; expiresAt: number }>();
+  private static readonly userMetadataCache = new Map<string, { value: Promise<FormationPersonMetadata | null>; expiresAt: number }>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -288,6 +291,11 @@ export class FormationService {
   /** Test seam: how many usernames the memo currently holds (live or expired-but-not-yet-evicted). */
   public static userMetadataCacheSizeForTests(): number {
     return FormationService.userMetadataCache.size;
+  }
+
+  /** Test seam: exactly what the memo holds for one username — lets a spec prove the raw profile never enters it. */
+  public static userMetadataCacheValueForTests(username: string): Promise<FormationPersonMetadata | null> | undefined {
+    return FormationService.userMetadataCache.get(username)?.value;
   }
 
   /**
@@ -999,7 +1007,7 @@ export class FormationService {
       deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
     });
 
-    const metadataByUsername = new Map<string, UserMetadata>();
+    const metadataByUsername = new Map<string, FormationPersonMetadata>();
     let skippedByBudget = 0;
     results.forEach((result, index) => {
       const username = targets[index].username;
@@ -1035,13 +1043,11 @@ export class FormationService {
         return person;
       }
 
-      // Runtime-checked, not just null-guarded: the NATS body is a type assertion, so a malformed
-      // profile (`job_title: 123`) must leave the field empty, not throw outside the settled batch.
       return {
         ...person,
-        job_title: FormationService.metadataText(metadata.job_title),
-        organization: FormationService.metadataText(metadata.organization),
-        avatar: person.avatar ?? FormationService.metadataText(metadata.picture),
+        job_title: metadata.job_title,
+        organization: metadata.organization,
+        avatar: person.avatar ?? metadata.picture,
       };
     });
   }
@@ -1063,7 +1069,7 @@ export class FormationService {
    * this caller never needs) nor `UserService` (its constructor stands up Snowflake and other
    * services this read has no use for).
    */
-  private readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+  private readUserMetadata(req: Request, username: string): Promise<FormationPersonMetadata | null> {
     const now = Date.now();
     const cached = FormationService.userMetadataCache.get(username);
     if (cached && now < cached.expiresAt) {
@@ -1100,8 +1106,14 @@ export class FormationService {
     return entry.value;
   }
 
-  /** The uncached half of {@link readUserMetadata}: one `USER_METADATA_READ` round trip. */
-  private async fetchUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+  /**
+   * The uncached half of {@link readUserMetadata}: one `USER_METADATA_READ` round trip, projected
+   * to {@link FormationPersonMetadata} BEFORE it is returned (and therefore before it is memoised).
+   * Each field is runtime-checked, not just null-guarded: the NATS body is a type assertion, so a
+   * malformed profile (`job_title: 123`) must leave the field empty, not throw outside the settled
+   * batch.
+   */
+  private async fetchUserMetadata(req: Request, username: string): Promise<FormationPersonMetadata | null> {
     const codec = this.natsService.getCodec();
     const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
     const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
@@ -1111,7 +1123,16 @@ export class FormationService {
       return null;
     }
 
-    return parsed.data ?? null;
+    const profile = parsed.data;
+    if (!profile || typeof profile !== 'object') {
+      return null;
+    }
+
+    return {
+      job_title: FormationService.metadataText(profile.job_title),
+      organization: FormationService.metadataText(profile.organization),
+      picture: FormationService.metadataText(profile.picture),
+    };
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
