@@ -1,11 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
-import { Formation, FormationChecklistResponse, FormationItem, FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { ERROR_CODES, LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
+import {
+  Formation,
+  FormationChecklistResponse,
+  FormationInviteFormValue,
+  FormationItem,
+  FormationPeopleResponse,
+  FormationPerson,
+} from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
-import { Observable, of, Subject } from 'rxjs';
+import { PermissionsService } from '@services/permissions.service';
+import { MessageService } from 'primeng/api';
+import { Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FormationPeopleCardComponent } from './formation-people-card.component';
@@ -13,6 +24,9 @@ import { FormationPeopleCardComponent } from './formation-people-card.component'
 describe('FormationPeopleCardComponent', () => {
   let fixture: ComponentFixture<FormationPeopleCardComponent>;
   let getFormationPeople: ReturnType<typeof vi.fn>;
+  let addUserToProject: ReturnType<typeof vi.fn>;
+  let invalidateProjectSettings: ReturnType<typeof vi.fn>;
+  let toast: ReturnType<typeof vi.fn>;
 
   const person = (overrides: Partial<FormationPerson> = {}): FormationPerson => ({
     key: 'sam.chen',
@@ -67,6 +81,9 @@ describe('FormationPeopleCardComponent', () => {
 
   beforeEach(() => {
     getFormationPeople = vi.fn(() => of<FormationPeopleResponse>({ state: 'loaded', people: [staff, person(), pending] }));
+    addUserToProject = vi.fn(() => of(undefined));
+    invalidateProjectSettings = vi.fn();
+    toast = vi.fn();
   });
 
   async function render(people$?: Observable<FormationPeopleResponse>, response: FormationChecklistResponse = checklist()): Promise<void> {
@@ -76,7 +93,12 @@ describe('FormationPeopleCardComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [FormationPeopleCardComponent],
-      providers: [{ provide: FormationService, useValue: { getFormationPeople } }],
+      providers: [
+        provideNoopAnimations(),
+        { provide: FormationService, useValue: { getFormationPeople } },
+        { provide: PermissionsService, useValue: { addUserToProject, invalidateProjectSettings } },
+        { provide: MessageService, useValue: { add: toast } },
+      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationPeopleCardComponent);
@@ -155,5 +177,88 @@ describe('FormationPeopleCardComponent', () => {
     await render();
 
     expect(byTestId('formation-people-footer')?.textContent).toContain('access comes from grants');
+  });
+
+  describe('invite (PR 2)', () => {
+    const invite: FormationInviteFormValue = { name: 'Kim Park', email: 'kim.park@partner-corp.example', role: 'view' };
+    const directoryMiss = () => new HttpErrorResponse({ status: 404, error: { code: ERROR_CODES.NOT_FOUND, error: 'User not found' } });
+
+    /** `onInvite` is the dialog's `(submitted)` handler — protected, so specs drive it the way the template does. */
+    async function submitInvite(value: FormationInviteFormValue = invite): Promise<void> {
+      fixture.componentInstance.inviteVisible.set(true);
+      (fixture.componentInstance as unknown as { onInvite(v: FormationInviteFormValue): void }).onInvite(value);
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    it('hides the Invite action from readers', async () => {
+      await render();
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+      expect(fixture.nativeElement.querySelector('lfx-formation-invite-dialog')).toBeNull();
+    });
+
+    it('offers Invite to writers and opens the dialog', async () => {
+      await render(undefined, checklist({ can_write: true }));
+
+      const button = byTestId('formation-people-invite-btn') as HTMLButtonElement | null;
+      expect(button).not.toBeNull();
+      button?.click();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.inviteVisible()).toBe(true);
+    });
+
+    it('adds an address with an LF account in one request, refreshes the list, evicts the settings cache, and toasts Added', async () => {
+      await render(undefined, checklist({ can_write: true }));
+      getFormationPeople.mockClear();
+
+      await submitInvite();
+
+      expect(addUserToProject).toHaveBeenCalledTimes(1);
+      expect(addUserToProject).toHaveBeenCalledWith('proj-1', { email: invite.email, role: 'view' });
+      expect(invalidateProjectSettings).toHaveBeenCalledWith('proj-1');
+      expect(getFormationPeople).toHaveBeenCalledTimes(1);
+      expect(fixture.componentInstance.inviteVisible()).toBe(false);
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Added', detail: expect.stringContaining('View access') }));
+    });
+
+    it('re-sends with the name on a directory miss — the manual add that makes upstream email the invite — and toasts Invite sent', async () => {
+      addUserToProject.mockReturnValueOnce(throwError(directoryMiss)).mockReturnValueOnce(of(undefined));
+      await render(undefined, checklist({ can_write: true }));
+
+      await submitInvite({ ...invite, role: 'manage' });
+
+      expect(addUserToProject).toHaveBeenCalledTimes(2);
+      expect(addUserToProject).toHaveBeenNthCalledWith(1, 'proj-1', { email: invite.email, role: 'manage' });
+      expect(addUserToProject).toHaveBeenNthCalledWith(2, 'proj-1', { name: 'Kim Park', email: invite.email, role: 'manage' });
+      expect(fixture.componentInstance.inviteVisible()).toBe(false);
+      expect(toast).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'success', summary: 'Invite sent', detail: expect.stringContaining('Manage access') })
+      );
+    });
+
+    it('surfaces any other failure as an error toast and keeps the dialog open for a retry', async () => {
+      addUserToProject.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'boom' } })));
+      await render(undefined, checklist({ can_write: true }));
+
+      await submitInvite();
+
+      expect(addUserToProject).toHaveBeenCalledTimes(1);
+      expect(invalidateProjectSettings).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.inviteVisible()).toBe(true);
+      expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Invite failed' }));
+    });
+
+    it('ignores a second submission while one is in flight', async () => {
+      const pendingAdd = new Subject<void>();
+      addUserToProject.mockReturnValue(pendingAdd.asObservable());
+      await render(undefined, checklist({ can_write: true }));
+
+      await submitInvite();
+      await submitInvite();
+
+      expect(addUserToProject).toHaveBeenCalledTimes(1);
+    });
   });
 });
