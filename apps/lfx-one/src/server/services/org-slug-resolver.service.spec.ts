@@ -76,8 +76,21 @@ describe('OrgSlugResolverService — input', () => {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      expect.objectContaining({ type: 'b2b_org', tags: ['slug:acme-inc'] })
+      expect.objectContaining({ type: 'b2b_org', tags: ['slug:acme-inc'] }),
+      undefined,
+      undefined,
+      expect.anything()
     );
+  });
+
+  // The SSR guard run blocks the page render on this lookup; a stalled query-service must fail fast
+  // (→ 408 → 502, FR-020), not sit on the client's 30 s default.
+  it('gives every query-service lookup a short per-call timeout', async () => {
+    proxyRequest.mockResolvedValueOnce(page([{ uid: UID_A }]));
+    await new OrgSlugResolverService().resolveSegment(req, UID_A);
+    const options = proxyRequest.mock.calls[0][7] as { timeoutMs?: number };
+    expect(options.timeoutMs).toBeGreaterThan(0);
+    expect(options.timeoutMs).toBeLessThanOrEqual(5000);
   });
 });
 
@@ -93,7 +106,10 @@ describe('OrgSlugResolverService — SFID segment', () => {
       'LFX_V2_SERVICE',
       '/query/resources',
       'GET',
-      expect.objectContaining({ tags: [`b2b_org_uid:${UID_A}`], page_size: 1 })
+      expect.objectContaining({ tags: [`b2b_org_uid:${UID_A}`], page_size: 1 }),
+      undefined,
+      undefined,
+      expect.anything()
     );
     expect(withCache).not.toHaveBeenCalled();
   });

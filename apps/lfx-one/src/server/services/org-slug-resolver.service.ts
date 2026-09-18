@@ -3,6 +3,7 @@
 
 import {
   ORG_ACCOUNT_ID_PATTERN,
+  ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS,
   ORG_SLUG_RESOLVE_NAMESPACE,
   ORG_SLUG_RESOLVE_PAGE_CAP,
   ORG_SLUG_RESOLVE_PAGE_SIZE,
@@ -182,11 +183,27 @@ export class OrgSlugResolverService {
     return rows.length === 0 ? { outcome: 'miss' } : { outcome: 'ambiguous' };
   }
 
-  /** Query-service exact-tag lookup with the caller's context. `page_size` is the Goa parameter name; `per_page` is silently ignored upstream. */
+  /**
+   * Query-service exact-tag lookup with the caller's context. `page_size` is the Goa parameter name;
+   * `per_page` is silently ignored upstream. Short per-call budget: the SSR guard run blocks the
+   * whole page render on this, so a stalled query-service must surface as a fast 408 (→ 502, FR-020)
+   * rather than the client's 30 s default.
+   */
   private query(req: Request, tags: string[], pageSize: number, pageToken?: string): Promise<QueryServiceResponse<B2bOrgIndexedDoc>> {
     const params: Record<string, unknown> = { type: 'b2b_org', tags, page_size: pageSize };
     if (pageToken) params['page_token'] = pageToken;
-    return this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    return this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params,
+      undefined,
+      undefined,
+      {
+        timeoutMs: ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS,
+      }
+    );
   }
 }
 

@@ -55,6 +55,14 @@ export const ORG_SLUG_RESOLVE_TTL_SECONDS = 300;
  */
 export const ORG_SLUG_RESOLVE_PAGE_SIZE = 10;
 
+/**
+ * Per-call budget for each query-service lookup the segment resolver makes. A routing lookup must
+ * fail fast: the server-side guard run blocks the whole SSR render of `/org/{segment}/…` on it, and
+ * the browser run holds the navigation. A timeout is reported as a 408 → 502 and lands in the
+ * FR-020 branch (SFID renders as-is; a slug is not found), never in a 30 s stall.
+ */
+export const ORG_SLUG_RESOLVE_LOOKUP_TIMEOUT_MS = 3000;
+
 /** Hard cap on the pages one slug lookup may walk. Reached only when ≥ `ORG_SLUG_RESOLVE_PAGE_CAP × ORG_SLUG_RESOLVE_PAGE_SIZE` organizations share a slug; the lookup then fails closed as ambiguous rather than guessing. */
 export const ORG_SLUG_RESOLVE_PAGE_CAP = 5;
 
