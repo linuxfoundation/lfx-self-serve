@@ -229,19 +229,20 @@ describe('VoteService', () => {
     });
   });
 
-  // GH-1637: the create/delete/enable polls must keep their explicit fine-grid budgets and the
-  // vote_uid filter predicate — `tags` can never match a vote by uid (vote documents are indexed
-  // without a vote-uid tag). A regression there silently turns create/enable into a fixed
-  // full-budget wait followed by the fallback, and makes delete resolve instantly without
-  // confirming removal (delete's predicate is `resources.length === 0`).
+  // GH-1637: the create/delete/enable polls must keep their explicit fine-grid budgets, the
+  // wall-clock cap (maxDurationMs — attempt counts alone can't bound wall-clock time) with the
+  // remaining-budget request timeout, and the vote_uid filter predicate — `tags` can never match
+  // a vote by uid (vote documents are indexed without a vote-uid tag). A regression there silently
+  // turns create/enable into a fixed full-budget wait followed by the fallback, and makes delete
+  // resolve instantly without confirming removal (delete's predicate is `resources.length === 0`).
   describe('poll budgets', () => {
-    // pollEndpoint is stubbed with a no-arg signature, so type the captured options explicitly.
+    // pollEndpoint is stubbed with an untyped vi.fn, so type the captured options explicitly.
     const capturedPollOptions = (): PollEndpointOptions => {
       const [options] = pollEndpoint.mock.calls[0] as unknown as [PollEndpointOptions];
       return options;
     };
 
-    it('createVote polls with the explicit 27 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('createVote polls with the explicit 27 × 300 ms budget, an 8 s wall-clock cap, and the vote_uid filter predicate', async () => {
       const voteData = { name: 'New ballot' };
 
       await service.createVote(req, voteData as never);
@@ -249,34 +250,52 @@ describe('VoteService', () => {
       // Exactly six args — a seventh would be the removed X-Sync header.
       expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'create_vote', maxRetries: 27, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'create_vote', maxRetries: 27, retryDelayMs: 300, maxDurationMs: 8000 });
 
       proxyRequest.mockResolvedValue({ resources: [] });
-      await expect(options.pollFn()).resolves.toBe(false);
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(false);
 
       // Found in the index: resolves true (the boolean pins the found-path — a bare call would
       // let an inverted `resources.length > 0` check pass while every create burns the full budget).
       proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'disabled' } }] });
-      await expect(options.pollFn()).resolves.toBe(true);
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(true);
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] },
+        undefined,
+        undefined,
+        { timeoutMs: 5000 }
+      );
     });
 
-    it('deleteVote polls with the explicit 27 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('deleteVote polls with the explicit 27 × 300 ms budget, an 8 s wall-clock cap, and the vote_uid filter predicate', async () => {
       proxyRequest.mockResolvedValue(undefined);
 
       await service.deleteVote(req, CANONICAL_UID);
 
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'delete_vote', maxRetries: 27, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'delete_vote', maxRetries: 27, retryDelayMs: 300, maxDurationMs: 8000 });
 
       // The fixed predicate must keep returning false while the record still exists and true
       // once it is gone — drive both cases directly.
       proxyRequest.mockResolvedValue({ resources: [voteFixture] });
-      await expect(options.pollFn()).resolves.toBe(false);
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(false);
 
       proxyRequest.mockResolvedValue({ resources: [] });
-      await expect(options.pollFn()).resolves.toBe(true);
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(true);
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] },
+        undefined,
+        undefined,
+        { timeoutMs: 5000 }
+      );
     });
 
     it('deleteVote awaits the de-index poll before returning', async () => {
@@ -303,23 +322,32 @@ describe('VoteService', () => {
       expect(settled).toBe(true);
     });
 
-    it('enableVote polls with the explicit 36 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('enableVote polls with the explicit 36 × 300 ms budget, a 10.5 s wall-clock cap, and the vote_uid filter predicate', async () => {
       await service.enableVote(req, CANONICAL_UID);
 
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 36, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 36, retryDelayMs: 300, maxDurationMs: 10500 });
 
       proxyRequest.mockResolvedValue({ resources: [] });
-      await expect(options.pollFn()).resolves.toBe(false);
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(false);
 
       // Still disabled in the index: keep polling.
       proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'disabled' } }] });
-      await expect(options.pollFn()).resolves.toBe(false);
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(false);
 
       // Active: resolves — pins the `status === 'active'` gate against deletion.
       proxyRequest.mockResolvedValue({ resources: [{ data: { vote_uid: CANONICAL_UID, status: 'active' } }] });
-      await expect(options.pollFn()).resolves.toBe(true);
-      expect(proxyRequest).toHaveBeenCalledWith(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] });
+      await expect(options.pollFn({ remainingMs: 5000 })).resolves.toBe(true);
+      expect(proxyRequest).toHaveBeenCalledWith(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { type: 'vote', filters: [`vote_uid:${CANONICAL_UID}`] },
+        undefined,
+        undefined,
+        { timeoutMs: 5000 }
+      );
     });
   });
 

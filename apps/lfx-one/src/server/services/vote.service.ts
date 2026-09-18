@@ -41,19 +41,26 @@ export class VoteService {
   private static readonly enableRetryDelayMs = 600;
 
   /**
-   * Vote index-confirmation poll grid (GH-1637), shared by create/delete/enable at one 300 ms
-   * cadence: create/delete 27 attempts ≈ 7.8 s worst case and enable 36 attempts = 10.5 s — each
-   * just under its pre-GH-1637 window (8 s / 12 s), and enable's poll plus the 2 × 600 ms 403-retry
-   * backoff stays under the old 12 s end to end (11.7 s). Nothing that confirmed before falls back
-   * now, while the happy path resolves on the first few attempts (convergence typically lands in
-   * <2 s). Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed without a
-   * vote-uid tag, so `tags` can never match a vote by uid. A `tags` regression silently turns
-   * create/enable into a fixed full-budget wait followed by the fallback, and makes delete
+   * Vote index-confirmation poll budget (GH-1637), shared by create/delete/enable at one 300 ms
+   * cadence. The cap is wall-clock, not attempt-count: `maxDurationMs` includes request duration
+   * (attempt counts alone can't bound wall-clock time — each query takes as long as its request,
+   * up to the API client's timeout), and each poll query receives only the remaining budget as its
+   * request timeout, so an in-flight request can't overshoot the deadline. Create/delete cap at 8 s
+   * and enable at 10.5 s (+ the 2 × 600 ms 403-retry backoff = 11.7 s end to end) — each inside
+   * its pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time, the
+   * 7-attempt/2 s grid 12 s plus request time). The attempt counts are only iteration upper bounds
+   * for fast queries; the deadline binds first once queries slow. Nothing that confirmed before
+   * falls back now, while the happy path resolves on the first few attempts (convergence typically
+   * lands in <2 s). Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
+   * without a vote-uid tag, so `tags` can never match a vote by uid. A `tags` regression silently
+   * turns create/enable into a fixed full-budget wait followed by the fallback, and makes delete
    * (predicate `resources.length === 0`) resolve instantly without confirming removal.
    */
   private static readonly voteIndexPollMaxAttempts = 27;
   private static readonly voteIndexPollEnableMaxAttempts = 36;
   private static readonly voteIndexPollRetryDelayMs = 300;
+  private static readonly voteIndexPollMaxDurationMs = 8000;
+  private static readonly voteIndexPollEnableMaxDurationMs = 10500;
 
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
@@ -175,11 +182,20 @@ export class VoteService {
     const resolved = await pollEndpoint({
       req,
       operation: 'create_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          filters: [`vote_uid:${voteUid}`],
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         if (resources.length > 0) {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
           return true;
@@ -188,6 +204,7 @@ export class VoteService {
       },
       maxRetries: VoteService.voteIndexPollMaxAttempts,
       retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
       metadata: { vote_uid: voteUid },
     });
 
@@ -226,15 +243,25 @@ export class VoteService {
     await pollEndpoint({
       req,
       operation: 'delete_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          filters: [`vote_uid:${voteUid}`],
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         return resources.length === 0;
       },
       maxRetries: VoteService.voteIndexPollMaxAttempts,
       retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
       metadata: { vote_uid: voteUid },
     });
   }
@@ -291,11 +318,20 @@ export class VoteService {
     const resolved = await pollEndpoint({
       req,
       operation: 'enable_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          filters: [`vote_uid:${voteUid}`],
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         if (resources.length > 0 && resources[0].data.status === 'active') {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
           return true;
@@ -305,6 +341,7 @@ export class VoteService {
       metadata: { vote_uid: voteUid },
       maxRetries: VoteService.voteIndexPollEnableMaxAttempts,
       retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: VoteService.voteIndexPollEnableMaxDurationMs,
     });
 
     if (resolved && fetchedVote) {
