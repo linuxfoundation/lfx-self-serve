@@ -14,6 +14,7 @@ import type {
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  FormationUser,
   MyFormationItemRow,
   MyFormationSummary,
   MyFormationWorkResponse,
@@ -208,6 +209,18 @@ export class FormationService {
     const items = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
+
+    // Enrich item owner display names — the mapper sets name = username as a placeholder; replace
+    // with the actual profile name where available. Best-effort; items without a name hit stay as-is.
+    const ownerRefs = items.flatMap((item) => (item.owner ? [item.owner] : []));
+    const ownerNames = await this.enrichFormationUserRefs(req, ownerRefs);
+    if (ownerNames.size > 0) {
+      for (const item of items) {
+        if (item.owner && ownerNames.has(item.owner.username)) {
+          item.owner = { ...item.owner, name: ownerNames.get(item.owner.username)! };
+        }
+      }
+    }
 
     const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
@@ -1078,6 +1091,45 @@ export class FormationService {
     });
   }
 
+  /**
+   * Derives the best available display name from a raw `UserMetadata` profile. Prefers
+   * `given_name + family_name` when both are present and non-blank; falls back to the top-level
+   * `name` field; returns `null` when nothing usable is available.
+   */
+  private static resolveDisplayName(profile: Record<string, unknown>): string | null {
+    const given = typeof profile['given_name'] === 'string' ? profile['given_name'].trim() : '';
+    const family = typeof profile['family_name'] === 'string' ? profile['family_name'].trim() : '';
+    if (given || family) {
+      return [given, family].filter(Boolean).join(' ') || null;
+    }
+    return FormationService.metadataText(profile['name']);
+  }
+
+  /**
+   * Batch-enriches an array of {@link FormationUser} refs — the item `owner` and activity `actor`
+   * shapes — by replacing the username-as-name placeholder with the actual display name from the
+   * auth-service user-metadata read. Reuses {@link readUserMetadata}'s process-wide cache, so names
+   * fetched during a concurrent {@link enrichFormationPeople} call are cache hits here. System actors
+   * (username `"system"`) are skipped; their name is already set to `"System"` by the mapper. Best-
+   * effort: a failed or budget-exceeded lookup leaves the ref with its username-as-name placeholder.
+   */
+  private async enrichFormationUserRefs(req: Request, refs: FormationUser[]): Promise<Map<string, string>> {
+    const targets = [...new Set(refs.filter((r) => r.username && r.username !== 'system').map((r) => r.username))];
+    if (targets.length === 0) return new Map();
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (username) => this.readUserMetadata(req, username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
+
+    const nameByUsername = new Map<string, string>();
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value?.name) {
+        nameByUsername.set(targets[index], result.value.name);
+      }
+    });
+    return nameByUsername;
+  }
+
   /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
   private static metadataText(value: unknown): string | null {
     if (typeof value !== 'string') {
@@ -1155,6 +1207,7 @@ export class FormationService {
     }
 
     return {
+      name: FormationService.resolveDisplayName(profile),
       job_title: FormationService.metadataText(profile.job_title),
       organization: FormationService.metadataText(profile.organization),
       picture: FormationService.metadataText(profile.picture),
@@ -1459,7 +1512,15 @@ export class FormationService {
           ),
         itemUid
       );
-      return { history: entries, history_state: 'complete' };
+
+      // Enrich actor display names — mapActor sets name = username as a placeholder for real users.
+      const actorNames = await this.enrichFormationUserRefs(
+        req,
+        entries.map((e) => e.actor)
+      );
+      const enrichedEntries = actorNames.size > 0 ? entries.map((e) => (actorNames.has(e.actor.username) ? { ...e, actor: { ...e.actor, name: actorNames.get(e.actor.username)! } } : e)) : entries;
+
+      return { history: enrichedEntries, history_state: 'complete' };
     } catch (error) {
       if (isMicroserviceError(error) && error.statusCode === 404) {
         logger.debug(req, 'get_formation_item_detail', 'Activity fetch 404 on a checklist-vouched item; treating as empty history', { projectUid, itemUid });

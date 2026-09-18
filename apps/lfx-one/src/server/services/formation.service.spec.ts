@@ -378,6 +378,7 @@ describe('FormationService', () => {
 
       expect(result.people[0]).toEqual(expect.objectContaining({ job_title: 'Partner contact', organization: null, avatar: 'https://cdn.example/s.png' }));
       await expect(FormationService.userMetadataCacheValueForTests('sam.chen')).resolves.toEqual({
+        name: null,
         job_title: 'Partner contact',
         organization: null,
         picture: 'https://cdn.example/s.png',
