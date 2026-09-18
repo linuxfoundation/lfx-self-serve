@@ -13,6 +13,7 @@ vi.mock('../services/microservice-proxy.service', () => ({
 }));
 vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
 vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesService: class {} }));
+vi.mock('../services/org-slug-resolver.service', () => ({ OrgSlugResolverService: class {} }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));

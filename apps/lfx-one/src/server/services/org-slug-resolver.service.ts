@@ -3,7 +3,9 @@
 
 import { ORG_ACCOUNT_ID_PATTERN, ORG_SLUG_RESOLVE_NAMESPACE, ORG_SLUG_RESOLVE_TTL_SECONDS } from '@lfx-one/shared/constants';
 import { B2bOrgIndexedDoc, OrgResolveResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
-import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@lfx-one/shared/utils';
+// Deep import on purpose: the `@lfx-one/shared/utils` barrel pulls Angular-only utils into the Node
+// server bundle and its specs; this module is pure (same precedent as `impersonation.utils`).
+import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment } from '@lfx-one/shared/utils/org-lens-url.utils';
 import { Request } from 'express';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
