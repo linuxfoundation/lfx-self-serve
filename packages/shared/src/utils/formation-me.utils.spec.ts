@@ -3,8 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
+import type { PendingActionItem } from '../interfaces/components.interface';
 import type { FormationItemStatus, MyFormationItemRow } from '../interfaces/formation.interface';
-import { buildFormationItemActions, formatMyFormationSubtitle, isAssignedItemOpen, summarizeMyFormationItems } from './formation-me.utils';
+import {
+  buildFormationItemActions,
+  buildFormationPendingActionView,
+  formatMyFormationSubtitle,
+  isAssignedItemOpen,
+  summarizeMyFormationItems,
+} from './formation-me.utils';
 
 const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormationItemRow => ({
   item_uid: 'item-1',
@@ -16,8 +23,6 @@ const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormat
   status: 'not_started',
   is_gating: true,
   due_date: null,
-  action: 'manual',
-  action_href: null,
   can_write: true,
   can_set_status: true,
   ...overrides,
@@ -77,8 +82,10 @@ describe('buildFormationItemActions', () => {
       type: 'FormationItem',
       badge: 'Acme Project',
       text: 'Complete legal review',
-      buttonText: 'Claim',
+      severity: 'accent',
+      buttonText: 'View item',
       formationProjectUid: 'project-1',
+      formationProjectSlug: 'acme-project',
       formationItemKey: 'legal-review',
       formationItemUid: 'item-1',
       formationItemStatus: 'not_started',
@@ -86,9 +93,19 @@ describe('buildFormationItemActions', () => {
     });
   });
 
+  // #2732: the row's one action navigates to the checklist item; nothing on the row reads the
+  // drawer-only permission flags any more, and the row shape carries no link of its own.
+  it('carries no buttonLink and none of the retired drawer-only permission fields', () => {
+    const [action] = buildFormationItemActions([formationItemRow({ can_write: true, can_set_status: true })]);
+    expect(action.buttonLink).toBeUndefined();
+    expect(action).not.toHaveProperty('formationCanWrite');
+    expect(action).not.toHaveProperty('formationCanSetStatus');
+    expect(action).not.toHaveProperty('formationItemAction');
+  });
+
   it('never emits a "Mark done" button text, regardless of the row\'s status (GH-1956 decision 3)', () => {
     const [action] = buildFormationItemActions([formationItemRow({ status: 'blocked' })]);
-    expect(action.buttonText).toBe('Claim');
+    expect(action.buttonText).toBe('View item');
     expect(action.buttonText.toLowerCase()).not.toContain('done');
   });
 
@@ -109,20 +126,57 @@ describe('buildFormationItemActions', () => {
   it('returns an empty array for no items', () => {
     expect(buildFormationItemActions([])).toEqual([]);
   });
+});
 
-  it('threads can_write through as formationCanWrite unchanged', () => {
-    const [writable] = buildFormationItemActions([formationItemRow({ can_write: true })]);
-    expect(writable.formationCanWrite).toBe(true);
-
-    const [readOnly] = buildFormationItemActions([formationItemRow({ can_write: false })]);
-    expect(readOnly.formationCanWrite).toBe(false);
+// #2732: the per-row view both Pending Actions surfaces (the dashboard list and its "View all"
+// drawer) precompute from a FormationItem row — link, status chip and due label — so neither
+// template calls a function and the two can't drift.
+describe('buildFormationPendingActionView', () => {
+  const formationAction = (overrides: Partial<PendingActionItem> = {}): PendingActionItem => ({
+    ...buildFormationItemActions([formationItemRow()])[0],
+    ...overrides,
   });
 
-  it('threads can_set_status through as formationCanSetStatus unchanged (GH-2705)', () => {
-    const [teamMember] = buildFormationItemActions([formationItemRow({ can_set_status: true })]);
-    expect(teamMember.formationCanSetStatus).toBe(true);
+  it('builds the checklist link from the project slug and the template item key', () => {
+    const view = buildFormationPendingActionView(formationAction());
+    expect(view.isFormationItem).toBe(true);
+    expect(view.formationViewCommands).toEqual(['/project/formation']);
+    expect(view.formationViewQueryParams).toEqual({ project: 'acme-project', item: 'legal-review' });
+    expect(view.formationViewAriaLabel).toBe('View Complete legal review on the formation checklist');
+  });
 
-    const [nonMember] = buildFormationItemActions([formationItemRow({ can_set_status: false })]);
-    expect(nonMember.formationCanSetStatus).toBe(false);
+  it.each([
+    ['not_started', 'Not started', 'secondary'],
+    ['in_progress', 'In progress', 'warn'],
+    ['blocked', 'Blocked', 'danger'],
+  ] as const)('labels the %s status chip "%s" with the %s tone', (status, label, severity) => {
+    const view = buildFormationPendingActionView(formationAction({ formationItemStatus: status }));
+    expect(view.formationStatusLabel).toBe(label);
+    expect(view.formationStatusSeverity).toBe(severity);
+  });
+
+  it('formats the due date as a short month-day label and drops it when absent or malformed', () => {
+    expect(buildFormationPendingActionView(formationAction({ date: '2026-10-01' })).formationDueLabel).toBe('Oct 1');
+    expect(buildFormationPendingActionView(formationAction({ date: undefined })).formationDueLabel).toBeNull();
+    expect(buildFormationPendingActionView(formationAction({ date: 'not-a-date' })).formationDueLabel).toBeNull();
+  });
+
+  it('is all-null for a non-formation row', () => {
+    const rsvp: PendingActionItem = { type: 'RSVP', badge: 'CNCF', text: 'RSVP to TAG Security weekly', icon: '', severity: 'warn', buttonText: 'RSVP' };
+    expect(buildFormationPendingActionView(rsvp)).toEqual({
+      isFormationItem: false,
+      formationViewCommands: null,
+      formationViewQueryParams: null,
+      formationViewAriaLabel: null,
+      formationStatusLabel: null,
+      formationStatusSeverity: null,
+      formationDueLabel: null,
+    });
+  });
+
+  it('treats a formation row missing its slug or item key as not linkable', () => {
+    expect(buildFormationPendingActionView(formationAction({ formationProjectSlug: undefined })).isFormationItem).toBe(false);
+    expect(buildFormationPendingActionView(formationAction({ formationItemKey: undefined })).isFormationItem).toBe(false);
+    expect(buildFormationPendingActionView(formationAction({ formationItemKey: undefined })).formationViewCommands).toBeNull();
   });
 });

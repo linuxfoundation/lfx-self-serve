@@ -1799,7 +1799,7 @@ describe('FormationService', () => {
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
-    it('builds items[] from open, live-checklist items only, mapping action/action_href/can_write, and reports state complete', async () => {
+    it('builds items[] from open, live-checklist items only, mapping can_write, and reports state complete', async () => {
       getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
       mockQueryResources(
         [
@@ -1838,6 +1838,51 @@ describe('FormationService', () => {
 
       expect(result.items).toEqual([]);
       expect(result.formations).toEqual([]);
+    });
+
+    // #2732: the `assignee:` tag is the primary filter; this backstop guarantees that a tag-matching
+    // or projection defect can never surface someone else's (or an unassigned) item on a caller's
+    // dashboard — Pending Actions lists only items assigned to the signed-in user.
+    it('never returns an index row assigned to someone else, or unassigned, even if the assignee tag is somehow ignored upstream (client-side backstop)', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false });
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-mine', assignee: 'alice' }),
+          itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' }),
+          itemIndexRow({ object_id: 'item-unassigned', assignee: undefined }),
+        ],
+        [formationIndexRow({ progress: { not_started: 3 } })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'auth0|alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-mine']);
+      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 0, assigned_skipped: 0 });
+      // A drop means the upstream tag or projection misbehaved — surfaced at WARN, not buried at DEBUG.
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 2 }
+      );
+    });
+
+    it('returns a complete empty result, skipping the formation-aggregate query, when every returned row belongs to someone else', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+      expect(getProjectById).not.toHaveBeenCalled();
+      // A total drop is the loudest case, not a silent one: the WARN is gated on any mismatch, so
+      // zero survivors out of a non-empty tag match still logs the full count (#2734 review).
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 1 }
+      );
     });
 
     it('keeps a blocked item in items[] — isAssignedItemOpen treats every non-terminal status as still open', async () => {
@@ -1934,6 +1979,38 @@ describe('FormationService', () => {
       // Not a data-availability failure — the aggregate row arrived, it's just out-of-gate. Never
       // reads as `state: 'partial'`, which would incorrectly suggest something is missing.
       expect(result.state).toBe('complete');
+    });
+
+    // #2734 review (Cursor Bugbot): the row's View item links into `/project/formation`, whose guard
+    // admits only Formation-stage projects. Production checklists stay `live` after a project goes
+    // Active (GH-2328), so gating items[] on lifecycle alone would hand out a link that bounces to
+    // the overview. The per-project read the can_write fan-out already makes carries the stage.
+    it('drops an open item whose project has left the Formation stage, so View item never links into a route its guard would bounce', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: 'Active' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow({ sub_stage: 'Active' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items).toEqual([]);
+      expect(result.state).toBe('complete');
+    });
+
+    it('keeps an open item on a Formation-stage project, including Confidential', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false, stage: 'Formation - Confidential' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+    });
+
+    it('keeps an open item whose stage is unknown because the project lookup failed, rather than hiding real work on a transient error', async () => {
+      getProjectById.mockRejectedValue(new Error('project lookup failed'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
     });
 
     it('excludes a Disengaged formation (the one terminal Formation sub-stage) but keeps a Confidential one visible to an assignee who holds access to it', async () => {

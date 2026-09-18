@@ -24,7 +24,7 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
 import { MessageService } from 'primeng/api';
@@ -32,16 +32,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
 import { timer } from 'rxjs';
 
-import type {
-  DecoratedPendingAction,
-  FormationItemOpenRequest,
-  Meeting,
-  MeetingRsvp,
-  PendingActionItem,
-  PendingDecline,
-  RsvpResponse,
-  Vote,
-} from '@lfx-one/shared/interfaces';
+import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, PendingDecline, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
 
 /** Deferred-undo window (ms) before an optimistic decline is committed upstream. */
 const INVITE_DECLINE_UNDO_MS = 5000;
@@ -90,10 +81,6 @@ export class PendingActionsComponent {
   public readonly actionClick = output<PendingActionItem>();
   // Emits the voteUid when a Vote pending-action needs the cast drawer (multi-question or ranked poll).
   public readonly castVoteRequested = output<string>();
-  // Emits {projectUid, itemKey} when a FormationItem row's Open action needs the existing
-  // formation-item-drawer (GH-1956) — the parent dashboard hosts `dashboard-formation-item-drawer-host`
-  // and opens it on this event.
-  public readonly formationItemRequested = output<FormationItemOpenRequest>();
 
   protected readonly drawerVisible = model<boolean>(false);
 
@@ -320,15 +307,6 @@ export class PendingActionsComponent {
     this.invitationService.unmarkResolved(pending.inviteUid);
     this.pendingDecline.set(null);
     this.messageService.clear(INVITE_UNDO_TOAST_KEY);
-  }
-
-  // Open (GH-1956): opens the existing formation-item-drawer via the parent-hosted
-  // dashboard-formation-item-drawer-host, same precedent as castVoteRequested/dashboard-cast-drawer-host.
-  protected onOpenFormationItem(item: DecoratedPendingAction): void {
-    const projectUid = item.formationProjectUid;
-    const itemKey = item.formationItemKey;
-    if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite, canSetStatus: item.formationCanSetStatus });
   }
 
   protected openDrawer(): void {
@@ -638,7 +616,6 @@ export class PendingActionsComponent {
         // Require committeeUid too — the invitation branch builds a routerLink to the group
         // and calls accept/decline with it, so a row missing it would render /groups/undefined.
         const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
-        const isFormationItem = item.type === 'FormationItem' && !!item.formationProjectUid && !!item.formationItemKey;
         const inviteGroupName = item.inviteGroupName ?? item.badge;
         // Canonical tier-prefixed view link (GH-1566): the invited group's own `inviteIsFoundation`
         // picks /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
@@ -661,7 +638,8 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
-          isFormationItem,
+          // Formation rows (#2732): link, status chip and due label — shared with the "View all" drawer.
+          ...buildFormationPendingActionView(item),
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
           declineAriaLabel: `Decline invite to ${inviteGroupName}`,
           inviteViewCommands,
