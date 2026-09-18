@@ -65,7 +65,7 @@ export const FORMATION_INVITE_ROLE_OPTIONS = [
 export const FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE = 8;
 
 /**
- * How long the BFF memoises one person's user-metadata read (title / organization / picture)
+ * How long the BFF memoises one person's user-metadata read (name, title, organization, picture)
  * across requests. The people card mounts on every checklist load on both hosts, and these
  * fields change rarely, so a revisit inside this window replays no per-person NATS fan-out.
  */

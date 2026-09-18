@@ -131,7 +131,7 @@ export class FormationService {
    * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
    * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
    * across requests — that is the point of it. Values are the projected
-   * {@link FormationPersonMetadata} (title, organization, picture), never the raw profile: the
+   * {@link FormationPersonMetadata} (name, title, organization, picture), never the raw profile: the
    * auth-service reply also carries address, phone and other PII this card never renders, and
    * nothing that isn't rendered is retained.
    */
@@ -169,7 +169,7 @@ export class FormationService {
     const ownerEnrichmentPromise = this.enrichFormationUserRefs(
       req,
       rawAssignees.map((u) => ({ username: u, name: u }))
-    );
+    ).catch(() => new Map<string, string>());
     const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same

@@ -813,18 +813,26 @@ describe('FormationService', () => {
       expect(result.items[0].owner).toEqual({ username: 'sam.chen', name: 'sam.chen' });
     });
 
-    it('resolveDisplayName: given+family beats top-level name; lone part is a last resort', async () => {
+    it('resolveDisplayName: given+family beats top-level name; lone part is a last resort; empty profile resolves null', async () => {
       // Verifies the three-tier precedence via the process-wide metadata cache, which stores the
       // resolved name from fetchUserMetadata → resolveDisplayName.
-      const mockedGetProjectSettings = getProjectSettings as ReturnType<typeof vi.fn>;
-      mockedGetProjectSettings.mockResolvedValue({ announcement_date: null, writers: [{ username: 'u1' }], auditors: [{ username: 'u2' }] });
+      proxyRequest.mockResolvedValue(checklist([]));
+      getProjectSettings.mockResolvedValue({
+        announcement_date: null,
+        writers: [{ username: 'u1' }, { username: 'u3' }],
+        auditors: [{ username: 'u2' }, { username: 'u4' }],
+      });
 
-      // u1: both parts — name should be "Ada Lovelace", NOT "Ada Lovelace Full" (given+family wins)
-      // u2: only given_name — falls through to top-level name "Full Name"
+      // u1: both parts present — given+family wins over top-level name
+      // u2: only given_name, top-level name present — falls through to top-level name
+      // u3: only given_name, no top-level name — lone part is last resort
+      // u4: empty profile — resolves to null
       natsRequest.mockImplementation(async (_subject: string, username: string) => {
         if (username === 'u1')
           return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', family_name: 'Lovelace', name: 'Ada Lovelace Full' } }) };
         if (username === 'u2') return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', name: 'Full Name' } }) };
+        if (username === 'u3') return { data: JSON.stringify({ success: true, data: { given_name: 'Ada' } }) };
+        if (username === 'u4') return { data: JSON.stringify({ success: true, data: {} }) };
         return { data: '' };
       });
 
@@ -832,6 +840,8 @@ describe('FormationService', () => {
 
       await expect(FormationService.userMetadataCacheValueForTests('u1')).resolves.toMatchObject({ name: 'Ada Lovelace' });
       await expect(FormationService.userMetadataCacheValueForTests('u2')).resolves.toMatchObject({ name: 'Full Name' });
+      await expect(FormationService.userMetadataCacheValueForTests('u3')).resolves.toMatchObject({ name: 'Ada' });
+      await expect(FormationService.userMetadataCacheValueForTests('u4')).resolves.toMatchObject({ name: null });
     });
   });
 
