@@ -56,6 +56,7 @@ function settings(): ProjectSettings {
 describe('FormationCardComponent', () => {
   let fixture: ComponentFixture<FormationCardComponent>;
   let getProjectSpy: ReturnType<typeof vi.fn>;
+  let getProjectSfidSpy: ReturnType<typeof vi.fn>;
 
   async function render(
     stage: string,
@@ -237,12 +238,14 @@ describe('FormationCardComponent', () => {
       };
     }
 
-    async function renderWithInput(value: Formation): Promise<void> {
+    async function renderWithInput(value: Formation, admin: { sfid?: string | null; auditor?: boolean } = {}): Promise<void> {
       TestBed.resetTestingModule();
+      getProjectSpy = vi.fn(() => of(project('Formation - Engaged', { auditor: admin.auditor ?? false })));
+      getProjectSfidSpy = vi.fn(() => of(admin.sfid ?? null));
       await TestBed.configureTestingModule({
         imports: [FormationCardComponent],
         providers: [
-          { provide: ProjectService, useValue: { getProjectSfid: () => of(null), getProject: () => of(project('Formation - Engaged')) } },
+          { provide: ProjectService, useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy } },
           { provide: ProjectContextService, useValue: throwingProjectContext() },
         ],
       }).compileComponents();
@@ -260,6 +263,29 @@ describe('FormationCardComponent', () => {
       expect(text()).toContain('Oct 25, 2026');
       expect(text()).toContain('child-project');
       expect(text()).not.toContain('project-one');
+    });
+
+    // The admin-tool link is the one cross-project field the card resolves itself, and the only
+    // one that can leak an identity: both probes key off `FormationCardView.uid`, which in input
+    // mode comes from `parent_project_uid`. A regression to `uid: null` would hide the link rather
+    // than fail, so the whole chain (uid -> auditor probe -> SFID -> href) is asserted here — this
+    // is the mixing hazard #2719 exists for, and the other input-mode specs stub the SFID to null.
+    it('resolves the admin-tool link from the response uid — the CHILD project, not the context', async () => {
+      await renderWithInput(formation(), { sfid: 'child-sfid', auditor: true });
+
+      expect(getProjectSpy).toHaveBeenCalledWith('child-uid', false, { auditor: true });
+      expect(getProjectSfidSpy).toHaveBeenCalledWith('child-uid');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
+        'https://pcc.dev.platform.linuxfoundation.org/project/child-sfid'
+      );
+    });
+
+    it('hides the admin-tool link when the response carries no uid, instead of probing the wrong project', async () => {
+      await renderWithInput(formation({ parent_project_uid: undefined }), { sfid: 'child-sfid', auditor: true });
+
+      expect(getProjectSpy).not.toHaveBeenCalled();
+      expect(getProjectSfidSpy).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
     });
 
     it('falls back to "Not set" when the response carries no announcement date, without the loading or error states', async () => {

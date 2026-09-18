@@ -24,6 +24,14 @@ export const mockFormationTemplate: FormationTemplate = {
 export const MOCK_FORMATION_ANNOUNCEMENT_DATE = '2026-10-25';
 
 /**
+ * The other queue row's announcement date, pinned for the same reason and deliberately earlier
+ * than `MOCK_FORMATION_ANNOUNCEMENT_DATE`: the queue sorts by `announcement_date` ASC, so a
+ * `Date.now()`-derived value here would flip these two rows' relative order once the wall clock
+ * passed the pinned date — latent today, a foot-gun for the first order-sensitive assertion.
+ */
+export const MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE = '2026-09-28';
+
+/**
  * Mock formation data for Playwright tests (GH-1958). Keyed by parent project slug, mirroring
  * `projects.mock.ts`'s `mockProjects` convention — a checklist test navigates to a project whose
  * slug has both a `mockProjects` entry (a Formation-stage `stage`) and a `mockFormations` entry.
@@ -116,7 +124,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     lifecycle: 'formation',
     gates_cleared: true,
     is_activating: true,
-    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    announcement_date: MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE,
     progress: { not_started: 0, in_progress: 0, blocked: 0, done: 4, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],

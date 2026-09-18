@@ -13,6 +13,7 @@ import { expect, test } from '@playwright/test';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
+  FORMATION_ANNOUNCEMENT_DATE_LABEL,
   FORMATION_PROJECT_SLUG,
   FOUNDATION_SLUG,
   gotoFormationDetail,
@@ -67,7 +68,7 @@ test.describe('Formation checklist drill-down (LFXV2-3386)', () => {
     await expect(card).toBeVisible();
     await expect(card).toContainText('Engaged');
     await expect(card).toContainText('Announcement date');
-    await expect(card).toContainText('Oct 25, 2026');
+    await expect(card).toContainText(FORMATION_ANNOUNCEMENT_DATE_LABEL);
     await expect(card).toContainText(FORMATION_PROJECT_SLUG);
     await expect(card).not.toContainText(FOUNDATION_SLUG);
   });

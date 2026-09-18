@@ -144,11 +144,23 @@ export function buildBaseProject(slug: string, overrides: Partial<Project> = {})
 export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
 
 /**
- * The date both mocked reads serve. Since #2719 the sidebar formation card takes it from the
- * checklist response (`MOCK_FORMATION_ANNOUNCEMENT_DATE`), not from the project-settings read
- * below — the two are kept equal so the "Oct 25, 2026" assertion can't pass off the old source.
+ * The date the mocked **project-settings** read serves, deliberately different from the checklist
+ * response's `MOCK_FORMATION_ANNOUNCEMENT_DATE`. Since #2719 the sidebar formation card takes its
+ * date from the checklist on both checklist hosts, so a card assertion naming the checklist's date
+ * fails if the card ever regresses to this read. Equal dates would let such a regression render
+ * the same string and stay green — the difference is what makes the date assertion itself
+ * source-sensitive, alongside the throwing-`ProjectContextService` unit spec and the drill-down's
+ * `not.toContainText(FOUNDATION_SLUG)`.
+ *
+ * Nothing asserts on this value directly; it exists so the settings route resolves at all (see the
+ * route stub below — unmocked, the fake uid 404s and the dashboard-sidebar card errors instead of
+ * rendering).
  */
+export const FORMATION_SETTINGS_ANNOUNCEMENT_DATE = '2026-03-14';
+/** The date the card actually renders on both checklist hosts — sourced from the checklist read. */
 export const FORMATION_ANNOUNCEMENT_DATE = MOCK_FORMATION_ANNOUNCEMENT_DATE;
+/** `FORMATION_ANNOUNCEMENT_DATE` as `formatAnnouncementDateLabel` renders it on the card. */
+export const FORMATION_ANNOUNCEMENT_DATE_LABEL = 'Oct 25, 2026';
 
 export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
@@ -214,7 +226,7 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
       contentType: 'application/json',
       body: JSON.stringify({
         uid: opts.project.uid,
-        announcement_date: FORMATION_ANNOUNCEMENT_DATE,
+        announcement_date: FORMATION_SETTINGS_ANNOUNCEMENT_DATE,
         writers: [],
         auditors: [],
         executive_director: null,

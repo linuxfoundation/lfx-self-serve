@@ -74,13 +74,12 @@ export class FormationCardComponent {
    * both checklist hosts (`/project/formation` and the foundation drill-down
    * `/foundation/formations/:projectSlug`) pass the response their own
    * `lfx-formation-checklist-section` just fetched, so everything the card *renders* — slug,
-   * sub-stage, announcement date, and whether the card appears at all — costs no extra request and
-   * rides the checklist's own read gate (#2719). The admin-tool deep link is the exception: its
-   * `auditor` probe and SFID lookup stay separate calls and fail closed (see
+   * sub-stage, announcement date, and whether the card appears at all — costs no extra request
+   * and rides the checklist's own read gate (#2719). The admin-tool deep link is the exception:
+   * its `auditor` probe and SFID lookup stay separate calls and fail closed (see
    * `initIsAuditorState`/`initSfidState`), so a reader who can't make them simply sees the card
-   * without the link. `null` (the default)
-   * preserves the original behavior: everything resolves from `ProjectContextService`, as on the
-   * project dashboard sidebar.
+   * without the link. `null` (the default) preserves the original behavior: everything resolves
+   * from `ProjectContextService`, as on the project dashboard sidebar.
    */
   public readonly formation = input<Formation | null>(null);
 

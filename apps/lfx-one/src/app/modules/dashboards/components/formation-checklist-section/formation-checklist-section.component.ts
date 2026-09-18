@@ -66,8 +66,12 @@ export class FormationChecklistSectionComponent {
    * The checklist response this component just fetched, so a host can render alongside it without
    * re-reading the checklist — both hosts use it for their `lfx-formation-card` sidebar rail
    * (#2719), whose rendered fields then need no request or permission probe of their own (the
-   * card's admin-tool link still makes its own, and fails closed). Emits `null` on a failed load and when there's no
-   * slug, so a host clears rather than pairing a stale card with a fresh (or empty) checklist.
+   * card's admin-tool link still makes its own, and fails closed).
+   *
+   * Emits `null` in three cases, so a host clears rather than pairing a stale card with a fresh
+   * (or empty) checklist: a failed load, no slug, and a genuine project switch — the last one
+   * before the new response arrives, which is the case the #2719-style mixing bugs come from. A
+   * first mount and a same-slug refresh deliberately emit no clear.
    */
   public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
