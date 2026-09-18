@@ -3995,6 +3995,56 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });
 
+    it('omits a whitespace-only CTA even when the registration URL is valid', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '   ' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The destination is fine here; the LABEL is the problem. Without the trim this sent a
+      // blank buttonText the controller then dropped, so the preview showed a button the draft
+      // never got -- the same drift, reached from the other side.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaLabel()).toBe('');
+    });
+
+    it('omits heroLinkUrl when the registration URL is not an http(s) URL, but keeps the image', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'javascript:alert(1)',
+          heroImageUrl: 'https://events.example/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The existing test used an EMPTY registrationUrl, which passes under either predicate, so
+      // the tightening from `!== ''` to emailCtaIsStageable() was untested. A non-http(s) value
+      // separates them: the image still ships, unlinked, which is the right degrade.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
+      expect(cfg?.heroLinkUrl).toBeUndefined();
+    });
+
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {
       selectEmail();
       // normalizeEventDetails defaults an absent registrationUrl to '' -- a real shape, not a

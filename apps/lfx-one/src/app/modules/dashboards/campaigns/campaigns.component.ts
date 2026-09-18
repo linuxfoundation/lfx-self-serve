@@ -1135,15 +1135,6 @@ export class CampaignsComponent {
    * the toggle being on so a generation cannot start for a test the operator has not opted into.
    */
   /**
-   * Whether a generated CTA will actually reach the staged draft.
-   *
-   * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
-   * brief has no registrationUrl, because the controller's allow-list drops the pair when the
-   * url is blank. Rendering the button in the preview regardless would make the preview claim
-   * something the draft will not have -- and the preview's whole purpose is to show what gets
-   * staged. Both read this, so they cannot drift apart.
-   */
-  /**
    * Whether variant B will actually be staged as an A/B test.
    *
    * Both halves must be non-empty: upstream reads an empty string as "blank this field", so a
@@ -1169,6 +1160,15 @@ export class CampaignsComponent {
    */
   protected readonly emailCtaLabel = computed<string>(() => (this.emailCtaIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''));
 
+  /**
+   * Whether a generated CTA will actually reach the staged draft.
+   *
+   * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
+   * brief has no registrationUrl, because the controller's allow-list drops the pair when the
+   * url is blank. Rendering the button in the preview regardless would make the preview claim
+   * something the draft will not have -- and the preview's whole purpose is to show what gets
+   * staged. Both read this, so they cannot drift apart.
+   */
   protected readonly emailCtaIsStageable = computed<boolean>(() => {
     const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
     if (typeof url !== 'string' || url === '') return false;
@@ -2400,11 +2400,13 @@ export class CampaignsComponent {
           // same registration URL the rest of the brief already points at. Sent only when the AI
           // actually produced a CTA, mirroring the subject/body/preheader spread above.
           //
-          // Gated on the DESTINATION too, not just the label. `normalizeEventDetails` defaults an
-          // absent registrationUrl to '', and the controller's allow-list drops buttonText and
-          // buttonUrl together when the url is blank — so sending a label with no destination
-          // silently loses the CTA the operator just previewed, with nothing anywhere saying so.
-          ...(copy !== null && copy.cta.trim() !== '' && this.emailCtaIsStageable() ? { buttonText: copy.cta, buttonUrl: details.registrationUrl } : {}),
+          // Gated on the DESTINATION too, not just the label, and read from `emailCtaLabel` —
+          // the same value the preview renders. `normalizeEventDetails` defaults an absent
+          // registrationUrl to '', and the controller's allow-list drops buttonText and buttonUrl
+          // together when the url is blank, so a label with no destination silently loses the CTA
+          // the operator just previewed. Re-deriving the trim inline here is the duplication that
+          // signal exists to remove, and it already drifted once.
+          ...(this.emailCtaLabel() !== '' ? { buttonText: this.emailCtaLabel(), buttonUrl: details.registrationUrl } : {}),
           // The scraped hero image and sponsor logos ride along as structured fields, not baked
           // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
           // hero as its own hosted image module and each sponsor as its own image module in tiered

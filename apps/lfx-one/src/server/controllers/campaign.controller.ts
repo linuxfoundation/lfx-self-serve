@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPrivateHost } from '../helpers/event-hero-sponsors.helper';
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -2199,8 +2200,15 @@ export class CampaignController {
         // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
         body.hubspotConfig.sponsors
           .filter((sponsor): sponsor is CampaignEventSponsor => !!sponsor && typeof sponsor.name === 'string')
-          .map((sponsor) => ({ ...sponsor, logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
-          .filter((sponsor) => sponsor.logoUrl !== '')
+          // CONSTRUCTED, not spread. Spreading the caller's object carried unvalidated extra keys
+          // through the very allow-list this function exists to be, and left `name` unbounded —
+          // it reaches a sent email, so it is trimmed and capped like every other text field.
+          .map((sponsor) => ({ name: sponsor.name.trim().slice(0, 100), logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
+          .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
+          // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
+          // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
+          // scrape path already refuses to produce.
+          .slice(0, 10)
       : [];
 
     // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves
@@ -2240,7 +2248,14 @@ export class CampaignController {
  *
  * Empty rather than a rejection because each field is already optional and gated on being
  * non-empty downstream: a bad URL degrades to "no button"/"no link", which is what an operator
- * would get from a brief that never had one. Mirrors `resolveUrl` in event-hero-sponsors.helper.
+ * would get from a brief that never had one.
+ *
+ * Returns the CANONICAL form (`parsed.href`), not the input: WHATWG `URL` accepts
+ * `http:example.com` and reports an `http:` protocol, so forwarding the original string hands the
+ * Go image downloader a value it cannot use, and the hero degrades silently.
+ *
+ * Shares `isPrivateHost` with `resolveUrl` in event-hero-sponsors.helper rather than restating
+ * the rules, so the scrape path and the direct-request path cannot diverge.
  */
 function httpUrlOrEmpty(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -2249,6 +2264,13 @@ function httpUrlOrEmpty(value: unknown): string {
   try {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    // The HOST check, not just the scheme. This is the sole validator for `heroImageUrl` and
+    // `sponsors[].logoUrl`, and campaign-service FETCHES those server-side and re-hosts the bytes
+    // as a publicly readable file — so a direct POST carrying `http://169.254.169.254/...` on
+    // this route (which has no body validator) is a read-back channel out of the cluster. Shares
+    // `isPrivateHost` with the scrape path rather than restating it, so the two cannot diverge;
+    // the docstring below used to claim it mirrored `resolveUrl` while omitting exactly this.
+    if (isPrivateHost(parsed.hostname)) return '';
     // The CANONICAL form, not the input. WHATWG `URL` accepts `http:example.com` and reports an
     // `http:` protocol, so returning the original string forwards a non-network-absolute value
     // that the Go image downloader cannot use -- the hero then degrades silently, because the

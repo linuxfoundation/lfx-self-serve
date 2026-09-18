@@ -25,7 +25,7 @@ const CONTEXT_WINDOW_CHARS = 400;
  * and closes the DNS-rebinding window -- stays the authoritative check. This stops the payload
  * from ever being persisted.
  */
-function isPrivateHost(hostname: string): boolean {
+export function isPrivateHost(hostname: string): boolean {
   const host = hostname.toLowerCase();
   if (host === 'localhost' || host.endsWith('.localhost')) return true;
 
