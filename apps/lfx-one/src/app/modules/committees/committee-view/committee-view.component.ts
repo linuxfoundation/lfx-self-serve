@@ -29,6 +29,7 @@ import {
 import {
   AcceptInviteOrganizationDialogData,
   AcceptInviteOrganizationDialogResult,
+  CommitteeDocument,
   CommitteeEngagementResponse,
   CommitteeEngagementWindow,
   CommitteeJoinApplication,
@@ -336,7 +337,12 @@ export class CommitteeViewComponent {
   // counts before the user opens each tab). surveysCount and documentsCount are null while loading
   // or when the user is a visitor — the label closures in tabConfig fall back to the plain name. --
   public surveysCount: Signal<number | null> = this.initSurveysCount();
-  public documentsCount: Signal<number | null> = this.initDocumentsCount();
+  // Documents are lifted to this level so the count badge and the Documents tab share the same
+  // fetch — no double call. documentsCount is derived from documents().length.
+  public documentsLoading = signal(true);
+  public documentsRefresh = signal(0);
+  public documents: Signal<CommitteeDocument[]> = this.initDocuments();
+  public documentsCount: Signal<number | null> = computed(() => (this.documentsLoading() ? null : this.documents().length));
   public votesCount: Signal<number | null> = this.initVotesCount();
 
   // -- Tab visibility signals --
@@ -478,6 +484,10 @@ export class CommitteeViewComponent {
 
   public onMembersRefreshed(): void {
     this.refreshMembers();
+  }
+
+  public onDocumentsRefreshRequested(): void {
+    this.documentsRefresh.update((v) => v + 1);
   }
 
   public onEngagementWindowChange(window: CommitteeEngagementWindow): void {
@@ -1421,19 +1431,30 @@ export class CommitteeViewComponent {
    * Fetches the total document count for the tab label. Same member-gating and latency profile
    * as initSurveysCount.
    */
-  private initDocumentsCount(): Signal<number | null> {
+  /**
+   * Lifts the committee documents fetch to this level so the tab-count badge and the Documents
+   * tab component share a single upstream fan-out (folders + links + indexed files). The child
+   * component skips its own internal fetch when `externalDocuments` is provided.
+   * `documentsRefresh` is bumped by `onDocumentsRefreshRequested()`, which the child calls via
+   * its `(refreshRequested)` output after every successful mutation.
+   */
+  private initDocuments(): Signal<CommitteeDocument[]> {
     return toSignal(
-      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading)]).pipe(
+      combineLatest([toObservable(this.committee), toObservable(this.myRoleLoading), toObservable(this.documentsRefresh)]).pipe(
         switchMap(([committee, roleLoading]) => {
           if (!committee?.uid || roleLoading) return EMPTY;
-          if (!this.isMemberOrAdmin()) return of(null);
+          if (!this.isMemberOrAdmin()) {
+            this.documentsLoading.set(false);
+            return of([] as CommitteeDocument[]);
+          }
+          this.documentsLoading.set(true);
           return this.committeeService.getCommitteeDocuments(committee.uid).pipe(
-            map((docs) => docs.length),
-            catchError(() => of(null))
+            catchError(() => of([] as CommitteeDocument[])),
+            finalize(() => this.documentsLoading.set(false))
           );
         })
       ),
-      { initialValue: null }
+      { initialValue: [] as CommitteeDocument[] }
     );
   }
 

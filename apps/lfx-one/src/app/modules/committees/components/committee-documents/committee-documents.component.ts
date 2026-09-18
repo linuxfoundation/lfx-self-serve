@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -13,7 +13,7 @@ import { MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeDocument, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, startWith, switchMap, take } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, filter, finalize, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { DocumentFormComponent } from '@components/document-form/document-form.component';
 
@@ -35,6 +35,22 @@ export class CommitteeDocumentsComponent {
   // === Inputs ===
   public readonly committee = input.required<Committee>();
   public readonly canEdit = input<boolean>(false);
+  /**
+   * When the parent lifts the documents fetch (e.g. for a tab-count badge), it passes the
+   * already-loaded list here so the component skips its own internal fetch. The parent also
+   * provides `externalLoading` so the table's skeleton state stays accurate while the
+   * first load is in flight.
+   */
+  public readonly externalDocuments = input<CommitteeDocument[] | null>(null);
+  public readonly externalLoading = input<boolean>(false);
+
+  // === Outputs ===
+  /**
+   * Emitted after a successful mutation (add link/folder/file or delete) when the parent
+   * owns the fetch (`externalDocuments` is provided). The parent re-fetches and passes the
+   * refreshed list back down, keeping the tab-count badge in sync.
+   */
+  public readonly refreshRequested = output<void>();
 
   // === Forms ===
   protected readonly filterForm = new FormGroup({
@@ -43,7 +59,7 @@ export class CommitteeDocumentsComponent {
   });
 
   // === Writable Signals ===
-  protected readonly loading = signal<boolean>(true);
+  private readonly internalLoading = signal<boolean>(true);
   protected readonly refreshTrigger = signal<number>(0);
   /** UID of the folder the user has drilled into; null means the root view. */
   protected readonly currentFolderUid = signal<string | null>(null);
@@ -58,7 +74,17 @@ export class CommitteeDocumentsComponent {
   // === Computed Signals ===
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
-  protected readonly committeeDocuments: Signal<CommitteeDocument[]> = this.initCommitteeDocuments();
+  private readonly internalCommitteeDocuments: Signal<CommitteeDocument[]> = this.initInternalCommitteeDocuments();
+  /** Selects the parent-provided list when available; falls back to the internal fetch. */
+  protected readonly committeeDocuments: Signal<CommitteeDocument[]> = computed(() => {
+    const ext = this.externalDocuments();
+    return ext !== null ? ext : this.internalCommitteeDocuments();
+  });
+  /** Loading state: driven by the parent when external documents are in use, internal otherwise. */
+  protected readonly loading: Signal<boolean> = computed(() => {
+    if (this.externalDocuments() !== null) return this.externalLoading();
+    return this.internalLoading();
+  });
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
   protected readonly folderOptions: Signal<{ label: string; value: string }[]> = this.initFolderOptions();
@@ -66,6 +92,19 @@ export class CommitteeDocumentsComponent {
   protected readonly currentFolder: Signal<CommitteeDocument | null> = this.initCurrentFolder();
 
   // === Public Methods ===
+  /**
+   * Triggers a refresh after a successful mutation. When the parent owns the data
+   * (`externalDocuments` provided), emits `refreshRequested` so the parent re-fetches
+   * and passes the updated list back down. Otherwise bumps the internal `refreshTrigger`.
+   */
+  private refresh(): void {
+    if (this.externalDocuments() !== null) {
+      this.refreshRequested.emit();
+    } else {
+      this.refreshTrigger.update((v) => v + 1);
+    }
+  }
+
   public openAddLinkDialog(): void {
     const dialogRef: DynamicDialogRef | null = this.dialogService.open(DocumentFormComponent, {
       header: 'Add Link',
@@ -85,7 +124,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.refresh();
         }
       },
     });
@@ -120,7 +159,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.refresh();
         }
       },
     });
@@ -148,7 +187,7 @@ export class CommitteeDocumentsComponent {
     dialogRef?.onClose.pipe(take(1)).subscribe({
       next: (result: boolean | undefined) => {
         if (result) {
-          this.refreshTrigger.update((v) => v + 1);
+          this.refresh();
         }
       },
     });
@@ -249,13 +288,21 @@ export class CommitteeDocumentsComponent {
     });
   }
 
-  private initCommitteeDocuments(): Signal<CommitteeDocument[]> {
+  private initInternalCommitteeDocuments(): Signal<CommitteeDocument[]> {
     return toSignal(
-      combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger)]).pipe(
-        filter(([committee]) => !!committee?.uid),
-        switchMap(([committee]) => {
-          this.loading.set(true);
-          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(finalize(() => this.loading.set(false)));
+      combineLatest([toObservable(this.committee), toObservable(this.refreshTrigger), toObservable(this.externalDocuments)]).pipe(
+        switchMap(([committee, _refresh, external]) => {
+          // Parent owns the data — skip the fetch entirely.
+          if (external !== null) {
+            this.internalLoading.set(false);
+            return of([] as CommitteeDocument[]);
+          }
+          if (!committee?.uid) {
+            this.internalLoading.set(false);
+            return of([] as CommitteeDocument[]);
+          }
+          this.internalLoading.set(true);
+          return this.committeeService.getCommitteeDocuments(committee.uid).pipe(finalize(() => this.internalLoading.set(false)));
         })
       ),
       { initialValue: [] as CommitteeDocument[] }
