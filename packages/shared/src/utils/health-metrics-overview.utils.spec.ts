@@ -9,6 +9,7 @@ import {
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewRevenueStreams,
   buildHealthMetricsOverviewTiles,
+  formatHealthMetricsOverviewAsOfLabel,
   groupHealthMetricsOverviewFindings,
   resolveHealthMetricsOverviewGroupMeta,
   resolveHealthMetricsOverviewKpiClassification,
@@ -115,6 +116,16 @@ describe('resolveHealthMetricsOverviewKpiClassification', () => {
   it('degrades null or undefined to none', () => {
     expect(resolveHealthMetricsOverviewKpiClassification(null)).toBe('none');
     expect(resolveHealthMetricsOverviewKpiClassification(undefined)).toBe('none');
+  });
+});
+
+describe('formatHealthMetricsOverviewAsOfLabel', () => {
+  it('returns an empty string for a never-evaluated (empty evaluatedAt) area', () => {
+    expect(formatHealthMetricsOverviewAsOfLabel('')).toBe('');
+  });
+
+  it('formats a populated ISO date as an "as of" label', () => {
+    expect(formatHealthMetricsOverviewAsOfLabel('2026-03-05')).toBe('as of Mar 5, 2026');
   });
 });
 

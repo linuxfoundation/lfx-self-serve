@@ -57,6 +57,13 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const dashboardMetricsConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/dashboard-metrics.constants')>(
     '../../../../../packages/shared/src/constants/dashboard-metrics.constants'
   );
+  // Real value, not a hardcoded copy that can drift: getHealthOverviewKpis now iterates this set to
+  // build its returned rows, so a stale copy here would keep passing after a real area is added/removed.
+  // health-metrics-overview.constants.ts imports only dashboard-metrics.constants plus a type-only
+  // interface import, so importing it directly is safe.
+  const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
+    '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
+  );
 
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
@@ -92,9 +99,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-    // Real set, not a stub: getHealthOverviewKpis now iterates this to build its returned rows, so a
-    // test asserting on which areas come back needs the actual evt/trn/mem/non membership.
-    HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: new Set(['evt', 'trn', 'mem', 'non']),
+    HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
