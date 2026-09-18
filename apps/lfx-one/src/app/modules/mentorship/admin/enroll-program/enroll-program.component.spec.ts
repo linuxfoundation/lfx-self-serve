@@ -166,4 +166,21 @@ describe('EnrollProgramComponent', () => {
     expect(component['form'].controls.name.value).toBe('GridFlow Mentorship Program');
     expect(component['form'].controls.logoPreviewUrl.value).toBe('blob:http://localhost/fake-preview');
   });
+
+  it('triggers the coming-soon toast when the submit button is clicked in the DOM', () => {
+    setPrerequisitesStep();
+
+    const nextBtn = element().querySelector<HTMLElement>('[data-testid="mentorship-enroll-next"] button');
+    expect(nextBtn).not.toBeNull();
+
+    nextBtn!.click();
+    fixture.detectChanges();
+
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast.mock.calls[0][0]).toMatchObject({
+      severity: 'info',
+      summary: 'Submit enrollment',
+      detail: MENTORSHIP_COMING_SOON_DETAIL,
+    });
+  });
 });
