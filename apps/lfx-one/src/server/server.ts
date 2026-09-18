@@ -214,11 +214,12 @@ app.use(httpLogger);
 const valkeyUrl = process.env['VALKEY_URL'];
 const sessionStoreEnabled = process.env['SESSION_STORE_ENABLED'] === 'true' && !!valkeyUrl;
 
-// Production-only guard (dev/staging can run plaintext Valkey locally). AuthStateService writes the
-// Auth0 sub to Valkey unconditionally whenever VALKEY_URL is set, with no separate opt-in flag, so
-// this gates on VALKEY_URL alone rather than just SESSION_STORE_ENABLED. Rollout note: broadening
-// this guard means a production env with an existing plaintext VALKEY_URL will now refuse to start
-// until that value is updated to rediss:// — update it before deploying this change, not after.
+// Production-only guard — the chart's values.yaml sets NODE_ENV=production unconditionally, so this
+// only exempts genuinely local (non-chart) dev. AuthStateService writes the Auth0 sub to Valkey
+// unconditionally whenever VALKEY_URL is set, with no separate opt-in flag, so this gates on
+// VALKEY_URL alone rather than just SESSION_STORE_ENABLED. Rollout note: broadening this guard means
+// a deployed env with an existing plaintext VALKEY_URL will now refuse to start until that value is
+// updated to rediss:// — update it before deploying this change, not after.
 if (valkeyUrl && process.env['NODE_ENV'] === 'production' && !valkeyUrl.startsWith('rediss://')) {
   throw new Error('VALKEY_URL requires a TLS-secured transport (rediss://) in production — refusing to start with an insecure transport.');
 }

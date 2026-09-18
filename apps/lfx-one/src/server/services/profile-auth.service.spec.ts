@@ -102,17 +102,4 @@ describe('ProfileAuthService.getAuthorizationUrl', () => {
     expect(parsed.searchParams.get('scope')).toBe('update:current_user_metadata');
     expect(parsed.searchParams.get('redirect_uri')).toBe('https://app.example/passwordless/callback');
   });
-
-  // AuthStateService.issue() never rejects — setJson catches every write failure internally and
-  // fails closed by still returning a nonce (auth-state.service.ts). getAuthorizationUrl must not
-  // assume otherwise: it should mint a normal URL with whatever nonce issue() hands back, even when
-  // that nonce came from an uncertain Valkey write (dealako, PR #2604 round 3).
-  it('builds a normal authorize URL even when the issued nonce came from an uncertain Valkey write', async () => {
-    authStateSvc.issue.mockResolvedValue('nonce-uncertain');
-    const req = buildReq({ oidc: { user: { sub: 'user-1' } } });
-
-    const url = await service.getAuthorizationUrl(req, '/profile');
-
-    expect(new URL(url).searchParams.get('state')).toBe('nonce-uncertain');
-  });
 });

@@ -98,8 +98,11 @@ const PASSWORD_ERROR_RULES: readonly {
  * Controller for handling profile HTTP requests
  */
 export class ProfileController {
+  /** Single source of truth for normalizeProfileReturnTo's fallback, so other call sites needing the same default (e.g. the impersonation guard) don't hardcode a second copy of '/profile'. */
+  private static readonly profileDefaultReturnTo = '/profile';
+
   private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
-    '/profile',
+    ProfileController.profileDefaultReturnTo,
     PROFILE_EMAIL_PATH,
     PROFILE_EMAILS_PATH,
     '/profile/identities',
@@ -1807,9 +1810,9 @@ export class ProfileController {
     // Checked before consuming: the nonce's Valkey record is single-use (deleted on read), so
     // consuming it ahead of a guard that then blocks the request would strand it, leaving no valid
     // nonce to retry with after impersonation ends. This redirect still lands on the generic
-    // '/profile' fallback rather than the request's real returnTo, since that value lives in the
+    // default fallback rather than the request's real returnTo, since that value lives in the
     // not-yet-consumed record — only the retry, not this immediate redirect, is preserved.
-    if (this.blockCallbackDuringImpersonation(req, res, '/profile', 'profile_auth_callback')) {
+    if (this.blockCallbackDuringImpersonation(req, res, ProfileController.profileDefaultReturnTo, 'profile_auth_callback')) {
       return;
     }
 
@@ -2739,7 +2742,7 @@ export class ProfileController {
   }
 
   private normalizeProfileReturnTo(raw: unknown): string {
-    return this.normalizeReturnTo(raw, '/profile');
+    return this.normalizeReturnTo(raw, ProfileController.profileDefaultReturnTo);
   }
 
   /**
