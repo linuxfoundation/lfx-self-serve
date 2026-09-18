@@ -9,10 +9,10 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
-  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
@@ -20,31 +20,33 @@ import {
   EVENT_TERM_DISTINCTIVE_LENGTH,
   EVENT_TERM_GENERIC,
   EVENT_TERM_STOPWORDS,
-  EVENT_TERM_YEAR_PATTERN,
   EVENT_TERM_WEIGHT,
+  EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
+  MAX_SPONSORS,
 } from '@lfx-one/shared/constants';
 import type {
   BriefMetrics,
   BriefMetricsRow,
-  CampaignBriefOutput,
   CampaignAudience,
-  CampaignServiceEmailMetrics,
-  CampaignJobOutcome,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
+  CampaignBriefPersistenceState,
+  CampaignCreateRequest,
+  CampaignDeliveryType,
   CampaignEmailStage,
+  CampaignEmailTab,
+  CampaignEventSponsor,
+  CampaignImplementationDraft,
+  CampaignIndexDoc,
+  CampaignJobOutcome,
+  CampaignPaidTab,
+  CampaignProgramType,
+  CampaignServiceEmailMetrics,
+  CampaignTabOption,
   EmailBriefCopy,
   EventTemplateTerms,
-  CampaignCreateRequest,
-  CampaignBriefPersistenceState,
-  CampaignImplementationDraft,
-  CampaignBriefPersistResult,
-  CampaignDeliveryType,
-  CampaignIndexDoc,
-  CampaignProgramType,
-  CampaignEmailTab,
-  CampaignPaidTab,
-  CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { isPrivateHost } from '@lfx-one/shared/utils';
@@ -1167,6 +1169,47 @@ export class CampaignsComponent {
    * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
    */
   protected readonly emailBodyIsStageable = computed<boolean>(() => (this.emailCopy()?.body ?? '').trim() !== '');
+
+  /**
+   * The hero image URL exactly as it will be staged, or '' when it will not be.
+   *
+   * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
+   * string off a restored brief, and the controller's `httpUrlOrEmpty` later drops non-http(s)
+   * and private hosts — so binding the raw value showed a banner the draft omits AND made the
+   * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
+   * controller, so the two cannot drift.
+   */
+  protected readonly emailHeroImageUrl = computed<string>(() => {
+    if (!this.emailBodyIsStageable()) return '';
+    const url = this.emailBriefOutput()?.eventDetails?.heroImageUrl;
+    if (typeof url !== 'string' || url.trim() === '') return '';
+    try {
+      const parsed = new URL(url.trim());
+      const httpish = parsed.protocol === 'http:' || parsed.protocol === 'https:';
+      return httpish && !isPrivateHost(parsed.hostname) ? url.trim() : '';
+    } catch {
+      return '';
+    }
+  });
+
+  /** Sponsors whose logo survives the same validation the controller applies, capped alike. */
+  protected readonly emailSponsors = computed<CampaignEventSponsor[]>(() => {
+    if (!this.emailBodyIsStageable()) return [];
+    const sponsors = this.emailBriefOutput()?.eventDetails?.sponsors;
+    if (!Array.isArray(sponsors)) return [];
+    return sponsors
+      .filter((sponsor) => {
+        const logo = typeof sponsor?.logoUrl === 'string' ? sponsor.logoUrl.trim() : '';
+        if (logo === '') return false;
+        try {
+          const parsed = new URL(logo);
+          return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !isPrivateHost(parsed.hostname);
+        } catch {
+          return false;
+        }
+      })
+      .slice(0, MAX_SPONSORS);
+  });
 
   protected readonly emailCtaLabel = computed<string>(() =>
     // Requires a stageable BODY too, not just a valid destination: the button is written by the
@@ -2442,16 +2485,16 @@ export class CampaignsComponent {
           // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
           // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
           // registration URL still renders -- just unlinked, which is the correct degrade.
-          ...(this.emailBodyIsStageable() && details.heroImageUrl
+          ...(this.emailHeroImageUrl()
             ? {
-                heroImageUrl: details.heroImageUrl,
+                heroImageUrl: this.emailHeroImageUrl(),
                 // The same predicate the CTA uses, for the same reason: the controller validates
                 // heroLinkUrl as absolute http(s), so a raw non-empty check here would send a
                 // link the server then drops.
                 ...(this.emailCtaIsStageable() ? { heroLinkUrl: details.registrationUrl } : {}),
               }
             : {}),
-          ...(this.emailBodyIsStageable() && details.sponsors && details.sponsors.length > 0 ? { sponsors: details.sponsors } : {}),
+          ...(this.emailSponsors().length > 0 ? { sponsors: this.emailSponsors() } : {}),
           // A/B fields ride along only when the operator opted in AND variant B has content —
           // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
           // write onto the variant, so an enabled toggle with nothing typed sends a single-variant

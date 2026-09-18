@@ -1295,6 +1295,39 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['heroImageUrl']).toBeUndefined();
   });
 
+  it('DOES forward hero, button and sponsors when a body is present', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>Join us</p>',
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonText: 'Register',
+            buttonUrl: 'https://events.example/register',
+            sponsors: [{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The POSITIVE case. Every other test around this gate asserts what is WITHHELD, so a gate
+    // that withheld everything unconditionally would have passed all of them -- this is the one
+    // that proves the fields still reach campaign-service when they should.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('https://cdn.example.com/hero.png');
+    expect(sent['buttonText']).toBe('Register');
+    expect(sent['buttonUrl']).toBe('https://events.example/register');
+    expect(sent['sponsors']).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+  });
+
   it.each([
     ['no body at all', {}],
     ['a whitespace-only body', { bodyHtml: '   ' }],

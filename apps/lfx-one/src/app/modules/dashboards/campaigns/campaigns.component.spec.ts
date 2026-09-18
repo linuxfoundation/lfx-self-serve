@@ -1894,6 +1894,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailStage: Signal<string>;
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
+    emailHeroImageUrl: Signal<string>;
+    emailSponsors: Signal<{ name: string; logoUrl: string }[]>;
     emailBodyIsStageable: Signal<boolean>;
     abTestIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
@@ -4081,6 +4083,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.heroImageUrl).toBeUndefined();
       expect(cfg?.sponsors).toBeUndefined();
       expect(internals().emailBodyIsStageable()).toBe(false);
+    });
+
+    it('does not preview or stage a hero the controller would drop', async () => {
+      selectEmail();
+      // A RESTORED brief: asEventDetails accepts any string, so a persisted blob can carry a
+      // host the controller later refuses. Binding it raw made the BROWSER fetch it, which no
+      // server-side guard can prevent.
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'http://169.254.169.254/hero.png',
+          sponsors: [
+            { name: 'Bad', logoUrl: 'http://127.0.0.1/logo.png' },
+            { name: 'Good', logoUrl: 'https://cdn.example.com/good.png' },
+          ],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // One validated model drives BOTH, so the preview cannot show what staging omits.
+      expect(internals().emailHeroImageUrl()).toBe('');
+      expect(internals().emailSponsors()).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
     });
 
     it('withholds the CTA when the body is blank, even with a valid destination', async () => {
