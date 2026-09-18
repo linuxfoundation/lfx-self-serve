@@ -8,6 +8,7 @@ import type {
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
+import type { HealthMetricsRange } from './dashboard-metric.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -50,10 +51,11 @@ export interface HealthMetricsAreaState {
 }
 
 /**
- * Raw `HEALTH_OVERVIEW_KPIS` row shape (LFXV2-3365), as queried by `getHealthOverviewKpis`. Field
- * names are the query's uppercase column aliases, not the underlying Snowflake column names. Five
- * fields (events/training/contributors-prefixed) are period-suffixed per the selected range; the
- * four members/non-members fields are point-in-time and carry no such suffix.
+ * One period's slice of a `HEALTH_OVERVIEW_KPIS` row (LFXV2-3365), projected out of a
+ * {@link HealthOverviewAllPeriodsRow} by `getHealthOverviewKpis`. Field names are the underlying
+ * columns' uppercase aliases with the period suffix stripped. Five fields
+ * (events/training/contributors-prefixed) vary by period; the four members/non-members fields are
+ * point-in-time and repeat identically across every range.
  */
 export interface HealthOverviewKpisRow {
   EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
@@ -66,6 +68,24 @@ export interface HealthOverviewKpisRow {
   NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
   NON_MEMBERS_STATUS: string | null;
 }
+
+/**
+ * Raw all-periods row from `HEALTH_OVERVIEW_KPIS` / `HEALTH_OVERVIEW_REVENUE`. Both tables key on
+ * `foundation_slug` alone and expose the period as a column suffix, so one read covers every range:
+ * period-suffixed columns are aliased `<COLUMN>__<RANGE>` (one per selectable range) and the
+ * period-invariant ones keep their bare alias. Projected per range by the service layer.
+ */
+export type HealthOverviewAllPeriodsRow = Record<string, number | string | null>;
+
+/**
+ * Per-range KPI area states from one all-periods read. Keyed only by the ranges the period selector
+ * offers (`buildHealthMetricsOverviewPeriods()`) — `HealthMetricsRange` carries a fifth member these
+ * tables have no columns for, so callers must handle a missing key.
+ */
+export type HealthMetricsOverviewKpisByRange = Partial<Record<HealthMetricsRange, HealthMetricsAreaState[]>>;
+
+/** Per-range revenue summaries from one all-periods read. Same partial-key caveat as {@link HealthMetricsOverviewKpisByRange}. */
+export type HealthMetricsOverviewRevenueByRange = Partial<Record<HealthMetricsRange, HealthMetricsOverviewRevenue>>;
 
 /**
  * Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity.
