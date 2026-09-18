@@ -376,7 +376,10 @@ describe('FormationChecklistSectionComponent', () => {
               activeProjectAnnouncementDateHasError: signal(false),
             },
           },
-          { provide: FormationService, useValue: { getProjectFormation: vi.fn().mockReturnValue(fetchResult), getQueueFormationChecklist: vi.fn().mockReturnValue(fetchResult) } },
+          {
+            provide: FormationService,
+            useValue: { getProjectFormation: vi.fn().mockReturnValue(fetchResult), getQueueFormationChecklist: vi.fn().mockReturnValue(fetchResult) },
+          },
           {
             provide: ActivatedRoute,
             useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } },
