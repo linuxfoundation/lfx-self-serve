@@ -10,8 +10,8 @@ import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 export interface RangeDataFetchingOptions<T> {
   projectContextService: ProjectContextService;
-  // Signal, not InputSignal — callers pass a signal input(). Only the legacy health-metrics cards use
-  // this helper; the overview page reads all periods at once and projects them client-side instead.
+  // Widened to Signal so a caller owning its own range signal isn't locked out; today every caller is
+  // a legacy health-metrics card passing input(). The overview page reads all periods at once instead.
   range: Signal<HealthMetricsRange>;
   loading: WritableSignal<boolean>;
   data: WritableSignal<T>;

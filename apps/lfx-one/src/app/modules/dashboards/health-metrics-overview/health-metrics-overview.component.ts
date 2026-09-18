@@ -147,7 +147,11 @@ export class HealthMetricsOverviewComponent {
         // request for the previous slug. Errors are absorbed by AnalyticsService's catchError.
         switchMap((slug) =>
           (slug ? fetchFn(slug) : of(emptyValue)).pipe(
-            tap(() => loading.set(false)),
+            // Only a real fetch ends the loading state: with no foundation resolved yet the tiles and
+            // rail stay on their skeleton rather than flashing a terminal "unavailable" message.
+            tap(() => {
+              if (slug) loading.set(false);
+            }),
             // Drops the previous foundation's map the moment the slug changes. Without it the tile
             // strip keeps rendering the old foundation's live rows until the new request resolves,
             // because mergeAreaStates prefers any live row over the loading placeholder.

@@ -3,7 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,9 @@ import type { HealthMetricsAreaState, HealthMetricsFinding, ProjectContext } fro
 describe('HealthMetricsOverviewComponent', () => {
   let fixture: ComponentFixture<HealthMetricsOverviewComponent>;
 
-  async function render(foundation: ProjectContext | null, foundationSfid: string | null): Promise<void> {
+  /** Returns the foundation signal so a test can switch foundations without re-wiring the TestBed. */
+  async function render(foundation: ProjectContext | null, foundationSfid: string | null): Promise<WritableSignal<ProjectContext | null>> {
+    const foundationSignal = signal<ProjectContext | null>(foundation);
     await TestBed.configureTestingModule({
       imports: [HealthMetricsOverviewComponent],
       providers: [
@@ -23,13 +25,15 @@ describe('HealthMetricsOverviewComponent', () => {
         provideHttpClientTesting(),
         {
           provide: ProjectContextService,
-          useValue: { selectedFoundation: signal(foundation), selectedFoundationSfid: signal(foundationSfid) },
+          useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal(foundationSfid) },
         },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
     fixture.detectChanges();
+
+    return foundationSignal;
   }
 
   afterEach(() => {
@@ -239,21 +243,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('clears the previous foundation tiles while the new foundation KPI fetch is in flight', async () => {
-      const foundationSignal = signal<ProjectContext | null>({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
-      await TestBed.configureTestingModule({
-        imports: [HealthMetricsOverviewComponent],
-        providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          {
-            provide: ProjectContextService,
-            useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal('a0912345678901234A') },
-          },
-        ],
-      }).compileComponents();
-      fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
-      fixture.detectChanges();
-
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -288,6 +278,38 @@ describe('HealthMetricsOverviewComponent', () => {
     });
   });
 
+  it('projects the clicked period out of the already-fetched KPI map without issuing any new request', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+    const httpMock = TestBed.inject(HttpTestingController);
+    httpMock
+      .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+      .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+    // The `range` assertion is the endpoint contract this PR establishes: the fetch is per
+    // foundation, so a period pill must never reintroduce a range param.
+    httpMock
+      .expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && !r.params.has('range'))
+      .flush({
+        YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })],
+        COMPLETED_YEAR: [areaState({ area: 'evt', statValue: '54%', statLabel: 'of registration goal', classification: 'watch' })],
+      });
+    await fixture.whenStable();
+    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
+
+    // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
+    const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+    fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+    fixture.detectChanges();
+
+    // A wrong range key would render '—'/"no data this period", which reads as a legitimate empty
+    // state rather than a bug — so assert the prior-year value specifically.
+    const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+    expect(evtTile.textContent).toContain('54%');
+    expect(evtTile.textContent).toContain('Needs attention');
+    expect(evtTile.textContent).not.toContain('81%');
+    httpMock.verify();
+  });
+
   describe('foundation summary rail wiring', () => {
     it('sends the selected foundation slug and renders the fetched values in the rail', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
@@ -308,21 +330,7 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('re-fetches the foundation summary when the selected foundation changes', async () => {
-      const foundationSignal = signal<ProjectContext | null>({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
-      await TestBed.configureTestingModule({
-        imports: [HealthMetricsOverviewComponent],
-        providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          {
-            provide: ProjectContextService,
-            useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal('a0912345678901234A') },
-          },
-        ],
-      }).compileComponents();
-      fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
-      fixture.detectChanges();
-
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')

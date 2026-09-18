@@ -6,15 +6,15 @@ import {
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
   getYearForRange,
   EMAIL_CAMPAIGN_LIMIT,
-  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   buildHealthMetricsOverviewPeriods,
+  FOUNDATION_DESCENDANT_TRAVERSAL_MAX_DEPTH,
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
-  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_METRICS_RANGES,
+  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   isHealthMetricsRange,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
@@ -6167,8 +6167,10 @@ export class ProjectService {
     const query = `
       SELECT
         revenue_domain AS REVENUE_DOMAIN,
-        ${ranges.map((range) => `revenue_usd${this.getRangeSuffix(range)} AS REVENUE_USD__${range}`).join(',\n        ')},
-        ${ranges.map((range) => `foundation_total_revenue_usd${this.getRangeSuffix(range)} AS FOUNDATION_TOTAL_REVENUE_USD__${range}`).join(',\n        ')}
+        ${ranges.map((range) => `revenue_usd${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias('REVENUE_USD', range)}`).join(',\n        ')},
+        ${ranges
+          .map((range) => `foundation_total_revenue_usd${this.getRangeSuffix(range)} AS ${ProjectService.revenueAlias('FOUNDATION_TOTAL_REVENUE_USD', range)}`)
+          .join(',\n        ')}
       FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_REVENUE
       WHERE foundation_slug = ?
       ORDER BY revenue_domain
@@ -6187,7 +6189,7 @@ export class ProjectService {
       // The view is one row per revenue_domain, not per period, so a foundation with a row here
       // always has rows.length > 0 even when this period has no data yet. A null total for the
       // period (rather than row absence) is the real "no data for this period" signal.
-      const total = ProjectService.toNullableNumber(rows[0]?.[`FOUNDATION_TOTAL_REVENUE_USD__${range}`]);
+      const total = ProjectService.toNullableNumber(rows[0]?.[ProjectService.revenueAlias('FOUNDATION_TOTAL_REVENUE_USD', range)]);
 
       if (total === null) {
         byRange[range] = { dataAvailable: false, total: 0, streams: [] };
@@ -6199,7 +6201,7 @@ export class ProjectService {
         total,
         streams: rows.map((row) => ({
           key: String(row['REVENUE_DOMAIN'] ?? '').toLowerCase(),
-          value: ProjectService.toNullableNumber(row[`REVENUE_USD__${range}`]) ?? 0,
+          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]) ?? 0,
         })),
       };
     }
@@ -6208,7 +6210,11 @@ export class ProjectService {
   }
 
   /**
-   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Events, Training,
+   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365), for every selectable
+   * period in one read — the table keys on `foundation_slug` alone and carries the period as a column
+   * suffix, so per-period queries would re-read the same row to project other columns. Returns one
+   * entry per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields an
+   * empty array for every range. Events, Training,
    * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
    * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
    * row. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
@@ -8683,6 +8689,14 @@ export class ProjectService {
    */
   private static getHealthOverviewRanges(): HealthMetricsRange[] {
     return buildHealthMetricsOverviewPeriods().map((period) => period.range);
+  }
+
+  /**
+   * The one alias form the revenue SELECT and its two readers key off. Those rows are index-signature
+   * typed, so a typo would silently read undefined and render every foundation as "no data".
+   */
+  private static revenueAlias(column: 'FOUNDATION_TOTAL_REVENUE_USD' | 'REVENUE_USD', range: HealthMetricsRange): string {
+    return `${column}__${range}`;
   }
 
   /** The one alias form both the generated SELECT and {@link projectKpiRow} key off, so they can't drift. */
