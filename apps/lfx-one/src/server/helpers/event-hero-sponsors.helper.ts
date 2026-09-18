@@ -3,17 +3,20 @@
 
 import type { CampaignEventSponsor } from '@lfx-one/shared/interfaces';
 import { MAX_SPONSORS } from '@lfx-one/shared/constants';
-import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
+import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;
 const CONTEXT_WINDOW_CHARS = 400;
 
 function resolveUrl(candidate: string, baseUrl: string): string | null {
   try {
-    const resolved = new URL(candidate, baseUrl);
-    if (resolved.protocol !== 'http:' && resolved.protocol !== 'https:') return null;
-    if (isPrivateHost(resolved.hostname)) return null;
-    return resolved.toString();
+    // Resolve against the page first -- scraped `src` values are routinely relative, which is the
+    // one thing canonicalHttpUrl cannot do -- then hand the ABSOLUTE result to the same validator
+    // the controller and the preview use. Restating the scheme/host rules here is what let this
+    // copy drift: it returned `resolved.toString()`, keeping userinfo the others strip, so a
+    // scraped credentialed image URL was persisted onto the brief.
+    const resolved = canonicalHttpUrl(new URL(candidate, baseUrl).toString());
+    return resolved === '' ? null : resolved;
   } catch {
     return null;
   }

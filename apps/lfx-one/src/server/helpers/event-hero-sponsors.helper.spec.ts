@@ -148,3 +148,23 @@ describe('extractHeroAndSponsors — SSRF', () => {
     expect(extractHeroAndSponsors(html, 'https://events.example/kubecon').heroImageUrl).toBe('https://cdn.example.com/hero.png');
   });
 });
+
+describe('extractHeroAndSponsors — URL canonicalization', () => {
+  // The helper resolved against the base URL and returned `resolved.toString()`, keeping
+  // userinfo that the controller and the preview both strip — so a scraped credentialed image
+  // URL was persisted onto the brief and travelled from there into a sent email.
+  it('strips userinfo from a scraped hero image URL', () => {
+    const html = `<meta property="og:image" content="https://user:secret@cdn.example.com/hero.png" />`;
+
+    const result = extractHeroAndSponsors(html, BASE_URL);
+
+    expect(result.heroImageUrl).toBe('https://cdn.example.com/hero.png');
+    expect(result.heroImageUrl).not.toContain('secret');
+  });
+
+  it('still resolves a RELATIVE src against the page, which is why this path cannot just call the validator', () => {
+    const html = `<meta property="og:image" content="/img/hero.png" />`;
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/img/hero.png');
+  });
+});
