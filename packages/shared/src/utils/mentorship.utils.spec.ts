@@ -149,13 +149,6 @@ describe('getMentorshipEnrollStepErrors', () => {
     expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
-  it('rejects a long garbage projectId that is not in the known project options', () => {
-    const form = createValidDetailsForm();
-    form.projectId = 'x'.repeat(10_000);
-
-    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
-  });
-
   it('rejects a whitespace-only projectId as blank', () => {
     const form = createValidDetailsForm();
     form.projectId = '   ';

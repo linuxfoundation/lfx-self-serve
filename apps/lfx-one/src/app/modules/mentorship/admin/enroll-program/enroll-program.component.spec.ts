@@ -84,6 +84,13 @@ describe('EnrollProgramComponent', () => {
     fixture.detectChanges();
   };
 
+  /** Queries the real submit button rendered by `ButtonComponent`. */
+  const submitButton = (): HTMLButtonElement => {
+    const btn = element().querySelector<HTMLButtonElement>('[data-testid="mentorship-enroll-next"] button');
+    expect(btn).not.toBeNull();
+    return btn!;
+  };
+
   beforeEach(async () => {
     toast = vi.fn();
 
@@ -143,7 +150,7 @@ describe('EnrollProgramComponent', () => {
   it('does not navigate away after submission, so the user keeps their work', () => {
     setPrerequisitesStep();
 
-    component['onNext']();
+    submitButton().click();
 
     expect(router.navigate).not.toHaveBeenCalled();
   });
@@ -152,7 +159,7 @@ describe('EnrollProgramComponent', () => {
     setPrerequisitesStep();
     const httpTesting = TestBed.inject(HttpTestingController);
 
-    component['onNext']();
+    submitButton().click();
 
     httpTesting.verify();
   });
@@ -170,11 +177,7 @@ describe('EnrollProgramComponent', () => {
   it('triggers the coming-soon toast when the submit button is clicked in the DOM', () => {
     setPrerequisitesStep();
 
-    const nextBtn = element().querySelector<HTMLElement>('[data-testid="mentorship-enroll-next"] button');
-    expect(nextBtn).not.toBeNull();
-
-    nextBtn!.click();
-    fixture.detectChanges();
+    submitButton().click();
 
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0][0]).toMatchObject({
