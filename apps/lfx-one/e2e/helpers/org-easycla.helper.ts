@@ -12,7 +12,7 @@
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
@@ -298,4 +298,76 @@ export function skipWithoutCredentials(): void {
   if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
     test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Approval List tab (GH-2410)
+// ---------------------------------------------------------------------------
+
+/** An editable list. Cases override the entries they are about. */
+export function approvalList(overrides: Partial<OrgClaApprovalList> = {}): OrgClaApprovalList {
+  return {
+    signatureId: STUB_SIGNATURE_ID,
+    entries: [],
+    canEdit: true,
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs both verbs on the approval-list path. PUT is never optional: aborting anything that is
+ * not GET or PUT is how a missed intercept stays a failed test rather than a write against a
+ * real agreement.
+ */
+export async function stubApprovalList(page: Page, options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}): Promise<void> {
+  const getBody = options.get ?? approvalList();
+  const putBody = options.put ?? getBody;
+
+  await page.route(APPROVAL_LIST_ROUTE, (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(getBody) });
+    }
+    if (method === 'PUT') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(putBody) });
+    }
+    return route.abort();
+  });
+}
+
+export function isApprovalListPut(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/approval-list') && request.method() === 'PUT';
+}
+
+export function countPutRequests(page: Page): { readonly count: number } {
+  let putCount = 0;
+  page.on('request', (request) => {
+    if (isApprovalListPut(request)) {
+      putCount += 1;
+    }
+  });
+  return {
+    get count() {
+      return putCount;
+    },
+  };
+}
+
+export async function gotoApproval(page: Page, options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubApprovalList(p, options);
+  });
+  await openApprovalTab(page);
+}
+
+/** Opens the Approval List tab. The panel mounts only after this click, and only when signed. */
+export async function openApprovalTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-approval').click();
+  await expect(page.getByTestId('org-easycla-approval-list')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+/** The dialog's value field. Same `data-test` quirk as the list search box. */
+export function approvalDialogValue(page: Page, index = 0): Locator {
+  return page.locator(`[data-test="org-easycla-approval-dialog-value-${index}"]`);
 }
