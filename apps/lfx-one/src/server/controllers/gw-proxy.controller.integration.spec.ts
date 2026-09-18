@@ -216,12 +216,12 @@ describe('GwProxyController over a real socket', () => {
  * listener being attached, and drains nothing at all because it runs after `finish`.
  */
 describe('attachGwDrainGuard over a real socket', () => {
-  let server: Server;
+  let server: Server | undefined;
   let baseUrl: string;
 
   /** Answers 401 without reading the body, standing in for authMiddleware. */
   const start = async (withGuard: boolean): Promise<void> => {
-    server = createServer((req, res) => {
+    const created = createServer((req, res) => {
       if (withGuard) {
         attachGwDrainGuard(req as unknown as Request, res as unknown as Response);
       }
@@ -229,8 +229,9 @@ describe('attachGwDrainGuard over a real socket', () => {
       res.setHeader('content-type', 'application/json');
       res.end(JSON.stringify({ code: 'UNAUTHORIZED' }));
     });
-    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    server = created;
+    await new Promise<void>((resolve) => created.listen(0, '127.0.0.1', resolve));
+    baseUrl = `http://127.0.0.1:${(created.address() as AddressInfo).port}`;
   };
 
   const post = (bytes: number): Promise<{ status?: number; clientFinishedWriting: boolean; written: number }> =>
@@ -262,9 +263,17 @@ describe('attachGwDrainGuard over a real socket', () => {
     });
 
   afterEach(async () => {
+    // Guarded: the cap-returned-drain test manages its own local server and never assigns this
+    // one, so running it alone (`-t`/`.only`) reaches here with `server` still undefined — and an
+    // afterEach that throws masks the real test result. Captured into a const so the narrowing
+    // survives into the callback.
+    const running = server;
+    if (!running) {
+      return;
+    }
     await new Promise<void>((resolve) => {
-      server.closeAllConnections?.();
-      server.close(() => resolve());
+      running.closeAllConnections?.();
+      running.close(() => resolve());
     });
   });
 

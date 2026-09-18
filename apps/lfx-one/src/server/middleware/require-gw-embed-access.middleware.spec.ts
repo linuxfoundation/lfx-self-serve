@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const personaMocks = vi.hoisted(() => ({ getPersonas: vi.fn() }));
 const projectMocks = vi.hoisted(() => ({ getWriterSummary: vi.fn() }));
 const flagMocks = vi.hoisted(() => ({ isServerFeatureEnabled: vi.fn() }));
-const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn(), getEffectiveEmail: vi.fn(), hasActiveImpersonationSession: vi.fn() }));
+const authMocks = vi.hoisted(() => ({ getEffectiveUsername: vi.fn(), getEffectiveEmail: vi.fn(), isImpersonating: vi.fn() }));
 
 vi.mock('../utils/auth-helper', async () => {
   const actual = await vi.importActual<typeof import('../utils/auth-helper')>('../utils/auth-helper');
@@ -15,7 +15,7 @@ vi.mock('../utils/auth-helper', async () => {
     ...actual,
     getEffectiveUsername: authMocks.getEffectiveUsername,
     getEffectiveEmail: authMocks.getEffectiveEmail,
-    hasActiveImpersonationSession: authMocks.hasActiveImpersonationSession,
+    isImpersonating: authMocks.isImpersonating,
   };
 });
 vi.mock('../utils/persona-helper', () => ({ personaDetectionService: { getPersonas: personaMocks.getPersonas } }));
@@ -62,7 +62,7 @@ describe('requireGwEmbedAccess', () => {
     // case below through the uncached path and keeps them independent of cache state.
     authMocks.getEffectiveUsername.mockReturnValue(null);
     authMocks.getEffectiveEmail.mockReturnValue(null);
-    authMocks.hasActiveImpersonationSession.mockReturnValue(false);
+    authMocks.isImpersonating.mockReturnValue(false);
     next = vi.fn() as NextFunction & ReturnType<typeof vi.fn>;
     const headers = new Map<string, unknown>();
     res = {
@@ -283,7 +283,7 @@ describe('requireGwEmbedAccess', () => {
     // The route's two identities diverge while impersonating: authorization below resolves the
     // impersonated TARGET from req.bearerToken, while the controller forwards the browser's own
     // Gatewaze bearer, which belongs to the real user. A write would be audited as the wrong one.
-    beforeEach(() => authMocks.hasActiveImpersonationSession.mockReturnValue(true));
+    beforeEach(() => authMocks.isImpersonating.mockReturnValue(true));
 
     it('refuses the proxy outright, before any authorization work', async () => {
       personaMocks.getPersonas.mockResolvedValue({ isRootWriter: true, personas: ['executive-director'] });
@@ -301,6 +301,20 @@ describe('requireGwEmbedAccess', () => {
       await requireGwEmbedAccess(req, res, next);
 
       expect(req.resume).toHaveBeenCalled();
+    });
+
+    it('refuses on the frozen marker even after the live session has expired', async () => {
+      // authMiddleware froze impersonationActive=true and swapped in the target's bearer; the
+      // impersonation session then expired before this middleware ran. The live check reads
+      // Date.now() past expiresAt and says false — skipping the block while the swapped bearer is
+      // still on the request, the exact split identity this refuses. isImpersonating honours the
+      // frozen marker, which cannot disagree with the bearer because one middleware set both.
+      // The mock stands in for that state: marker true, live session gone.
+      authMocks.isImpersonating.mockReturnValue(true);
+
+      await requireGwEmbedAccess(buildReq(), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 403, code: 'GW_EMBED_IMPERSONATION_BLOCKED' }));
     });
 
     it('still carries the correlation id, since the denial terminates here', async () => {

@@ -10,7 +10,7 @@ import { drainRequestBody, ensureGwRequestId } from '../helpers/gw-api.helper';
 import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
-import { getEffectiveEmail, getEffectiveUsername, hasActiveImpersonationSession } from '../utils/auth-helper';
+import { getEffectiveEmail, getEffectiveUsername, isImpersonating } from '../utils/auth-helper';
 import { personaDetectionService } from '../utils/persona-helper';
 
 const ED: PersonaType = 'executive-director';
@@ -156,7 +156,14 @@ export async function requireGwEmbedAccess(req: Request, res: Response, next: Ne
     // A 403 rather than the uniform 404, deliberately: the caller is an authenticated LFX admin
     // who can already see the route exists, so there is nothing to conceal here, and a 404 would
     // read as "the pilot is off" and send them to debug the wrong thing.
-    if (hasActiveImpersonationSession(req)) {
+    //
+    // `isImpersonating`, NOT the live `hasActiveImpersonationSession` check, and the difference is
+    // the whole point. `authMiddleware` freezes its decision on `req.impersonationActive` and swaps
+    // in the target's bearer; the live check re-reads `expiresAt`, so an impersonation session that
+    // expires between the two middlewares flipped this to false — skipping the block while the
+    // swapped bearer was still on the request, which is precisely the split identity it refuses.
+    // The frozen marker cannot disagree with the bearer, because the same middleware set both.
+    if (isImpersonating(req)) {
       logger.debug(req, 'require_gw_embed_access', 'Refusing embed proxy access during impersonation', { path: req.path });
       await drainRequestBody(req);
       next(
