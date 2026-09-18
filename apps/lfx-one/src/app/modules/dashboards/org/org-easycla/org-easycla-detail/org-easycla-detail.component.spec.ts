@@ -949,6 +949,13 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
     });
 
+    it('renders the preview when the route and the selection spell the same group differently', async () => {
+      const fixture = await render(previewing({ claGroupId: PREVIEW_GROUP_ID.replaceAll('-', '') }));
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+    });
+
     /**
      * A signatory who signs and returns to this address still carries the selection in history.
      * The agreement they now hold has to win — telling them it is not yet signed would be false.
