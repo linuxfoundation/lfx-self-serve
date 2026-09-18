@@ -112,10 +112,31 @@ protected onDrawerShow(): void {
 - **The heading needs `tabindex="-1"`, an `id` (the `aria-labelledby` target), and a
   `data-testid`** (query specs by testid, not the CSS id — the id stays reserved for the ARIA
   wiring). `-1` keeps it out of the natural Tab order; it's reachable only via `onDrawerShow()`.
-- **The heading's text must never render empty.** If it's driven by loaded data (`item()?.title`
-  or similar), `onDrawerShow()` can focus it before that data arrives — fall back to a loading/
-  error string via a computed signal (e.g. `item()?.title ?? (loadFailed() ? 'Unable to load
-item' : 'Loading item…')`), not a raw interpolation that can resolve to nothing.
+- **The heading's text must never render empty, including through the close animation.** If it's
+  driven by loaded data (`item()?.title` or similar), `onDrawerShow()` can focus it before that
+  data arrives — fall back to a loading/error string. A naive `item()?.title ?? (visible() ?
+loadingOrErrorString : '')` still announces an unnamed dialog for the ~150ms the panel stays
+  mounted after closing (that data resets to `null` on close too) — carry the last non-empty
+  value forward instead of falling back to `''`, via a `scan` accumulator that only updates on a
+  real title or while `visible()`, and otherwise returns its own previous value unchanged.
+  Combine the dependent signals into **one** plain `computed()` first, then cross into RxJS with
+  a single `toObservable()` over that — feeding several independently-constructed
+  `toObservable()` sources into `combineLatest` risks each settling on its own schedule when one
+  of them (here, `item()`, via the drawer's own data-loading pipeline) transitively depends on
+  another (`visible()`), so `combineLatest` can combine a stale tuple:
+  ```typescript
+  const state = computed(() => ({ title: this.item()?.title, visible: this.visible(), loadFailed: this.loadFailed() }));
+  toSignal(
+    toObservable(state).pipe(
+      scan((last, { title, visible, loadFailed }) => {
+        if (title) return title;
+        if (visible) return loadFailed ? 'Unable to load item' : 'Loading item…';
+        return last;
+      }, '')
+    ),
+    { initialValue: '' }
+  );
+  ```
 - **Focus target**: the title heading, not the close button or the first form field — landing on
   a form field drops a screen-reader user mid-form with no context; the title is already the
   `aria-labelledby` target, so focusing it announces the heading immediately.
@@ -355,9 +376,10 @@ Drawer components follow the standard component organization:
 5. Chart options (static `protected readonly` objects)
 6. Computed signals and data loading signals
 7. Constructor (the focus-restore `toObservable()` subscription from Modal Semantics and Focus
-   Management, above; a pre-existing form-state `effect()` in some drawers predates
-   `docs/reviews/frontend-checklist.md`'s `effect()` guidance and isn't a pattern to copy — new
-   constructor logic should reach for `toObservable()` first)
+   Management, above; new constructor logic should reach for `toObservable()` first —
+   `docs/reviews/frontend-checklist.md` §5 disfavors `effect()` outside logging/debugging, and the
+   form-state `effect()` still present in `formation-item-drawer.component.ts` is a violation to
+   migrate, not a pattern to copy — it was added five months after §5 landed, not before it)
 8. Protected methods (`onClose()`, `onDrawerShow()`)
 9. Private initializer functions (`initDrawerData()`, `initChartData()`)
 

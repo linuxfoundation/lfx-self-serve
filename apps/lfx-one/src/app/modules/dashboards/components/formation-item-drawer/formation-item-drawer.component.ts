@@ -18,7 +18,7 @@ import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLoca
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, filter, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, filter, finalize, map, merge, Observable, of, scan, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-formation-item-drawer',
@@ -213,22 +213,19 @@ export class FormationItemDrawerComponent {
   protected readonly item = computed(() => this.optimisticItem() ?? this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
   /**
-   * GH-2620: the drawer's `aria-labelledby` points at this heading — it must never render empty
-   * *while the dialog is open*. `item()` is `null` for the entire loading window (and forever, on
-   * `loadFailed()`), and `onDrawerShow()` moves focus onto this heading as soon as the panel
-   * opens, well before the fetch resolves — an empty fallback would announce a nameless dialog
-   * with a blank heading, the exact defect this ticket set out to fix. The `!this.visible()`
-   * branch matters too: closing also resets `item()` to `null` (`initDrawerData()`'s open-trigger
-   * pipeline), and the header stays on screen through the ~150ms leave animation — without this
-   * branch the heading would flash "Loading item…" on every close, a user-visible regression this
-   * ticket didn't have before (an empty heading during that same window was merely invisible).
+   * GH-2620 (PR #2636 review): the drawer's `aria-labelledby` points at this heading — it must
+   * never render empty while the panel is mounted. `item()` is `null` for the entire loading
+   * window (and forever, on `loadFailed()`), and `onDrawerShow()` moves focus onto this heading as
+   * soon as the panel opens, well before the fetch resolves — a blank fallback would announce a
+   * nameless dialog, the exact defect this ticket set out to fix. Closing has the same problem:
+   * `item()` resets to `null` (`initDrawerData()`'s open-trigger pipeline) while the header stays
+   * mounted through the ~150ms leave animation, so a naive `!visible()` -> '' fallback would
+   * announce an unnamed dialog for that whole window instead (Copilot review, PR #2636) —
+   * `initDrawerHeading()`'s `scan` carries the last non-empty value forward instead, so closing
+   * simply leaves whatever heading was showing right before close in place until the panel
+   * reopens and overwrites it.
    */
-  protected readonly drawerHeading: Signal<string> = computed(() => {
-    const title = this.item()?.title;
-    if (title) return title;
-    if (!this.visible()) return '';
-    return this.loadFailed() ? 'Unable to load item' : 'Loading item…';
-  });
+  protected readonly drawerHeading: Signal<string> = this.initDrawerHeading();
   /** Distinguishes the History panel's honest empty/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
   protected readonly historyState = computed(() => this.drawerData().history_state);
   /**
@@ -651,6 +648,32 @@ export class FormationItemDrawerComponent {
       {
         initialValue: ownerUsernameControl.value ?? '',
       }
+    );
+  }
+
+  /**
+   * Combines into one plain `computed()` (synchronous, glitch-free) before crossing into RxJS —
+   * `item()` transitively depends on `visible()` via `drawerData()`'s own fetch pipeline, so
+   * feeding three *separately*-constructed `toObservable()` sources into `combineLatest` risks
+   * each one settling on its own schedule and `combineLatest` combining a stale tuple (verified:
+   * an earlier version of this method did exactly that, and `item`'s resolved title never
+   * overtook the initial "Loading item…" combination in a test). One `toObservable()` over the
+   * single combined computed sidesteps it entirely. `scan`'s accumulator is the only place the
+   * "leave it alone on close" rule lives — the last argument (`lastHeading`) is returned
+   * unchanged whenever neither branch above it produces a new value, which is exactly the
+   * closed/closing state `drawerHeading`'s own comment describes.
+   */
+  private initDrawerHeading(): Signal<string> {
+    const state = computed(() => ({ title: this.item()?.title, visible: this.visible(), loadFailed: this.loadFailed() }));
+    return toSignal(
+      toObservable(state).pipe(
+        scan((lastHeading, { title, visible, loadFailed }) => {
+          if (title) return title;
+          if (visible) return loadFailed ? 'Unable to load item' : 'Loading item…';
+          return lastHeading;
+        }, '')
+      ),
+      { initialValue: '' }
     );
   }
 

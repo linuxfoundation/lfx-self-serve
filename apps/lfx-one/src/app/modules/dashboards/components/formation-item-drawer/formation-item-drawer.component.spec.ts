@@ -1032,14 +1032,22 @@ describe('FormationItemDrawerComponent', () => {
   describe('modal semantics and focus management (GH-2620)', () => {
     const title = (): HTMLElement | null => query('[data-testid="formation-item-drawer-title"]') as HTMLElement | null;
 
-    it('exposes dialog role, aria-modal, and an aria-labelledby pointing at the title', async () => {
+    it('exposes dialog role, aria-modal, and an aria-labelledby that resolves to the real title', async () => {
       const item = buildItem({ title: 'Signed CLA on file' });
       await render(item, false);
 
       const dialog = title()?.closest('[role="dialog"]');
       expect(dialog).not.toBeNull();
       expect(dialog?.getAttribute('aria-modal')).toBe('true');
-      expect(dialog?.getAttribute('aria-labelledby')).toBe('formation-item-drawer-title');
+
+      // Resolving the id (rather than asserting the literal string, or re-querying by testid)
+      // pins the actual accessible name PrimeNG's pt.root wiring resolves to — a dropped `id` on
+      // the heading, or a `drawerHeading()` that stops reading `item()?.title`, both still pass a
+      // testid-only or attribute-only assertion here (dealako review, PR #2636).
+      const labelledById = dialog?.getAttribute('aria-labelledby') ?? '';
+      const labelElement = document.getElementById(labelledById);
+      expect(labelElement).toBeTruthy();
+      expect(labelElement?.textContent?.trim()).toBe('Signed CLA on file');
     });
 
     it('keeps the aria-labelledby heading non-empty while the item is still loading', async () => {
@@ -1062,6 +1070,20 @@ describe('FormationItemDrawerComponent', () => {
       await render(item, false, { getFormationItem: vi.fn().mockReturnValue(throwError(() => new Error('boom'))) });
 
       expect(title()?.textContent?.trim()).toBe('Unable to load item');
+    });
+
+    it('preserves the last known heading through close instead of blanking it (Copilot review, PR #2636)', async () => {
+      // `item()` resets to null on close (initDrawerData()'s open-trigger pipeline) while the
+      // header stays mounted through the ~150ms leave animation — a naive '' fallback for that
+      // window would announce an unnamed dialog, same defect this ticket exists to fix.
+      const item = buildItem({ title: 'Signed CLA on file' });
+      await render(item, false);
+      expect((fixture.componentInstance as unknown as { drawerHeading: () => string }).drawerHeading()).toBe('Signed CLA on file');
+
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+
+      expect((fixture.componentInstance as unknown as { drawerHeading: () => string }).drawerHeading()).toBe('Signed CLA on file');
     });
 
     it('moves focus to the title on open, not the close button or the first form field', async () => {
@@ -1103,6 +1125,57 @@ describe('FormationItemDrawerComponent', () => {
       fixture.componentInstance.visible.set(false);
       await fixture.whenStable();
 
+      expect(document.activeElement).toBe(opener);
+      opener.remove();
+    });
+
+    // Copilot review, PR #2636: the acceptance criteria (linked #2620) call for a real
+    // focus-containment assertion, not just "focus enters on open" — this drawer owns no
+    // Tab-handling code of its own (PrimeNG's `pFocusTrap` is applied unconditionally on the
+    // panel), so this pins the library's actual sentinel-based wrap behavior rather than trusting
+    // it stays correct across a PrimeNG bump. jsdom has no native Tab-order traversal, so a
+    // dispatched `keydown` Tab never moves focus on its own — `pFocusTrap`'s redirect only fires
+    // from the hidden sentinel spans' own `focus` events (which real Tab/Shift+Tab landing on
+    // them would trigger), so focusing each sentinel directly is what a real Tab press causes.
+    it('traps focus inside the dialog when Tab reaches either edge (PrimeNG pFocusTrap)', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false);
+
+      const dialog = title()?.closest('[role="dialog"]') as HTMLElement;
+      const firstSentinel = dialog.querySelector('[data-pc-section="firstfocusableelement"]') as HTMLElement | null;
+      const lastSentinel = dialog.querySelector('[data-pc-section="lastfocusableelement"]') as HTMLElement | null;
+      expect(firstSentinel).not.toBeNull();
+      expect(lastSentinel).not.toBeNull();
+
+      // Tab from the last real focusable control reaches the trailing sentinel — the trap must
+      // redirect focus back inside the dialog, not leave it on the sentinel or let it escape.
+      lastSentinel?.focus();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).not.toBe(lastSentinel);
+
+      // Shift+Tab from the first real focusable control reaches the leading sentinel — same
+      // containment requirement in the other direction.
+      firstSentinel?.focus();
+      expect(dialog.contains(document.activeElement)).toBe(true);
+      expect(document.activeElement).not.toBe(firstSentinel);
+    });
+
+    it('closes on Escape and restores focus to the opener', async () => {
+      const opener = document.createElement('button');
+      document.body.appendChild(opener);
+      opener.focus();
+
+      const item = buildItem({});
+      await render(item, false);
+      expect(document.activeElement).toBe(title());
+
+      // PrimeNG's real Escape path: a document-level listener (bound while the drawer is open)
+      // checks `event.which === 27`, not `event.key` — see close()/bindDocumentEscapeListener in
+      // the pinned primeng@20.4.0 Drawer source cited elsewhere in this file.
+      document.dispatchEvent(new KeyboardEvent('keydown', { which: 27, keyCode: 27, bubbles: true } as unknown as KeyboardEventInit));
+      await fixture.whenStable();
+
+      expect(fixture.componentInstance.visible()).toBe(false);
       expect(document.activeElement).toBe(opener);
       opener.remove();
     });
