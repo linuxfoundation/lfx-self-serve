@@ -2218,7 +2218,7 @@ export class CampaignController {
           // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
           // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
           // scrape path already refuses to produce.
-          .slice(0, 10)
+          .slice(0, MAX_SPONSORS)
       : [];
 
     // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves

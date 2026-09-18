@@ -2253,11 +2253,6 @@ export class CampaignsComponent {
   }
 
   /**
-   * Toggle the A/B test on or off. Turning it off clears variant B's draft and any error, so a
-   * later re-enable starts clean rather than showing a stale draft the operator never confirmed
-   * they still want.
-   */
-  /**
    * Generate variant B copy for the A/B test.
    *
    * Reuses the same `generateEmailCopy` endpoint variant A uses — upstream composes from the
