@@ -38,8 +38,9 @@ export class FormationApiMockHelper {
         contentType: 'application/json',
         // can_write mirrors the real BFF's per-caller writer flag (GH-2694) — true here, since these
         // specs exercise the editable drawer; without it the assignee/due-date fields render
-        // read-only and every editing flow fails.
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+        // read-only and every editing flow fails. can_set_status likewise mirrors the GH-2705
+        // writer ∧ team:formation pair; without it every status control is hidden.
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
       });
     };
 

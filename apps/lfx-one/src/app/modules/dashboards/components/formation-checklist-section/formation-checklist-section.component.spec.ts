@@ -41,9 +41,10 @@ function buildFormation(lifecycle: FormationLifecycle | null, lifecycleRaw: stri
   };
 }
 
-function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true): FormationChecklistResponse {
+function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: string, canWrite = true, canSetStatus = canWrite): FormationChecklistResponse {
   return {
     can_write: canWrite,
+    can_set_status: canSetStatus,
     formation: buildFormation(lifecycle, lifecycleRaw),
     template: {
       uid: 'template:test',
@@ -185,6 +186,20 @@ describe('FormationChecklistSectionComponent', () => {
     const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
     expect(rowDebugEl.componentInstance.canWrite()).toBe(false);
     expect(drawerDebugEl.componentInstance.canWrite()).toBe(false);
+  });
+
+  // GH-2705: can_set_status is the writer ∧ team:formation pair — the shipped defect was a writer
+  // outside the formation team receiving status controls that could only 403, so the split
+  // (canWrite true, canSetStatus false) is the case that matters.
+  it('passes the response can_set_status through to the row and the drawer independently of can_write', async () => {
+    await render(buildResponse('live', 'live', true, false));
+
+    const rowDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-checklist-row');
+    const drawerDebugEl = fixture.debugElement.query((el) => el.name === 'lfx-formation-item-drawer');
+    expect(rowDebugEl.componentInstance.canWrite()).toBe(true);
+    expect(rowDebugEl.componentInstance.canSetStatus()).toBe(false);
+    expect(drawerDebugEl.componentInstance.canWrite()).toBe(true);
+    expect(drawerDebugEl.componentInstance.canSetStatus()).toBe(false);
   });
 
   // LFXV2-3386: the foundation formations drill-down renders another project's checklist while the

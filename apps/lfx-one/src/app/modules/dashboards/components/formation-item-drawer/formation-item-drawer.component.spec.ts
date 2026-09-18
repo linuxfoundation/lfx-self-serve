@@ -92,7 +92,10 @@ describe('FormationItemDrawerComponent', () => {
       updateFormationItemStatus?: ReturnType<typeof vi.fn>;
       messageServiceAdd?: ReturnType<typeof vi.fn>;
     },
-    canWrite = true
+    canWrite = true,
+    // Defaults to canWrite for fixture brevity; production keeps them independent (GH-2705:
+    // can_set_status = can_write ∧ team:formation membership) and the canSetStatus tests set them apart.
+    canSetStatus = canWrite
   ): Promise<void> => {
     TestBed.resetTestingModule();
     const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
@@ -128,6 +131,7 @@ describe('FormationItemDrawerComponent', () => {
     fixture.componentRef.setInput('itemKey', item.template_item_key);
     fixture.componentRef.setInput('readOnly', readOnly);
     fixture.componentRef.setInput('canWrite', canWrite);
+    fixture.componentRef.setInput('canSetStatus', canSetStatus);
     fixture.detectChanges();
 
     // `drawerData`'s open-trigger observable is `toObservable(this.visible).pipe(skip(1), ...)` — the
@@ -356,6 +360,72 @@ describe('FormationItemDrawerComponent', () => {
 
       expect(updateFormationItemMock).toHaveBeenCalledWith(item.project_uid, item.template_item_key, String(item.version), { note: 'new note' });
       expect(updateFormationItemAssignmentMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // GH-2705: Mark complete/Skip ride POST .../status, whose gateway rule ANDs writer_guard with
+  // `member` on `team:formation` — the writer half alone (canWrite) must not enable them. This was
+  // the shipped defect on this surface: a writer outside the formation team got enabled status
+  // controls whose every write 403'd.
+  describe('canSetStatus (GH-2705)', () => {
+    it('disables Mark complete for a writer who is not on the formation team', async () => {
+      const item = buildItem({ status: 'in_progress', is_gating: true });
+      await render(item, false, undefined, true, false);
+
+      const markComplete = query('[data-testid="formation-item-drawer-mark-complete"] button') as HTMLButtonElement | null;
+      expect(markComplete?.disabled).toBe(true);
+    });
+
+    it('shows the visible standing explanation for that same writer — disabled buttons alone explain nothing', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, true, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).not.toBeNull();
+    });
+
+    it('renders no standing explanation when no status control renders — e.g. a blocked item', async () => {
+      // Mark complete renders only for in_progress and Skip only for gating not_started; a blocked
+      // item offers neither, so a lone explanation about absent controls must not appear.
+      const item = buildItem({ status: 'blocked' });
+      await render(item, false, undefined, true, false);
+
+      expect(query('[data-testid="formation-item-drawer-no-write-access"]')).toBeNull();
+    });
+
+    it('keeps assignee and due date editable for that same writer — /assignment needs writer_guard alone', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false, undefined, true, false);
+
+      const assignee = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+      expect(assignee?.readOnly).toBe(false);
+      const dueDate = query('[data-testid="formation-item-drawer-due-date"] input') as HTMLInputElement | null;
+      expect(dueDate?.disabled).toBe(false);
+    });
+  });
+
+  // GH-2705 review: upstream's `no_fields_to_update` on the note/assignment routes is raised on
+  // field PRESENCE only (item_mutator.go / item_assignment.go), and every save leg always includes
+  // its field — so on this chain it can only mean the body was lost in transit. It must therefore
+  // fail the save loudly (with the server-authored reason), never be absorbed as a no-op "Saved".
+  describe('no_fields_to_update stays a failure (GH-2705 review)', () => {
+    it('reports the failed note leg with the server-authored reason instead of claiming Saved', async () => {
+      const noFieldsError = () => new HttpErrorResponse({ status: 400, error: { code: 'NO_FIELDS_TO_UPDATE', error: 'the request changes no field' } });
+      const item = buildItem({ status: 'in_progress', notes: 'old note' });
+      const updateFormationItemMock = vi.fn().mockReturnValue(throwError(noFieldsError));
+      const messageServiceAddMock = vi.fn();
+      await render(item, false, { updateFormationItem: updateFormationItemMock, messageServiceAdd: messageServiceAddMock });
+
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = 'new note';
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+
+      (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+
+      const toast = messageServiceAddMock.mock.calls.at(-1)?.[0] as { severity: string; detail: string };
+      expect(toast.severity).toBe('error');
+      expect(toast.detail).toContain('the request changes no field');
     });
   });
 

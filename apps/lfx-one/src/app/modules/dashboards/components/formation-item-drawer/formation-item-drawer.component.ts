@@ -46,17 +46,16 @@ export class FormationItemDrawerComponent {
   /** True specifically while a skip the user submitted from this drawer is in flight — scoped narrower than `mutationInFlight` so a row action elsewhere doesn't spin this button. */
   public readonly skipInFlight = input<boolean>(false);
   /**
-   * Whether the caller has real project write access — Mark complete and Skip both hard-require
-   * `project.writer` upstream via the gateway's `writer_guard` on `POST .../status` (a gating item
-   * additionally requires `member` on `team:formation`, which this component has no client-visible
-   * signal for — see `formation-checklist-row.component.ts`'s `buildStatusMenuItems` doc comment),
-   * independent of the item's own `available_actions`-derived affordance signals (GH-2576, formerly
-   * `can_complete`; copilot review: those signals are item-scoped and advisory, not a real
-   * write-access check, so an auditor-only assignee would otherwise see enabled buttons that always
-   * 403). Gates {@link statusActionsDisabled} (Mark complete/Skip), not {@link busy} — Save's
-   * note-only leg doesn't need this: the PATCH item route is gated on read access (`auditor_guard`)
-   * upstream, per the GH-2576 guard-tier audit, so a caller with `canWrite() === false` can still
-   * save a note. Assignee/due-date edits DO need it — the POST .../assignment route is writer-gated —
+   * Whether the caller has real project write access (`project.writer`, the gateway's
+   * `writer_guard`), independent of the item's own `available_actions`-derived affordance signals
+   * (GH-2576, formerly `can_complete`; copilot review: those signals are item-scoped and advisory,
+   * not a real write-access check). Since GH-2705 the Mark complete/Skip gate is
+   * {@link canSetStatus} (this plus `team:formation` membership — the full `POST .../status`
+   * pair); this flag alone no longer gates {@link statusActionsDisabled}, and never {@link busy} —
+   * Save's note-only leg doesn't need it: the PATCH item route is gated on read access
+   * (`auditor_guard`) upstream, per the GH-2576 guard-tier audit, so a caller with
+   * `canWrite() === false` can still save a note. Assignee/due-date edits DO need it — the
+   * POST .../assignment route is writer-gated —
    * so when false those two controls are read-only/disabled ({@link assignmentReadOnly}) and
    * `onSaveDetails` ignores any stray difference rather than submitting a deterministic 403 which,
    * for a combined edit, would otherwise report failure after the note leg had already persisted
@@ -66,6 +65,16 @@ export class FormationItemDrawerComponent {
    * input, and is NOT a statement that any current host does.
    */
   public readonly canWrite = input<boolean>(true);
+  /**
+   * GH-2705: whether the caller may move statuses — {@link canWrite} plus the `team:formation`
+   * membership the gateway's `set_item_status` rule additionally checks, resolved fail-closed by
+   * the BFF (`FormationChecklistResponse.can_set_status` / `MyFormationItemRow.can_set_status`)
+   * and bound by both hosts. Replaces `canWrite` in {@link statusActionsDisabled}'s gate (Mark
+   * complete/Skip — both ride `POST .../status`); `canWrite` keeps gating the assignment fields,
+   * whose `/assignment` route checks `writer_guard` alone. Defaults `false` (fail closed) — a
+   * host that omits it renders the status controls disabled, never a write that can only 403.
+   */
+  public readonly canSetStatus = input<boolean>(false);
   /**
    * True when the drawer was opened from the Me-lens Pending Actions flow, where GH-1956 decision 3
    * forbids the assignee from setting item status at all ("No 'Mark done'" — claim/block/open only,
@@ -173,8 +182,20 @@ export class FormationItemDrawerComponent {
    * applies to Mark complete/Skip, not Save's note-only leg (GH-2613 review).
    */
   protected readonly busy: Signal<boolean> = computed(() => this.completing() || this.savingDetails() || this.mutationInFlight() || this.readOnly());
-  /** Mark complete/Skip both hard-require project write access upstream (see `canWrite`'s doc comment) — Save is gated by {@link busy} alone. */
-  protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canWrite());
+  /** Mark complete/Skip both ride `POST .../status`, whose gateway rule ANDs `writer_guard` with `team:formation` membership — gated on `canSetStatus` (the full pair, GH-2705); Save is gated by {@link busy} alone. */
+  protected readonly statusActionsDisabled: Signal<boolean> = computed(() => this.busy() || !this.canSetStatus());
+  /**
+   * True when at least one status control renders for the current item — Mark complete only for
+   * `in_progress`, Skip only for gating `not_started` (see the template's own conditions). The
+   * standing explanation must never outlive the buttons it explains: without this, a blocked or
+   * non-gating not_started item showed a lone sentence about controls that aren't on screen
+   * (GH-2705 review — the writer-outside-the-team population made that the common case).
+   */
+  protected readonly statusControlsRendered: Signal<boolean> = computed(() => {
+    const item = this.item();
+    if (!item) return false;
+    return item.status === 'in_progress' || (item.is_gating && item.status === 'not_started');
+  });
   /**
    * Gates the assignee/due-date fields — both ride the writer-gated POST .../assignment route (see
    * `canWrite`'s doc comment), so an auditor-only caller gets them read-only/disabled even though the
@@ -258,9 +279,9 @@ export class FormationItemDrawerComponent {
   protected onMarkComplete(): void {
     const item = this.item();
     // The template only renders this button for `in_progress` — guard here too since this method is
-    // also reachable from tests/future callers that bypass the template's gating. Whether the caller
-    // may actually close this item is enforced upstream by the API gateway (`writer_guard` + `member`
-    // on `team:formation`, GH-2576) — this component has no way to check that itself.
+    // also reachable from tests/future callers that bypass the template's gating. Caller standing is
+    // the statusActionsDisabled gate's canSetStatus half (GH-2705) — the BFF's fail-closed mirror of
+    // the gateway's `writer_guard` + `member` on `team:formation` pair, which remains the enforcer.
     if (!item || this.statusActionsDisabled() || item.status !== 'in_progress') return;
     this.beginWrite(this.completingUids, item.uid);
     this.writeStarted.emit(item.uid);
@@ -285,8 +306,9 @@ export class FormationItemDrawerComponent {
           // GH-2328: a formation that turned `completed`/`frozen` between load and submit refuses the
           // write with `409 CHECKLIST_READ_ONLY` naming the reason — extractErrorMessage reads the
           // server's own `error` text (see `ConflictError`'s `toResponse`) instead of a generic fallback.
-          // A stale local copy (412) or a caller not on team:formation (403) both fall back to the
-          // same generic message today — no formation-specific reason→copy mapping exists yet.
+          // A caller whose `can_set_status` went stale gets the BFF's FORMATION_TEAM_REQUIRED
+          // message the same way (GH-2705); only a stale local copy (412) still falls back to the
+          // generic string.
           this.messageService.add({ severity: 'error', summary: 'Error', detail: extractErrorMessage(error, 'Could not mark this item done.') });
         },
       });
@@ -422,6 +444,14 @@ export class FormationItemDrawerComponent {
               lastSavedItem = result.item;
             }),
             catchError((error: unknown) => {
+              // Deliberately NO tolerance for upstream's `no_fields_to_update` here: on these
+              // routes the refusal is raised on field PRESENCE (item_mutator.go /
+              // item_assignment.go check `p.X == nil`, never value equality), and every leg
+              // above always puts its field in the body — so that reason on this chain means
+              // the body was lost in transit, a genuine failure. Absorbing it as a no-op would
+              // report a green "Saved" for a write that never landed, the exact GH-2694 defect
+              // class. It surfaces via saveLegErrorDetail's server-authored message instead
+              // (GH-2705; the body-loss anomaly itself is tracked separately).
               failedLabel = leg.label;
               failedIndex = index;
               throw error;

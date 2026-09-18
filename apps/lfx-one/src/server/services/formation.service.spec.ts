@@ -25,12 +25,20 @@ const getProjectSettings = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
+const checkSingleAccess = vi.fn();
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectSettings = getProjectSettings;
+  },
+}));
+// Backs `checkFormationTeamMembership` (GH-2705) — the `team:formation#member` half of
+// `can_set_status`. Mocked at the module boundary so the real class's proxy transport never runs.
+vi.mock('./access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccess = (...args: unknown[]) => checkSingleAccess(...args);
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -183,6 +191,10 @@ describe('FormationService', () => {
     resetRootProjectUidCacheForTests();
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
+    checkSingleAccess.mockReset();
+    // Default: caller is NOT on team:formation — matching production's provisioning state and the
+    // fail-closed posture; the can_set_status tests opt in explicitly.
+    checkSingleAccess.mockResolvedValue(false);
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
@@ -241,6 +253,37 @@ describe('FormationService', () => {
       const result = await service.getProjectFormation(buildReq(), 'live-project');
 
       expect(result.can_write).toBe(false);
+    });
+
+    it('resolves can_set_status as writer AND team:formation membership (GH-2705)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_set_status).toBe(true);
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'team', id: 'formation', access: 'member' });
+    });
+
+    it('reports can_set_status false for a writer who is not on team:formation — the shipped production defect (GH-2705)', async () => {
+      // beforeEach default: writer true, membership false. The gateway's set_item_status rule ANDs
+      // writer_guard with team membership, so the writer half alone must not offer status controls.
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(true);
+      expect(result.can_set_status).toBe(false);
+    });
+
+    it('reports can_set_status false for a team member who is not a writer on this project', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_set_status).toBe(false);
     });
 
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
@@ -938,6 +981,21 @@ describe('FormationService', () => {
       expect(call[3]).toBe('POST');
       expect(call[6]).toEqual({ 'If-Match': '7' });
     });
+
+    // The gateway's set_item_status rule refuses with an empty-bodied 403 when either half of its
+    // writer_guard + team:formation pair fails — bare "Forbidden" explains nothing to the caller
+    // (GH-2705). Status route only: a 403 on assignment/PATCH means a different guard failed.
+    it('maps a gateway 403 on the status route to AuthorizationError FORMATION_TEAM_REQUIRED with an explanatory message', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+      const { AuthorizationError } = await import('../errors');
+      const error = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'done' }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect((error as InstanceType<typeof AuthorizationError>).code).toBe('FORMATION_TEAM_REQUIRED');
+      expect((error as InstanceType<typeof AuthorizationError>).statusCode).toBe(403);
+      expect((error as InstanceType<typeof AuthorizationError>).message).toMatch(/formation team/i);
+    });
   });
 
   describe('getFormationsQueue', () => {
@@ -1456,6 +1514,30 @@ describe('FormationService', () => {
 
       expect(result.state).toBe('complete');
       expect(result.items[0].can_write).toBe(false);
+    });
+
+    it('stamps can_set_status per row as can_write AND team:formation membership, checked once per request (GH-2705)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-1', status: 'not_started' }), itemIndexRow({ object_id: 'item-2', status: 'in_progress' })],
+        [formationIndexRow()]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(checkSingleAccess).toHaveBeenCalledTimes(1);
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'team', id: 'formation', access: 'member' });
+      expect(result.items.every((item) => item.can_set_status === true)).toBe(true);
+    });
+
+    it('a writer who is not on team:formation gets can_write true but can_set_status false on every row (GH-2705)', async () => {
+      // beforeEach default: membership false.
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'not_started' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items[0].can_write).toBe(true);
+      expect(result.items[0].can_set_status).toBe(false);
     });
 
     it('builds formations[] bucket counts from every assigned item on the formation, including done/skipped, and whole-formation totals from the formation-aggregate row', async () => {

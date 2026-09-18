@@ -240,3 +240,14 @@ export const FORMATION_STATUS_MENU_ITEM_DISPLAY = {
   done: { label: 'Mark done', icon: 'fa-light fa-check' },
   skipped: { label: 'Skip with reason', icon: 'fa-light fa-forward' },
 } as const satisfies Record<FormationItemStatus, { label: string; icon: string }>;
+
+/**
+ * The OpenFGA team whose `member`s may move a checklist item's status (GH-2705). Mirrors
+ * `lfx-v2-formation-service`'s chart default (`values.yaml` `app.formationTeamName: "formation"`,
+ * tag v0.1.4) — the chart documents it as "the same value in every environment, so it is a real
+ * default here rather than a per-environment identifier". The gateway's `set_item_status` rule
+ * checks `member` on `team:<this>` (ANDed with `writer_guard` on the project); the BFF checks the
+ * same relation via the access-check service to compute `FormationChecklistResponse.can_set_status`,
+ * so the UI can stop offering status controls to callers the gateway will deterministically 403.
+ */
+export const FORMATION_TEAM_NAME = 'formation';
