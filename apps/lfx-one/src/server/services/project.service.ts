@@ -11,6 +11,7 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -90,10 +91,13 @@ import {
   FoundationValueConcentrationRow,
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
+  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
+  HealthOverviewKpisRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -154,12 +158,15 @@ import {
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
 import {
   computeIsFoundation,
+  formatCurrency,
+  formatNumber,
   getDefaultMarketingImpactMonth,
   maskEmailForLogs,
   maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
+  resolveHealthMetricsOverviewKpiClassification,
   resolvePeriodRange,
   summarizeWriterGrants,
 } from '@lfx-one/shared/utils';
@@ -6159,6 +6166,111 @@ export class ProjectService {
       total,
       streams: rows.map((row) => ({ key: row.REVENUE_DOMAIN.toLowerCase(), value: row.REVENUE_USD ?? 0 })),
     };
+  }
+
+  /**
+   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Events, Training,
+   * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
+   * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
+   * row. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
+   * no paired `_STATUS` column, so its classification is always `'none'` — the tile renders an LFX
+   * Insights link instead of a status word for this area anyway.
+   */
+  public async getHealthOverviewKpis(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsAreaState[]> {
+    logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug, range });
+
+    const suffix = this.getRangeSuffix(range);
+    const query = `
+      SELECT
+        events_pct_of_registration_goal${suffix} AS EVENTS_PCT_OF_REGISTRATION_GOAL,
+        events_status${suffix} AS EVENTS_STATUS,
+        certifications_earned_count${suffix} AS CERTIFICATIONS_EARNED_COUNT,
+        training_status${suffix} AS TRAINING_STATUS,
+        contributors_count${suffix} AS CONTRIBUTORS_COUNT,
+        members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
+        members_status AS MEMBERS_STATUS,
+        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
+        non_members_status AS NON_MEMBERS_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+    // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
+    // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
+
+    const result = await this.snowflakeService.execute<HealthOverviewKpisRow>(query, [foundationSlug]);
+    const row = result.rows?.[0];
+
+    if (!row) {
+      logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug, range });
+      return [];
+    }
+
+    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column, and the query's a point-in-time read, not
+    // a per-period evaluation — empty, like the neutral placeholder tiles, rather than "as of today".
+    const evaluatedAt = '';
+    const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
+    const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
+    const contributorsCount = row.CONTRIBUTORS_COUNT;
+    const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
+    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
+    // rather than a misleading "$0" until that data lands.
+    const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
+
+    // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
+    // missing its builder here is dropped from the response instead of the two silently drifting.
+    const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
+      evt: () => ({
+        area: 'evt',
+        statValue: eventsGoalPct == null ? '—' : `${Math.round(eventsGoalPct)}%`,
+        statLabel: eventsGoalPct == null ? 'no registration goal set' : 'of registration goal',
+        statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
+        evaluatedAt,
+        // Hide only when there's truly nothing to say (no goal, no status). Any goal or any status
+        // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
+        // how trn/mem/non already treat a null status column.
+        showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
+      }),
+      trn: () => ({
+        area: 'trn',
+        statValue: certificationsEarned == null ? '—' : formatNumber(certificationsEarned),
+        statLabel: 'certifications earned',
+        statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
+        evaluatedAt,
+      }),
+      mem: () => ({
+        area: 'mem',
+        statValue: membersRenewingValue == null ? '—' : formatCurrency(membersRenewingValue),
+        statLabel: 'renewing in next 90 days',
+        statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
+        evaluatedAt,
+      }),
+      non: () => ({
+        area: 'non',
+        statValue: nonMembersPipelineValue == null ? '—' : formatCurrency(nonMembersPipelineValue),
+        statLabel: 'pipeline value',
+        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
+        evaluatedAt,
+      }),
+      code: () => ({
+        area: 'code',
+        statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
+        statLabel: 'active contributors',
+        // No _STATUS column backs this area (see method doc), so unlike the sibling areas above,
+        // statSource names the stat's own column rather than a status column.
+        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
+        classification: 'none',
+        evaluatedAt,
+      }),
+    };
+
+    return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
+      .map((area) => areaStateBuilders[area]?.())
+      .filter((state): state is HealthMetricsAreaState => state !== undefined);
   }
 
   /**
