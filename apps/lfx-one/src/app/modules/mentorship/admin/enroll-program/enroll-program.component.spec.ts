@@ -134,10 +134,10 @@ describe('EnrollProgramComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-enroll-title"]')?.textContent).toContain('Enroll a Program');
   });
 
-  it('shows a coming-soon toast on submit without claiming enrollment was created', () => {
+  it('shows a coming-soon toast when the submit button is clicked', () => {
     setPrerequisitesStep();
 
-    component['onNext']();
+    submitButton().click();
 
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0][0]).toMatchObject({
@@ -152,6 +152,7 @@ describe('EnrollProgramComponent', () => {
 
     submitButton().click();
 
+    expect(toast).toHaveBeenCalledTimes(1);
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
@@ -161,6 +162,7 @@ describe('EnrollProgramComponent', () => {
 
     submitButton().click();
 
+    expect(toast).toHaveBeenCalledTimes(1);
     httpTesting.verify();
   });
 
@@ -168,22 +170,10 @@ describe('EnrollProgramComponent', () => {
     setPrerequisitesStep();
     component['form'].controls.logoPreviewUrl.setValue('blob:http://localhost/fake-preview');
 
-    component['onNext']();
-
-    expect(component['form'].controls.name.value).toBe('GridFlow Mentorship Program');
-    expect(component['form'].controls.logoPreviewUrl.value).toBe('blob:http://localhost/fake-preview');
-  });
-
-  it('triggers the coming-soon toast when the submit button is clicked in the DOM', () => {
-    setPrerequisitesStep();
-
     submitButton().click();
 
     expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0]).toMatchObject({
-      severity: 'info',
-      summary: 'Submit enrollment',
-      detail: MENTORSHIP_COMING_SOON_DETAIL,
-    });
+    expect(component['form'].controls.name.value).toBe('GridFlow Mentorship Program');
+    expect(component['form'].controls.logoPreviewUrl.value).toBe('blob:http://localhost/fake-preview');
   });
 });
