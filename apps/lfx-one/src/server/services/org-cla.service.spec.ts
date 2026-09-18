@@ -1775,7 +1775,7 @@ describe('OrgClaService — an approval list that cannot be addressed', () => {
   it.each([
     ['the CLA Group id', { claGroupID: undefined }],
     ['the internal company id', { companyID: undefined }],
-    ['any project SFID', { projects: [{ projectName: 'Cascade' }] }],
+    ['any project SFID and the foundation id', { projects: [{ projectName: 'Cascade' }], foundationSFID: undefined }],
   ])('rejects a read when upstream omits %s', async (_case, overrides) => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry(overrides)));
 
@@ -1791,13 +1791,20 @@ describe('OrgClaService — an approval list that cannot be addressed', () => {
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
-  // A foundation id is not a project id, and the producer's lookup would 404 on it — so falling
-  // back to it would turn a clear 502 into a confusing not-found.
-  it('does not fall back to the foundation id when no project SFID is present', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [{ projectName: 'Cascade' }] })));
+  // GetCompanyClaGroups drops the foundation marker from projects[], so a foundation-level group
+  // arrives with no project SFID and a present foundationSFID. GetClaGroupIDForProject already
+  // falls back to a foundation lookup, so that id is a valid path segment.
+  it('falls back to the foundation id when no project SFID is present', async () => {
+    stageApprovalRead(corporateSignature(), [upstreamEntry({ projects: [{ projectName: 'Cascade' }] })]);
 
-    await expect(new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow();
-    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('a09410000182dD2AAI'), expect.anything());
+    await new OrgClaService().getApprovalList(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/signatures/project/a09410000182dD2AAI/company/company-uuid-1',
+      expect.objectContaining({ operation: 'org_cla_get_approval_list' })
+    );
   });
 });
 
