@@ -549,10 +549,16 @@ export class GwModuleOutletComponent {
   /**
    * Keeps the embed's router in step with host-initiated navigation.
    *
-   * Both mounts are `**` wildcards, so moving between two embed URLs — the sidebar's Newsletters
-   * link followed from inside an edition, or going back to an index from a detail page — does not
-   * recreate this component. Angular updates the URL with `history.pushState`, which fires no `popstate`, and
-   * `popstate` is the only thing the embed's router listens to. The address bar moved while the
+   * Both mounts are `**` wildcards, so moving between two embed URLs — going back to an index from
+   * a detail page, say — does not recreate this component. Angular updates the URL with
+   * `history.pushState`, which fires no `popstate`, and `popstate` is the only thing the embed's
+   * router listens to.
+   *
+   * Deliberately NOT the sidebar's Newsletters link followed from inside an edition. That is the
+   * one case this sync cannot reach — its target equals Angular's stale current URL, so no
+   * `NavigationEnd` fires and there is nothing to sync — and it is recorded as a known limitation
+   * in `docs/architecture/frontend/gw-embed.md`, tracked on #2262. An earlier revision of this
+   * comment cited it as an example of what DOES work, which is the opposite of the truth. The address bar moved while the
    * embed carried on rendering the previous page, and only a reload resolved it.
    *
    * Re-dispatching `popstate` is what tells the embed's router to re-read the URL. Guarded on
