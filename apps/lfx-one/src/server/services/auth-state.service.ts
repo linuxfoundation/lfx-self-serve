@@ -47,6 +47,7 @@ export class AuthStateService {
         // working indefinitely once Valkey recovers, since the session copy has no TTL (#1938).
         delete req.appSession?.['profileAuthState'];
         if (req.appSession) {
+          delete req.appSession['profileAuthSub'];
           delete req.appSession['profileAuthReturnTo'];
         }
         if (persisted) {
@@ -138,7 +139,7 @@ export class AuthStateService {
     }
   }
 
-  /** No-Valkey fallback read — mirrors the pre-#1938 behavior. */
+  /** No-Valkey fallback read — returns the issue-time `sub`, not the live session, to preserve the same-sub check (#2604 review). */
   private consumeFromSession(req: Request, state: string): AuthStateRecord | null {
     const storedState = req.appSession?.['profileAuthState'];
     const storedSub = req.appSession?.['profileAuthSub'] as string | undefined;

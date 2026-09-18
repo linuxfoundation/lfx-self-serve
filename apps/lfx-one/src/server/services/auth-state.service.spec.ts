@@ -93,12 +93,15 @@ describe('AuthStateService', () => {
     it('clears a stale session-stored nonce even when the Valkey write outcome is uncertain (#1938 review)', async () => {
       valkeyService.isEnabled.mockReturnValue(true);
       valkeyService.setJson.mockResolvedValue(false);
-      const req = buildReq({ appSession: { profileAuthState: 'old-nonce', profileAuthReturnTo: '/old' } } as unknown as Partial<Request>);
+      const req = buildReq({
+        appSession: { profileAuthState: 'old-nonce', profileAuthReturnTo: '/old', profileAuthSub: 'old-sub' },
+      } as unknown as Partial<Request>);
 
       await service.issue(req, 'sub-1');
 
       expect(req.appSession?.['profileAuthState']).toBeUndefined();
       expect(req.appSession?.['profileAuthReturnTo']).toBeUndefined();
+      expect(req.appSession?.['profileAuthSub']).toBeUndefined();
     });
   });
 
