@@ -24,7 +24,7 @@
         data-testid="health-metrics-overview-tile-insights-link">
         LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
       </a>
-    } @else {
+    } @else if (tile().showStatus !== false) {
       <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass">
         <i [class]="classificationMeta().icon" aria-hidden="true"></i>
         {{ classificationMeta().label }}

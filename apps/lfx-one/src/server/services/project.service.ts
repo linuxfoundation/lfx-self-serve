@@ -158,6 +158,7 @@ import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, Resolved
 import {
   computeIsFoundation,
   formatCurrency,
+  formatNumber,
   getDefaultMarketingImpactMonth,
   maskEmailForLogs,
   maskIdentifierForLogs,
@@ -6170,7 +6171,7 @@ export class ProjectService {
    * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Events, Training,
    * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
    * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
-   * rows. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
+   * row. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
    * no paired `_STATUS` column, so its classification is always `'none'` — the tile renders an LFX
    * Insights link instead of a status word for this area anyway.
    */
@@ -6222,9 +6223,9 @@ export class ProjectService {
     const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
     const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
     const contributorsCount = row.CONTRIBUTORS_COUNT;
-    // Both NULL per the doc's null-handling notes: no goal set / no pipeline data (the latter always
-    // NULL pending upstream ticket DL-1383) — render blank rather than a misleading "0%"/"$0".
     const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
+    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
+    // rather than a misleading "$0" until that data lands.
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
 
     // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
@@ -6237,6 +6238,9 @@ export class ProjectService {
         statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
+        // "No registration goal set" is a distinct state from "awaiting data" — hide the status
+        // chip rather than let it read as an urgency signal that was never computed.
+        showStatus: eventsGoalPct != null,
       }),
       trn: () => ({
         area: 'trn',
@@ -6262,11 +6266,9 @@ export class ProjectService {
         classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
         evaluatedAt,
       }),
-      // No CONTRIBUTORS_STATUS column exists for this area, so classification is always 'none' — the
-      // tile renders an LFX Insights link instead of a status word for 'code' regardless.
       code: () => ({
         area: 'code',
-        statValue: contributorsCount == null ? '—' : String(contributorsCount),
+        statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
         statLabel: 'active contributors',
         statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
         classification: 'none',

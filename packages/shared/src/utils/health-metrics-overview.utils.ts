@@ -71,6 +71,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       classification: state.classification,
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
+      showStatus: state.showStatus,
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);

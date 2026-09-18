@@ -32,8 +32,15 @@ export interface HealthMetricsAreaState {
   statLabel: string;
   statSource: string;
   classification: HealthMetricsOverviewClassification;
-  /** ISO date, or '' for an area that was never evaluated (e.g. a neutral placeholder tile). */
+  /**
+   * ISO date, or '' when the area was never evaluated (e.g. a neutral placeholder tile) OR when
+   * its source table simply carries no evaluation timestamp at all (e.g. `HEALTH_OVERVIEW_KPIS`,
+   * a point-in-time read) — '' is not proof an evaluation never happened, only that no date is
+   * available to show.
+   */
   evaluatedAt: string;
+  /** False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data" chip) — e.g. events with no registration goal set. Omitted/true renders the chip normally. */
+  showStatus?: boolean;
 }
 
 /**
@@ -104,6 +111,8 @@ export interface HealthMetricsOverviewTileViewModel {
   evaluatedAt: string;
   /** Set only for the `code` area — tile renders an "LFX Insights" link instead of a status word. */
   insightsUrl?: string;
+  /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
+  showStatus?: boolean;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */

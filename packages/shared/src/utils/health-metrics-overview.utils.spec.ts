@@ -70,6 +70,11 @@ describe('buildHealthMetricsOverviewTiles', () => {
     expect(tiles.find((tile) => tile.area === 'eng')?.insightsUrl).toBeUndefined();
     expect(tiles.find((tile) => tile.area === 'code')?.insightsUrl).toBe('https://insights.example/foundation');
   });
+
+  it('carries showStatus through to the tile view model', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', showStatus: false })], undefined);
+    expect(tiles[0].showStatus).toBe(false);
+  });
 });
 
 describe('groupHealthMetricsOverviewFindings', () => {

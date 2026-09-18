@@ -186,6 +186,24 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock.verify();
     });
 
+    it('hides the status chip for the events tile when showStatus is false, instead of showing "Awaiting data"', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush([areaState({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false })]);
+      await fixture.whenStable();
+
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no registration goal set');
+      expect(evtTile.textContent).not.toContain('Awaiting data');
+      httpMock.verify();
+    });
+
     it('shows a neutral "no data" tile, not the fabricated fixture, for a live area when the KPI fetch fails', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
@@ -193,7 +211,16 @@ describe('HealthMetricsOverviewComponent', () => {
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').error(new ProgressEvent('error'));
+      const kpiRequest = httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis');
+      fixture.detectChanges();
+
+      // Before the fetch resolves, the loading branch of buildNeutralKpiAreaState renders "loading…",
+      // not "no data this period" — assert this pre-flush so a regression that only shows the
+      // post-flush failure state can't silently swap the two.
+      const evtTileLoading = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTileLoading.textContent).toContain('loading…');
+
+      kpiRequest.error(new ProgressEvent('error'));
       await fixture.whenStable();
 
       // AnalyticsService.getHealthOverviewKpis degrades to [] on failure. All 6 tiles still render —
