@@ -2338,6 +2338,87 @@ describe('ProjectService — enrichWithProjectData', () => {
   });
 });
 
+describe('ProjectService.updateProjectPermissions', () => {
+  let service: ProjectService;
+  const req = { path: '/api/projects/project-1/permissions' } as Request;
+
+  const member = { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' };
+
+  function mockFetch(settings: Record<string, unknown> = { writers: [member], auditors: [] }): void {
+    fetchWithETag.mockResolvedValue({ data: settings, etag: 'etag-1' });
+    updateWithETag.mockImplementation(async (_req: unknown, _svc: unknown, _path: unknown, _etag: unknown, body: unknown) => body);
+  }
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    natsRequest.mockReset();
+    checkSingleAccessStrict.mockReset();
+    // Authorized writer unless a test says otherwise — the guard runs before everything else.
+    checkSingleAccessStrict.mockResolvedValue(true);
+    service = new ProjectService();
+  });
+
+  it('rejects a non-writer before the settings read or the directory lookup (#2728 review)', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+    mockFetch();
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'nobody@partner-corp.example', 'view')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'AUTHORIZATION_REQUIRED',
+    });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    // Nothing may run before the gate: the directory lookup answers "is this address known?"
+    // with a distinguishable 404, so reaching it would leak directory membership to a reader.
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the access check itself cannot be resolved', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+    mockFetch();
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'nobody@partner-corp.example', 'view')).rejects.toThrow('fga unavailable');
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('refuses to re-add someone already on the project instead of silently re-filing their role', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'ALREADY_ON_PROJECT',
+    });
+
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('still adds a manual (email-only) entry that is not yet listed, without a directory lookup', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    const result = await service.updateProjectPermissions(req, 'project-1', 'add', 'kim.park@partner-corp.example', 'view', {
+      name: 'Kim Park',
+      email: 'kim.park@partner-corp.example',
+    });
+
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(updateWithETag).toHaveBeenCalledTimes(1);
+    expect(result.auditors).toEqual([{ name: 'Kim Park', email: 'kim.park@partner-corp.example' }]);
+    expect(result.writers).toEqual([member]);
+  });
+
+  it('still lets update re-file an existing member under a new role', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+
+    expect(result.writers).toEqual([]);
+    expect(result.auditors).toEqual([member]);
+  });
+});
+
 describe('ProjectService.updateProjectStaff', () => {
   let service: ProjectService;
 

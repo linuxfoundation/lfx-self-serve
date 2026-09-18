@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FORMATION_PEOPLE_GROUP_LABELS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
+import type { FORMATION_INVITE_ROLE_OPTIONS, FORMATION_PEOPLE_GROUP_LABELS, FORMATION_PERSON_STATUS_LABELS } from '../constants/formation-people.constants';
 
 /** Mirrors `AddUserToProjectRequest['role']` — `manage` = settings `writers`, `view` = settings `auditors`. */
 export type FormationPersonRole = 'view' | 'manage';
@@ -41,6 +41,17 @@ export interface FormationPerson {
   avatar: string | null;
 }
 
+/**
+ * The three user-metadata fields the people card consumes — and the ONLY profile data the BFF
+ * memoises across requests. The auth-service profile also carries address, phone and other PII
+ * this feature never renders, so it is projected to this shape before any value enters the cache.
+ */
+export interface FormationPersonMetadata {
+  job_title: string | null;
+  organization: string | null;
+  picture: string | null;
+}
+
 /** Response body for `GET /api/projects/:slug/formation/people`. */
 export interface FormationPeopleResponse {
   state: FormationPeopleState;
@@ -63,6 +74,31 @@ export interface FormationPersonRow extends FormationPerson {
   /** `null` for LF staff — only external rows carry a status chip. */
   status: FormationPersonStatus | null;
 }
+
+/** One radio in the invite dialog — `FORMATION_INVITE_ROLE_OPTIONS`'s element type. */
+export type FormationInviteRoleOption = (typeof FORMATION_INVITE_ROLE_OPTIONS)[number];
+
+/** `DynamicDialogConfig.data` for the invite dialog, handed over by the people card when it opens it. */
+export interface FormationInviteDialogData {
+  projectUid: string;
+  /** Lowercased addresses already on the project — the dialog rejects these inline, with no request. */
+  existingEmails: readonly string[];
+}
+
+/** The invite dialog's normalised form value — already trimmed; `email` lowercased. */
+export interface FormationInviteFormValue {
+  name: string;
+  email: string;
+  role: FormationPersonRole;
+}
+
+/**
+ * What an invite submission turned out to be: `added` when the address resolved to an existing LF
+ * account (the person is on the project immediately and upstream sends a role notification), or
+ * `invite_sent` when it did not and the BFF stored an email-only entry, which is what makes
+ * upstream email the invite (#2147).
+ */
+export type FormationInviteOutcome = 'added' | 'invite_sent';
 
 /** One rendered group on the people card — only non-empty groups are emitted, so the template loops once with no per-group branching. */
 export interface FormationPeopleRowGroup {

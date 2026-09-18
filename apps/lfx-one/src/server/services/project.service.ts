@@ -174,7 +174,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -634,7 +634,10 @@ export class ProjectService {
   }
 
   /**
-   * Unified method to update project permissions using ETag for safe updates
+   * Unified method to update project permissions using ETag for safe updates. `add` is an add,
+   * not an upsert: a person already on the project is refused with a 409 rather than silently
+   * re-filed under the submitted role (which would demote a writer to auditor with a success
+   * response); role changes go through `update`.
    */
   public async updateProjectPermissions(
     req: Request,
@@ -644,6 +647,20 @@ export class ProjectService {
     role?: 'view' | 'manage',
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
   ): Promise<ProjectSettings> {
+    // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
+    // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
+    // and answers "is this address known?" with a distinguishable 404, so without this gate a
+    // read-only caller could probe directory membership through this route off the 404-vs-403
+    // split. Strict so an access-service outage fails closed instead of degrading to "not a writer".
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+
+    if (!canWrite) {
+      throw new AuthorizationError('You do not have permission to manage project permissions', {
+        operation: `${operation}_user_project_permissions`,
+        service: 'project_service',
+      });
+    }
+
     // Step 1: Fetch current settings with ETag first.
     // Settings must be fetched before resolveEmailToUsername so that manually-added users
     // (not present in the NATS directory) can be matched by email fallback and skip
@@ -693,6 +710,14 @@ export class ProjectService {
     // Capture the user's existing UserInfo before removal — used by the 'update' path to
     // avoid a NATS roundtrip when only the role is changing.
     const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+
+    // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
+    if (operation === 'add' && existingUserInfo) {
+      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+        operation: 'add_user_project_permissions',
+        service: 'project_service',
+      });
+    }
 
     // Remove user from both arrays first (for all operations)
     updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));

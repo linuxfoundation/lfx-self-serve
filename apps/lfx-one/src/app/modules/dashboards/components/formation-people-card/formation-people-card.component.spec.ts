@@ -5,6 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
 import { Formation, FormationChecklistResponse, FormationItem, FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
+import { DialogService } from 'primeng/dynamicdialog';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,6 +14,9 @@ import { FormationPeopleCardComponent } from './formation-people-card.component'
 describe('FormationPeopleCardComponent', () => {
   let fixture: ComponentFixture<FormationPeopleCardComponent>;
   let getFormationPeople: ReturnType<typeof vi.fn>;
+  let open: ReturnType<typeof vi.fn>;
+  /** Stands in for the dialog's own close stream so each test drives the result it needs. */
+  let onClose: Subject<unknown>;
 
   const person = (overrides: Partial<FormationPerson> = {}): FormationPerson => ({
     key: 'sam.chen',
@@ -49,7 +53,7 @@ describe('FormationPeopleCardComponent', () => {
     organization: null,
   });
 
-  /** Only the slug and the items' owners matter — the card reads nothing else off the checklist. */
+  /** Only the slug, the writer flag and the items' owners matter — the card reads nothing else off the checklist. */
   function checklist(overrides: Partial<FormationChecklistResponse> = {}): FormationChecklistResponse {
     return {
       formation: { parent_project_uid: 'proj-1', parent_project_slug: 'cascade-data-alliance' } as Formation,
@@ -67,6 +71,8 @@ describe('FormationPeopleCardComponent', () => {
 
   beforeEach(() => {
     getFormationPeople = vi.fn(() => of<FormationPeopleResponse>({ state: 'loaded', people: [staff, person(), pending] }));
+    onClose = new Subject<unknown>();
+    open = vi.fn(() => ({ onClose }));
   });
 
   async function render(people$?: Observable<FormationPeopleResponse>, response: FormationChecklistResponse = checklist()): Promise<void> {
@@ -77,7 +83,11 @@ describe('FormationPeopleCardComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FormationPeopleCardComponent],
       providers: [{ provide: FormationService, useValue: { getFormationPeople } }],
-    }).compileComponents();
+    })
+      // The card provides its own DialogService (component-scoped, like the checklist section);
+      // override at the component level so the mock wins over that provider.
+      .overrideComponent(FormationPeopleCardComponent, { set: { providers: [{ provide: DialogService, useValue: { open } }] } })
+      .compileComponents();
 
     fixture = TestBed.createComponent(FormationPeopleCardComponent);
     // Set before the first change detection: `toObservable(this.projectSlug)` reads the required
@@ -89,6 +99,11 @@ describe('FormationPeopleCardComponent', () => {
 
   function byTestId(id: string): HTMLElement | null {
     return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  async function settle(): Promise<void> {
+    fixture.detectChanges();
+    await fixture.whenStable();
   }
 
   it('fetches the list for the checklist’s own slug, never a context-derived one', async () => {
@@ -155,5 +170,85 @@ describe('FormationPeopleCardComponent', () => {
     await render();
 
     expect(byTestId('formation-people-footer')?.textContent).toContain('access comes from grants');
+  });
+
+  describe('invite (PR 2)', () => {
+    it('hides the Invite action from readers', async () => {
+      await render();
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+    });
+
+    it('hides the Invite action from a writer until the list has loaded', async () => {
+      await render(new Subject<FormationPeopleResponse>(), checklist({ can_write: true }));
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+    });
+
+    it('hides the Invite action from a writer while the list is unavailable', async () => {
+      await render(of<FormationPeopleResponse>({ state: 'unavailable', people: [] }), checklist({ can_write: true }));
+
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+    });
+
+    it('opens the invite dialog for a writer with the project uid and the listed addresses', async () => {
+      await render(undefined, checklist({ can_write: true }));
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(open).toHaveBeenCalledTimes(1);
+      const [, config] = open.mock.calls[0];
+      expect(config).toEqual(
+        expect.objectContaining({ modal: true, closable: false, dismissableMask: false, closeOnEscape: false, style: { maxWidth: '90vw' } })
+      );
+      expect(config.data).toEqual({
+        projectUid: 'proj-1',
+        existingEmails: [`alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`, 'sam.chen@cascade-data.example', 'jordan.lee@partner-corp.example'],
+      });
+    });
+
+    it('hides the Invite action while the list re-reads after an invite, so a stale duplicate list is never used', async () => {
+      const reread = new Subject<FormationPeopleResponse>();
+      getFormationPeople.mockReturnValueOnce(of<FormationPeopleResponse>({ state: 'loaded', people: [staff] })).mockReturnValue(reread.asObservable());
+      await render(undefined, checklist({ can_write: true }));
+      expect(byTestId('formation-people-invite-btn')).not.toBeNull();
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next('added');
+      await settle();
+      expect(byTestId('formation-people-invite-btn')).toBeNull();
+
+      reread.next({ state: 'loaded', people: [staff, person()] });
+      await settle();
+      expect(byTestId('formation-people-invite-btn')).not.toBeNull();
+    });
+
+    it('leaves an email-less settings entry out of the addresses handed to the dialog', async () => {
+      await render(
+        of<FormationPeopleResponse>({ state: 'loaded', people: [person({ key: 'no.email', username: 'no.email', email: '' }), staff] }),
+        checklist({ can_write: true })
+      );
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(open.mock.calls[0][1].data.existingEmails).toEqual([`alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`]);
+    });
+
+    it('re-reads the list when the dialog closes with an outcome, and not on a plain dismiss', async () => {
+      await render(undefined, checklist({ can_write: true }));
+      getFormationPeople.mockClear();
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next(undefined);
+      await settle();
+      expect(getFormationPeople).not.toHaveBeenCalled();
+
+      (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
+      onClose.next('invite_sent');
+      await settle();
+      expect(getFormationPeople).toHaveBeenCalledTimes(1);
+    });
   });
 });

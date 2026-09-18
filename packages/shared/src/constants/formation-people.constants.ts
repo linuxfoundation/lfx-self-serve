@@ -35,6 +35,29 @@ export const FORMATION_PEOPLE_EMPTY_MESSAGE = 'No one has been added to this for
 
 export const FORMATION_PEOPLE_UNAVAILABLE_MESSAGE = 'People are not available for this project right now.';
 
+/** Invite dialog header (#2724, PR 2). */
+export const FORMATION_INVITE_DIALOG_HEADER = 'Invite to this formation';
+
+/** Intro line under the dialog header — states the pending label the person will carry until they accept. */
+export const FORMATION_INVITE_DIALOG_INTRO =
+  'If they already have an LF account they are added right away; otherwise they appear under Invited as “Invite Sent” until they accept the emailed invite.';
+
+/** Cap on the invite dialog's free-text name — it is persisted and forwarded into the outbound invite email. */
+export const FORMATION_INVITE_NAME_MAX_LENGTH = 200;
+
+/** Inline error when the address is already on the project — no request is sent. */
+export const FORMATION_INVITE_DUPLICATE_MESSAGE = 'This person is already on the project.';
+
+/**
+ * Invite dialog role radios — `view` is the default (everyone invited from the card is read-only
+ * unless the inviter says otherwise); `manage` is offered for partners who must work checklist
+ * items, since View cannot act on them. Values mirror `AddUserToProjectRequest['role']`.
+ */
+export const FORMATION_INVITE_ROLE_OPTIONS = [
+  { value: 'view', label: 'View', description: 'Can see the checklist and the items assigned to them.' },
+  { value: 'manage', label: 'Manage', description: 'Can also assign items and edit the checklist.' },
+] as const;
+
 /**
  * Batch size for the BFF's per-person user-metadata fan-out. Settings lists are small (tens, not
  * hundreds), so this bounds concurrent NATS requests without serialising the whole list.
