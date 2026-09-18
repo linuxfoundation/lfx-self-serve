@@ -23,8 +23,6 @@ const formationItemRow = (overrides: Partial<MyFormationItemRow> = {}): MyFormat
   status: 'not_started',
   is_gating: true,
   due_date: null,
-  action: 'manual',
-  action_href: null,
   can_write: true,
   can_set_status: true,
   ...overrides,
@@ -96,9 +94,9 @@ describe('buildFormationItemActions', () => {
   });
 
   // #2732: the row's one action navigates to the checklist item; nothing on the row reads the
-  // item's own `action_href` or the drawer-only permission flags any more.
+  // drawer-only permission flags any more, and the row shape carries no link of its own.
   it('carries no buttonLink and none of the retired drawer-only permission fields', () => {
-    const [action] = buildFormationItemActions([formationItemRow({ action_href: 'https://example.com/charter', can_write: true, can_set_status: true })]);
+    const [action] = buildFormationItemActions([formationItemRow({ can_write: true, can_set_status: true })]);
     expect(action.buttonLink).toBeUndefined();
     expect(action).not.toHaveProperty('formationCanWrite');
     expect(action).not.toHaveProperty('formationCanSetStatus');

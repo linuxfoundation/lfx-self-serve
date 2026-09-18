@@ -1799,7 +1799,7 @@ describe('FormationService', () => {
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
-    it('builds items[] from open, live-checklist items only, mapping action/action_href/can_write, and reports state complete', async () => {
+    it('builds items[] from open, live-checklist items only, mapping can_write, and reports state complete', async () => {
       getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
       mockQueryResources(
         [

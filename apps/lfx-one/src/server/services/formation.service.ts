@@ -63,13 +63,7 @@ import {
   InvalidRequestError,
 } from '../errors';
 import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
-import {
-  deriveItemAction,
-  mapUpstreamFormationChecklist,
-  mapUpstreamFormationItem,
-  resolveActionHref,
-  sectionTitlesFromChecklist,
-} from '../helpers/formation-mapper.helper';
+import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
 import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
@@ -1179,8 +1173,6 @@ export class FormationService {
       status: row.status,
       is_gating: row.gate,
       due_date: row.due_date ?? null,
-      action: deriveItemAction(row),
-      action_href: resolveActionHref(row.action_link, row.project_slug),
       can_write: canWrite,
       can_set_status: canWrite && isFormationTeamMember,
     };
