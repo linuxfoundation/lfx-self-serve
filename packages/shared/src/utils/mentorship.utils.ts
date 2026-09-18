@@ -37,8 +37,8 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
-  MentorshipEnrollValidationInput,
   MentorshipEnrollStep,
+  MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
@@ -162,6 +162,13 @@ export function getMentorshipTermDateErrors(
   return errors;
 }
 
+/**
+ * Field-keyed validation errors for a single enroll wizard step.
+ *
+ * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
+ * — a temporary mock-backed allowlist that must be replaced with server-side validation
+ * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ */
 export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
@@ -175,7 +182,7 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
       errors.projectId = 'Select a Linux Foundation project.';
     } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
       // Temporary mock-backed allowlist — replace with server-side validation
-      // when the upstream mentorship-service project endpoint is wired up.
+      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
       errors.projectId = 'Select a valid Linux Foundation project.';
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
@@ -405,25 +412,6 @@ export function parseMentorshipDateOnly(value: string): Date | null {
 
 export function toMentorshipDateOnly(value: Date): string {
   return toLocalDateOnlyString(value);
-}
-
-/**
- * URL-safe slug from a program name. Empty names fall back to `program`.
- *
- * The first `.replace` collapses every run of non-alphanumerics into a single
- * `-`, so at most one leading and one trailing `-` can remain. Trimming those
- * with `slice` instead of a `/^-+|-+$/g` alternation removes the polynomial
- * ReDoS surface CodeQL flags (`js/polynomial-redos`) even when `name` comes
- * from an unvalidated caller — the shared util has no length guard of its own.
- */
-export function mentorshipProgramSlug(name: string): string {
-  let slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-');
-  if (slug.startsWith('-')) slug = slug.slice(1);
-  if (slug.endsWith('-')) slug = slug.slice(0, -1);
-  return slug || 'program';
 }
 
 export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {

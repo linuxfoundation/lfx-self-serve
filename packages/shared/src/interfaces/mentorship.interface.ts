@@ -116,7 +116,6 @@ export interface MentorshipEnrollForm {
 /**
  * Validation shape for `getMentorshipEnrollStepErrors`. Omits the browser-only
  * `logoPreviewUrl` so the validator never depends on a transient blob URL.
- * Previously also served as the POST body; that endpoint was removed by GH-2717.
  */
 export type MentorshipEnrollValidationInput = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
 

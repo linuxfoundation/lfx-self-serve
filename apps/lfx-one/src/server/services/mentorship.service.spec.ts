@@ -27,6 +27,33 @@ function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
 }
 
+describe('MentorshipService.getPrograms (read-only mock)', () => {
+  let service: InstanceType<typeof MentorshipService>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('exposes only GET-retrieved programs — no POST route can grow the list', async () => {
+    const first = await service.getPrograms(buildReq());
+    const second = await service.getPrograms(buildReq());
+
+    expect(first.total).toBe(second.total);
+    expect(first.total).toBeGreaterThan(0);
+    expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
+  });
+
+  it('does not expose an enrollProgram method', () => {
+    expect(service).not.toHaveProperty('enrollProgram');
+  });
+});
+
 describe('MentorshipService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipService>;
 

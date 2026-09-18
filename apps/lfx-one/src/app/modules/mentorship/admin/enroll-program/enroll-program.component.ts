@@ -23,9 +23,9 @@ import {
   MENTORSHIP_ENROLL_STEPS_ORDER,
 } from '@lfx-one/shared/constants';
 import {
+  MentorshipCiiLookupStatus,
   MentorshipEnrollForm,
   MentorshipEnrollStep,
-  MentorshipCiiLookupStatus,
   MentorshipNameLookupStatus,
   MentorshipPrerequisite,
   MentorshipProgramTerm,
