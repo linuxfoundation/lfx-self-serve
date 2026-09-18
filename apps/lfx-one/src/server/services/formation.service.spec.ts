@@ -12,7 +12,14 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
-import { ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+  LF_STAFF_EMAIL_DOMAIN,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -189,6 +196,7 @@ describe('FormationService', () => {
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
+    FormationService.resetUserMetadataCacheForTests();
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
     checkSingleAccess.mockReset();
@@ -198,6 +206,354 @@ describe('FormationService', () => {
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
+  });
+
+  describe('getFormationPeople (#2724)', () => {
+    // Built from the constant rather than spelled out: check-fixture-emails.sh (GH-1674)
+    // denylists the LF domain itself in spec files.
+    const LF_STAFF_EMAIL = `alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`;
+    const LF_STAFF_EMAIL_MIXED_CASE = `Alex.Rivera@${LF_STAFF_EMAIL_DOMAIN.replace('linux', 'Linux')}`;
+    const settingsWith = (overrides: Record<string, unknown> = {}) => ({
+      uid: 'live-project-1',
+      announcement_date: null,
+      writers: [],
+      auditors: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      ...overrides,
+    });
+    const metadataReply = (data: Record<string, unknown>) => ({ data: JSON.stringify({ success: true, username: 'x', data }) });
+
+    it('throws ResourceNotFoundError when the project does not exist for this caller', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: undefined, exists: false });
+
+      await expect(service.getFormationPeople(buildReq(), 'does-not-exist')).rejects.toThrow(/not found/i);
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])('masks a checklist %s as not-found and never reads settings — the checklist read is the gate', async (status) => {
+      proxyRequest.mockRejectedValue(new MicroserviceError('denied', status, 'DENIED', { operation: 'x', service: 'x', path: '/x' }));
+
+      await expect(service.getFormationPeople(buildReq(), 'live-project')).rejects.toThrow(/not found/i);
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it('degrades a refused settings read to an unavailable list instead of failing (global-grant staff)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { operation: 'x', service: 'x', path: '/x' }));
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'unavailable', people: [] });
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_formation_people',
+        expect.stringMatching(/unavailable/i),
+        expect.objectContaining({ status_code: 403 })
+      );
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('builds the list from settings roles: writers manage, auditors view, staff by LF domain, pending when username-less', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL_MIXED_CASE, username: 'alex.rivera' }],
+          auditors: [
+            { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' },
+            { name: 'Jordan Lee', email: 'jordan.lee@partner-corp.example' },
+          ],
+        })
+      );
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', role: 'manage', group: 'staff', is_pending: false }),
+        expect.objectContaining({
+          key: 'jordan.lee@partner-corp.example',
+          username: null,
+          role: 'view',
+          group: 'invited',
+          is_pending: true,
+        }),
+        expect.objectContaining({ key: 'sam.chen', role: 'view', group: 'invited', is_pending: false }),
+      ]);
+      // One metadata read per person WITH a username — the pending entry has no account to look up.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      expect(natsRequest.mock.calls.map((call) => call[1]).sort()).toEqual(['alex.rivera', 'sam.chen']);
+    });
+
+    it('enriches title, organization and a fallback avatar from user metadata, keeping a settings avatar', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera', avatar: 'https://cdn.example/settings.png' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') return metadataReply({ job_title: ' Program Manager ', organization: '', picture: 'https://cdn.example/meta-a.png' });
+        return metadataReply({ job_title: 'Partner contact', organization: 'Cascade Data', picture: 'https://cdn.example/meta-s.png' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: 'Program Manager', organization: null, avatar: 'https://cdn.example/settings.png' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact', organization: 'Cascade Data', avatar: 'https://cdn.example/meta-s.png' }),
+      ]);
+    });
+
+    it('tolerates one failed metadata lookup — that person stays unenriched, the rest and the response are unaffected', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') throw new Error('nats timeout');
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: null, organization: null }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact' }),
+      ]);
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'enrich_formation_people',
+        expect.stringMatching(/lookup failed/i),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('leaves a malformed profile (non-string metadata fields) unenriched instead of failing the endpoint', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen')
+          return metadataReply({ job_title: 123 as unknown as string, organization: ['x'] as unknown as string, picture: null as unknown as string });
+        return metadataReply({ job_title: 'Program Manager' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'kim.park', job_title: 'Program Manager' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: null, organization: null, avatar: null }),
+      ]);
+    });
+
+    it('memoises only the three rendered fields, never the raw profile and its PII', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue(
+        metadataReply({
+          job_title: ' Partner contact ',
+          organization: '',
+          picture: 'https://cdn.example/s.png',
+          address: '1 Main St',
+          phone_number: '555-0100',
+          postal_code: '00000',
+          bio: 'private',
+        })
+      );
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: 'Partner contact', organization: null, avatar: 'https://cdn.example/s.png' }));
+      await expect(FormationService.userMetadataCacheValueForTests('sam.chen')).resolves.toEqual({
+        job_title: 'Partner contact',
+        organization: null,
+        picture: 'https://cdn.example/s.png',
+      });
+    });
+
+    it('treats an explicit metadata miss (success: false) as nothing to show, without a warning', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: null, organization: null, avatar: null }));
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('memoises each person’s metadata across requests, including a resolved miss, but not a transport failure', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+          auditors: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'kim.park') return { data: JSON.stringify({ success: false }) };
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+      const second = await service.getFormationPeople(buildReq(), 'live-project');
+
+      // Two people, two reads total — the second request served both from the memo.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      // Name-sorted: Kim Park (resolved miss → null) before Sam Chen.
+      expect(second.people.map((p) => p.job_title)).toEqual([null, 'Partner contact']);
+
+      // A transport failure is not memoised: the next read retries.
+      FormationService.resetUserMetadataCacheForTests();
+      natsRequest.mockRejectedValueOnce(new Error('nats timeout')).mockRejectedValueOnce(new Error('nats timeout'));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(6);
+    });
+
+    it('shares one in-flight lookup between concurrent requests for the same person', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      // SSR pre-render plus client hydration on first load: both miss an empty memo at once.
+      const [first, second] = await Promise.all([
+        service.getFormationPeople(buildReq(), 'live-project'),
+        service.getFormationPeople(buildReq(), 'live-project'),
+      ]);
+
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(first.people[0].job_title).toBe('Partner contact');
+      expect(second.people[0].job_title).toBe('Partner contact');
+    });
+
+    it('re-reads a person’s metadata once the memo TTL has elapsed', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        await service.getFormationPeople(buildReq(), 'live-project');
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS - 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(1);
+
+        vi.setSystemTime(new Date(Date.now() + 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('evicts expired memo entries on the next write, so the map does not grow with every user ever seen', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+
+        // sam.chen expired and was dropped by kim.park's write — only the live entry remains.
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('caps the memo at FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES by evicting the oldest live entry', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+      const writers = Array.from({ length: FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES + 1 }, (_, i) => ({
+        // Zero-padded so the name sort matches insertion order and "oldest" is deterministic.
+        name: `Person ${String(i).padStart(5, '0')}`,
+        email: `person${i}@partner-corp.example`,
+        username: `person${i}`,
+      }));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(FormationService.userMetadataCacheSizeForTests()).toBe(FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES);
+      // The first person written is the one evicted; the last is still memoised.
+      natsRequest.mockClear();
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [writers[0], writers[writers.length - 1]] }));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(natsRequest.mock.calls[0][1]).toBe('person0');
+    });
+
+    it('stops enriching once the wall-clock budget is spent and returns the rest unenriched, logging once', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        const writers = Array.from({ length: FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE + 2 }, (_, i) => ({
+          name: `Person ${String(i).padStart(2, '0')}`,
+          email: `person${i}@partner-corp.example`,
+          username: `person${i}`,
+        }));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+        natsRequest.mockImplementation(async () => {
+          // A slow responder: each read burns the whole budget, so only the first batch is issued.
+          vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS + 1));
+          return metadataReply({ job_title: 'Partner contact' });
+        });
+
+        const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+        expect(result.state).toBe('loaded');
+        expect(result.people).toHaveLength(writers.length);
+        expect(natsRequest).toHaveBeenCalledTimes(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === 'Partner contact')).toHaveLength(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === null)).toHaveLength(2);
+        // One summary line for the skipped people — not a warning per person.
+        expect(logger.warning).toHaveBeenCalledTimes(1);
+        expect(logger.warning).toHaveBeenCalledWith(
+          expect.anything(),
+          'enrich_formation_people',
+          expect.stringMatching(/budget/i),
+          expect.objectContaining({ skipped: 2 })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns an empty loaded list, with no metadata reads, for a formation nobody has been added to', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith());
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'loaded', people: [] });
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('getProjectFormation', () => {

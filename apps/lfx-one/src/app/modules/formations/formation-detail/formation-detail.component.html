@@ -31,17 +31,19 @@
       data-testid="formation-detail-not-in-formation" />
   } @else if (project(); as project) {
     <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
-    <!-- Same two-column shell as `/project/formation` (formation-page.component.html), and the card
-         is fed the same way: from the checklist response the section beside it just fetched, so
-         everything the rail renders needs no request of its own and rides the checklist's read
-         gate (#2719). Only the card's admin-tool link still probes separately, and fails closed. -->
+    <!-- Same two-column shell as `/project/formation` (formation-page.component.html), and the cards
+         are fed the same way: from the checklist response the section beside it just fetched, so
+         the rail's slug, stage and date need no request of their own and ride the checklist's read
+         gate (#2719). Only the formation card's admin-tool link and the people
+         card's own list read (#2724) probe separately, and both fail closed/quiet. -->
     <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-detail-columns">
       <div class="flex-1 min-w-0">
         <lfx-formation-checklist-section [projectSlug]="project.slug" (responseLoaded)="onChecklistLoaded($event)" />
       </div>
-      @if (formation(); as formation) {
-        <aside class="w-full shrink-0 xl:w-64" data-testid="formation-detail-sidebar">
-          <lfx-formation-card [formation]="formation" />
+      @if (activeChecklist(); as checklist) {
+        <aside class="flex flex-col gap-8 w-full shrink-0 xl:w-64" data-testid="formation-detail-sidebar">
+          <lfx-formation-card [formation]="checklist.formation" />
+          <lfx-formation-people-card [checklist]="checklist" />
         </aside>
       }
     </div>
