@@ -64,8 +64,9 @@ export class FormationChecklistSectionComponent {
 
   /**
    * The checklist response this component just fetched, so a host can render alongside it without
-   * a second request or a second permission probe — both hosts use it for their
-   * `lfx-formation-card` sidebar rail (#2719). Emits `null` on a failed load and when there's no
+   * re-reading the checklist — both hosts use it for their `lfx-formation-card` sidebar rail
+   * (#2719), whose rendered fields then need no request or permission probe of their own (the
+   * card's admin-tool link still makes its own, and fails closed). Emits `null` on a failed load and when there's no
    * slug, so a host clears rather than pairing a stale card with a fresh (or empty) checklist.
    */
   public readonly responseLoaded = output<FormationChecklistResponse | null>();

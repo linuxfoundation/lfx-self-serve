@@ -25,7 +25,8 @@ export class FormationPageComponent {
    * /api/projects/:slug` plus an `auditor`-gated settings read, each of which degrades to `null`
    * with no retry, so the rail could vanish beside a checklist that had loaded fine for the same
    * caller. Sourcing both from this one response means whoever can read the checklist sees the
-   * card beside it.
+   * card beside it, with its slug, sub-stage and announcement date already in hand. Only the
+   * card's admin-tool deep link still probes separately, and it fails closed.
    */
   protected readonly checklist = signal<FormationChecklistResponse | null>(null);
   /**
