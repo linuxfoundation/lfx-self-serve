@@ -6,7 +6,7 @@ import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, provideRouter, Router } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
@@ -345,6 +345,86 @@ describe('FormationChecklistSectionComponent', () => {
 
       expect(emitted).toEqual([null]);
       expect(getProjectFormation).not.toHaveBeenCalled();
+    });
+  });
+
+  // GH-2573: ?item=<key> deep-link from assignment emails
+  describe('?item= deep-link (GH-2573)', () => {
+    async function renderWithItem(
+      itemKey: string | null,
+      opts: { response?: FormationChecklistResponse; fetchResult?: Observable<FormationChecklistResponse> } = {}
+    ) {
+      TestBed.resetTestingModule();
+      const response = opts.response ?? buildResponse('live', 'live');
+      const fetchResult = opts.fetchResult ?? of(response);
+      const contextSignal = signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' });
+
+      await TestBed.configureTestingModule({
+        imports: [FormationChecklistSectionComponent],
+        providers: [
+          provideHttpClient(),
+          provideHttpClientTesting(),
+          provideRouter([]),
+          provideNoopAnimations(),
+          { provide: MessageService, useValue: { add: vi.fn() } },
+          {
+            provide: ProjectContextService,
+            useValue: {
+              activeContext: contextSignal,
+              activeProjectAnnouncementDate: signal<string | null>(null),
+              activeProjectAnnouncementDateLoading: signal(false),
+              activeProjectAnnouncementDateHasError: signal(false),
+            },
+          },
+          { provide: FormationService, useValue: { getProjectFormation: vi.fn().mockReturnValue(fetchResult), getQueueFormationChecklist: vi.fn().mockReturnValue(fetchResult) } },
+          {
+            provide: ActivatedRoute,
+            useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } },
+          },
+        ],
+      }).compileComponents();
+
+      const router = TestBed.inject(Router);
+      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+
+      const f = TestBed.createComponent(FormationChecklistSectionComponent);
+      f.detectChanges();
+      await f.whenStable();
+      f.detectChanges();
+
+      return { fixture: f, navigateSpy };
+    }
+
+    it('opens the matching item drawer and clears ?item= from the URL', async () => {
+      const { fixture, navigateSpy } = await renderWithItem('test-item');
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(true);
+      expect(fixture.componentInstance.drawerItemAddress()).toEqual({ projectUid: 'project:test', itemKey: 'test-item' });
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+    });
+
+    it('clears ?item= without opening a drawer when the key matches no item', async () => {
+      const { fixture, navigateSpy } = await renderWithItem('unknown-key');
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+    });
+
+    it('clears ?item= on a terminal no-items state without opening a drawer', async () => {
+      const emptyChecklist: FormationChecklistResponse = { ...buildResponse('live', 'live'), items: [] };
+      const { fixture, navigateSpy } = await renderWithItem('test-item', { response: emptyChecklist });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+    });
+
+    it('preserves ?item= on the retryable error state so the user can retry', async () => {
+      const { fixture, navigateSpy } = await renderWithItem('test-item', {
+        fetchResult: throwError(() => new Error('network error')),
+      });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).not.toHaveBeenCalled();
     });
   });
 });

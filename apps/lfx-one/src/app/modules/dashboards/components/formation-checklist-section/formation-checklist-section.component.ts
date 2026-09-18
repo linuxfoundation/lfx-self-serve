@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, output, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -55,6 +56,7 @@ export class FormationChecklistSectionComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   /**
    * Renders another project's checklist by explicit slug, without touching the project context —
@@ -170,25 +172,7 @@ export class FormationChecklistSectionComponent {
   });
 
   constructor() {
-    // If the URL carries ?item=<key>, open that item's panel once the checklist
-    // is ready. Read once from the snapshot — the param is navigation intent,
-    // not reactive state — then clear it so a refresh doesn't re-open the drawer.
-    const itemKey = this.route.snapshot.queryParamMap.get('item');
-    if (itemKey) {
-      toObservable(this.pageState)
-        .pipe(
-          filter((state) => state === 'ready'),
-          take(1),
-          takeUntilDestroyed(this.destroyRef)
-        )
-        .subscribe(() => {
-          const item = this.items().find((i) => i.template_item_key === itemKey);
-          if (item) {
-            this.onOpenDrawer(item);
-          }
-          void this.router.navigate([], { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true });
-        });
-    }
+    this.initDeepLink();
   }
 
   protected onRetry(): void {
@@ -354,6 +338,42 @@ export class FormationChecklistSectionComponent {
   /** The drawer's own Skip button — reuses the same reason-prompt + `/status` write as the row overflow menu's "Skip with reason". */
   protected onSkipRequested(item: FormationItem): void {
     this.onRowReasonedStatusRequested({ item, status: 'skipped' });
+  }
+
+  private initDeepLink(): void {
+    // Only run in the browser — router.navigate() on the server manipulates Angular's
+    // internal URL before hydration, risking NG0500 mismatches. This feature targets
+    // browser-opened email deep-links only.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    // Read once from the snapshot — ?item= is navigation intent from an email deep-link,
+    // not reactive state. This component is destroyed on navigation so one-time reads
+    // are the right semantic; a same-tab re-navigation with a new ?item= starts a fresh mount.
+    const itemKey = this.route.snapshot.queryParamMap.get('item');
+    if (!itemKey) return;
+
+    // Act on the first terminal pageState:
+    //   'ready'       → find and open the item's drawer; an unknown key is a silent no-op
+    //                   (the item may have been completed or removed since the email was sent)
+    //   'no-template' → no checklist template loaded; nothing to open
+    //   'no-items'    → empty checklist; nothing to open
+    //   'error'       → retryable; keep ?item= so a page reload retries with it still set
+    // queryParamsHandling: 'merge' preserves any other active params (e.g. ?project=).
+    toObservable(this.pageState)
+      .pipe(
+        filter((state) => state === 'ready' || state === 'no-template' || state === 'no-items'),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((state) => {
+        if (state === 'ready') {
+          const item = this.items().find((i) => i.template_item_key === itemKey);
+          if (item) {
+            this.onOpenDrawer(item);
+          }
+        }
+        void this.router.navigate([], { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
   }
 
   private initResponse(): Signal<FormationChecklistResponse | null> {
