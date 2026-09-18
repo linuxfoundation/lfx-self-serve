@@ -1159,6 +1159,16 @@ export class CampaignsComponent {
     () => this.abTestSubjectB().trim() !== '' && this.abTestBodyHtmlB().trim() !== ''
   );
 
+  /**
+   * The CTA label exactly as it will be staged: trimmed, and empty when it will not be sent.
+   *
+   * Every preview block reads this rather than `copy.cta`, because the wire path trims and the
+   * controller trims again -- so a padded or whitespace-only label rendered a button the draft
+   * either omits or labels differently. Same drift as the two predicates below; one value is the
+   * fix rather than a `.trim()` repeated at each render site.
+   */
+  protected readonly emailCtaLabel = computed<string>(() => (this.emailCtaIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''));
+
   protected readonly emailCtaIsStageable = computed<boolean>(() => {
     const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
     if (typeof url !== 'string' || url === '') return false;

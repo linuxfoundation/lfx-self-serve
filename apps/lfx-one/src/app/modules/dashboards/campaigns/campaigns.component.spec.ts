@@ -1891,7 +1891,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
     abTestCopyError: WritableSignal<string>;
     canGenerateAbTestCopy: Signal<boolean>;
+    selectedEmailStage: Signal<string>;
     emailCtaIsStageable: Signal<boolean>;
+    emailCtaLabel: Signal<string>;
     abTestIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
@@ -3968,6 +3970,29 @@ describe('CampaignsComponent — email delivery channel', () => {
       // here would preview an A/B test that stages as single-variant.
       expect(internals().abTestIsStageable()).toBe(false);
       expect(create.mock.calls[0][0].hubspotConfig?.abTestEnabled).toBeUndefined();
+    });
+
+    it('generates variant B with ordinary stage copy and writes it into the B controls', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } }) as never);
+
+      await internals().onGenerateAbTestCopy();
+      fixture.detectChanges();
+
+      // Variant B takes ORDINARY stage copy -- variant A is the one that requests urgency-fomo.
+      // If B passed the same variant, both arms would be the same draft and the A/B test would
+      // compare a copy against itself, which no other test would notice.
+      expect(gen).toHaveBeenCalledWith(expect.any(String), 'brief-77', internals().selectedEmailStage());
+      expect(internals().abTestSubjectB()).toBe('B subject');
+      expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });
 
     it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {

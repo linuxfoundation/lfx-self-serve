@@ -2395,6 +2395,29 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(call[5]).toBeUndefined();
   });
 
+  it('sends the variant alongside the stage, both as QUERY params', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event', 'urgency-fomo');
+
+    // Asserted at THIS boundary because every layer above mocks the client: the controller and
+    // component tests would all pass with `variant` dropped here, and the only symptom upstream
+    // is default copy -- variant A's arm and variant B's arm become identical and the A/B test
+    // compares a draft against itself.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ stage: 'Post-Event', variant: 'urgency-fomo' });
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('sends the variant with no stage when only a variant is named', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', undefined, 'urgency-fomo');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ variant: 'urgency-fomo' });
+  });
+
   it('sends no stage param at all when the caller names none', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 

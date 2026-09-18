@@ -1228,6 +1228,49 @@ describe('CampaignController.createCampaign cutover', () => {
    * these assert the exact strings.
    */
   it.each([
+    ['only a subject', { subjectB: 'S', bodyHtmlB: '' }],
+    ['only a body', { subjectB: '', bodyHtmlB: '<p>b</p>' }],
+    ['a whitespace-only body', { subjectB: 'S', bodyHtmlB: '   ' }],
+  ])('refuses to stage an A/B variant from a direct request carrying %s', async (_label, half) => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', abTestEnabled: true, ...half } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    // This is the boundary that matters: the client gate stops the UI sending a half-filled
+    // variant, but a direct campaign-manager request bypasses it, and upstream reads '' as
+    // "blank this field" -- so the request meant to SET variant B's body would clear it.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['abTestEnabled']).toBeUndefined();
+    expect(sent['subjectB']).toBeUndefined();
+    expect(sent['bodyHtmlB']).toBeUndefined();
+  });
+
+  it('canonicalizes a scheme-relative-looking URL rather than forwarding it verbatim', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        { platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', heroImageUrl: 'http:example.com/hero.png' } },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // WHATWG `URL` accepts `http:example.com` and reports an `http:` protocol, so a validator
+    // that returns the INPUT forwards a non-network-absolute value the Go downloader cannot
+    // use -- and the hero then degrades silently, because the upload is best-effort.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['heroImageUrl']).toBe('http://example.com/hero.png');
+  });
+
+  it.each([
     ['javascript:', 'javascript:alert(1)'],
     ['data:', 'data:text/html,<script>alert(1)</script>'],
     ['not a url', 'not-a-url'],

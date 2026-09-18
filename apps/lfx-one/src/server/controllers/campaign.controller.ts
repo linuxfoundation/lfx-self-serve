@@ -2220,10 +2220,12 @@ export class CampaignController {
       ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
       ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
       ...(sponsors.length > 0 ? { sponsors } : {}),
-      // `abTestEnabled` is forwarded only alongside non-empty variant-B content, mirroring the
-      // frontend's own gate (`onStageEmailSend`) — an enabled toggle with nothing typed must not
-      // reach campaign-service as a variant request with an empty B side.
-      ...(abTestEnabled && (subjectB || bodyHtmlB) ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
+      // BOTH halves, matching `abTestIsStageable` on the client. This is the boundary that
+      // actually matters: the client gate stops the UI from sending a half-filled variant, but a
+      // direct campaign-manager request bypasses it entirely, and upstream reads an empty string
+      // as "blank this field" — so `||` here could still stage a variant whose body was cleared
+      // by the very request meant to set it. Both are already trimmed above.
+      ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== '' ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
     };
   }
 }
@@ -2246,7 +2248,12 @@ function httpUrlOrEmpty(value: unknown): string {
   if (trimmed === '') return '';
   try {
     const parsed = new URL(trimmed);
-    return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? trimmed : '';
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    // The CANONICAL form, not the input. WHATWG `URL` accepts `http:example.com` and reports an
+    // `http:` protocol, so returning the original string forwards a non-network-absolute value
+    // that the Go image downloader cannot use -- the hero then degrades silently, because the
+    // upload is best-effort. `href` is what the parse actually resolved to.
+    return parsed.href;
   } catch {
     return '';
   }

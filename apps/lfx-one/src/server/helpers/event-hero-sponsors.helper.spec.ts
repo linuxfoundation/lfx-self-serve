@@ -54,9 +54,16 @@ describe('extractHeroAndSponsors', () => {
   });
 
   it('dedupes repeated sponsor logos and caps the list at 10', () => {
-    const repeated = Array.from({ length: 15 }, (_, i) => `<img src="/sponsors/s${i % 3}.png" alt="Sponsor ${i % 3}" />`).join('');
-    const result = extractHeroAndSponsors(`<h2>Sponsors</h2>${repeated}`, BASE_URL);
-    expect(result.sponsors.length).toBeLessThanOrEqual(10);
+    // 14 UNIQUE logos plus one duplicate. The previous fixture used `i % 3`, so 15 tags
+    // collapsed to three URLs and never reached the cap -- `toBeLessThanOrEqual(10)` stayed
+    // green with MAX_SPONSORS removed entirely. Both properties need more uniques than the cap.
+    const unique = Array.from({ length: 14 }, (_, i) => `<img src="/sponsors/s${i}.png" alt="Sponsor ${i}" />`);
+    const html = `<h2>Sponsors</h2>${[...unique, unique[0]].join('')}`;
+
+    const result = extractHeroAndSponsors(html, BASE_URL);
+
+    // EXACTLY 10, not at-most: the cap is the assertion, so a raised or removed limit fails.
+    expect(result.sponsors).toHaveLength(10);
     const urls = result.sponsors.map((s) => s.logoUrl);
     expect(new Set(urls).size).toBe(urls.length);
   });
