@@ -160,10 +160,8 @@ export class OrgEasyclaComponent {
   /**
    * The organization's CLA list.
    *
-   * Written from two places: the main fetch keyed on `orgUid$`, and the return-trip retry which
-   * asks upstream directly and pushes what it hears back in. Without the second the retry could
-   * recover the list without the row and still leave "we couldn't load your CLAs" on screen — the
-   * error state having been set by the failed initial attempt and never cleared.
+   * Written from the fetch keyed on `orgUid$`. The return-trip retry that used to push into this
+   * signal lives on the CLA Group detail page (`retriedList$`), not here.
    */
   private readonly claData = signal<OrgClaGroupList | null | undefined>(undefined);
 
