@@ -83,6 +83,17 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
   };
 }
 
+/** Item-drawer child calls this on open; omitting it fails GH-2573 as `getFormationItem is not a function`. */
+function stubGetFormationItem(response: FormationChecklistResponse) {
+  return vi.fn().mockReturnValue(
+    of({
+      item: response.items[0] ?? buildResponse('live', 'live').items[0],
+      history: [],
+      history_state: 'complete' as const,
+    })
+  );
+}
+
 function buildSharedProviders(fetchResult: Observable<FormationChecklistResponse>, ctx: WritableSignal<{ uid: string; name: string; slug: string } | null>) {
   return [
     provideHttpClient(),
@@ -132,7 +143,14 @@ describe('FormationChecklistSectionComponent', () => {
       imports: [FormationChecklistSectionComponent],
       providers: [
         ...buildSharedProviders(fetchResult, activeContext),
-        { provide: FormationService, useValue: { getProjectFormation, getQueueFormationChecklist } },
+        {
+          provide: FormationService,
+          useValue: {
+            getProjectFormation,
+            getQueueFormationChecklist,
+            getFormationItem: stubGetFormationItem(response),
+          },
+        },
       ],
     }).compileComponents();
 
@@ -375,7 +393,14 @@ describe('FormationChecklistSectionComponent', () => {
         imports: [FormationChecklistSectionComponent],
         providers: [
           ...buildSharedProviders(fetchResult, contextSignal),
-          { provide: FormationService, useValue: { getProjectFormation: formationMock, getQueueFormationChecklist: formationMock } },
+          {
+            provide: FormationService,
+            useValue: {
+              getProjectFormation: formationMock,
+              getQueueFormationChecklist: formationMock,
+              getFormationItem: stubGetFormationItem(response),
+            },
+          },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } } },
           ...(opts.platformId ? [{ provide: PLATFORM_ID, useValue: opts.platformId }] : []),
         ],

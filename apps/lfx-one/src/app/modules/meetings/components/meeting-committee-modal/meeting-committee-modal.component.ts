@@ -206,9 +206,9 @@ export class MeetingCommitteeModalComponent {
 
     this.saving.set(true);
 
-    // Read the helper with the ids about to be saved, not the signal: `committees()` is the option
-    // list, and writing `selectedCommitteeIds` first would be load-bearing for a computed that no
-    // longer needs it.
+    // Pass the ids being saved straight to the helper instead of writing `selectedCommitteeIds`
+    // just to drive the computed — the `valueChanges` subscription already keeps that signal in
+    // sync, so the save path doesn't need an extra write to get the right answer.
     const allowedVotingStatuses = meetingSelectionHasVotingFilter(selectedIds, this.committees(), selectedVotingStatuses.length) ? selectedVotingStatuses : [];
 
     // Build update request with all existing meeting fields plus committees

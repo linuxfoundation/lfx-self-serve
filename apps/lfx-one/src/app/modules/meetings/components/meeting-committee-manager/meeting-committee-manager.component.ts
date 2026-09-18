@@ -162,11 +162,12 @@ export class MeetingCommitteeManagerComponent {
    * skip the filter and queue every group member as a guest, including ones the saved filter
    * excluded; keeping the filter fails safe in the other direction.
    *
-   * This is the single voting-enabled test for the component: the roster filter, the
-   * `committees` clearer and `updateParentForm` all read it, so the saved filter, the picker and
-   * the persisted `allowed_voting_statuses` cannot disagree about whether voting filtering applies.
-   * An empty selection is not missing metadata — there is nothing to filter — and a mixed
-   * known/unknown set still falls back so one resolved non-voting group cannot erase a saved filter.
+   * `meetingSelectionHasVotingFilter` is the single voting-enabled test. This computed is its
+   * signal-backed reading, used by the roster filter and the `committees` clearer.
+   * `updateParentForm` / `reconcileVotingFilter` call the helper directly so a just-fetched
+   * options list can be used before `committeeOptions()` updates. An empty selection is not
+   * missing metadata — there is nothing to filter — and a mixed known/unknown set still falls
+   * back so one resolved non-voting group cannot erase a saved filter.
    */
   public hasVotingEnabledCommittee = computed(() =>
     meetingSelectionHasVotingFilter(this.selectedCommitteeIds(), this.committeeOptions(), this.selectedVotingStatuses().length)
@@ -308,9 +309,13 @@ export class MeetingCommitteeManagerComponent {
             this.committeeOptionsSettled.set(true);
           }
         }),
-        filter((trigger): trigger is { uid: string; attempt: number } => !!trigger.uid),
-        switchMap(({ uid }) =>
-          this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
+        switchMap((trigger) => {
+          const uid = trigger.uid;
+          if (!uid) {
+            return of([]);
+          }
+
+          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
             tap((committees) => {
               this.committeesLoading.set(false);
               this.committeeOptionsSettled.set(true);
@@ -329,8 +334,8 @@ export class MeetingCommitteeManagerComponent {
               this._committeeOptionsFailed.set(true);
               return of([]);
             })
-          )
-        )
+          );
+        })
       ),
       { initialValue: [] }
     );
@@ -370,8 +375,17 @@ export class MeetingCommitteeManagerComponent {
    * @description Called from the options-fetch `tap` with the response itself, because
    * `committeeOptions()` has not updated yet. A retry that learns the group does not vote must
    * drop statuses the failure window preserved before writing the parent form.
+   *
+   * No-op until `initializeFromSelectedCommittees` has run: this tap fires (and flips
+   * `committeeOptionsSettled`) before the deferred `toObservable` combineLatest can seed
+   * `selectedCommitteeIds` from the parent. Writing the parent form from `[]` would wipe saved
+   * groups on an ordinary edit-mode load. Retry always has `selectionApplied` by then.
    */
   private reconcileVotingFilter(options: Committee[]): void {
+    if (!this.selectionApplied) {
+      return;
+    }
+
     const ids = this.selectedCommitteeIds();
     if (!meetingSelectionHasVotingFilter(ids, options, this.selectedVotingStatuses().length)) {
       this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });

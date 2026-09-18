@@ -1481,6 +1481,10 @@ describe('meetingSelectionHasVotingFilter', () => {
     expect(meetingSelectionHasVotingFilter(['board'], [board], 1)).toBe(false);
     expect(meetingSelectionHasVotingFilter(['voting'], [voting], 0)).toBe(true);
   });
+
+  it('treats a duplicate selected uid as resolved once that uid is in the option list', () => {
+    expect(meetingSelectionHasVotingFilter(['board', 'board'], [board], 1)).toBe(false);
+  });
 });
 
 describe('reconcileOptimisticPad', () => {

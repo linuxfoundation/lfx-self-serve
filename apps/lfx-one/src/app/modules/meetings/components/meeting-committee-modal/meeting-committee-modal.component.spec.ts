@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MeetingCommitteeModalComponent } from './meeting-committee-modal.component';
 
 const BOARD = { uid: 'committee-board', name: 'Board', category: 'Board', enable_voting: false, public: true, sso_group_enabled: false } as Committee;
+const LEGAL = { uid: 'committee-legal', name: 'Legal', category: 'Legal', enable_voting: false, public: true, sso_group_enabled: false } as Committee;
 const VOTING_BOARD = { ...BOARD, enable_voting: true } as Committee;
 
 /** A member of `committeeUid`, carrying only the fields this component reads or forwards. */
@@ -206,5 +207,28 @@ describe('MeetingCommitteeModalComponent — persisting the filter without optio
 
     expect(component.hasVotingEnabledCommittee()).toBe(false);
     expect(component.selectedVotingStatuses()).toEqual([]);
+  });
+
+  it('keeps a saved filter on save when only some selected groups have option metadata', async () => {
+    const { component, fixture, updateMeeting } = await mount(
+      [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee, { uid: LEGAL.uid } as MeetingCommittee],
+      {
+        [BOARD.uid]: boardMembers[BOARD.uid],
+        [LEGAL.uid]: of([member(LEGAL.uid, 'counsel@example.com')]),
+      },
+      [BOARD]
+    );
+    await fixture.whenStable();
+
+    component.form.get('committees')?.setValue([BOARD.uid, LEGAL.uid]);
+    await fixture.whenStable();
+
+    component.form.get('votingStatuses')?.setValue([...component.selectedVotingStatuses(), CommitteeMemberVotingStatus.OBSERVER]);
+    component.onSave();
+    await fixture.whenStable();
+
+    expect(updateMeeting).toHaveBeenCalled();
+    expect(new Set(updateMeeting.mock.calls[0][1].committees[0].allowed_voting_statuses)).toEqual(new Set(['voting_rep', 'observer']));
+    expect(updateMeeting.mock.calls[0][1].committees.map((committee: MeetingCommittee) => committee.uid)).toEqual([BOARD.uid, LEGAL.uid]);
   });
 });

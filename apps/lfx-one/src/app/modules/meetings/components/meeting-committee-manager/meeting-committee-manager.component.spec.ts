@@ -36,7 +36,10 @@ async function mount(
   // An observable rather than only a list, so a test can supply the failing options fetch that
   // `initCommitteeOptions` maps onto an empty one — indistinguishable in the result, opposite in cause.
   options: Committee[] | Observable<Committee[]> = [BOARD],
-  projectUid: string | null = 'project-1'
+  projectUid: string | null = 'project-1',
+  // Composer-like: parent `committees` already holds the saved groups. Default `[]` hid the first-
+  // load wipe — `reconcileVotingFilter` writing `[]` over `[]` is a no-op in the assertions.
+  seedParentCommittees = false
 ) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -60,7 +63,7 @@ async function mount(
     'form',
     new FormGroup({
       visibility: new FormControl('private'),
-      committees: new FormControl([]),
+      committees: new FormControl(seedParentCommittees ? saved : []),
       show_meeting_attendees: new FormControl(false),
     })
   );
@@ -585,6 +588,15 @@ describe('MeetingCommitteeManagerComponent — persisting the filter without opt
     expect(component.hasVotingEnabledCommittee()).toBe(true);
     expect(persisted(component)).toEqual(['voting_rep']);
   });
+
+  it('does not wipe saved parent committees when options settle before selection is applied', async () => {
+    const { component, fixture } = await mount(savedVotingRep, boardMembers, [BOARD], 'project-1', true);
+    await fixture.whenStable();
+
+    const parent = component.form().get('committees')?.value as MeetingCommittee[];
+    expect(parent.map((committee) => committee.uid)).toEqual([BOARD.uid]);
+    expect(parent[0]?.allowed_voting_statuses).toEqual(['voting_rep']);
+  });
 });
 
 /**
@@ -667,6 +679,42 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     await fixture.whenStable();
 
     expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    const committeeService = TestBed.inject(CommitteeService);
+    vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));
+    component.retryCommitteeOptions();
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(false);
+    expect(component.selectedVotingStatuses()).toEqual([]);
+    expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
+  });
+
+  it('drops a filter the organizer edited during the failure window once retry metadata says the group does not vote', async () => {
+    const savedVotingRep = [{ uid: BOARD.uid, allowed_voting_statuses: ['voting_rep'] } as MeetingCommittee];
+    const boardMembers = {
+      [BOARD.uid]: of([
+        votingMember(BOARD.uid, 'rep@example.com', CommitteeMemberVotingStatus.VOTING_REP),
+        votingMember(BOARD.uid, 'observer@example.com', CommitteeMemberVotingStatus.OBSERVER),
+      ]),
+    };
+    const { component, fixture } = await mount(
+      savedVotingRep,
+      boardMembers,
+      throwError(() => new Error('options boom'))
+    );
+    await fixture.whenStable();
+
+    expect(component.hasVotingEnabledCommittee()).toBe(true);
+
+    component.committeeForm.patchValue({
+      votingStatuses: [...component.selectedVotingStatuses(), CommitteeMemberVotingStatus.OBSERVER],
+    });
+    await fixture.whenStable();
+
+    expect(new Set((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses)).toEqual(
+      new Set(['voting_rep', 'observer'])
+    );
 
     const committeeService = TestBed.inject(CommitteeService);
     vi.mocked(committeeService.getCommitteesByProjectOrThrow).mockReturnValue(of([BOARD]));

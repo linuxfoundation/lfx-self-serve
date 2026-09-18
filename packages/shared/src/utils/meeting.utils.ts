@@ -1455,7 +1455,7 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
  * "keep the filter": too few guests is visible, too many is not.
  */
 export function meetingSelectionHasVotingFilter(
-  selectedIds: readonly string[],
+  selectedIds: ReadonlyArray<string>,
   options: ReadonlyArray<{ uid: string; enable_voting?: boolean }>,
   savedVotingStatusCount: number
 ): boolean {
@@ -1463,9 +1463,12 @@ export function meetingSelectionHasVotingFilter(
     return false;
   }
 
+  const optionUids = new Set(options.map((option) => option.uid));
+  const allResolved = selectedIds.every((id) => optionUids.has(id));
   const selected = new Set(selectedIds);
   const known = options.filter((option) => selected.has(option.uid));
-  if (known.length < selectedIds.length) {
+
+  if (!allResolved) {
     return known.some((option) => option.enable_voting) || savedVotingStatusCount > 0;
   }
 
