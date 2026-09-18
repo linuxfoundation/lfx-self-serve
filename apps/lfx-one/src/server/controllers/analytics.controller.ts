@@ -2828,6 +2828,55 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/health-overview-kpis
+   * Get Health Metrics Overview KPI tile-strip data for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getHealthOverviewKpis(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_health_overview_kpis');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      const range = getStringQueryParam(req, 'range') || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_health_overview_kpis',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_health_overview_kpis',
+        });
+      }
+
+      const validatedRange = assertHealthMetricsRange(range, 'get_health_overview_kpis');
+
+      // HEALTH_OVERVIEW_KPIS only exposes 4 period-suffix columns (no 4th-year-back variant) — reuse
+      // the same 4-option set the period selector renders so this never silently drifts from the UI.
+      const allowedRanges = new Set(buildHealthMetricsOverviewPeriods().map((period) => period.range));
+      if (!allowedRanges.has(validatedRange)) {
+        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${[...allowedRanges].join(', ')}`, {
+          operation: 'get_health_overview_kpis',
+        });
+      }
+
+      const response = await this.projectService.getHealthOverviewKpis(foundationSlug, validatedRange);
+
+      logger.success(req, 'get_health_overview_kpis', startTime, {
+        foundation_slug: foundationSlug,
+        range: validatedRange,
+        area_count: response.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/event-growth
    * Get event growth metrics (total attendees, top events by attendance/revenue)
    */
