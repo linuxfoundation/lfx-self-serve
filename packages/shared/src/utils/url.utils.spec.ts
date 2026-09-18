@@ -167,9 +167,19 @@ describe('isPrivateHost', () => {
     ['a bare localhost-wildcard domain', 'localtest.me'],
     ['any subdomain of a localhost wildcard', 'anything.localtest.me'],
     ['the lvh.me loopback wildcard', 'foo.lvh.me'],
+    // traefik.me is the same shape: a subdomain that spells no address still resolves to
+    // loopback, so the spelled-address scan can never match it.
+    ['a traefik.me subdomain that spells no address', 'whoami.traefik.me'],
+    ['the bare traefik.me domain', 'traefik.me'],
+    // BARE hex is a documented nip.io/sslip.io spelling. Without decoding it, this fell through
+    // every later check and was allowed.
+    ['a bare-hex packed metadata address', 'a9fea9fe.nip.io'],
+    ['a bare-hex packed loopback address', '7f000001.nip.io'],
     // A malformed 4-LABEL host used to skip the fail-closed check entirely, a label count the
-    // attacker picks for free.
-    ['a malformed 4-label host', 'foo_bar.a.b.com'],
+    // attacker picks for free. Uses `$`, not `_`: underscores are LEGAL in DNS labels, so an
+    // underscore host is the wrong stand-in for "malformed" and this case asserted a
+    // false positive.
+    ['a malformed 4-label host', 'foo$bar.a.b.com'],
     // Deprecated IPv6 site-local, alongside link-local and unique-local.
     ['an IPv6 site-local address', '[fec0::1]'],
   ])('blocks %s', (_label, hostname) => {
@@ -210,6 +220,12 @@ describe('isPrivateHost', () => {
     ['a public IPv4-mapped address in hex', '[::ffff:808:808]'],
     ['a public IPv4-compatible address', '[::8.8.8.8]'],
     ['a public 6to4 address', '[2002:808:808::]'],
+    // A bare-hex label is only decoded under a wildcard-DNS suffix -- elsewhere it is a word.
+    ['a bare-hex label outside a wildcard suffix', 'a9fea9fe.example.com'],
+    ['a bare-hex PUBLIC address under a wildcard suffix', '08080808.nip.io'],
+    // Underscores are legal in DNS labels and ordinary in internal CDN names. Denying them
+    // refused real hosts without refusing a single address spelling.
+    ['an underscored hostname', 'my_cdn.example.com'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });
@@ -244,7 +260,7 @@ describe('isPrivateHost', () => {
   it.each([
     ['a malformed octet count', '10.0.0'],
     ['a five-octet address', '10.0.0.1.5'],
-    ['an underscore host', 'foo_bar'],
+    ['a host with an illegal character', 'foo$bar'],
     ['a stray bracket', '[::1'],
   ])('refuses %s rather than allowing an unrecognised shape', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);

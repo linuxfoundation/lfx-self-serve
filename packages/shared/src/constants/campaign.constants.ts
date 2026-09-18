@@ -1378,8 +1378,9 @@ export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
 /**
  * Most sponsor logos carried on a brief.
  *
- * Shared rather than helper-local because BOTH the scrape path and the controller's allow-list
- * enforce it, and each entry is a server-side image fetch downstream — a cap that lives in one
- * of the two can silently diverge from the other.
+ * Shared rather than helper-local because THREE sites enforce it — the scrape path, the
+ * controller's allow-list, and the client preview — and each entry is a server-side image fetch
+ * downstream. A cap that lives in one of them can silently diverge from the others, and the
+ * preview would then promise a logo the draft drops.
  */
 export const MAX_SPONSORS = 10;

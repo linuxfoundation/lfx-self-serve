@@ -1166,12 +1166,12 @@ export class CampaignsComponent {
    * The hero image URL exactly as it will be staged, or '' when it will not be.
    *
    * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
-   * string off a restored brief, and the shared `canonicalHttpUrl` the controller also uses drops non-http(s)
-   * and private hosts — so binding the raw value showed a banner the draft omits AND made the
+   * string off a restored brief, and the shared `canonicalHttpUrl` that the controller also uses
+   * drops non-http(s) and private hosts — so binding the raw value showed a banner the draft
+   * omits AND made the
    * BROWSER fetch it, which the server-side guard cannot prevent. Same validator as the
    * controller, so the two cannot drift.
-   */
-  /**
+   *
    * RESIDUAL RISK, recorded rather than implied.
    *
    * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
@@ -2487,7 +2487,9 @@ export class CampaignsComponent {
           // the operator just previewed. Re-deriving the trim inline here is the duplication that
           // signal exists to remove, and it already drifted once.
           ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: registrationUrl } : {}),
-          // Gated on `copy` as well, and this one is DATA LOSS rather than a cosmetic gap:
+          // Gated on a non-blank BODY (via `emailHeroImageUrl`, which reads
+          // `emailBodyIsStageable`), not merely on `copy` being non-null -- a present-but-empty
+          // body is the reachable case, and this one is DATA LOSS rather than a cosmetic gap:
           // `RebuildEmailContent` replaces the whole widget tree, and a rebuild carrying a hero
           // but no body drops the cloned template's body entirely (see that function's comment
           // and TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone). Staging does not require

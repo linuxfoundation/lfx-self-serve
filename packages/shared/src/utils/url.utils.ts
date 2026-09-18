@@ -284,15 +284,7 @@ export function isProfileHubPath(url: string): boolean {
  * and closes the DNS-rebinding window -- stays the authoritative check. This stops the payload
  * from ever being persisted.
  */
-/**
- * Wildcard-DNS services that resolve a spelled-out address to that address.
- *
- * The bypass only works through a resolver that performs that mapping, so the spelled-address
- * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
- * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
- * legitimate hero image or CTA.
- */
-const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io', 'traefik.me'];
+const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io'];
 
 /**
  * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
@@ -301,8 +293,35 @@ const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io', 'traefik.me'];
  * look handled while the scan could never match, because there is no address in the name to find.
  * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
  */
-const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me'];
+/**
+ * Decode a whole IPv4 address packed into ONE label, in the spellings the wildcard-DNS services
+ * accept: `0x`-prefixed hex, BARE hex, and packed decimal. All three of `0xa9fea9fe`, `a9fea9fe`
+ * and `2852039166` are 169.254.169.254.
+ *
+ * Bare hex is the one that bit us: it is documented by nip.io and sslip.io, and without it
+ * `a9fea9fe.nip.io` decoded to NaN and fell through every later check.
+ *
+ * Returns NaN for anything that is not one of those forms -- including a bare-hex-shaped label
+ * that is really a word, which cannot be distinguished here and is why this only runs under a
+ * wildcard-DNS suffix.
+ */
+function decodePackedAddress(label: string): number {
+  if (/^0x[0-9a-f]{8}$/.test(label)) return parseInt(label.slice(2), 16);
+  if (/^[0-9a-f]{8}$/.test(label)) return parseInt(label, 16);
+  if (/^\d{8,10}$/.test(label)) return Number(label);
+  return NaN;
+}
 
+const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
+
+/**
+ * Wildcard-DNS services that resolve a spelled-out address to that address.
+ *
+ * The bypass only works through a resolver that performs that mapping, so the spelled-address
+ * scan is limited to these. Scanning every hostname instead over-blocks ordinary version and
+ * build labels (`release-10-0-0-5.example.com`), and a false positive here silently drops a
+ * legitimate hero image or CTA.
+ */
 export function isPrivateHost(hostname: string): boolean {
   // Trailing ROOT DOTS are stripped first, ALL of them. `new URL('http://localhost./x').hostname`
   // keeps the dot, and a resolver treats `localhost.` and `localhost` as the same absolute name;
@@ -439,7 +458,7 @@ export function isPrivateHost(hostname: string): boolean {
     // Hex and decimal spellings of the whole address, which these services also accept:
     // `0xa9fea9fe.nip.io` and `2852039166.nip.io` are both 169.254.169.254.
     for (const label of host.split('.')) {
-      const packed = /^0x([0-9a-f]{8})$/.exec(label) ? parseInt(label.slice(2), 16) : /^\d{8,10}$/.test(label) ? Number(label) : NaN;
+      const packed = decodePackedAddress(label);
       if (Number.isInteger(packed) && packed >= 0 && packed <= 0xffffffff) {
         const quad = `${(packed >>> 24) & 0xff}.${(packed >>> 16) & 0xff}.${(packed >>> 8) & 0xff}.${packed & 0xff}`;
         if (isPrivateHost(quad)) return true;
@@ -460,12 +479,16 @@ export function isPrivateHost(hostname: string): boolean {
   // while the same shape at 2 or 3 labels was refused -- a label count the attacker picks for
   // free, which undoes the invariant the check exists to state.
   //
+  // Underscores are permitted: they are legal in DNS labels and ordinary in internal CDN and
+  // service names (`my_cdn.example.com`), so denying them refused real hosts without refusing a
+  // single address spelling -- an over-denial in the opposite direction to the one this fixes.
+  //
   // It judges `addr`, NOT `host`. By this point the mapped, compatible and RFC 2765 forms have
   // been DECODED into `addr`, while `host` still carries their colons and brackets -- so reading
   // `host` here refused a PUBLIC address (`[::ffff:8.8.8.8]`) purely for how it was spelled,
   // while 6to4 returned earlier and allowed the very same address. The decoded value is the one
   // every other check below reads, and it is the one that means something.
-  if (!addr.split('.').every((label) => /^[a-z0-9-]+$/.test(label))) return true;
+  if (!addr.split('.').every((label) => /^[a-z0-9_-]+$/.test(label))) return true;
 
   const octets = addr.split('.');
   // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name
@@ -475,11 +498,14 @@ export function isPrivateHost(hostname: string): boolean {
   // else fails closed, so a fifth spelling of an address is refused rather than allowed.
   if (octets.length !== 4) {
     const labels = host.split('.');
+    // Underscores allowed here for the same reason as the check above -- the two encode ONE rule
+    // and must stay identical; they have drifted apart before.
+    //
     // Every label must be a valid one. The numeric test applies to the host as a WHOLE, not to
     // each label: `123.example.com` and `2024.events.example.com` are ordinary hostnames, and
     // rejecting them was a false positive. An ALL-numeric dotted host is not a name at all --
     // it is a malformed IP literal, which is what must fail closed.
-    const everyLabelValid = labels.every((l) => /^[a-z0-9-]+$/.test(l));
+    const everyLabelValid = labels.every((l) => /^[a-z0-9_-]+$/.test(l));
     const allNumeric = labels.every((l) => /^[0-9]+$/.test(l));
     return !everyLabelValid || allNumeric;
   }
