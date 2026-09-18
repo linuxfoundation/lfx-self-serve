@@ -258,7 +258,17 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
-      // Org Lens — dark-launched behind `org-lens-enabled` (CanMatch); /org/* is invisible when the flag is off.
+      // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
+      // outside its CanMatch: `orgLensEnabledGuard` and `orgPathParamGuard` both redirect here, so the
+      // address must resolve without re-entering the guard that sent the viewer to it (no loop), and
+      // it must render even when the Org Lens flag is off or LaunchDarkly never answered.
+      {
+        path: 'org/not-found',
+        title: 'Organization Not Found',
+        data: { lens: 'org' },
+        loadComponent: () => import('./modules/dashboards/org/org-not-found/org-not-found.component').then((m) => m.OrgNotFoundComponent),
+      },
+      // Org Lens — dark-launched behind `org-lens-enabled` (CanMatch); /org/* lands on the dead end above when the flag is off.
       {
         path: 'org',
         canMatch: [orgLensEnabledGuard],

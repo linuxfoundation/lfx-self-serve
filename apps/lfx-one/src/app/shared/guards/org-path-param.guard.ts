@@ -30,10 +30,12 @@ import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
  * - Resolver unavailable (network, timeout, 5xx): an SFID is let through (the pages read by uid
  *   anyway, FR-020); a slug cannot be trusted and lands on not-found. A 4xx is an answer about the
  *   address, not an outage, and fails closed the same way a miss does.
- * - Server: resolves the same way (cookies are forwarded to the BFF) so the initial HTML shows the
- *   organization the address names, never the cookie selection (SC-010) — but issues no redirect
- *   (FR-021): where the browser would redirect, the server renders no organization at all (the
- *   page skeleton) and lets the browser run decide after hydration.
+ * - Server: resolves the same way (cookies are forwarded to the BFF) so the selection the initial
+ *   HTML is rendered from is the organization the address names, or none — SSR serializes once the
+ *   initial navigation (this guard included) has settled, so the shell and the page share that
+ *   selection (SC-010; the render-level proof is e2e E16). It issues no redirect (FR-021): where the
+ *   browser would redirect, the server clears the selection (page skeleton) and lets the browser run
+ *   decide after hydration.
  */
 export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const isBrowser = isPlatformBrowser(inject(PLATFORM_ID));

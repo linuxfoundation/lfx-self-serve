@@ -10,8 +10,10 @@
  *   E13 — an upper-case slug resolves and the address is lowercased in place (FR-004).
  *   E2  — an SFID address for an organization that has a slug is rewritten to the slug form,
  *         keeping child segments, query and fragment (FR-002).
- *   E9  — an address the resolver cannot answer for this viewer (404) lands on the not-found
- *         address and leaves the previous selection untouched.
+ *   E8/E9 — an address the resolver cannot answer for this viewer (unheld or unknown — one 404 by
+ *         design, DR-002) lands on the Org Lens not-found page inside the shell, names no
+ *         organization, and leaves the previous selection untouched (FR-022…FR-024).
+ *   E10 — with the Org Lens flag off, a deep link lands on the same not-found page, not on `/`.
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
@@ -30,6 +32,7 @@
  * run after hydration. The SSR contract (no cookie organization in the pre-hydration HTML) is E16.
  */
 
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(120_000);
@@ -45,6 +48,9 @@ const ORG_B_UID = '0014100000DlbBBBBB';
 const ORG_B_SLUG = 'deeplink-bravo-llc';
 const ORG_B_NAME = 'DeepLink Bravo, LLC';
 const UNKNOWN_SLUG = 'no-such-organization';
+// An organization that exists for someone else: the stub answers the same 404 it gives an unknown slug.
+const UNHELD_SLUG = 'deeplink-charlie-corp';
+const UNHELD_NAME = 'DeepLink Charlie Corp';
 
 const ROLE_GRANTS_BODY = {
   writers: [ORG_A_UID, ORG_B_UID],
@@ -141,6 +147,20 @@ async function stubOrgIdentity(page: Page): Promise<{ resolved: string[] }> {
   return { resolved };
 }
 
+/** Pins `org-lens-enabled` for this page before the app's flag-provider bootstrap runs — see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY` (non-production builds). */
+async function stubOrgLensFlag(page: Page, enabled: boolean): Promise<void> {
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+    JSON.stringify({ [ORG_LENS_ENABLED_FLAG]: enabled }),
+  ] as const);
+}
+
+async function plantSelectionCookie(page: Page, baseURL: string | undefined, uid: string): Promise<void> {
+  // Planted for the configured base URL (E2E_BASE_URL may override localhost).
+  if (!baseURL) throw new Error('baseURL fixture is required to plant the selection cookie');
+  await page.context().addCookies([{ name: 'lfx-selected-account', value: encodeURIComponent(JSON.stringify({ uid })), url: baseURL, sameSite: 'Lax' }]);
+}
+
 async function readSelectionCookie(page: Page): Promise<{ uid: string } | undefined> {
   const cookies = await page.context().cookies();
   const raw = cookies.find((c) => c.name === 'lfx-selected-account')?.value;
@@ -208,23 +228,44 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
   });
 
-  test('E9: an unresolvable slug lands on the not-found address and leaves the selection untouched', async ({ page, context, baseURL }) => {
-    // Asserts the address + selection contract only. The branded Org Lens not-found page is US4; until
-    // it lands, `/org/not-found` is served by the in-shell catch-all.
-    await stubOrgIdentity(page);
-    // Selection B already held from an earlier visit. B, not the first row: if the cookie were lost,
-    // bootstrap would fall back to A and a "still A" assertion could not tell preserved from defaulted.
-    // The cookie is planted for the configured base URL (E2E_BASE_URL may override localhost).
-    if (!baseURL) throw new Error('baseURL fixture is required to plant the selection cookie');
-    await context.addCookies([{ name: 'lfx-selected-account', value: encodeURIComponent(JSON.stringify({ uid: ORG_B_UID })), url: baseURL, sameSite: 'Lax' }]);
+  // Unheld and unknown are one scenario at the wire (the resolver's 404 is the same, DR-002), so the
+  // two contract rows share one body. Selection B, not the first row: if the cookie were lost, bootstrap
+  // would fall back to A and a "still A" assertion could not tell preserved from defaulted.
+  for (const [scenario, slug, leaked] of [
+    ['E8: an organization the viewer does not hold', UNHELD_SLUG, UNHELD_NAME],
+    ['E9: an unknown organization', UNKNOWN_SLUG, UNKNOWN_SLUG],
+  ] as const) {
+    test(`${scenario} lands on the Org Lens not-found page and leaves the selection untouched`, async ({ page, baseURL }) => {
+      await stubOrgIdentity(page);
+      await plantSelectionCookie(page, baseURL, ORG_B_UID);
 
-    await page.goto(`/org/${UNKNOWN_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      await page.goto(`/org/${slug}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
+      // The branded dead end, inside the shell (FR-022): the sidebar selector is still there and still B.
+      await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+      await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+      // FR-023: nothing about the addressed organization reaches the DOM.
+      await expect(page.locator('body')).not.toContainText(leaked);
+      // FR-024: a failed address never rewrites the selection — B survives, and no default took over.
+      expect((await readSelectionCookie(page))?.uid).toBe(ORG_B_UID);
+    });
+  }
+
+  test('E10: with the Org Lens flag off, a deep link lands on the not-found page, not on the dashboard', async ({ page, baseURL }) => {
+    await stubOrgIdentity(page);
+    await stubOrgLensFlag(page, false);
+    await plantSelectionCookie(page, baseURL, ORG_A_UID);
+
+    await page.goto(`/org/${ORG_B_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
     await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
-    // The unknown organization's name never reaches the DOM — there is nothing to show.
-    await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
-    // FR-024: a failed address never rewrites the selection — B survives, and no default took over.
-    expect((await readSelectionCookie(page))?.uid).toBe(ORG_B_UID);
+    await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    // The dead end is reached before any resolution: the addressed organization is never named, and
+    // the selection is untouched.
+    await expect(page.locator('body')).not.toContainText(ORG_B_NAME);
+    expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
   });
 });
