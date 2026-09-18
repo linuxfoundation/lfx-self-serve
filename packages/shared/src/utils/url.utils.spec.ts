@@ -141,6 +141,12 @@ describe('isPrivateHost', () => {
     // Prefixed labels: the signature is scanned at EVERY position now, not just the first.
     ['a prefixed dotted wildcard host', 'cdn.169.254.169.254.nip.io'],
     ['a prefixed dash wildcard host', 'x.10-0-0-1.sslip.io'],
+    // These two were never enumerated. They are caught because the host is NORMALIZED before
+    // scanning -- `-` treated as a separator, leading zeros stripped -- rather than because
+    // someone listed the spelling. That is the point of normalising instead of matching.
+    ['a mixed dot-dash spelling', '169.254-169.254.nip.io'],
+    ['a zero-padded spelling', '0169-0254-0169-0254.nip.io'],
+    ['a dash host with a suffix label', '169-254-169-254.x.nip.io'],
     // IPv4-COMPATIBLE (::/96) carries the address with no `ffff` marker, so the mapped checks
     // miss it.
     ['an IPv4-compatible metadata address', '[::a9fe:a9fe]'],

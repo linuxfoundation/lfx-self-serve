@@ -371,19 +371,20 @@ export function isPrivateHost(hostname: string): boolean {
   // EVERY position, not just the first: `cdn.169.254.169.254.nip.io` and `x.10-0-0-1.sslip.io`
   // are the same bypass with a prefix label. Scanning all labels costs nothing and removes the
   // "which position" question that produced two rounds of narrower fixes.
-  const labelsToScan = host.split('.');
-  for (let i = 0; i + 3 < labelsToScan.length; i++) {
-    const quad = labelsToScan.slice(i, i + 4).join('.');
-    if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(quad) && quad !== host && isPrivateHost(quad)) return true;
-  }
-
-  // DASH notation is the same bypass in the spelling these services also accept:
-  // `169-254-169-254.nip.io` resolves exactly as the dotted form does. Only the FIRST label is
-  // considered, because that is where these services carry the address, and a hyphenated word
-  // elsewhere in a name is ordinary.
-  for (const label of labelsToScan) {
-    const dashed = /^(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})$/.exec(label);
-    if (dashed && host.includes('.') && isPrivateHost(dashed.slice(1, 5).join('.'))) return true;
+  // NORMALIZE, then scan. Wildcard-DNS services accept the address in several spellings --
+  // dotted, dash-separated, mixed, zero-padded -- and matching each one produced a round of
+  // review per spelling. Treating `-` as a separator and stripping leading zeros collapses the
+  // whole family into one form, so a spelling nobody has thought of is covered by construction
+  // rather than by having been listed.
+  //
+  // Every consecutive run of four numeric parts is checked, at any position, so a prefix or
+  // suffix label changes nothing either.
+  const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
+  for (let i = 0; i + 3 < numericParts.length; i++) {
+    const window = numericParts.slice(i, i + 4);
+    if (!window.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
+    const quad = window.join('.');
+    if (quad !== host && isPrivateHost(quad)) return true;
   }
 
   const octets = addr.split('.');
