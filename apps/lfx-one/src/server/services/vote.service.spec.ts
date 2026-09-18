@@ -303,11 +303,11 @@ describe('VoteService', () => {
       expect(settled).toBe(true);
     });
 
-    it('enableVote polls with the explicit 40 × 300 ms budget and the vote_uid filter predicate', async () => {
+    it('enableVote polls with the explicit 36 × 300 ms budget and the vote_uid filter predicate', async () => {
       await service.enableVote(req, CANONICAL_UID);
 
       const options = capturedPollOptions();
-      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 40, retryDelayMs: 300 });
+      expect(options).toMatchObject({ operation: 'enable_vote', maxRetries: 36, retryDelayMs: 300 });
 
       proxyRequest.mockResolvedValue({ resources: [] });
       await expect(options.pollFn()).resolves.toBe(false);
