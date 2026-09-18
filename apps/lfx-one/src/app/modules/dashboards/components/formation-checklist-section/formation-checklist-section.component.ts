@@ -179,7 +179,7 @@ export class FormationChecklistSectionComponent {
         .pipe(
           filter((state) => state === 'ready'),
           take(1),
-          takeUntilDestroyed(this.destroyRef),
+          takeUntilDestroyed(this.destroyRef)
         )
         .subscribe(() => {
           const item = this.items().find((i) => i.template_item_key === itemKey);
