@@ -53,8 +53,11 @@ const SOCKET_TEST_TIMEOUT_MS = 20_000;
 describe('GwProxyController over a real socket', () => {
   let server: Server;
   let baseUrl: string;
+  /** Marker state at the moment the error path asks to respond — the guard's decision point. */
+  let markerAtResponse: boolean | null = null;
 
   beforeEach(async () => {
+    markerAtResponse = null;
     // Stand in for undici: drain whatever the controller forwards, and wrap a stream failure the
     // way it does, so the controller's unwrap logic is exercised rather than bypassed.
     vi.stubGlobal(
@@ -80,6 +83,7 @@ describe('GwProxyController over a real socket', () => {
     server = createServer((req, res) => {
       const expressish = Object.assign(req, { bearerToken: 'token-1', path: '/api/gw/media' }) as unknown as Request;
       const next: NextFunction = ((error: unknown) => {
+        markerAtResponse = hasGwDrainBeenAttempted(expressish);
         // Stands in for apiErrorHandler.
         const status = (error as { statusCode?: number })?.statusCode ?? 500;
         const code = (error as { code?: string })?.code ?? 'unknown';
@@ -98,6 +102,12 @@ describe('GwProxyController over a real socket', () => {
           return this;
         },
       }) as unknown as Response;
+
+      // Mirrors server.ts's mount order: the drain guard wraps the response BEFORE the controller
+      // runs, exactly as it does in production. Without this the harness could not observe the
+      // interaction between the guard and the controller's own drain at all — which is what let the
+      // 413 double-drain regression sit untested.
+      attachGwDrainGuard(expressish, expressishRes);
 
       void controller.proxy(expressish, expressishRes, next);
     });
@@ -165,6 +175,26 @@ describe('GwProxyController over a real socket', () => {
       const result = await upload(UPLOAD_BYTES);
 
       expect(result.clientFinishedWriting).toBe(true);
+    },
+    SOCKET_TEST_TIMEOUT_MS
+  );
+
+  it(
+    'drains the oversized upload through the shared helper, so the guard does not drain again',
+    async () => {
+      // The anti-regression assertion for the 413 double-drain fix, and it has to be read at the
+      // guard's DECISION point rather than after the request settles. Other paths in this
+      // controller also call `drainRequestBody`, so by the time the response has been sent the
+      // marker is set either way — an assertion made then passes even with the fix reverted, which
+      // is exactly how the first attempt at this test came out inert.
+      //
+      // `markerAtResponse` is captured inside the error handler, the moment before `res.end` runs
+      // and therefore the moment `patchedEnd` decides whether to start a second drain. Reverting
+      // the 413 path to its old hand-rolled inline promise makes this false.
+      const result = await upload(UPLOAD_BYTES);
+
+      expect(result.status).toBe(413);
+      expect(markerAtResponse).toBe(true);
     },
     SOCKET_TEST_TIMEOUT_MS
   );
@@ -357,17 +387,15 @@ describe('attachGwDrainGuard fast paths', () => {
     expect(true).toBe(true);
   });
 
-  it('writes through immediately once the request is destroyed mid-drain', () => {
-    // A client that aborts mid-upload: 'end'/'close'/'error' have already fired, so no listener can
-    // settle the drain and only its cap would — but `drainRequestBody` short-circuits on
-    // `destroyed`, so the response is not held for the full cap.
+  it('resolves rather than waiting for the cap when the request is destroyed', async () => {
+    // `drainRequestBody`'s OWN destroyed check, not the guard's — a client that aborts mid-upload
+    // has already fired 'end'/'close'/'error', so no listener can settle the drain and only its cap
+    // would. Reached directly, because the guard's own `destroyed` check fires first and would
+    // otherwise short-circuit before this code runs. (An earlier version of this test went through
+    // the guard and therefore duplicated the case above it.)
     const req = { readableEnded: false, destroyed: true, method: 'POST' } as unknown as Request;
-    const { res, ended } = fakeRes();
-    attachGwDrainGuard(req, res);
 
-    res.end('body');
-
-    expect(ended).toEqual(['body']);
+    await expect(drainRequestBody(req, SOCKET_TEST_TIMEOUT_MS)).resolves.toBeUndefined();
   });
 
   it('ignores a second end() while a drain is still pending', () => {

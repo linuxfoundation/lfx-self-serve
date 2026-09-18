@@ -549,8 +549,8 @@ export class GwModuleOutletComponent {
   /**
    * Keeps the embed's router in step with host-initiated navigation.
    *
-   * Both mounts are `**` wildcards, so moving between two embed URLs — the sidebar's Newsletters
-   * and Broadcasts links, or going back to an index from a detail page — does not recreate this
+   * Both mounts are `**` wildcards, so moving between two embed URLs — moving between two embed
+   * URLs, or going back to an index from a detail page — does not recreate this
    * component. Angular updates the URL with `history.pushState`, which fires no `popstate`, and
    * `popstate` is the only thing the embed's router listens to. The address bar moved while the
    * embed carried on rendering the previous page, and only a reload resolved it.
