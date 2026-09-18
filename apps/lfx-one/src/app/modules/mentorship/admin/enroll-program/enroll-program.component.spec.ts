@@ -6,6 +6,8 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter, Router } from '@angular/router';
+import { provideHttpClient } from '@angular/common/http';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { ButtonComponent } from '@components/button/button.component';
 import { MENTORSHIP_COMING_SOON_DETAIL, createEmptyMentorshipEnrollForm } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipEnrollStep, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
@@ -75,8 +77,8 @@ describe('EnrollProgramComponent', () => {
     fixture.detectChanges();
   };
 
-  /** Advances the wizard through all three steps to the final submit. */
-  const advanceToPrerequisites = (): void => {
+  /** Sets the wizard directly to the prerequisites step with a valid form. */
+  const setPrerequisitesStep = (): void => {
     fillValidForm();
     component['nameLookupStatus'].set('available');
     component['step'].set('prerequisites');
@@ -89,7 +91,13 @@ describe('EnrollProgramComponent', () => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [EnrollProgramComponent],
-      providers: [provideNoopAnimations(), provideRouter([]), { provide: MessageService, useValue: { add: toast } }],
+      providers: [
+        provideNoopAnimations(),
+        provideRouter([]),
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        { provide: MessageService, useValue: { add: toast } },
+      ],
     });
 
     await TestBed.overrideComponent(EnrollProgramComponent, {
@@ -122,7 +130,7 @@ describe('EnrollProgramComponent', () => {
   });
 
   it('shows a coming-soon toast on submit without claiming enrollment was created', () => {
-    advanceToPrerequisites();
+    setPrerequisitesStep();
 
     component['onNext']();
 
@@ -135,27 +143,24 @@ describe('EnrollProgramComponent', () => {
   });
 
   it('does not navigate away after submission, so the user keeps their work', () => {
-    advanceToPrerequisites();
+    setPrerequisitesStep();
 
     component['onNext']();
 
     expect(router.navigate).not.toHaveBeenCalled();
   });
 
-  it('does not issue an HTTP enrollment request', () => {
-    advanceToPrerequisites();
+  it('does not issue any HTTP request on submission', () => {
+    setPrerequisitesStep();
+    const httpTesting = TestBed.inject(HttpTestingController);
 
     component['onNext']();
 
-    // The component has no HttpClient injection and no enrollment POST call.
-    // If one were re-added, TestBed would fail to inject it (no HttpClientModule
-    // is provided). This test documents that the submission path is toast-only.
-    expect(toast).toHaveBeenCalledTimes(1);
-    expect(toast.mock.calls[0][0].severity).toBe('info');
+    httpTesting.verify();
   });
 
   it('preserves form values and logo preview after the coming-soon toast', () => {
-    advanceToPrerequisites();
+    setPrerequisitesStep();
     component['form'].controls.logoPreviewUrl.setValue('blob:http://localhost/fake-preview');
 
     component['onNext']();
