@@ -2003,7 +2003,9 @@ describe('ProjectService — getHealthOverviewKpis', () => {
         {
           EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
           EVENTS_STATUS: 'healthy',
-          CERTIFICATIONS_EARNED_COUNT: 42,
+          // >1,000 so formatNumber's compact notation is actually exercised, not just its identity
+          // behavior on small integers (which the pre-formatNumber `String()` code also produced).
+          CERTIFICATIONS_EARNED_COUNT: 1240,
           TRAINING_STATUS: 'needs_attention',
           // Deliberately distinct from the frontend's still-fixture-backed `code` stat value (184)
           // so this test can't pass by accident against stale fixture data.
@@ -2020,7 +2022,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     expect(result).toEqual([
       expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok', showStatus: true }),
-      expect.objectContaining({ area: 'trn', statValue: '42', statLabel: 'certifications earned', classification: 'watch' }),
+      expect.objectContaining({ area: 'trn', statValue: '1.2K', statLabel: 'certifications earned', classification: 'watch' }),
       expect.objectContaining({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' }),
       expect.objectContaining({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'ok' }),
       expect.objectContaining({ area: 'code', statValue: '2.5K', statLabel: 'active contributors', classification: 'none' }),
@@ -2128,7 +2130,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     );
   });
 
-  it('hides the events status chip when the goal is set but EVENTS_STATUS is unpopulated, instead of showing a conflicting "Awaiting data" chip', async () => {
+  it('shows an "Awaiting data" events status chip when the goal is set but EVENTS_STATUS is unpopulated, matching how trn/mem/non treat a null status', async () => {
     execute.mockResolvedValueOnce({
       rows: [
         {
@@ -2149,7 +2151,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     expect(result).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'none', showStatus: false }),
+        expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'none', showStatus: true }),
       ])
     );
   });

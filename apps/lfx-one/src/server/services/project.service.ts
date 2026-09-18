@@ -6227,10 +6227,10 @@ export class ProjectService {
         statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
         classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
         evaluatedAt,
-        // "No registration goal set" is a distinct state from "awaiting data" — hide the status
-        // chip rather than let it read as an urgency signal that was never computed. Keyed off
-        // EVENTS_STATUS (what the chip actually renders), not eventsGoalPct (the stat column).
-        showStatus: row.EVENTS_STATUS != null,
+        // Hide only when there's truly nothing to say (no goal, no status). Any goal or any status
+        // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
+        // how trn/mem/non already treat a null status column.
+        showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
       }),
       trn: () => ({
         area: 'trn',
@@ -6260,9 +6260,9 @@ export class ProjectService {
         area: 'code',
         statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
         statLabel: 'active contributors',
-        // No _STATUS column backs this area (see method doc) — naming the stat column here isn't
-        // an inconsistency with the sibling '_status' sources, it reflects that there's no status.
-        statSource: 'HEALTH_OVERVIEW_KPIS',
+        // No _STATUS column backs this area (see method doc), so unlike the sibling areas above,
+        // statSource names the stat's own column rather than a status column.
+        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
         classification: 'none',
         evaluatedAt,
       }),
