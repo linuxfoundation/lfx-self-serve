@@ -124,6 +124,16 @@ describe('isPrivateHost', () => {
     // denies the shape a bypass attempt takes.
     ['an empty interior label', 'local..host'],
     ['a leading empty label', '..localhost'],
+    // Wildcard-DNS bypass hosts spell the address they resolve to, which is a detectable
+    // signature. A name that points at private space WITHOUT spelling it remains this
+    // function's documented limitation and the dial-time guard's job.
+    ['a nip.io metadata host', '169.254.169.254.nip.io'],
+    ['a nip.io loopback host', '127.0.0.1.nip.io'],
+    ['an sslip.io rfc1918 host', '10.0.0.1.sslip.io'],
+    // Translated forms carry an IPv4 destination INSIDE an IPv6 address, so judging the literal
+    // alone misses them. campaign-service's dial guard decodes NAT64 for the same reason.
+    ['a NAT64-translated metadata address', '[64:ff9b::a9fe:a9fe]'],
+    ['a 6to4-translated metadata address', '[2002:a9fe:a9fe::]'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
@@ -140,6 +150,9 @@ describe('isPrivateHost', () => {
     ['a single-digit label', '1.gravatar.com'],
     ['a year-prefixed subdomain', '2024.events.example.com'],
     ['a public host with trailing dots', 'cdn.example.com..'],
+    // A PUBLIC address in a wildcard name is not a bypass -- denying it would break a legitimate
+    // use of the same service.
+    ['a nip.io host for a public address', '8.8.8.8.nip.io'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });
@@ -204,5 +217,14 @@ describe('canonicalHttpUrl', () => {
     ['an unparsable value', 'not-a-url'],
   ])('refuses %s', (_label, input) => {
     expect(canonicalHttpUrl(input)).toBe('');
+  });
+
+  // The embedded-quad check re-judges the address it extracts, and a bare dotted-quad matches
+  // that pattern AS ITSELF -- which recursed until the stack blew. Caught locally; it would have
+  // been a hang in a request handler.
+  it('does not recurse on a bare dotted-quad', () => {
+    expect(() => isPrivateHost('93.184.216.34')).not.toThrow();
+    expect(isPrivateHost('93.184.216.34')).toBe(false);
+    expect(isPrivateHost('10.0.0.1')).toBe(true);
   });
 });

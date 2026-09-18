@@ -317,8 +317,38 @@ export function isPrivateHost(hostname: string): boolean {
     // A genuine IPv6 literal: ::1 loopback, fe80::/10 link-local, fc00::/7 unique-local.
     const groups = addr.split(':');
     const first = groups.find((g) => g !== '') ?? '';
-    return addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first);
+    if (addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first)) return true;
+
+    // TRANSLATED forms carry an IPv4 destination inside an IPv6 address, so judging the IPv6
+    // literal alone misses it entirely: 64:ff9b::/96 is well-known NAT64 (RFC 6052) and
+    // 2002::/16 is 6to4 (RFC 3056). campaign-service's dial-time guard decodes NAT64 for exactly
+    // this reason; mirroring it here keeps the persisted value from carrying the payload at all.
+    // The last two groups are the embedded IPv4 in both encodings.
+    const isNat64 = /^0*64:ff9b:/.test(addr);
+    const is6to4 = /^2002:/.test(addr);
+    if (isNat64 || is6to4) {
+      const hex = groups.filter((g) => g !== '');
+      const pair = isNat64 ? hex.slice(-2) : hex.slice(1, 3);
+      if (pair.length === 2 && pair.every((g) => /^[0-9a-f]{1,4}$/.test(g))) {
+        const hi = parseInt(pair[0], 16);
+        const lo = parseInt(pair[1], 16);
+        return isPrivateHost(`${hi >> 8}.${hi & 0xff}.${lo >> 8}.${lo & 0xff}`);
+      }
+      // Declared as a translation prefix but undecodable: refuse rather than fall through.
+      return true;
+    }
+    return false;
   }
+
+  // A NAME that EMBEDS a dotted-quad is the wildcard-DNS bypass shape: `169.254.169.254.nip.io`
+  // and `10.0.0.1.sslip.io` resolve to the address they spell out. This is a signature, not
+  // resolution -- a name pointing at private space without spelling it stays this function's
+  // documented limitation and the dial-time guard's job -- but the spelled-out form is both the
+  // common bypass and cheap to deny.
+  // Guarded against self-recursion: a bare dotted-quad matches this pattern as itself, so only
+  // a quad with a LABEL beside it is an embedded one worth re-judging.
+  const embedded = /(^|\.)((?:\d{1,3}\.){3}\d{1,3})(\.|$)/.exec(host);
+  if (embedded && embedded[2] !== host && isPrivateHost(embedded[2])) return true;
 
   const octets = addr.split('.');
   // A NAME rather than an IPv4 literal is allowed: this function cannot resolve, so a DNS name

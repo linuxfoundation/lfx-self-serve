@@ -2387,7 +2387,9 @@ export class CampaignsComponent {
     // live lets a generation that completes mid-stage make them disagree -- shipping a hero or
     // button whose body came from a copy that no longer exists. One moment in time, one config.
     const copy = this.emailCopy();
-    const bodyIsStageable = this.emailBodyIsStageable();
+    // No separate bodyIsStageable snapshot: emailHeroImageUrl, emailSponsors and emailCtaLabel
+    // each already require it, so snapshotting them captures the body condition too. A fifth
+    // variable would only be a second place for the same fact to live.
     const heroImageUrl = this.emailHeroImageUrl();
     const sponsors = this.emailSponsors();
     const ctaLabel = this.emailCtaLabel();
