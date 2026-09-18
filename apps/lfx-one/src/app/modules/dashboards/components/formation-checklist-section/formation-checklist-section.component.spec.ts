@@ -3,7 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal, WritableSignal } from '@angular/core';
+import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter, Router } from '@angular/router';
@@ -83,6 +83,25 @@ function buildResponse(lifecycle: FormationLifecycle | null, lifecycleRaw: strin
   };
 }
 
+function buildSharedProviders(fetchResult: Observable<FormationChecklistResponse>, ctx: WritableSignal<{ uid: string; name: string; slug: string } | null>) {
+  return [
+    provideHttpClient(),
+    provideHttpClientTesting(),
+    provideRouter([]),
+    provideNoopAnimations(),
+    { provide: MessageService, useValue: { add: vi.fn() } },
+    {
+      provide: ProjectContextService,
+      useValue: {
+        activeContext: ctx,
+        activeProjectAnnouncementDate: signal<string | null>(null),
+        activeProjectAnnouncementDateLoading: signal(false),
+        activeProjectAnnouncementDateHasError: signal(false),
+      },
+    },
+  ];
+}
+
 describe('FormationChecklistSectionComponent', () => {
   let fixture: ComponentFixture<FormationChecklistSectionComponent>;
   let getProjectFormation: ReturnType<typeof vi.fn>;
@@ -112,20 +131,7 @@ describe('FormationChecklistSectionComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FormationChecklistSectionComponent],
       providers: [
-        provideHttpClient(),
-        provideHttpClientTesting(),
-        provideRouter([]),
-        provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        {
-          provide: ProjectContextService,
-          useValue: {
-            activeContext,
-            activeProjectAnnouncementDate: signal<string | null>(null),
-            activeProjectAnnouncementDateLoading: signal(false),
-            activeProjectAnnouncementDateHasError: signal(false),
-          },
-        },
+        ...buildSharedProviders(fetchResult, activeContext),
         { provide: FormationService, useValue: { getProjectFormation, getQueueFormationChecklist } },
       ],
     }).compileComponents();
@@ -352,38 +358,26 @@ describe('FormationChecklistSectionComponent', () => {
   describe('?item= deep-link (GH-2573)', () => {
     async function renderWithItem(
       itemKey: string | null,
-      opts: { response?: FormationChecklistResponse; fetchResult?: Observable<FormationChecklistResponse> } = {}
+      opts: {
+        response?: FormationChecklistResponse;
+        fetchResult?: Observable<FormationChecklistResponse>;
+        /** Provide 'server' to assert the SSR guard short-circuits initDeepLink. */
+        platformId?: string;
+      } = {}
     ) {
       TestBed.resetTestingModule();
       const response = opts.response ?? buildResponse('live', 'live');
       const fetchResult = opts.fetchResult ?? of(response);
       const contextSignal = signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' });
+      const formationMock = vi.fn().mockReturnValue(fetchResult);
 
       await TestBed.configureTestingModule({
         imports: [FormationChecklistSectionComponent],
         providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          provideRouter([]),
-          provideNoopAnimations(),
-          { provide: MessageService, useValue: { add: vi.fn() } },
-          {
-            provide: ProjectContextService,
-            useValue: {
-              activeContext: contextSignal,
-              activeProjectAnnouncementDate: signal<string | null>(null),
-              activeProjectAnnouncementDateLoading: signal(false),
-              activeProjectAnnouncementDateHasError: signal(false),
-            },
-          },
-          {
-            provide: FormationService,
-            useValue: { getProjectFormation: vi.fn().mockReturnValue(fetchResult), getQueueFormationChecklist: vi.fn().mockReturnValue(fetchResult) },
-          },
-          {
-            provide: ActivatedRoute,
-            useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } },
-          },
+          ...buildSharedProviders(fetchResult, contextSignal),
+          { provide: FormationService, useValue: { getProjectFormation: formationMock, getQueueFormationChecklist: formationMock } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } } },
+          ...(opts.platformId ? [{ provide: PLATFORM_ID, useValue: opts.platformId }] : []),
         ],
       }).compileComponents();
 
@@ -395,22 +389,24 @@ describe('FormationChecklistSectionComponent', () => {
       await f.whenStable();
       f.detectChanges();
 
-      return { fixture: f, navigateSpy };
+      return { fixture: f, navigateSpy, formationMock };
     }
+
+    const wantNavigateArgs = { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true };
 
     it('opens the matching item drawer and clears ?item= from the URL', async () => {
       const { fixture, navigateSpy } = await renderWithItem('test-item');
 
       expect(fixture.componentInstance.drawerVisible()).toBe(true);
       expect(fixture.componentInstance.drawerItemAddress()).toEqual({ projectUid: 'project:test', itemKey: 'test-item' });
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
     });
 
     it('clears ?item= without opening a drawer when the key matches no item', async () => {
       const { fixture, navigateSpy } = await renderWithItem('unknown-key');
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
     });
 
     it('clears ?item= on a terminal no-items state without opening a drawer', async () => {
@@ -418,13 +414,49 @@ describe('FormationChecklistSectionComponent', () => {
       const { fixture, navigateSpy } = await renderWithItem('test-item', { response: emptyChecklist });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { item: null } }));
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
     });
 
-    it('preserves ?item= on the retryable error state so the user can retry', async () => {
+    it('clears ?item= on a terminal no-template state without opening a drawer', async () => {
+      const noTemplateResponse: FormationChecklistResponse = { ...buildResponse('live', 'live'), template: null };
+      const { fixture, navigateSpy } = await renderWithItem('test-item', { response: noTemplateResponse });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+    });
+
+    it('preserves ?item= on the retryable error state so an in-page retry can still open the drawer', async () => {
       const { fixture, navigateSpy } = await renderWithItem('test-item', {
         fetchResult: throwError(() => new Error('network error')),
       });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).not.toHaveBeenCalled();
+    });
+
+    it('opens the drawer and clears ?item= after an in-page retry succeeds', async () => {
+      const response = buildResponse('live', 'live');
+      // First call errors; second call (after onRetry) succeeds.
+      const { fixture, navigateSpy, formationMock } = await renderWithItem('test-item', {
+        fetchResult: throwError(() => new Error('network error')),
+      });
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(false);
+      expect(navigateSpy).not.toHaveBeenCalled();
+
+      // Wire the retry to succeed, then trigger it.
+      formationMock.mockReturnValue(of(response));
+      fixture.componentInstance['onRetry']();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.componentInstance.drawerVisible()).toBe(true);
+      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+    });
+
+    it('does not open a drawer or clear ?item= when running on the server (SSR guard)', async () => {
+      const { fixture, navigateSpy } = await renderWithItem('test-item', { platformId: 'server' });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
       expect(navigateSpy).not.toHaveBeenCalled();

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { isPlatformBrowser } from '@angular/common';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -352,12 +352,9 @@ export class FormationChecklistSectionComponent {
     const itemKey = this.route.snapshot.queryParamMap.get('item');
     if (!itemKey) return;
 
-    // Act on the first terminal pageState:
-    //   'ready'       → find and open the item's drawer; an unknown key is a silent no-op
-    //                   (the item may have been completed or removed since the email was sent)
-    //   'no-template' → no checklist template loaded; nothing to open
-    //   'no-items'    → empty checklist; nothing to open
-    //   'error'       → retryable; keep ?item= so a page reload retries with it still set
+    // Wait for the first non-error terminal pageState, then clear ?item= from the URL.
+    // 'error' is deliberately excluded so the subscription stays alive: an in-page retry
+    // (onRetry) can still open the drawer once the fetch succeeds.
     // queryParamsHandling: 'merge' preserves any other active params (e.g. ?project=).
     toObservable(this.pageState)
       .pipe(
