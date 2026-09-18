@@ -55,6 +55,18 @@ import {
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
+  /** Creates a form with all details-step fields filled to valid values. Override only the field under test. */
+  const createValidDetailsForm = (): ReturnType<typeof createEmptyMentorshipEnrollForm> => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'proj-gridflow';
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+    return form;
+  };
+
   it('requires the details fields from the Nuxt enroll wizard', () => {
     const errors = getMentorshipEnrollStepErrors('details', createEmptyMentorshipEnrollForm());
 
@@ -128,62 +140,34 @@ describe('getMentorshipEnrollStepErrors', () => {
   });
 
   it('treats a filled details step as valid', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
-
-    expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
+    expect(isMentorshipEnrollStepValid('details', createValidDetailsForm())).toBe(true);
   });
 
   it('rejects an unknown projectId that is not in the known project options', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
+    const form = createValidDetailsForm();
     form.projectId = 'proj-unknown-not-in-allowlist';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
   it('rejects an oversized projectId even if it is nonblank', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
+    const form = createValidDetailsForm();
     form.projectId = 'x'.repeat(10_000);
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
   it('rejects a non-numeric CII project ID', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
+    const form = createValidDetailsForm();
     form.ciiProjectId = 'abc';
 
     expect(getMentorshipEnrollStepErrors('details', form).ciiProjectId).toBe('Invalid CII Project ID');
   });
 
   it('rejects a short program name and an invalid repository URL', () => {
-    const form = createEmptyMentorshipEnrollForm();
+    const form = createValidDetailsForm();
     form.name = 'Go';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'not-a-url';
-    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).name).toContain('between 3 and 100');
     expect(getMentorshipEnrollStepErrors('details', form).repositoryUrl).toBe('The link must be a valid URL.');

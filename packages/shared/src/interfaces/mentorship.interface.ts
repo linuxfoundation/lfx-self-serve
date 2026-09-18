@@ -93,7 +93,7 @@ export interface MentorshipPrerequisite {
 
 /**
  * State held by the enroll wizard. `logoPreviewUrl` is a browser-only `blob:` URL for the picker;
- * validation uses `MentorshipEnrollRequest` (the form minus the preview field).
+ * validation uses `MentorshipEnrollValidationInput` (the form minus the preview field).
  */
 export interface MentorshipEnrollForm {
   importProgramId: string;
@@ -118,7 +118,7 @@ export interface MentorshipEnrollForm {
  * `logoPreviewUrl` so the validator never depends on a transient blob URL.
  * Previously also served as the POST body; that endpoint was removed by GH-2717.
  */
-export type MentorshipEnrollRequest = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
+export type MentorshipEnrollValidationInput = Omit<MentorshipEnrollForm, 'logoPreviewUrl'>;
 
 /** Field-keyed validation errors for a single enroll wizard step. */
 export interface MentorshipEnrollFieldErrors {

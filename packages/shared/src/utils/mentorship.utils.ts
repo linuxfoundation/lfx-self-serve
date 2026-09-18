@@ -37,7 +37,7 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
-  MentorshipEnrollRequest,
+  MentorshipEnrollValidationInput,
   MentorshipEnrollStep,
   MentorshipMenteeAction,
   MentorshipMenteeRegisterFieldErrors,
@@ -162,7 +162,7 @@ export function getMentorshipTermDateErrors(
   return errors;
 }
 
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): MentorshipEnrollFieldErrors {
+export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -170,9 +170,10 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     } else if (form.name.trim().length < MENTORSHIP_ENROLL_NAME_MIN || form.name.trim().length > MENTORSHIP_ENROLL_NAME_MAX) {
       errors.name = `Program name should be between ${MENTORSHIP_ENROLL_NAME_MIN} and ${MENTORSHIP_ENROLL_NAME_MAX} characters.`;
     }
-    if (isBlank(form.projectId)) {
+    const projectId = form.projectId.trim();
+    if (!projectId) {
       errors.projectId = 'Select a Linux Foundation project.';
-    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id.trim() === form.projectId.trim())) {
+    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
       // Temporary mock-backed allowlist — replace with server-side validation
       // when the upstream mentorship-service project endpoint is wired up.
       errors.projectId = 'Select a valid Linux Foundation project.';
@@ -357,7 +358,7 @@ export function isMentorshipTermsAccepted(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): boolean {
+export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): boolean {
   return Object.keys(getMentorshipEnrollStepErrors(step, form)).length === 0;
 }
 

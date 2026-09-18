@@ -42,11 +42,11 @@ const MAX_LIMIT = 50;
 const CII_BADGE_TIMEOUT_MS = 10_000;
 
 /**
- * Read-only mock store — seeded from the mock constants so the admin list has
- * data to show. No writes; enrollment is handled client-side as a coming-soon
- * toast until the upstream mentorship-service is wired up.
+ * Read-only mock seed data — the admin list has data to show while the upstream
+ * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
+ * toast instead.
  */
-const programsStore: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
+const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
 
 function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: number): { data: T[]; total: number } {
   const start = Math.max(0, offset);
@@ -74,7 +74,7 @@ export class MentorshipService {
   ): Promise<MentorshipProgramsResponse> {
     logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
 
-    let filtered: readonly MentorshipProgram[] = programsStore;
+    let filtered: readonly MentorshipProgram[] = mockPrograms;
     if (options.status) {
       filtered = filtered.filter((p) => p.status === options.status);
     }
@@ -140,7 +140,7 @@ export class MentorshipService {
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
     logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
     const needle = name.trim().toLowerCase();
-    const taken = programsStore.some((program) => program.name.trim().toLowerCase() === needle);
+    const taken = mockPrograms.some((program) => program.name.trim().toLowerCase() === needle);
     logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: !taken });
     return { available: !taken };
   }
@@ -237,7 +237,7 @@ export class MentorshipService {
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
-    return programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+    return mockPrograms.find((item) => item.id === programId) ?? mockPrograms.find((item) => item.slug === programId);
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */
