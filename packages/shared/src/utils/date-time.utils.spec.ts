@@ -17,6 +17,7 @@ import {
   toLocalDateOnlyString,
   toZonedDateCarrier,
   tryParseLocalDateString,
+  wallTimeExistsInTimezone,
 } from './date-time.utils';
 
 /**
@@ -347,5 +348,53 @@ describe('toZonedDateCarrier', () => {
     expect(carrier.getMonth()).toBe(instant.getMonth());
     expect(carrier.getDate()).toBe(instant.getDate());
     expect(carrier.getHours()).toBe(12);
+  });
+});
+
+// Dates use the local constructor: the function reads host-local wall fields, so an ISO-string
+// date would shift with the test machine's TZ (convention: vote.validators.spec.ts).
+describe('wallTimeExistsInTimezone', () => {
+  it('accepts a valid time just before a spring-forward gap', () => {
+    // Mar 8 2026 1:59 AM exists in America/New_York — the gap starts at 2:00 AM.
+    expect(wallTimeExistsInTimezone(new Date(2026, 2, 8), '1:59 AM', 'America/New_York')).toBe(true);
+  });
+
+  it('rejects a nonexistent time inside a spring-forward gap', () => {
+    // Mar 8 2026 2:30 AM never happens in America/New_York — clocks jump 2:00 → 3:00.
+    expect(wallTimeExistsInTimezone(new Date(2026, 2, 8), '2:30 AM', 'America/New_York')).toBe(false);
+  });
+
+  it('accepts a valid time just after a spring-forward gap', () => {
+    expect(wallTimeExistsInTimezone(new Date(2026, 2, 8), '3:30 AM', 'America/New_York')).toBe(true);
+  });
+
+  it('accepts an ambiguous fall-back time that exists twice', () => {
+    // Nov 1 2026 1:30 AM happens twice in America/New_York — it converges to a real instant.
+    expect(wallTimeExistsInTimezone(new Date(2026, 10, 1), '1:30 AM', 'America/New_York')).toBe(true);
+  });
+
+  it('rejects an unparseable time', () => {
+    expect(wallTimeExistsInTimezone(new Date(2026, 2, 8), '25:99 PM', 'America/New_York')).toBe(false);
+  });
+
+  it('rejects an invalid zone', () => {
+    expect(wallTimeExistsInTimezone(new Date(2026, 2, 8), '2:30 AM', 'Not/AZone')).toBe(false);
+  });
+
+  it('validates a target-zone wall time that falls inside the HOST zone DST gap', () => {
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/New_York';
+    try {
+      // 2:30 AM on Mar 14 2027 does not exist in the host zone (New York spring forward) but
+      // exists in Tokyo — the Intl-parts wall read must not be corrupted by the host gap.
+      expect(wallTimeExistsInTimezone(new Date(2027, 2, 14), '2:30 AM', 'Asia/Tokyo')).toBe(true);
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into the string "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
   });
 });

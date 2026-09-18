@@ -162,6 +162,7 @@
               control="timezone"
               inputId="vote-timezone"
               [options]="timezoneOptions()"
+              (onChange)="onTimezoneUserPick($event.value)"
               optionLabel="label"
               optionValue="value"
               placeholder="Select timezone"
