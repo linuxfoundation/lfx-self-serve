@@ -1895,6 +1895,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaIsStageable: Signal<boolean>;
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
+    emailRegistrationUrl: Signal<string>;
     emailSponsors: Signal<{ name: string; logoUrl: string }[]>;
     emailBodyIsStageable: Signal<boolean>;
     abTestIsStageable: Signal<boolean>;
@@ -4083,6 +4084,63 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.heroImageUrl).toBeUndefined();
       expect(cfg?.sponsors).toBeUndefined();
       expect(internals().emailBodyIsStageable()).toBe(false);
+    });
+
+    it('canonicalizes the preview hero and drops blank-name sponsors, matching the controller', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://user:secret@cdn.example.com/hero.png',
+          sponsors: [
+            { name: '   ', logoUrl: 'https://cdn.example.com/blank.png' },
+            { name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' },
+          ],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      fixture.detectChanges();
+
+      // The model returned the RAW trimmed value and kept blank-name sponsors, while the
+      // controller canonicalizes and filters on the name too — so the preview bound a
+      // credentialed <img src> and showed a logo the draft omits. Both now read one shared
+      // canonicalHttpUrl, so the two cannot restate the rule differently.
+      expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
+      expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('sends the registration URL in the canonical form, without userinfo', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://user:secret@events.example/register',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The controller strips userinfo and canonicalizes, so sending the raw string made the
+      // PREVIEW show credentials and a different URL than the draft receives. Benign for the
+      // draft; not for a preview whose whole job is to match it.
+      expect(internals().emailRegistrationUrl()).toBe('https://events.example/register');
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.example/register');
+      expect(String(cfg?.buttonUrl)).not.toContain('secret');
     });
 
     it('does not preview or stage a hero the controller would drop', async () => {

@@ -347,3 +347,32 @@ export function isPrivateHost(hostname: string): boolean {
   if (a === 100 && b >= 64 && b <= 127) return true; // RFC6598 carrier-grade NAT
   return false;
 }
+
+/**
+ * The canonical http(s) form of `value`, or '' when it is not a usable public URL.
+ *
+ * ONE implementation, because the server's allow-list and the client's preview must agree
+ * exactly: they diverged three times in review — scheme-only vs host-checked, raw vs canonical,
+ * and userinfo kept vs stripped — and each divergence let the preview show something the staged
+ * draft would not contain.
+ *
+ * Canonical rather than the input: WHATWG `URL` accepts `http:example.com` and reports an
+ * `http:` protocol, so returning the original forwards a non-network-absolute value. Userinfo is
+ * dropped because these URLs are fetched server-side and rendered into a SENT email, so embedded
+ * credentials would travel into the message and every log that records the fetch.
+ */
+export function canonicalHttpUrl(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
+    if (isPrivateHost(parsed.hostname)) return '';
+    parsed.username = '';
+    parsed.password = '';
+    return parsed.href;
+  } catch {
+    return '';
+  }
+}

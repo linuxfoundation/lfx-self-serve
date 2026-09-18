@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
+import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 
 import { NextFunction, Request, Response } from 'express';
 
@@ -2176,7 +2176,7 @@ export class CampaignController {
     const rawButtonText = body.hubspotConfig?.buttonText;
     const buttonText = typeof rawButtonText === 'string' ? rawButtonText.trim() : '';
     const rawButtonUrl = body.hubspotConfig?.buttonUrl;
-    const buttonUrl = httpUrlOrEmpty(rawButtonUrl);
+    const buttonUrl = canonicalHttpUrl(rawButtonUrl);
 
     // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
     // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
@@ -2193,9 +2193,9 @@ export class CampaignController {
     // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
     // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
     const rawHeroImageUrl = body.hubspotConfig?.heroImageUrl;
-    const heroImageUrl = httpUrlOrEmpty(rawHeroImageUrl);
+    const heroImageUrl = canonicalHttpUrl(rawHeroImageUrl);
     const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
-    const heroLinkUrl = httpUrlOrEmpty(rawHeroLinkUrl);
+    const heroLinkUrl = canonicalHttpUrl(rawHeroLinkUrl);
     const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
       ? // The logo goes through the SAME validator as the other link fields: it becomes an
         // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
@@ -2213,7 +2213,7 @@ export class CampaignController {
           // mapper are trim-only; this one is caller-supplied display text with no upstream cap).
           // [...name] splits by CODE POINT, so a 100-char cut cannot land inside a surrogate
           // pair, and the second trim removes a space the cut may have left at the end.
-          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, 100).join('').trim(), logoUrl: httpUrlOrEmpty(sponsor.logoUrl) }))
+          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, 100).join('').trim(), logoUrl: canonicalHttpUrl(sponsor.logoUrl) }))
           .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
           // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
           // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
@@ -2256,54 +2256,5 @@ export class CampaignController {
       // by the very request meant to set it. Both are already trimmed above.
       ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== '' ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
     };
-  }
-}
-
-/**
- * Returns `value` only when it is an absolute http(s) URL, and '' otherwise.
- *
- * Every field this guards becomes an outbound link or image source in a SENT email: `buttonUrl`
- * is the CTA destination, `heroLinkUrl` wraps the banner, and `heroImageUrl` is fetched
- * server-side and re-hosted. Trimming alone let `javascript:` and `data:` through to that sink,
- * and the dispatcher writes the destination verbatim.
- *
- * Empty rather than a rejection because each field is already optional and gated on being
- * non-empty downstream: a bad URL degrades to "no button"/"no link", which is what an operator
- * would get from a brief that never had one.
- *
- * Returns the CANONICAL form (`parsed.href`), not the input: WHATWG `URL` accepts
- * `http:example.com` and reports an `http:` protocol, so forwarding the original string hands the
- * Go image downloader a value it cannot use, and the hero degrades silently.
- *
- * Shares `isPrivateHost` with the scrape path (both import it from `@lfx-one/shared/utils`)
- * rather than restating the rules, so the two cannot diverge.
- */
-function httpUrlOrEmpty(value: unknown): string {
-  if (typeof value !== 'string') return '';
-  const trimmed = value.trim();
-  if (trimmed === '') return '';
-  try {
-    const parsed = new URL(trimmed);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
-    // The HOST check, not just the scheme. This is the sole validator for `heroImageUrl` and
-    // `sponsors[].logoUrl`, and campaign-service FETCHES those server-side and re-hosts the bytes
-    // as a publicly readable file — so a direct POST carrying `http://169.254.169.254/...` on
-    // this route (which has no body validator) is a read-back channel out of the cluster. Shares
-    // `isPrivateHost` from @lfx-one/shared/utils with the scrape path and the client preview,
-    // rather than restating it, so none of the three can diverge;
-    // the docstring below used to claim it mirrored `resolveUrl` while omitting exactly this.
-    if (isPrivateHost(parsed.hostname)) return '';
-    // The CANONICAL form, not the input. WHATWG `URL` accepts `http:example.com` and reports an
-    // `http:` protocol, so returning the original string forwards a non-network-absolute value
-    // that the Go image downloader cannot use -- the hero then degrades silently, because the
-    // upload is best-effort. `href` is what the parse actually resolved to.
-    // Userinfo is dropped: `parsed.href` preserves `user:pass@host`, and these URLs are fetched
-    // server-side and rendered into a SENT email, so embedded credentials would travel into the
-    // message and every log that records the fetch.
-    parsed.username = '';
-    parsed.password = '';
-    return parsed.href;
-  } catch {
-    return '';
   }
 }

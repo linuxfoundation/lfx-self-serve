@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractUrls, isPrivateHost, isProfileHubPath, isRelativeInAppPath } from './url.utils';
+import { canonicalHttpUrl, extractUrls, isPrivateHost, isProfileHubPath, isRelativeInAppPath } from './url.utils';
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -178,5 +178,31 @@ describe('isPrivateHost', () => {
     ['a stray bracket', '[::1'],
   ])('refuses %s rather than allowing an unrecognised shape', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
+  });
+});
+
+describe('canonicalHttpUrl', () => {
+  // ONE implementation shared by the server allow-list and the client preview. They diverged
+  // three times in review — scheme-only vs host-checked, raw vs canonical, userinfo kept vs
+  // stripped — and each divergence let the preview show something the draft would not contain.
+  it.each([
+    ['strips userinfo', 'https://user:secret@cdn.example.com/h.png', 'https://cdn.example.com/h.png'],
+    ['canonicalizes a scheme-relative form', 'http:example.com/r', 'http://example.com/r'],
+    ['keeps an ordinary public URL', 'https://cdn.example.com/ok.png', 'https://cdn.example.com/ok.png'],
+    ['trims before parsing', '  https://cdn.example.com/ok.png  ', 'https://cdn.example.com/ok.png'],
+  ])('%s', (_label, input, want) => {
+    expect(canonicalHttpUrl(input)).toBe(want);
+  });
+
+  it.each([
+    ['a private host', 'http://169.254.169.254/h.png'],
+    ['loopback with a trailing dot', 'http://localhost./h.png'],
+    ['a javascript: scheme', 'javascript:alert(1)'],
+    ['a data: scheme', 'data:text/html,<script>alert(1)</script>'],
+    ['whitespace only', '   '],
+    ['a non-string', 42],
+    ['an unparsable value', 'not-a-url'],
+  ])('refuses %s', (_label, input) => {
+    expect(canonicalHttpUrl(input)).toBe('');
   });
 });

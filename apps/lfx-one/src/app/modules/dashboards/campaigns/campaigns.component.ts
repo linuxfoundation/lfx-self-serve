@@ -49,7 +49,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { isPrivateHost } from '@lfx-one/shared/utils';
+import { canonicalHttpUrl } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1181,15 +1181,7 @@ export class CampaignsComponent {
    */
   protected readonly emailHeroImageUrl = computed<string>(() => {
     if (!this.emailBodyIsStageable()) return '';
-    const url = this.emailBriefOutput()?.eventDetails?.heroImageUrl;
-    if (typeof url !== 'string' || url.trim() === '') return '';
-    try {
-      const parsed = new URL(url.trim());
-      const httpish = parsed.protocol === 'http:' || parsed.protocol === 'https:';
-      return httpish && !isPrivateHost(parsed.hostname) ? url.trim() : '';
-    } catch {
-      return '';
-    }
+    return canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.heroImageUrl);
   });
 
   /** Sponsors whose logo survives the same validation the controller applies, capped alike. */
@@ -1197,18 +1189,31 @@ export class CampaignsComponent {
     if (!this.emailBodyIsStageable()) return [];
     const sponsors = this.emailBriefOutput()?.eventDetails?.sponsors;
     if (!Array.isArray(sponsors)) return [];
-    return sponsors
-      .filter((sponsor) => {
-        const logo = typeof sponsor?.logoUrl === 'string' ? sponsor.logoUrl.trim() : '';
-        if (logo === '') return false;
-        try {
-          const parsed = new URL(logo);
-          return (parsed.protocol === 'http:' || parsed.protocol === 'https:') && !isPrivateHost(parsed.hostname);
-        } catch {
-          return false;
-        }
-      })
-      .slice(0, MAX_SPONSORS);
+    return (
+      sponsors
+        .map((sponsor) => ({
+          name: typeof sponsor?.name === 'string' ? sponsor.name.trim() : '',
+          logoUrl: canonicalHttpUrl(sponsor?.logoUrl),
+        }))
+        // Blank names dropped too, matching the controller: it filters on both, so keeping them
+        // here showed logos the staged draft omits.
+        .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
+        .slice(0, MAX_SPONSORS)
+    );
+  });
+
+  /**
+   * The registration URL in the same canonical form the controller forwards.
+   *
+   * `httpUrlOrEmpty` returns `parsed.href` with userinfo stripped, so sending the raw string put
+   * a different value in the preview than the draft receives — `http:example.com/r` previews
+   * verbatim and stages as `http://example.com/r`, and `https://user:pass@host/r` would show the
+   * credentials. Benign for the draft, which the controller fixes on receipt; not benign for the
+   * preview, whose entire job is to match. Empty when the destination is not stageable.
+   */
+  protected readonly emailRegistrationUrl = computed<string>(() => {
+    if (!this.emailCtaIsStageable()) return '';
+    return canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
   });
 
   protected readonly emailCtaLabel = computed<string>(() =>
@@ -1227,26 +1232,12 @@ export class CampaignsComponent {
    * something the draft will not have -- and the preview's whole purpose is to show what gets
    * staged. Both read this, so they cannot drift apart.
    */
-  protected readonly emailCtaIsStageable = computed<boolean>(() => {
-    const url = this.emailBriefOutput()?.eventDetails?.registrationUrl;
-    if (typeof url !== 'string' || url === '') return false;
-    // The SAME test the controller applies, scheme AND host: httpUrlOrEmpty keeps buttonUrl only
-    // when the value is an absolute http(s) URL whose host is not private, so a `javascript:` or
-    // `http://169.254.169.254/` registration URL would otherwise render a button here and be
-    // dropped on the wire -- the exact preview/draft drift this computed exists to remove.
-    // isPrivateHost is imported from @lfx-one/shared/utils, the same implementation the
-    // controller and the scrape path use, so the three cannot diverge.
-    try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
-      // The HOST check too, because the server's httpUrlOrEmpty rejects private, loopback,
-      // link-local and CGNAT hosts as well — a scheme-only predicate here would preview a CTA
-      // the server then drops. Same shared helper, so the two cannot diverge.
-      return !isPrivateHost(parsed.hostname);
-    } catch {
-      return false;
-    }
-  });
+  protected readonly emailCtaIsStageable = computed<boolean>(
+    // Reuses the ONE canonicalizer the controller uses, rather than restating scheme+host here:
+    // a non-empty result means the destination survives `canonicalHttpUrl`, which is exactly
+    // what the controller keeps. Three earlier versions of this predicate drifted from it.
+    () => canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl) !== ''
+  );
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
@@ -2469,7 +2460,7 @@ export class CampaignsComponent {
           // together when the url is blank, so a label with no destination silently loses the CTA
           // the operator just previewed. Re-deriving the trim inline here is the duplication that
           // signal exists to remove, and it already drifted once.
-          ...(this.emailCtaLabel() !== '' ? { buttonText: this.emailCtaLabel(), buttonUrl: details.registrationUrl } : {}),
+          ...(this.emailCtaLabel() !== '' ? { buttonText: this.emailCtaLabel(), buttonUrl: this.emailRegistrationUrl() } : {}),
           // Gated on `copy` as well, and this one is DATA LOSS rather than a cosmetic gap:
           // `RebuildEmailContent` replaces the whole widget tree, and a rebuild carrying a hero
           // but no body drops the cloned template's body entirely (see that function's comment
@@ -2491,7 +2482,7 @@ export class CampaignsComponent {
                 // The same predicate the CTA uses, for the same reason: the controller validates
                 // heroLinkUrl as absolute http(s), so a raw non-empty check here would send a
                 // link the server then drops.
-                ...(this.emailCtaIsStageable() ? { heroLinkUrl: details.registrationUrl } : {}),
+                ...(this.emailRegistrationUrl() !== '' ? { heroLinkUrl: this.emailRegistrationUrl() } : {}),
               }
             : {}),
           ...(this.emailSponsors().length > 0 ? { sponsors: this.emailSponsors() } : {}),
