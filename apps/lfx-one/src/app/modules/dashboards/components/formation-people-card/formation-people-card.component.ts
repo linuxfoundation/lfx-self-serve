@@ -13,11 +13,11 @@ import {
   FORMATION_PEOPLE_UNAVAILABLE_MESSAGE,
   FORMATION_PERSON_STATUS_LABELS,
 } from '@lfx-one/shared/constants';
-import type { FormationChecklistResponse, FormationPeopleGroup, FormationPeopleResponse, FormationPeopleRowGroup } from '@lfx-one/shared/interfaces';
-import { groupFormationPeople, toFormationPersonRow } from '@lfx-one/shared/utils';
+import type { FormationChecklistResponse, FormationPeopleResponse, FormationPeopleRowGroup } from '@lfx-one/shared/interfaces';
+import { formationPeopleGroupKeys, groupFormationPeople, toFormationPersonRow } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { distinctUntilChanged, map, merge, Subject, switchMap, tap } from 'rxjs';
+import { distinctUntilChanged, switchMap, tap } from 'rxjs';
 
 /**
  * "People on this formation" — the checklist sidebar's people card (#2724), rendered under
@@ -25,8 +25,8 @@ import { distinctUntilChanged, map, merge, Subject, switchMap, tap } from 'rxjs'
  * invite is a project invite, #2147) grouped into LF Staff and Invited, each external row carrying
  * an "Invited" (has an LF account) or "Invite Sent" (email-only, pending acceptance) chip.
  *
- * Fed entirely from the checklist response the host already holds: slug and writer flag come off
- * it, so the card never reads `ProjectContextService` — on the foundation drill-down that service
+ * Fed from the checklist response the host already holds: the slug and each row's assigned-item
+ * count come off it, so the card never reads `ProjectContextService` — on the foundation drill-down that service
  * describes the *parent foundation*, and a context-derived slug would list the foundation's people
  * beside a child project's checklist (#2719 precedent). The list itself is one extra read,
  * `GET /api/projects/:slug/formation/people`, which the BFF degrades to an `unavailable` state when
@@ -51,12 +51,10 @@ export class FormationPeopleCardComponent {
   protected readonly statusLabels = FORMATION_PERSON_STATUS_LABELS;
 
   protected readonly loading = signal(true);
-  // Manual re-fetch trigger (e.g. after an invite). A Subject, not a BehaviorSubject, so nothing
-  // emits at subscription time while the required `checklist` input is still unreadable (NG0950).
-  private readonly refresh$ = new Subject<void>();
 
   protected readonly projectSlug = computed(() => this.checklist().formation.parent_project_slug);
-  protected readonly canWrite = computed(() => this.checklist().can_write);
+  /** The checklist items' owners, for each row's assigned-item count — from the read the host already made, never a second one. */
+  private readonly assignees = computed(() => this.checklist().items.map((item) => item.owner?.username ?? null));
   protected readonly response: Signal<FormationPeopleResponse> = this.initResponse();
   protected readonly unavailable = computed(() => this.response().state === 'unavailable');
   protected readonly groups: Signal<FormationPeopleRowGroup[]> = this.initGroups();
@@ -64,7 +62,8 @@ export class FormationPeopleCardComponent {
 
   private initResponse(): Signal<FormationPeopleResponse> {
     return toSignal(
-      merge(toObservable(this.projectSlug).pipe(distinctUntilChanged()), this.refresh$.pipe(map(() => this.projectSlug()))).pipe(
+      toObservable(this.projectSlug).pipe(
+        distinctUntilChanged(),
         tap(() => this.loading.set(true)),
         // `getFormationPeople` never errors (it degrades to the unavailable shape itself), so
         // clearing `loading` on next is complete. Deliberately not `finalize` on the inner: a
@@ -79,10 +78,12 @@ export class FormationPeopleCardComponent {
   private initGroups(): Signal<FormationPeopleRowGroup[]> {
     return computed(() => {
       const grouped = groupFormationPeople(this.response().people);
-      const order: FormationPeopleGroup[] = ['staff', 'invited'];
+      const assignees = this.assignees();
 
-      return order
-        .map((key) => ({ key, label: FORMATION_PEOPLE_GROUP_LABELS[key], rows: grouped[key].map(toFormationPersonRow) }))
+      // Render order is the labels constant's declaration order (staff first) — derived, not
+      // restated, so a group added to the constant renders without a matching edit here.
+      return formationPeopleGroupKeys()
+        .map((key) => ({ key, label: FORMATION_PEOPLE_GROUP_LABELS[key], rows: grouped[key].map((person) => toFormationPersonRow(person, assignees)) }))
         .filter((group) => group.rows.length > 0);
     });
   }

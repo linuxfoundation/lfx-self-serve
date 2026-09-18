@@ -1,27 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
 import { FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
 
 /**
  * Mock `GET /api/projects/:slug/formation/people` data for Playwright tests (#2724). One LF staff
- * row (the product's own domain — the only non-`.example` address, and the one the grouping keys
- * on), one accepted partner, and one pending invite; `alex.rivera`/`sam.chen` mirror the item
- * owners in `formation-item.mock.ts` so the assigned-item counts line up with the checklist.
+ * row (address built from `LF_STAFF_EMAIL_DOMAIN` — the grouping keys on it, and spelling the
+ * domain out would trip check-fixture-emails.sh), one accepted partner, and one pending invite;
+ * `alex.rivera`/`sam.chen` mirror the item owners in `formation-item.mock.ts`, which is where the
+ * card takes each row's assigned-item count from (one item each there).
  */
 export const mockFormationPeople: FormationPerson[] = [
   {
     key: 'alex.rivera',
     username: 'alex.rivera',
     name: 'Alex Rivera',
-    email: 'alex.rivera@linuxfoundation.org',
+    email: `alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`,
     role: 'manage',
     group: 'staff',
     is_pending: false,
     job_title: 'Program Manager',
     organization: null,
     avatar: null,
-    assigned_item_count: 1,
   },
   {
     key: 'sam.chen',
@@ -34,7 +35,6 @@ export const mockFormationPeople: FormationPerson[] = [
     job_title: 'Partner contact',
     organization: 'Cascade Data',
     avatar: null,
-    assigned_item_count: 1,
   },
   {
     key: 'jordan.lee@partner-corp.example',
@@ -47,7 +47,6 @@ export const mockFormationPeople: FormationPerson[] = [
     job_title: null,
     organization: null,
     avatar: null,
-    assigned_item_count: 0,
   },
 ];
 

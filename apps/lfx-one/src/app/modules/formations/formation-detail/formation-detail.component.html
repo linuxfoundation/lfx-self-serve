@@ -33,8 +33,8 @@
     <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
     <!-- Same two-column shell as `/project/formation` (formation-page.component.html), and the cards
          are fed the same way: from the checklist response the section beside it just fetched, so
-         the rail's slug, stage, date and writer flag need no request of their own and ride the
-         checklist's read gate (#2719). Only the formation card's admin-tool link and the people
+         the rail's slug, stage and date need no request of their own and ride the checklist's read
+         gate (#2719). Only the formation card's admin-tool link and the people
          card's own list read (#2724) probe separately, and both fail closed/quiet. -->
     <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-detail-columns">
       <div class="flex-1 min-w-0">

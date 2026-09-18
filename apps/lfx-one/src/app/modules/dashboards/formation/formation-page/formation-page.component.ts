@@ -28,8 +28,8 @@ export class FormationPageComponent {
    * caller. Sourcing both from this one response means whoever can read the checklist sees the
    * card beside it, with its slug, sub-stage and announcement date already in hand. Only the
    * card's admin-tool deep link still probes separately, and it fails closed. The people card
-   * (#2724) rides the same response for its slug and writer flag, and gates the rail with it: an
-   * ungated `<aside>` would reserve a blank fixed-width column while the checklist loads.
+   * (#2724) rides the same response for its slug, and gates the rail with it: an ungated `<aside>`
+   * would reserve a blank fixed-width column while the checklist loads.
    */
   protected readonly checklist = signal<FormationChecklistResponse | null>(null);
 

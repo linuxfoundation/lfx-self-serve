@@ -167,8 +167,6 @@ export async function mockFormationChecklistApis(
   opts: {
     project: Project;
     checklistState?: FormationChecklistApiState;
-    /** The checklist response's per-caller writer flag; defaults to `true` so editing flows render. */
-    canWrite?: boolean;
     /** The sidebar people card's read (#2724); defaults to the three-person fixture. */
     people?: FormationPeopleResponse;
   }
@@ -211,13 +209,13 @@ export async function mockFormationChecklistApis(
           },
           template: state === 'no-template' ? null : { uid: 'seed', version: 1, name: 'Project formation', sections: [] },
           items: [],
-          can_write: opts.canWrite ?? true,
+          can_write: true,
           can_set_status: true,
         }),
       })
     );
   } else {
-    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug, { canWrite: opts.canWrite });
+    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug);
   }
 
   await FormationApiMockHelper.setupFormationItemMock(page);

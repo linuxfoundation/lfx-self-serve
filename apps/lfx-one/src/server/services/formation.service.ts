@@ -30,6 +30,7 @@ import type {
 import {
   createUnavailableFormationPeopleResponse,
   FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
@@ -118,6 +119,15 @@ export class FormationService {
   // the same `projectUid` within one request — share a single upstream checklist fetch instead of
   // fanning the gate check into a second one.
   private readonly checklistByRequestCache = new WeakMap<Request, Map<string, UpstreamFormationChecklist>>();
+  /**
+   * Process-wide, time-bounded memo for {@link readUserMetadata}, keyed by username (#2724). The
+   * people card issues one metadata read per listed person on every mount, on both checklist
+   * hosts, and a title/organization pair changes rarely — so a revisit inside
+   * `FORMATION_PEOPLE_METADATA_CACHE_TTL_MS` replays no NATS fan-out. A resolved miss (`null`) is
+   * cached like a hit; a transport failure is not, so it retries on the next read. Unlike the
+   * per-request WeakMaps above this must survive across requests — that is the point of it.
+   */
+  private static readonly userMetadataCache = new Map<string, { value: UserMetadata | null; expiresAt: number }>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -224,8 +234,10 @@ export class FormationService {
    * takes above) — deliberately no M2M read here; the user's own token decides what they see.
    *
    * Enrichment (title / organization / avatar fallback from the auth-service user-metadata read)
-   * is best-effort and bounded: a failed lookup leaves that person's fields `null` and never
-   * fails the response.
+   * is best-effort, bounded, and memoised across requests: a failed lookup leaves that person's
+   * fields `null` and never fails the response. Assigned-item counts are NOT on this response —
+   * the card derives them from the checklist items its host already holds, so this read never
+   * fetches a second checklist payload for a number the client can compute.
    */
   public async getFormationPeople(req: Request, projectSlug: string): Promise<FormationPeopleResponse> {
     logger.debug(req, 'get_formation_people', 'Resolving project for the formation people list', { projectSlug });
@@ -235,7 +247,8 @@ export class FormationService {
       throw new ResourceNotFoundError('Project', projectSlug, { operation: 'get_formation_people', service: 'formation_service', path: req.path });
     }
 
-    const checklist = await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
+    // The masking gate only — its payload is deliberately unused here (see the class doc above).
+    await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
       resource: 'Formation',
       operation: 'get_formation_people',
     });
@@ -252,10 +265,7 @@ export class FormationService {
       return createUnavailableFormationPeopleResponse();
     }
 
-    const people = buildFormationPeople(
-      settings,
-      checklist.items.map((item) => item.assignee)
-    );
+    const people = buildFormationPeople(settings);
     logger.debug(req, 'get_formation_people', 'Built the people list from project settings', { projectSlug, count: people.length });
 
     return { state: 'loaded', people: await this.enrichFormationPeople(req, people) };
@@ -959,7 +969,7 @@ export class FormationService {
       return people;
     }
 
-    logger.info(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
+    logger.debug(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
 
     const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username));
 
@@ -1003,16 +1013,30 @@ export class FormationService {
    * services this read has no use for).
    */
   private async readUserMetadata(req: Request, username: string): Promise<UserMetadata | null> {
+    const cached = FormationService.userMetadataCache.get(username);
+    if (cached && Date.now() < cached.expiresAt) {
+      return cached.value;
+    }
+
     const codec = this.natsService.getCodec();
     const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
     const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
 
+    let value: UserMetadata | null;
     if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
       logger.debug(req, 'enrich_formation_people', 'No user metadata for username', { username: maskIdentifierForLogs(username) });
-      return null;
+      value = null;
+    } else {
+      value = parsed.data ?? null;
     }
 
-    return parsed.data ?? null;
+    FormationService.userMetadataCache.set(username, { value, expiresAt: Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS });
+    return value;
+  }
+
+  /** Test seam for the cross-request memo above — same shape as `resetRootProjectUidCacheForTests`. */
+  public static resetUserMetadataCacheForTests(): void {
+    FormationService.userMetadataCache.clear();
   }
 
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */

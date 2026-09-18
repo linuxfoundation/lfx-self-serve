@@ -39,8 +39,6 @@ export interface FormationPerson {
   organization: string | null;
   /** The settings avatar, else the metadata `picture`; `null` when neither is set. */
   avatar: string | null;
-  /** Checklist items whose upstream `assignee` equals this person's username; always 0 for a pending entry. */
-  assigned_item_count: number;
 }
 
 /** Response body for `GET /api/projects/:slug/formation/people`. */
@@ -49,13 +47,18 @@ export interface FormationPeopleResponse {
   people: FormationPerson[];
 }
 
-export interface FormationPeopleGroups {
-  staff: FormationPerson[];
-  invited: FormationPerson[];
-}
+/** Every group in `FORMATION_PEOPLE_GROUP_LABELS`, in that constant's declaration order — the card's render order. */
+export type FormationPeopleGroups = Record<FormationPeopleGroup, FormationPerson[]>;
 
-/** The people card's row view-model — a {@link FormationPerson} plus the strings the template renders, so the template calls no functions. */
+/**
+ * The people card's row view-model — a {@link FormationPerson} plus what the card derives from the
+ * checklist it already holds (the assigned-item count, from `FormationItem.owner.username`) and
+ * the strings the template renders, so the template calls no functions and the list read never
+ * refetches the checklist for a count the client can compute.
+ */
 export interface FormationPersonRow extends FormationPerson {
+  /** Checklist items whose `owner.username` is this person's username; always 0 for a pending entry. */
+  assigned_item_count: number;
   subtitle: string;
   /** `null` for LF staff — only external rows carry a status chip. */
   status: FormationPersonStatus | null;
@@ -66,11 +69,4 @@ export interface FormationPeopleRowGroup {
   key: FormationPeopleGroup;
   label: string;
   rows: FormationPersonRow[];
-}
-
-/** The invite dialog's submit payload — already trimmed; `email` lowercased. */
-export interface FormationInviteFormValue {
-  name: string;
-  email: string;
-  role: FormationPersonRole;
 }

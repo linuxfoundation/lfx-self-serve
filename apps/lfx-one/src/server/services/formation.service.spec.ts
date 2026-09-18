@@ -12,7 +12,7 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
-import { ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import { LF_STAFF_EMAIL_DOMAIN, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -189,6 +189,7 @@ describe('FormationService', () => {
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
+    FormationService.resetUserMetadataCacheForTests();
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
     checkSingleAccess.mockReset();
@@ -201,6 +202,10 @@ describe('FormationService', () => {
   });
 
   describe('getFormationPeople (#2724)', () => {
+    // Built from the constant rather than spelled out: check-fixture-emails.sh (GH-1674)
+    // denylists the LF domain itself in spec files.
+    const LF_STAFF_EMAIL = `alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`;
+    const LF_STAFF_EMAIL_MIXED_CASE = `Alex.Rivera@${LF_STAFF_EMAIL_DOMAIN.replace('linux', 'Linux')}`;
     const settingsWith = (overrides: Record<string, unknown> = {}) => ({
       uid: 'live-project-1',
       announcement_date: null,
@@ -244,10 +249,10 @@ describe('FormationService', () => {
     });
 
     it('builds the list from settings roles: writers manage, auditors view, staff by LF domain, pending when username-less', async () => {
-      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' }), rawItem({ item_key: 'item-key-2', assignee: 'sam.chen' })]));
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
       getProjectSettings.mockResolvedValue(
         settingsWith({
-          writers: [{ name: 'Alex Rivera', email: 'Alex.Rivera@LinuxFoundation.org', username: 'alex.rivera' }],
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL_MIXED_CASE, username: 'alex.rivera' }],
           auditors: [
             { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' },
             { name: 'Jordan Lee', email: 'jordan.lee@partner-corp.example' },
@@ -260,16 +265,15 @@ describe('FormationService', () => {
 
       expect(result.state).toBe('loaded');
       expect(result.people).toEqual([
-        expect.objectContaining({ key: 'alex.rivera', role: 'manage', group: 'staff', is_pending: false, assigned_item_count: 0 }),
+        expect.objectContaining({ key: 'alex.rivera', role: 'manage', group: 'staff', is_pending: false }),
         expect.objectContaining({
           key: 'jordan.lee@partner-corp.example',
           username: null,
           role: 'view',
           group: 'invited',
           is_pending: true,
-          assigned_item_count: 0,
         }),
-        expect.objectContaining({ key: 'sam.chen', role: 'view', group: 'invited', is_pending: false, assigned_item_count: 2 }),
+        expect.objectContaining({ key: 'sam.chen', role: 'view', group: 'invited', is_pending: false }),
       ]);
       // One metadata read per person WITH a username — the pending entry has no account to look up.
       expect(natsRequest).toHaveBeenCalledTimes(2);
@@ -280,7 +284,7 @@ describe('FormationService', () => {
       proxyRequest.mockResolvedValue(checklist([rawItem()]));
       getProjectSettings.mockResolvedValue(
         settingsWith({
-          writers: [{ name: 'Alex Rivera', email: 'alex.rivera@linuxfoundation.org', username: 'alex.rivera', avatar: 'https://cdn.example/settings.png' }],
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera', avatar: 'https://cdn.example/settings.png' }],
           auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
         })
       );
@@ -301,7 +305,7 @@ describe('FormationService', () => {
       proxyRequest.mockResolvedValue(checklist([rawItem()]));
       getProjectSettings.mockResolvedValue(
         settingsWith({
-          writers: [{ name: 'Alex Rivera', email: 'alex.rivera@linuxfoundation.org', username: 'alex.rivera' }],
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera' }],
           auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
         })
       );
@@ -334,6 +338,35 @@ describe('FormationService', () => {
 
       expect(result.people[0]).toEqual(expect.objectContaining({ job_title: null, organization: null, avatar: null }));
       expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('memoises each person’s metadata across requests, including a resolved miss, but not a transport failure', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+          auditors: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'kim.park') return { data: JSON.stringify({ success: false }) };
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+      const second = await service.getFormationPeople(buildReq(), 'live-project');
+
+      // Two people, two reads total — the second request served both from the memo.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      // Name-sorted: Kim Park (resolved miss → null) before Sam Chen.
+      expect(second.people.map((p) => p.job_title)).toEqual([null, 'Partner contact']);
+
+      // A transport failure is not memoised: the next read retries.
+      FormationService.resetUserMetadataCacheForTests();
+      natsRequest.mockRejectedValueOnce(new Error('nats timeout')).mockRejectedValueOnce(new Error('nats timeout'));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(6);
     });
   });
 

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Formation, FormationChecklistResponse, FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
+import { LF_STAFF_EMAIL_DOMAIN } from '@lfx-one/shared/constants';
+import { Formation, FormationChecklistResponse, FormationItem, FormationPeopleResponse, FormationPerson } from '@lfx-one/shared/interfaces';
 import { FormationService } from '@services/formation.service';
 import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,15 +25,15 @@ describe('FormationPeopleCardComponent', () => {
     job_title: 'Partner contact',
     organization: 'Cascade Data',
     avatar: null,
-    assigned_item_count: 1,
     ...overrides,
   });
 
+  // Built from the constant: check-fixture-emails.sh (GH-1674) denylists the LF domain itself in spec files.
   const staff = person({
     key: 'alex.rivera',
     username: 'alex.rivera',
     name: 'Alex Rivera',
-    email: 'alex.rivera@linuxfoundation.org',
+    email: `alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`,
     role: 'manage',
     group: 'staff',
     job_title: 'Program Manager',
@@ -46,15 +47,18 @@ describe('FormationPeopleCardComponent', () => {
     is_pending: true,
     job_title: null,
     organization: null,
-    assigned_item_count: 0,
   });
 
-  /** Only the slug and writer flag matter — the card reads nothing else off the checklist. */
+  /** Only the slug and the items' owners matter — the card reads nothing else off the checklist. */
   function checklist(overrides: Partial<FormationChecklistResponse> = {}): FormationChecklistResponse {
     return {
       formation: { parent_project_uid: 'proj-1', parent_project_slug: 'cascade-data-alliance' } as Formation,
       template: null,
-      items: [],
+      // One item each for the staff row and the accepted partner; none for the pending invitee.
+      items: [
+        { owner: { username: 'alex.rivera', name: 'Alex Rivera' } } as FormationItem,
+        { owner: { username: 'sam.chen', name: 'sam.chen' } } as FormationItem,
+      ],
       can_write: false,
       can_set_status: false,
       ...overrides,

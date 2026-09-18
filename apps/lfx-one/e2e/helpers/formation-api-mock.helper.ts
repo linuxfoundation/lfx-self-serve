@@ -30,7 +30,7 @@ export class FormationApiMockHelper {
    * /api/formations/:slug/checklist` (foundation drill-down, explicit-slug mode — LFXV2-3386).
    * Same response either way, mirroring the real BFF's shared controller.
    */
-  static async setupProjectFormationMock(page: Page, slug: string, opts: { canWrite?: boolean } = {}): Promise<void> {
+  static async setupProjectFormationMock(page: Page, slug: string): Promise<void> {
     const fulfillChecklist = async (route: Parameters<Parameters<Page['route']>[1]>[0]): Promise<void> => {
       const formation = getMockFormation(slug);
 
@@ -47,7 +47,7 @@ export class FormationApiMockHelper {
         // specs exercise the editable drawer; without it the assignee/due-date fields render
         // read-only and every editing flow fails. can_set_status likewise mirrors the GH-2705
         // writer ∧ team:formation pair; without it every status control is hidden.
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: opts.canWrite ?? true, can_set_status: true }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
       });
     };
 
