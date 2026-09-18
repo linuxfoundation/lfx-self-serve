@@ -8,6 +8,7 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
+import { logger } from '../services/logger.service';
 import { pollEndpoint } from './poll-endpoint.helper';
 
 vi.mock('../services/logger.service', () => ({
@@ -65,6 +66,54 @@ describe('pollEndpoint', () => {
 
     expect(resolved).toBe(false);
     expect(pollFn).not.toHaveBeenCalled();
+  });
+
+  it('keeps polling into the final second of the budget — late index visibility still resolves', async () => {
+    vi.useFakeTimers();
+    try {
+      const start = Date.now();
+      // The vote grid (8 s budget, 300 ms cadence): the condition flips at t≈7.5 s — inside the
+      // last second of the budget, which a minimum-request-budget floor would have discarded even
+      // though the remaining time still carries a viable query (GH-1637's no-new-fallback bar).
+      const pollFn = vi.fn(async () => Date.now() - start >= 7500);
+
+      const promise = pollEndpoint({ req: undefined, operation: 'test_op', pollFn, maxRetries: 27, retryDelayMs: 300, maxDurationMs: 8000 });
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('logs a pollFn throw at the deadline as budget exhaustion, not an unexpected error', async () => {
+    vi.useFakeTimers();
+    vi.mocked(logger.warning).mockClear();
+    try {
+      const start = Date.now();
+      const pollFn = vi.fn(async () => {
+        if (Date.now() - start < 7800) {
+          return false;
+        }
+        // The tail request runs past the 8 s deadline before its timeout aborts it.
+        await sleep(300);
+        throw new Error('The operation timed out');
+      });
+
+      const promise = pollEndpoint({ req: undefined, operation: 'test_op', pollFn, maxRetries: 27, retryDelayMs: 300, maxDurationMs: 8000 });
+      await vi.runAllTimersAsync();
+
+      await expect(promise).resolves.toBe(false);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        undefined,
+        'test_op',
+        'Poll wall-clock budget exhausted, proceeding anyway',
+        expect.objectContaining({ max_duration_ms: 8000 })
+      );
+      expect(vi.mocked(logger.warning)).not.toHaveBeenCalledWith(undefined, 'test_op', 'Unexpected error during polling', expect.anything());
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('hands pollFn the remaining wall-clock budget so the caller can cap its request timeout', async () => {

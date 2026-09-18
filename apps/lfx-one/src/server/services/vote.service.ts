@@ -355,6 +355,14 @@ export class VoteService {
           next_retry_ms: delayMs,
         });
         await new Promise((resolve) => setTimeout(resolve, delayMs));
+        // Timers can resume late under event-loop load — re-check what the backoff actually left
+        // before looping: a sub-floor remainder would send the next PUT out with a near-zero
+        // timeout whose 408 masks this 403 (and skips the exhaustion warning, since a 408 is not
+        // `retryableForbidden`).
+        if (deadline - Date.now() < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
       }
     }
 

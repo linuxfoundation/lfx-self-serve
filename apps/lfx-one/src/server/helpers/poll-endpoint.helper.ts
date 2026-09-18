@@ -3,8 +3,6 @@
 
 import { Request } from 'express';
 
-import { MIN_VIABLE_REQUEST_BUDGET_MS } from '@lfx-one/shared/constants';
-
 import { logger } from '../services/logger.service';
 
 export interface PollEndpointContext {
@@ -70,23 +68,6 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
         // The sleep is still taken when budget remains — it is only capped at the deadline, since
         // time slept past it would be discarded by the next iteration's budget check anyway.
         const delayMs = deadline === undefined ? retryDelayMs : Math.min(retryDelayMs, Math.max(deadline - Date.now(), 0));
-        // Re-check what the sleep leaves: a remainder under the minimum viable request budget
-        // dooms the next query to a sub-round-trip timeout logged as a generic polling error —
-        // stop now with the budget-exhausted signal instead. The floor binds only multi-second
-        // budgets; a caller budgeting below it opted into sub-second requests.
-        if (
-          deadline !== undefined &&
-          maxDurationMs !== undefined &&
-          maxDurationMs >= MIN_VIABLE_REQUEST_BUDGET_MS &&
-          deadline - Date.now() - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS
-        ) {
-          logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
-            ...metadata,
-            attempts_made: attempt,
-            max_duration_ms: maxDurationMs,
-          });
-          return false;
-        }
         logger.debug(req, operation, 'Poll condition not met, retrying', {
           ...metadata,
           attempt,
@@ -104,6 +85,16 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
       });
       return false;
     } catch (error: any) {
+      // A tail request whose timeout aborts it at the deadline lands here — report it as budget
+      // exhaustion rather than a generic polling error, so the two signals stay distinguishable.
+      if (deadline !== undefined && Date.now() >= deadline) {
+        logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
+          ...metadata,
+          attempts_made: attempt,
+          max_duration_ms: maxDurationMs,
+        });
+        return false;
+      }
       logger.warning(req, operation, 'Unexpected error during polling', {
         ...metadata,
         attempt,
