@@ -248,9 +248,12 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
-      // The canonical record is authoritative for the slug, including an explicit `null` after a
-      // rename removed it; only an absent field keeps what was known.
-      slug: canonical.slug !== undefined ? canonical.slug : current.slug,
+      // Spec 050: the URL slug is the *index's*, not member-service's. Addresses resolve against the
+      // index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs ahead
+      // of it during lag — so a slug known from an indexed row (org-items, the resolver) or `null`
+      // from one stays; the canonical slug only fills a selection that has no indexed answer yet
+      // (a cookie stub), and the org list replaces it with the indexed one when it answers.
+      slug: current.slug !== undefined ? current.slug : (canonical.slug ?? null),
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,

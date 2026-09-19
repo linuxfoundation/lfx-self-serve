@@ -103,10 +103,14 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
-  // A cookie-restored selection carries no slug; the indexed row does. Filling it is a patch to the
-  // same selection, not a new one — and the address is written only after the slug is in place.
-  it('backfills the slug of a restored selection from its row before writing the address', () => {
-    selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
+  // A cookie-restored selection carries no slug — or one the canonical record filled in meanwhile;
+  // the indexed row's is the one addresses resolve against. Applying it is a patch to the same
+  // selection, not a new one — and the address is written only after the slug is in place.
+  it.each([
+    ['no slug yet', undefined],
+    ['the canonical slug filled in meanwhile', 'beta-renamed'],
+  ])('applies the indexed slug to a restored selection with %s before writing the address', (_label, slug) => {
+    selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 

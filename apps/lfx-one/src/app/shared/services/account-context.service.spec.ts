@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Account } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +48,40 @@ describe('AccountContextService — address-adopted selection', () => {
       ],
     });
     service = TestBed.inject(AccountContextService);
+  });
+
+  // Spec 050: addresses resolve against the index, and member-service runs ahead of it during lag —
+  // so an indexed slug is never overwritten by the canonical record; only a gap is filled.
+  describe('canonical record and the URL slug', () => {
+    const canonicalOf = (slug: string | null | undefined): OrgCanonicalRecord => ({ uid: UID_B, accountId: UID_B, name: 'Bravo', slug }) as OrgCanonicalRecord;
+    const http = (): { get: ReturnType<typeof vi.fn> } => TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
+
+    it('keeps an indexed slug when the canonical record carries another', async () => {
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of(canonicalOf('bravo-renamed')));
+
+      await service.refreshCanonicalRecord(addressedB);
+
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
+    it('keeps an indexed null slug (SFID address) when the canonical record already has one', async () => {
+      service.adoptFromAddress({ ...addressedB, slug: null });
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
+
+      await service.refreshCanonicalRecord({ ...addressedB, slug: null });
+
+      expect(service.selectedUrlSegment()).toBe(UID_B);
+    });
+
+    it('fills the slug of a selection that has no indexed answer yet', async () => {
+      service.setAccount({ ...addressedB, slug: undefined });
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
+
+      await service.refreshCanonicalRecord({ ...addressedB, slug: undefined });
+
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
   });
 
   it('survives a staff re-seed with no organizations, which otherwise resets to the placeholder', () => {

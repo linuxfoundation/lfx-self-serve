@@ -263,11 +263,13 @@ export class OrgNavigationService {
     if (current.uid) {
       const match = page.items.find((item) => item.uid === current.uid);
       if (match) {
-        // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
-        // indexed row does (spec 050). Fill it once so in-app addresses and the path-param guard's
-        // no-round-trip path see the canonical segment; `null` here means member-service published none.
-        if (current.slug === undefined) {
-          this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
+        // A selection restored from the cookie or a persona seed carries no URL-identity slug, or one
+        // the canonical record filled in meanwhile; the indexed row's is the one addresses resolve
+        // against (spec 050). Apply it whenever it differs so in-app addresses and the path-param
+        // guard's no-round-trip path see the indexed segment; `null` means the index has none.
+        const indexedSlug = match.slug ?? null;
+        if (current.slug !== indexedSlug) {
+          this.accountContextService.setAccount({ ...current, slug: indexedSlug });
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never leaves an addressed page or the

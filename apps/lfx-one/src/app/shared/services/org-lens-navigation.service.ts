@@ -22,12 +22,12 @@ import { AccountContextService } from './account-context.service';
  *   fragment. What it may touch, and whether history stacks, depends on who made the selection
  *   (`OrgLensAddressIntent`).
  *
- * The segment written comes from the selection at the time of the write — the indexed org row. It is
- * deliberately not re-written when the canonical record (member-service) later arrives with a
- * different slug: addresses are resolved against the index (`/api/orgs/resolve/:segment` reads
- * query-service), and during index lag the canonical slug is the one the resolver cannot answer yet.
- * The indexed slug is the copyable one; a rename reaches addresses when the index has caught up and
- * the org list is next loaded.
+ * The segment is the *index's* slug for the selection (org-items row, resolver answer), never
+ * member-service's: addresses are resolved against the index (`/api/orgs/resolve/:segment` reads
+ * query-service), and during index lag the canonical record's slug is the one the resolver cannot
+ * answer yet. `AccountContextService.applyCanonicalRecord` therefore never overwrites an indexed
+ * slug, so links and address agree on the resolvable form; a rename reaches both when the index has
+ * caught up and the org list is next loaded.
  *
  * Two builders coexist on purpose. This one derives the organization from the *selection*, which is
  * right for links and for code that runs after a route has been recognized. Code that runs *during*
