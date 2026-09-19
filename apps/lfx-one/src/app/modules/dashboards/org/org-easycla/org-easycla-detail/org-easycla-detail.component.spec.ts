@@ -4,7 +4,7 @@
 import '@angular/compiler';
 
 import { Location } from '@angular/common';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
@@ -13,7 +13,6 @@ import {
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_NOT_STARTED_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
 } from '@lfx-one/shared/constants';
@@ -45,8 +44,11 @@ const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
+  const OTHER_ORG = { uid: '0014100000OtherOrgAA', accountName: 'Other' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -105,7 +107,7 @@ describe('OrgEasyclaDetailComponent', () => {
           provide: ActivatedRoute,
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
         },
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
@@ -479,7 +481,7 @@ describe('OrgEasyclaDetailComponent', () => {
       byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
       expect(openDialog).toHaveBeenCalledTimes(1);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -510,7 +512,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
       opened.data?.onRequestStarted?.();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -735,7 +737,7 @@ describe('OrgEasyclaDetailComponent', () => {
       attestationOnClose.next(attestations);
       // Between onClose and onDestroy, the viewer switches organizations. The click captured the
       // Acme uid; opening the hand-off now would sign Acme's CCLA for a different company.
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       attestationOnDestroy.next();
       fixture.detectChanges();
 
@@ -1063,11 +1065,12 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render(previewing());
       expect(navigate).not.toHaveBeenCalled();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1088,7 +1091,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
       opened.data?.onRequestStarted?.();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1100,7 +1103,8 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1120,7 +1124,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       onClose.next({ sendByEmail: true });
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1129,7 +1133,8 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       expect(openDialog).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1192,7 +1197,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Signed');
       expect(navigate).not.toHaveBeenCalled();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1202,7 +1207,8 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
       // The router is a spy, so this component is still mounted and the preview it should not be
       // showing is still on screen. Start is the assertion that means something in that window:
       // whatever the page renders before the navigation lands, it cannot open a session for the
@@ -1219,9 +1225,10 @@ describe('OrgEasyclaDetailComponent', () => {
      * made under for there to be anything to compare.
      */
     it('leaves for the list when the choice was made under another organization', async () => {
-      await render(previewing({ orgUid: '0014100000OtherOrgAA' }));
+      await render(previewing({ orgUid: OTHER_ORG.uid }));
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The selection is still Acme; only the stale choice named Other — so the list is Acme's.
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1252,7 +1259,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render(previewing());
       // The component is on-screen against SELECTED_ACCOUNT. Simulate the race window by switching
       // the account after the guard has read a matching value, then calling the action directly.
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       const component = fixture.componentInstance as unknown as { startClaProcess: () => void };
       component.startClaProcess();
 
@@ -1412,7 +1419,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await start();
       expect(opened).toHaveLength(1);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1450,7 +1457,7 @@ describe('OrgEasyclaDetailComponent', () => {
       opened[0].onDestroy.next();
       expect(opened).toHaveLength(2);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1651,7 +1658,7 @@ describe('OrgEasyclaDetailComponent', () => {
     // wrong reason: nothing subscribed, so nothing could have downloaded either way.
     expect(getPdfUrl).toHaveBeenCalledTimes(1);
 
-    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    selectedAccount.set(OTHER_ORG);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -1982,6 +1989,7 @@ describe('OrgEasyclaDetailComponent', () => {
             // left, and every ordering that depends on the selection catching up goes untested.
             useValue: {
               selectedAccount,
+              selectedUrlSegment,
               hasOrgSelectorAccess,
               setAccount: (account: { uid?: string; accountName: string }) => selectedAccount.set(account),
               refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
@@ -2292,7 +2300,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
-        expect(navigate).not.toHaveBeenCalledWith([ORG_EASYCLA_PATH], expect.anything());
+        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
       } finally {
         vi.useRealTimers();
       }
@@ -2520,6 +2528,8 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   // Both halves of the address (#2364), as the main describe above supplies them: the CLA Group in
   // the path, the signature narrowing it in the query.
   const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
@@ -2560,7 +2570,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
           provide: ActivatedRoute,
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
         },
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },

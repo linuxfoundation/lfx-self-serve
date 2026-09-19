@@ -8,7 +8,7 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE, orgEasyclaReturnPath } from '@lfx-one/shared/constants';
 import { isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -557,19 +557,19 @@ export class OrgClaService {
       // one thing this request already knows — so the signatory returns looking at the agreement
       // they signed rather than at a list that then has to hop somewhere.
       //
-      // Two parameters ride along. The organization, because the signatory comes back through a
-      // cross-site navigation and which organization is selected survives that only in a
-      // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
-      // signing for one company lands them looking at another. `orgUid` is the value the grant check
-      // already cleared and the same one sent as `company_sfid`, so the address describes the session
-      // that was actually opened. And the signed flag, because the row will not be on the list the
-      // instant they arrive — without it the page would read a group with no signed agreement and
-      // settle straight onto the cannot-preview state.
+      // The organization is named in the path (spec 050, lfx-self-serve#2743), because the signatory
+      // comes back through a cross-site navigation and which organization is selected survives that
+      // only in a `SameSite=Lax` cookie; without it the page falls to the first organization in their
+      // list, so signing for one company lands them looking at another. `orgUid` is the value the
+      // grant check already cleared and the same one sent as `company_sfid`, so the address describes
+      // the session that was actually opened; the path guard resolves it and canonicalizes to the slug
+      // on arrival. The signed flag rides along, because the row will not be on the list the instant
+      // they arrive — without it the page would read a group with no signed agreement and settle
+      // straight onto the cannot-preview state.
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
-        return_url: claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
-          [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+        return_url: claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), {
           [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
         }),
         authority_acked: request.authorityAcked,

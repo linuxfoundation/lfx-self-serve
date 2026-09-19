@@ -766,7 +766,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
-          return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1`,
+          return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -798,7 +798,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
       expect.anything(),
       expect.any(String),
       expect.objectContaining({
-        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1` }),
+        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1` }),
       })
     );
   });
@@ -813,7 +813,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
 
-    expect(new URL(body.return_url).pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
   });
 
   // The row is not on the organization's list the instant they arrive. Without the flag the page
@@ -830,8 +830,9 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
   // Without this the signatory returns through a cross-site navigation carrying only a
   // `SameSite=Lax` cookie, and when it does not come back the page selects the first organization
-  // in their list — so signing for one company lands them looking at another.
-  it('names the organization on the return address rather than leaving the page to guess it', async () => {
+  // in their list — so signing for one company lands them looking at another. Since spec 050 the
+  // organization is the address's own segment (lfx-self-serve#2743), not a `?org=` parameter.
+  it('names the organization in the return address path rather than leaving the page to guess it', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
     await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
@@ -839,9 +840,9 @@ describe('OrgClaService.requestCorporateSignature', () => {
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
     const returned = new URL(body.return_url);
 
-    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
     // The organization the grant check cleared and the request was made for, not a client value.
-    expect(returned.searchParams.get('org')).toBe(ORG_UID);
+    expect(returned.pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.has('org')).toBe(false);
   });
 
   // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.

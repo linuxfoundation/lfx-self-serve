@@ -6,13 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import {
-  CCLA_SIGN_COPY,
-  ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_PATH,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
-  ORG_EASYCLA_SIGNATURE_PARAM,
-} from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_SIGN_SELECTION_STATE, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -23,6 +17,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -46,6 +41,7 @@ export class OrgEasyclaComponent {
   private static readonly pageSize = 8;
 
   private readonly accountContext = inject(AccountContextService);
+  protected readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
@@ -370,7 +366,7 @@ export class OrgEasyclaComponent {
    */
   private openPreview(selection: OrgClaSignSelection): void {
     void this.router
-      .navigate([ORG_EASYCLA_PATH, selection.claGroupId], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      .navigate(this.orgLens.orgLensLink('easycla', selection.claGroupId), { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
       // Released at the navigation rather than at the dialog's close, so the control stays disabled
       // across the teardown gap and a navigation that never lands — refused by a guard, or
       // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
