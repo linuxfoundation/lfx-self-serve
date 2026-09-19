@@ -2469,6 +2469,33 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.cta).toBe('<script>alert(1)</script>');
   });
 
+  it('keeps a URL-less button label in the body, so the CTA does not vanish', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Speak with us</p>' },
+          { type: 'button', text: '<b>Submit</b> Your Proposal' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // CFP Launch: the generator omits `url` because registration is the wrong destination, and
+    // the UI correctly withholds a native button with no destination. Filtering the section out
+    // as well made the call to action disappear from the email entirely -- the label IS the
+    // content; only the link is missing.
+    expect(result.copy?.body).toContain('Submit');
+    // Escaped: `body` is rendered through [innerHTML] and lands in a rich-text widget, so model
+    // output must not become markup.
+    expect(result.copy?.body).not.toContain('<b>');
+    expect(result.copy?.body).toContain('&lt;b&gt;');
+    // Still no destination, so no native button.
+    expect(result.copy?.ctaUrl).toBe('');
+  });
+
   it('renders a divider as <hr /> rather than dropping it', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({

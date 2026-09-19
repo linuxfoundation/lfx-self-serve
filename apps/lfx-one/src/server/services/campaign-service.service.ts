@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { escapeHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -868,9 +869,24 @@ export class CampaignServiceClient {
       // the wire (`BodyHTML string` in internal/dispatch/hubspot.go), so a second button and any
       // button URL are still lost. That needs a contract change on both sides and is filed as a
       // follow-up rather than widened into this PR.
+      // A button with NO url keeps its label, as text, in place. The generator omits `url` for
+      // the stages where registration is the wrong destination ("Submit Your Proposal",
+      // "Share Feedback", "See You There") -- and since the UI correctly withholds a native
+      // button with no destination, filtering the section out too made the call to action
+      // vanish from the email entirely. The label is the content; only the link is missing.
+      //
+      // Escaped, because `body` is rendered through `[innerHTML]` and lands in a rich-text
+      // widget: the label is model output and must not become markup.
       const body = sections
-        .filter((section) => (section.type === 'rich_text' && section.html) || section.type === 'divider')
-        .map((section) => (section.type === 'divider' ? '<hr />' : section.html))
+        .filter(
+          (section) =>
+            (section.type === 'rich_text' && section.html) || section.type === 'divider' || (section.type === 'button' && !section.url && section.text)
+        )
+        .map((section) => {
+          if (section.type === 'divider') return '<hr />';
+          if (section.type === 'button') return `<p class="lfx-cta-text">${escapeHtml(section.text ?? '')}</p>`;
+          return section.html;
+        })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
       const cta = buttonSection?.text ?? '';
