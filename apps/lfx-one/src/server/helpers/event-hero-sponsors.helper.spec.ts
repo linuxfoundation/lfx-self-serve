@@ -34,11 +34,17 @@ describe('extractHeroAndSponsors', () => {
   it('decodes entities in sponsor logo URLs too, not just the hero', () => {
     // The decode lives in the shared resolver, so every extractor gets it -- a new one cannot
     // forget to call it.
-    const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme" class="sponsor" />`;
+    //
+    // `alt` carries the keyword, NOT `class`: the detector tests alt/src/context and ignores
+    // class entirely. An earlier version of this fixture used class="sponsor", matched nothing,
+    // and its assertion sat behind an `if (length > 0)` that silently skipped -- a test that
+    // could not fail. Asserting the length FIRST is what makes that impossible.
+    const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme sponsor logo" />`;
     const result = extractHeroAndSponsors(html, BASE_URL);
-    if (result.sponsors.length > 0) {
-      expect(result.sponsors[0].logoUrl).not.toContain('amp;');
-    }
+
+    expect(result.sponsors).toHaveLength(1);
+    expect(result.sponsors[0].logoUrl).toBe('https://cdn.example.com/logo.png?v=2&token=xyz');
+    expect(new URL(result.sponsors[0].logoUrl).searchParams.get('token')).toBe('xyz');
   });
 
   it('decodes &amp; LAST so an escaped entity does not become a real one', () => {

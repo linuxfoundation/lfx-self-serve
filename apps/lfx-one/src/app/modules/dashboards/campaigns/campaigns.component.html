@@ -813,7 +813,7 @@
                                absent previewTextB -- so the preview states the real outcome rather
                                than showing an empty line the send would not produce. -->
                           <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-b">
-                            {{ abTestPreheaderB() || emailCopy()?.preheader || '(template preheader)' }}
+                            {{ abTestPreheaderBPreview() || '(template preheader)' }}
                           </p>
                         </div>
                         @if (emailHeroImageUrl(); as heroUrl) {

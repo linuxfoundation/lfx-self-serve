@@ -1128,12 +1128,26 @@ export class CampaignsComponent {
     initialValue: this.abTestForm.controls.subjectB.value,
   });
 
-  /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
   /** Variant B's preheader — forwarded as `previewTextB` so B does not inherit A's. */
   protected readonly abTestPreheaderB = toSignal(this.abTestForm.controls.preheaderB.valueChanges, {
     initialValue: this.abTestForm.controls.preheaderB.value,
   });
 
+  /**
+   * Variant B's preheader as it will ACTUALLY be sent: trimmed, and '' when B has none.
+   *
+   * One computed rather than a trim in the template and another in `onStageEmailSend`. Those two
+   * drifted immediately -- a whitespace-only value was omitted on the wire (so upstream kept A's)
+   * while the preview rendered it as blank, contradicting the send. This is the same
+   * duplicate-predicate defect this PR exists to remove, so it gets the same fix: delete the
+   * second place.
+   */
+  protected readonly abTestPreheaderBForSend = computed<string>(() => this.abTestPreheaderB().trim());
+
+  /** What the preview shows for B: its own preheader, or A's when it has none -- matching send. */
+  protected readonly abTestPreheaderBPreview = computed<string>(() => this.abTestPreheaderBForSend() || (this.emailCopy()?.preheader ?? '').trim());
+
+  /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
   protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
     initialValue: this.abTestForm.controls.bodyHtmlB.value,
   });
@@ -2432,7 +2446,7 @@ export class CampaignsComponent {
     // hero: exactly the config-that-never-coexisted this block exists to prevent.
     const abTestEnabled = this.abTestEnabled() && this.abTestIsStageable();
     const abTestSubjectB = this.abTestSubjectB();
-    const abTestPreheaderB = this.abTestPreheaderB();
+    const abTestPreheaderB = this.abTestPreheaderBForSend();
     const abTestBodyHtmlB = this.abTestBodyHtmlB();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
@@ -2547,7 +2561,16 @@ export class CampaignsComponent {
           // and upstream reads an empty string as "blank this field" rather than "leave it
           // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
           // comment above already said the Go side requires both non-empty; the gate now agrees.
-          ...(abTestEnabled
+          // NARROWING is authoritative, widening is not. The pre-await snapshot exists to stop a
+          // mid-stage edit producing a config that never coexisted -- but for A/B it also
+          // overrode the operator: toggling OFF during the brief-id await left the snapshotted
+          // variant B in the payload, and recipients got a two-variant test that was cancelled
+          // before it was sent. That is externally visible and not undoable after staging.
+          //
+          // So: a variant that was on and is now off is DROPPED (the operator's explicit "stop"
+          // wins), while everything else still comes from the snapshot. Turning A/B ON mid-await
+          // is NOT honoured -- that would stage a half-filled variant assembled from two moments.
+          ...(abTestEnabled && this.abTestEnabled()
             ? {
                 abTestEnabled: true,
                 subjectB: abTestSubjectB,
@@ -2555,7 +2578,7 @@ export class CampaignsComponent {
                 // Local name, renamed to `previewTextB` by the controller exactly as `preheader`
                 // becomes `previewText`. Omitted when blank: upstream preserves the parent's
                 // preview text for an absent value, so '' would blank B's preheader instead.
-                ...(abTestPreheaderB.trim() !== '' ? { preheaderB: abTestPreheaderB.trim() } : {}),
+                ...(abTestPreheaderB !== '' ? { preheaderB: abTestPreheaderB } : {}),
               }
             : {}),
         },

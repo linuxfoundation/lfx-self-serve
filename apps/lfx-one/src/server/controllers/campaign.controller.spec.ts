@@ -1250,6 +1250,59 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['bodyHtmlB']).toBeUndefined();
   });
 
+  it('renames preheaderB to previewTextB on the wire, like preheader to previewText', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            abTestEnabled: true,
+            subjectB: 'S',
+            bodyHtmlB: '<p>b</p>',
+            preheaderB: '  B preheader  ',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // The Go decoder reads `previewTextB` (internal/dispatch/hubspot.go); a `preheaderB` key is
+    // silently dropped. That is exactly the bug the original preheader/previewText rename fixed,
+    // so the B half is tested rather than assumed -- and trimmed, matching the A half.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['previewTextB']).toBe('B preheader');
+    expect(sent['preheaderB']).toBeUndefined();
+  });
+
+  it('omits previewTextB entirely when blank, rather than blanking B preheader', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: { sourceEmailId: 'e-1', abTestEnabled: true, subjectB: 'S', bodyHtmlB: '<p>b</p>', preheaderB: '   ' },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // ABSENT, not ''. Upstream preserves the parent's preview text for an absent value, so an
+    // empty string would BLANK variant B's preheader instead of leaving it alone.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['previewTextB']).toBeUndefined();
+    expect(sent['abTestEnabled']).toBe(true);
+  });
+
   it('canonicalizes a scheme-relative-looking URL rather than forwarding it verbatim', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });

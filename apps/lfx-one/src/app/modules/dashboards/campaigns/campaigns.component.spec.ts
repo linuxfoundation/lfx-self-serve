@@ -4003,7 +4003,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });
 
-    it('truncates a long sponsor name the same way the controller does', async () => {
+    it('truncates a long sponsor name the same way the controller does', () => {
       selectEmail();
       // 150 code points, past the 100 the controller forwards. An astral character at the cut
       // boundary proves the slice is by CODE POINT -- a UTF-16 slice would split the surrogate
@@ -4069,7 +4069,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
     });
 
-    it('stages the A/B fields as they were BEFORE the brief-id await', async () => {
+    it('drops variant B when the operator toggles A/B off during the brief-id await', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -4097,13 +4097,16 @@ describe('CampaignsComponent — email delivery channel', () => {
       persisting.complete();
       await staging;
 
-      // Reading these live staged post-await A/B state against pre-await copy and hero -- a
-      // config that never existed at any single moment. Every sibling field is snapshotted for
-      // exactly this reason.
+      // NARROWING wins. The snapshot stops a mid-stage edit producing a config that never
+      // coexisted, but "turn A/B off" is the operator explicitly cancelling -- honouring the
+      // snapshot there shipped a two-variant test they had just stopped, which recipients see
+      // and which cannot be undone after staging. So the variant is DROPPED.
       const cfg = create.mock.calls[0][0].hubspotConfig;
-      expect(cfg?.abTestEnabled).toBe(true);
-      expect(cfg?.subjectB).toBe('B subject');
-      expect(cfg?.bodyHtmlB).toBe('<p>B body</p>');
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(cfg?.bodyHtmlB).toBeUndefined();
+      // The rest of the snapshot still holds -- only the A/B triple narrows.
+      expect(cfg?.subject).toBe('S');
     });
 
     it('forwards variant B preheader as previewTextB, so B does not inherit A', async () => {
