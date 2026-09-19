@@ -76,8 +76,11 @@ describe('orgLensPagePath shape rules', () => {
     }
   );
 
-  it('keeps an SFID whatever its letter case', () => {
-    expect(orgLensPagePath(['org', UID, 'roi'], 'overview')).toBe(`/org/${UID}/overview`);
+  // SFIDs are case-sensitive upstream: the shape check must not lowercase one on the way through.
+  it('keeps a mixed-case SFID exactly as addressed', () => {
+    const mixed = '0014100000MgAaAaAa';
+    expect(orgLensPagePath(['org', mixed, 'roi'], 'overview')).toBe(`/org/${mixed}/overview`);
+    expect(orgLensPagePath(['org', 'ACME-Inc', 'roi'], 'overview')).toBe('/org/ACME-Inc/overview');
   });
 });
 

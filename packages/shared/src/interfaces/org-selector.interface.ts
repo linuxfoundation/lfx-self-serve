@@ -368,14 +368,3 @@ export interface AccessAwareOrgsCacheEntry {
   /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
   degraded: boolean;
 }
-
-/**
- * Who selected the organization an Org Lens address is being re-written for
- * (`OrgLensNavigationService.navigateToSelectedOrg`, spec 050 US2).
- *
- * - `switch`: the viewer picked it. The page follows them anywhere inside Org Lens — including off
- *   the not-found dead end — and history is pushed so Back returns to the pre-switch organization.
- * - `default`: the app picked it because nothing was selected. Only an address that names no
- *   organization is filled in (`/org/{page}` → `/org/{segment}/{page}`), replacing the entry.
- */
-export type OrgLensAddressIntent = 'switch' | 'default';

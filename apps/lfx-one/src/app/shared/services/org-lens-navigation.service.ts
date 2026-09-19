@@ -3,7 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { ORG_LENS_PAGE_SEGMENTS } from '@lfx-one/shared/constants';
+import { ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_PATH } from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
@@ -47,10 +47,10 @@ export class OrgLensNavigationService {
     return this.orgLensLink(page, ...rest).join('/');
   }
 
-  /** True on the Org Lens not-found dead end (`/org/not-found`), the one page a same-organization pick may still leave. */
+  /** True on the Org Lens not-found dead end (`ORG_NOT_FOUND_PATH`), the one page a same-organization pick may still leave. */
   public isOnNotFound(): boolean {
-    const segments = this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((s) => s.path) ?? [];
-    return segments[0] === 'org' && segments[1] === 'not-found';
+    const [root, second] = this.currentPrimarySegments();
+    return `/${root}/${second}` === ORG_NOT_FOUND_PATH;
   }
 
   /**
@@ -66,8 +66,7 @@ export class OrgLensNavigationService {
    * and may not have adopted it yet when the org list answers.
    */
   public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
-    const tree = this.router.parseUrl(this.router.url);
-    const segments = tree.root.children['primary']?.segments.map((s) => s.path) ?? [];
+    const segments = this.currentPrimarySegments();
     if (segments[0] !== 'org' || segments[1] === 'easycla') {
       return;
     }
@@ -80,7 +79,7 @@ export class OrgLensNavigationService {
     if (segments.length === 1) {
       // Nothing after `/org`: land on the organization's overview.
       child = ['overview'];
-    } else if (segments[1] === 'not-found') {
+    } else if (this.isOnNotFound()) {
       // The dead end: only the viewer's own pick may leave it, for that organization's overview.
       if (intent !== 'switch') {
         return;
@@ -107,5 +106,10 @@ export class OrgLensNavigationService {
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
+  }
+
+  /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */
+  private currentPrimarySegments(): string[] {
+    return this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((s) => s.path) ?? [];
   }
 }

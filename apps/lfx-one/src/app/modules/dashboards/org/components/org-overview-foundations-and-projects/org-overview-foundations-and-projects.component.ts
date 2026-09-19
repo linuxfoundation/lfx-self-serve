@@ -32,12 +32,12 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly plausibleService = inject(PlausibleService);
   private readonly router = inject(Router);
 
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
-
   private readonly retryTrigger = signal(0);
   private readonly expansionState = signal<Record<string, boolean>>({});
   private readonly viewedOrgs = new Set<string>();
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 

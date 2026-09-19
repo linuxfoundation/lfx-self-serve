@@ -66,9 +66,6 @@ export class OrgMembershipDetailComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
 
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
-
   // Two-way sync with URL fragment; switchTab() writes, route.fragment subscription reads back.
   protected readonly activeTab = signal<MembershipDetailTab>(fragmentToTab(this.route.snapshot.fragment));
   protected readonly retryTrigger = signal(0);
@@ -122,6 +119,9 @@ export class OrgMembershipDetailComponent {
 
   // Subscribe via toSignal so the observable runs (read in template indirectly via pageState/foundation/keyContacts)
   protected readonly detailData = toSignal<OrgMembershipDetailResponse | null>(this.detail$, { initialValue: null });
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   protected readonly pageState: Signal<OrgMembershipDetailPageState> = computed(() => this.initPageState());
 

@@ -40,9 +40,6 @@ export class OrgRoiProjectDetailComponent {
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
 
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly roiLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('roi'));
-
   protected readonly noValue = ORG_LENS_ROI_NO_VALUE;
   protected readonly explanation = ORG_LENS_ROI_KPI_EXPLANATION;
 
@@ -52,6 +49,9 @@ export class OrgRoiProjectDetailComponent {
    * numbers without saying so.
    */
   protected readonly method = signal<OrgLensRoiMethod>(ORG_LENS_ROI_DEFAULT_METHOD);
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly roiLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('roi'));
 
   protected readonly methodLabel: Signal<string> = computed(() => ORG_LENS_ROI_METHOD_LABELS[this.method()]);
 

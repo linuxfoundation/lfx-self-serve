@@ -235,7 +235,9 @@ export class OrgSelectorComponent {
     // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
     // one exception is the not-found dead end, where the selection is the cookie's or a default that
     // never made it into the address: the pick is still the viewer's way out, to that organization's
-    // overview — `navigateToSelectedOrg('switch')` is a no-op everywhere else for the same organization.
+    // overview. The `isOnNotFound()` guard is load-bearing, not belt-and-braces — on a legacy
+    // `/org/{page}` address a `'switch'` for the same organization would insert the segment, which
+    // FR-014 forbids for a same-organization pick.
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
         this.orgLensNavigation.navigateToSelectedOrg('switch');

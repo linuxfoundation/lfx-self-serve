@@ -24,6 +24,8 @@
  *   E11b (US2, T036) — switching on a memberships detail page keeps the foundation segment.
  *   E11c (US2) — switching on a legacy bare `/org/{page}` inserts the organization.
  *   E12 (US2) — picking the already-selected organization navigates nowhere.
+ *   E12b (US2) — … except on the not-found dead end, where that pick is the viewer's way out to the
+ *         organization's overview (also unit-tested in `org-selector.component.spec.ts`).
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
@@ -397,5 +399,22 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await page.waitForTimeout(1_000);
     expect(page.url()).toBe(before);
     expect(await page.evaluate(() => window.history.length)).toBe(historyBefore);
+  });
+
+  // The dead end's selection is the bootstrap default (E9c), which never made it into the address — so
+  // the row shown as selected is, for a single-organization viewer, the only way out.
+  test('E12b: picking the already-selected organization on the not-found page leaves for its overview', async ({ page }) => {
+    await stubOrgIdentity(page);
+    await page.context().clearCookies({ name: 'lfx-selected-account' });
+
+    await page.goto(`/org/${UNKNOWN_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_A_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/overview(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
   });
 });
