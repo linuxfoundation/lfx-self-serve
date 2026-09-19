@@ -2200,14 +2200,13 @@ export class CampaignsComponent {
     // Invalidating a generation and cleaning up the state it owns are one operation, not two --
     // the stage-change branch and `resetEmailBriefDerivedState` both do both.
     this.emailStagingGeneration++;
-    if (this.emailStaging() === 'staging') {
-      // CANCEL the poll rather than bump past it: `pollStagingJob` never reads the counter, so a
-      // subscription already running would keep writing done/error for the abandoned send.
-      this.stagingJobSubscription?.unsubscribe();
-      this.stagingJobSubscription = null;
-      this.emailStaging.set('idle');
-      this.emailStagingMessage.set('');
-    }
+    // Cancelled HERE rather than only in the stage-change branch below, because a type change
+    // that maps to the SAME stage never reaches that branch -- and the bump above has already
+    // guaranteed `onStageEmailSend` will return without touching `emailStaging`, leaving the
+    // button spinning. The stage-change branch's own call is now redundant when both conditions
+    // hold, which is harmless (unsubscribe is idempotent) but noted so it is not read as an
+    // oversight. See `cancelStagingPoll` for why a bump alone is not enough.
+    this.cancelStagingPoll();
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made
@@ -2280,16 +2279,7 @@ export class CampaignsComponent {
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
-      // CANCEL the poll, do not merely bump past it. `pollStagingJob` never reads
-      // `emailStagingGeneration`, so the counter only guards the awaits BEFORE the poll starts; a
-      // subscription already running keeps writing `done`/`error` and would announce "Draft
-      // created" for the PREVIOUS send under the newly selected stage.
-      // `resetEmailBriefDerivedState` cancels it for exactly this reason, and a stage change is
-      // the same hazard by a different route.
-      this.stagingJobSubscription?.unsubscribe();
-      this.stagingJobSubscription = null;
-      this.emailStaging.set('idle');
-      this.emailStagingMessage.set('');
+      this.cancelStagingPoll();
     }
   }
 
@@ -2995,6 +2985,25 @@ export class CampaignsComponent {
       });
   }
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
+  /**
+   * Abandon an in-flight staging poll and return the button to idle.
+   *
+   * CANCEL, do not merely bump past it: `pollStagingJob` never reads `emailStagingGeneration`,
+   * so the counter guards only the awaits BEFORE the poll starts. A subscription already running
+   * keeps writing done/error and would announce "Draft created" for the abandoned send.
+   *
+   * Resetting the state is half of it, and the half that was missing: `onStageEmailSend` returns
+   * at its `isCurrent()` check WITHOUT touching `emailStaging`, so a bump on its own leaves the
+   * button spinning until a reload. Invalidating a generation and cleaning up the state it owns
+   * are one operation.
+   */
+  private cancelStagingPoll(): void {
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = null;
+    this.emailStaging.set('idle');
+    this.emailStagingMessage.set('');
+  }
+
   private clearAbTestDraft(): void {
     // Bump FIRST. An in-flight onGenerateAbTestCopy captured the previous generation, and
     // without this its `isCurrent()` still passes when the response lands -- writing the draft

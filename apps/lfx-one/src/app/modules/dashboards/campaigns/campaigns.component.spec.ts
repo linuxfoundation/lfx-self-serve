@@ -4051,17 +4051,21 @@ describe('CampaignsComponent — email delivery channel', () => {
       await generating;
       fixture.detectChanges();
 
-      // WHAT THIS PINS, stated precisely, because a vaguer claim here would be false.
+      // WHAT THIS PINS: `clearAbTestDraft()`'s `abTestCopyGeneration` bump, for the FIRST await
+      // window (the brief-id persist).
       //
-      // Toggling A/B off mid-flight abandons the generation before `generateEmailCopy` is
-      // reached, and leaves the B controls empty. That is the operator-visible contract.
+      // `onGenerateAbTestCopy` captures `++this.abTestCopyGeneration`; toggling off mid-flight
+      // runs `clearAbTestDraft`, which bumps it again. When the persist resolves, `isCurrent()`
+      // is false and the method returns BEFORE `generateEmailCopy` is called -- which is what
+      // `expect(gen).not.toHaveBeenCalled()` below asserts. Delete the bump and the guard is
+      // bypassed: the call happens and this test fails.
       //
-      // It does NOT prove the `abTestCopyGeneration` bump in clearAbTestDraft() is load-bearing:
-      // removing that bump leaves this test green, because the write-back is not reached on this
-      // path either way. Five stagings were tried and none made it fail. The bump is
-      // defence-in-depth for a path that is not demonstrably reachable today -- kept because the
-      // cost is one increment and the failure mode is a discarded draft silently returning, but
-      // labelled honestly rather than described as covered.
+      // The SECOND await window -- after `generateEmailCopy` resolves, where a late response
+      // would write back into the cleared controls -- is NOT covered here. Reaching it needs the
+      // generation call itself held open, not the persist.
+      //
+      // (An earlier revision of this comment claimed the bump was inert. That was wrong: it came
+      // from mutation runs against a spec that was failing to COMPILE, so the test never ran.)
       expect(gen).not.toHaveBeenCalled();
       // The CONTROLS, not the `toSignal` mirrors, which lag a setValue landing outside change
       // detection -- asserting the mirrors let a stale write through unnoticed.
@@ -4073,6 +4077,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailStaging.set('staging');
+      // A REAL subscription and a non-empty message, so the unsubscribe and the message clear are
+      // actually exercised rather than asserted against values that were already correct.
+      const polled = new Subject<unknown>();
+      const sub = polled.subscribe();
+      (fixture.componentInstance as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription = sub;
+      internals().emailStagingMessage.set('Creating draft...');
       fixture.detectChanges();
 
       // `main-registration-push` maps to the SAME stage as the default, which is the whole
@@ -4090,6 +4100,11 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       expect(internals().selectedEmailStage()).toBe('Registration Push');
       expect(internals().emailStaging()).toBe('idle');
+      // The poll is CANCELLED, not merely bumped past: `pollStagingJob` never reads the
+      // generation counter, so a live subscription would keep writing done/error for the
+      // abandoned send.
+      expect(sub.closed).toBe(true);
+      expect(internals().emailStagingMessage()).toBe('');
     });
 
     it('drops variant B when A/B is toggled off and back ON during the await', async () => {
