@@ -54,7 +54,7 @@ export class OrgLensNavigationService {
     return this.orgLensLink(page, ...rest).join('/');
   }
 
-  /** True on the Org Lens not-found dead end (`ORG_NOT_FOUND_PATH`), the one page a same-organization pick may still leave. */
+  /** True on the Org Lens not-found dead end (`ORG_NOT_FOUND_SEGMENTS`) or anything beneath it — the one page a same-organization pick may still leave. */
   public isOnNotFound(): boolean {
     return this.isNotFoundAddress(this.currentPrimarySegments());
   }

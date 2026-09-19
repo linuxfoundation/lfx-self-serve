@@ -54,7 +54,7 @@ export class AccountContextService {
    */
   private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
 
-  /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
+  /** Spec 050: the `/org/{segment}/…` segment of the current selection — the indexed slug (org-items row or resolver answer) when one is known, else the SFID; null for the placeholder. Never member-service's slug: addresses resolve against the index. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
 
   /** True while the selection is the organization the address named (see `adoptFromAddress`). */
@@ -226,7 +226,7 @@ export class AccountContextService {
     return promise;
   }
 
-  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. */
+  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. The URL slug is the one field not propagated (spec 050): it stays the index's until the org list reloads, since addresses resolve against the index and a rename reaches it only when the indexer has caught up. */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
     this.applyCanonicalRecord(canonical);
   }
