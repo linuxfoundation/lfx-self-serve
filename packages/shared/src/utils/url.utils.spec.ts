@@ -194,6 +194,10 @@ describe('isPrivateHost', () => {
     ['a malformed 4-label host', 'foo$bar.a.b.com'],
     // Deprecated IPv6 site-local, alongside link-local and unique-local.
     ['an IPv6 site-local address', '[fec0::1]'],
+    // All-numeric but OUT OF RANGE is a malformed literal, not a name, so it fails closed --
+    // checking range while deciding "is this a quad" would have let it through.
+    ['an out-of-range dotted quad', '10.0.0.256'],
+    ['a wildly out-of-range quad', '999.1.1.1'],
   ])('blocks %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
@@ -242,6 +246,12 @@ describe('isPrivateHost', () => {
     // Underscores are legal in DNS labels and ordinary in internal CDN names. Denying them
     // refused real hosts without refusing a single address spelling.
     ['an underscored hostname', 'my_cdn.example.com'],
+    // Quad-SHAPED but not a quad: the fourth label is a TLD, so these are ordinary hostnames.
+    // Reading only the first three octets refused them as RFC1918 -- a false positive on a
+    // legitimate hero or CTA URL.
+    ['a hostname shaped like an RFC1918 quad', '10.0.0.com'],
+    ['a hostname shaped like a 192.168 quad', '192.168.1.org'],
+    ['a hostname shaped like a loopback quad', '127.0.0.io'],
   ])('allows %s', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(false);
   });
