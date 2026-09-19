@@ -7,7 +7,7 @@ import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
 import { ORG_NOT_FOUND_PATH } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
-import { isOrgAccountIdSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
+import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
 
 import { AccountContextService } from '../services/account-context.service';
@@ -66,8 +66,14 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // cookie-restored or FR-020 stub no org-items row has answered for yet, or one the canonical record
   // disagreed with (spec 050) — and the resolver must still answer for it: it is the one source that
   // can learn the indexed slug here, without which an SFID address would never canonicalize (FR-002).
+  // A held slug is trusted for the shortcut only if it is slug-shaped (`isOrgSlugSegment`, which
+  // rejects SFID-shaped values): an SFID-shaped "slug" equal to the addressed segment would otherwise
+  // pass an SFID address for *another* organization off as the selected one without asking the
+  // resolver. The resolver classifies SFID syntax first, so such a segment must go to it.
   const selected = accountContext.selectedAccount();
-  if (selected.uid && selected.slug !== undefined && (segment === selected.uid || segment === selected.slug?.toLowerCase())) {
+  const heldSlug = typeof selected.slug === 'string' ? selected.slug.toLowerCase() : null;
+  const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;
+  if (selected.uid && selected.slug !== undefined && (segment === selected.uid || slugMatches)) {
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }
 

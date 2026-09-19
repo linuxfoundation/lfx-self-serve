@@ -119,6 +119,17 @@ describe('orgPathParamGuard', () => {
   });
 
   describe('already-selected organization (no round trip)', () => {
+    // The shortcut trusts the held slug only when it is slug-shaped: an SFID-shaped "slug" equal to
+    // the addressed segment would pass another organization's SFID address off as the selected one.
+    // Such a segment goes to the resolver, which classifies SFID syntax first.
+    it('does not take the shortcut on an SFID-shaped held slug, even when it equals the address', async () => {
+      selectedAccount.set(account({ uid: UID_A, slug: UID_B }));
+      resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
+
+      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe('/org/bravo-llc/projects');
+      expect(resolve).toHaveBeenCalledWith(UID_B, UID_A);
+    });
+
     it('is a no-op when the address already uses the selected slug', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome('acme-inc', '/org/acme-inc/projects?tab=active#top')).toBe(true);
