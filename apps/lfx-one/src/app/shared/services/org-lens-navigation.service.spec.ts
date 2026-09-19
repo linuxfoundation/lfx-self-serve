@@ -96,6 +96,19 @@ describe('OrgLensNavigationService', () => {
     });
   });
 
+  describe('isOnNotFound', () => {
+    it.each([
+      ['/org/not-found', true],
+      ['/org/not-found?from=x', true],
+      ['/org/acme-inc/overview', false],
+      ['/org/people', false],
+      ['/', false],
+    ])('%s → %s', (url, expected) => {
+      currentUrl = url;
+      expect(service.isOnNotFound()).toBe(expected);
+    });
+  });
+
   /**
    * An automatic default is not a switch: it only fills an organization into an address that names
    * none, and it replaces the entry (FR-011) so Back cannot land on the bare, uncopyable form.

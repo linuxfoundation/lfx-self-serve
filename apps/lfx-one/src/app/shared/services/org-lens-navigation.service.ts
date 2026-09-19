@@ -4,18 +4,9 @@
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
 import { ORG_LENS_PAGE_SEGMENTS } from '@lfx-one/shared/constants';
+import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
-
-/**
- * Who selected the organization the address is being re-written for.
- *
- * - `switch`: the viewer picked it. The page follows them anywhere inside Org Lens — including off
- *   the not-found dead end — and history is pushed so Back returns to the pre-switch organization.
- * - `default`: the app picked it because nothing was selected. Only an address that names no
- *   organization is filled in (`/org/{page}` → `/org/{segment}/{page}`), replacing the entry.
- */
-export type OrgLensAddressIntent = 'switch' | 'default';
 
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
@@ -54,6 +45,12 @@ export class OrgLensNavigationService {
   /** `orgLensLink` as a single path string, for string-typed `routerLink`s (sidebar items). */
   public orgLensPath(page: string, ...rest: (string | number)[]): string {
     return this.orgLensLink(page, ...rest).join('/');
+  }
+
+  /** True on the Org Lens not-found dead end (`/org/not-found`), the one page a same-organization pick may still leave. */
+  public isOnNotFound(): boolean {
+    const segments = this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((s) => s.path) ?? [];
+    return segments[0] === 'org' && segments[1] === 'not-found';
   }
 
   /**

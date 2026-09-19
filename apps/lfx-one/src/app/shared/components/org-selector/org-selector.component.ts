@@ -232,8 +232,14 @@ export class OrgSelectorComponent {
 
   protected selectItem(item: OrgItem): void {
     // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
-    // no account emission (which page consumers refetch on), no canonical fetch, no navigation.
+    // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
+    // one exception is the not-found dead end, where the selection is the cookie's or a default that
+    // never made it into the address: the pick is still the viewer's way out, to that organization's
+    // overview — `navigateToSelectedOrg('switch')` is a no-op everywhere else for the same organization.
     if (item.uid === this.selectedAccountUid()) {
+      if (this.orgLensNavigation.isOnNotFound()) {
+        this.orgLensNavigation.navigateToSelectedOrg('switch');
+      }
       this.popoverRef()?.hide();
       return;
     }

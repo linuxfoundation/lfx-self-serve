@@ -15,10 +15,15 @@
  *   E8/E9 — an address the resolver cannot answer for this viewer (unheld or unknown — one 404 by
  *         design, DR-002) lands on the Org Lens not-found page inside the shell, names no
  *         organization, and leaves the previous selection untouched (FR-022…FR-024).
+ *   E9c — a fresh session (no selection cookie) on such an address stays on the not-found page after
+ *         the org list picks its default: a default is a selection, never a navigation (SC-004).
  *   E10 — with the Org Lens flag off, a deep link lands on the same not-found page, not on `/`.
- *   E11/E11b/E12 (US2) — switching organization in the selector re-addresses the current page
- *         (child segments, query and fragment kept), Back returns to the pre-switch organization,
- *         and picking the already-selected organization navigates nowhere.
+ *   E11 (US2) — switching organization on a detail page re-addresses it (detail segment, query and
+ *         fragment kept), every rendered Org Lens link follows, and Back returns to the pre-switch
+ *         organization and page.
+ *   E11b (US2, T036) — switching on a memberships detail page keeps the foundation segment.
+ *   E11c (US2) — switching on a legacy bare `/org/{page}` inserts the organization.
+ *   E12 (US2) — picking the already-selected organization navigates nowhere.
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
@@ -283,8 +288,12 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     const historyAtNotFound = await page.evaluate(() => window.history.length);
     // The default has been picked (the selector names A) …
     await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
-    // … and the address is still the dead end, with nothing pushed under it.
-    await expect.poll(() => page.url(), { timeout: 3_000, intervals: [250] }).toMatch(/\/org\/not-found(\?|#|$)/);
+    // … and the address is still the dead end, with nothing pushed under it. A settle window first,
+    // then the assertion: a navigation one task later (a `replaceUrl` one leaves `history.length`
+    // alone) must be given the chance to happen — polling for the status quo would pass on its
+    // first tick and prove nothing.
+    await page.waitForTimeout(1_000);
+    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/);
     expect(await page.evaluate(() => window.history.length)).toBe(historyAtNotFound);
     await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
   });
@@ -381,10 +390,12 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     const historyBefore = await page.evaluate(() => window.history.length);
 
     await switchOrg(page, ORG_B_UID);
-    // The pick closes the panel; from then on nothing may move. Polled for a short window rather
-    // than slept: a navigation that did fire would show up as a changed URL within it.
+    // The pick closes the panel; from then on nothing may move. A settle window, then the
+    // assertion — a status-quo poll would pass on its first tick and let a navigation one task
+    // later (or a `replaceUrl` one, which keeps `history.length`) through.
     await expect(page.getByTestId('org-selector-list')).toBeHidden({ timeout: 10_000 });
-    await expect.poll(() => page.url(), { timeout: 2_000, intervals: [200] }).toBe(before);
-    await expect.poll(() => page.evaluate(() => window.history.length), { timeout: 2_000, intervals: [200] }).toBe(historyBefore);
+    await page.waitForTimeout(1_000);
+    expect(page.url()).toBe(before);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyBefore);
   });
 });

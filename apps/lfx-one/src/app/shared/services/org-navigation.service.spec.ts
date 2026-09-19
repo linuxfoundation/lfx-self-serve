@@ -95,4 +95,28 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
+
+  // A cookie-restored selection carries no slug; the indexed row does. Filling it is a patch to the
+  // same selection, not a new one — so it must not re-address the page either.
+  it('backfills the slug of a restored selection from its row without re-addressing', () => {
+    selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
+
+    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+    expect(setAccount).toHaveBeenCalledTimes(1);
+    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+  });
+
+  // A pre-spec-002 selection keyed by accountId rather than uid still finds its own row; that is a
+  // default selection of the *same* organization, and takes the default path like any other.
+  it('falls back to the row matching the restored accountId, still as a default', () => {
+    selectedAccount.set({ ...placeholder, accountId: UID_B });
+
+    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
+    expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
+    expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
 });

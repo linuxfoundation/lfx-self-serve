@@ -57,8 +57,6 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
 export class OrgMembershipDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly drawer = inject(PersonDetailDrawerService);
@@ -67,6 +65,9 @@ export class OrgMembershipDetailComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   // Two-way sync with URL fragment; switchTab() writes, route.fragment subscription reads back.
   protected readonly activeTab = signal<MembershipDetailTab>(fragmentToTab(this.route.snapshot.fragment));

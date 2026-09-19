@@ -27,11 +27,7 @@
     </lfx-empty-state>
   } @else {
     <!-- Breadcrumb: Projects / <Project> -->
-    <lfx-breadcrumb
-      [model]="breadcrumbItems()"
-      [home]="{ icon: 'fa-light fa-house', routerLink: projectsLink(), styleClass: 'sr-only' }"
-      data-testid="project-detail-breadcrumb">
-    </lfx-breadcrumb>
+    <lfx-breadcrumb [model]="breadcrumbItems()" [home]="breadcrumbHome()" data-testid="project-detail-breadcrumb"> </lfx-breadcrumb>
 
     <!-- B1 Hero -->
     @if (heroState().status === 'loading') {

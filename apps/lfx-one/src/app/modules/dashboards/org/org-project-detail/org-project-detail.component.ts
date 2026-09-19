@@ -111,14 +111,17 @@ export class OrgProjectDetailComponent {
 
   protected readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly destroyRef = inject(DestroyRef);
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
+  /** Breadcrumb home, as one stable object: an inline literal in the template would be a new object per change-detection pass. */
+  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({ icon: 'fa-light fa-house', routerLink: this.projectsLink(), styleClass: 'sr-only' }));
 
   // Per-block retry counters — bumping one re-runs only that block's fetch, so one failed block
   // never forces a whole-page reload.

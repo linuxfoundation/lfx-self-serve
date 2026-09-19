@@ -67,6 +67,20 @@ describe('orgLensPagePath', () => {
   });
 });
 
+describe('orgLensPagePath shape rules', () => {
+  // The same rules as the producer (`orgUrlSegment`): punctuation or a leading dash is not a slug.
+  it.each(['acme/inc', 'acme?x=1', 'acme#top', '-acme'])(
+    'falls back to the legacy page when the addressed segment %p is neither slug nor SFID shaped',
+    (segment) => {
+      expect(orgLensPagePath(['org', segment, 'roi'], 'overview')).toBe('/org/overview');
+    }
+  );
+
+  it('keeps an SFID whatever its letter case', () => {
+    expect(orgLensPagePath(['org', UID, 'roi'], 'overview')).toBe(`/org/${UID}/overview`);
+  });
+});
+
 describe('orgLensDestinationKey', () => {
   it('drops the organization from an Org Lens address and leaves everything else alone', () => {
     expect(orgLensDestinationKey('/org/acme-inc/projects')).toBe('/org/projects');

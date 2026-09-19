@@ -42,11 +42,19 @@ export function isOrgSlugSegment(segment: string): boolean {
  * legacy `/org/{page}`. Feature fallbacks redirect through this so they never drop the organization
  * a shared link named (FR-001) and hand the viewer back to the cookie selection. The segment is
  * passed through as addressed; the path-param guard canonicalizes it on the next navigation.
+ *
+ * "Names an organization" means shaped like one — slug (`isOrgSlugSegment`) or SFID
+ * (`isOrgAccountIdSegment`) — the same rules `orgUrlSegment` applies on the producing side. The
+ * matcher already rejects other values before a guard runs; this keeps the two builders honest
+ * with each other rather than trusting that ordering.
  */
 export function orgLensPagePath(urlSegments: readonly string[], page: string): string {
   const [root, second] = urlSegments;
-  if (root === 'org' && second && ORG_LENS_PAGE_SEGMENTS[second.toLowerCase()] !== true) {
-    return `/org/${second}/${page}`;
+  if (root === 'org' && second) {
+    const normalized = normalizeOrgSegment(second);
+    if (isOrgSlugSegment(normalized) || isOrgAccountIdSegment(normalized)) {
+      return `/org/${second}/${page}`;
+    }
   }
   return `/org/${page}`;
 }

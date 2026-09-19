@@ -29,10 +29,11 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly foundationsService = inject(OrgLensFoundationsService);
   private readonly orgLens = inject(OrgLensNavigationService);
-  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
-  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
   private readonly plausibleService = inject(PlausibleService);
   private readonly router = inject(Router);
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   private readonly retryTrigger = signal(0);
   private readonly expansionState = signal<Record<string, boolean>>({});
