@@ -39,10 +39,12 @@ describe('extractHeroAndSponsors', () => {
     // class entirely. An earlier version of this fixture used class="sponsor", matched nothing,
     // and its assertion sat behind an `if (length > 0)` that silently skipped -- a test that
     // could not fail. Asserting the length FIRST is what makes that impossible.
-    const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme sponsor logo" />`;
+    const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme &amp; Co sponsor" />`;
     const result = extractHeroAndSponsors(html, BASE_URL);
 
     expect(result.sponsors).toHaveLength(1);
+    // The NAME is decoded too, not just the URL -- it reaches a sent email as alt text.
+    expect(result.sponsors[0].name).toBe('Acme & Co sponsor');
     expect(result.sponsors[0].logoUrl).toBe('https://cdn.example.com/logo.png?v=2&token=xyz');
     expect(new URL(result.sponsors[0].logoUrl).searchParams.get('token')).toBe('xyz');
   });

@@ -4399,14 +4399,9 @@ export class CampaignsComponent {
     // The in-flight request is left to finish; only the promise other callers can join is cut.
     this.emailBriefPersistInFlight = null;
 
-    // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
-    // subscription running, so a job settling after a new brief or a foundation switch still
-    // writes `done` or `error` — announcing a HubSpot draft that belongs to the PREVIOUS brief as
-    // though it were this one's.
-    this.stagingJobSubscription?.unsubscribe();
-    this.stagingJobSubscription = null;
-    this.emailStaging.set('idle');
-    this.emailStagingMessage.set('');
+    // A job settling after a new brief or a foundation switch would otherwise write done/error,
+    // announcing a HubSpot draft that belongs to the PREVIOUS brief as though it were this one's.
+    this.cancelStagingPoll();
     // Cleared with the rest of the brief-derived state. These counters belong to ONE brief's
     // campaigns; leaving them set would render the previous brief's sends under the new one.
     // Back to `null`/`idle` rather than an empty result, so the panel reads "nothing staged yet"

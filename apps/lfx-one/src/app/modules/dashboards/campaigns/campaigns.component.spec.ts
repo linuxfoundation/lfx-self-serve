@@ -4024,6 +4024,37 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
+    it('discards a variant B response that lands after the operator toggled A/B off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      // The SECOND await window: let the brief-id persist resolve so execution parks on
+      // `generateEmailCopy`, which is what the sibling test above cannot reach. This is where a
+      // late response would write back into the controls the toggle-off emptied.
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const pending = new Subject<unknown>();
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(pending as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(gen).toHaveBeenCalled());
+
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      pending.next({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } });
+      pending.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // The post-`generateEmailCopy` isCurrent() guard is what stops this write-back. Without
+      // it the discarded draft reappears in the cleared controls.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
+    });
+
     it('abandons an in-flight variant B generation when the operator toggles A/B off', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
