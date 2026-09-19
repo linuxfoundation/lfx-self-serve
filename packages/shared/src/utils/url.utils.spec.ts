@@ -254,6 +254,11 @@ describe('isPrivateHost', () => {
     // 32 hex digits is only an address under a wildcard-DNS suffix; elsewhere it is a word.
     ['a 32-hex label outside a wildcard suffix', 'deadbeefdeadbeefdeadbeefdeadbeef.example.com'],
     ['a 32-hex PUBLIC address under a wildcard suffix', '20010db8000000000000000000000001.sslip.io'],
+    // Expanded IPv6 contains runs like `0-0-0-0`, which the dash-QUAD scan would read as the
+    // IPv4 window `0.0.0.0`. A label already decoded as a complete IPv6 address must not be
+    // re-read as IPv4 digits -- this is Google public DNS.
+    ['a PUBLIC expanded dash-notation IPv6', '2001-4860-4860-0-0-0-0-8888.sslip.io'],
+    ['a public expanded IPv6 in the doc range', '2001-db8-0-0-0-0-0-1.sslip.io'],
     // `5a5a5a5a` is hex-only (not all-digits), so it has ONE reading: 90.90.90.90, public.
     // `08080808` is deliberately NOT used here -- it is 8.8.8.8 as hex but 0.123.77.168 as
     // decimal, and an ambiguous label is refused if EITHER reading is private.

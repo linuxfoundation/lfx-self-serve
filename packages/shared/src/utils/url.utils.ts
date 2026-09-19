@@ -526,12 +526,21 @@ export function isPrivateHost(hostname: string): boolean {
       if (spelled !== '' && isPrivateHost(`[${spelled}]`)) return true;
     }
 
-    const numericParts = host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
+    // Labels already recognised as a COMPLETE IPv6 address are excluded before this scan. An
+    // expanded form contains runs like `0-0-0-0`, which this scan would otherwise read as the
+    // IPv4 window `0.0.0.0` -- refusing `2001-4860-4860-0-0-0-0-8888.sslip.io`, which is Google
+    // public DNS. Decoding a label one way and then re-reading its digits another way is how a
+    // guard produces false positives on addresses it has already judged correctly.
+    const scannable = host
+      .split('.')
+      .filter((label) => dashNotationIPv6(label) === '')
+      .join('.');
+    const numericParts = scannable.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
     for (let i = 0; i + 3 < numericParts.length; i++) {
       const quadParts = numericParts.slice(i, i + 4);
       if (!quadParts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
       const quad = quadParts.join('.');
-      if (quad !== host && isPrivateHost(quad)) return true;
+      if (quad !== scannable && isPrivateHost(quad)) return true;
     }
   }
 
