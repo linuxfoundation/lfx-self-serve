@@ -5,7 +5,7 @@ import { KEYWORD_ACTION_DEADLINE_MS } from '../services/campaign-keyword-actions
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MAX_BULK_KEYWORD_ACTIONS } from '@lfx-one/shared/constants';
+import { MAX_BULK_KEYWORD_ACTIONS, MAX_SPONSORS } from '@lfx-one/shared/constants';
 import type { CampaignBriefOutput } from '@lfx-one/shared/interfaces';
 
 import { ServiceValidationError } from '../errors';
@@ -1248,6 +1248,27 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['abTestEnabled']).toBeUndefined();
     expect(sent['subjectB']).toBeUndefined();
     expect(sent['bodyHtmlB']).toBeUndefined();
+  });
+
+  it('bounds the sponsor list before parsing, then caps the survivors', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    // 100 entries. The pre-slice bounds the work at MAX_SPONSORS * 2 BEFORE the per-entry
+    // canonicalHttpUrl parse, so a direct request cannot make the controller parse an unbounded
+    // list; the cap after it is what limits what actually ships.
+    const sponsors = Array.from({ length: 100 }, (_, i) => ({ name: `S${i}`, logoUrl: `https://cdn.example.com/${i}.png` }));
+
+    await controller.createCampaign(
+      buildReq({ platforms: ['hubspot'], hubspotConfig: { sourceEmailId: 'e-1', bodyHtml: '<p>b</p>', sponsors } }, { project: 'tlf', brief_id: 'b-1' }),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect((sent['sponsors'] as unknown[]).length).toBe(MAX_SPONSORS);
+    // From the FRONT of the list -- the pre-slice keeps the first 2N, so the first N survive.
+    expect((sent['sponsors'] as { name: string }[])[0].name).toBe('S0');
   });
 
   it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {

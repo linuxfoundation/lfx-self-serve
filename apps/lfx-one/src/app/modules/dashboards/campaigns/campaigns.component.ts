@@ -2506,7 +2506,7 @@ export class CampaignsComponent {
     // while every sibling came from this block -- so toggling A/B off, or editing variant B,
     // during the brief-id round trip staged post-await A/B state against pre-await copy and
     // hero: exactly the config-that-never-coexisted this block exists to prevent.
-    const abTestEnabled = this.abTestEnabled() && this.abTestIsStageable();
+    const abTestWasStageable = this.abTestEnabled() && this.abTestIsStageable();
     const abTestDiscardAtSnapshot = this.abTestDiscardGeneration;
     const abTestSubjectB = this.abTestSubjectB();
     const abTestPreheaderB = this.abTestPreheaderBForSend();
@@ -2641,7 +2641,7 @@ export class CampaignsComponent {
           // true again after an off->ON cycle during the await, while the controls this
           // snapshotted were emptied by the toggle-off -- so the flag check shipped a variant
           // the operator had discarded. The counter cannot be un-bumped.
-          ...(abTestEnabled && this.abTestDiscardGeneration === abTestDiscardAtSnapshot
+          ...(abTestWasStageable && this.abTestDiscardGeneration === abTestDiscardAtSnapshot
             ? {
                 abTestEnabled: true,
                 subjectB: abTestSubjectB,
