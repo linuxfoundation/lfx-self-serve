@@ -252,8 +252,9 @@ export class AccountContextService {
       // the index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs
       // ahead of it during lag — a slug taken from here could be one the resolver cannot answer yet.
       // So the slug is left exactly as the indexed rows set it (org-items, the resolver): a value,
-      // an indexed `null`, or still `undefined` for a stub, which addresses as the SFID until an
-      // indexed row answers.
+      // an indexed `null`, or still `undefined` for a stub, which addresses as the SFID — until the
+      // org list answers for a cookie stub, for the session for the FR-020 resolver-unavailable stub
+      // (address-adopted, so never re-checked against the org list).
       slug: current.slug,
     };
     this.selectedAccount.set(next);

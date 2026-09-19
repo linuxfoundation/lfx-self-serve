@@ -82,9 +82,14 @@ export class OrgLensNavigationService {
     }
 
     let child: string[];
+    // A bare or legacy address names no organization, so it has no pre-switch organization to go
+    // back to: Back would re-render it under the *new* selection. Inserting the organization is a
+    // canonicalization of the address the viewer already meant, whoever triggered it, so it replaces.
+    let canonicalizes = false;
     if (segments.length === 1) {
       // Nothing after `/org`: land on the organization's overview.
       child = ['overview'];
+      canonicalizes = true;
     } else if (this.isNotFoundAddress(segments)) {
       // The dead end: only the viewer's own pick may leave it, for that organization's overview.
       if (intent !== 'switch') {
@@ -94,6 +99,7 @@ export class OrgLensNavigationService {
     } else if (ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) {
       // Legacy `/org/{page}/…`: insert the organization.
       child = segments.slice(1);
+      canonicalizes = true;
     } else {
       // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
       // leaves an addressed organization alone.
@@ -104,11 +110,13 @@ export class OrgLensNavigationService {
       child = segments.slice(2);
     }
 
-    // A switch is pushed so Back returns to the pre-switch organization and page (US2 scenario 3);
-    // a default is a canonicalizing rewrite of the address the viewer already meant, so it replaces
-    // (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen.
+    // A switch between addressed organizations is pushed so Back returns to the pre-switch
+    // organization and page (US2 scenario 3); a default, or any insert into an address that named
+    // no organization, is a canonicalizing rewrite of the address the viewer already meant, so it
+    // replaces (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen,
+    // now showing the new selection.
     void this.router.navigate(['/org', segment, ...child], {
-      replaceUrl: intent === 'default',
+      replaceUrl: intent === 'default' || canonicalizes,
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });

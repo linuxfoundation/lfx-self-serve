@@ -65,16 +65,28 @@ describe('OrgLensNavigationService', () => {
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
-    it('inserts the organization on a legacy page address', () => {
+    // A legacy address names no organization to go back to — Back would re-render it under the new
+    // selection — so the insert replaces the entry even for a switch.
+    it('inserts the organization on a legacy page address, replacing the entry', () => {
       currentUrl = '/org/people';
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/people');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
     });
 
-    it.each(['/org/not-found', '/org'])('lands on the overview from %s', (url) => {
-      currentUrl = url;
+    it('lands on the overview from the bare /org, replacing the entry', () => {
+      currentUrl = '/org';
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/overview');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
+    });
+
+    // The dead end is a page the viewer came from and can meaningfully return to, so the pick pushes.
+    it('lands on the overview from the not-found page, pushing the entry', () => {
+      currentUrl = '/org/not-found';
+      service.navigateToSelectedOrg();
+      expect(navigatedTo()).toBe('/org/acme-inc/overview');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false }));
     });
 
     it.each(['/org/acme-inc/projects', `/org/${UID_A}/projects`])('is a no-op when the address already names the selection (%s)', (url) => {

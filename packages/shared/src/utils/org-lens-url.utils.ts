@@ -14,9 +14,10 @@ import type { Account } from '../interfaces';
  *
  * Both values are shape-checked, not trusted: this is the one producer every in-app Org Lens
  * address goes through, and some consumers join it into a string (`routerLink="…"`, `parseUrl`),
- * where a stray `/`, `?` or `#` would reshape the address. A slug that is not `[a-z0-9-]` falls
- * back to the SFID, and a uid that is not an SFID yields null — the same two rules the inbound
- * resolver applies (`isOrgSlugSegment`, `isOrgAccountIdSegment`).
+ * where a stray `/`, `?` or `#` would reshape the address. A slug `isOrgSlugSegment` rejects —
+ * not `[a-z0-9-]`, a reserved page name, or itself SFID-shaped — falls back to the SFID, and a uid
+ * that is not an SFID (`isOrgAccountIdSegment`) yields null: the same rules the inbound resolver
+ * applies, so what is produced here is what it will answer for.
  */
 export function orgUrlSegment(org: Pick<Account, 'uid' | 'slug'> | null | undefined): string | null {
   if (!org) return null;
