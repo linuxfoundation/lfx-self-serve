@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Event, Navigation, NavigationEnd, provideRouter, Router } from '@angular/router';
+import { Event, Navigation, NavigationCancel, NavigationEnd, provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgItemsResponse } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { Subject } from 'rxjs';
@@ -71,10 +71,11 @@ describe('OrgNavigationService default selection', () => {
   };
 
   // The default re-address reads the *current* address; mid-navigation that is the page being
-  // left, so the write waits for the navigation to settle and then re-reads the destination.
-  it('defers the re-address until an in-flight navigation settles', () => {
+  // left, so the write waits until the router is idle and then re-reads the destination. A cancel
+  // that is immediately followed by another navigation (a guard redirect) is not idle yet.
+  it('defers the re-address until the router is idle, through a cancel-and-redirect', () => {
     const router = TestBed.inject(Router);
-    vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({} as Navigation);
+    const inFlight = vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({} as Navigation);
     const events = new Subject<Event>();
     Object.defineProperty(router, 'events', { get: () => events.asObservable() });
 
@@ -82,7 +83,12 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
-    events.next(new NavigationEnd(1, '/org/people', '/org/people'));
+    // The first navigation is cancelled by a redirect that is already in flight: still not idle.
+    events.next(new NavigationCancel(1, '/org/roi', 'redirected'));
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+
+    inFlight.mockReturnValue(null);
+    events.next(new NavigationEnd(2, '/org/people', '/org/people'));
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');

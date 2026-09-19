@@ -301,9 +301,11 @@ export class OrgNavigationService {
   /**
    * The `'default'` re-address reads the router's *current* address. If a navigation is in flight
    * when the org-items page lands (the viewer clicked a link while the bootstrap fetch was pending),
-   * that address is the one being left, not the one being entered — so the write waits for the
-   * navigation to settle and then re-reads: a legacy destination still gets its organization, an
-   * addressed one is left alone by the default's own rules (and its guard has decided it by then).
+   * that address is the one being left, not the one being entered — so the write waits until the
+   * router is idle and then re-reads: a legacy destination still gets its organization, an addressed
+   * one is left alone by the default's own rules (and its guard has decided it by then). "Idle", not
+   * "first settle event": a guard redirect or a superseding click cancels one navigation and starts
+   * the next in the same tick, and `router.url` still names the page being left until that one lands.
    */
   private writeDefaultAddress(): void {
     if (!this.router.getCurrentNavigation()) {
@@ -313,6 +315,7 @@ export class OrgNavigationService {
     this.router.events
       .pipe(
         filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        filter(() => !this.router.getCurrentNavigation()),
         take(1)
       )
       .subscribe(() => this.orgLensNavigation.navigateToSelectedOrg('default'));
