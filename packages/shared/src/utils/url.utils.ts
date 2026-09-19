@@ -270,6 +270,27 @@ export function isProfileHubPath(url: string): boolean {
 const WILDCARD_DNS_SUFFIXES = ['nip.io', 'sslip.io', 'xip.io'];
 
 /**
+ * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
+ *
+ * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
+ * look handled while the scan could never match, because there is no address in the name to find.
+ * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
+ */
+const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
+
+/**
+ * Cloud metadata endpoints addressed by NAME rather than by address.
+ *
+ * `metadata.google.internal` resolves to 169.254.169.254 -- the same endpoint the link-local
+ * range already denies, reached by a spelling this function cannot see, because it does not
+ * resolve. The docstring claimed to cover "cloud metadata" while only the literal address was
+ * denied, so the name form went straight through.
+ *
+ * Matched as the host itself or as a parent of it, so `x.metadata.google.internal` is denied too.
+ */
+const METADATA_HOSTNAMES = ['metadata.google.internal', 'metadata.goog', 'instance-data', 'metadata'];
+
+/**
  * Every packed IPv4 address a single DNS label could be spelling, under a wildcard-DNS suffix.
  *
  * Returns a LIST, not one value, because a label can be read more than one way and guessing
@@ -322,27 +343,6 @@ function dashNotationIPv6(label: string): string {
   if (!candidate.includes('::') && candidate.split(':').length !== 8) return '';
   return candidate;
 }
-
-/**
- * Wildcard services that resolve EVERYTHING under them to loopback, without spelling an address.
- *
- * Listing these beside the spelled-address suffixes was worse than omitting them: it made them
- * look handled while the scan could never match, because there is no address in the name to find.
- * They are denied outright instead -- `anything.localtest.me` is 127.0.0.1.
- */
-const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
-
-/**
- * Cloud metadata endpoints addressed by NAME rather than by address.
- *
- * `metadata.google.internal` resolves to 169.254.169.254 -- the same endpoint the link-local
- * range already denies, reached by a spelling this function cannot see, because it does not
- * resolve. The docstring claimed to cover "cloud metadata" while only the literal address was
- * denied, so the name form went straight through.
- *
- * Matched as the host itself or as a parent of it, so `x.metadata.google.internal` is denied too.
- */
-const METADATA_HOSTNAMES = ['metadata.google.internal', 'metadata.goog', 'instance-data', 'metadata'];
 
 /**
  * Whether a URL's host names a private, loopback, or link-local address.
