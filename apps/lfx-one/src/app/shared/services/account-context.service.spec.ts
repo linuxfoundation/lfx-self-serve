@@ -51,7 +51,8 @@ describe('AccountContextService — address-adopted selection', () => {
   });
 
   // Spec 050: addresses resolve against the index, and member-service runs ahead of it during lag —
-  // so an indexed slug is never overwritten by the canonical record; only a gap is filled.
+  // so the canonical record never sets the URL slug: not over an indexed value, not over an indexed
+  // null, and not into a gap (a stub addresses as the SFID until an indexed row answers).
   describe('canonical record and the URL slug', () => {
     const canonicalOf = (slug: string | null | undefined): OrgCanonicalRecord => ({ uid: UID_B, accountId: UID_B, name: 'Bravo', slug }) as OrgCanonicalRecord;
     const http = (): { get: ReturnType<typeof vi.fn> } => TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
@@ -74,13 +75,15 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.selectedUrlSegment()).toBe(UID_B);
     });
 
-    it('fills the slug of a selection that has no indexed answer yet', async () => {
-      service.setAccount({ ...addressedB, slug: undefined });
+    // The FR-020 stub the path guard adopts when the resolver is unavailable is address-adopted, so
+    // the org list never re-checks it: a canonical fill here would stick for the session.
+    it('leaves a selection with no indexed slug on its SFID address', async () => {
+      service.adoptFromAddress({ ...addressedB, slug: undefined });
       http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
 
       await service.refreshCanonicalRecord({ ...addressedB, slug: undefined });
 
-      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+      expect(service.selectedUrlSegment()).toBe(UID_B);
     });
   });
 

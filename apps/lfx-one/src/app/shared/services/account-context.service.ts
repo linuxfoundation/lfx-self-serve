@@ -248,12 +248,13 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
-      // Spec 050: the URL slug is the *index's*, not member-service's. Addresses resolve against the
-      // index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs ahead
-      // of it during lag — so a slug known from an indexed row (org-items, the resolver) or `null`
-      // from one stays; the canonical slug only fills a selection that has no indexed answer yet
-      // (a cookie stub), and the org list replaces it with the indexed one when it answers.
-      slug: current.slug !== undefined ? current.slug : (canonical.slug ?? null),
+      // Spec 050: the URL slug is the *index's*, never member-service's. Addresses resolve against
+      // the index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs
+      // ahead of it during lag — a slug taken from here could be one the resolver cannot answer yet.
+      // So the slug is left exactly as the indexed rows set it (org-items, the resolver): a value,
+      // an indexed `null`, or still `undefined` for a stub, which addresses as the SFID until an
+      // indexed row answers.
+      slug: current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
