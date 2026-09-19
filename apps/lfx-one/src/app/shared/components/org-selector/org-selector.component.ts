@@ -265,16 +265,12 @@ export class OrgSelectorComponent {
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
     // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
+    // `refreshCanonicalRecord` settles after the fetch either way (a failure is logged inside it and
+    // leaves the indexed snapshot). Then: the canonical record can carry a different slug than the
+    // indexed row, and the address written below must follow it or the bar stops being copyable
+    // (spec 050 FR-002) — a no-op after a failed fetch, since the slug is as it was.
     void this.accountContextService
       .refreshCanonicalRecord(account)
-      .catch(() => {
-        // Errors are already logged inside refreshCanonicalRecord — swallow here so the
-        // floating promise doesn't reach the browser console.
-      })
-      // After the fetch settles either way: the canonical record can carry a different slug than the
-      // indexed row, and the address written below must follow it or the bar stops being copyable
-      // (spec 050 FR-002). A failed fetch leaves the slug as it was, so this is a no-op then. Kept
-      // outside the fetch's catch so a reconciliation fault is not mistaken for a fetch failure.
       .then(() => this.orgLensNavigation.reconcileAddress())
       .catch(() => {
         // Reconciliation is best-effort: the address stays as written.

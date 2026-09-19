@@ -3,13 +3,10 @@
 
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_PATH } from '@lfx-one/shared/constants';
+import { ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_SEGMENTS } from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
-
-/** `ORG_NOT_FOUND_PATH` as primary segments, compared segment by segment. */
-const NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
 
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
@@ -184,7 +181,7 @@ export class OrgLensNavigationService {
   }
 
   private isNotFoundAddress(segments: readonly string[]): boolean {
-    return NOT_FOUND_SEGMENTS.length === segments.length && NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
+    return ORG_NOT_FOUND_SEGMENTS.length === segments.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }
 
   /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */

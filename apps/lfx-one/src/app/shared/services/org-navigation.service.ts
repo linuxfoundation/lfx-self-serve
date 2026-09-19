@@ -297,13 +297,11 @@ export class OrgNavigationService {
    * reconciled against the slug it carried.
    */
   private writeDefaultAddress(account: Account): void {
+    // `refreshCanonicalRecord` settles after the fetch either way (a failure is logged inside it and
+    // leaves the indexed snapshot). A canonical slug that differs from the indexed row's then
+    // re-addresses the page written below; after a failed fetch this is a no-op.
     void this.accountContextService
       .refreshCanonicalRecord(account)
-      .catch(() => {
-        // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
-      })
-      // A canonical slug that differs from the indexed row's re-addresses the page written below;
-      // a failed fetch leaves the slug as it was and this is a no-op. Outside the fetch's catch on purpose.
       .then(() => this.orgLensNavigation.reconcileAddress())
       .catch(() => {
         // Reconciliation is best-effort: the address stays as written.

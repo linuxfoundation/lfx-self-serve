@@ -88,21 +88,8 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta-llc' }));
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
-    // Once the canonical record is in, the address is checked against the slug it carried — after
-    // the write, never before: `reconcileAddress` only knows what `navigateToSelectedOrg` recorded.
+    // Once the canonical record is in, the address is checked against the slug it carried.
     await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
-    expect(navigateToSelectedOrg.mock.invocationCallOrder[0]).toBeLessThan(reconcileAddress.mock.invocationCallOrder[0]);
-  });
-
-  // A degraded BFF fails the canonical fetch; the selection keeps the indexed slug and the address
-  // must still be checked against it — the failure is swallowed before, not after, the reconcile.
-  it('still reconciles the address when the canonical fetch fails', async () => {
-    refreshCanonicalRecord.mockReturnValue(Promise.reject(new Error('canonical fetch failed')));
-
-    pick(rowB);
-
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
-    expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.

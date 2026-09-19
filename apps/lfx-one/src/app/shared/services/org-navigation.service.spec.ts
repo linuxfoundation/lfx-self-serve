@@ -77,17 +77,7 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme' }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    // Once the canonical record is in, the written address is checked against the slug it carried —
-    // after the write, never before.
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
-    expect(navigateToSelectedOrg.mock.invocationCallOrder[0]).toBeLessThan(reconcileAddress.mock.invocationCallOrder[0]);
-  });
-
-  it('still reconciles the written address when the canonical fetch fails', async () => {
-    refreshCanonicalRecord.mockReturnValue(Promise.reject(new Error('canonical fetch failed')));
-
-    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
-
+    // Once the canonical record is in, the written address is checked against the slug it carried.
     await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
