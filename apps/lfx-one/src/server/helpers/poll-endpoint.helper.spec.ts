@@ -108,12 +108,31 @@ describe('pollEndpoint', () => {
         undefined,
         'test_op',
         'Poll wall-clock budget exhausted, proceeding anyway',
-        expect.objectContaining({ max_duration_ms: 8000 })
+        expect.objectContaining({ max_duration_ms: 8000, error: 'The operation timed out' })
       );
       expect(vi.mocked(logger.warning)).not.toHaveBeenCalledWith(undefined, 'test_op', 'Unexpected error during polling', expect.anything());
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('logs a pollFn throw before the deadline as an unexpected error, not budget exhaustion', async () => {
+    vi.mocked(logger.warning).mockClear();
+    // The other side of the deadline boundary: a defined deadline still far in the future means an
+    // early throw must keep the generic error signal with its detail — misclassifying it as budget
+    // exhaustion would drop exactly the upstream-failure visibility the deadline branch preserves.
+    const pollFn = vi.fn().mockRejectedValue(new Error('upstream 500'));
+
+    await expect(pollEndpoint({ req: undefined, operation: 'test_op', pollFn, maxRetries: 5, retryDelayMs: 1, maxDurationMs: 8000 })).resolves.toBe(false);
+
+    expect(pollFn).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+      undefined,
+      'test_op',
+      'Unexpected error during polling',
+      expect.objectContaining({ attempt: 1, error: 'upstream 500' })
+    );
+    expect(vi.mocked(logger.warning)).not.toHaveBeenCalledWith(undefined, 'test_op', 'Poll wall-clock budget exhausted, proceeding anyway', expect.anything());
   });
 
   it('hands pollFn the remaining wall-clock budget so the caller can cap its request timeout', async () => {

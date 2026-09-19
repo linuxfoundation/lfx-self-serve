@@ -485,6 +485,35 @@ describe('VoteService', () => {
         vi.useRealTimers();
       }
     });
+
+    it('rethrows the observed 403 with the exhaustion warning when the backoff sleep resumes past the budget floor', async () => {
+      vi.useFakeTimers();
+      try {
+        // The first 403 returns instantly with the budget intact, so the pre-sleep floor check
+        // passes (11700 - 600 >= 1000) and the 600 ms backoff is taken. A timer scheduled at the
+        // same instant but first then jumps the clock 10.6 s mid-sleep — an event-loop stall
+        // resuming the backoff timer late — leaving 500 ms, under the minimum viable request
+        // budget: the post-sleep re-check must rethrow the observed 403 with the exhaustion
+        // warning rather than issue a PUT whose sub-round-trip 408 would mask it.
+        setTimeout(() => vi.advanceTimersByTime(10600), 600);
+        proxyRequestWithResponse.mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+        const promise = service.enableVote(req, CANONICAL_UID);
+        const rejection = expect(promise).rejects.toMatchObject({ statusCode: 403 });
+        await vi.advanceTimersByTimeAsync(600);
+        await rejection;
+
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'enable_vote',
+          'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+          { vote_uid: CANONICAL_UID, attempts: 1 }
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
   });
 
   describe('getVoteResults', () => {

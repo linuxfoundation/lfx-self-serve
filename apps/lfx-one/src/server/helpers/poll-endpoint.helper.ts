@@ -9,7 +9,8 @@ export interface PollEndpointContext {
   /**
    * Remaining wall-clock budget in ms — set only when `maxDurationMs` is. Callers should pass it
    * as the per-request timeout of any upstream call inside `pollFn` so an in-flight request can
-   * never overshoot the deadline (a timeout throws, which ends polling like any other error).
+   * never overshoot the deadline (a timeout throws, and a throw at/past the deadline is reported
+   * as budget exhaustion rather than an unexpected error).
    */
   remainingMs?: number;
 }
@@ -36,6 +37,8 @@ export interface PollEndpointOptions {
  * - `pollFn` returns `true`  → polling resolved, stop retrying.
  * - `pollFn` returns `false` → condition not met, retry after delay.
  * - `pollFn` throws          → unexpected error, stop polling.
+ * - `pollFn` throws at/after the deadline → reported as budget exhaustion, not an unexpected
+ *   error (a tail request timing out at the deadline lands here); the error detail is still logged.
  * - deadline passed          → `maxDurationMs` spent (request time counts), stop polling.
  *
  * Returns `true` if polling resolved, `false` if retries or the wall-clock budget were
@@ -87,11 +90,14 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
     } catch (error: any) {
       // A tail request whose timeout aborts it at the deadline lands here — report it as budget
       // exhaustion rather than a generic polling error, so the two signals stay distinguishable.
+      // The error detail still rides along: a throw coinciding with the deadline can be something
+      // other than exhaustion (e.g. an upstream 5xx), and the log must be able to tell them apart.
       if (deadline !== undefined && Date.now() >= deadline) {
         logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
           ...metadata,
           attempts_made: attempt,
           max_duration_ms: maxDurationMs,
+          error: error instanceof Error ? error.message : 'Unknown error',
         });
         return false;
       }
