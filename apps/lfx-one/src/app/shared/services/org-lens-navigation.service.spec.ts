@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, WritableSignal } from '@angular/core';
+import { computed, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
 import { Account } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -18,7 +19,8 @@ describe('OrgLensNavigationService', () => {
   const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
 
   let selectedAccount: WritableSignal<Account>;
-  let selectedUrlSegment: WritableSignal<string | null>;
+  /** Derived exactly as `AccountContextService` derives it, so canonical-record outcomes (slug removed, case, shape) are the real ones. */
+  let selectedUrlSegment: Signal<string | null>;
   let service: OrgLensNavigationService;
   let router: Router;
   let navigate: MockInstance<Router['navigate']>;
@@ -26,7 +28,7 @@ describe('OrgLensNavigationService', () => {
 
   beforeEach(() => {
     selectedAccount = signal<Account>(acme);
-    selectedUrlSegment = signal<string | null>('acme-inc');
+    selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
     currentUrl = '/';
     TestBed.configureTestingModule({
       providers: [provideRouter([]), { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment } }],
@@ -48,7 +50,6 @@ describe('OrgLensNavigationService', () => {
     });
 
     it('falls back to the legacy page address while nothing is selected', () => {
-      selectedUrlSegment.set(null);
       selectedAccount.set(placeholder);
       expect(service.orgLensLink('memberships', 'cncf')).toEqual(['/org', 'memberships', 'cncf']);
     });
@@ -89,7 +90,7 @@ describe('OrgLensNavigationService', () => {
     });
 
     it('is a no-op while no segment is known', () => {
-      selectedUrlSegment.set(null);
+      selectedAccount.set(placeholder);
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
@@ -133,7 +134,7 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/acme-inc/projects/k8s?tab=active#top';
       navigate.mockClear();
 
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
       await service.reconcileAddress();
 
       expect(navigatedTo()).toBe('/org/acme-incorporated/projects/k8s');
@@ -148,7 +149,7 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       navigate.mockClear();
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
 
       const reconciling = service.reconcileAddress();
       // Still pre-switch on the address bar: nothing may be decided yet.
@@ -170,12 +171,11 @@ describe('OrgLensNavigationService', () => {
       const reconciling = service.reconcileAddress();
 
       selectedAccount.set(beta);
-      selectedUrlSegment.set('beta-llc');
       service.navigateToSelectedOrg();
       currentUrl = '/org/beta-llc/projects';
       navigate.mockClear();
 
-      selectedUrlSegment.set('beta-llc-renamed');
+      selectedAccount.set({ ...beta, slug: 'beta-llc-renamed' });
       activate(true);
       await reconciling;
 
@@ -192,7 +192,7 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       navigate.mockClear();
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
 
       await expect(service.reconcileAddress()).resolves.toBeUndefined();
       expect(navigate).not.toHaveBeenCalled();
@@ -207,7 +207,7 @@ describe('OrgLensNavigationService', () => {
       service.navigateToSelectedOrg();
       currentUrl = '/org/acme-inc/overview';
       navigate.mockClear();
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
 
       await service.reconcileAddress();
 
@@ -221,10 +221,38 @@ describe('OrgLensNavigationService', () => {
       service.navigateToSelectedOrg();
       currentUrl = '/org/acme-inc/projects';
       navigate.mockReturnValueOnce(Promise.reject(new Error('navigation failed')));
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
 
       await service.reconcileAddress();
       await expect(service.reconcileAddress()).resolves.toBeUndefined();
+    });
+
+    // A rename can remove the slug outright (`slug: null` is authoritative): the address falls to the
+    // SFID form, exactly as `orgUrlSegment` would produce it.
+    it('falls back to the SFID when the canonical record carries no slug', async () => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects';
+      navigate.mockClear();
+
+      selectedAccount.set({ ...acme, slug: null });
+      await service.reconcileAddress();
+
+      expect(navigatedTo()).toBe(`/org/${UID_A}/projects`);
+    });
+
+    // The canonical slug is normalized the same way the written one was, so a case or whitespace
+    // difference is not a change of address.
+    it.each(['ACME-Inc', '  acme-inc  '])('is a no-op when the canonical slug %p normalizes to what was written', async (slug) => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects';
+      navigate.mockClear();
+
+      selectedAccount.set({ ...acme, slug });
+      await service.reconcileAddress();
+
+      expect(navigate).not.toHaveBeenCalled();
     });
 
     it('is a no-op when the canonical segment matches what was written', async () => {
@@ -242,14 +270,12 @@ describe('OrgLensNavigationService', () => {
     // page alone. Acme's canonical record must not turn Beta's page into Acme's either.
     it('never re-addresses a page written for another organization', async () => {
       selectedAccount.set(beta);
-      selectedUrlSegment.set('beta-llc');
       currentUrl = '/org/acme-inc/projects';
       service.navigateToSelectedOrg('switch');
       currentUrl = '/org/beta-llc/projects';
       navigate.mockClear();
 
       selectedAccount.set(acme);
-      selectedUrlSegment.set('acme-inc');
       await service.reconcileAddress();
 
       expect(navigate).not.toHaveBeenCalled();
@@ -262,7 +288,7 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/third-org/people';
       navigate.mockClear();
 
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
       await service.reconcileAddress();
 
       expect(navigate).not.toHaveBeenCalled();
@@ -270,7 +296,7 @@ describe('OrgLensNavigationService', () => {
 
     it('is a no-op before anything was written', async () => {
       currentUrl = '/org/acme-inc/projects';
-      selectedUrlSegment.set('acme-incorporated');
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
       await service.reconcileAddress();
       expect(navigate).not.toHaveBeenCalled();
     });

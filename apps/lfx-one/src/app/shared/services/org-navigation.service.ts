@@ -269,6 +269,10 @@ export class OrgNavigationService {
         if (current.slug === undefined) {
           this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
         }
+        // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
+        // bar as a default's — written the same way. A default never leaves an addressed page or the
+        // not-found dead end alone, so this is a no-op everywhere but the bare form.
+        this.orgLensNavigation.navigateToSelectedOrg('default');
         return;
       }
     }
@@ -286,8 +290,11 @@ export class OrgNavigationService {
         // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
       })
       // A canonical slug that differs from the indexed row's re-addresses the page written below;
-      // a failed fetch leaves the slug as it was and this is a no-op. Outside the catch on purpose.
-      .then(() => this.orgLensNavigation.reconcileAddress());
+      // a failed fetch leaves the slug as it was and this is a no-op. Outside the fetch's catch on purpose.
+      .then(() => this.orgLensNavigation.reconcileAddress())
+      .catch(() => {
+        // Reconciliation is best-effort: the address stays as written.
+      });
     // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
     // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
     // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never

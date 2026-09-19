@@ -8,6 +8,9 @@ import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
 
+/** `ORG_NOT_FOUND_PATH` as primary segments, compared segment by segment. */
+const NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
+
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
  * with the selection (spec 050 US2 — FR-013…FR-016, FR-029).
@@ -21,6 +24,9 @@ import { AccountContextService } from './account-context.service';
  *   Lens page, now addressed to the selected organization — same child segments, query and
  *   fragment. What it may touch, and whether history stacks, depends on who made the selection
  *   (`OrgLensAddressIntent`).
+ * - `reconcileAddress()` is chained behind the canonical-record fetch by every caller of
+ *   `navigateToSelectedOrg`: once the canonical slug is known and differs from the indexed row the
+ *   address was written with, the written segment is replaced.
  *
  * Two builders coexist on purpose. This one derives the organization from the *selection*, which is
  * right for links and for code that runs after a route has been recognized. Code that runs *during*
@@ -64,8 +70,9 @@ export class OrgLensNavigationService {
   /**
    * Re-address the current page to the selected organization. No-op outside Org Lens (a switch
    * from the Me or Project lens changes the selection only), on EasyCLA pages (DR-004: they stay
-   * on the legacy address in phase 1), when no segment is known yet, or when the address already
-   * names the selected organization (FR-014).
+   * on the legacy address in phase 1), when the selection has no segment or no uid yet (the uid is
+   * the key `reconcileAddress` binds the write to), or when the address already names the selected
+   * organization (FR-014).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -176,8 +183,8 @@ export class OrgLensNavigationService {
     return navigation.catch(() => false);
   }
 
-  private isNotFoundAddress([root, second]: readonly string[]): boolean {
-    return `/${root}/${second}` === ORG_NOT_FOUND_PATH;
+  private isNotFoundAddress(segments: readonly string[]): boolean {
+    return NOT_FOUND_SEGMENTS.length === segments.length && NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }
 
   /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */

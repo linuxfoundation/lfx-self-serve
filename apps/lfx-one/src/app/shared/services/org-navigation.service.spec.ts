@@ -75,7 +75,17 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme' }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    // Once the canonical record is in, the written address is checked against the slug it carried.
+    // Once the canonical record is in, the written address is checked against the slug it carried —
+    // after the write, never before.
+    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
+    expect(navigateToSelectedOrg.mock.invocationCallOrder[0]).toBeLessThan(reconcileAddress.mock.invocationCallOrder[0]);
+  });
+
+  it('still reconciles the written address when the canonical fetch fails', async () => {
+    TestBed.inject(AccountContextService).refreshCanonicalRecord = vi.fn(() => Promise.reject(new Error('canonical fetch failed')));
+
+    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
     await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
@@ -91,25 +101,30 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
   });
 
-  it('keeps a restored selection that is on the page and does not re-address for it', () => {
+  // A restored selection on a legacy `/org/{page}` is the same uncopyable bar as a default's, so it is
+  // written the same way — as a default, which is a no-op on an addressed page or the dead end.
+  it('keeps a restored selection that is on the page and writes it into a legacy address as a default', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).not.toHaveBeenCalled();
-    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
+    expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    expect(reconcileAddress).not.toHaveBeenCalled();
   });
 
   // A cookie-restored selection carries no slug; the indexed row does. Filling it is a patch to the
-  // same selection, not a new one — so it must not re-address the page either.
-  it('backfills the slug of a restored selection from its row without re-addressing', () => {
+  // same selection, not a new one — and the address is written only after the slug is in place.
+  it('backfills the slug of a restored selection from its row before writing the address', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).toHaveBeenCalledTimes(1);
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
-    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    expect(setAccount.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   // A pre-spec-002 selection keyed by accountId rather than uid still finds its own row; that is a
