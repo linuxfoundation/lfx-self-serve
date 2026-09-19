@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -26,6 +26,8 @@ describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
   const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -64,7 +66,7 @@ describe('OrgEasyclaComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -249,7 +251,7 @@ describe('OrgEasyclaComponent', () => {
           provideRouter([]),
           provideNoopAnimations(),
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
-          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -341,7 +343,7 @@ describe('OrgEasyclaComponent', () => {
       // The state key is spelled out rather than taken from the constant, deliberately. It is
       // written into a history entry that outlives the deployment that wrote it, so renaming it
       // silently breaks in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -447,7 +449,7 @@ describe('OrgEasyclaComponent', () => {
           providers: [
             provideRouter([]),
             provideNoopAnimations(),
-            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
             { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -644,7 +646,7 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
       // Addressed by CLA Group, with this row's signature narrowing it (#2364).
-      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+      expect(link?.getAttribute('href')).toContain(`/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
     });
 
     /**
@@ -663,7 +665,10 @@ describe('OrgEasyclaComponent', () => {
       const fixture = await render();
       const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
 
-      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+      expect(hrefs).toEqual([
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
+      ]);
     });
 
     /**
@@ -1086,7 +1091,7 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
+            useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },

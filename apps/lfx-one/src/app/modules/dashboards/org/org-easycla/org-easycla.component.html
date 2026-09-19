@@ -134,7 +134,7 @@
             -->
             @if (claGroup.claGroupId) {
               <a
-                [routerLink]="['/org/easycla', claGroup.claGroupId]"
+                [routerLink]="orgLens.orgLensLink('easycla', claGroup.claGroupId)"
                 [queryParams]="cardSignatureParams()[claGroup.id]"
                 class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 [attr.aria-label]="orgClaOpenLabel(claGroup)"

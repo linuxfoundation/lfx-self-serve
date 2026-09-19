@@ -61,9 +61,9 @@ export class OrgLensNavigationService {
 
   /**
    * Re-address the current page to the selected organization. No-op outside Org Lens (a switch
-   * from the Me or Project lens changes the selection only), on EasyCLA pages (DR-004: they stay
-   * on the legacy address in phase 1), when no segment is known yet, or when the address already
-   * names the selected organization (FR-014).
+   * from the Me or Project lens changes the selection only), when no segment is known yet, or when
+   * the address already names the selected organization (FR-014). EasyCLA pages follow the same
+   * rule since lfx-self-serve#2743 ended their DR-004 exemption.
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -74,6 +74,16 @@ export class OrgLensNavigationService {
   public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
     const segments = this.currentPrimarySegments();
     if (!this.isRewritableOrgAddress(segments)) {
+      return;
+    }
+    // Legacy `/org/easycla/…` for one release after lfx-self-serve#2743: a corporate-signing return
+    // minted before the deploy arrives here as `?org={uid}&signed=1`, and the org list can answer
+    // before `OrgClaReturnService.adopt` has run — a default insert then would write the *default*
+    // organization into the address while the page adopts the named one from `?org=` (the DR-004
+    // Option-B trace). The viewer's own switch may still re-address it; only the automatic default
+    // leaves the legacy EasyCLA address alone. New returns carry the organization in the path and
+    // are address-adopted, so they never reach a default in the first place.
+    if (intent === 'default' && segments[1] === 'easycla') {
       return;
     }
     const segment = this.accountContext.selectedUrlSegment();
@@ -127,9 +137,9 @@ export class OrgLensNavigationService {
     return segments.length >= ORG_NOT_FOUND_SEGMENTS.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }
 
-  /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */
+  /** An Org Lens address this service may rewrite: anything under `/org` (EasyCLA included since lfx-self-serve#2743). */
   private isRewritableOrgAddress(segments: readonly string[]): boolean {
-    return segments[0] === 'org' && segments[1] !== 'easycla';
+    return segments[0] === 'org';
   }
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */

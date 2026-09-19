@@ -222,16 +222,24 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
- * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
- * child route under /org in the org dashboard routes.
+ * Where EasyCLA returns a signatory after signing a corporate CLA (#1983, #2352): the CLA Group's
+ * own address under the organization the signing was opened for — `/org/{orgUid}/easycla/{claGroupId}`
+ * (spec 050 address scheme, lfx-self-serve#2743). Mirrors the `easycla` child of the
+ * `/org/:orgSegment` route in the org dashboard routes.
+ *
+ * `orgUid` is the 18-char SFID the grant check cleared; the path guard resolves it against the
+ * viewer's own organizations and canonicalizes the segment to the slug on arrival, so the address
+ * names an organization without granting one.
  *
  * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
  * address from the request Host, and the two hand-offs must not disagree on where they land.
  */
-export const ORG_EASYCLA_PATH = '/org/easycla';
+export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
+  return `/org/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
+}
 
 /**
- * Query parameter naming which corporate agreement a `ORG_EASYCLA_PATH` group address is about,
+ * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
  * when the group id alone does not say (#2364).
  *
  * The path segment is the CLA Group, which identifies an agreement *template* rather than one
@@ -251,7 +259,7 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 
 /**
  * Key the picker's chosen CLA Group travels under, in the router state of the navigation to that
- * group's `ORG_EASYCLA_PATH` address (#1983, #2364).
+ * group's `/org/{org}/easycla/{claGroupId}` address (#1983, #2364).
  *
  * State rather than the address, because the address holds nothing that could be resolved into the
  * agreement this page has to name: the CLA service exposes no fetch-a-CLA-group-by-id endpoint —
@@ -265,18 +273,15 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * Query parameter naming the organization a corporate signing session was opened for, carried on
- * the CLA Group address EasyCLA returns the signatory to (#1983, #2352).
+ * Legacy query parameter naming the organization a corporate signing session was opened for, on
+ * return addresses minted before spec 050 moved the organization into the path
+ * (`orgEasyclaReturnPath`, lfx-self-serve#2743). The BFF no longer writes it; the Org Lens page
+ * still reads it for one release so a signing trip opened against the old address lands on the
+ * right organization when it comes back.
  *
- * The return is a cross-site navigation, and which organization is selected survives only in a
- * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
- * organization in the viewer's list, so a signatory who signed for one company returns looking at
- * another — reading as though the signature landed on the wrong organization.
- *
- * Shared because the BFF writes it and the Org Lens page reads it. **It names an organization; it
- * does not grant one.** The page resolves it against the viewer's own authorized organizations and
- * ignores anything absent from that list, so a crafted link cannot select an organization the
- * viewer does not hold.
+ * **It names an organization; it does not grant one.** The page resolves it against the viewer's
+ * own authorized organizations and ignores anything absent from that list, so a crafted link cannot
+ * select an organization the viewer does not hold.
  */
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
 

@@ -268,7 +268,7 @@ export class OrgSelectorComponent {
     // indexed snapshot.
     void this.accountContextService.refreshCanonicalRecord(account);
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
-    // re-addressed to the new selection (no-op outside Org Lens and on EasyCLA).
+    // re-addressed to the new selection (no-op outside Org Lens).
     this.orgLensNavigation.navigateToSelectedOrg('switch');
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).

@@ -732,13 +732,12 @@ export class SidebarNavService {
     testId: 'sidebar-org-roi',
   }));
 
-  /** EasyCLA stays on the legacy address in phase 1 (spec 050 DR-004) — the one Org Lens item that does not carry the organization. */
-  private readonly orgEasyclaNavItem: SidebarMenuItem = {
+  private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
-    routerLink: '/org/easycla',
+    routerLink: this.orgLensNavigation.orgLensPath('easycla'),
     testId: 'sidebar-org-easycla',
-  };
+  }));
 
   /**
    * Org Lens items address the selected organization (`/org/{segment}/{page}`, spec 050 US2) and
@@ -814,7 +813,7 @@ export class SidebarNavService {
       if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
       const afterContributions = item.items.findIndex((child) => child.routerLink === this.orgLensNavigation.orgLensPath('contributions')) + 1;
       const at = afterContributions === 0 ? item.items.length : afterContributions;
-      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
+      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem(), ...item.items.slice(at)] };
     });
   }
 

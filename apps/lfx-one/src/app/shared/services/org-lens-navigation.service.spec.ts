@@ -65,6 +65,17 @@ describe('OrgLensNavigationService', () => {
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
+    // DR-004 exemption ended (lfx-self-serve#2743): EasyCLA pages re-address like every other page.
+    it.each([
+      ['/org/easycla', '/org/acme-inc/easycla'],
+      ['/org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
+      ['/org/other-org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
+    ])('re-addresses EasyCLA pages too (%s)', (url, expected) => {
+      currentUrl = url;
+      service.navigateToSelectedOrg();
+      expect(navigatedTo()).toBe(expected);
+    });
+
     // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
     // not know the selection is unchanged (there is no segment to compare) and inserts regardless.
     it('inserts the organization on a legacy page address even when the selection did not change', () => {
@@ -105,7 +116,7 @@ describe('OrgLensNavigationService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it.each(['/org/easycla', '/org/easycla/abc-123', '/project/cncf/overview', '/'])('is a no-op on %s', (url) => {
+    it.each(['/project/cncf/overview', '/'])('is a no-op outside Org Lens (%s)', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
@@ -150,6 +161,15 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org';
       service.navigateToSelectedOrg('default');
       expect(navigatedTo()).toBe('/org/acme-inc/overview');
+    });
+
+    // DR-004 Option-B trace: a pre-deploy corporate-signing return on the legacy EasyCLA address
+    // names its organization in `?org=`, which the page adopts after the org list has answered — a
+    // default insert in between would address the default organization instead.
+    it.each(['/org/easycla', '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1'])('leaves the legacy EasyCLA address alone (%s)', (url) => {
+      currentUrl = url;
+      service.navigateToSelectedOrg('default');
+      expect(navigate).not.toHaveBeenCalled();
     });
 
     // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;
