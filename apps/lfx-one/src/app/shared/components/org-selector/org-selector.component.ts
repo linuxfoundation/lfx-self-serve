@@ -267,13 +267,15 @@ export class OrgSelectorComponent {
     // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
     this.accountContextService
       .refreshCanonicalRecord(account)
-      // The canonical record can carry a different slug than the indexed row; the address written
-      // below must follow it or the bar stops being copyable (spec 050 FR-002).
-      .then(() => this.orgLensNavigation.reconcileAddress())
       .catch(() => {
         // Errors are already logged inside refreshCanonicalRecord — swallow here so the
         // floating promise doesn't reach the browser console.
-      });
+      })
+      // After the fetch settles either way: the canonical record can carry a different slug than the
+      // indexed row, and the address written below must follow it or the bar stops being copyable
+      // (spec 050 FR-002). A failed fetch leaves the slug as it was, so this is a no-op then. Kept
+      // outside the catch so a reconciliation fault is not mistaken for a fetch failure.
+      .then(() => this.orgLensNavigation.reconcileAddress());
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
     // re-addressed to the new selection (no-op outside Org Lens and on EasyCLA).
     this.orgLensNavigation.navigateToSelectedOrg('switch');

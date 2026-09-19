@@ -282,11 +282,12 @@ export class OrgNavigationService {
     this.accountContextService.setAccount(account);
     this.accountContextService
       .refreshCanonicalRecord(account)
-      // A canonical slug that differs from the indexed row's re-addresses the page written below.
-      .then(() => this.orgLensNavigation.reconcileAddress())
       .catch(() => {
         // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
-      });
+      })
+      // A canonical slug that differs from the indexed row's re-addresses the page written below;
+      // a failed fetch leaves the slug as it was and this is a no-op. Outside the catch on purpose.
+      .then(() => this.orgLensNavigation.reconcileAddress());
     // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
     // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
     // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never

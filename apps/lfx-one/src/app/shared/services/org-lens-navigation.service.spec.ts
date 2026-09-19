@@ -111,34 +111,75 @@ describe('OrgLensNavigationService', () => {
 
   /**
    * The canonical record can carry a different slug than the indexed row the address was written
-   * from (index lag, a rename). The address follows — but only the address this service wrote.
+   * from (index lag, a rename). The address follows — but only the address this service wrote, for
+   * the organization it wrote it for, and only once that navigation has settled.
    */
   describe('reconcileAddress', () => {
-    it('replaces the segment it wrote when the selection canonicalizes to another one', () => {
+    const UID_B = '0014100000MgbBBBBB';
+    const beta: Account = { accountId: UID_B, accountName: 'Beta', accountSlug: '', membershipTier: '', uid: UID_B, slug: 'beta-llc' };
+
+    it('replaces the segment it wrote when the selection canonicalizes to another one', async () => {
       currentUrl = '/org/other-org/projects/k8s?tab=active#top';
       service.navigateToSelectedOrg();
       currentUrl = '/org/acme-inc/projects/k8s?tab=active#top';
       navigate.mockClear();
 
       selectedUrlSegment.set('acme-incorporated');
-      service.reconcileAddress();
+      await service.reconcileAddress();
 
       expect(navigatedTo()).toBe('/org/acme-incorporated/projects/k8s');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
-    it('is a no-op when the canonical segment matches what was written', () => {
+    // The canonical fetch can settle before the navigation it follows has activated (`Router.url`
+    // moves only on activation); the address must be read after the write, not before.
+    it('waits for the navigation it follows before reading the address', async () => {
+      let activate!: (value: boolean) => void;
+      navigate.mockReturnValueOnce(new Promise<boolean>((resolve) => (activate = resolve)));
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      navigate.mockClear();
+      selectedUrlSegment.set('acme-incorporated');
+
+      const reconciling = service.reconcileAddress();
+      // Still pre-switch on the address bar: nothing may be decided yet.
+      expect(navigate).not.toHaveBeenCalled();
+      currentUrl = '/org/acme-inc/projects';
+      activate(true);
+      await reconciling;
+
+      expect(navigatedTo()).toBe('/org/acme-incorporated/projects');
+    });
+
+    it('is a no-op when the canonical segment matches what was written', async () => {
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       currentUrl = '/org/acme-inc/projects';
       navigate.mockClear();
 
-      service.reconcileAddress();
+      await service.reconcileAddress();
 
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it('leaves an address it did not write alone, even when the segment changed', () => {
+    // A switch wrote Beta's address; a later default selected Acme and (correctly) left the addressed
+    // page alone. Acme's canonical record must not turn Beta's page into Acme's either.
+    it('never re-addresses a page written for another organization', async () => {
+      selectedAccount.set(beta);
+      selectedUrlSegment.set('beta-llc');
+      currentUrl = '/org/acme-inc/projects';
+      service.navigateToSelectedOrg('switch');
+      currentUrl = '/org/beta-llc/projects';
+      navigate.mockClear();
+
+      selectedAccount.set(acme);
+      selectedUrlSegment.set('acme-inc');
+      await service.reconcileAddress();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('leaves an address it did not write alone, even when the segment changed', async () => {
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       // The viewer has moved on to a page this service did not address.
@@ -146,15 +187,15 @@ describe('OrgLensNavigationService', () => {
       navigate.mockClear();
 
       selectedUrlSegment.set('acme-incorporated');
-      service.reconcileAddress();
+      await service.reconcileAddress();
 
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it('is a no-op before anything was written', () => {
+    it('is a no-op before anything was written', async () => {
       currentUrl = '/org/acme-inc/projects';
       selectedUrlSegment.set('acme-incorporated');
-      service.reconcileAddress();
+      await service.reconcileAddress();
       expect(navigate).not.toHaveBeenCalled();
     });
   });

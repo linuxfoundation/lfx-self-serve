@@ -90,6 +90,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
     // Once the canonical record is in, the address is checked against the slug it carried.
     await Promise.resolve();
+    await Promise.resolve();
     expect(reconcileAddress).toHaveBeenCalledTimes(1);
   });
 

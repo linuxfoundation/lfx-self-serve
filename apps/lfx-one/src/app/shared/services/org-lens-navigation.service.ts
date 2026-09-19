@@ -35,8 +35,14 @@ export class OrgLensNavigationService {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
 
-  /** The organization segment `navigateToSelectedOrg` last wrote into the address; what `reconcileAddress` is allowed to replace. */
-  private lastWrittenSegment: string | null = null;
+  /**
+   * The address `navigateToSelectedOrg` last navigated toward — the organization (by uid) and the
+   * segment it was written with — plus the navigation itself. What `reconcileAddress` is allowed to
+   * replace, and only after that navigation has settled: the navigation may still be in flight when
+   * the canonical record lands, and it may have been cancelled or redirected (a guard failing closed),
+   * which is why the live address is re-checked rather than trusted.
+   */
+  private lastWrite: { uid: string; segment: string; navigation: Promise<boolean> } | null = null;
 
   /** Router commands for an Org Lens page under the current selection. */
   public orgLensLink(page: string, ...rest: (string | number)[]): string[] {
@@ -70,11 +76,12 @@ export class OrgLensNavigationService {
    */
   public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
     const segments = this.currentPrimarySegments();
-    if (segments[0] !== 'org' || segments[1] === 'easycla') {
+    if (!this.isRewritableOrgAddress(segments)) {
       return;
     }
     const segment = this.accountContext.selectedUrlSegment();
-    if (!segment) {
+    const uid = this.accountContext.selectedAccount().uid;
+    if (!segment || !uid) {
       return;
     }
 
@@ -104,12 +111,12 @@ export class OrgLensNavigationService {
     // A switch is pushed so Back returns to the pre-switch organization and page (US2 scenario 3);
     // a default is a canonicalizing rewrite of the address the viewer already meant, so it replaces
     // (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen.
-    this.lastWrittenSegment = segment;
-    void this.router.navigate(['/org', segment, ...child], {
+    const navigation = this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default',
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
+    this.lastWrite = { uid, segment, navigation };
   }
 
   /**
@@ -117,22 +124,48 @@ export class OrgLensNavigationService {
    * by `navigateToSelectedOrg` comes from the indexed org row; the canonical fetch that both callers
    * start alongside it can carry a different slug (index lag, a rename), after which every link on
    * the page uses the new segment while the address bar still shows the old one — copied then, it
-   * could reopen as not-found. Bounded to the address this service itself wrote: only when the
-   * current address still carries `lastWrittenSegment` and the selection now canonicalizes to
-   * something else, and always as a replacement — the viewer meant this page all along (FR-011).
+   * could reopen as not-found. Always a replacement: the viewer meant this page all along (FR-011).
+   *
+   * Bounded three ways to the write this service itself made. It waits for that navigation to settle
+   * (the canonical fetch can win the race — `refreshCanonicalRecord` dedupes in-flight requests, so a
+   * re-pick can be handed a promise that is already resolving — and `Router.url` only moves once a
+   * navigation activates). It acts only for the *same organization*: a later default selection of
+   * another organization must not re-address a page a switch wrote, however the segments compare. And
+   * it re-checks that the live address still carries the written segment, since the navigation may
+   * have been cancelled or redirected.
+   *
+   * Deep links do not come through here on purpose: `orgPathParamGuard` canonicalizes from the
+   * resolver's own answer, which is authoritative for the address it was asked about.
    */
-  public reconcileAddress(): void {
-    const written = this.lastWrittenSegment;
+  public async reconcileAddress(): Promise<void> {
+    const write = this.lastWrite;
+    if (!write) {
+      return;
+    }
+    await write.navigation;
+    if (this.lastWrite !== write) {
+      return;
+    }
+    const selected = this.accountContext.selectedAccount();
     const canonical = this.accountContext.selectedUrlSegment();
-    if (!written || !canonical || canonical === written) {
+    if (selected.uid !== write.uid || !canonical || canonical === write.segment) {
       return;
     }
     const segments = this.currentPrimarySegments();
-    if (segments[0] !== 'org' || segments[1] !== written) {
+    if (!this.isRewritableOrgAddress(segments) || segments[1] !== write.segment) {
       return;
     }
-    this.lastWrittenSegment = canonical;
-    void this.router.navigate(['/org', canonical, ...segments.slice(2)], { replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true });
+    const navigation = this.router.navigate(['/org', canonical, ...segments.slice(2)], {
+      replaceUrl: true,
+      queryParamsHandling: 'preserve',
+      preserveFragment: true,
+    });
+    this.lastWrite = { uid: write.uid, segment: canonical, navigation };
+  }
+
+  /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */
+  private isRewritableOrgAddress(segments: readonly string[]): boolean {
+    return segments[0] === 'org' && segments[1] !== 'easycla';
   }
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */

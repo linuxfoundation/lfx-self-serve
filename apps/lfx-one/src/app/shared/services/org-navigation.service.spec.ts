@@ -33,6 +33,7 @@ describe('OrgNavigationService default selection', () => {
   let isAddressedSelection: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
+  let reconcileAddress: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
 
@@ -41,6 +42,7 @@ describe('OrgNavigationService default selection', () => {
     isAddressedSelection = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     navigateToSelectedOrg = vi.fn();
+    reconcileAddress = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -49,7 +51,7 @@ describe('OrgNavigationService default selection', () => {
         MessageService,
         { provide: LensService, useValue: {} },
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, reconcileAddress: vi.fn() } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, reconcileAddress } },
         {
           provide: AccountContextService,
           useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord: vi.fn(() => Promise.resolve()) },
@@ -67,12 +69,16 @@ describe('OrgNavigationService default selection', () => {
     http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(items));
   };
 
-  it('selects the first organization and re-addresses the page as a default, not a switch', () => {
+  it('selects the first organization and re-addresses the page as a default, not a switch', async () => {
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme' }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    // Once the canonical record is in, the written address is checked against the slug it carried.
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(reconcileAddress).toHaveBeenCalledTimes(1);
   });
 
   // The organization the address named was access-verified by the resolver a moment ago; whether or
