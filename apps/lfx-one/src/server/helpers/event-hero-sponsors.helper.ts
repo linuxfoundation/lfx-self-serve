@@ -8,11 +8,9 @@ import { MAX_SPONSORS } from '@lfx-one/shared/constants';
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-// The SHARED decoder, not a local copy: it is SINGLE-PASS, so a decoded `&` cannot be
-// re-read as the start of a fresh entity (`&amp;#39;` -> `&#39;` -> `'`), the
-// double-unescape CodeQL flags. My private version avoided that only by careful
-// ordering of chained replaces, and covered five names where this covers every
-// numeric entity too.
+// The shared decoder rather than a local copy. It is SINGLE-PASS, so a decoded `&` cannot be
+// re-read as the start of a fresh entity (`&amp;#39;` -> `&#39;` -> `'`) -- the double-unescape
+// CodeQL flags -- and it covers every numeric form, not just a handful of named ones.
 import { decodeHtmlEntities } from '@lfx-one/shared/utils/html-utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;

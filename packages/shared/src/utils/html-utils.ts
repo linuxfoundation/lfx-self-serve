@@ -17,16 +17,26 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
  * fresh entity (e.g., `&amp;#39;` → `&#39;` → `'`), which is the
  * double-unescape pattern CodeQL flags. Pure string ops — SSR-safe.
  */
+/** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
+function isDecodableCodePoint(code: number): boolean {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
+}
+
 export function decodeHtmlEntities(s: string): string {
   return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
     const lower = body.toLowerCase();
+    // RANGE-checked, not just finite-checked. `Number.isFinite(999999999)` is true while
+    // `String.fromCodePoint(999999999)` throws RangeError, and this function is reachable from
+    // scraped third-party HTML (`&#999999999;`), so a finite-only guard turned attacker-
+    // influenced input into an exception. An out-of-range escape is left as literal text --
+    // it names no character, so there is nothing to decode it to.
     if (lower.startsWith('#x')) {
       const code = parseInt(lower.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isDecodableCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     if (lower.startsWith('#')) {
       const code = Number(lower.slice(1));
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isDecodableCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     return NAMED_HTML_ENTITIES[lower] ?? match;
   });

@@ -2189,6 +2189,13 @@ export class CampaignsComponent {
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
+    // An in-flight stage must be abandoned too, not just the copy generation. This clears
+    // `emailCopy`, the template id and the brief id, so a stage that is mid-await would send a
+    // payload for the type the operator just abandoned -- and it CLONES a HubSpot draft, which
+    // is not undoable. `onStageEmailSend` already guards on this counter; this path simply was
+    // not bumping it, so the A/B discard counter was catching only the variant-B half of a
+    // problem that affects the whole payload.
+    this.emailStagingGeneration++;
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made
@@ -2210,10 +2217,14 @@ export class CampaignsComponent {
     // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
     // stage must not ride along into a create for the new one.
     this.abTestCopyGeneration++;
-    // Every path that CLEARS variant B is a discard, so every one bumps this. An in-flight stage
-    // cannot detect a cancel by re-reading `abTestEnabled()`: toggling off and back ON during
-    // the await reads true again while the controls it snapshotted have been emptied, so the
-    // discarded variant still shipped. A monotonic counter makes the cancel permanent.
+    // A DISCARD -- the operator abandoning variant B -- as opposed to the pre-await clear in
+    // `onGenerateAbTestCopy`, which is about to REFILL these controls and so must not abort a
+    // stage. `resetEmailBriefDerivedState` is a discard too, but it bumps
+    // `emailStagingGeneration`, which abandons the whole stage rather than just the A/B fields.
+    //
+    // A counter, not a flag: an in-flight stage cannot detect a cancel by re-reading
+    // `abTestEnabled()`, because toggling off and back ON during the await reads true again
+    // while the controls it snapshotted have been emptied. A bump cannot be undone.
     this.abTestDiscardGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.preheaderB.setValue('');
@@ -2978,10 +2989,14 @@ export class CampaignsComponent {
     // the operator just discarded back into the cleared controls. The other reset paths
     // (2050, 4117) already bump for the same reason.
     this.abTestCopyGeneration++;
-    // Every path that CLEARS variant B is a discard, so every one bumps this. An in-flight stage
-    // cannot detect a cancel by re-reading `abTestEnabled()`: toggling off and back ON during
-    // the await reads true again while the controls it snapshotted have been emptied, so the
-    // discarded variant still shipped. A monotonic counter makes the cancel permanent.
+    // A DISCARD -- the operator abandoning variant B -- as opposed to the pre-await clear in
+    // `onGenerateAbTestCopy`, which is about to REFILL these controls and so must not abort a
+    // stage. `resetEmailBriefDerivedState` is a discard too, but it bumps
+    // `emailStagingGeneration`, which abandons the whole stage rather than just the A/B fields.
+    //
+    // A counter, not a flag: an in-flight stage cannot detect a cancel by re-reading
+    // `abTestEnabled()`, because toggling off and back ON during the await reads true again
+    // while the controls it snapshotted have been emptied. A bump cannot be undone.
     this.abTestDiscardGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.preheaderB.setValue('');

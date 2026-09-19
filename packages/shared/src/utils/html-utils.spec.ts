@@ -3,7 +3,31 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+import { decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+
+describe('decodeHtmlEntities', () => {
+  it('leaves an out-of-range numeric entity as literal text instead of throwing', () => {
+    // `Number.isFinite(999999999)` is true but `String.fromCodePoint(999999999)` throws
+    // RangeError. This helper is reachable from SCRAPED third-party HTML, so a finite-only
+    // guard turned attacker-influenced input into an exception.
+    expect(() => decodeHtmlEntities('&#999999999;')).not.toThrow();
+    expect(decodeHtmlEntities('&#999999999;')).toBe('&#999999999;');
+    expect(decodeHtmlEntities('&#x110000;')).toBe('&#x110000;');
+  });
+
+  it('still decodes valid named, decimal and hex entities', () => {
+    expect(decodeHtmlEntities('&amp;')).toBe('&');
+    expect(decodeHtmlEntities('&#65;')).toBe('A');
+    expect(decodeHtmlEntities('&#x41;')).toBe('A');
+  });
+
+  it('decodes in a SINGLE pass, so an escaped entity cannot become a real one', () => {
+    // `&amp;#39;` is the literal text `&#39;`. A chained implementation would decode `&amp;`
+    // to `&` and then re-read `&#39;` as an apostrophe -- the double-unescape CodeQL flags.
+    expect(decodeHtmlEntities('&amp;#39;')).toBe('&#39;');
+    expect(decodeHtmlEntities('&amp;lt;')).toBe('&lt;');
+  });
+});
 
 describe('escapeHtml', () => {
   it('escapes all five HTML-significant characters', () => {

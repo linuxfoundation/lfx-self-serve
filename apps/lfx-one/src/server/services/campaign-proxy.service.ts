@@ -1450,10 +1450,15 @@ export class CampaignProxyService {
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
     // The URL that actually SERVED the page, after redirects. Declared alongside `html` because
-    // it has the same lifetime: everything downstream that describes "the page" must use it.
-    // The AI prompt and the event-name fallback both used `body.url` -- raw user input, a hop
-    // further from the truth than even the requested URL -- so a redirected event page was
-    // described to the model by a URL it never saw, and the slug came from the wrong path.
+    // it has the same lifetime.
+    //
+    // Used by the two consumers that describe THIS fetch: the extraction prompt (which tells the
+    // model which URL it is reading) and the event-name fallback (which derives a slug from the
+    // path). Both used `body.url` -- raw user input, a hop further from the truth than even the
+    // requested URL -- so a redirected page was described by a URL it never served.
+    //
+    // The ad-copy prompts further down still use `body.url` deliberately: they run on a separate
+    // request that does no fetch of its own, so there is no final URL to speak of there.
     let pageUrl = '';
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
