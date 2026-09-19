@@ -4003,6 +4003,24 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
     });
 
+    it('sanitizes the previewed sponsor name, so preview and wire cannot disagree', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          sponsors: [{ name: 'Acme\u202Emoc.evil', logoUrl: 'https://cdn.example.com/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      fixture.detectChanges();
+
+      // U+202E visually REVERSES what follows it. The controller strips it before staging, so
+      // leaving the preview unsanitised showed the operator a reversed name while the sent
+      // draft carried the cleaned one -- the preview lying about the result.
+      const [sponsor] = internals().emailSponsors();
+      expect(sponsor.name).toBe('Acmemoc.evil');
+      expect(sponsor.name).not.toContain('\u202E');
+    });
+
     it('truncates a long sponsor name the same way the controller does', () => {
       selectEmail();
       // 150 code points, past the 100 the controller forwards. An astral character at the cut

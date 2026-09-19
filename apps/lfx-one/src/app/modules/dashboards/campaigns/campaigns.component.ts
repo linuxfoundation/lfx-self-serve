@@ -51,6 +51,7 @@ import type {
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils';
+import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1237,7 +1238,10 @@ export class CampaignsComponent {
           // Truncated the SAME way the controller truncates (by code point, so a cut cannot
           // land inside a surrogate pair). Showing the full name previewed a sponsor label the
           // staged draft does not carry.
-          name: typeof sponsor?.name === 'string' ? [...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('').trim() : '',
+          // Sanitised like the controller's copy. Without it the PREVIEW showed a bidi-reversed
+          // name while the staged draft showed the cleaned one -- preview and wire disagreeing,
+          // which is the defect this PR exists to remove.
+          name: typeof sponsor?.name === 'string' ? sanitizeDisplayText([...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('')) : '',
           logoUrl: canonicalHttpUrl(sponsor?.logoUrl),
         }))
         // Blank names dropped too, matching the controller: it filters on both, so keeping them
