@@ -2200,13 +2200,16 @@ export class CampaignsComponent {
     // Invalidating a generation and cleaning up the state it owns are one operation, not two --
     // the stage-change branch and `resetEmailBriefDerivedState` both do both.
     this.emailStagingGeneration++;
-    // Cancelled HERE rather than only in the stage-change branch below, because a type change
-    // that maps to the SAME stage never reaches that branch -- and the bump above has already
-    // guaranteed `onStageEmailSend` will return without touching `emailStaging`, leaving the
-    // button spinning. The stage-change branch's own call is now redundant when both conditions
-    // hold, which is harmless (unsubscribe is idempotent) but noted so it is not read as an
-    // oversight. See `cancelStagingPoll` for why a bump alone is not enough.
-    this.cancelStagingPoll();
+    // Cancelled HERE rather than only in the stage-change branch below: a type change mapping to
+    // the SAME stage never reaches that branch. See `cancelStagingPoll` for why the bump alone
+    // is not enough.
+    // Only an IN-FLIGHT poll. Making this unconditional when I consolidated the helper also
+    // wiped a TERMINAL banner: after a successful stage, changing type erased "Draft created"
+    // -- the operator's confirmation that the send they just made exists. A finished stage has
+    // nothing to abandon, so there is nothing to cancel.
+    if (this.emailStaging() === 'staging') {
+      this.cancelStagingPoll();
+    }
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made
@@ -2227,21 +2230,11 @@ export class CampaignsComponent {
 
     // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
     // stage must not ride along into a create for the new one.
-    this.abTestCopyGeneration++;
-    // A DISCARD -- the operator abandoning variant B -- as opposed to the pre-await clear in
-    // `onGenerateAbTestCopy`, which is about to REFILL these controls and so must not abort a
-    // stage. `resetEmailBriefDerivedState` is a discard too, but it bumps
-    // `emailStagingGeneration`, which abandons the whole stage rather than just the A/B fields.
-    //
-    // A counter, not a flag: an in-flight stage cannot detect a cancel by re-reading
-    // `abTestEnabled()`, because toggling off and back ON during the await reads true again
-    // while the controls it snapshotted have been emptied. A bump cannot be undone.
-    this.abTestDiscardGeneration++;
-    this.abTestForm.controls.subjectB.setValue('');
-    this.abTestForm.controls.preheaderB.setValue('');
-    this.abTestForm.controls.bodyHtmlB.setValue('');
-    this.abTestCopyState.set('idle');
-    this.abTestCopyError.set('');
+    // Variant B is brief-scoped the same way variant A is -- a stale draft from the previous
+    // stage must not ride along into a create for the new one. Same sequence as a toggle-off,
+    // so it calls the same function: six duplicated lines are exactly what drifts, which is the
+    // defect this PR exists to remove.
+    this.clearAbTestDraft();
 
     // LAST, and only when the STAGE actually moved. A stage change changes which brief this tab is
     // working on, because the stage is part of a brief's identity upstream. Moving the picker above
@@ -2984,7 +2977,6 @@ export class CampaignsComponent {
         },
       });
   }
-  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   /**
    * Abandon an in-flight staging poll and return the button to idle.
    *
@@ -3026,6 +3018,7 @@ export class CampaignsComponent {
     this.abTestCopyError.set('');
   }
 
+  /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
     this.knownBriefIdsVersion.update((v) => v + 1);

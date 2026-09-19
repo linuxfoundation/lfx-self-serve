@@ -45,8 +45,21 @@ describe('extractHeroAndSponsors', () => {
     expect(result.sponsors).toHaveLength(1);
     // The NAME is decoded too, not just the URL -- it reaches a sent email as alt text.
     expect(result.sponsors[0].name).toBe('Acme & Co sponsor');
+    // The NAME is decoded too, not just the URL -- it reaches a sent email as alt text.
+    expect(result.sponsors[0].name).toBe('Acme & Co sponsor');
     expect(result.sponsors[0].logoUrl).toBe('https://cdn.example.com/logo.png?v=2&token=xyz');
     expect(new URL(result.sponsors[0].logoUrl).searchParams.get('token')).toBe('xyz');
+  });
+
+  it('strips markup that decoding the sponsor name would otherwise resurrect', () => {
+    // Decoding alone turns `&lt;script&gt;` back into LIVE markup, in a value that reaches a
+    // sent email as an attribute -- trading a cosmetic bug for an injection one.
+    const html = `<img src="https://cdn.example.com/l.png" alt="Acme &lt;script&gt;alert(1)&lt;/script&gt; sponsor" />`;
+    const result = extractHeroAndSponsors(html, BASE_URL);
+
+    expect(result.sponsors).toHaveLength(1);
+    expect(result.sponsors[0].name).not.toContain('<');
+    expect(result.sponsors[0].name).not.toContain('>');
   });
 
   it('decodes &amp; LAST so an escaped entity does not become a real one', () => {

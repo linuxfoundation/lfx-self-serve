@@ -4094,14 +4094,29 @@ describe('CampaignsComponent — email delivery channel', () => {
       // The SECOND await window -- after `generateEmailCopy` resolves, where a late response
       // would write back into the cleared controls -- is NOT covered here. Reaching it needs the
       // generation call itself held open, not the persist.
-      //
-      // (An earlier revision of this comment claimed the bump was inert. That was wrong: it came
-      // from mutation runs against a spec that was failing to COMPILE, so the test never ran.)
+
       expect(gen).not.toHaveBeenCalled();
       // The CONTROLS, not the `toSignal` mirrors, which lag a setValue landing outside change
       // detection -- asserting the mirrors let a stale write through unnoticed.
       expect(internals().abTestForm.controls.subjectB.value).toBe('');
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
+    });
+
+    it('keeps a terminal staging banner when the type changes after a completed stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailStaging.set('done');
+      internals().emailStagingMessage.set('Draft created');
+      fixture.detectChanges();
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('registration-launch');
+      fixture.detectChanges();
+
+      // A FINISHED stage has nothing to abandon. Cancelling unconditionally erased the
+      // operator's confirmation that the send they just made exists -- the state the banner is
+      // there to report.
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingMessage()).toBe('Draft created');
     });
 
     it('does not leave the Stage button spinning when the type changes mid-stage', () => {

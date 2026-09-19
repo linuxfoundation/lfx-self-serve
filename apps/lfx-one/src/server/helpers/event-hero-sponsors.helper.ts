@@ -79,9 +79,14 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
     const src = tag.match(/\bsrc=["']([^"']+)["']/i)?.[1];
     if (!src) continue;
 
-    // DECODED, like the URLs. `alt` is captured from the same entity-encoded attribute, and it
-    // reaches a sent email as the logo's alt text -- so "Acme &amp; Co" shipped literally.
-    const alt = decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? '').trim();
+    // Decoded, then STRIPPED of anything that decoding could have resurrected. `alt` is captured
+    // from the same entity-encoded attribute as the URL, so "Acme &amp; Co" shipped literally --
+    // but decoding alone turns `&lt;script&gt;` back into live markup in a value that reaches a
+    // sent email as an attribute. Decoding without re-sanitising trades a cosmetic bug for an
+    // injection one.
+    const alt = decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? '')
+      .replace(/[<>"'`\u0000-\u001f\u007f]/g, '')
+      .trim();
     // A page rarely marks sponsor logos with a dedicated attribute, so a nearby heading or
     // container class (e.g. "Our Sponsors", class="sponsor-grid") is the most reliable signal.
     const contextStart = Math.max(0, (imgMatch.index ?? 0) - CONTEXT_WINDOW_CHARS);
