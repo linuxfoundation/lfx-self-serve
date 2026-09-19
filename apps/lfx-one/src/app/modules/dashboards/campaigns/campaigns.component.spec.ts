@@ -1882,6 +1882,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestEnabled: Signal<boolean>;
     abTestSubjectB: Signal<string>;
     abTestBodyHtmlB: Signal<string>;
+    abTestPreheaderBForSend: Signal<string>;
+    abTestPreheaderBPreview: Signal<string>;
+    emailPreheaderPreview: Signal<string>;
     abTestForm: {
       controls: {
         // `value` as well as `setValue`: asserting the CONTROL is what catches a stale write
@@ -4360,6 +4363,26 @@ describe('CampaignsComponent — email delivery channel', () => {
       const cfg = create.mock.calls[0][0].hubspotConfig;
       expect(cfg?.heroLinkUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
       expect(cfg?.buttonUrl).toBeUndefined();
+    });
+
+    it('trims the previewed preheaders and falls B back to A', () => {
+      selectEmail();
+      internals().emailCopy.set({ subject: 'S', preheader: '  A preheader  ', body: '<p>b</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.preheaderB.setValue('   ');
+      fixture.detectChanges();
+
+      // Whitespace-only reads as ABSENT on both cards, matching the wire: staging trims and
+      // omits, so an untrimmed preview showed a blank line the send would never produce.
+      expect(internals().emailPreheaderPreview()).toBe('A preheader');
+      expect(internals().abTestPreheaderBForSend()).toBe('');
+      // B with none of its own shows A's -- what upstream actually does with an absent
+      // previewTextB, rather than an empty line.
+      expect(internals().abTestPreheaderBPreview()).toBe('A preheader');
+
+      internals().abTestForm.controls.preheaderB.setValue('  B preheader  ');
+      fixture.detectChanges();
+      expect(internals().abTestPreheaderBForSend()).toBe('B preheader');
+      expect(internals().abTestPreheaderBPreview()).toBe('B preheader');
     });
 
     it('sends no button when the generator omitted its url, even with a registration URL', async () => {

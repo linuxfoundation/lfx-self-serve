@@ -349,6 +349,8 @@ const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
  * dots, IPv6 compression expanded) before judging it; decodes translated encodings that carry an
  * IPv4 destination (IPv4-mapped, IPv4-compatible, RFC 2765 translated, NAT64 64:ff9b::/96, 6to4
  * 2002::/16); denies literal private, loopback, link-local, site-local and CGNAT ranges; scans
+ * denies blanket-loopback wildcard domains outright (localtest.me, lvh.me, traefik.me, which
+ * resolve EVERY subdomain to 127.0.0.1 without spelling an address); scans
  * for spelled-out addresses under known wildcard-DNS suffixes in dotted, dash, hex and packed
  * forms -- including affixed and IPv6 dash spellings, with EVERY reading of an ambiguous label
  * checked rather than one guessed; and FAILS CLOSED on any host that is neither a judged IP
@@ -405,6 +407,7 @@ export function isPrivateHost(hostname: string): boolean {
   // address -- `[64:ff9b::a9fe]` is NAT64 for 0.0.169.254 -- so positional reads on the raw
   // split silently decode the wrong thing or skip it entirely. Expanding first means one
   // decode path handles every spelling of the same address.
+  /** Every group of an IPv6 address, with `::` expanded to the zeros it elides. */
   const expandIPv6 = (value: string): string[] => {
     if (!value.includes('::')) return value.split(':');
     const [left, right] = value.split('::');
