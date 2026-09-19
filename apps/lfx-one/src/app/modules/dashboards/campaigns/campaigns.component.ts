@@ -2192,10 +2192,22 @@ export class CampaignsComponent {
     // An in-flight stage must be abandoned too, not just the copy generation. This clears
     // `emailCopy`, the template id and the brief id, so a stage that is mid-await would send a
     // payload for the type the operator just abandoned -- and it CLONES a HubSpot draft, which
-    // is not undoable. `onStageEmailSend` already guards on this counter; this path simply was
-    // not bumping it, so the A/B discard counter was catching only the variant-B half of a
-    // problem that affects the whole payload.
+    // is not undoable.
+    //
+    // Bumping ALONE leaves the UI stuck: `onStageEmailSend` returns at its `isCurrent()` check
+    // without touching `emailStaging`, so the button spins on 'staging' forever when the new
+    // type maps to the SAME stage (the stage-change branch below, which resets it, never runs).
+    // Invalidating a generation and cleaning up the state it owns are one operation, not two --
+    // the stage-change branch and `resetEmailBriefDerivedState` both do both.
     this.emailStagingGeneration++;
+    if (this.emailStaging() === 'staging') {
+      // CANCEL the poll rather than bump past it: `pollStagingJob` never reads the counter, so a
+      // subscription already running would keep writing done/error for the abandoned send.
+      this.stagingJobSubscription?.unsubscribe();
+      this.stagingJobSubscription = null;
+      this.emailStaging.set('idle');
+      this.emailStagingMessage.set('');
+    }
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made

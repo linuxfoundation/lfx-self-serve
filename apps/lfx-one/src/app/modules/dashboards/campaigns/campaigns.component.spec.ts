@@ -4069,6 +4069,29 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
     });
 
+    it('does not leave the Stage button spinning when the type changes mid-stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailStaging.set('staging');
+      fixture.detectChanges();
+
+      // `main-registration-push` maps to the SAME stage as the default, which is the whole
+      // point. A type change abandons an in-flight stage by bumping `emailStagingGeneration`,
+      // so `onStageEmailSend` returns at its `isCurrent()` check WITHOUT touching
+      // `emailStaging`. The stage-change branch that resets it does not run here, so
+      // invalidating without cleaning up left the button spinning until a reload. A
+      // different-stage type takes that other branch and would prove nothing.
+      expect(internals().selectedEmailStage()).toBe('Registration Push');
+
+      // `registration-launch`, not `main-registration-push`: the latter IS the default, so
+      // `onSelectEmailType` returns early and the test proves nothing.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('registration-launch');
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailStage()).toBe('Registration Push');
+      expect(internals().emailStaging()).toBe('idle');
+    });
+
     it('drops variant B when A/B is toggled off and back ON during the await', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
