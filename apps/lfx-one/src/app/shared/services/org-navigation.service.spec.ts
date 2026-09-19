@@ -5,9 +5,10 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Navigation, provideRouter, Router } from '@angular/router';
+import { Event, Navigation, NavigationEnd, provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgItemsResponse } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
+import { Subject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -70,14 +71,21 @@ describe('OrgNavigationService default selection', () => {
   };
 
   // The default re-address reads the *current* address; mid-navigation that is the page being
-  // left, so the write waits for the destination's own guards instead.
-  it('does not re-address while a navigation is in flight', () => {
-    vi.spyOn(TestBed.inject(Router), 'getCurrentNavigation').mockReturnValue({} as Navigation);
+  // left, so the write waits for the navigation to settle and then re-reads the destination.
+  it('defers the re-address until an in-flight navigation settles', () => {
+    const router = TestBed.inject(Router);
+    vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({} as Navigation);
+    const events = new Subject<Event>();
+    Object.defineProperty(router, 'events', { get: () => events.asObservable() });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
-
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+
+    events.next(new NavigationEnd(1, '/org/people', '/org/people'));
+
+    expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
+    expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
   it('selects the first organization and re-addresses the page as a default, not a switch', () => {

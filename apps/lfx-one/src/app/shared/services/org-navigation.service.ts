@@ -4,11 +4,11 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { NavigationCancel, NavigationEnd, NavigationError, Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, take, tap } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
@@ -301,16 +301,21 @@ export class OrgNavigationService {
   /**
    * The `'default'` re-address reads the router's *current* address. If a navigation is in flight
    * when the org-items page lands (the viewer clicked a link while the bootstrap fetch was pending),
-   * that address is the one being left, not the one being entered — so the write is skipped: the
-   * destination's own guards decide it, and a legacy destination is re-addressed by the next
-   * bootstrap or switch. The default's own no-op rules already exclude an addressed page and the
-   * dead end; this closes the in-flight window on top.
+   * that address is the one being left, not the one being entered — so the write waits for the
+   * navigation to settle and then re-reads: a legacy destination still gets its organization, an
+   * addressed one is left alone by the default's own rules (and its guard has decided it by then).
    */
   private writeDefaultAddress(): void {
-    if (this.router.getCurrentNavigation()) {
+    if (!this.router.getCurrentNavigation()) {
+      this.orgLensNavigation.navigateToSelectedOrg('default');
       return;
     }
-    this.orgLensNavigation.navigateToSelectedOrg('default');
+    this.router.events
+      .pipe(
+        filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        take(1)
+      )
+      .subscribe(() => this.orgLensNavigation.navigateToSelectedOrg('default'));
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {
