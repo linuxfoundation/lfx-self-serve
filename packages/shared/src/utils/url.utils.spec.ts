@@ -211,6 +211,23 @@ describe('isPrivateHost', () => {
     // Exactly four groups, so this IS the address rather than interior IPv6 padding.
     ['a bare all-zero dash quad', '0-0-0-0.nip.io'],
     ['a bare this-host dash quad', '0-0-0-1.nip.io'],
+    // Cloud metadata by NAME. `metadata.google.internal` resolves to 169.254.169.254 -- the
+    // endpoint the link-local range already denies, reached by a spelling this function cannot
+    // see because it does not resolve.
+    ['the GCE metadata hostname', 'metadata.google.internal'],
+    ['the short GCE metadata hostname', 'metadata.goog'],
+    ['the EC2 instance-data hostname', 'instance-data'],
+    ['a subdomain of a metadata hostname', 'x.metadata.google.internal'],
+    // Reserved and special-use ranges: none is a legitimate hero or CTA destination, and each
+    // is routable-looking enough to pass every other check.
+    ['RFC5737 TEST-NET-1', '192.0.2.1'],
+    ['RFC5737 TEST-NET-2', '198.51.100.1'],
+    ['RFC5737 TEST-NET-3', '203.0.113.1'],
+    ['RFC6890 protocol assignments', '192.0.0.1'],
+    ['RFC2544 benchmarking', '198.18.0.1'],
+    ['multicast', '224.0.0.1'],
+    ['the reserved 240/4 range', '240.0.0.1'],
+    ['the broadcast address', '255.255.255.255'],
     // FAILS CLOSED, deliberately. These are PUBLIC addresses (Google DNS, doc range), but their
     // expanded IPv6 zero run forms a `0.0.0.x` window and they are structurally identical to
     // `0-0-0-5-dead-beef-0-0`, which resolves into 0.0.0.0/8. Four heuristics were tried --
@@ -287,6 +304,13 @@ describe('isPrivateHost', () => {
     // Underscores are legal in DNS labels and ordinary in internal CDN names. Denying them
     // refused real hosts without refusing a single address spelling.
     ['an underscored hostname', 'my_cdn.example.com'],
+    // Neighbours of the reserved ranges, and a host merely NAMED metadata -- denying these
+    // would refuse real destinations, which is the failure mode this file keeps guarding.
+    ['a host next to TEST-NET-3', '203.0.114.1'],
+    ['a host next to TEST-NET-2', '198.52.100.1'],
+    ['a host next to the protocol range', '192.1.2.3'],
+    ['the last address below multicast', '223.255.255.255'],
+    ['an ordinary host named metadata', 'metadata.example.com'],
     // Quad-SHAPED but not a quad: the fourth label is a TLD, so these are ordinary hostnames.
     // Reading only the first three octets refused them as RFC1918 -- a false positive on a
     // legitimate hero or CTA URL.

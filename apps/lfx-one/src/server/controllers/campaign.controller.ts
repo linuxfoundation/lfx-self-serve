@@ -6,7 +6,7 @@
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
-import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
+import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 
 import { NextFunction, Request, Response } from 'express';
 
@@ -18,7 +18,6 @@ import type {
   CampaignBriefRequest,
   CampaignCreateRequest,
   CampaignDeliveryType,
-  CampaignEventSponsor,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignSSEEventType,
@@ -35,8 +34,6 @@ import {
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
   MAX_BULK_KEYWORD_ACTIONS,
-  MAX_SPONSOR_NAME_LENGTH,
-  MAX_SPONSORS,
   META_GEO_CODE_PATTERN,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
@@ -2208,28 +2205,10 @@ export class CampaignController {
       ? // The logo goes through the SAME validator as the other link fields: it becomes an
         // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
         // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
-        body.hubspotConfig.sponsors
-          .filter((sponsor): sponsor is CampaignEventSponsor => !!sponsor && typeof sponsor.name === 'string')
-          // Cut BEFORE the per-entry URL parse, not after: parsing every element of an oversized
-          // direct request and then discarding most of them is work the cap is supposed to
-          // prevent. Sliced generously (2x) so entries dropped below for a bad name or URL do not
-          // silently shrink the result under the cap.
-          .slice(0, MAX_SPONSORS * 2)
-          // CONSTRUCTED, not spread. Spreading the caller's object carried unvalidated extra keys
-          // through the very allow-list this function exists to be, and left `name` unbounded —
-          // it reaches a sent email as alt text, so it is trimmed and bounded (the other fields in this
-          // mapper are trim-only; this one is caller-supplied display text with no upstream cap).
-          // [...name] splits by CODE POINT, so a 100-char cut cannot land inside a surrogate
-          // pair, and the second trim removes a space the cut may have left at the end.
-          .map((sponsor) => ({
-            name: sanitizeDisplayText([...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('')),
-            logoUrl: canonicalHttpUrl(sponsor.logoUrl),
-          }))
-          .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
-          // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
-          // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
-          // scrape path already refuses to produce.
-          .slice(0, MAX_SPONSORS)
+        // preSliceFactor 2: bounds the work BEFORE the per-entry URL parse, so a direct
+        // request cannot make this parse an unbounded list. The client's input is already
+        // bounded, so it passes the default.
+        normalizeSponsors(body.hubspotConfig.sponsors, 2)
       : [];
 
     // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves

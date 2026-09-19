@@ -333,6 +333,18 @@ function dashNotationIPv6(label: string): string {
 const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
 
 /**
+ * Cloud metadata endpoints addressed by NAME rather than by address.
+ *
+ * `metadata.google.internal` resolves to 169.254.169.254 -- the same endpoint the link-local
+ * range already denies, reached by a spelling this function cannot see, because it does not
+ * resolve. The docstring claimed to cover "cloud metadata" while only the literal address was
+ * denied, so the name form went straight through.
+ *
+ * Matched as the host itself or as a parent of it, so `x.metadata.google.internal` is denied too.
+ */
+const METADATA_HOSTNAMES = ['metadata.google.internal', 'metadata.goog', 'instance-data', 'metadata'];
+
+/**
  * Whether a URL's host names a private, loopback, or link-local address.
  *
  * These values are scraped from an operator-named page, persisted on the brief, and forwarded to
@@ -385,6 +397,7 @@ export function isPrivateHost(hostname: string): boolean {
   const host = lowered.slice(0, end);
   if (host === '' || host === 'localhost' || host.endsWith('.localhost')) return true;
   if (LOOPBACK_WILDCARD_SUFFIXES.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))) return true;
+  if (METADATA_HOSTNAMES.some((name) => host === name || host.endsWith(`.${name}`))) return true;
 
   // An empty label anywhere else (`local..host`, `..localhost`) is not a valid hostname. It
   // cannot resolve, so nothing legitimate is refused by treating it as suspicious — and it is
@@ -630,6 +643,15 @@ export function isPrivateHost(hostname: string): boolean {
   if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
   if (a === 192 && b === 168) return true; // RFC1918
   if (a === 100 && b >= 64 && b <= 127) return true; // RFC6598 carrier-grade NAT
+  // Reserved and special-use ranges. None is a legitimate destination for a hero image or CTA,
+  // and several are routable-looking enough to pass every check above -- the docstring claimed
+  // to deny "literal private" addresses while allowing all of these.
+  if (a === 192 && b === 0 && c === 0) return true; // RFC6890 IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true; // RFC5737 TEST-NET-1
+  if (a === 198 && b === 51 && c === 100) return true; // RFC5737 TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // RFC5737 TEST-NET-3
+  if (a === 198 && b >= 18 && b <= 19) return true; // RFC2544 benchmarking
+  if (a >= 224) return true; // multicast (224/4) and reserved/broadcast (240/4, 255.255.255.255)
   return false;
 }
 

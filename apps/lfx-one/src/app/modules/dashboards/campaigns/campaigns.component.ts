@@ -24,8 +24,6 @@ import {
   EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
-  MAX_SPONSOR_NAME_LENGTH,
-  MAX_SPONSORS,
 } from '@lfx-one/shared/constants';
 import type {
   BriefMetrics,
@@ -51,7 +49,7 @@ import type {
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils';
-import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
+import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1230,25 +1228,10 @@ export class CampaignsComponent {
   /** Sponsors whose logo survives the same validation the controller applies, capped alike. */
   protected readonly emailSponsors = computed<CampaignEventSponsor[]>(() => {
     if (!this.emailBodyIsStageable()) return [];
-    const sponsors = this.emailBriefOutput()?.eventDetails?.sponsors;
-    if (!Array.isArray(sponsors)) return [];
-    return (
-      sponsors
-        .map((sponsor) => ({
-          // Truncated the SAME way the controller truncates (by code point, so a cut cannot
-          // land inside a surrogate pair). Showing the full name previewed a sponsor label the
-          // staged draft does not carry.
-          // Sanitised like the controller's copy. Without it the PREVIEW showed a bidi-reversed
-          // name while the staged draft showed the cleaned one -- preview and wire disagreeing,
-          // which is the defect this PR exists to remove.
-          name: typeof sponsor?.name === 'string' ? sanitizeDisplayText([...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('')) : '',
-          logoUrl: canonicalHttpUrl(sponsor?.logoUrl),
-        }))
-        // Blank names dropped too, matching the controller: it filters on both, so keeping them
-        // here showed logos the staged draft omits.
-        .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
-        .slice(0, MAX_SPONSORS)
-    );
+    // The SAME normaliser the controller uses. These two pipelines were duplicated verbatim and
+    // drifted repeatedly -- blank names, the name cap, the sanitizer -- each drift showing the
+    // operator a sponsor the sent draft omits, or the reverse.
+    return normalizeSponsors(this.emailBriefOutput()?.eventDetails?.sponsors);
   });
 
   /**
