@@ -11,13 +11,13 @@ Each item lists its `rule:` ID (used in finding JSON), severity, the check, the 
 
 ## 1. `pr-shape/branch-name` — SHOULD_FIX
 
-**Check:** the current branch matches `<type>/issue-<number>` (GitHub Issue) per `.claude/rules/commit-workflow.md`.
+**Check:** the current branch matches `<type>/issue-<number>` (GitHub Issue in this repo) or `<type>/<repo>-<number>` (GitHub Issue in another repo, e.g. `feat/lfx-mentorship-123`) per `.claude/rules/commit-workflow.md`.
 
-Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/issue-[0-9]+$`
+Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(issue-[0-9]+|[a-z0-9][a-z0-9._-]*-[0-9]+)$`
 
-**Failure message:** `Branch name '<branch>' does not match '<type>/issue-<number>'.`
+**Failure message:** `Branch name '<branch>' does not match '<type>/issue-<number>' or '<type>/<repo>-<number>'.`
 
-**Suggestion:** `git branch -m <type>/issue-<issue>` — e.g. `git branch -m feat/issue-1331`.
+**Suggestion:** `git branch -m <type>/issue-<issue>` or `git branch -m <type>/<repo>-<issue>` — e.g. `git branch -m feat/issue-1331` or `git branch -m feat/lfx-mentorship-123`.
 
 ## 2. `pr-shape/issue` — SHOULD_FIX
 

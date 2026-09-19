@@ -36,9 +36,9 @@ Follow the "Starting New Work" rule in `development-rules.md` — checkout `main
 
 Before writing code, ensure the work is tracked:
 
-1. **Check for an existing issue** — a GitHub Issue on `linuxfoundation/lfx-self-serve` (e.g. under an epic on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17))
-2. **Create one if needed** — create a GitHub Issue via `gh issue create`; do **not** create Jira tickets
-3. **Branch name must include the issue number:** `feat/issue-<number>`, `fix/issue-<number>`
+1. **Check for an existing issue** — a GitHub Issue on `linuxfoundation/lfx-self-serve` (e.g. under an epic on the [Kanban board](https://github.com/orgs/linuxfoundation/projects/17)). Work on another product's feature that lands in this repo stays tracked in that product's repo — e.g. Mentorship on [`linuxfoundation/lfx-mentorship`](https://github.com/linuxfoundation/lfx-mentorship/issues) — reference that issue rather than duplicating it here
+2. **Create one if needed** — create a GitHub Issue via `gh issue create` (use `--repo linuxfoundation/<repo>` when the feature belongs to a sibling product, so the issue lands in that product's tracker); do **not** create Jira tickets
+3. **Branch name must include the issue number:** `feat/issue-<number>`, `fix/issue-<number>` for a GitHub Issue in this repo, or `feat/<repo>-<number>` (e.g. `feat/lfx-mentorship-123`) for one in another repo
 4. Reference `.claude/rules/commit-workflow.md` for naming conventions
 
 ## Step 2: Plan the Feature (Ideation)
