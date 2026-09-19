@@ -347,6 +347,32 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).toBeNull();
       httpMock.verify();
     });
+
+    it('leaves the loading state when the foundation is cleared after one was selected', async () => {
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+
+      foundationSignal.set(null);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The other half of the foundationSeen latch: clearing a previously selected foundation must reach
+      // the terminal empty state, not wedge every tile and the rail on a skeleton that never resolves.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no data this period');
+      expect(evtTile.textContent).not.toContain('loading…');
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
+      httpMock.verify();
+    });
   });
 
   describe('foundation summary rail wiring', () => {

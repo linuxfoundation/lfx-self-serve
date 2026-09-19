@@ -2043,8 +2043,9 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect(execute).toHaveBeenCalledTimes(1);
     expect(binds).toEqual(['cncf']);
     expect((query as string).match(/\?/g)).toHaveLength(1);
-    // Columns come from the shared constant the service generates the SELECT from, so adding one
-    // there without covering it here can't quietly leave a period unselected.
+    // Pinned independently of the constant: the loop below derives its expectations from the same
+    // list the service generates from, so only this assertion catches a column silently dropped there.
+    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'FOUNDATION_TOTAL_REVENUE_USD']);
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
       for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
         expect(query).toContain(`${column.toLowerCase()}${suffix}`);

@@ -140,8 +140,8 @@ export class HealthMetricsOverviewComponent {
       return computed(() => emptyValue);
     }
 
-    // Tracks whether a foundation has ever resolved, so "not selected yet" keeps the skeleton up while
-    // a foundation that was cleared afterwards still reaches a terminal empty state instead of wedging.
+    // Latches on the first non-empty slug emission, so "none selected yet" keeps the skeleton up while
+    // a foundation cleared after one was selected still reaches a terminal empty state instead of wedging.
     let foundationSeen = false;
 
     return toSignal(
@@ -179,8 +179,9 @@ export class HealthMetricsOverviewComponent {
       return computed(() => HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
     }
 
-    // Same "has a foundation ever resolved" latch as initByRangeFetch: without it the rail renders the
-    // zero-filled default as "0 projects" before any foundation is selected, as if that were real data.
+    // Same latch as initByRangeFetch, with the same two guarantees: before any foundation is selected the
+    // rail keeps its skeleton rather than rendering the zero-filled default as a real "0 projects", and a
+    // foundation cleared after one was selected still leaves the loading state instead of wedging.
     let foundationSeen = false;
 
     return toSignal(

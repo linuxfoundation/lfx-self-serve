@@ -76,8 +76,8 @@ export interface HealthOverviewKpisRow {
  * the SELECT list and its readers from.
  */
 export interface HealthOverviewRevenueRow {
-  FOUNDATION_TOTAL_REVENUE_USD: number | null;
   REVENUE_USD: number | null;
+  FOUNDATION_TOTAL_REVENUE_USD: number | null;
 }
 
 /**
