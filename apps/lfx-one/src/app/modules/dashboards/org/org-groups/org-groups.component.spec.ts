@@ -930,7 +930,11 @@ describe('OrgGroupsComponent stat strip', () => {
         provideRouter([]),
         {
           provide: AccountContextService,
-          useValue: { selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account), hasOrgSelectorAccess: signal(true) },
+          useValue: {
+            selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account),
+            hasOrgSelectorAccess: signal(true),
+            selectedUrlSegment: signal(null),
+          },
         },
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
