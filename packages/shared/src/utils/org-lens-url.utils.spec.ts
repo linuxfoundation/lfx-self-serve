@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isOrgSlugSegment, normalizeOrgSegment, orgLensPagePath, orgUrlSegment } from './org-lens-url.utils';
+import { isOrgSlugSegment, normalizeOrgSegment, orgLensDestinationKey, orgLensPagePath, orgUrlSegment } from './org-lens-url.utils';
 
 const UID = '0014100000MgaAAAAA';
 
@@ -23,6 +23,17 @@ describe('orgUrlSegment', () => {
     expect(orgUrlSegment({ uid: UID })).toBe(UID);
     expect(orgUrlSegment({ uid: '', slug: '  ' })).toBeNull();
     expect(orgUrlSegment(null)).toBeNull();
+  });
+
+  // The producer applies the resolver's shape rules: a slug that could reshape a joined address
+  // (`/`, `?`, `#`, spaces) is not emitted, and a uid that is not an SFID is not an address at all.
+  it.each(['acme/inc', 'acme?x=1', 'acme#top', 'acme inc', '-acme'])('emits the SFID when the slug %p is not slug-shaped', (slug) => {
+    expect(orgUrlSegment({ uid: UID, slug })).toBe(UID);
+  });
+
+  it('yields null when the uid is not an SFID and there is no usable slug', () => {
+    expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: null })).toBeNull();
+    expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: 'acme/inc' })).toBeNull();
   });
 });
 
@@ -53,5 +64,16 @@ describe('orgLensPagePath', () => {
     expect(orgLensPagePath(['org', 'easycla', 'group-1'], 'overview')).toBe('/org/overview');
     expect(orgLensPagePath(['org'], 'overview')).toBe('/org/overview');
     expect(orgLensPagePath(['project', 'acme'], 'overview')).toBe('/org/overview');
+  });
+});
+
+describe('orgLensDestinationKey', () => {
+  it('drops the organization from an Org Lens address and leaves everything else alone', () => {
+    expect(orgLensDestinationKey('/org/acme-inc/projects')).toBe('/org/projects');
+    expect(orgLensDestinationKey(`/org/${UID}/projects/k8s`)).toBe('/org/projects/k8s');
+    expect(orgLensDestinationKey('/org/projects')).toBe('/org/projects');
+    expect(orgLensDestinationKey('/org/easycla')).toBe('/org/easycla');
+    expect(orgLensDestinationKey('/org/acme-inc')).toBe('/org/acme-inc');
+    expect(orgLensDestinationKey('/project/cncf/overview')).toBe('/project/cncf/overview');
   });
 });

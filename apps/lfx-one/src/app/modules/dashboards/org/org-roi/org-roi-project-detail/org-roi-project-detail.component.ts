@@ -35,7 +35,9 @@ const EMPTY_DETAIL: { detail: OrgLensRoiProjectDetail | null; annual: OrgLensRoi
 })
 export class OrgRoiProjectDetailComponent {
   private readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly roiLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('roi'));
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);

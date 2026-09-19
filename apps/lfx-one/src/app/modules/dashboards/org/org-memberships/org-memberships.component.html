@@ -164,9 +164,9 @@
               <ng-template #body let-membership>
                 <tr>
                   <td>
-                    @if (membership.foundationSlug) {
+                    @if (membership.membershipLink) {
                       <a
-                        [routerLink]="orgLens.orgLensLink('memberships', membership.foundationSlug)"
+                        [routerLink]="membership.membershipLink"
                         [attr.data-testid]="'memberships-active-row-link-' + membership.foundationSlug"
                         class="flex items-center gap-3 -mx-2 -my-1.5 px-2 py-1.5 rounded-md hover:bg-gray-50 transition-colors no-underline">
                         @if (membership.foundationLogo) {

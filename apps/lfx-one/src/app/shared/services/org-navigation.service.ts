@@ -283,9 +283,11 @@ export class OrgNavigationService {
     this.accountContextService.refreshCanonicalRecord(account).catch(() => {
       // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
     });
-    // Spec 050 US2: a default picked while already inside Org Lens is written into the address
-    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on.
-    this.orgLensNavigation.navigateToSelectedOrg();
+    // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
+    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
+    // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never
+    // overrides an address that already names an organization.
+    this.orgLensNavigation.navigateToSelectedOrg('default');
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {

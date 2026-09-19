@@ -49,14 +49,14 @@
              so neither is handled twice or robbed of "open in a new tab". A row whose slug is
              missing stays inert, and does not advertise itself as clickable either. -->
         <tr
-          [class.cursor-pointer]="row.projectSlug"
-          [class.hover:bg-gray-50]="row.projectSlug"
+          [class.cursor-pointer]="row.roiLink"
+          [class.hover:bg-gray-50]="row.roiLink"
           [attr.data-testid]="'org-roi-projects-table-row-' + row.projectId"
           (click)="openProject(row, $event)">
           <td class="truncate" [attr.title]="row.projectName">
-            @if (row.projectSlug) {
+            @if (row.roiLink) {
               <a
-                [routerLink]="orgLens.orgLensLink('roi', 'projects', row.projectSlug)"
+                [routerLink]="row.roiLink"
                 class="text-blue-600 hover:text-blue-700 hover:underline"
                 [attr.data-testid]="'org-roi-projects-table-link-' + row.projectId">
                 {{ row.projectName }}

@@ -56,7 +56,9 @@ import { EditKeyContactModalComponent } from './components/edit-key-contact-moda
 })
 export class OrgMembershipDetailComponent {
   protected readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly drawer = inject(PersonDetailDrawerService);

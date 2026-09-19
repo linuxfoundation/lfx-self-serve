@@ -141,23 +141,25 @@ Available to `contributor`, `maintainer`, and root writers.
 
 ## Org Lens
 
-**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. When the flag is off, `orgLensEnabledGuard` (CanMatch) blocks all `/org/*` routes in the browser and redirects to `/` — the routes are invisible to the router. On the server during SSR, LaunchDarkly is unavailable, so the guard returns `true` and defers the real enforcement to the browser after hydration. When the flag is enabled, the Org Lens is identical for all personas.
+**Feature-flagged** via `ORG_LENS_ENABLED_FLAG`. When the flag is off, `orgLensEnabledGuard` (CanMatch) blocks all `/org/*` routes in the browser and redirects to `/org/not-found` — the routes are invisible to the router. On the server during SSR, LaunchDarkly is unavailable, so the guard returns `true` and defers the real enforcement to the browser after hydration. When the flag is enabled, the Org Lens is identical for all personas.
 
-| Section         | Item                     | Route                |
-| --------------- | ------------------------ | -------------------- |
-| _(top-level)_   | Org Overview             | `/org/overview`      |
-| Org Foundations | Memberships              | `/org/memberships`   |
-|                 | Projects                 | `/org/projects`      |
-|                 | ROI                      | `/org/roi`           |
-|                 | Governance               | `/org/governance`    |
-| Org Engagement  | People                   | `/org/people`        |
-|                 | Code Contributions       | `/org/contributions` |
-|                 | EasyCLA                  | `/org/easycla`       |
-|                 | Events                   | `/org/events`        |
-|                 | Training & Certification | `/org/training`      |
-|                 | Meetings                 | `/org/meetings`      |
-|                 | Committees               | `/org/groups`        |
-| Org Admin       | Profile                  | `/org/profile`       |
+Org Lens pages are addressed **by organization** (spec 050): `/org/{segment}/{page}`, where `{segment}` is the organization's slug (or its 18-char SFID when it has none). The legacy `/org/{page}` form still routes and is redirected to the selected organization's address. Every in-app Org Lens link — sidebar, breadcrumbs, table rows, CTAs — is built through `OrgLensNavigationService` (see [Lens System → Org Lens addresses](lens-system.md#org-lens-addresses)); no page hard-codes `/org/…`. EasyCLA is the one exception and stays at `/org/easycla` for now (DR-004; migration tracked in lfx-self-serve#2743).
+
+| Section         | Item                     | Route                           |
+| --------------- | ------------------------ | ------------------------------- |
+| _(top-level)_   | Org Overview             | `/org/{segment}/overview`       |
+| Org Foundations | Memberships              | `/org/{segment}/memberships`    |
+|                 | Projects                 | `/org/{segment}/projects`       |
+|                 | ROI                      | `/org/{segment}/roi`            |
+|                 | Governance               | `/org/{segment}/governance`     |
+| Org Engagement  | People                   | `/org/{segment}/people`         |
+|                 | Code Contributions       | `/org/{segment}/contributions`  |
+|                 | EasyCLA                  | `/org/easycla` (legacy, DR-004) |
+|                 | Events                   | `/org/{segment}/events`         |
+|                 | Training & Certification | `/org/{segment}/training`       |
+|                 | Meetings                 | `/org/{segment}/meetings`       |
+|                 | Committees               | `/org/{segment}/groups`         |
+| Org Admin       | Profile                  | `/org/{segment}/profile`        |
 
 ---
 
@@ -172,11 +174,11 @@ Guards enforce access at the router level — regardless of whether a sidebar li
 | `campaignAccessGuard`        | `/foundation/campaigns`                                                                                                  | `currentPersona() === 'executive-director'` always; when `marketing-ops-fga-enabled` is on, a root/project-scoped `campaign_manager` grant also admits                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | `newsletterAccessGuard`      | `/newsletters` (lens redirect), `/foundation/newsletters`, `/project/newsletters`, `/foundation/gw/**`, `/project/gw/**` | `canSeeNewsletters()` — ED or `canWrite()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `writerGuard`                | Create/edit routes for meetings, committees, mailing lists, surveys, votes (all lenses)                                  | `executive-director` (fast path) or project `writer`; meetings routes also allow `meetingCoordinator` or `committee.writer` when `?committee_uid=` is set — see [Meetings write paths](#meetings-write-paths) below                                                                                                                                                                                                                                                                                                                                                    |
-| `orgLensEnabledGuard`        | `/org/*` (CanMatch — routes invisible when flag is off)                                                                  | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `orgLensEnabledGuard`        | `/org/*` (CanMatch — routes invisible when flag is off)                                                                  | Browser: `ORG_LENS_ENABLED_FLAG` must be `true`; redirects to `/org/not-found` otherwise. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `mktgOsAgentsEnabledGuard`   | `/project/mktg-os-agents`, `/foundation/mktg-os-agents` (CanMatch)                                                       | Browser: waits for LaunchDarkly READY, then `MKTG_OS_AGENTS_ENABLED_FLAG`; fail closed. Denied deep links go to `/{lens}/overview`. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                                                                                                                                                                                                                                                                                         |
 | `gatewazeEmbedEnabledGuard`  | `/foundation/gw/**`, `/project/gw/**` (CanMatch)                                                                         | Browser: waits for LaunchDarkly READY, then `GATEWAZE_EMBED_ENABLED_FLAG`; fail closed to `/`. Access is `newsletterAccessGuard` on both mounts — the flag decides whether the embed is reachable at all, never who may reach it. Paired with the `LFX_GATEWAZE_EMBED_ENABLED` server flag, which independently gates the `/api/gw` proxy — the client flag hides the UI, the server flag closes the BFF. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                   |
 | `gwEmbedTenantGuard`         | `/foundation/gw/**`, `/project/gw/**` (CanActivate)                                                                      | Restricts the embed to the tenants Gatewaze can serve (`GW_EMBED_ALLOWED_PROJECT_SLUGS`); fail closed to `/`. Decides on the **route snapshot** (`?project=`, falling back to the resolved context only when the route names none) — not on `ProjectContextService`, which same-tick guard concurrency would leave holding the tenant being navigated away from. A data-isolation control, not a rollout gate: Gatewaze has no multi-foundation scoping, so another foundation's chrome would wrap AAIF's content. See [Gatewaze Embed Host](gw-embed.md) § Enablement |
-| `orgLensClaM3EnabledGuard`   | `/org/easycla` and its children (CanMatch)                                                                               | Browser: waits for LaunchDarkly READY, then `ORG_LENS_CLA_M3_ENABLED_FLAG`; fail closed, redirecting to `/org/overview`. SSR: always returns `true` — enforcement defers to browser after hydration                                                                                                                                                                                                                                                                                                                                                                    |
+| `orgLensClaM3EnabledGuard`   | `/org/easycla` and its children (CanMatch)                                                                               | Browser: waits for LaunchDarkly READY, then `ORG_LENS_CLA_M3_ENABLED_FLAG`; fail closed, redirecting to the selected organization's overview (`/org/{segment}/overview`, legacy `/org/overview` while nothing is selected). SSR: always returns `true` — enforcement defers to browser after hydration                                                                                                                                                                                                                                                                 |
 
 Guards are defined in `apps/lfx-one/src/app/shared/guards/`.
 

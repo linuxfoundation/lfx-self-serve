@@ -11,13 +11,19 @@ import type { Account } from '../interfaces';
  * member-service published (derived from the org name, DR-007) — never re-derived here or taken
  * from the Snowflake `accountSlug`. A slug equal to an Org Lens page name is emitted as the SFID so
  * a static route can never be shadowed (DR-007 §5, T017a).
+ *
+ * Both values are shape-checked, not trusted: this is the one producer every in-app Org Lens
+ * address goes through, and some consumers join it into a string (`routerLink="…"`, `parseUrl`),
+ * where a stray `/`, `?` or `#` would reshape the address. A slug that is not `[a-z0-9-]` falls
+ * back to the SFID, and a uid that is not an SFID yields null — the same two rules the inbound
+ * resolver applies (`isOrgSlugSegment`, `isOrgAccountIdSegment`).
  */
 export function orgUrlSegment(org: Pick<Account, 'uid' | 'slug'> | null | undefined): string | null {
   if (!org) return null;
   const slug = org.slug?.trim().toLowerCase();
-  if (slug && ORG_LENS_PAGE_SEGMENTS[slug] !== true) return slug;
+  if (slug && isOrgSlugSegment(slug)) return slug;
   const uid = org.uid?.trim();
-  return uid ? uid : null;
+  return uid && isOrgAccountIdSegment(uid) ? uid : null;
 }
 
 /** True when the segment is shaped like an org account id (`001` + 15 alphanumerics) — the identifier form of the address (FR-001, FR-002). */
@@ -43,6 +49,20 @@ export function orgLensPagePath(urlSegments: readonly string[], page: string): s
     return `/org/${second}/${page}`;
   }
   return `/org/${page}`;
+}
+
+/**
+ * The organization-independent form of an Org Lens address: `/org/{segment}/{page}/…` becomes
+ * `/org/{page}/…`; any other path is returned unchanged. For identity that must survive an
+ * organization switch — the sidebar tracks its rows by destination, and a switch only re-addresses
+ * them, it does not replace them.
+ */
+export function orgLensDestinationKey(path: string): string {
+  const [, root, second, ...rest] = path.split('/');
+  if (root === 'org' && second && ORG_LENS_PAGE_SEGMENTS[second.toLowerCase()] !== true && rest.length > 0) {
+    return `/org/${rest.join('/')}`;
+  }
+  return path;
 }
 
 /** Lowercase + trim a raw URL segment before matching or lookup (FR-004). SFIDs are case-sensitive upstream, so they are only trimmed. */

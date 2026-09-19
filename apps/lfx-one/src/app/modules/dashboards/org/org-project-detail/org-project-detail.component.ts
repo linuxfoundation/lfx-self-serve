@@ -110,7 +110,9 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
@@ -827,7 +829,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: this.orgLens.orgLensLink('projects') };
+    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink() };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

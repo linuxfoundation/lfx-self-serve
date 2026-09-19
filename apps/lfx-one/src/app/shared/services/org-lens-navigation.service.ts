@@ -8,6 +8,16 @@ import { ORG_LENS_PAGE_SEGMENTS } from '@lfx-one/shared/constants';
 import { AccountContextService } from './account-context.service';
 
 /**
+ * Who selected the organization the address is being re-written for.
+ *
+ * - `switch`: the viewer picked it. The page follows them anywhere inside Org Lens — including off
+ *   the not-found dead end — and history is pushed so Back returns to the pre-switch organization.
+ * - `default`: the app picked it because nothing was selected. Only an address that names no
+ *   organization is filled in (`/org/{page}` → `/org/{segment}/{page}`), replacing the entry.
+ */
+export type OrgLensAddressIntent = 'switch' | 'default';
+
+/**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
  * with the selection (spec 050 US2 — FR-013…FR-016, FR-029).
  *
@@ -16,10 +26,16 @@ import { AccountContextService } from './account-context.service';
  *   `['/org', page, …rest]` while nothing is selected yet (the default-organization redirect of
  *   US3 resolves that form). Reading `selectedUrlSegment()` makes every template link re-render on
  *   a switch, so the address bar and the links on screen never disagree.
- * - `navigateToSelectedOrg()` runs after a selection change: the viewer stays on the same Org Lens
- *   page, now addressed to the new organization — same child segments, query and fragment. A
- *   pushed history entry (not a replacement): the switch is a user intent, and Back must return
- *   to the pre-switch organization and page (US2 scenario 3, SC-009).
+ * - `navigateToSelectedOrg(intent)` runs after a selection change: the viewer stays on the same Org
+ *   Lens page, now addressed to the selected organization — same child segments, query and
+ *   fragment. What it may touch, and whether history stacks, depends on who made the selection
+ *   (`OrgLensAddressIntent`).
+ *
+ * Two builders coexist on purpose. This one derives the organization from the *selection*, which is
+ * right for links and for code that runs after a route has been recognized. Code that runs *during*
+ * recognition under `/org/:orgSegment` (a `CanMatch` flag guard) must derive it from the URL being
+ * recognized (`orgLensPagePath` in `@lfx-one/shared/utils`) — at that moment the path guard has not
+ * adopted the addressed organization yet, and the selection may still be the cookie's.
  */
 @Injectable({
   providedIn: 'root',
@@ -45,8 +61,14 @@ export class OrgLensNavigationService {
    * from the Me or Project lens changes the selection only), on EasyCLA pages (DR-004: they stay
    * on the legacy address in phase 1), when no segment is known yet, or when the address already
    * names the selected organization (FR-014).
+   *
+   * A `default` intent is narrower still: it only fills an organization into an address that names
+   * none. It never leaves `/org/not-found` — a default landing there would be the silent
+   * substitution the dead end exists to prevent (FR-022–FR-024) — and never overrides an address
+   * that already names an organization, because the path guard that resolves it is the authority
+   * and may not have adopted it yet when the org list answers.
    */
-  public navigateToSelectedOrg(): void {
+  public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
     const tree = this.router.parseUrl(this.router.url);
     const segments = tree.root.children['primary']?.segments.map((s) => s.path) ?? [];
     if (segments[0] !== 'org' || segments[1] === 'easycla') {
@@ -58,21 +80,35 @@ export class OrgLensNavigationService {
     }
 
     let child: string[];
-    if (segments.length === 1 || segments[1] === 'not-found') {
-      // Nothing (or the dead end) after `/org`: land on the organization's overview.
+    if (segments.length === 1) {
+      // Nothing after `/org`: land on the organization's overview.
+      child = ['overview'];
+    } else if (segments[1] === 'not-found') {
+      // The dead end: only the viewer's own pick may leave it, for that organization's overview.
+      if (intent !== 'switch') {
+        return;
+      }
       child = ['overview'];
     } else if (ORG_LENS_PAGE_SEGMENTS[segments[1]] === true) {
       // Legacy `/org/{page}/…`: insert the organization.
       child = segments.slice(1);
     } else {
-      // `/org/{organization}/…`: swap the organization, keep the page.
+      // `/org/{organization}/…`: a switch swaps the organization and keeps the page; a default
+      // leaves an addressed organization alone.
       const selected = this.accountContext.selectedAccount();
-      if (segments[1] === segment || segments[1] === selected.uid) {
+      if (intent !== 'switch' || segments[1] === segment || segments[1] === selected.uid) {
         return;
       }
       child = segments.slice(2);
     }
 
-    void this.router.navigate(['/org', segment, ...child], { queryParamsHandling: 'preserve', preserveFragment: true });
+    // A switch is pushed so Back returns to the pre-switch organization and page (US2 scenario 3);
+    // a default is a canonicalizing rewrite of the address the viewer already meant, so it replaces
+    // (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen.
+    void this.router.navigate(['/org', segment, ...child], {
+      replaceUrl: intent === 'default',
+      queryParamsHandling: 'preserve',
+      preserveFragment: true,
+    });
   }
 }

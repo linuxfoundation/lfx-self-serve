@@ -231,6 +231,12 @@ export class OrgSelectorComponent {
   }
 
   protected selectItem(item: OrgItem): void {
+    // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
+    // no account emission (which page consumers refetch on), no canonical fetch, no navigation.
+    if (item.uid === this.selectedAccountUid()) {
+      this.popoverRef()?.hide();
+      return;
+    }
     const account: Account = {
       // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
       // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
@@ -256,8 +262,8 @@ export class OrgSelectorComponent {
       // floating promise doesn't reach the browser console.
     });
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
-    // re-addressed to the new selection (no-op outside Org Lens, on EasyCLA, or for the same org).
-    this.orgLensNavigation.navigateToSelectedOrg();
+    // re-addressed to the new selection (no-op outside Org Lens and on EasyCLA).
+    this.orgLensNavigation.navigateToSelectedOrg('switch');
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();

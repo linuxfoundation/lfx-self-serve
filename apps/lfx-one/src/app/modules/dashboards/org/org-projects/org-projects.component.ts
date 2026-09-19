@@ -75,6 +75,9 @@ import { OrgLensProjectsService } from '@shared/services/org-lens-projects.servi
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonaService } from '@shared/services/persona.service';
 
+/** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
+type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
+
 @Component({
   selector: 'lfx-org-projects',
   imports: [
@@ -104,7 +107,7 @@ export class OrgProjectsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
@@ -792,14 +795,17 @@ export class OrgProjectsComponent {
   }
 
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
-  private initRows(): Signal<OrgProjectsTableRow[]> {
+  private initRows(): Signal<OrgProjectsLinkedRow[]> {
     return computed(() =>
       this.sortedProjects().map((project) => {
+        // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+        const projectLink = this.orgLens.orgLensLink('projects', project.slug);
         // Fallback rows (org has no metrics row for the project) render org-relative metrics as "Unavailable".
         // A `full` row — including a participating project with no code activity — renders every metric for real.
         const orgMetricsUnavailable = this.isOrgMetricsUnavailable(project);
         return {
           ...project,
+          projectLink,
           orgMetricsUnavailable,
           insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
           // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather

@@ -59,8 +59,9 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/projects/k8s?card=contributors#top';
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/projects/k8s');
-      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'preserve', preserveFragment: true }));
-      expect(navigate.mock.calls[0][1]).not.toHaveProperty('replaceUrl');
+      // Pushed, not replaced: a switch is a user intent, and Back must return to the pre-switch
+      // organization and page (US2 scenario 3).
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
     it('inserts the organization on a legacy page address', () => {
@@ -69,8 +70,8 @@ describe('OrgLensNavigationService', () => {
       expect(navigatedTo()).toBe('/org/acme-inc/people');
     });
 
-    it('lands on the overview from the not-found page or the bare /org', () => {
-      currentUrl = '/org/not-found';
+    it.each(['/org/not-found', '/org'])('lands on the overview from %s', (url) => {
+      currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/overview');
     });
@@ -91,6 +92,42 @@ describe('OrgLensNavigationService', () => {
       selectedUrlSegment.set(null);
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * An automatic default is not a switch: it only fills an organization into an address that names
+   * none, and it replaces the entry (FR-011) so Back cannot land on the bare, uncopyable form.
+   */
+  describe("navigateToSelectedOrg('default')", () => {
+    it('inserts the organization on a legacy page address and replaces the history entry', () => {
+      currentUrl = '/org/people?tab=admins#top';
+      service.navigateToSelectedOrg('default');
+      expect(navigatedTo()).toBe('/org/acme-inc/people');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true }));
+    });
+
+    it('lands on the overview from the bare /org', () => {
+      currentUrl = '/org';
+      service.navigateToSelectedOrg('default');
+      expect(navigatedTo()).toBe('/org/acme-inc/overview');
+    });
+
+    // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;
+    // a default picked from the org list would silently substitute another organization for the
+    // one the link named.
+    it('never leaves the not-found page', () => {
+      currentUrl = '/org/not-found';
+      service.navigateToSelectedOrg('default');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // The org list can answer before the path guard has adopted the addressed organization; the
+    // address is the authority then, not the default.
+    it('never overrides an address that already names an organization', () => {
+      currentUrl = '/org/other-org/projects/k8s';
+      service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
     });
   });

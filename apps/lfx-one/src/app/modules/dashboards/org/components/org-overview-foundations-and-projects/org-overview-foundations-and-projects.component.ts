@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -28,7 +28,9 @@ import { FoundationsStatStripComponent } from './components/foundations-stat-str
 export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly foundationsService = inject(OrgLensFoundationsService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
   private readonly plausibleService = inject(PlausibleService);
   private readonly router = inject(Router);
 

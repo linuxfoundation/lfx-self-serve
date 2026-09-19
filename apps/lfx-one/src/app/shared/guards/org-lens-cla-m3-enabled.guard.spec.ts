@@ -17,7 +17,7 @@ describe('orgLensClaM3EnabledGuard', () => {
   let getBooleanFlag: ReturnType<typeof vi.fn>;
   let waitForReady: ReturnType<typeof vi.fn>;
   let router: {
-    parseUrl: ReturnType<typeof vi.fn>;
+    createUrlTree: ReturnType<typeof vi.fn>;
   };
 
   const route: Route = { path: 'easycla', data: { lens: 'org' } };
@@ -41,7 +41,7 @@ describe('orgLensClaM3EnabledGuard', () => {
     );
 
     router = {
-      parseUrl: vi.fn().mockImplementation((url: string) => ({ redirected: url })),
+      createUrlTree: vi.fn().mockImplementation((commands: string[]) => ({ redirected: commands.join('/') })),
     };
 
     TestBed.configureTestingModule({
@@ -53,7 +53,7 @@ describe('orgLensClaM3EnabledGuard', () => {
         { provide: Router, useValue: router },
         // Spec 050 US2: the fallback carries the selected organization; this suite pins the redirect
         // rules, so the address builder is stubbed to the org-aware form.
-        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => `/org/acme-inc/${page}` } },
+        { provide: OrgLensNavigationService, useValue: { orgLensLink: (page: string) => ['/org', 'acme-inc', page] } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     });
@@ -85,7 +85,7 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
     expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });
@@ -103,7 +103,7 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     const result = await runGuard();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
     expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
   });
 
@@ -117,7 +117,7 @@ describe('orgLensClaM3EnabledGuard', () => {
 
     vi.useRealTimers();
 
-    expect(router.parseUrl).toHaveBeenCalledWith('/org/acme-inc/overview');
+    expect(router.createUrlTree).toHaveBeenCalledWith(['/org', 'acme-inc', 'overview']);
     expect(result).toEqual({ redirected: '/org/acme-inc/overview' });
     expect(getBooleanFlag).not.toHaveBeenCalled();
   });

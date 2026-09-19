@@ -23,6 +23,12 @@ import type {
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 
+/**
+ * Table row plus its detail-page router commands (`null` when the row has no slug, so the template's
+ * guard and `openProject` agree on which rows navigate).
+ */
+type OrgLensRoiLinkedRow = OrgLensRoiProjectTableRow & { roiLink: string[] | null };
+
 /** Every project in the portfolio, sortable and paged. */
 @Component({
   selector: 'lfx-org-roi-projects-table',
@@ -31,7 +37,7 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 })
 export class OrgRoiProjectsTableComponent {
   private readonly router = inject(Router);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
 
   /** The complete, uncapped project set — this view pages it rather than summarising it. */
   public readonly projects = input.required<OrgLensRoiProjectRow[]>();
@@ -59,7 +65,7 @@ export class OrgRoiProjectsTableComponent {
 
   protected readonly countLabel: Signal<string> = computed(() => `${this.totalRecords().toLocaleString('en-US')} projects`);
 
-  protected readonly rows: Signal<OrgLensRoiProjectTableRow[]> = computed(() => {
+  protected readonly rows: Signal<OrgLensRoiLinkedRow[]> = computed(() => {
     const field = this.sortField();
     const direction = this.sortDir() === 'asc' ? 1 : -1;
     return this.projects()
@@ -87,12 +93,12 @@ export class OrgRoiProjectsTableComponent {
    * choice the viewer just made. A row with no slug does nothing, since the slug is the route
    * parameter and routing without one would land on a URL that cannot resolve.
    */
-  public openProject(row: OrgLensRoiProjectTableRow, event: MouseEvent): void {
-    if (!row.projectSlug) return;
+  public openProject(row: OrgLensRoiLinkedRow, event: MouseEvent): void {
+    if (!row.roiLink) return;
     if (event.ctrlKey || event.metaKey || event.shiftKey || event.button !== 0) return;
     const target = event.target as HTMLElement | null;
     if (target?.closest('a')) return;
-    void this.router.navigate(this.orgLens.orgLensLink('roi', 'projects', row.projectSlug));
+    void this.router.navigate(row.roiLink);
   }
 
   public toggleSort(field: OrgLensRoiProjectSortField): void {
@@ -156,10 +162,12 @@ export class OrgRoiProjectsTableComponent {
   }
 
   /** Never re-derives roi, bcr or profit: they are defined once in the metric layer. */
-  private toTableRow(project: OrgLensRoiProjectRow): OrgLensRoiProjectTableRow {
+  private toTableRow(project: OrgLensRoiProjectRow): OrgLensRoiLinkedRow {
     return {
       projectId: project.projectId,
       projectSlug: project.projectSlug,
+      // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+      roiLink: project.projectSlug ? this.orgLens.orgLensLink('roi', 'projects', project.projectSlug) : null,
       projectName: project.projectName,
       totalExpenditure: project.totalExpenditure,
       totalReturn: project.totalReturn,

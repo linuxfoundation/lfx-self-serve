@@ -22,8 +22,11 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
   // Injected up front: the fallback also runs after the `await` below, outside the injection context.
   const orgLensNavigation = inject(OrgLensNavigationService);
   // Spec 050 US2: the fallback stays with the selected organization (`/org/{segment}/overview`);
-  // the legacy `/org/overview` only while nothing is selected yet.
-  const fallback = (): UrlTree => router.parseUrl(orgLensNavigation.orgLensPath('overview'));
+  // the legacy `/org/overview` only while nothing is selected yet. Derived from the *selection*
+  // rather than the URL being recognized (as `orgLensRoiEnabledGuard` does with `orgLensPagePath`)
+  // because EasyCLA's legacy address names no organization — there is nothing in the URL to keep.
+  // Built from commands, not a joined string, so the segment stays one path segment whatever it holds.
+  const fallback = (): UrlTree => router.createUrlTree(orgLensNavigation.orgLensLink('overview'));
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be
