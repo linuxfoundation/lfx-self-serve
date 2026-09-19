@@ -13,7 +13,8 @@ Before starting any new feature or task, always start from the latest `main`:
 ```bash
 git checkout main
 git pull
-git checkout -b <type>/issue-<issue-number>    # GitHub Issue-tracked work
+git checkout -b <type>/issue-<issue-number>    # GitHub Issue in this repo
+git checkout -b <type>/<repo>-<issue-number>   # GitHub Issue in a sibling product repo
 ```
 
 If you already have a working branch, ensure it's rebased on the latest `main` before proceeding.
@@ -107,6 +108,7 @@ When editing files in `docs/`:
 
 ## GitHub Issues
 
-- All work is tracked as GitHub Issues on `linuxfoundation/lfx-self-serve`. Do **not** create Jira tickets.
-- File new issues with `gh issue create`, set `--label` (e.g. `bug`), and optionally `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
-- Reference GitHub Issues in branches as `issue-<issue-number>`, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the issue isn't in this repo (see `.claude/rules/commit-workflow.md`).
+- Work owned by this repo is tracked as GitHub Issues on `linuxfoundation/lfx-self-serve`. Do **not** create Jira tickets.
+- File new issues owned by this repo with `gh issue create`, set `--label` (e.g. `bug`), and optionally `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
+- Reference GitHub Issues in branches as `issue-<issue-number>`, or as `<repo>-<issue-number>` (e.g. `lfx-mentorship-123`) for an issue in a sibling product repo, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-mentorship#123`) when the issue isn't in this repo (see `.claude/rules/commit-workflow.md`).
+- Work on another product's feature that lands in this repo is tracked in that product's repo — file it there with `gh issue create --repo linuxfoundation/<repo>` rather than opening a duplicate here.
