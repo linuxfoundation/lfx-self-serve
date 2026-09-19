@@ -1295,7 +1295,20 @@ export class CampaignsComponent {
    * field -- never invent one -- so an absent url is a deliberate "registration is not the right
    * destination for this stage", not a gap for the UI to fill.
    */
-  protected readonly emailCtaDestination = computed<string>(() => canonicalHttpUrl(this.emailCopy()?.ctaUrl));
+  protected readonly emailCtaDestination = computed<string>(() => {
+    const generated = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
+    if (generated === '') return '';
+    // MUST EQUAL the brief's registration URL. The generator is told "a button's url must be
+    // that URL, copied exactly ... never invented", so anything else is a model that did not
+    // follow its instructions -- and accepting it would ship a button pointing somewhere the
+    // brief never contained. Checking only that the URL is public-looking is not enough: a
+    // hallucinated `https://evil.example.com/phish` passes that check.
+    //
+    // Compared in canonical form so a trailing slash or userinfo difference is not read as a
+    // mismatch, and vice versa.
+    const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
+    return generated === fromBrief ? generated : '';
+  });
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on

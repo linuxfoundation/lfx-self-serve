@@ -482,6 +482,9 @@ export function isPrivateHost(hostname: string): boolean {
       const values = parts.map((g) => (g === '' ? 0 : parseInt(g, 16)));
       if (values.slice(0, 7).every((v) => v === 0) && (values[7] === 0 || values[7] === 1)) return true;
     }
+    // `ff00::/8` is IPv6 multicast -- the twin of the 224/4 denial on the v4 side, and no more a
+    // legitimate hero destination than that one.
+    if (/^ff/.test(first)) return true;
     if (addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first) || /^fe[c-f]/.test(first)) return true;
 
     // TRANSLATED forms carry an IPv4 destination inside an IPv6 address, so judging the IPv6

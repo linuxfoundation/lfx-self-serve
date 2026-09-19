@@ -4385,6 +4385,59 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestPreheaderBPreview()).toBe('B preheader');
     });
 
+    it('refuses a CTA url the brief never contained', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // A public-looking URL the model invented. The generator is told to copy the brief's
+      // Registration URL exactly or omit the field, so anything else is a model that did not
+      // follow its instructions.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join</p>', cta: 'Register', ctaUrl: 'https://evil.example.com/phish' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Checking only that the URL is public-looking would ship this button pointing at a host
+      // the brief never contained.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(cfg?.buttonText).toBeUndefined();
+    });
+
+    it('accepts a CTA url that matches the brief, modulo canonical form', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join</p>',
+        cta: 'Register',
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The equality check must not refuse the legitimate case -- that would be the
+      // over-denial this file keeps guarding against.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
+      expect(cfg?.buttonText).toBe('Register');
+    });
+
     it('sends no button when the generator omitted its url, even with a registration URL', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

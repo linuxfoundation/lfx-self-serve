@@ -226,6 +226,10 @@ describe('isPrivateHost', () => {
     ['RFC6890 protocol assignments', '192.0.0.1'],
     ['RFC2544 benchmarking', '198.18.0.1'],
     ['multicast', '224.0.0.1'],
+    // The IPv6 twin of 224/4. No more a legitimate hero destination than the v4 form.
+    ['IPv6 link-local multicast', '[ff02::1]'],
+    ['IPv6 multicast, low', '[ff00::1]'],
+    ['IPv6 site-local multicast', '[ff05::1:3]'],
     ['the reserved 240/4 range', '240.0.0.1'],
     ['the broadcast address', '255.255.255.255'],
     // FAILS CLOSED, deliberately. These are PUBLIC addresses (Google DNS, doc range), but their
@@ -310,6 +314,8 @@ describe('isPrivateHost', () => {
     ['a host next to TEST-NET-2', '198.52.100.1'],
     ['a host next to the protocol range', '192.1.2.3'],
     ['the last address below multicast', '223.255.255.255'],
+    // `fe00::/8` sits just below the multicast prefix and is ordinary space.
+    ['an IPv6 address below the multicast prefix', '[fe00::1]'],
     ['an ordinary host named metadata', 'metadata.example.com'],
     // Quad-SHAPED but not a quad: the fourth label is a TLD, so these are ordinary hostnames.
     // Reading only the first three octets refused them as RFC1918 -- a false positive on a
