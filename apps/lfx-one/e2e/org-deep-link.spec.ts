@@ -278,11 +278,14 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
 
     await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
     await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    // Captured once the dead end has settled and before the org list can have answered: a default
+    // that navigated (pushed or replaced) would move the URL, and a push would also grow this.
+    const historyAtNotFound = await page.evaluate(() => window.history.length);
     // The default has been picked (the selector names A) …
     await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
-    // … and the address is still the dead end, with no entry pushed under it.
+    // … and the address is still the dead end, with nothing pushed under it.
     await expect.poll(() => page.url(), { timeout: 3_000, intervals: [250] }).toMatch(/\/org\/not-found(\?|#|$)/);
-    expect(await page.evaluate(() => window.history.length)).toBe(await page.evaluate(() => window.history.length));
+    expect(await page.evaluate(() => window.history.length)).toBe(historyAtNotFound);
     await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
   });
 
