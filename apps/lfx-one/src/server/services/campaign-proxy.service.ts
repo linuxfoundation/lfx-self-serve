@@ -1527,7 +1527,16 @@ export class CampaignProxyService {
         };
       }
 
-      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(pageUrl || body.url);
+      // Tries the FINAL url first, then the requested one. A redirect to a MORE specific path is
+      // the case `pageUrl` exists for; one to a bare origin (`/kubecon-eu-2026` -> `/`) yields
+      // '' and now falls back to the slug the operator typed.
+      //
+      // NOT fully solved, and cannot be from here: a redirect to `/events/` yields "Events",
+      // which is a worse name but still a name, so no fallback fires. Distinguishing "a listing
+      // page" from "a legitimately short slug" needs knowledge this function does not have. The
+      // operator can override the name, and this is only a fallback for when the scrape found
+      // none -- so it degrades to a poor default rather than a wrong destination.
+      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(pageUrl || body.url) || extractEventNameFromUrl(body.url);
       if (eventName) {
         yield { type: 'status', data: 'Looking up HubSpot campaign...' };
         try {
