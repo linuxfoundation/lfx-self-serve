@@ -2469,7 +2469,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.cta).toBe('<script>alert(1)</script>');
   });
 
-  it('joins multiple rich_text sections into one body, in order', async () => {
+  it('renders a divider as <hr /> rather than dropping it', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
         subject: 's',
@@ -2480,7 +2480,11 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
-    expect(result.copy?.body).toBe('<p>First</p><p>Second</p>');
+    // A divider carries no content of its own ("divider (no other fields)" upstream), so the
+    // only thing dropping it loses is its POSITION -- which is the entire point of a divider.
+    // `body` is rendered with innerHTML here and lands in a rich-text widget upstream, so the
+    // `<hr />` survives both.
+    expect(result.copy?.body).toBe('<p>First</p><hr /><p>Second</p>');
     expect(result.copy?.cta).toBe('');
   });
 

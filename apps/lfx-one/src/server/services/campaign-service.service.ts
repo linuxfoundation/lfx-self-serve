@@ -858,9 +858,19 @@ export class CampaignServiceClient {
       // the CTA twice — once inline in the rich text, once as the native button — in both the
       // operator preview and the live HubSpot draft.
       const sections = copy.sections ?? [];
+      // Dividers become `<hr />` rather than being dropped. They carry no content of their own
+      // ("divider (no other fields)" in campaign-service's own generator), so the only thing a
+      // filter loses is their POSITION -- and position is exactly what a divider is for. The
+      // body is rendered with innerHTML here and lands in a rich-text widget upstream, so an
+      // `<hr />` survives both.
+      //
+      // This does NOT solve the ordered-sections gap: `bodyHtml` is one flat rich-text field on
+      // the wire (`BodyHTML string` in internal/dispatch/hubspot.go), so a second button and any
+      // button URL are still lost. That needs a contract change on both sides and is filed as a
+      // follow-up rather than widened into this PR.
       const body = sections
-        .filter((section) => section.type === 'rich_text' && section.html)
-        .map((section) => section.html)
+        .filter((section) => (section.type === 'rich_text' && section.html) || section.type === 'divider')
+        .map((section) => (section.type === 'divider' ? '<hr />' : section.html))
         .join('');
       const cta = sections.find((section) => section.type === 'button')?.text ?? '';
 
