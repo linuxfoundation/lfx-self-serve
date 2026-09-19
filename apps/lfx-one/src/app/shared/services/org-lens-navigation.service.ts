@@ -25,9 +25,9 @@ import { AccountContextService } from './account-context.service';
  * The segment is the *index's* slug for the selection (org-items row, resolver answer), never
  * member-service's: addresses are resolved against the index (`/api/orgs/resolve/:segment` reads
  * query-service), and during index lag the canonical record's slug is the one the resolver cannot
- * answer yet. `AccountContextService.applyCanonicalRecord` therefore never sets the slug, so links
- * and address agree on the resolvable form (a stub with no indexed slug addresses as the SFID); a
- * rename reaches both when the index has caught up and the org list is next loaded.
+ * answer yet. The full slug-ownership rules — who writes the slug, the SFID fallback, how a rename
+ * lands (links first, the address on the next resolved navigation) and the guard's trust window —
+ * live in one place: docs/architecture/frontend/lens-system.md, "Org Lens addresses".
  *
  * Two builders coexist on purpose. This one derives the organization from the *selection*, which is
  * right for links and for code that runs after a route has been recognized. Code that runs *during*
@@ -54,7 +54,7 @@ export class OrgLensNavigationService {
     return this.orgLensLink(page, ...rest).join('/');
   }
 
-  /** True on the Org Lens not-found dead end (`ORG_NOT_FOUND_SEGMENTS`) or anything beneath it — the one page a same-organization pick may still leave. */
+  /** `isNotFoundAddress` for the router's current address — the one page a same-organization pick may still leave. */
   public isOnNotFound(): boolean {
     return this.isNotFoundAddress(this.currentPrimarySegments());
   }
