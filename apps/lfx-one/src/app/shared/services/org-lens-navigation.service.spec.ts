@@ -151,6 +151,48 @@ describe('OrgLensNavigationService', () => {
       expect(navigatedTo()).toBe('/org/acme-incorporated/projects');
     });
 
+    // A second write while the first is still in flight supersedes it: the first write's canonical
+    // record must not re-address the page the second one is heading to.
+    it('does nothing for a write that a newer write superseded', async () => {
+      let activate!: (value: boolean) => void;
+      navigate.mockReturnValueOnce(new Promise<boolean>((resolve) => (activate = resolve)));
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      const reconciling = service.reconcileAddress();
+
+      selectedAccount.set(beta);
+      selectedUrlSegment.set('beta-llc');
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/beta-llc/projects';
+      navigate.mockClear();
+
+      selectedUrlSegment.set('beta-llc-renamed');
+      activate(true);
+      await reconciling;
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // A guard cancelled or redirected the write (resolves `false`), or the router threw (rejects):
+    // nothing landed, nothing to reconcile, and no unhandled rejection either way.
+    it.each([
+      ['cancelled', (): Promise<boolean> => Promise.resolve(false)],
+      ['errored', (): Promise<boolean> => Promise.reject(new Error('navigation failed'))],
+    ])('forgets a write whose navigation %s and settles cleanly', async (_label, outcome) => {
+      navigate.mockReturnValueOnce(outcome());
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      navigate.mockClear();
+      selectedUrlSegment.set('acme-incorporated');
+      currentUrl = '/org/acme-inc/projects';
+
+      await expect(service.reconcileAddress()).resolves.toBeUndefined();
+      expect(navigate).not.toHaveBeenCalled();
+      // Forgotten, not re-awaited: a later call is a plain no-op.
+      await service.reconcileAddress();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
     it('is a no-op when the canonical segment matches what was written', async () => {
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();

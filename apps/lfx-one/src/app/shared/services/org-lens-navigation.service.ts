@@ -142,8 +142,15 @@ export class OrgLensNavigationService {
     if (!write) {
       return;
     }
-    await write.navigation;
+    // `Router.navigate` resolves `false` when a guard cancels or redirects the navigation and rejects
+    // on a navigation error; neither is this method's to report (the router already did), and a
+    // write that never landed has nothing to reconcile — so it is forgotten rather than re-awaited.
+    const activated = await write.navigation.catch(() => false);
     if (this.lastWrite !== write) {
+      return;
+    }
+    if (!activated) {
+      this.lastWrite = null;
       return;
     }
     const selected = this.accountContext.selectedAccount();

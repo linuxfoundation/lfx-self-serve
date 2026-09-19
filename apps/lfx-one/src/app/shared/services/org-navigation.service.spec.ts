@@ -76,9 +76,7 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
     // Once the canonical record is in, the written address is checked against the slug it carried.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(reconcileAddress).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // The organization the address named was access-verified by the resolver a moment ago; whether or

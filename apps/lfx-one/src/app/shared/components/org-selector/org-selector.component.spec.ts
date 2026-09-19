@@ -89,9 +89,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
     // Once the canonical record is in, the address is checked against the slug it carried.
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(reconcileAddress).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.
