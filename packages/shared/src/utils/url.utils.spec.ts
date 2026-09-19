@@ -187,6 +187,19 @@ describe('isPrivateHost', () => {
     // sslip.io maps `-` to `:` for IPv6, which no IPv4 scan can reach.
     ['a dash-notation IPv6 ULA', 'fd00--1.sslip.io'],
     ['a dash-notation IPv6 loopback', '--1.sslip.io'],
+    // sslip.io also takes the address as 32 bare hex digits, with no separator to key off.
+    ['a 32-hex-digit IPv6 ULA', 'fd001234567890abcdef1234567890ab.sslip.io'],
+    ['a 32-hex-digit IPv6 loopback', '00000000000000000000000000000001.sslip.io'],
+    // An EXPANDED dash form has no `::` but is still a full address; requiring `::` refused it.
+    // NO zero run in this one, deliberately: `fd00-0-0-0-0-0-0-1` is caught by the dash-QUAD
+    // scan (it contains `0-0-0-0`), so it would pass even with the expanded form unhandled and
+    // prove nothing.
+    ['an expanded dash-notation IPv6 ULA', 'fd00-1234-5678-90ab-cdef-1234-5678-90ab.sslip.io'],
+    ['an expanded dash form with a zero run', 'fd00-0-0-0-0-0-0-1.sslip.io'],
+    // `[::1]` and its expanded twin are the SAME address -- a string compare against '::1'
+    // matched only the compressed spelling.
+    ['a fully expanded IPv6 loopback', '[0000:0000:0000:0000:0000:0000:0000:0001]'],
+    ['a fully expanded unspecified address', '[0:0:0:0:0:0:0:0]'],
     // A malformed 4-LABEL host used to skip the fail-closed check entirely, a label count the
     // attacker picks for free. Uses `$`, not `_`: underscores are LEGAL in DNS labels, so an
     // underscore host is the wrong stand-in for "malformed" and this case asserted a
@@ -238,6 +251,9 @@ describe('isPrivateHost', () => {
     ['a public 6to4 address', '[2002:808:808::]'],
     // A bare-hex label is only decoded under a wildcard-DNS suffix -- elsewhere it is a word.
     ['a bare-hex label outside a wildcard suffix', 'a9fea9fe.example.com'],
+    // 32 hex digits is only an address under a wildcard-DNS suffix; elsewhere it is a word.
+    ['a 32-hex label outside a wildcard suffix', 'deadbeefdeadbeefdeadbeefdeadbeef.example.com'],
+    ['a 32-hex PUBLIC address under a wildcard suffix', '20010db8000000000000000000000001.sslip.io'],
     // `5a5a5a5a` is hex-only (not all-digits), so it has ONE reading: 90.90.90.90, public.
     // `08080808` is deliberately NOT used here -- it is 8.8.8.8 as hex but 0.123.77.168 as
     // decimal, and an ambiguous label is refused if EITHER reading is private.

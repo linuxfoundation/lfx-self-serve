@@ -308,10 +308,18 @@ function packedAddressCandidates(label: string): number[] {
  * both private, and neither reachable by the IPv4 scans above.
  */
 function dashNotationIPv6(label: string): string {
+  // sslip.io also accepts the address as 32 bare hex digits, no separators at all --
+  // `fd001234567890abcdef1234567890ab.sslip.io`. No dash to key off, so the dash branch below
+  // could never see it.
+  if (/^[0-9a-f]{32}$/.test(label)) {
+    return (label.match(/.{4}/g) ?? []).join(':');
+  }
   if (!label.includes('-')) return '';
   const candidate = label.replace(/-/g, ':');
   if (!/^[0-9a-f:]+$/.test(candidate)) return '';
-  if (!candidate.includes('::')) return '';
+  // An EXPANDED dash form has no `::` but is still a full address: `fd00-0-0-0-0-0-0-1`.
+  // Requiring `::` refused it, so only the compressed spelling was decoded.
+  if (!candidate.includes('::') && candidate.split(':').length !== 8) return '';
   return candidate;
 }
 
@@ -443,8 +451,21 @@ export function isPrivateHost(hostname: string): boolean {
     addr = dotted;
   } else if (addr.includes(':')) {
     // A genuine IPv6 literal: ::1 loopback, fe80::/10 link-local, fc00::/7 unique-local.
-    const groups = addr.split(':');
-    const first = groups.find((g) => g !== '') ?? '';
+    // The FIRST group positionally, defaulting to 0 when compression elides it -- not the first
+    // non-empty one. `::1` and its expanded twin `0000:...:0001` are the same address, and a
+    // string compare against '::1' matched only the compressed spelling.
+    // `parts` is the expansion computed above. Take the first group POSITIONALLY -- compression
+    // can elide it, and `groups.find(g => g !== '')` returned the first non-empty one instead,
+    // which is a different group entirely for `::1`.
+    const first = (parts[0] ?? '').replace(/^0+(?=.)/, '');
+
+    // All-zero except a trailing 0 or 1 is the unspecified address or loopback. Judged on the
+    // EXPANDED groups, so `[::1]` and `[0000:...:0001]` -- the same address -- are both caught.
+    // A string compare against '::1' matched only the compressed spelling.
+    if (parts.length === 8) {
+      const values = parts.map((g) => (g === '' ? 0 : parseInt(g, 16)));
+      if (values.slice(0, 7).every((v) => v === 0) && (values[7] === 0 || values[7] === 1)) return true;
+    }
     if (addr === '::' || addr === '::1' || /^fe[89ab]/.test(first) || /^f[cd]/.test(first) || /^fe[c-f]/.test(first)) return true;
 
     // TRANSLATED forms carry an IPv4 destination inside an IPv6 address, so judging the IPv6

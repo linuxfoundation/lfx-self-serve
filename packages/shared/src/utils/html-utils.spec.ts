@@ -19,6 +19,15 @@ describe('sanitizeDisplayText', () => {
     expect(sanitizeDisplayText('Acme\u0085Corp')).toBe('AcmeCorp');
   });
 
+  it('keeps ordinary punctuation, which is not the risk', () => {
+    // Stripping quotes turned `O'Reilly` into `OReilly`. They were never the risk: every
+    // consumer escapes structurally -- Angular `[alt]` is a property binding, the Go side
+    // JSON-encodes -- so a quote cannot break out of either context.
+    expect(sanitizeDisplayText("O'Reilly")).toBe("O'Reilly");
+    expect(sanitizeDisplayText('The "Best" Corp')).toBe('The "Best" Corp');
+    expect(sanitizeDisplayText('Ben & Jerry’s')).toBe('Ben & Jerry’s');
+  });
+
   it('keeps accented and non-Latin names intact', () => {
     // Over-stripping would refuse legitimate sponsors, which is a real defect rather than a
     // safe default -- the same trap the host denylist kept falling into.

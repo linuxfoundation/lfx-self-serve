@@ -54,7 +54,14 @@ export function sanitizeDisplayText(value: string): string {
       if (code === 0x200b || code === 0x200c || code === 0x200d) return false;
       if (code === 0x200e || code === 0x200f) return false;
       if (code === 0x2060 || code === 0xfeff) return false;
-      return !['<', '>', '"', "'", '`'].includes(ch);
+      // `<` and `>` only. Quotes, apostrophes and backticks are ordinary punctuation in real
+      // names -- stripping them turned `O'Reilly` into `OReilly`, which is the over-stripping
+      // this function's own doc warns against. They were never the risk: every consumer escapes
+      // structurally rather than by interpolation -- Angular `[alt]` is a property binding, and
+      // the Go side JSON-encodes the field -- so a quote cannot break out of either context.
+      // Angle brackets stay dropped because the value is decoded first, and decoding is what can
+      // turn `&lt;script&gt;` back into markup.
+      return ch !== '<' && ch !== '>';
     })
     .join('')
     .trim();
