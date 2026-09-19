@@ -526,14 +526,24 @@ export function isPrivateHost(hostname: string): boolean {
       if (spelled !== '' && isPrivateHost(`[${spelled}]`)) return true;
     }
 
-    // Labels already recognised as a COMPLETE IPv6 address are excluded before this scan. An
-    // expanded form contains runs like `0-0-0-0`, which this scan would otherwise read as the
-    // IPv4 window `0.0.0.0` -- refusing `2001-4860-4860-0-0-0-0-8888.sslip.io`, which is Google
-    // public DNS. Decoding a label one way and then re-reading its digits another way is how a
-    // guard produces false positives on addresses it has already judged correctly.
+    // A label recognised as a COMPLETE IPv6 address is scanned for an IPv4 quad only when its
+    // groups could BE one. Two failure modes meet here and both are real:
+    //
+    //   - Excluding such labels outright (my first attempt) let `10-0-0-1-2-3-4-5.nip.io`
+    //     through: 8 valid hex groups, so it parsed as IPv6, while the resolver maps the host
+    //     to the RFC1918 address its first four groups spell. A BYPASS.
+    //   - Scanning them blindly reads the `0-0-0-0` run inside an ordinary expanded address as
+    //     `0.0.0.0`, refusing `2001-4860-4860-0-0-0-0-8888.sslip.io` (Google public DNS).
+    //     A FALSE POSITIVE.
+    //
+    // A group above 255 or longer than 3 digits cannot be an IPv4 octet, so a label containing
+    // one is a genuine IPv6 address and nothing else; anything else stays scannable.
     const scannable = host
       .split('.')
-      .filter((label) => dashNotationIPv6(label) === '')
+      .filter((label) => {
+        if (dashNotationIPv6(label) === '') return true;
+        return label.split('-').every((g) => /^\d{1,3}$/.test(g) && Number(g) <= 255);
+      })
       .join('.');
     const numericParts = scannable.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
     for (let i = 0; i + 3 < numericParts.length; i++) {

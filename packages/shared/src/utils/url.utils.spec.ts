@@ -196,6 +196,13 @@ describe('isPrivateHost', () => {
     // prove nothing.
     ['an expanded dash-notation IPv6 ULA', 'fd00-1234-5678-90ab-cdef-1234-5678-90ab.sslip.io'],
     ['an expanded dash form with a zero run', 'fd00-0-0-0-0-0-0-1.sslip.io'],
+    // 8 valid hex groups, so it PARSES as IPv6 -- but the resolver maps the host to the RFC1918
+    // address its first four groups spell. Excluding every IPv6-parseable label from the IPv4
+    // scan let these through; the exclusion now applies only to labels whose groups cannot be
+    // IPv4 octets.
+    ['a dash-quad hiding inside an 8-group label', '10-0-0-1-2-3-4-5.nip.io'],
+    ['link-local hiding inside an 8-group label', '169-254-169-254-1-2-3-4.nip.io'],
+    ['RFC1918 hiding inside an 8-group label', '192-168-1-1-0-0-0-0.sslip.io'],
     // `[::1]` and its expanded twin are the SAME address -- a string compare against '::1'
     // matched only the compressed spelling.
     ['a fully expanded IPv6 loopback', '[0000:0000:0000:0000:0000:0000:0000:0001]'],
