@@ -1304,10 +1304,14 @@ export class CampaignsComponent {
     // brief never contained. Checking only that the URL is public-looking is not enough: a
     // hallucinated `https://evil.example.com/phish` passes that check.
     //
-    // Compared in canonical form so a trailing slash or userinfo difference is not read as a
-    // mismatch, and vice versa.
+    // Compared with the trailing slash normalised away. `canonicalHttpUrl` does NOT equalise
+    // it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct, and I wrongly said
+    // otherwise when adding this check. A model copying the URL and adding or dropping a slash
+    // addresses the SAME page, so refusing it would silently drop the button for a generation
+    // that followed its instructions -- the over-denial this PR keeps having to guard against.
     const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
-    return generated === fromBrief ? generated : '';
+    const sameTarget = (url: string): string => url.replace(/\/+$/, '');
+    return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
   });
 
   /**

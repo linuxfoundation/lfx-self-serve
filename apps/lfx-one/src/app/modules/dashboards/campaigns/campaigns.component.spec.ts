@@ -4385,6 +4385,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestPreheaderBPreview()).toBe('B preheader');
     });
 
+    it('accepts a CTA url that differs from the brief only by a trailing slash', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Same page, no trailing slash. `canonicalHttpUrl` does NOT equalise this, so a strict
+      // comparison silently dropped the button for a generation that had followed its
+      // instructions.
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join</p>',
+        cta: 'Register',
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026');
+      expect(cfg?.buttonText).toBe('Register');
+    });
+
     it('refuses a CTA url the brief never contained', async () => {
       selectEmail();
       internals().emailBriefOutput.set({
