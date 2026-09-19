@@ -22,11 +22,12 @@ If the work is a modal dialog (not a slide-in), this skill does not apply.
 1. **Re-read** `docs/architecture/frontend/drawer-pattern.md` (the reference linked below). The full pattern — visibility model, lazy load via `toObservable(visible).pipe(skip(1), switchMap(...))`, `forkJoin` for parallel calls, chart `computed()` signals, responsive width — is the source of truth.
 2. **Check what exists** — read at least one current drawer in the touched module before generating new code to match the team's current shape.
 3. **Place files** following the component placement table in `docs/architecture/frontend/component-architecture.md` (and the high-level decision tree in `docs/architecture/placement.md`).
-4. **Generate three files** (`.component.ts`, `.component.html`, `.component.scss`) with the LFX license header on each. Follow the 11-section class structure from `.claude/rules/component-organization.md`.
+4. **Generate three files** (`.component.ts`, `.component.html`, `.component.scss`) with the LFX license header on each. Follow the class structure from `.claude/rules/component-organization.md`.
 5. **Wire visibility with `model<boolean>(false)`** — two-way `[(visible)]` from the parent.
 6. **Lazy-load data on open** — `toSignal` over `toObservable(this.visible).pipe(skip(1), switchMap(...))`; reset `drawerLoading` to `false` on close. `forkJoin` for parallel calls.
-7. **Use the standard width chain** — `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`.
-8. **Run `yarn format`** after writing files. Report what was changed.
+7. **Wire modal semantics and focus management** — `[pt].root` for `role`/`aria-modal`/`aria-labelledby` (PrimeNG's Drawer provides none of this itself), a heading whose text can never render empty, focus-in on open via `(onShow)`, and focus-restore on close via a `visible()` subscription (not `(onHide)` — see drawer-pattern.md's own reasoning for why). See "Modal Semantics and Focus Management" in `docs/architecture/frontend/drawer-pattern.md` for the full pattern (GH-2620) — not yet applied to every existing drawer in this repo, but every new one should have it.
+8. **Use the standard width chain** — `xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full`.
+9. **Run `yarn format`** after writing files. Report what was changed.
 
 ## Reference
 
