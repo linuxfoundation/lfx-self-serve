@@ -195,6 +195,9 @@ router.get('/board-meeting-participation-summary', requireDashboardAccess, (req,
 // Health Metrics Overview "Foundation Revenue" rail endpoint (LFXV2-3365)
 router.get('/health-overview-revenue', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewRevenue(req, res, next));
 
+// Health Metrics Overview KPI tile-strip endpoint (LFXV2-3365)
+router.get('/health-overview-kpis', requireDashboardAccess, (req, res, next) => analyticsController.getHealthOverviewKpis(req, res, next));
+
 // Health Metrics Overview "Foundation" rail endpoint (LFXV2-3365)
 router.get('/foundation-profile-summary', requireDashboardAccess, (req, res, next) => analyticsController.getFoundationProfileSummary(req, res, next));
 

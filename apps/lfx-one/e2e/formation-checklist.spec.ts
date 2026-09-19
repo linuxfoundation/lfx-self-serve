@@ -10,8 +10,10 @@ import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
+  FORMATION_ANNOUNCEMENT_DATE_LABEL,
   FORMATION_PROJECT_SLUG,
   gotoProjectFormation,
+  gotoProjectFormationItem,
   mockFormationChecklistApis,
   stubFormationFlag,
 } from './helpers/formation-checklist.helper';
@@ -40,6 +42,30 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     // audience chip's longest label render as visible text.
     await expect(section.getByText('Brand Counsel')).toBeVisible();
     await expect(section.getByText('Internal + External')).toBeVisible();
+  });
+
+  test('renders the sidebar formation card with stage, announcement date and slug — and no date in the strip (GH-2702)', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+    const sidebar = page.getByTestId('formation-page-sidebar');
+    await expect(sidebar).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+    const card = sidebar.getByTestId('formation-card');
+    await expect(card).toBeVisible();
+    // Sub-stage tag derived from the mocked project's 'Formation - Engaged' stage.
+    await expect(card).toContainText('Engaged');
+    // The announcement date off the mocked checklist response (#2719 — no longer the separate,
+    // auditor-gated project-settings read), rendered by formatAnnouncementDateLabel.
+    await expect(card).toContainText('Announcement date');
+    await expect(card).toContainText(FORMATION_ANNOUNCEMENT_DATE_LABEL);
+    await expect(card).toContainText(FORMATION_PROJECT_SLUG);
+
+    // The date moved out of the readiness strip — the strip must not render its own copy anymore.
+    const strip = page.getByTestId('formation-readiness-strip');
+    await expect(strip).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(strip).not.toContainText('Announcement date');
   });
 
   test('redirects to project overview for a project not in a Formation stage', async ({ page }) => {
@@ -73,6 +99,36 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     const drawer = page.getByTestId('formation-item-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
+  });
+
+  // #2732: a Me-lens pending-action row (and, per #2573/#2616, the item-assigned email) lands here
+  // with `?item=<template_item_key>`. The section opens that item's drawer once the checklist is in
+  // and strips the param, so a refresh after closing shows the plain checklist again.
+  test("?item= opens that item's drawer on arrival and strips the param from the URL", async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormationItem(page, FORMATION_PROJECT_SLUG, 'contribution_agreement_executed');
+
+    const drawer = page.getByTestId('formation-item-drawer');
+    await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
+    await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+
+    await page.getByTestId('formation-item-drawer-close').click();
+    await expect(drawer).toBeHidden();
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(drawer).toBeHidden();
+  });
+
+  test('an unknown ?item= key (a stale link) opens nothing and is still stripped from the URL', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await gotoProjectFormationItem(page, FORMATION_PROJECT_SLUG, 'not_a_real_item');
+
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    await expect(page.getByTestId('formation-item-drawer')).toBeHidden();
   });
 
   test('the "Choose a template" empty state renders when no template has been chosen', async ({ page }) => {
@@ -127,7 +183,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
       })
     );
     await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -182,7 +238,7 @@ test.describe('Formation Checklist section (GH-1958)', () => {
       route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true, can_set_status: true }),
       })
     );
     await page.route('**/api/formations/*/items/*', async (route) => {

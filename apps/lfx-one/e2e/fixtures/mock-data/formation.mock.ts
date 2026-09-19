@@ -16,6 +16,22 @@ export const mockFormationTemplate: FormationTemplate = {
 };
 
 /**
+ * The announcement date the checklist read serves. Since #2719 the sidebar formation card renders
+ * it straight off this response ("Oct 25, 2026") rather than off the separate, `auditor`-gated
+ * project-settings read, so it is pinned here rather than computed from `Date.now()` — the card's
+ * assertion must not drift with the clock.
+ */
+export const MOCK_FORMATION_ANNOUNCEMENT_DATE = '2026-10-25';
+
+/**
+ * The other queue row's announcement date, pinned for the same reason and deliberately earlier
+ * than `MOCK_FORMATION_ANNOUNCEMENT_DATE`: the queue sorts by `announcement_date` ASC, so a
+ * `Date.now()`-derived value here would flip these two rows' relative order once the wall clock
+ * passed the pinned date — latent today, a foot-gun for the first order-sensitive assertion.
+ */
+export const MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE = '2026-09-28';
+
+/**
  * Mock formation data for Playwright tests (GH-1958). Keyed by parent project slug, mirroring
  * `projects.mock.ts`'s `mockProjects` convention — a checklist test navigates to a project whose
  * slug has both a `mockProjects` entry (a Formation-stage `stage`) and a `mockFormations` entry.
@@ -34,7 +50,7 @@ export const mockFormations: Record<string, Formation> = {
     sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'live',
     lifecycle_raw: 'live',
-    announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    announcement_date: MOCK_FORMATION_ANNOUNCEMENT_DATE,
     is_activating: false,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items
     // (draft_project_record=done, contribution_agreement_executed=in_progress) — this same fixture
@@ -108,7 +124,7 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     lifecycle: 'formation',
     gates_cleared: true,
     is_activating: true,
-    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    announcement_date: MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE,
     progress: { not_started: 0, in_progress: 0, blocked: 0, done: 4, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],

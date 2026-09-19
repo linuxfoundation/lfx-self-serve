@@ -5,6 +5,7 @@ import type { Request } from 'express';
 
 import type { NatsService } from '../services/nats.service';
 import { resolveV1MappingBatch } from './v1-mapping-batch.helper';
+import type { V1MappingBatchResult } from './v1-mapping-batch.helper';
 
 /**
  * Resolves LFX v2 committee UUIDs to the v1 committee SFID via the platform's
@@ -36,7 +37,24 @@ import { resolveV1MappingBatch } from './v1-mapping-batch.helper';
  * know the batch was cut short. See `v1-mapping-batch.helper.ts` for the shared implementation.
  */
 export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: NatsService, v2CommitteeUids: string[]): Promise<Map<string, string>> {
-  const { resolved } = await resolveV1MappingBatch(req, natsService, v2CommitteeUids, {
+  const { resolved } = await resolveCommitteeV2UidMappings(req, natsService, v2CommitteeUids);
+  return resolved;
+}
+
+/**
+ * The same lookup, keeping the `confirmedUnresolved` half of the batch result.
+ *
+ * `resolveCommitteeV2UidsToV1Ids` above collapses "this committee has no v1 counterpart" and "the
+ * lookup didn't answer" into the same absence, which is the right contract for a caller that
+ * degrades either way. A caller that *writes* needs them apart: a confirmed absence is permanent, so
+ * failing on it would leave the organizer with no way to save at all, while an indeterminate answer
+ * is a transient fault a retry can clear — and downgrading on it persists a wrong row that no later
+ * request can repair (`UpdateMeetingRegistrantRequest` carries no `committee_uid` by design).
+ *
+ * See `V1MappingBatchResult` for exactly which outcomes land in which bucket.
+ */
+export async function resolveCommitteeV2UidMappings(req: Request, natsService: NatsService, v2CommitteeUids: string[]): Promise<V1MappingBatchResult> {
+  return resolveV1MappingBatch(req, natsService, v2CommitteeUids, {
     buildLookupKey: (v2Uid) => `committee.uid.${v2Uid}`,
     parseResponse: (responseText) => {
       // Response format: "{project_sfid}:{committee_sfid}" — the committee SFID is the second segment.
@@ -46,5 +64,4 @@ export async function resolveCommitteeV2UidsToV1Ids(req: Request, natsService: N
     logOperation: 'resolve_committee_v1_mapping',
     entityLabel: 'committee',
   });
-  return resolved;
 }

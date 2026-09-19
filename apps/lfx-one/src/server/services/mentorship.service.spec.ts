@@ -27,6 +27,29 @@ function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
 }
 
+describe('MentorshipService — read-only contract', () => {
+  let service: InstanceType<typeof MentorshipService>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns a stable program list across consecutive reads', async () => {
+    const first = await service.getPrograms(buildReq());
+    const second = await service.getPrograms(buildReq());
+
+    expect(first.total).toBe(second.total);
+    expect(first.total).toBeGreaterThan(0);
+    expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
+  });
+});
+
 describe('MentorshipService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipService>;
 

@@ -128,14 +128,27 @@
                           <span class="text-xs text-gray-500" data-testid="dashboard-pending-actions-invitation-expiry"> Expires {{ item.date }} </span>
                         }
                       </div>
+                    } @else if (item.isFormationItem) {
+                      <!-- Formation item (#2732): bold title, then a gray meta line — project · due · required for Active — per the Me-lens design. -->
+                      <p
+                        class="flex flex-wrap items-baseline gap-x-1.5 text-sm sm:flex-1 sm:min-w-0 sm:px-4"
+                        data-testid="dashboard-pending-actions-formation-title-group">
+                        <span class="font-semibold text-gray-900" data-testid="dashboard-pending-actions-title">{{ item.text }}</span>
+                        <span class="text-xs text-gray-500" data-testid="dashboard-pending-actions-formation-meta">
+                          <span data-testid="dashboard-pending-actions-formation-project">· {{ item.badge }}</span>
+                          @if (item.formationDueLabel) {
+                            <span data-testid="dashboard-pending-actions-formation-due"> · due {{ item.formationDueLabel }}</span>
+                          }
+                          @if (item.formationIsGating) {
+                            <span data-testid="dashboard-pending-actions-formation-gating"> · required for Active</span>
+                          }
+                        </span>
+                      </p>
                     } @else {
                       <div class="flex flex-col gap-0.5 sm:flex-1 sm:min-w-0 sm:px-4">
                         <p class="text-sm font-medium text-gray-900 sm:truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
                           {{ item.text }}
                         </p>
-                        @if (item.isFormationItem && item.formationIsGating) {
-                          <span class="text-xs text-amber-600" data-testid="dashboard-pending-actions-formation-gating">Required for Active</span>
-                        }
                       </div>
                     }
                     <!-- Action button — right-aligned, fixed by content -->
@@ -210,19 +223,26 @@
                             data-testid="dashboard-pending-actions-invitation-decline" />
                         </div>
                       } @else if (item.isFormationItem) {
-                        <!-- Claim/Block removed (GH-2613 review, linuxfoundation/lfx-self-serve#2628): both mutate
-                             POST .../status, which the deployed v0.1.4 gateway gates on writer_guard AND member
-                             on team:formation — an assignee (this row's entire audience) structurally never holds
-                             that membership, so both actions 403ed deterministically. Open (below) is unaffected —
-                             it reaches the drawer, whose PATCH item route is read-access-gated. -->
+                        <!-- Formation item (#2732): status chip plus one navigation to the checklist with this item's panel
+                             open, where the full item surface lives. Nothing here mutates the item — the assignee never
+                             sets a status from the dashboard (GH-1956 decision 3). -->
                         <div class="flex items-center gap-2">
+                          @if (item.formationStatusLabel && item.formationStatusSeverity) {
+                            <lfx-tag
+                              [value]="item.formationStatusLabel"
+                              [severity]="item.formationStatusSeverity"
+                              [rounded]="true"
+                              data-testid="dashboard-pending-actions-formation-status" />
+                          }
                           <lfx-button
                             size="small"
                             severity="secondary"
-                            [text]="true"
-                            label="Open"
-                            (onClick)="onOpenFormationItem(item)"
-                            data-testid="dashboard-pending-actions-formation-open" />
+                            [outlined]="true"
+                            [label]="item.buttonText"
+                            [routerLink]="item.formationViewCommands ?? undefined"
+                            [queryParams]="item.formationViewQueryParams ?? {}"
+                            [ariaLabel]="item.formationViewAriaLabel ?? undefined"
+                            data-testid="dashboard-pending-actions-formation-view" />
                         </div>
                       } @else if (item.buttonLink) {
                         <lfx-button
@@ -247,8 +267,9 @@
                       }
                     </div>
                     <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
-                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. -->
-                    @if (!item.isInvitation) {
+                       server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
+                       are resolved on the checklist and stay until done or skipped (#1956, #2732), so they render none either. -->
+                    @if (!item.isInvitation && !item.isFormationItem) {
                       @if (item.isRsvpInline && (!item.meeting || item.isLoading)) {
                         <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0 self-start sm:self-auto sm:ml-4" />
                       } @else {
@@ -279,8 +300,7 @@
         (actionCompleted)="onDrawerActionCompleted()"
         (castVoteRequested)="castVoteRequested.emit($event)"
         (acceptInvitationRequested)="onAcceptInvitation($event)"
-        (declineInvitationRequested)="onDeclineInvitation($event)"
-        (formationItemRequested)="formationItemRequested.emit($event)" />
+        (declineInvitationRequested)="onDeclineInvitation($event)" />
     }
   </section>
 }

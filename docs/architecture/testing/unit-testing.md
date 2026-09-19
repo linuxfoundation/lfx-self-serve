@@ -1,15 +1,27 @@
 # Unit Testing Architecture
 
-Unit tests run under [Vitest](https://vitest.dev/) in **two halves**, because the two halves of
-this app run in two different places. Server code under `src/server/` is plain Node; app code
+Unit tests run under [Vitest](https://vitest.dev/) in **two halves** (three spec sets — see the
+table below), because the two halves of this app run in two different places. Server code under `src/server/` is plain Node; app code
 under `src/app/` is Angular components and services that need templates compiled and a DOM to
 render into. One runner configuration cannot serve both without giving each half an environment
 it does not want, so there are two — wired to the same `yarn test`.
 
-| Half   | Specs                     | Runner                                 | Environment | Config                                |
-| ------ | ------------------------- | -------------------------------------- | ----------- | ------------------------------------- |
-| Server | `src/server/**/*.spec.ts` | `vitest run`                           | `node`      | `vitest.config.ts`                    |
-| App    | `src/app/**/*.spec.ts`    | `ng test` (`@angular/build:unit-test`) | `jsdom`     | `angular.json` + `tsconfig.spec.json` |
+| Half    | Specs                     | Runner                                 | Environment | Config                                |
+| ------- | ------------------------- | -------------------------------------- | ----------- | ------------------------------------- |
+| Server  | `src/server/**/*.spec.ts` | `vitest run`                           | `node`      | `vitest.config.ts`                    |
+| Scripts | `scripts/**/*.spec.mjs`   | `vitest run`                           | `node`      | `vitest.config.ts`                    |
+| App     | `src/app/**/*.spec.ts`    | `ng test` (`@angular/build:unit-test`) | `jsdom`     | `angular.json` + `tsconfig.spec.json` |
+
+Build-time scripts under `scripts/` ride the server runner: they are plain Node with no Angular or
+DOM involvement, so they need the same environment `src/server/` does. They are listed separately
+only because the path does not fall under `src/`.
+
+`*.integration.spec.ts` files ride the same server runner and need no separate configuration. They
+exist where a unit test structurally cannot see the behaviour: `gw-proxy.controller.integration.spec.ts`
+stands up a real `http.Server` and drives it with a real client socket, because the proxy's
+oversized-upload rejection depends on socket and response-lifecycle semantics that a substituted
+`Readable.from()` request simply does not have. Two defects shipped through a green unit suite
+before it existed. Reach for one only when that is the case — a fake is cheaper everywhere else.
 
 ```bash
 yarn test          # both halves (this is what CI runs)

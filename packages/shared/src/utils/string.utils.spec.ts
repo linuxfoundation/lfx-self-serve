@@ -3,7 +3,17 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { capCodePointEdit, codePointLength, formatTag, sanitizePlainText, slugify, splitIntoParagraphs, stripMarkdown } from './string.utils';
+import {
+  capCodePointEdit,
+  codePointLength,
+  formatTag,
+  joinAsSentenceList,
+  sanitizePlainText,
+  slugify,
+  splitIntoParagraphs,
+  stripMarkdown,
+  truncateToUtf16Units,
+} from './string.utils';
 
 describe('codePointLength', () => {
   it('counts ASCII the same as String.length', () => {
@@ -178,5 +188,79 @@ describe('stripMarkdown', () => {
   it('strips headings only at line start, preserving mid-text # sequences', () => {
     expect(stripMarkdown('# Title\nbody')).toBe('Title\nbody');
     expect(stripMarkdown('C# developer')).toBe('C# developer');
+  });
+});
+
+describe('truncateToUtf16Units', () => {
+  it('returns the value untouched when it is within the cap', () => {
+    expect(truncateToUtf16Units('agenda', 10)).toBe('agenda');
+    expect(truncateToUtf16Units('agenda', 6)).toBe('agenda');
+  });
+
+  it('clips to exactly the cap in UTF-16 units', () => {
+    expect(truncateToUtf16Units('abcdef', 3)).toBe('abc');
+    expect(truncateToUtf16Units('x'.repeat(2001), 2000)).toHaveLength(2000);
+  });
+
+  it('drops a boundary code unit rather than splitting a surrogate pair', () => {
+    // '🎉' is a surrogate pair, so a cap of 3 would otherwise land between its two units.
+    const value = `ab🎉cd`;
+    const truncated = truncateToUtf16Units(value, 3);
+
+    expect(truncated).toBe('ab');
+    // The real guard: no lone surrogate survived the cut.
+    expect([...truncated]).toHaveLength(2);
+  });
+
+  it('keeps a surrogate pair whole when the cut falls after it', () => {
+    expect(truncateToUtf16Units('ab🎉cd', 4)).toBe('ab🎉');
+  });
+
+  it('returns an empty string for a non-positive cap', () => {
+    expect(truncateToUtf16Units('agenda', 0)).toBe('');
+    expect(truncateToUtf16Units('agenda', -5)).toBe('');
+  });
+
+  it('carries a lone surrogate the caller already had straight through', () => {
+    // The contract is that the *cut* never produces an unpaired code unit — not that the result is
+    // well-formed UTF-16. A malformed input is returned as given, whether it is inside the cap or
+    // away from the boundary of a cut, because this is a length cap and not a sanitiser: the public
+    // registration and AI-prompt callers pass untrusted JSON and need the value they were handed.
+    expect(truncateToUtf16Units('\ud800', 10)).toBe('\ud800');
+    expect(truncateToUtf16Units('\udc00', 10)).toBe('\udc00');
+    expect(truncateToUtf16Units('a\udc00bcdef', 4)).toBe('a\udc00bc');
+  });
+
+  it('keeps an unpaired high surrogate sitting exactly on the boundary', () => {
+    // The case the "wherever it sits" half of the contract turns on, and the one a single-sided check
+    // gets wrong: the last kept unit is a high surrogate, so it looks like half a pair, but the unit
+    // being cut is a plain 'c'. Nothing was split, so nothing may be dropped — this must keep all
+    // three units, not two.
+    expect(truncateToUtf16Units('ab\ud800c', 3)).toBe('ab\ud800');
+    // Same boundary, and here the next unit really is the low half — so the pair would be split and
+    // the high surrogate goes. These two differ only in the unit past the cap, which is why both
+    // halves have to be read.
+    expect(truncateToUtf16Units('ab\ud800\udc00', 3)).toBe('ab');
+    // A trailing high surrogate with nothing after it is inside the cap, so the cut never happens.
+    expect(truncateToUtf16Units('ab\ud800', 3)).toBe('ab\ud800');
+  });
+});
+
+describe('joinAsSentenceList', () => {
+  it('returns a single label unchanged', () => {
+    expect(joinAsSentenceList(['Email address'])).toBe('Email address');
+  });
+
+  it('joins two labels with a bare and', () => {
+    expect(joinAsSentenceList(['Meeting ID', 'Email address'])).toBe('Meeting ID and Email address');
+  });
+
+  // The case a plain join(' and ') gets wrong — three items chant instead of reading as a list.
+  it('commas all but the last label for three or more', () => {
+    expect(joinAsSentenceList(['Meeting ID', 'Email address', 'First name'])).toBe('Meeting ID, Email address and First name');
+  });
+
+  it('returns an empty string for no labels', () => {
+    expect(joinAsSentenceList([])).toBe('');
   });
 });

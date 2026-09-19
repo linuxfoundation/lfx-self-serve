@@ -3,7 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse } = vi.hoisted(() => ({ proxyRequest: vi.fn(), proxyRequestWithResponse: vi.fn() }));
+const { proxyRequest, proxyRequestWithResponse, resolveSegment } = vi.hoisted(() => ({
+  proxyRequest: vi.fn(),
+  proxyRequestWithResponse: vi.fn(),
+  resolveSegment: vi.fn(),
+}));
 
 vi.mock('../services/microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -13,6 +17,11 @@ vi.mock('../services/microservice-proxy.service', () => ({
 }));
 vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
 vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesService: class {} }));
+vi.mock('../services/org-slug-resolver.service', () => ({
+  OrgSlugResolverService: class {
+    public resolveSegment = resolveSegment;
+  },
+}));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), error: vi.fn(), debug: vi.fn(), info: vi.fn() },
 }));
@@ -172,5 +181,69 @@ describe('OrgIdentityController.uploadLogo', () => {
 
     expect(next).toHaveBeenCalledTimes(1);
     expect(next.mock.calls[0][0]).toBeInstanceOf(Error);
+  });
+});
+
+// Spec 050, contracts/bff-org-slug-transport.md §3: the wire envelope is what the browser guard keys
+// its branches on, and the negative envelopes must carry nothing about the organization.
+describe('OrgIdentityController.resolveSegment', () => {
+  const org = { uid: VALID_UID, slug: 'acme', name: 'Acme' };
+  const request = (segment: string, prefer?: string) => ({ params: { segment }, query: prefer ? { prefer } : {}, path: `/api/orgs/resolve/${segment}` }) as any;
+
+  it('answers a hit with the organization and marks the response private / no-store', async () => {
+    resolveSegment.mockResolvedValue({ outcome: 'hit', org, cache: 'miss' });
+    const res = buildRes();
+
+    await new OrgIdentityController().resolveSegment(request('acme', VALID_UID), res, vi.fn());
+
+    expect(resolveSegment).toHaveBeenCalledWith(expect.anything(), 'acme', VALID_UID);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    expect(res.status).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith(org);
+  });
+
+  it('answers a miss with the fixed 404 envelope', async () => {
+    resolveSegment.mockResolvedValue({ outcome: 'miss', cache: 'miss' });
+    const res = buildRes();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Organization not found' });
+  });
+
+  it('answers an unbroken tie with the fixed 409 envelope', async () => {
+    resolveSegment.mockResolvedValue({ outcome: 'ambiguous', cache: 'miss' });
+    const res = buildRes();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Organization address is ambiguous' });
+  });
+
+  // Query-service answers "no rows" with an empty 200, so any upstream status is a transport failure:
+  // the fixed 502 is what lets the browser apply FR-020 (SFID through, slug not found) instead of
+  // reading a routing 404 / rate-limit 429 as an answer about the address.
+  it.each([503, 500, 408, 429, 404, 409, 403])('maps an upstream %i to a 502 the browser reads as "resolver unavailable" (FR-020)', async (upstream) => {
+    resolveSegment.mockRejectedValue(new MicroserviceError('down', upstream, 'UPSTREAM', { operation: 'op', service: 'query' }));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgIdentityController().resolveSegment(request('acme'), res, next);
+
+    expect(res.status).toHaveBeenCalledWith(502);
+    expect(res.json).toHaveBeenCalledWith({ error: 'Upstream query-service failure' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('hands validation errors to the error handler (400 stays a local answer)', async () => {
+    const validation = ServiceValidationError.forField('segment', 'Invalid organization segment', { operation: 'op', service: 'svc', path: '/x' });
+    resolveSegment.mockRejectedValueOnce(validation);
+    const next = vi.fn();
+    const res = buildRes();
+    await new OrgIdentityController().resolveSegment(request('bad!'), res, next);
+    expect(next).toHaveBeenCalledWith(validation);
+    expect(res.status).not.toHaveBeenCalled();
   });
 });

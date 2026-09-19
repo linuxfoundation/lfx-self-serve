@@ -40,6 +40,10 @@ Trace where personas come from: the upstream persona-service NATS contract, dete
 
 See which sidebar links and pages each persona can access in each lens, plus route guard wiring.
 
+### [Gatewaze Embed Host](./gw-embed.md)
+
+Understand how the React newsletter module is mounted without an iframe: the dual-router contract, style containment, and the LFID sign-in round trip.
+
 ### [Angular Patterns](./angular-patterns.md)
 
 Learn about Angular 20 features, zoneless change detection, and SSR configuration.

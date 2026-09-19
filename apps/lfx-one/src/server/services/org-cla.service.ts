@@ -921,9 +921,14 @@ export class OrgClaService {
     // arbitrary in one respect: the producer records this SFID on the activity-log entry it
     // writes, so a multi-project CLA Group attributes every approval-list change to whichever
     // project upstream happens to list first. The alternative is inventing a selection rule the
-    // producer does not have. `foundationSFID` is deliberately not a fallback — a foundation id is
-    // not a project id, and the producer's lookup would 404 on it.
-    const projectSfid = entry.projects?.find((project) => !!project.projectSFID)?.projectSFID?.trim() ?? '';
+    // producer does not have.
+    //
+    // `GetCompanyClaGroups` drops the foundation marker from `projects[]` so the foundation is
+    // not drawn as a covered project. That skip is correct for the chips. A foundation-level
+    // group therefore arrives with no project SFID and a present `foundationSFID`. The producer's
+    // `GetClaGroupIDForProject` already falls back to a foundation lookup, so that id is a valid
+    // path segment — refusing it 502s a real signed CCLA before the approval-list API is called.
+    const projectSfid = entry.projects?.find((project) => !!project.projectSFID?.trim())?.projectSFID?.trim() || entry.foundationSFID?.trim() || '';
 
     if (!claGroupId || !companyId || !projectSfid) {
       // Not a 404: the agreement exists and the caller may see it. The row simply cannot be

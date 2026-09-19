@@ -15,12 +15,20 @@ import { formatCurrency } from './number.utils';
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
+  HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingGroupRows,
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewRevenueStreamViewModel,
   HealthMetricsOverviewTileViewModel,
 } from '../interfaces/health-metrics-overview.interface';
+
+/** `HEALTH_OVERVIEW_KPIS` status column → tile classification, per the verified taxonomy in LFXV2-3341. */
+const KPI_STATUS_TO_CLASSIFICATION: Record<string, HealthMetricsOverviewClassification> = {
+  healthy: 'ok',
+  needs_attention: 'watch',
+  needs_action: 'act',
+};
 
 /**
  * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
@@ -63,6 +71,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       classification: state.classification,
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
+      showStatus: state.showStatus,
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);
@@ -84,9 +93,24 @@ export function groupHealthMetricsOverviewFindings(findings: HealthMetricsFindin
   })).filter((groupRows) => groupRows.findings.length > 0);
 }
 
-/** Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never drifts between the two components. */
+/**
+ * Maps a `HEALTH_OVERVIEW_KPIS` status column value (`healthy` / `needs_attention` / `needs_action`)
+ * to the tile classification. This table's contract only ever emits those three values — `opp` and
+ * `none` aren't part of it — but an unrecognized or missing value still degrades to `'none'` rather
+ * than throwing.
+ */
+export function resolveHealthMetricsOverviewKpiClassification(status: string | null | undefined): HealthMetricsOverviewClassification {
+  const normalized = status?.trim().toLowerCase();
+  return normalized && Object.hasOwn(KPI_STATUS_TO_CLASSIFICATION, normalized) ? KPI_STATUS_TO_CLASSIFICATION[normalized] : 'none';
+}
+
+/**
+ * Shared `as of <date>` label for the overview tile strip and finding rows, so the copy never
+ * drifts between the two components. An empty `evaluatedAt` means the area was never evaluated
+ * (e.g. a neutral placeholder tile) — returns '' rather than a dangling "as of " in that case.
+ */
 export function formatHealthMetricsOverviewAsOfLabel(evaluatedAt: string): string {
-  return `as of ${formatIsoDateLabel(evaluatedAt)}`;
+  return evaluatedAt ? `as of ${formatIsoDateLabel(evaluatedAt)}` : '';
 }
 
 /** Resolves a findings-list group's classification key to its tone/icon, for the group heading. */

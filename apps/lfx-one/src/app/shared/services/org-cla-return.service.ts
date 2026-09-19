@@ -4,7 +4,7 @@
 import { computed, inject, Injectable, Injector, Signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
-import { combineLatest, filter, map, Observable, of, shareReplay, skip, switchMap, take } from 'rxjs';
+import { combineLatest, filter, map, Observable, of, shareReplay, skip, switchMap, take, timeout } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
@@ -21,6 +21,13 @@ import { PersonaService } from './persona.service';
  */
 @Injectable({ providedIn: 'root' })
 export class OrgClaReturnService {
+  /**
+   * Hang-up for one catalogue pin-reload. Same 10s ceiling as `ORG_SEARCH_TIMEOUT_MS` (an org-list
+   * HTTP call that must settle), and well below the 30s API gateway timeout. This is one shot, not
+   * a per-attempt cap with retries.
+   */
+  private static readonly catalogueReloadTimeoutMs = 10_000;
+
   private readonly accountContext = inject(AccountContextService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
@@ -95,7 +102,9 @@ export class OrgClaReturnService {
    * match is returned as-is. Only when the named organization is absent does this pin and reload
    * (`resetAndReload`), then skip the current emission and wait for the next loaded one before
    * matching again. Dropping `skip(1)` would re-match the stale pre-reload list and treat a
-   * not-yet-listed organization as a miss.
+   * not-yet-listed organization as a miss. That second wait is bounded: a reload that never
+   * re-emits resolves to null rather than leaving adopt() pending. The first wait for a loaded
+   * catalogue or a settled no-access answer is not this bound.
    *
    * Ask is not a grant: the second pass still only selects what the catalogue returns.
    */
@@ -118,7 +127,8 @@ export class OrgClaReturnService {
           skip(1),
           filter(([, loaded]) => loaded),
           map(([current]) => this.catalogueAccountNamed(current, named)),
-          take(1)
+          take(1),
+          timeout({ first: OrgClaReturnService.catalogueReloadTimeoutMs, with: () => of(null) })
         );
       })
     );
@@ -149,6 +159,7 @@ export class OrgClaReturnService {
       membershipTier: '',
       logoUrl: match.logoUrl ?? null,
       uid: named,
+      slug: match.slug ?? null,
     };
   }
 }

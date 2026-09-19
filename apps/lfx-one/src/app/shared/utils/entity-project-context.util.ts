@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router } from '@angular/router';
 import { EntityWithProject, ProjectContext } from '@lfx-one/shared/interfaces';
 import { computeIsFoundation, isSameProjectContext } from '@lfx-one/shared/utils';
-import { catchError, distinctUntilChanged, filter, map, merge, Observable, of, switchMap } from 'rxjs';
+import { catchError, distinctUntilChanged, EMPTY, filter, finalize, map, merge, Observable, of, switchMap } from 'rxjs';
 
 import { ProjectContextService } from '../services/project-context.service';
 import { ProjectService } from '../services/project.service';
@@ -274,6 +274,10 @@ export function canonicalizeTierPrefix(router: Router, isFoundation: boolean, pr
  *
  * `canonicalizeRoute` mirrors the syncEntityProjectContext option: rewrite a wrong-tier URL to the
  * resolved context's tier after applying it.
+ *
+ * Clearing the entity signal cancels an in-flight lookup: hosts that unmount their entity on close
+ * (the meeting composer nulls `meetingEntityContext` when the drawer is dismissed) get the pending
+ * request torn down instead of leaving it free to repoint the page context afterwards.
  */
 export function syncEntityProjectContextFallback<T extends EntityWithProject>(
   entitySignal: Signal<T | null>,
@@ -298,8 +302,15 @@ export function syncEntityProjectContextFallback<T extends EntityWithProject>(
       return of(null);
     }
     freshFetchRetried.add(entity.uid);
+    // The marker is released unless the fetch actually answered. `settled` is what distinguishes
+    // the two, because a cancelled inner observable runs neither `map` nor `catchError` — only
+    // `finalize` — and cancellation is the designed behaviour here, not an edge case: clearing the
+    // entity signal tears this request down on purpose. Released from `finalize` rather than from
+    // each arm so both reasons for not answering are covered by one path.
+    let settled = false;
     return freshFetch(entity.uid).pipe(
       map((fresh) => {
+        settled = true;
         if (!fresh?.project_slug) {
           console.warn(`Unable to resolve project context for ${options?.entityKind ?? 'entity'} ${entity.uid}: detail payload carries no project_slug`);
           return null;
@@ -312,11 +323,15 @@ export function syncEntityProjectContextFallback<T extends EntityWithProject>(
         return resolved;
       }),
       catchError((error) => {
-        // Transient failures (network, 5xx) shouldn't burn the retry — release the uid so a later
-        // NavigationEnd re-apply can attempt the fresh fetch again.
-        freshFetchRetried.delete(entity.uid);
+        // Transient failures (network, 5xx) shouldn't burn the retry: leaving `settled` false lets
+        // `finalize` release the uid so a later NavigationEnd re-apply can attempt the fetch again.
         console.warn(`Unable to resolve project context for ${options?.entityKind ?? 'entity'} ${entity.uid}:`, error);
         return of(null);
+      }),
+      finalize(() => {
+        if (!settled) {
+          freshFetchRetried.delete(entity.uid);
+        }
       })
     );
   };
@@ -329,8 +344,15 @@ export function syncEntityProjectContextFallback<T extends EntityWithProject>(
 
   merge(unresolvedEntity$, navigationReapply$)
     .pipe(
-      filter((entity): entity is T => !!entity?.project_uid && !entity.project_slug),
+      // The unresolved test lives INSIDE the switchMap rather than in a `filter` ahead of it, so
+      // that clearing the entity CANCELS whatever lookup is still in flight. Closing the composer
+      // (or navigating off the page) nulls the entity signal; with the test as a filter, that
+      // emission never reached the switchMap and the previous `getProject`/fresh-detail request
+      // stayed subscribed — free to repoint the page context long after the drawer was dismissed.
       switchMap((entity) => {
+        if (!entity?.project_uid || entity.project_slug) {
+          return EMPTY;
+        }
         const cached = resolvedCache.get(entity.uid);
         if (cached) {
           return of(cached);

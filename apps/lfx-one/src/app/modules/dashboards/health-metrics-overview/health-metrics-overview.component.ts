@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
+  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
@@ -32,6 +33,7 @@ import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-ti
 import type {
   HealthMetricsAreaState,
   HealthMetricsFinding,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewFindingGroup,
   HealthMetricsOverviewFindingViewModel,
   HealthMetricsOverviewFoundationSummary,
@@ -54,9 +56,6 @@ export class HealthMetricsOverviewComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
-  // Default to the temporary fixture (LFXV2-3364 will replace it); overridable via setInput so
-  // specs can pin the empty/missing-area/unsorted branches the fixture itself can't exercise.
-  public readonly areaStates = input<HealthMetricsAreaState[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE);
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
 
   // Fresh per component instance (not a static/module-level constant) so the derived labels stay
@@ -75,10 +74,17 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly foundationSummaryLoading = signal(true);
 
+  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members/Code only); merged with
+  // the Engagement fixture row in initTiles since that table doesn't cover that area.
+  protected readonly kpiAreaStatesLoading = signal(true);
+  protected readonly kpiAreaStates = signal<HealthMetricsAreaState[]>([]);
+
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
-  // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation — re-fetches
-  // whenever the foundation changes (unlike areaStates/findings, still LFXV2-3364 fixtures).
+  // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation only — re-fetches
+  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture). kpiAreaStates
+  // above is also live-fetched, but via initializeRangeDataFetching, so it additionally re-fetches
+  // on range changes, which this foundation-only signal doesn't need to.
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -96,6 +102,15 @@ export class HealthMetricsOverviewComponent {
         data: this.revenue,
         defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
         fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
+        destroyRef: this.destroyRef,
+      });
+      initializeRangeDataFetching({
+        projectContextService: this.projectContextService,
+        range: this.selectedRange,
+        loading: this.kpiAreaStatesLoading,
+        data: this.kpiAreaStates,
+        defaultValue: [],
+        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewKpis(slug, range),
         destroyRef: this.destroyRef,
       });
     }
@@ -136,7 +151,12 @@ export class HealthMetricsOverviewComponent {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
-      return buildHealthMetricsOverviewTiles(this.areaStates(), insightsUrl);
+      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(
+        this.kpiAreaStates(),
+        this.kpiAreaStatesLoading(),
+        HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE
+      );
+      return buildHealthMetricsOverviewTiles(areaStates, insightsUrl);
     });
   }
 
@@ -156,6 +176,39 @@ export class HealthMetricsOverviewComponent {
         };
       });
     });
+  }
+
+  /**
+   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members/Code — Engagement stays
+   * fixture-backed until LFXV2-3364 ships its `hm_area_state` row. For the five live areas, the
+   * fixture's numbers are fabricated placeholders, not real fallback data — showing them while the
+   * live fetch is still loading, or after it resolved empty/failed, would render fake figures as if
+   * they were the foundation's actual metrics. Those areas get a neutral "no data" row instead.
+   */
+  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean, fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
+    const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
+    return fixture.map((fixtureState) => {
+      const liveState = liveByArea.get(fixtureState.area);
+      if (liveState) {
+        return liveState;
+      }
+      return HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS.has(fixtureState.area)
+        ? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(fixtureState.area, loading)
+        : fixtureState;
+    });
+  }
+
+  private static buildNeutralKpiAreaState(area: HealthMetricsOverviewArea, loading: boolean): HealthMetricsAreaState {
+    return {
+      area,
+      statValue: '—',
+      statLabel: loading ? 'loading…' : 'no data this period',
+      statSource: 'HEALTH_OVERVIEW_KPIS',
+      classification: 'none',
+      // Empty, not today's date — this area was never actually evaluated, so "as of today" would
+      // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
+      evaluatedAt: '',
+    };
   }
 
   private observeHeaderHeight(): void {

@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Same page container every other LFX route uses, so the embed's title and content line up with
+     the rest of the app rather than sitting flush against the shell — this is what supplies the
+     horizontal gutter, since the embed's own layout goes full-bleed via --margin-x.
+     No top padding: the embed's hero already contributes LFX's 21px, and adding the container's
+     own would double it. The bottom padding is ours because the embed has none. -->
+<div class="container mx-auto flex flex-col gap-4 px-4 pb-6 sm:px-6 lg:px-8">
+  <!-- Unconditional siblings: the embed mounts into #embedRoot and renders portals (dialogs,
+       toasts, etc.) into #embedPortals. Both must exist in the DOM before mount() runs. -->
+  <!-- Hidden, NOT removed, when a host panel is showing. The embed at a dead end still renders a
+       full-height empty region, which pushed the sign-in panel below the fold — the user saw a
+       blank page with the message 769px down. An inline style rather than `[hidden]` or a class:
+       the embed's contained stylesheet also targets these ids, and an inline declaration wins over
+       it without needing !important. The element stays in the DOM for viewChild.required and
+       mount(). -->
+  <div #embedRoot id="gw-embed-root" [style.display]="hostPanelShowing() ? 'none' : null"></div>
+  <div #embedPortals id="gw-embed-portals" [style.display]="hostPanelShowing() ? 'none' : null"></div>
+
+  <!-- The embed is a large React bundle fetched on demand; without this the container sits empty
+       for the length of the import. Rendered as a sibling so the mount points above keep their
+       stable references. -->
+  @if (mounting()) {
+    <div class="flex flex-col gap-3" data-testid="gw-embed-loading" aria-busy="true">
+      <p-skeleton height="2rem" width="14rem" />
+      <p-skeleton height="1rem" width="24rem" />
+      <p-skeleton height="12rem" />
+    </div>
+  }
+
+  @if (signInRequired()) {
+    <div class="flex flex-col items-start gap-3 rounded border border-gray-300 bg-gray-50 p-4">
+      <p class="font-semibold">Sign in to Gatewaze</p>
+      <p>Your LFX session doesn't yet include access to the embedded admin module.</p>
+      <button type="button" data-testid="gw-embed-signin-button" class="rounded bg-blue-600 px-4 py-2 text-white" (click)="startSignIn()">
+        Sign in with LFID
+      </button>
+    </div>
+  }
+
+  @if (mountError()) {
+    <div class="flex flex-col gap-2 rounded border border-red-300 bg-red-50 p-4 text-red-700" role="alert">
+      <p class="font-semibold">The embedded admin module couldn't be loaded.</p>
+      <p>{{ mountError() }}</p>
+    </div>
+  }
+</div>
