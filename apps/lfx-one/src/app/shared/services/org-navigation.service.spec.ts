@@ -120,7 +120,19 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
-  // Compared as address segments, not raw strings: a case-only difference is the same address and
+  // The tri-state matters to the path guard, which takes its no-round-trip shortcut only for a
+  // *known* slug: an indexed row without a slug confirms `null`, so the SFID address stops
+  // round-tripping to the resolver on every navigation.
+  it('confirms an indexed null for a restored selection whose row has no slug', () => {
+    selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
+
+    bootstrapWith([item(UID_A, 'Acme'), { ...item(UID_B, 'Beta'), slug: null }]);
+
+    expect(setAccount).toHaveBeenCalledTimes(1);
+    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: null }));
+  });
+
+  // Compared as normalized slugs, not raw strings: a case-only difference is the same address and
   // must not re-write the account (and the cookie) for nothing.
   it('does not re-write a restored selection whose slug differs from the row only in case', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'Beta' });

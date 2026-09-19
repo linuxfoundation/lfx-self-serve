@@ -92,14 +92,29 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.selectedUrlSegment()).toBe(UID_B);
     });
 
-    // Spec 021 FR-009: the Org Profile rename hook is the one caller where member-service is truly
-    // ahead of the index — the URL slug still waits for the index.
-    it('does not propagate a renamed slug from the Org Profile edit hook', () => {
+    // Spec 021 FR-009: the Org Profile rename hook is the one caller that knows the client is ahead
+    // of the index. The new slug is not adopted (the index cannot answer it yet); the old one is
+    // forgotten (it stops resolving once the index catches up, and the guard's shortcut would keep
+    // trusting it) — so addresses fall to the SFID until the resolver answers with the indexed slug.
+    it('forgets the held slug when the Org Profile edit hook renames it, without adopting the new one', () => {
       service.adoptFromAddress(addressedB);
 
       service.updateCanonicalRecord(canonicalOf('bravo-renamed'));
 
       expect(service.selectedAccount().accountName).toBe('Bravo');
+      expect(service.selectedAccount().slug).toBeUndefined();
+      expect(service.selectedUrlSegment()).toBe(UID_B);
+    });
+
+    it.each([
+      ['the same slug', 'bravo-llc'],
+      ['the same slug in another case', 'Bravo-LLC'],
+      ['no slug field', undefined],
+    ])('keeps the held slug when the Org Profile edit hook carries %s', (_label, slug) => {
+      service.adoptFromAddress(addressedB);
+
+      service.updateCanonicalRecord(canonicalOf(slug));
+
       expect(service.selectedUrlSegment()).toBe('bravo-llc');
     });
 

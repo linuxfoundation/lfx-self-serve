@@ -226,9 +226,32 @@ export class AccountContextService {
     return promise;
   }
 
-  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. The URL slug is the one field not propagated (spec 050): addresses resolve against the index, so the renamed slug reaches links and the address only once the indexer has caught up and an indexed row (resolver on the next navigation, org list on the next bootstrap) has answered with it. */
+  /**
+   * Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009);
+   * patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next
+   * natural fetch.
+   *
+   * The URL slug is not propagated (spec 050: addresses resolve against the index, which will not
+   * carry the new slug until the indexer has caught up). It is *forgotten* when the rename changed
+   * it: the held slug is the old one, which the path guard's shortcut would otherwise keep trusting
+   * for the rest of the session — every link built from it, never re-resolved — and which stops
+   * resolving the moment the index catches up. With the slug unknown, links and address fall to the
+   * SFID (resolves regardless), and the guard asks the resolver on the next navigation: it answers
+   * the old slug until the index has the new one, then the new one — converging, never flip-flopping,
+   * because the resolver is the index. This is the one caller where the client knows it is ahead of
+   * the index; the background canonical fetch never does this (`applyCanonicalRecord`).
+   */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
     this.applyCanonicalRecord(canonical);
+    const current = this.selectedAccount();
+    if (
+      canonical.slug !== undefined &&
+      current.slug !== undefined &&
+      current.slug !== null &&
+      orgUrlSegment({ uid: current.uid, slug: canonical.slug }) !== orgUrlSegment(current)
+    ) {
+      this.selectedAccount.set({ ...current, slug: undefined });
+    }
   }
 
   private applyCanonicalRecord(canonical: OrgCanonicalRecord): void {

@@ -7,7 +7,6 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
-import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
@@ -265,11 +264,14 @@ export class OrgNavigationService {
       const match = page.items.find((item) => item.uid === current.uid);
       if (match) {
         // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
-        // indexed row's is the one addresses resolve against (spec 050). Apply it whenever it differs
-        // so in-app addresses and the path-param guard's no-round-trip path see the indexed segment;
-        // `null` means the index has none.
-        const indexedSlug = match.slug ?? null;
-        if (orgUrlSegment({ uid: current.uid, slug: current.slug }) !== orgUrlSegment({ uid: current.uid, slug: indexedSlug })) {
+        // indexed row's is the one addresses resolve against (spec 050). Apply it whenever the
+        // tri-state differs — `undefined` (not known) becomes the row's value or an indexed `null`, a
+        // stale slug becomes the current one — so in-app addresses see the indexed segment and the
+        // path guard, which keys its no-round-trip shortcut on the slug being *known*, can take it.
+        // Compared as normalized slugs, not raw strings: a case-only difference is the same address.
+        const indexedSlug = match.slug?.trim().toLowerCase() ?? null;
+        const heldSlug = typeof current.slug === 'string' ? current.slug.trim().toLowerCase() : current.slug;
+        if (heldSlug !== indexedSlug) {
           this.accountContextService.setAccount({ ...current, slug: indexedSlug });
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable

@@ -123,11 +123,14 @@ describe('orgPathParamGuard', () => {
     // the addressed segment would pass another organization's SFID address off as the selected one.
     // Such a segment goes to the resolver, which classifies SFID syntax first.
     it('does not take the shortcut on an SFID-shaped held slug, even when it equals the address', async () => {
-      selectedAccount.set(account({ uid: UID_A, slug: UID_B }));
+      // All-lowercase on both sides, so the only thing standing between this address and the
+      // shortcut is the slug-shape check — with it removed, the segment would equal the held slug.
+      const sfidShaped = UID_B.toLowerCase();
+      selectedAccount.set(account({ uid: UID_A, slug: sfidShaped }));
       resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
 
-      expect(await outcome(UID_B, `/org/${UID_B}/projects`)).toBe('/org/bravo-llc/projects');
-      expect(resolve).toHaveBeenCalledWith(UID_B, UID_A);
+      expect(await outcome(sfidShaped, `/org/${sfidShaped}/projects`)).toBe('/org/bravo-llc/projects');
+      expect(resolve).toHaveBeenCalledWith(sfidShaped, UID_A);
     });
 
     it('is a no-op when the address already uses the selected slug', async () => {
