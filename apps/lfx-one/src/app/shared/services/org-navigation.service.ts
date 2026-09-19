@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { NavigationCancel, NavigationEnd, NavigationError, Router } from '@angular/router';
+import { computed, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -22,6 +22,7 @@ import {
   scan,
   skip,
   Subject,
+  Subscription,
   switchMap,
   take,
   tap,
@@ -44,8 +45,12 @@ export class OrgNavigationService {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly state: OrgListState = this.createOrgListState();
+
+  /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
+  private pendingDefaultWrite: Subscription | null = null;
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
@@ -289,7 +294,7 @@ export class OrgNavigationService {
         const indexedSlug = match.slug?.trim().toLowerCase() ?? null;
         const heldSlug = typeof current.slug === 'string' ? current.slug.trim().toLowerCase() : current.slug;
         if (heldSlug !== indexedSlug) {
-          this.accountContextService.setAccount({ ...current, slug: indexedSlug });
+          this.accountContextService.setIndexedSlug(indexedSlug);
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never touches an addressed page or the
@@ -328,18 +333,29 @@ export class OrgNavigationService {
    * once that finalize has run, and a settle that left another navigation in flight keeps waiting.
    */
   private writeDefaultAddress(): void {
+    // One pending write at most: a later bootstrap (selector re-enabled, CLA return) supersedes an
+    // earlier one still waiting, so a stale deferred write cannot fire an unrelated re-address later.
+    this.pendingDefaultWrite?.unsubscribe();
+    this.pendingDefaultWrite = null;
     if (!this.router.getCurrentNavigation()) {
       this.orgLensNavigation.navigateToSelectedOrg('default');
       return;
     }
-    this.router.events
+    this.pendingDefaultWrite = this.router.events
       .pipe(
-        filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        filter(
+          (event) =>
+            event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped
+        ),
         switchMap(() => from(Promise.resolve())),
         filter(() => !this.router.getCurrentNavigation()),
-        take(1)
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe(() => this.orgLensNavigation.navigateToSelectedOrg('default'));
+      .subscribe(() => {
+        this.pendingDefaultWrite = null;
+        this.orgLensNavigation.navigateToSelectedOrg('default');
+      });
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {

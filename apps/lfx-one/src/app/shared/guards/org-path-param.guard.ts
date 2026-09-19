@@ -22,9 +22,14 @@ import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
  *   never trusted as a slug): no round trip — the guard re-runs on every child navigation and must
  *   not re-resolve or flicker; only the address is canonicalized when it is not already in the
  *   canonical form. An unknown slug always goes to the resolver, even on a uid match, so the indexed
- *   slug gets learned. The held slug is trusted until the next resolver round trip; a slug the index
- *   reassigns to another organization in between is not detected until one occurs (narrow: slug
- *   reuse after a rename, no navigation that misses the shortcut) — FGA still gates the page data.
+ *   slug gets learned — which also means the FR-020 stub (resolver unavailable) re-asks on every
+ *   child navigation until the resolver is back; that is the accepted cost of never caching an
+ *   outage as an answer. The held slug is trusted until the next resolver round trip; a slug the
+ *   index reassigns to another organization in between is not detected until one occurs (narrow:
+ *   slug reuse after a rename, no navigation that misses the shortcut). Accepted trade-off (spec
+ *   050): no flicker or round trip on every child navigation, and FGA still gates the page data on
+ *   `selected.uid` — the address bar can name the other organization until the next resolve, the
+ *   page cannot show its data.
  * - Resolves through the BFF (`GET /api/orgs/resolve/:segment?prefer=<selected uid>`), which is
  *   FGA-filtered per viewer: a hit adopts the organization; a 404/409 (unknown, not readable, or a
  *   same-slug tie the selection could not break) lands on the not-found page **without** touching
@@ -76,7 +81,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   // pass an SFID address for *another* organization off as the selected one without asking the
   // resolver. The resolver classifies SFID syntax first, so such a segment must go to it.
   const selected = accountContext.selectedAccount();
-  const heldSlug = typeof selected.slug === 'string' ? selected.slug.toLowerCase() : null;
+  const heldSlug = typeof selected.slug === 'string' ? selected.slug.trim().toLowerCase() : null;
   const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || slugMatches)) {
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;

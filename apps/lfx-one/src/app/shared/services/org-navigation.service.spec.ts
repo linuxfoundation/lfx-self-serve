@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Event, Navigation, NavigationCancel, NavigationEnd, provideRouter, Router } from '@angular/router';
+import { Event, Navigation, NavigationCancel, NavigationEnd, NavigationSkipped, provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgItemsResponse } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { Subject } from 'rxjs';
@@ -33,6 +33,7 @@ describe('OrgNavigationService default selection', () => {
   let selectedAccount: WritableSignal<Account>;
   let isAddressedSelection: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
+  let setIndexedSlug: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
@@ -42,6 +43,7 @@ describe('OrgNavigationService default selection', () => {
     selectedAccount = signal<Account>(placeholder);
     isAddressedSelection = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
+    setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
     navigateToSelectedOrg = vi.fn();
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
@@ -55,7 +57,7 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord },
+          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, refreshCanonicalRecord },
         },
       ],
     });
@@ -98,6 +100,27 @@ describe('OrgNavigationService default selection', () => {
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
+
+  // Two bootstraps while the router is busy (selector re-enabled, CLA return) must not leave two
+  // deferred writes behind: the later one supersedes the earlier, and exactly one fires on idle.
+  it('keeps at most one deferred write pending across overlapping bootstraps', async () => {
+    const router = TestBed.inject(Router);
+    const inFlight = vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({} as Navigation);
+    const events = new Subject<Event>();
+    Object.defineProperty(router, 'events', { get: () => events.asObservable() });
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+    bootstrapWith([item(UID_A, 'Acme')]);
+    bootstrapWith([item(UID_A, 'Acme')]);
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+
+    inFlight.mockReturnValue(null);
+    // A skipped navigation is a settle event too.
+    events.next(new NavigationSkipped(3, '/org/people', 'same url'));
+    await settle();
+
+    expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
   });
 
   it('selects the first organization and re-addresses the page as a default, not a switch', () => {
@@ -145,10 +168,11 @@ describe('OrgNavigationService default selection', () => {
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
-    expect(setAccount).toHaveBeenCalledTimes(1);
-    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
+    expect(setAccount).not.toHaveBeenCalled();
+    expect(setIndexedSlug).toHaveBeenCalledTimes(1);
+    expect(setIndexedSlug).toHaveBeenCalledWith('beta');
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    expect(setAccount.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+    expect(setIndexedSlug.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   // The tri-state matters to the path guard, which takes its no-round-trip shortcut only for a
@@ -159,8 +183,8 @@ describe('OrgNavigationService default selection', () => {
 
     bootstrapWith([item(UID_A, 'Acme'), { ...item(UID_B, 'Beta'), slug: null }]);
 
-    expect(setAccount).toHaveBeenCalledTimes(1);
-    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: null }));
+    expect(setIndexedSlug).toHaveBeenCalledTimes(1);
+    expect(setIndexedSlug).toHaveBeenCalledWith(null);
   });
 
   // Compared as normalized slugs, not raw strings: a case-only difference is the same address and
@@ -171,6 +195,7 @@ describe('OrgNavigationService default selection', () => {
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).not.toHaveBeenCalled();
+    expect(setIndexedSlug).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 

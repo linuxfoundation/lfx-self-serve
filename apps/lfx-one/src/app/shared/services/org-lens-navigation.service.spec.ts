@@ -65,6 +65,14 @@ describe('OrgLensNavigationService', () => {
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
+    // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
+    // not know the selection is unchanged (there is no segment to compare) and inserts regardless.
+    it('inserts the organization on a legacy page address even when the selection did not change', () => {
+      currentUrl = '/org/people';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/people');
+    });
+
     // A legacy address names no organization to go back to — Back would re-render it under the new
     // selection — so the insert replaces the entry even for a switch.
     it('inserts the organization on a legacy page address, replacing the entry', () => {

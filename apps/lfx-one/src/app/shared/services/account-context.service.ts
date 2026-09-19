@@ -149,6 +149,19 @@ export class AccountContextService {
     }
   }
 
+  /**
+   * Spec 050: patches only the URL-identity slug of the current selection, from an indexed row (the
+   * org list). A slug-only change must not go through `setAccount`, which rebuilds the selection from
+   * the live Snowflake row and would revert display fields the canonical record has since patched
+   * (a rename propagated to member-service but not yet to Snowflake would flip back in the sidebar).
+   */
+  public setIndexedSlug(slug: string | null): void {
+    const current = this.selectedAccount();
+    const next: Account = { ...current, slug };
+    this.selectedAccount.set(next);
+    this.persistToStorage(next);
+  }
+
   public setAccount(account: Account): void {
     const live = this.liveAccounts().get(account.accountId);
     const next = live

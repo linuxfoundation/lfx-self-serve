@@ -107,6 +107,21 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.selectedUrlSegment()).toBe('bravo-llc');
     });
 
+    // A slug-only patch from the org list must not rebuild the selection from the Snowflake row:
+    // a name the canonical record has since patched (a rename not yet in Snowflake) would flip back.
+    it('setIndexedSlug keeps display fields the canonical record patched', async () => {
+      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo (Snowflake)' }]);
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of({ ...canonicalOf('bravo-llc'), name: 'Bravo Renamed' }));
+      await service.refreshCanonicalRecord(addressedB);
+      expect(service.selectedAccount().accountName).toBe('Bravo Renamed');
+
+      service.setIndexedSlug('bravo-llc-2');
+
+      expect(service.selectedAccount().accountName).toBe('Bravo Renamed');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc-2');
+    });
+
     it('ignores a record of another organization entirely', () => {
       service.adoptFromAddress(addressedB);
 
