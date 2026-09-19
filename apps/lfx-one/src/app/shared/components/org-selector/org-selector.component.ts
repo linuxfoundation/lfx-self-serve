@@ -8,6 +8,7 @@ import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
@@ -26,6 +27,7 @@ import { distinctUntilChanged, filter } from 'rxjs';
 export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
@@ -229,6 +231,20 @@ export class OrgSelectorComponent {
   }
 
   protected selectItem(item: OrgItem): void {
+    // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
+    // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
+    // one exception is the not-found dead end, where the selection is the cookie's or a default that
+    // never made it into the address: the pick is still the viewer's way out, to that organization's
+    // overview. The `isOnNotFound()` guard is load-bearing, not belt-and-braces — on a legacy
+    // `/org/{page}` address a `'switch'` for the same organization would insert the segment, which
+    // FR-014 forbids for a same-organization pick.
+    if (item.uid === this.selectedAccountUid()) {
+      if (this.orgLensNavigation.isOnNotFound()) {
+        this.orgLensNavigation.navigateToSelectedOrg('switch');
+      }
+      this.popoverRef()?.hide();
+      return;
+    }
     const account: Account = {
       // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
       // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
@@ -248,11 +264,12 @@ export class OrgSelectorComponent {
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
-    // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
-    this.accountContextService.refreshCanonicalRecord(account).catch(() => {
-      // Errors are already logged inside refreshCanonicalRecord — swallow here so the
-      // floating promise doesn't reach the browser console.
-    });
+    // arrives. It settles either way: failures are logged (no UI toast, FR-020) and leave the
+    // indexed snapshot.
+    void this.accountContextService.refreshCanonicalRecord(account);
+    // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
+    // re-addressed to the new selection (no-op outside Org Lens and on EasyCLA).
+    this.orgLensNavigation.navigateToSelectedOrg('switch');
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();

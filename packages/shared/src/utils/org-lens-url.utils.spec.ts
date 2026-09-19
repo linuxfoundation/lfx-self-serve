@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isOrgSlugSegment, normalizeOrgSegment, orgLensPagePath, orgUrlSegment } from './org-lens-url.utils';
+import { isOrgSlugSegment, normalizeOrgSegment, orgLensDestinationKey, orgLensPagePath, orgUrlSegment } from './org-lens-url.utils';
 
 const UID = '0014100000MgaAAAAA';
 
@@ -23,6 +23,24 @@ describe('orgUrlSegment', () => {
     expect(orgUrlSegment({ uid: UID })).toBe(UID);
     expect(orgUrlSegment({ uid: '', slug: '  ' })).toBeNull();
     expect(orgUrlSegment(null)).toBeNull();
+  });
+
+  // The producer applies the resolver's shape rules: a slug that could reshape a joined address
+  // (`/`, `?`, `#`, spaces) is not emitted, and a uid that is not an SFID is not an address at all.
+  it.each(['acme/inc', 'acme?x=1', 'acme#top', 'acme inc', '-acme'])('emits the SFID when the slug %p is not slug-shaped', (slug) => {
+    expect(orgUrlSegment({ uid: UID, slug })).toBe(UID);
+  });
+
+  // The resolver classifies SFID syntax before slugs, so a slug that looks like an SFID would be
+  // resolved as an account id — of some other organization, or none. The real SFID is used instead.
+  it('emits the SFID when the published slug is itself SFID-shaped', () => {
+    expect(orgUrlSegment({ uid: UID, slug: '0014100000mgbbbbbb' })).toBe(UID);
+    expect(isOrgSlugSegment('0014100000mgbbbbbb')).toBe(false);
+  });
+
+  it('yields null when the uid is not an SFID and there is no usable slug', () => {
+    expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: null })).toBeNull();
+    expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: 'acme/inc' })).toBeNull();
   });
 });
 
@@ -53,5 +71,34 @@ describe('orgLensPagePath', () => {
     expect(orgLensPagePath(['org', 'easycla', 'group-1'], 'overview')).toBe('/org/overview');
     expect(orgLensPagePath(['org'], 'overview')).toBe('/org/overview');
     expect(orgLensPagePath(['project', 'acme'], 'overview')).toBe('/org/overview');
+  });
+});
+
+describe('orgLensPagePath shape rules', () => {
+  // The same rules as the producer (`orgUrlSegment`): punctuation or a leading dash is not a slug.
+  it.each(['acme/inc', 'acme?x=1', 'acme#top', '-acme'])(
+    'falls back to the legacy page when the addressed segment %p is neither slug nor SFID shaped',
+    (segment) => {
+      expect(orgLensPagePath(['org', segment, 'roi'], 'overview')).toBe('/org/overview');
+    }
+  );
+
+  // The segment is passed through as addressed: SFIDs are case-sensitive upstream, and a slug's
+  // case is the path-param guard's to canonicalize on the next navigation, not this builder's.
+  it('passes the addressed segment through unchanged, whatever its letter case', () => {
+    const mixed = '0014100000MgAaAaAa';
+    expect(orgLensPagePath(['org', mixed, 'roi'], 'overview')).toBe(`/org/${mixed}/overview`);
+    expect(orgLensPagePath(['org', 'ACME-Inc', 'roi'], 'overview')).toBe('/org/ACME-Inc/overview');
+  });
+});
+
+describe('orgLensDestinationKey', () => {
+  it('drops the organization from an Org Lens address and leaves everything else alone', () => {
+    expect(orgLensDestinationKey('/org/acme-inc/projects')).toBe('/org/projects');
+    expect(orgLensDestinationKey(`/org/${UID}/projects/k8s`)).toBe('/org/projects/k8s');
+    expect(orgLensDestinationKey('/org/projects')).toBe('/org/projects');
+    expect(orgLensDestinationKey('/org/easycla')).toBe('/org/easycla');
+    expect(orgLensDestinationKey('/org/acme-inc')).toBe('/org/acme-inc');
+    expect(orgLensDestinationKey('/project/cncf/overview')).toBe('/project/cncf/overview');
   });
 });

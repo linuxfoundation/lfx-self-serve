@@ -29,12 +29,16 @@ import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
+
+/** Group view-model plus its foundation membership-page router commands (`null` when the group carries no project_slug). */
+type OrgLensGroupRow = OrgLensGroupVm & { membershipLink: string[] | null };
 
 @Component({
   selector: 'lfx-org-groups',
@@ -56,6 +60,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
 })
 export class OrgGroupsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -146,7 +151,7 @@ export class OrgGroupsComponent {
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
   // Not read from the template — filteredGroups() is what the @for actually iterates.
-  private readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
+  private readonly groupsWithClass: Signal<OrgLensGroupRow[]> = this.initGroupsWithClass();
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -159,7 +164,7 @@ export class OrgGroupsComponent {
   private readonly foundationLabelsBySlug: Signal<Map<string, string>> = this.initFoundationLabelsBySlug();
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = this.initFoundationOptions();
   protected readonly typeOptions: Signal<OrgDropdownOption[]> = this.initTypeOptions();
-  protected readonly filteredGroups: Signal<OrgLensGroupVm[]> = this.initFilteredGroups();
+  protected readonly filteredGroups: Signal<OrgLensGroupRow[]> = this.initFilteredGroups();
   // Single source of truth for the export button's disabled state and its tooltip/aria explanation,
   // so every binding that reads it can't drift apart (mirrors showRoster's rationale above).
   protected readonly hasNoRowsToExport: Signal<boolean> = computed(() => this.filteredGroups().length === 0);
@@ -254,7 +259,7 @@ export class OrgGroupsComponent {
     );
   }
 
-  private initGroupsWithClass(): Signal<OrgLensGroupVm[]> {
+  private initGroupsWithClass(): Signal<OrgLensGroupRow[]> {
     return computed(() =>
       this.groups().map((g) => {
         const cls = getGroupBehavioralClass(g.category);
@@ -263,8 +268,10 @@ export class OrgGroupsComponent {
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
         // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
+        // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+        const membershipLink = g.project_slug ? this.orgLens.orgLensLink('memberships', g.project_slug) : null;
         const seatHoldersTriggerAriaLabel = `View ${g.org_seat_count} seat holder${g.org_seat_count === 1 ? '' : 's'} for ${g.name}`;
-        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, seatHoldersTriggerAriaLabel };
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, membershipLink, seatHoldersTriggerAriaLabel };
       })
     );
   }
@@ -327,7 +334,7 @@ export class OrgGroupsComponent {
     });
   }
 
-  private initFilteredGroups(): Signal<OrgLensGroupVm[]> {
+  private initFilteredGroups(): Signal<OrgLensGroupRow[]> {
     return computed(() => {
       const v = this.filterValues();
       const q = v.search.trim().toLowerCase();

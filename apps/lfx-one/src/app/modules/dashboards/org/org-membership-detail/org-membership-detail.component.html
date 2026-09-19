@@ -35,7 +35,7 @@
         subtitle="We couldn't find that membership for your organization."
         ctaLabel="Back to Memberships"
         ctaIcon="fa-light fa-arrow-left"
-        [ctaRoute]="['/org/memberships']"
+        [ctaRoute]="membershipsLink()"
         data-testid="membership-detail-not-found">
       </lfx-empty-state>
     }
@@ -43,7 +43,7 @@
     @default {
       <!-- Header (ready or empty) -->
       <a
-        [routerLink]="['/org/memberships']"
+        [routerLink]="membershipsLink()"
         class="inline-flex w-fit items-center gap-1 text-sm font-medium text-blue-600 hover:text-blue-700"
         data-testid="membership-detail-back-link">
         <i class="fa-light fa-arrow-left"></i>

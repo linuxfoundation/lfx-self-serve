@@ -54,7 +54,7 @@ export class AccountContextService {
    */
   private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
 
-  /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
+  /** Spec 050: the `/org/{segment}/…` segment of the current selection — the indexed slug (org-items row or resolver answer) when one is known, else the SFID; null for the placeholder. Never member-service's slug: addresses resolve against the index. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
 
   /** True while the selection is the organization the address named (see `adoptFromAddress`). */
@@ -149,6 +149,19 @@ export class AccountContextService {
     }
   }
 
+  /**
+   * Spec 050: patches only the URL-identity slug of the current selection, from an indexed row (the
+   * org list). A slug-only change must not go through `setAccount`, which rebuilds the selection from
+   * the live Snowflake row and would revert display fields the canonical record has since patched
+   * (a rename propagated to member-service but not yet to Snowflake would flip back in the sidebar).
+   */
+  public setIndexedSlug(slug: string | null): void {
+    const current = this.selectedAccount();
+    const next: Account = { ...current, slug };
+    this.selectedAccount.set(next);
+    this.persistToStorage(next);
+  }
+
   public setAccount(account: Account): void {
     const live = this.liveAccounts().get(account.accountId);
     const next = live
@@ -226,7 +239,14 @@ export class AccountContextService {
     return promise;
   }
 
-  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. */
+  /**
+   * Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009);
+   * patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next
+   * natural fetch. The URL slug is the one field not propagated (spec 050): addresses resolve against
+   * the index, so a renamed slug reaches links and address only once the index carries it and an
+   * indexed row (resolver on a navigation, org list on bootstrap) has answered with it. Forgetting the
+   * old slug here would not help — the next resolve hands the still-indexed old slug straight back.
+   */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
     this.applyCanonicalRecord(canonical);
   }
@@ -248,9 +268,14 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
-      // The canonical record is authoritative for the slug, including an explicit `null` after a
-      // rename removed it; only an absent field keeps what was known.
-      slug: canonical.slug !== undefined ? canonical.slug : current.slug,
+      // Spec 050: the URL slug is the *index's*, never member-service's. Addresses resolve against
+      // the index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs
+      // ahead of it during lag — a slug taken from here could be one the resolver cannot answer yet.
+      // So the canonical record never touches the slug, not even to unset it on a disagreement: the
+      // next org-segment navigation asks the resolver, which is the index and hands the indexed slug
+      // straight back — an unset would only flip-flop. A rename reaches addresses when the index has
+      // caught up, and a reused name resolves to whoever the index says (access-checked either way).
+      slug: current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,

@@ -133,7 +133,7 @@
                    on a path segment, not by uid. -->
                 <a
                   class="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
-                  [routerLink]="['/org/projects', row.projectSlug]"
+                  [routerLink]="row.projectLink"
                   [attr.aria-label]="'View ' + row.project + ' project detail'"
                   (click)="$event.stopPropagation()">
                   Projects
