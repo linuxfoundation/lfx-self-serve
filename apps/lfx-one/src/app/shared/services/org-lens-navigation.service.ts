@@ -180,6 +180,7 @@ export class OrgLensNavigationService {
     return navigation.catch(() => false);
   }
 
+  /** True when the address is exactly the not-found dead end (`ORG_NOT_FOUND_SEGMENTS`), not merely a path beneath it. */
   private isNotFoundAddress(segments: readonly string[]): boolean {
     return ORG_NOT_FOUND_SEGMENTS.length === segments.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }

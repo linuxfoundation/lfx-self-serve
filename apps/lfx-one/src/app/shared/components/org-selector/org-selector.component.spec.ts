@@ -104,13 +104,16 @@ describe('OrgSelectorComponent.selectItem', () => {
   // On the dead end the selection is the cookie's or a bootstrap default that never made it into the
   // address, so the row shown as selected — for a single-organization viewer, the only row — is the
   // way out. Still no re-selection: the address moves, the account does not.
-  it('leaves the not-found dead end for the already selected organization, without re-selecting it', () => {
+  it('leaves the not-found dead end for the already selected organization, without re-selecting it', async () => {
     isOnNotFound.mockReturnValue(true);
 
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
-    expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    // The selection on the dead end is the cookie's or the bootstrap default's, whose canonical
+    // record may not be in yet — so this write gets the same follow-up as any other.
+    expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 });

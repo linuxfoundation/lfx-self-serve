@@ -182,6 +182,21 @@ describe('OrgLensNavigationService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
+    // Two callers can chain onto the same deduped canonical fetch for one uid, so two reconciles can
+    // be in flight against one write. Exactly one may act; the second finds the write superseded.
+    it('lets only one of two concurrent reconciles of the same write act', async () => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects';
+      navigate.mockClear();
+      selectedAccount.set({ ...acme, slug: 'acme-incorporated' });
+
+      await Promise.all([service.reconcileAddress(), service.reconcileAddress()]);
+
+      expect(navigate).toHaveBeenCalledTimes(1);
+      expect(navigatedTo()).toBe('/org/acme-incorporated/projects');
+    });
+
     // A guard cancelled the write (resolves `false`) or the router threw (rejects) and the address
     // never moved: nothing to reconcile, and no unhandled rejection either way.
     it.each([

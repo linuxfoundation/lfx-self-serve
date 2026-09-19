@@ -240,6 +240,14 @@ export class OrgSelectorComponent {
     // FR-014 forbids for a same-organization pick.
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
+        // A write like any other: the selection here came from the cookie or the bootstrap default,
+        // whose canonical fetch may not have landed yet, so this address wants the same follow-up.
+        void this.accountContextService
+          .refreshCanonicalRecord(this.selectedAccount())
+          .then(() => this.orgLensNavigation.reconcileAddress())
+          .catch(() => {
+            // Reconciliation is best-effort: the address stays as written.
+          });
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
       this.popoverRef()?.hide();
