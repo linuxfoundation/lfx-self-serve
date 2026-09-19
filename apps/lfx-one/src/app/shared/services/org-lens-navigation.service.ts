@@ -114,9 +114,9 @@ export class OrgLensNavigationService {
     });
   }
 
-  /** True when the address is exactly the not-found dead end (`ORG_NOT_FOUND_SEGMENTS`), not merely a path beneath it. */
+  /** True on the not-found dead end (`ORG_NOT_FOUND_SEGMENTS`) or anything beneath it — a deeper path there is still the dead end, never a legacy page. */
   private isNotFoundAddress(segments: readonly string[]): boolean {
-    return ORG_NOT_FOUND_SEGMENTS.length === segments.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
+    return segments.length >= ORG_NOT_FOUND_SEGMENTS.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }
 
   /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */

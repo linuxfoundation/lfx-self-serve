@@ -101,6 +101,8 @@ describe('OrgLensNavigationService', () => {
     it.each([
       ['/org/not-found', true],
       ['/org/not-found?from=x', true],
+      // Beneath the dead end is still the dead end — never the legacy `not-found` page segment.
+      ['/org/not-found/anything', true],
       ['/org/acme-inc/overview', false],
       ['/org/people', false],
       ['/', false],
@@ -131,8 +133,8 @@ describe('OrgLensNavigationService', () => {
     // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;
     // a default picked from the org list would silently substitute another organization for the
     // one the link named.
-    it('never leaves the not-found page', () => {
-      currentUrl = '/org/not-found';
+    it.each(['/org/not-found', '/org/not-found/anything'])('never leaves the not-found page (%s)', (url) => {
+      currentUrl = url;
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
     });

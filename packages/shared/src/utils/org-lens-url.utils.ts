@@ -31,9 +31,16 @@ export function isOrgAccountIdSegment(segment: string): boolean {
   return ORG_ACCOUNT_ID_PATTERN.test(segment);
 }
 
-/** True when the (already lowercased) segment is shaped like a slug and is not a reserved page name. Does not mean the org exists — only that a lookup is worth making. Uses `=== true`, not `in`: a plain-object `in` test also matches `Object.prototype` keys (`'constructor' in {}` is true). */
+/**
+ * True when the (already lowercased) segment is shaped like a slug, is not a reserved page name, and
+ * is not shaped like an SFID — the resolver classifies SFID syntax first, so a published slug that
+ * happens to look like one (`0014100000mgaaaaaa`) would resolve as an account id, not as this slug;
+ * such an organization is addressed by its real SFID instead. Does not mean the org exists — only
+ * that a lookup is worth making. Uses `=== true`, not `in`: a plain-object `in` test also matches
+ * `Object.prototype` keys (`'constructor' in {}` is true).
+ */
 export function isOrgSlugSegment(segment: string): boolean {
-  return ORG_SLUG_SEGMENT_PATTERN.test(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
+  return ORG_SLUG_SEGMENT_PATTERN.test(segment) && !isOrgAccountIdSegment(segment) && ORG_LENS_PAGE_SEGMENTS[segment] !== true;
 }
 
 /**

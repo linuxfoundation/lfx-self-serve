@@ -31,6 +31,13 @@ describe('orgUrlSegment', () => {
     expect(orgUrlSegment({ uid: UID, slug })).toBe(UID);
   });
 
+  // The resolver classifies SFID syntax before slugs, so a slug that looks like an SFID would be
+  // resolved as an account id — of some other organization, or none. The real SFID is used instead.
+  it('emits the SFID when the published slug is itself SFID-shaped', () => {
+    expect(orgUrlSegment({ uid: UID, slug: '0014100000mgbbbbbb' })).toBe(UID);
+    expect(isOrgSlugSegment('0014100000mgbbbbbb')).toBe(false);
+  });
+
   it('yields null when the uid is not an SFID and there is no usable slug', () => {
     expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: null })).toBeNull();
     expect(orgUrlSegment({ uid: 'legacy-uuid-1234', slug: 'acme/inc' })).toBeNull();
