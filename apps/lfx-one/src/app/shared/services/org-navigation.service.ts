@@ -277,7 +277,7 @@ export class OrgNavigationService {
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never touches an addressed page or the
         // not-found dead end, so this is a no-op everywhere but the bare legacy form.
-        this.orgLensNavigation.navigateToSelectedOrg('default');
+        this.writeDefaultAddress();
         return;
       }
     }
@@ -295,6 +295,21 @@ export class OrgNavigationService {
     // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
     // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never
     // overrides an address that already names an organization.
+    this.writeDefaultAddress();
+  }
+
+  /**
+   * The `'default'` re-address reads the router's *current* address. If a navigation is in flight
+   * when the org-items page lands (the viewer clicked a link while the bootstrap fetch was pending),
+   * that address is the one being left, not the one being entered — so the write is skipped: the
+   * destination's own guards decide it, and a legacy destination is re-addressed by the next
+   * bootstrap or switch. The default's own no-op rules already exclude an addressed page and the
+   * dead end; this closes the in-flight window on top.
+   */
+  private writeDefaultAddress(): void {
+    if (this.router.getCurrentNavigation()) {
+      return;
+    }
     this.orgLensNavigation.navigateToSelectedOrg('default');
   }
 

@@ -5,7 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { Navigation, provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgItemsResponse } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -68,6 +68,17 @@ describe('OrgNavigationService default selection', () => {
     service.resetAndReload();
     http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(items));
   };
+
+  // The default re-address reads the *current* address; mid-navigation that is the page being
+  // left, so the write waits for the destination's own guards instead.
+  it('does not re-address while a navigation is in flight', () => {
+    vi.spyOn(TestBed.inject(Router), 'getCurrentNavigation').mockReturnValue({} as Navigation);
+
+    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+  });
 
   it('selects the first organization and re-addresses the page as a default, not a switch', () => {
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
