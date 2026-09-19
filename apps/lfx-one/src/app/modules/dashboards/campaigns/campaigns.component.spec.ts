@@ -2265,7 +2265,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
     } as unknown as CampaignBriefOutput;
 
-    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register' };
+    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register', ctaUrl: '' };
 
     let persist: ReturnType<typeof vi.fn>;
 
@@ -2992,6 +2992,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       preheader: 'Sessions and labs',
       body: '<p>Body</p>',
       cta: 'Register',
+      ctaUrl: '',
     };
 
     it('shows nothing until copy exists', () => {
@@ -3157,7 +3158,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
-        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } }) as never);
 
       // The type is chosen BEFORE the brief id is cached, deliberately. An earlier revision set
       // `emailBriefId` first and then switched to a different stage, which pinned the id across a
@@ -3434,7 +3435,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('drops copy written for the previous type when the type changes', () => {
       selectEmail();
-      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '' } as never);
+      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '', ctaUrl: '' } as never);
 
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
@@ -3448,7 +3449,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
-      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '' } as never);
+      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '', ctaUrl: '' } as never);
       vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, error: 'upstream refused' }) as never);
 
       await internals().onGenerateEmailCopy();
@@ -3936,7 +3937,9 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      // The generator copies the Registration URL EXACTLY, so an unusable one arrives here
+      // unchanged -- `canonicalHttpUrl` is what refuses it.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: 'javascript:alert(1)' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -3990,7 +3993,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
-        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } }) as never);
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } }) as never);
 
       await internals().onGenerateAbTestCopy();
       fixture.detectChanges();
@@ -4010,7 +4013,7 @@ describe('CampaignsComponent — email delivery channel', () => {
           sponsors: [{ name: 'Acme\u202Emoc.evil', logoUrl: 'https://cdn.example.com/acme.png' }],
         },
       } as unknown as CampaignBriefOutput);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       // U+202E visually REVERSES what follows it. The controller strips it before staging, so
@@ -4032,7 +4035,7 @@ describe('CampaignsComponent — email delivery channel', () => {
           sponsors: [{ name: longName, logoUrl: 'https://cdn.example.com/acme.png' }],
         },
       } as unknown as CampaignBriefOutput);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       const [sponsor] = internals().emailSponsors();
@@ -4061,7 +4064,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().abTestForm.controls.subjectB.setValue('My own subject');
       fixture.detectChanges();
 
-      pending.next({ enabled: true, copy: { subject: 'Generated subject', preheader: 'P', body: '<p>Generated body</p>', cta: '' } });
+      pending.next({ enabled: true, copy: { subject: 'Generated subject', preheader: 'P', body: '<p>Generated body</p>', cta: '', ctaUrl: '' } });
       pending.complete();
       await generating;
       fixture.detectChanges();
@@ -4093,7 +4096,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().abTestForm.controls.enabled.setValue(false);
       fixture.detectChanges();
 
-      pending.next({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } });
+      pending.next({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } });
       pending.complete();
       await generating;
       fixture.detectChanges();
@@ -4117,7 +4120,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       persistBrief.mockReturnValue(persisting as never);
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
-        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } }) as never);
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } }) as never);
 
       const generating = internals().onGenerateAbTestCopy();
       await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
@@ -4207,7 +4210,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       internals().abTestForm.controls.enabled.setValue(true);
       internals().abTestForm.controls.subjectB.setValue('B subject');
       internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
@@ -4244,7 +4247,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       internals().abTestForm.controls.enabled.setValue(true);
       internals().abTestForm.controls.subjectB.setValue('B subject');
       internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
@@ -4284,7 +4287,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       internals().abTestForm.controls.enabled.setValue(true);
       internals().abTestForm.controls.subjectB.setValue('B subject');
       internals().abTestForm.controls.preheaderB.setValue('  B preheader  ');
@@ -4310,7 +4313,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       internals().abTestForm.controls.enabled.setValue(true);
       internals().abTestForm.controls.subjectB.setValue('B subject');
       internals().abTestForm.controls.preheaderB.setValue('   ');
@@ -4329,12 +4332,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBe(true);
     });
 
+    it('sends no button when the generator omitted its url, even with a registration URL', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // "Submit Your Proposal" on CFP Launch. The generator OMITS `url` for the stages where
+      // registration is the wrong destination -- it is told to copy the Registration URL exactly
+      // or omit the field, never invent one.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Speak with us</p>', cta: 'Submit Your Proposal', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Substituting the brief's registrationUrl here pointed "Submit Your Proposal" at the
+      // registration page -- a button that goes somewhere the operator never chose. No
+      // destination means no button.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(cfg?.buttonText).toBeUndefined();
+    });
+
     it('omits a whitespace-only CTA even when the registration URL is valid', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '   ' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '   ', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4366,7 +4393,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       // Copy is required for the hero to ship at all: a hero with no body reaches
       // RebuildEmailContent with an empty body and drops the clone's body entirely.
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4402,7 +4429,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       // Copy EXISTS — generation requires a subject, not a body — so `copy !== null` passed while
       // the controller trimmed bodyHtml away and the hero shipped anyway. That is the data-loss
       // case, reached from the one direction a null check cannot see.
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body, cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body, cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4433,7 +4460,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       // The model returned the RAW trimmed value and kept blank-name sponsors, while the
@@ -4457,7 +4484,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       // The persist resolves on a later tick; clear the copy while staging is mid-flight, the
@@ -4499,7 +4526,15 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      // The generator copies the Registration URL EXACTLY, so a credentialed one arrives here
+      // with its userinfo intact -- which is what this test checks gets stripped.
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta: 'Register',
+        ctaUrl: 'https://user:secret@events.example/register',
+      });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4536,7 +4571,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4561,7 +4596,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
       // A real CTA label and a valid destination -- only the BODY is blank.
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '   ', cta: 'Register' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '   ', cta: 'Register', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4626,7 +4661,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       } as unknown as CampaignBriefOutput);
       internals().selectedEmailTemplateId.set('hs-123');
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: '' });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -4654,7 +4689,16 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().selectedEmailTemplateId.set('hs-123');
       // Staging requires a BUILT audience upstream; these predate that gate.
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      // A "Register" button carries the registration URL, which is what the generator supplies
+      // for the stages where registration IS the destination.
+      internals().emailCopy.set({
+        subject: 'Three days in Amsterdam',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta: 'Register',
+        // Matches the brief's registrationUrl, because the generator is told to copy it exactly.
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));

@@ -1293,8 +1293,21 @@ export class CampaignsComponent {
     // Reuses the ONE canonicalizer the controller uses, rather than restating scheme+host here:
     // a non-empty result means the destination survives `canonicalHttpUrl`, which is exactly
     // what the controller keeps. Three earlier versions of this predicate drifted from it.
-    () => canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl) !== ''
+    // The GENERATOR's url when it supplied one, the brief's registration URL otherwise. The
+    // generator omits `url` for the stages where registration is the wrong destination ("Submit
+    // Your Proposal", "Share Feedback", "See You There"), so treating its absence as "use
+    // registration" pointed those buttons at the registration page.
+    () => this.emailCtaDestination() !== ''
   );
+
+  /**
+   * Where a staged CTA button will actually point, or '' when no button should be sent.
+   *
+   * The generator's own url wins. It is told to copy the Registration URL exactly or OMIT the
+   * field -- never invent one -- so an absent url is a deliberate "registration is not the right
+   * destination for this stage", not a gap for the UI to fill.
+   */
+  protected readonly emailCtaDestination = computed<string>(() => canonicalHttpUrl(this.emailCopy()?.ctaUrl));
 
   /**
    * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
@@ -2483,6 +2496,7 @@ export class CampaignsComponent {
     const sponsors = this.emailSponsors();
     const ctaLabel = this.emailCtaLabel();
     const registrationUrl = this.emailRegistrationUrl();
+    const ctaDestination = this.emailCtaDestination();
     // The A/B fields snapshot here too. They were the one exception, read live after the await
     // while every sibling came from this block -- so toggling A/B off, or editing variant B,
     // during the brief-id round trip staged post-await A/B state against pre-await copy and
@@ -2569,7 +2583,11 @@ export class CampaignsComponent {
           // together when the url is blank, so a label with no destination silently loses the CTA
           // the operator just previewed. Re-deriving the trim inline here is the duplication that
           // signal exists to remove, and it already drifted once.
-          ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: registrationUrl } : {}),
+          // buttonUrl is the GENERATOR's destination, not the brief's registration URL. The
+          // generator omits its url for stages whose button is not about registering, so
+          // substituting registrationUrl there sent "Submit Your Proposal" to the registration
+          // page. When it omitted one, ctaLabel is '' and no button is sent at all.
+          ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: ctaDestination } : {}),
           // Gated on a non-blank BODY (via `emailHeroImageUrl`, which reads
           // `emailBodyIsStageable`), not merely on `copy` being non-null -- a present-but-empty
           // body is the reachable case, and this one is DATA LOSS rather than a cosmetic gap:

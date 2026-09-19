@@ -1543,7 +1543,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it('forwards the body stage to the campaign-service client', async () => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq({ stage: 'Post-Event' }, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
@@ -1553,7 +1553,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   it('forwards the body variant to the campaign-service client', async () => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq({ variant: 'B' }, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
@@ -1567,7 +1567,7 @@ describe('CampaignController.createCampaign cutover', () => {
     ['not a string', { variant: 42 }],
     ['absent', {}],
   ])('sends no variant when the body carries %s', async (_label, body) => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 
@@ -1579,7 +1579,7 @@ describe('CampaignController.createCampaign cutover', () => {
     ['not a string', { stage: 42 }],
     ['absent', {}],
   ])('sends no stage when the body carries %s', async (_label, body) => {
-    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } });
+    generateEmailCopy.mockResolvedValue({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } });
 
     await controller.generateEmailCopy(buildReq(body, { project: 'tlf', brief_id: 'b-1' }), res, next);
 

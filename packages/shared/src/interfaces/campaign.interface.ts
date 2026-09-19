@@ -764,6 +764,19 @@ export interface EmailBriefCopy {
   preheader: string;
   body: string;
   cta: string;
+  /**
+   * The button's destination as the GENERATOR supplied it, or '' when it omitted one.
+   *
+   * Carried separately from `cta` (the label) because omission is MEANINGFUL. The generator is
+   * told "a button's url must be the Registration URL, copied exactly. If no Registration URL is
+   * given, omit url -- never href='#', never invented" -- and for CFP Launch, Post-Event and
+   * Final Countdown the running button says "Submit Your Proposal" / "Share Feedback" / "See You
+   * There", where registration is the WRONG destination.
+   *
+   * Dropping this field let staging substitute the registration URL for every stage, so a
+   * "Submit Your Proposal" button silently pointed at the registration page.
+   */
+  ctaUrl: string;
 }
 
 /**

@@ -872,11 +872,15 @@ export class CampaignServiceClient {
         .filter((section) => (section.type === 'rich_text' && section.html) || section.type === 'divider')
         .map((section) => (section.type === 'divider' ? '<hr />' : section.html))
         .join('');
-      const cta = sections.find((section) => section.type === 'button')?.text ?? '';
+      const buttonSection = sections.find((section) => section.type === 'button');
+      const cta = buttonSection?.text ?? '';
+      // The generator OMITS `url` when registration is not the right destination for the stage,
+      // so an absent value must stay absent rather than be replaced downstream.
+      const ctaUrl = buttonSection?.url ?? '';
 
       return {
         enabled: true,
-        copy: { subject: copy.subject, preheader: copy.preheader, body, cta },
+        copy: { subject: copy.subject, preheader: copy.preheader, body, cta, ctaUrl },
       };
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
