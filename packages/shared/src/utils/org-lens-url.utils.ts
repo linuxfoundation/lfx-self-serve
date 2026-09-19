@@ -7,10 +7,12 @@ import type { Account } from '../interfaces';
 /**
  * The `/org/{segment}/…` segment for an organization: its lowercase slug when it has one, else its
  * 18-char SFID. Null when the selection carries neither (placeholder account) — callers then emit
- * the legacy `/org/{page}` form and let the redirect guard resolve it. The slug is whatever
- * member-service published (derived from the org name, DR-007) — never re-derived here or taken
- * from the Snowflake `accountSlug`. A slug equal to an Org Lens page name is emitted as the SFID so
- * a static route can never be shadowed (DR-007 §5, T017a).
+ * the legacy `/org/{page}` form and let the redirect guard resolve it. The slug is the one the
+ * *index* carries for the organization (org-items row, resolver answer) — derived upstream by
+ * member-service from the org name (DR-007), but taken here only as indexed, since that is what
+ * addresses resolve against; never re-derived here, never the canonical record's, never the
+ * Snowflake `accountSlug`. A slug equal to an Org Lens page name is emitted as the SFID so a static
+ * route can never be shadowed (DR-007 §5, T017a).
  *
  * Both values are shape-checked, not trusted: this is the one producer every in-app Org Lens
  * address goes through, and some consumers join it into a string (`routerLink="…"`, `parseUrl`),

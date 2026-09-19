@@ -272,8 +272,8 @@ export class OrgNavigationService {
           this.accountContextService.setAccount({ ...current, slug: indexedSlug });
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
-        // bar as a default's — written the same way. A default never leaves an addressed page or the
-        // not-found dead end alone, so this is a no-op everywhere but the bare form.
+        // bar as a default's — written the same way. A default never touches an addressed page or the
+        // not-found dead end, so this is a no-op everywhere but the bare legacy form.
         this.orgLensNavigation.navigateToSelectedOrg('default');
         return;
       }

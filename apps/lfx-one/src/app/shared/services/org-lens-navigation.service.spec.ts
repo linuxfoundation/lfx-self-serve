@@ -82,8 +82,10 @@ describe('OrgLensNavigationService', () => {
     });
 
     // The dead end is a page the viewer came from and can meaningfully return to, so the pick pushes.
-    it('lands on the overview from the not-found page, pushing the entry', () => {
-      currentUrl = '/org/not-found';
+    // Anything beneath it is still the dead end ('not-found' is also a page-segment key, so the
+    // subtree check must win over the legacy-insert branch), and lands on the overview too.
+    it.each(['/org/not-found', '/org/not-found/anything'])('lands on the overview from %s, pushing the entry', (url) => {
+      currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigatedTo()).toBe('/org/acme-inc/overview');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false }));
