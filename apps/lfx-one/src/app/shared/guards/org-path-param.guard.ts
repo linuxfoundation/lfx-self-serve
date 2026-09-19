@@ -17,8 +17,9 @@ import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
  * Seeds the selected organization from the `/org/{orgSegment}/…` address (spec 050,
  * contracts/web-org-url-scheme.md §2 — FR-001…FR-004, FR-017, FR-020, FR-021, FR-022a, FR-024).
  *
- * - Segment already selected (by slug or by uid) with the slug known: no round trip — the guard
- *   re-runs on every child navigation and must not re-resolve or flicker; only the address is
+ * - Segment already selected (by uid, or by a slug that is known from the index and slug-shaped —
+ *   `isOrgSlugSegment`, so an SFID-shaped value is never trusted as a slug): no round trip — the
+ *   guard re-runs on every child navigation and must not re-resolve or flicker; only the address is
  *   canonicalized when it is not already in the canonical form.
  * - Resolves through the BFF (`GET /api/orgs/resolve/:segment?prefer=<selected uid>`), which is
  *   FGA-filtered per viewer: a hit adopts the organization; a 404/409 (unknown, not readable, or a
