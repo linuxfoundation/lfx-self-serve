@@ -3,15 +3,54 @@
 
 /** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { LensItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import type { FormationPeopleResponse, LensItem, PendingActionItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
+import { getMockFormationItems, MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
 import { FormationApiMockHelper } from './formation-api-mock.helper';
 
 export const DATA_LOAD_TIMEOUT = 30_000;
 export const FORMATION_PROJECT_SLUG = 'cascade-data-alliance';
 export const FOUNDATION_SLUG = 'test-foundation';
+
+/**
+ * The host a seeded cookie must be scoped to — the same precedence `playwright.config.ts` uses for
+ * `baseURL`, so an `E2E_BASE_URL` override moves the cookie host along with the page under test
+ * (mirrors `campaign-planning.helper.ts`). A hard-coded `localhost` puts the cookie on a host the
+ * browser never visits.
+ */
+function e2eCookieHost(): string {
+  return new URL(process.env['E2E_BASE_URL'] ?? `http://${process.env['E2E_HOST'] ?? 'localhost'}:${process.env['E2E_PORT'] ?? '4200'}`).hostname;
+}
+
+/**
+ * One Me-lens pending-action row for a formation item (#2732), as `GET /api/user/pending-actions`
+ * serves it — built from the `contribution_agreement_executed` fixture so a click-through lands on
+ * a row the mocked checklist actually has. The `pendingActions` option on
+ * `mockFormationChecklistApis` serves it.
+ */
+export function buildFormationPendingActionRow(): PendingActionItem {
+  const item = getMockFormationItems(`formation:${FORMATION_PROJECT_SLUG}`).find(
+    (candidate) => candidate.template_item_key === 'contribution_agreement_executed'
+  );
+  if (!item) throw new Error('Expected the contribution_agreement_executed fixture item.');
+  return {
+    type: 'FormationItem',
+    badge: 'Cascade Data Alliance',
+    text: item.title,
+    icon: 'fa-light fa-diagram-project',
+    severity: 'accent',
+    buttonText: 'View item',
+    date: item.due_date ?? undefined,
+    formationProjectUid: item.project_uid,
+    formationProjectSlug: FORMATION_PROJECT_SLUG,
+    formationItemKey: item.template_item_key,
+    formationItemUid: item.uid,
+    formationItemStatus: item.status,
+    formationIsGating: item.is_gating,
+  };
+}
 
 const MOCK_FOUNDATION_ITEM: LensItem = {
   uid: 'f0000000-0000-0000-0000-000000000099',
@@ -45,7 +84,7 @@ export async function setPersonaCookie(page: Page): Promise<void> {
   const state: PersistedPersonaState = { primary: 'contributor' as PersonaType, all: ['contributor'] as PersonaType[] };
   await page
     .context()
-    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: 'localhost', path: '/', sameSite: 'Lax' }]);
+    .addCookies([{ name: PERSONA_COOKIE_KEY, value: encodeURIComponent(JSON.stringify(state)), domain: e2eCookieHost(), path: '/', sameSite: 'Lax' }]);
 }
 
 /** One mocked foundation in the foundation lens — enough for the sidebar to resolve on `/foundation/*` pages. */
@@ -90,6 +129,14 @@ export async function gotoFormationDetail(page: Page, slug: string): Promise<voi
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.goto(`/foundation/formations/${slug}?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/** The drill-down with `?item=<template_item_key>` — the deep link the section honours on both hosts (#2732). */
+export async function gotoFormationDetailItem(page: Page, slug: string, itemKey: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/foundation/formations/${slug}?project=${FOUNDATION_SLUG}&item=${itemKey}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }
 
@@ -142,7 +189,38 @@ export function buildBaseProject(slug: string, overrides: Partial<Project> = {})
 
 export type FormationChecklistApiState = 'ready' | 'no-template' | 'no-items' | 'error';
 
-export async function mockFormationChecklistApis(page: Page, opts: { project: Project; checklistState?: FormationChecklistApiState }): Promise<void> {
+/**
+ * The date the mocked **project-settings** read serves, deliberately different from the checklist
+ * response's `MOCK_FORMATION_ANNOUNCEMENT_DATE`. Since #2719 the sidebar formation card takes its
+ * date from the checklist on both checklist hosts, so a card assertion naming the checklist's date
+ * fails if the card ever regresses to this read. Equal dates would let such a regression render
+ * the same string and stay green — the difference is what makes the date assertion itself
+ * source-sensitive, alongside the throwing-`ProjectContextService` unit spec and the drill-down's
+ * `not.toContainText(FOUNDATION_SLUG)`.
+ *
+ * Nothing asserts on this value directly; it exists so the settings route resolves at all (see the
+ * route stub below — unmocked, the fake uid 404s and the dashboard-sidebar card errors instead of
+ * rendering).
+ */
+export const FORMATION_SETTINGS_ANNOUNCEMENT_DATE = '2026-03-14';
+/** The date the card actually renders on both checklist hosts — sourced from the checklist read. */
+export const FORMATION_ANNOUNCEMENT_DATE = MOCK_FORMATION_ANNOUNCEMENT_DATE;
+/** `FORMATION_ANNOUNCEMENT_DATE` as `formatAnnouncementDateLabel` renders it on the card. */
+export const FORMATION_ANNOUNCEMENT_DATE_LABEL = 'Oct 25, 2026';
+
+export async function mockFormationChecklistApis(
+  page: Page,
+  opts: {
+    project: Project;
+    checklistState?: FormationChecklistApiState;
+    /** The checklist response's per-caller writer flag; defaults to `true` so editing flows (and the people card's Invite action) render. */
+    canWrite?: boolean;
+    /** The sidebar people card's read (#2724); defaults to the three-person fixture. */
+    people?: FormationPeopleResponse;
+    /** What `GET /api/user/pending-actions` serves — empty by default; the Me-dashboard formation-row spec passes a row (#2732). */
+    pendingActions?: PendingActionItem[];
+  }
+): Promise<void> {
   await page.route(`**/api/projects/${opts.project.slug}`, (route) => {
     if (route.request().method() !== 'GET') return route.fallback();
     return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.project) });
@@ -181,19 +259,49 @@ export async function mockFormationChecklistApis(page: Page, opts: { project: Pr
           },
           template: state === 'no-template' ? null : { uid: 'seed', version: 1, name: 'Project formation', sections: [] },
           items: [],
-          can_write: true,
+          can_write: opts.canWrite ?? true,
+          can_set_status: true,
         }),
       })
     );
   } else {
-    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug);
+    await FormationApiMockHelper.setupProjectFormationMock(page, opts.project.slug, { canWrite: opts.canWrite });
   }
 
   await FormationApiMockHelper.setupFormationItemMock(page);
   await FormationApiMockHelper.setupFormationItemActionMock(page);
 
-  // Sidebar/other project-page widgets this page also renders — stub to empty so they don't block load.
-  await page.route('**/api/user/pending-actions*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  // Sidebar/other project-page widgets this page also renders — stub to empty so they don't block load
+  // (or to the caller's rows, for the Me-dashboard formation-row spec).
+  await page.route('**/api/user/pending-actions*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(opts.pendingActions ?? []) })
+  );
+
+  // Project settings back the sidebar formation card's announcement date (GH-2702) via
+  // `ProjectContextService.activeProjectAnnouncementDate` — unmocked, the fake uid 404s against the
+  // real backend and the card falls into its error state instead of rendering the date.
+  await page.route('**/api/projects/*/permissions', (route) => {
+    if (route.request().method() !== 'GET') return route.fallback();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: opts.project.uid,
+        announcement_date: FORMATION_SETTINGS_ANNOUNCEMENT_DATE,
+        writers: [],
+        auditors: [],
+        executive_director: null,
+        program_manager: null,
+        opportunity_owner: null,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      }),
+    });
+  });
+
+  // The sidebar people card's own read (#2724) — a longer path the `**/api/projects/*/formation`
+  // checklist glob above never matches, so it needs its own route.
+  await FormationApiMockHelper.setupFormationPeopleMock(page, opts.people);
 }
 
 export async function gotoProjectOverview(page: Page, slug: string): Promise<void> {
@@ -203,10 +311,48 @@ export async function gotoProjectOverview(page: Page, slug: string): Promise<voi
   skipWhenAuthMissing(page);
 }
 
+/**
+ * Lands on the Me dashboard with the mocked formation row as the only pending action (#2732) —
+ * every other Me-lens feed is stubbed empty so the row is deterministic on both dashboard variants
+ * (`user-dashboard` and `multi-persona-dashboard` render the same `lfx-pending-actions`). Shared by
+ * the content spec and its structural `-robust` twin.
+ */
+export async function gotoMeDashboardWithFormationRow(page: Page, flagEnabled = true): Promise<void> {
+  await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'me', domain: e2eCookieHost(), path: '/' }]);
+  await stubFormationFlag(page, flagEnabled);
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
+    })
+  );
+  await page.route('**/api/user/meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/past-meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/formation-work*', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ formations: [], items: [], state: 'complete' }) })
+  );
+  await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), pendingActions: [buildFormationPendingActionRow()] });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
 /** Navigates to the formation checklist's own route (GH-1958), guarded by `formationProjectEnabledGuard`. */
 export async function gotoProjectFormation(page: Page, slug: string): Promise<void> {
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await page.goto(`/project/formation?project=${slug}`, { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/**
+ * The checklist route with `?item=<template_item_key>` (#2732) — what a Me-lens pending-action row
+ * links to, and the shape the item-assigned email can append (#2573, #2616).
+ */
+export async function gotoProjectFormationItem(page: Page, slug: string, itemKey: string): Promise<void> {
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+  await page.goto(`/project/formation?project=${slug}&item=${itemKey}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }

@@ -2,19 +2,23 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { Component, DestroyRef, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, makeStateKey, PLATFORM_ID, REQUEST_CONTEXT, Signal, signal, TransferState } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterOutlet } from '@angular/router';
+import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { filter } from 'rxjs';
 
+import { MeetingComposerHostComponent } from './modules/meetings/meeting-composer/meeting-composer-host.component';
+import { MeetingComposerService } from './modules/meetings/meeting-composer/meeting-composer.service';
 import { getRuntimeConfig } from './shared/providers/runtime-config.provider';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { IntercomService } from './shared/services/intercom.service';
+import { PersonaService } from './shared/services/persona.service';
 import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
@@ -30,7 +34,7 @@ const ACCESS_DENIED_MESSAGES: Record<string, string> = {
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, ToastModule],
+  imports: [RouterOutlet, ToastModule, MeetingComposerHostComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })
@@ -42,11 +46,66 @@ export class AppComponent {
   private readonly dataDogRumService = inject(DataDogRumService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly intercomService = inject(IntercomService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
+  protected readonly meetingComposer = inject(MeetingComposerService);
+  /**
+   * Whether meetings v2 is enabled for this user.
+   * @description The host is mounted here for every page, so this is the one read that decides
+   * whether the composer exists in the tree at all. Read as a signal so the host appears once
+   * LaunchDarkly resolves without any manual change detection, and defaulted to `false` so a slow
+   * or unreachable provider leaves the tree exactly as pre-v2 — the entry points are gated on the
+   * same flag, so with it off nothing can ask the composer to open. See `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+  // Mirrors writerGuard's cheap paths so the composer chunk is prefetched for the personas that
+  // actually open it. Meeting-coordinator and committee-writer grants aren't known this early, so
+  // those users fall back to the `when` trigger and download the chunk on click. Gated on the flag
+  // too, so a non-targeted user never downloads the v2 chunk at all.
+  protected readonly canPrefetchComposer = computed(
+    () => this.meetingsV2Enabled() && (this.projectContextService.canWrite() || this.personaService.currentPersona() === 'executive-director')
+  );
+  /**
+   * Latches once the host has been in the tree, and never goes back.
+   * @description Closing is not the end of the host's job: `onSubmit()` announces a successful create
+   * on the keyed `<p-toast>` that lives *inside* the host and calls `composer.close()` in the same
+   * tick. On the flag alone those two legs both read false at that point, so the outlet is destroyed
+   * on the next change-detection pass and the toast is unsubscribed before it ever paints —
+   * `MessageService` is a plain Subject with no replay, so the message is gone for good. Creating no
+   * longer navigates, so the organizer would be left with no confirmation at all that the meeting
+   * saved. Keeping the host mounted costs almost nothing once the composer is closed — the drawer is
+   * bound to `isOpen()` and `meetingEntityContext` returns null — and it cannot let an untargeted
+   * user back in: every entry point and the prefetch trigger stay on the flag alone.
+   */
+  private readonly hostEverMounted = signal(false);
+  /**
+   * Whether the composer host belongs in the tree right now.
+   * @description `meetingsV2Enabled()` is deliberately reactive — `FeatureFlagService` re-evaluates it
+   * on LaunchDarkly's `ConfigurationChanged`/`ContextChanged` events — so a targeting change mid-session
+   * can flip it true → false under a composer that is already open. On the flag alone that unmounts the
+   * host, which takes the component-scoped `MeetingComposerFormService` and the organizer's unfilled
+   * meeting with it, while `MeetingComposerService.isOpen()` stays true because only `close()` clears the
+   * context: the composer is gone from the screen but still logically open, and a later flag-on remounts a
+   * host that immediately reopens that stale context. So an open composer keeps itself mounted until it
+   * closes, and `hostEverMounted` holds it there afterwards so the create toast it renders survives the
+   * close. This cannot let an untargeted user in: every entry point is gated on the same flag and the
+   * deep-link routes render the pre-v2 screens, so `isOpen()` is false for them and neither the host nor
+   * its chunk is ever reached (`canPrefetchComposer` stays on the flag alone).
+   */
+  protected readonly composerHostMounted = computed(() => this.meetingsV2Enabled() || this.meetingComposer.isOpen() || this.hostEverMounted());
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
 
   public constructor() {
+    // Flip the latch the first time the host is genuinely in the tree. Reading the two live legs
+    // rather than `composerHostMounted()` keeps this from feeding on its own output.
+    effect(() => {
+      if (this.meetingsV2Enabled() || this.meetingComposer.isOpen()) {
+        this.hostEverMounted.set(true);
+      }
+    });
+
     // Initialize Segment tracking
     this.segmentService.initialize();
 
@@ -217,7 +276,6 @@ export class AppComponent {
 
     const router = inject(Router);
     const location = inject(Location);
-    const projectContextService = inject(ProjectContextService);
     const destroyRef = inject(DestroyRef);
 
     router.events
@@ -248,7 +306,7 @@ export class AppComponent {
         if (Object.keys(snapshot.params).length > 0) return;
         if (!kind) return;
 
-        const context = kind === 'foundation' ? projectContextService.selectedFoundation() : projectContextService.selectedProject();
+        const context = kind === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
         if (!context?.slug) return;
 
         parsed.queryParams['project'] = context.slug;

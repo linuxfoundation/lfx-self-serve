@@ -32,7 +32,39 @@ export interface HealthMetricsAreaState {
   statLabel: string;
   statSource: string;
   classification: HealthMetricsOverviewClassification;
+  /**
+   * ISO date, or '' when the area was never evaluated (e.g. a neutral placeholder tile) OR when
+   * its source table simply carries no evaluation timestamp at all (e.g. `HEALTH_OVERVIEW_KPIS`,
+   * a point-in-time read) — '' is not proof an evaluation never happened, only that no date is
+   * available to show.
+   */
   evaluatedAt: string;
+  /**
+   * False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data"
+   * chip) — e.g. events with neither a registration goal nor a computed status. Omitted/true renders
+   * the chip normally. Synthesized by the service layer (e.g. `project.service.ts`'s
+   * `getHealthOverviewKpis`) — unlike every other field on this interface, it has no backing
+   * `hm_area_state` column.
+   */
+  showStatus?: boolean;
+}
+
+/**
+ * Raw `HEALTH_OVERVIEW_KPIS` row shape (LFXV2-3365), as queried by `getHealthOverviewKpis`. Field
+ * names are the query's uppercase column aliases, not the underlying Snowflake column names. Five
+ * fields (events/training/contributors-prefixed) are period-suffixed per the selected range; the
+ * four members/non-members fields are point-in-time and carry no such suffix.
+ */
+export interface HealthOverviewKpisRow {
+  EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
+  EVENTS_STATUS: string | null;
+  CERTIFICATIONS_EARNED_COUNT: number | null;
+  TRAINING_STATUS: string | null;
+  CONTRIBUTORS_COUNT: number | null;
+  MEMBERS_RENEWING_90D_VALUE_USD: number | null;
+  MEMBERS_STATUS: string | null;
+  NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
+  NON_MEMBERS_STATUS: string | null;
 }
 
 /**
@@ -103,6 +135,8 @@ export interface HealthMetricsOverviewTileViewModel {
   evaluatedAt: string;
   /** Set only for the `code` area — tile renders an "LFX Insights" link instead of a status word. */
   insightsUrl?: string;
+  /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
+  showStatus?: boolean;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */

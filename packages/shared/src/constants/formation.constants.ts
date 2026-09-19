@@ -240,3 +240,28 @@ export const FORMATION_STATUS_MENU_ITEM_DISPLAY = {
   done: { label: 'Mark done', icon: 'fa-light fa-check' },
   skipped: { label: 'Skip with reason', icon: 'fa-light fa-forward' },
 } as const satisfies Record<FormationItemStatus, { label: string; icon: string }>;
+
+/**
+ * The OpenFGA team whose `member`s may move a checklist item's status (GH-2705). Mirrors
+ * `lfx-v2-formation-service`'s chart default (`values.yaml` `app.formationTeamName: "formation"`,
+ * tag v0.1.4) — the chart documents it as "the same value in every environment, so it is a real
+ * default here rather than a per-environment identifier". The gateway's `set_item_status` rule
+ * checks `member` on `team:<this>` (ANDed with `writer_guard` on the project); the BFF checks the
+ * same relation via the access-check service to compute `FormationChecklistResponse.can_set_status`,
+ * so the UI can stop offering status controls to callers the gateway will deterministically 403.
+ */
+export const FORMATION_TEAM_NAME = 'formation';
+
+/** The project-page formation checklist route; `?project=<slug>` names the project (GH-1958). */
+export const FORMATION_CHECKLIST_PATH = '/project/formation';
+
+/**
+ * Query param that deep-links to one checklist item (#2732): `?item=<template_item_key>` — the
+ * item's stable key, never its uid. Honoured by `FormationChecklistSectionComponent` on both hosts
+ * (`/project/formation` and `/foundation/formations/:projectSlug`), which opens that item's panel
+ * once the checklist has loaded and then strips the param from the URL, so a refresh or Back never
+ * re-opens it. `buildFormationPendingActionView` (`formation-me.utils.ts`) builds the link for the
+ * Me-lens pending-action row; the same shape is what the formation-service item-assigned email can
+ * append (#2573, #2616, #1961).
+ */
+export const FORMATION_ITEM_QUERY_PARAM = 'item';

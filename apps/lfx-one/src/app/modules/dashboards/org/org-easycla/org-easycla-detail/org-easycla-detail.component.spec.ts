@@ -949,6 +949,13 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
     });
 
+    it('renders the preview when the route and the selection spell the same group differently', async () => {
+      const fixture = await render(previewing({ claGroupId: PREVIEW_GROUP_ID.replaceAll('-', '') }));
+
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Cascade CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).toBeNull();
+    });
+
     /**
      * A signatory who signs and returns to this address still carries the selection in history.
      * The agreement they now hold has to win — telling them it is not yet signed would be false.
@@ -2036,6 +2043,29 @@ describe('OrgEasyclaDetailComponent', () => {
 
       expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
       expect(selectedAccount()?.uid).toBe(NAMED.uid);
+    });
+
+    /**
+     * After the signed-row wait moved behind adoption, a pin reload that never answers left adopt()
+     * pending, so settleReturn never ran and the return parameters stayed on the address. The reload
+     * is bounded: a miss settles the same way a catalogue refusal does.
+     */
+    it('settles when the catalogue pin reload never answers', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture, resetAndReload } = await renderReturn({ held: [ELSEWHERE], adoptionLandsLater: [NAMED] });
+
+        expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
+        expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        await flush(fixture);
+
+        expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     /**

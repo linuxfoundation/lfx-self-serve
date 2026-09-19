@@ -30,6 +30,22 @@ describe('FormationService', () => {
     req.flush({});
   });
 
+  it('getFormationPeople GETs /api/projects/:slug/formation/people, URI-encoding the slug', () => {
+    service.getFormationPeople('cascade/data alliance').subscribe();
+
+    const req = http.expectOne('/api/projects/cascade%2Fdata%20alliance/formation/people');
+    expect(req.request.method).toBe('GET');
+    req.flush({ state: 'loaded', people: [] });
+  });
+
+  it('getFormationPeople degrades an HTTP failure to the unavailable shape instead of erroring (#2724)', async () => {
+    const result = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush('nope', { status: 500, statusText: 'Server Error' });
+
+    await expect(result).resolves.toEqual({ state: 'unavailable', people: [] });
+  });
+
   it('getFormationItem GETs /api/formations/:projectUid/items/:itemKey, URI-encoding both', () => {
     service.getFormationItem('project/1', 'item key').subscribe();
 

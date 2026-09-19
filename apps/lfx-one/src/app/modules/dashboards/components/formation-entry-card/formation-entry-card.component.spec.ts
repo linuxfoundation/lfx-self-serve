@@ -93,6 +93,7 @@ describe('FormationEntryCardComponent', () => {
     template: null,
     formation: buildFormation({ gating_items_open: gatingItemsOpen, gating_items_total: gatingItemsTotal }),
     can_write: true,
+    can_set_status: true,
   });
 
   beforeEach(() => {

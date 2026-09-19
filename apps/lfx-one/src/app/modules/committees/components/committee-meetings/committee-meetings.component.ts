@@ -12,7 +12,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_TYPE_CONFIGS, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
+import { MEETING_TYPE_CONFIGS, MEETING_V2_ENABLED_FLAG, PAST_MEETING_SORT } from '@lfx-one/shared/constants';
 import { Committee, Meeting, MeetingCalendarClickProps, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
@@ -23,7 +23,9 @@ import {
   surveyToCalendarEvent,
   voteToCalendarEvent,
 } from '@lfx-one/shared/utils';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { SurveyService } from '@services/survey.service';
@@ -60,6 +62,8 @@ export class CommitteeMeetingsComponent {
   private readonly router = inject(Router);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly composer = inject(MeetingComposerService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -81,8 +85,17 @@ export class CommitteeMeetingsComponent {
   public isListView = computed(() => this.viewMode() === 'list');
   public isCalendarView = computed(() => this.viewMode() === 'calendar');
 
+  /**
+   * Whether meetings v2 is the create surface for this user.
+   * @description Read as a signal so the tab settles on its own once LaunchDarkly resolves, and
+   * defaulted to `false` so a slow or unreachable provider routes "Schedule meeting" to the pre-v2
+   * create page rather than a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+
   // Query params for the create-meeting route. Includes project slug so writerGuard
   // can resolve write access — without it the guard redirects to the lens overview.
+  // Only used on the flag-off side: the composer takes the committee as context instead of a URL.
   public createMeetingQueryParams: Signal<Record<string, string>> = this.initCreateMeetingQueryParams();
 
   // Form for search + filter controls (bound in template)
@@ -176,7 +189,7 @@ export class CommitteeMeetingsComponent {
     void this.router.navigate(route.path, route.queryParams ? { queryParams: route.queryParams } : undefined);
   }
 
-  /** Checks writer permission fresh before navigating — prevents a demoted member from reaching /meetings/create. */
+  /** Checks writer permission fresh before opening the composer — prevents a demoted member from scheduling. */
   protected onScheduleMeeting(): void {
     if (this.creating()) return;
     const committee = this.committee();
@@ -198,7 +211,15 @@ export class CommitteeMeetingsComponent {
             deny();
             return;
           }
-          void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
+          // The freshness re-check above runs on both sides of `MEETING_V2_ENABLED_FLAG`; only the
+          // surface differs. Flag off navigates to the pre-v2 create page carrying the committee
+          // and project context in the URL, which is what this button did before v2.
+          if (!this.meetingsV2Enabled()) {
+            void this.router.navigate(['/meetings', 'create'], { queryParams: this.createMeetingQueryParams() });
+            return;
+          }
+
+          this.composer.open({ mode: 'create', committeeUid: committee.uid, projectUid: fresh.project_uid });
         },
         error: () => deny(),
       });

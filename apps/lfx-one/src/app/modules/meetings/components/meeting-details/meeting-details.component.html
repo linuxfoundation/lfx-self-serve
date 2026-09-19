@@ -122,13 +122,13 @@
         }
 
         @if (showTemplateSelector()) {
-          <lfx-agenda-template-selector
+          <lfx-agenda-template-selector-v1
             [meetingType]="form().get('meeting_type')?.value"
             [visible]="showTemplateSelector()"
             (templateSelected)="applyTemplate($event)"
             (closeSelector)="hideAgendaTemplateSelector()"
             data-testid="meeting-details-template-selector">
-          </lfx-agenda-template-selector>
+          </lfx-agenda-template-selector-v1>
         }
 
         <lfx-textarea
@@ -184,7 +184,7 @@
         <lfx-time-picker
           [form]="form()"
           control="startTime"
-          id="start-time"
+          inputId="start-time"
           placeholder="Select time"
           styleClass="w-full"
           data-testid="meeting-details-start-time"></lfx-time-picker>

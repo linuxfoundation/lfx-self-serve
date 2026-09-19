@@ -53,6 +53,7 @@ Request → Controller → Service → Microservice/Data Layer
 | [Snowflake Integration](./snowflake-integration.md)               | Analytics queries, connection pooling, query deduplication                      |
 | [Public Meetings](./public-meetings.md)                           | Unauthenticated meeting access, M2M token flow                                  |
 | [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md) | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
+| [Gatewaze Embed Proxy](./gw-proxy.md)                             | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
 
 ### Committee Management
 

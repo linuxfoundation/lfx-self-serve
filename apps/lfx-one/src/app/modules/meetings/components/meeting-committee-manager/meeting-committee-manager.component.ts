@@ -4,12 +4,19 @@
 import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/enums';
 import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { fromMeetingApiVotingStatuses, sanitizeMeetingCommittees, sanitizeMeetingCommitteeUids, toMeetingApiVotingStatuses } from '@lfx-one/shared/utils';
+import {
+  fromMeetingApiVotingStatuses,
+  meetingSelectionHasVotingFilter,
+  sanitizeMeetingCommittees,
+  sanitizeMeetingCommitteeUids,
+  toMeetingApiVotingStatuses,
+} from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -22,7 +29,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
+  imports: [ButtonComponent, ReactiveFormsModule, MultiSelectComponent, SelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -34,16 +41,101 @@ export class MeetingCommitteeManagerComponent {
   public readonly selectedCommittees: InputSignal<MeetingCommittee[]> = input<MeetingCommittee[]>([]);
   public readonly form: InputSignal<FormGroup> = input.required<FormGroup>();
   public readonly committeeContext = input<Committee | null>(null);
+  /**
+   * Whether the caller is still resolving the {@link committeeContext} it is going to pass.
+   * @description Renders the loading block rather than the picker. Without it the unlocked
+   * multiselect shows for the length of that lookup, so a group picked in the gap is overwritten
+   * the moment the context lands and locks the field.
+   */
+  public readonly contextLoading = input<boolean>(false);
+  /** Whether the caller's {@link committeeContext} lookup failed, so the scoping group is missing. */
+  public readonly contextFailed = input<boolean>(false);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
   public readonly committeeMembersChange: OutputEmitterRef<CommitteeMember[]> = output<CommitteeMember[]>();
+  /**
+   * The group uids the roster in the paired {@link committeeMembersChange} actually covers.
+   * @description The selection is written to the parent form synchronously, but its members are
+   * fetched, so there is a window — and, after a failed fetch, an indefinite one — where the parent
+   * holds a valid-looking group and no members for it. The emission gate below is deliberately
+   * silent in exactly those two states, so what has been covered has to be reported or the surfaces
+   * gating save cannot tell "this group has no members" from "we haven't got them".
+   *
+   * A uid list rather than a boolean because the answer has to survive this component being absent:
+   * the picker only exists while the Guests section is mounted, and a boolean it emitted before
+   * unmounting describes a selection the parent may since have changed. Comparing uids lets the
+   * parent re-derive the gate from its own form at any moment, mounted or not.
+   */
+  public readonly committeeMembersResolvedChange: OutputEmitterRef<string[]> = output<string[]>();
+  /** Asks the caller to re-run the {@link committeeContext} lookup that failed. */
+  public readonly retryContext: OutputEmitterRef<void> = output<void>();
 
   // State management
   public selectedCommitteeIds: WritableSignal<string[]> = signal([]);
   public selectedVotingStatuses: WritableSignal<string[]> = signal([]);
   public committeeForm: FormGroup;
   public readonly committeesLoading = signal<boolean>(true);
+
+  /**
+   * Whether the committee-options load has produced an answer — of any kind.
+   * @description The selection gate below used to wait on `committeeOptions().length > 0`, reading a
+   * non-empty list as "loaded". An empty list is also an answer, and `initCommitteeOptions` maps a
+   * failed fetch onto one, so a project with no committees and a project whose fetch broke both left
+   * the gate closed forever: the parent's selection was never applied, `selectionApplied` stayed
+   * false, no roster was ever reported, and the composer sat on an unreconciled group with Create /
+   * Save disabled and no banner to retry from. The load being settled is what the gate actually
+   * wanted, and it is not the same question as the list being non-empty.
+   */
+  private readonly committeeOptionsSettled = signal(false);
+
+  /**
+   * Whether the last committee-options fetch failed.
+   * @description `committeeOptionsSettled` is true for both a successful empty list and a failed
+   * fetch, which is the right call for applying a saved selection. It is the wrong call for the
+   * picker: those two answers look identical in `committeeOptions()`, so a failed load used to
+   * render as "this project has no groups". Tracked separately so the template can say so and retry.
+   */
+  private readonly _committeeOptionsFailed = signal(false);
+  public readonly committeeOptionsFailed = this._committeeOptionsFailed.asReadonly();
+
+  /**
+   * Bumped to re-run the options fetch over a project that has not changed.
+   * @description The fetch hangs off the project uid, so a failed load left the picker empty with
+   * no way to ask again without leaving the composer.
+   */
+  private readonly optionsRetryToken = signal(0);
+
+  /**
+   * Emission gate for `committeeMembersChange`.
+   * @description Consumers reconcile their guest list against every emission, so an emission that
+   * isn't a truthful picture of the selected groups' membership would queue saved guests for
+   * deletion. `membersResolved` only flips once a fetch settles; an empty selection counts as settled
+   * only after the parent's committees have actually been applied (until then the empty list is a
+   * mount-time artifact); and a failed fetch is never emitted, since "no members" and "we couldn't
+   * ask" are indistinguishable in the result but opposite in consequence.
+   *
+   * What the gate cannot tell apart is an empty selection from a parent that has none and one from a
+   * parent that has not resolved its own yet — both arrive as `[]` on the same input. So the parent
+   * owns that half: mount this component only once its selection is known. Both callers do, by
+   * reading `selectedCommittees` off the form control the composer populates, and by rendering the
+   * Guests section only after an edit-mode load has settled.
+   */
+  private membersResolved = false;
+  private selectionApplied = false;
+
+  /** Whether the last member fetch failed — blocks emission, and the template says so rather than failing silently. */
+  private readonly _membersFetchError = signal(false);
+  public readonly membersFetchError = this._membersFetchError.asReadonly();
+
+  /**
+   * Bumped to re-run the member fetch over a selection that has not changed.
+   * @description The fetch hangs off `selectedCommitteeIds`, so re-picking the groups was the only
+   * thing that ever retried it. A group-scoped create has no picker to re-pick with — its group
+   * arrives as `committeeContext` and renders locked — so a failure there left the composer holding
+   * a group whose members can never be reconciled, and a Save disabled with no way back.
+   */
+  private readonly membersRetryToken = signal(0);
 
   // Committee options loaded from API
   public readonly committeeOptions: Signal<Committee[]> = this.initCommitteeOptions();
@@ -60,13 +152,27 @@ export class MeetingCommitteeManagerComponent {
   public readonly meetingVisibility = MeetingVisibility;
 
   // Computed signals
-  public hasVotingEnabledCommittee = computed(() => {
-    const selectedIds = this.selectedCommitteeIds();
-    const committees = this.committeeOptions();
-    return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
-  });
+  /**
+   * Whether the voting-status filter applies to the current selection.
+   * @description Derived from option metadata when there is any for the selected groups. When there
+   * is none — an empty or failed options load, the very case `committeeOptionsSettled` lets the
+   * selection through on — it falls back to the saved selection's own filter, because
+   * `selectedVotingStatuses` is metadata-independent evidence that voting filtering was configured.
+   * Reading a missing option list as "no voting anywhere" would make `initFilteredCommitteeMembers`
+   * skip the filter and queue every group member as a guest, including ones the saved filter
+   * excluded; keeping the filter fails safe in the other direction.
+   *
+   * `meetingSelectionHasVotingFilter` is the single voting-enabled test. This computed is its
+   * signal-backed reading, used by the roster filter and the `committees` clearer.
+   * `updateParentForm` / `reconcileVotingFilter` call the helper directly so a just-fetched
+   * options list can be used before `committeeOptions()` updates. An empty selection is not
+   * missing metadata — there is nothing to filter — and a mixed known/unknown set still falls
+   * back so one resolved non-voting group cannot erase a saved filter.
+   */
+  public hasVotingEnabledCommittee = computed(() =>
+    meetingSelectionHasVotingFilter(this.selectedCommitteeIds(), this.committeeOptions(), this.selectedVotingStatuses().length)
+  );
   public isPublicVisibility: Signal<boolean> = this.initIsPublicVisibility();
-
   public constructor() {
     this.committeeForm = new FormGroup({
       committees: new FormControl([]),
@@ -82,10 +188,10 @@ export class MeetingCommitteeManagerComponent {
         this.selectedCommitteeIds.set(ids);
         this.updateParentForm(ids);
 
-        // Clear voting statuses if no voting committees selected
+        // Clear voting statuses if no voting committees selected. Reads the same signal the roster
+        // filter does, so a missing option list cannot clear a filter the filter itself still honours.
         const committees = this.committeeOptions();
-        const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-        if (!hasVotingCommittees) {
+        if (!this.hasVotingEnabledCommittee()) {
           this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
@@ -106,24 +212,56 @@ export class MeetingCommitteeManagerComponent {
         this.updateParentForm(this.selectedCommitteeIds());
       });
 
-    // Subscribe to selected committees changes - wait for options to load first
-    combineLatest([toObservable(this.selectedCommittees), toObservable(this.committeeOptions)])
+    // Subscribe to selected committees changes - wait for the options load to settle first.
+    // `initializeFromSelectedCommittees` reads no option metadata, so it only has to wait for the
+    // load to have an answer; see `committeeOptionsSettled` for why it cannot wait for a non-empty one.
+    combineLatest([toObservable(this.selectedCommittees), toObservable(this.committeeOptionsSettled)])
       .pipe(
         takeUntilDestroyed(),
-        filter(([, options]) => options.length > 0) // Only proceed when options are loaded
+        filter(([, settled]) => settled)
       )
       .subscribe(([committees]) => this.initializeFromSelectedCommittees(committees));
 
     // Emit committee members whenever they change
     toObservable(this.filteredCommitteeMembers)
-      .pipe(takeUntilDestroyed())
-      .subscribe((members) => this.committeeMembersChange.emit(members));
+      .pipe(
+        filter(() => this.membersResolved && !this.membersFetchError()),
+        takeUntilDestroyed()
+      )
+      .subscribe((members) => {
+        // Coverage first, so a consumer that gates on it while handling the roster it was just
+        // given sees the selection as settled rather than still owed. Both are plain emissions
+        // inside a subscription rather than an effect: writing parent state from an effect updates
+        // it during change detection, which is what ExpressionChangedAfterItHasBeenCheckedError is.
+        this.committeeMembersResolvedChange.emit(this.selectedCommitteeIds());
+        this.committeeMembersChange.emit(members);
+      });
+  }
+
+  /**
+   * Re-runs the member fetch for the current selection, behind the error banner's Try again.
+   * @description Deliberately not a re-selection: the locked group of a scoped create is exactly the
+   * case that needs this, and it has no control to change.
+   */
+  public retryCommitteeMembers(): void {
+    this.membersRetryToken.update((token) => token + 1);
+  }
+
+  /**
+   * Re-runs the group-options fetch for the current project, behind the error banner's Try again.
+   * @description The fetch hangs off the project uid, so re-picking groups was never a retry — there
+   * are no groups to pick when the list failed to load.
+   */
+  public retryCommitteeOptions(): void {
+    this.optionsRetryToken.update((token) => token + 1);
   }
 
   /**
    * Initialize the component state from the selected committees input
    */
   private initializeFromSelectedCommittees(committees: MeetingCommittee[]): void {
+    this.selectionApplied = true;
+
     const validCommittees = sanitizeMeetingCommittees(committees);
     const committeeIds = validCommittees.map((c) => c.uid);
     this.selectedCommitteeIds.set(committeeIds);
@@ -153,22 +291,51 @@ export class MeetingCommitteeManagerComponent {
    * Fetches committee options from API reactively based on project context
    */
   private initCommitteeOptions(): Signal<Committee[]> {
-    const projectUid = computed(() => this.projectContextService.activeContextUid());
+    // A fresh object per recompute, so a retry that leaves the project untouched still reaches the
+    // pipe: `computed` settles on `Object.is`, and the uid would be the very same reference.
+    const fetchTrigger = computed(() => ({
+      uid: this.projectContextService.activeContextUid(),
+      attempt: this.optionsRetryToken(),
+    }));
 
     return toSignal(
-      toObservable(projectUid).pipe(
-        tap(() => this.committeesLoading.set(true)),
-        filter((uid) => !!uid),
-        switchMap((uid) =>
-          this.committeeService.getCommitteesByProject(uid).pipe(
-            tap(() => this.committeesLoading.set(false)),
+      toObservable(fetchTrigger).pipe(
+        tap(({ uid }) => {
+          // A context with no project never reaches the fetch below, so the answer is already in:
+          // there are no options to load. Leaving it pending is what the gate cannot survive.
+          this.committeesLoading.set(!!uid);
+          this._committeeOptionsFailed.set(false);
+          if (!uid) {
+            this.committeeOptionsSettled.set(true);
+          }
+        }),
+        switchMap((trigger) => {
+          const uid = trigger.uid;
+          if (!uid) {
+            return of([]);
+          }
+
+          return this.committeeService.getCommitteesByProjectOrThrow(uid).pipe(
+            tap((committees) => {
+              this.committeesLoading.set(false);
+              this.committeeOptionsSettled.set(true);
+              this._committeeOptionsFailed.set(false);
+              // The options signal has not updated yet inside this tap, so persist against the
+              // response itself: a retry that learns the group does not vote must drop the
+              // statuses the failure window preserved, or Save would still submit them.
+              this.reconcileVotingFilter(committees);
+            }),
             catchError(() => {
               console.error('Failed to load committees for project', uid);
               this.committeesLoading.set(false);
+              // Settled, not successful. The picker has nothing to offer either way, but the
+              // selection the parent already holds still has to be applied and reconciled.
+              this.committeeOptionsSettled.set(true);
+              this._committeeOptionsFailed.set(true);
               return of([]);
             })
-          )
-        )
+          );
+        })
       ),
       { initialValue: [] }
     );
@@ -203,12 +370,36 @@ export class MeetingCommitteeManagerComponent {
     return ids;
   }
 
-  private updateParentForm(committeeIds: string[]): void {
+  /**
+   * Re-applies the voting-status filter against a just-loaded options list.
+   * @description Called from the options-fetch `tap` with the response itself, because
+   * `committeeOptions()` has not updated yet. A retry that learns the group does not vote must
+   * drop statuses the failure window preserved before writing the parent form.
+   *
+   * No-op until `initializeFromSelectedCommittees` has run: this tap fires (and flips
+   * `committeeOptionsSettled`) before the deferred `toObservable` combineLatest can seed
+   * `selectedCommitteeIds` from the parent. Writing the parent form from `[]` would wipe saved
+   * groups on an ordinary edit-mode load. Retry always has `selectionApplied` by then.
+   */
+  private reconcileVotingFilter(options: Committee[]): void {
+    if (!this.selectionApplied) {
+      return;
+    }
+
+    const ids = this.selectedCommitteeIds();
+    if (!meetingSelectionHasVotingFilter(ids, options, this.selectedVotingStatuses().length)) {
+      this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
+      this.selectedVotingStatuses.set([]);
+    }
+    this.updateParentForm(ids, options);
+  }
+
+  private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {
     const selectedVotingStatuses = this.selectedVotingStatuses();
-    const committees = this.committeeOptions();
     const ids = sanitizeMeetingCommitteeUids(committeeIds);
-    const hasVotingCommittees = committees.some((c) => ids.includes(c.uid) && c.enable_voting);
-    const allowedVotingStatuses = hasVotingCommittees ? toMeetingApiVotingStatuses(selectedVotingStatuses) : [];
+    const allowedVotingStatuses = meetingSelectionHasVotingFilter(ids, options, selectedVotingStatuses.length)
+      ? toMeetingApiVotingStatuses(selectedVotingStatuses)
+      : [];
 
     const committeeData: MeetingCommittee[] = ids.map((uid) => ({
       uid,
@@ -223,10 +414,18 @@ export class MeetingCommitteeManagerComponent {
   }
 
   private initCommitteeMembers(): Signal<CommitteeMemberDisplay[]> {
+    // A fresh object per recompute, so a retry that leaves the selection untouched still reaches the
+    // pipe: `computed` settles on `Object.is`, and the uid array would be the very same reference.
+    const fetchTrigger = computed(() => ({ committeeIds: this.selectedCommitteeIds(), attempt: this.membersRetryToken() }));
+
     return toSignal(
-      toObservable(this.selectedCommitteeIds).pipe(
-        switchMap((committeeIds) => {
+      toObservable(fetchTrigger).pipe(
+        switchMap(({ committeeIds }) => {
+          this.membersResolved = false;
+          this._membersFetchError.set(false);
+
           if (!committeeIds || committeeIds.length === 0) {
+            this.membersResolved = this.selectionApplied;
             return of([]);
           }
 
@@ -242,6 +441,7 @@ export class MeetingCommitteeManagerComponent {
               ),
               catchError((error) => {
                 console.error(`Failed to load members for committee ${id}:`, error);
+                this._membersFetchError.set(true);
                 return of([]);
               })
             );
@@ -275,6 +475,9 @@ export class MeetingCommitteeManagerComponent {
               });
 
               return Array.from(memberMap.values());
+            }),
+            tap(() => {
+              this.membersResolved = true;
             })
           );
         })

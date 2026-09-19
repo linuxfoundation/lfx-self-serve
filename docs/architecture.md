@@ -41,6 +41,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [Drawer Pattern](architecture/frontend/drawer-pattern.md)                              | Drawer components, lazy data, chart integration                         |
 | [Lazy Loading & Preloading](architecture/frontend/lazy-loading-preloading-strategy.md) | Route splitting + custom preloading strategy                            |
 | [Feature Flags](architecture/frontend/feature-flags.md)                                | OpenFeature + LaunchDarkly wiring, signal-reactive flag reads           |
+| [Gatewaze Embed Host](architecture/frontend/gw-embed.md)                               | React embed mount, dual-router sync, style containment, sign-in         |
 | [Performance](architecture/frontend/performance.md)                                    | Bundle management, SSR, runtime patterns                                |
 
 ### Backend
@@ -61,6 +62,7 @@ Each subtopic owns one file under `docs/architecture/`. Start there for patterns
 | [NATS Integration](architecture/backend/nats-integration.md)           | Request/reply pattern, lazy connections                           |
 | [Snowflake Integration](architecture/backend/snowflake-integration.md) | Singleton pool, query deduplication, read-only validation         |
 | [Public Meetings](architecture/backend/public-meetings.md)             | Unauthenticated meeting access, M2M tokens                        |
+| [Gatewaze Embed Proxy](architecture/backend/gw-proxy.md)               | Wildcard BFF proxy, authorization, header policy, body limits     |
 
 ### Shared & Testing
 

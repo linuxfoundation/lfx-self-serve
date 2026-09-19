@@ -57,6 +57,11 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const dashboardMetricsConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/dashboard-metrics.constants')>(
     '../../../../../packages/shared/src/constants/dashboard-metrics.constants'
   );
+  // Real value, not a hardcoded copy: getHealthOverviewKpis iterates this set, so a stale copy
+  // would keep passing after a real area is added/removed. Importing it directly is safe (no Angular deps).
+  const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
+    '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
+  );
 
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
@@ -92,6 +97,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // UID count against this to decide whether to warn about an unbatched filters_or fan-out.
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+    HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
@@ -157,6 +163,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const emailUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/email.utils')>(
     '../../../../../packages/shared/src/utils/email.utils'
   );
+  // The real formatCurrency/formatNumber, not stubs: number.utils has no imports of its own, so
+  // deep-importing it directly is safe, and the getHealthOverviewKpis tests assert actual formatted strings.
+  const numberUtils = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/number.utils')>(
+    '../../../../../packages/shared/src/utils/number.utils'
+  );
   return {
     computeIsFoundation: actual.computeIsFoundation,
     summarizeWriterGrants: actual.summarizeWriterGrants,
@@ -167,6 +178,16 @@ vi.mock('@lfx-one/shared/utils', async () => {
     getDefaultMarketingImpactMonth: vi.fn(),
     nullifyEmptyStrings: objectUtils.nullifyEmptyStrings,
     resolvePeriodRange: vi.fn(),
+    formatCurrency: numberUtils.formatCurrency,
+    formatNumber: numberUtils.formatNumber,
+    // Deep-importing health-metrics-overview.utils.ts here would pull in date-time.utils -> '../enums',
+    // colliding with the incomplete @lfx-one/shared/enums mock above. The classification map itself
+    // is exhaustively unit-tested in health-metrics-overview.utils.spec.ts, so re-implement it inline.
+    resolveHealthMetricsOverviewKpiClassification: (status: string | null | undefined) => {
+      const map: Record<string, string> = { healthy: 'ok', needs_attention: 'watch', needs_action: 'act' };
+      const normalized = status?.trim().toLowerCase();
+      return (normalized && map[normalized]) || 'none';
+    },
   };
 });
 vi.mock('./microservice-proxy.service', () => ({
@@ -1968,6 +1989,192 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
   });
 });
 
+describe('ProjectService — getHealthOverviewKpis', () => {
+  let service: ProjectService;
+
+  beforeEach(() => {
+    execute.mockReset();
+    service = new ProjectService();
+  });
+
+  it('maps a fetched row to the five covered area states, pinning to a single row', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: 'healthy',
+          // >1,000 so formatNumber's compact notation is actually exercised, not just its identity
+          // behavior on small integers (which the pre-formatNumber `String()` code also produced).
+          CERTIFICATIONS_EARNED_COUNT: 1240,
+          TRAINING_STATUS: 'needs_attention',
+          // Deliberately distinct from the frontend's still-fixture-backed `code` stat value (184)
+          // so this test can't pass by accident against stale fixture data.
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([
+      expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok', showStatus: true }),
+      expect.objectContaining({ area: 'trn', statValue: '1.2K', statLabel: 'certifications earned', classification: 'watch' }),
+      expect.objectContaining({ area: 'mem', statValue: '$250K', statLabel: 'renewing in next 90 days', classification: 'act' }),
+      expect.objectContaining({ area: 'non', statValue: '$75K', statLabel: 'pipeline value', classification: 'ok' }),
+      expect.objectContaining({ area: 'code', statValue: '2.5K', statLabel: 'active contributors', classification: 'none' }),
+    ]);
+    expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
+  });
+
+  it('renders a blank stat with an alternate label for each NULL column instead of a fabricated 0, and hides the status chip when there is no registration goal', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
+          EVENTS_STATUS: null,
+          CERTIFICATIONS_EARNED_COUNT: null,
+          TRAINING_STATUS: null,
+          CONTRIBUTORS_COUNT: null,
+          MEMBERS_RENEWING_90D_VALUE_USD: null,
+          MEMBERS_STATUS: null,
+          NON_MEMBERS_PIPELINE_VALUE_USD: null,
+          NON_MEMBERS_STATUS: null,
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([
+      expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false }),
+      expect.objectContaining({ area: 'trn', statValue: '—', statLabel: 'certifications earned', classification: 'none' }),
+      expect.objectContaining({ area: 'mem', statValue: '—', statLabel: 'renewing in next 90 days', classification: 'none' }),
+      expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'none' }),
+      expect.objectContaining({ area: 'code', statValue: '—', statLabel: 'active contributors', classification: 'none' }),
+    ]);
+  });
+
+  it('renders a genuine zero contributor count as "0", not the neutral placeholder', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: 'healthy',
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 0,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '0', statLabel: 'active contributors' })]));
+  });
+
+  it('renders a NULL stat value alongside a real status for a mixed row, instead of only ever testing the all-NULL/all-populated extremes', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: 'healthy',
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: null,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(
+      expect.arrayContaining([expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'ok' })])
+    );
+  });
+
+  it('shows the events status chip with a real classification when the goal is unset but EVENTS_STATUS is populated', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: null,
+          EVENTS_STATUS: 'healthy',
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'ok', showStatus: true }),
+      ])
+    );
+  });
+
+  it('shows an "Awaiting data" events status chip when the goal is set but EVENTS_STATUS is unpopulated, matching how trn/mem/non treat a null status', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
+          EVENTS_STATUS: null,
+          CERTIFICATIONS_EARNED_COUNT: 42,
+          TRAINING_STATUS: 'needs_attention',
+          CONTRIBUTORS_COUNT: 2540,
+          MEMBERS_RENEWING_90D_VALUE_USD: 250_000,
+          MEMBERS_STATUS: 'needs_action',
+          NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
+          NON_MEMBERS_STATUS: 'healthy',
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'none', showStatus: true }),
+      ])
+    );
+  });
+
+  it('returns an empty array when no row is returned for the foundation', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+
+    expect(result).toEqual([]);
+  });
+
+  it('substitutes the period suffix into the query for a non-YTD range', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getHealthOverviewKpis('cncf', 'COMPLETED_YEAR');
+
+    expect(execute.mock.calls[0][0]).toContain('events_pct_of_registration_goal_last_completed_year');
+    expect(execute.mock.calls[0][0]).toContain('contributors_count_last_completed_year');
+    expect(execute.mock.calls[0][0]).not.toContain('members_renewing_90d_value_usd_last_completed_year');
+  });
+});
+
 describe('ProjectService — getFoundationProfileSummary', () => {
   let service: ProjectService;
 
@@ -2128,6 +2335,87 @@ describe('ProjectService — enrichWithProjectData', () => {
     ]);
 
     expect(result[0]).toMatchObject({ project_name: 'Last Known', project_slug: 'last-known', is_foundation: true, parent_project_uid: 'p' });
+  });
+});
+
+describe('ProjectService.updateProjectPermissions', () => {
+  let service: ProjectService;
+  const req = { path: '/api/projects/project-1/permissions' } as Request;
+
+  const member = { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' };
+
+  function mockFetch(settings: Record<string, unknown> = { writers: [member], auditors: [] }): void {
+    fetchWithETag.mockResolvedValue({ data: settings, etag: 'etag-1' });
+    updateWithETag.mockImplementation(async (_req: unknown, _svc: unknown, _path: unknown, _etag: unknown, body: unknown) => body);
+  }
+
+  beforeEach(() => {
+    fetchWithETag.mockReset();
+    updateWithETag.mockReset();
+    natsRequest.mockReset();
+    checkSingleAccessStrict.mockReset();
+    // Authorized writer unless a test says otherwise — the guard runs before everything else.
+    checkSingleAccessStrict.mockResolvedValue(true);
+    service = new ProjectService();
+  });
+
+  it('rejects a non-writer before the settings read or the directory lookup (#2728 review)', async () => {
+    checkSingleAccessStrict.mockResolvedValue(false);
+    mockFetch();
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'nobody@partner-corp.example', 'view')).rejects.toMatchObject({
+      statusCode: 403,
+      code: 'AUTHORIZATION_REQUIRED',
+    });
+
+    expect(checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'project', id: 'project-1', access: 'writer' });
+    // Nothing may run before the gate: the directory lookup answers "is this address known?"
+    // with a distinguishable 404, so reaching it would leak directory membership to a reader.
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(fetchWithETag).not.toHaveBeenCalled();
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('fails closed when the access check itself cannot be resolved', async () => {
+    checkSingleAccessStrict.mockRejectedValue(new Error('fga unavailable'));
+    mockFetch();
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'nobody@partner-corp.example', 'view')).rejects.toThrow('fga unavailable');
+    expect(fetchWithETag).not.toHaveBeenCalled();
+  });
+
+  it('refuses to re-add someone already on the project instead of silently re-filing their role', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    await expect(service.updateProjectPermissions(req, 'project-1', 'add', 'sam.chen', 'view')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'ALREADY_ON_PROJECT',
+    });
+
+    expect(updateWithETag).not.toHaveBeenCalled();
+  });
+
+  it('still adds a manual (email-only) entry that is not yet listed, without a directory lookup', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    const result = await service.updateProjectPermissions(req, 'project-1', 'add', 'kim.park@partner-corp.example', 'view', {
+      name: 'Kim Park',
+      email: 'kim.park@partner-corp.example',
+    });
+
+    expect(natsRequest).not.toHaveBeenCalled();
+    expect(updateWithETag).toHaveBeenCalledTimes(1);
+    expect(result.auditors).toEqual([{ name: 'Kim Park', email: 'kim.park@partner-corp.example' }]);
+    expect(result.writers).toEqual([member]);
+  });
+
+  it('still lets update re-file an existing member under a new role', async () => {
+    mockFetch({ writers: [member], auditors: [] });
+
+    const result = await service.updateProjectPermissions(req, 'project-1', 'update', 'sam.chen', 'view');
+
+    expect(result.writers).toEqual([]);
+    expect(result.auditors).toEqual([member]);
   });
 });
 

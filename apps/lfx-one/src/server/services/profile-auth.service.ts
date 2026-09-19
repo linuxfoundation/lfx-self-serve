@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import crypto from 'crypto';
 import { Request } from 'express';
 
+import { authStateService } from './auth-state.service';
 import { logger } from './logger.service';
 
 interface TokenResponse {
@@ -69,19 +69,13 @@ export class ProfileAuthService {
   }
 
   /**
-   * Constructs the Auth0 /authorize URL and stores CSRF state in session
+   * Constructs the Auth0 /authorize URL and issues a CSRF state nonce via AuthStateService — see
+   * #1938. Not stored on `req.appSession`, so a concurrent request's stale session snapshot can no
+   * longer clobber it.
    */
-  public getAuthorizationUrl(req: Request, returnTo?: string): string {
-    const state = crypto.randomBytes(32).toString('hex');
-
-    if (!req.appSession) {
-      req.appSession = {};
-    }
-    req.appSession.profileAuthState = state;
-
-    if (returnTo) {
-      req.appSession['profileAuthReturnTo'] = returnTo;
-    }
+  public async getAuthorizationUrl(req: Request, returnTo?: string): Promise<string> {
+    const sub = req.oidc?.user?.['sub'] as string | undefined;
+    const state = await authStateService.issue(req, sub ?? '', returnTo);
 
     const params = new URLSearchParams({
       response_type: 'code',

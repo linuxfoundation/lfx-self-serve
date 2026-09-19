@@ -5,6 +5,7 @@ import { Router } from 'express';
 
 import {
   getFormationItem,
+  getFormationPeople,
   getFormationsQueue,
   getProjectFormation,
   updateFormationItem,
@@ -21,6 +22,14 @@ const router = Router();
 // gateway (writer_guard + team:formation membership) on the actual write route, not here or in the
 // controller (GH-2576 Phase 2).
 router.get('/projects/:slug/formation', getProjectFormation);
+
+// People on this formation (#2724) — the checklist sidebar's people card, served from the project's
+// settings roles. Same ungated per-project audience as the checklist read above: the service's own
+// masking checklist read is the access gate, and the settings read behind it degrades to an
+// `unavailable` state for a caller upstream 403s (global-grant staff) instead of failing the card.
+// The foundation drill-down only mounts the card after its auditor-gated checklist call succeeded,
+// so this path needs no `requireAuditor` twin.
+router.get('/projects/:slug/formation/people', getFormationPeople);
 
 // Shared fail-closed gate (GH-2328): every item mutation below is denied (409 CHECKLIST_READ_ONLY)
 // unless the formation's upstream lifecycle is `'live'`. `router.use`'s prefix match covers all
@@ -42,9 +51,10 @@ router.post('/formations/:projectUid/items/:itemKey/status', updateFormationItem
 router.patch('/formations/:projectUid/items/:itemKey', updateFormationItem);
 
 // Formations queue (GH-1958), auditor-only. Root-scoped by default (every formation); an optional
-// `?foundation_uid=` narrows to that foundation's direct-child formations (GH-2367). Exception:
-// passing the `tlf` LF umbrella foundation's uid is treated as root scope too (every formation),
-// not narrowed to its direct children (GH-2378) — the UI always seeds this uid on unscoped landing.
+// `?foundation_uid=` narrows to that foundation's formations (GH-2367 — the whole subtree at any
+// depth since GH-2368's upstream ancestry chain). The `tlf` LF umbrella foundation's uid — where
+// LF staff land by default — narrows to LF's own formations instead: parentless rows plus tlf's
+// direct children (GH-2699, superseding GH-2378's treat-tlf-as-everything behaviour).
 router.get('/formations', requireAuditor, getFormationsQueue);
 
 // Queue drill-down checklist read (LFXV2-3386, #2690 review): the same controller and response as

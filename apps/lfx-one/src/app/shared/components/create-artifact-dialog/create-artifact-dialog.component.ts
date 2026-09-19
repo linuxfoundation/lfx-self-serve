@@ -5,8 +5,10 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CreateTargetPickerComponent } from '@components/create-target-picker/create-target-picker.component';
-import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS } from '@lfx-one/shared/constants';
+import { COMMITTEE_WRITE_ARTIFACT_TYPES, CREATABLE_ARTIFACTS, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { CreatableArtifactConfig, CreatableArtifactType, CreatePickerNode, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -32,6 +34,8 @@ export class CreateArtifactDialogComponent {
   private readonly router = inject(Router);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
+  private readonly composer = inject(MeetingComposerService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // The artifact type is chosen in the rail popover and handed to the dialog as data;
   // this dialog only resolves the project/committee target for that fixed type.
@@ -50,6 +54,14 @@ export class CreateArtifactDialogComponent {
 
   protected readonly selectedTarget: WritableSignal<CreatePickerNode | null> = signal<CreatePickerNode | null>(null);
   protected readonly canContinue: Signal<boolean> = computed(() => this.selectedTarget() !== null);
+
+  /**
+   * Whether meetings v2 is the create surface for this user.
+   * @description Read as a signal so the dialog settles on its own once LaunchDarkly resolves, and
+   * defaulted to `false` so a slow or unreachable provider sends a meeting pick to the pre-v2
+   * create route rather than a composer this user isn't targeted for. See `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
 
   public onTargetSelected(node: CreatePickerNode): void {
     this.selectedTarget.set(node);
@@ -76,15 +88,23 @@ export class CreateArtifactDialogComponent {
 
     // `syncUrl: false` because the default rewrites the *current* page's history entry via
     // replaceState — the dialog is global to the rail, so that would re-point whatever page the
-    // user opened it from. `router.navigate` carries the slug (and committee_uid) to the
-    // destination instead.
-    if (target.kind === 'project') {
-      const context: ProjectContext = { uid: target.uid, name: target.name, slug: target.slug };
-      this.setContext(target.isFoundation, context);
+    // user opened it from. The create route carries the slug (and committee_uid) to the
+    // destination instead; the meeting path below carries the uids directly, having no
+    // destination to carry them to.
+    const context: ProjectContext =
+      target.kind === 'project'
+        ? { uid: target.uid, name: target.name, slug: target.slug }
+        : { uid: target.projectUid, name: target.projectName, slug: target.projectSlug };
+    this.setContext(target.isFoundation, context);
+
+    // Meetings only take the composer path while the flag is on; with it off a meeting pick falls
+    // through to the same `createRoute` navigation every other artifact type uses, which is what
+    // this dialog did before v2.
+    if (this.artifact.type === 'meeting' && this.meetingsV2Enabled()) {
+      this.openMeetingComposer(target, context);
+    } else if (target.kind === 'project') {
       this.router.navigate([this.artifact.createRoute], { queryParams: { project: target.slug } });
     } else {
-      const context: ProjectContext = { uid: target.projectUid, name: target.projectName, slug: target.projectSlug };
-      this.setContext(target.isFoundation, context);
       this.router.navigate([this.artifact.createRoute], { queryParams: { project: target.projectSlug, committee_uid: target.uid } });
     }
 
@@ -93,6 +113,25 @@ export class CreateArtifactDialogComponent {
 
   public cancel(): void {
     this.dialogRef.close(false);
+  }
+
+  /**
+   * Opens the composer over the page the rail was on, instead of routing to `/meetings/create`.
+   * @description #1452 makes the composer an overlay every entry point raises in place. Routing
+   * here would push a history entry that immediately replaces itself with the meetings list —
+   * throwing away the page the organizer was reading to reach a list they did not ask for. That
+   * URL stays, but only for what it is there for: a deep link, which has nowhere else to land.
+   *
+   * The drawer, not the quick dialog: the picker asked which artifact to create, not how much of
+   * it to fill in. Quick create is a narrower field set the organizer opts into from the create
+   * menu, so every other entry point lands on the surface that renders all five sections.
+   */
+  private openMeetingComposer(target: CreatePickerNode, context: ProjectContext): void {
+    this.composer.open({
+      mode: 'create',
+      projectUid: context.uid,
+      committeeUid: target.kind === 'committee' ? target.uid : undefined,
+    });
   }
 
   private setContext(isFoundation: boolean, context: ProjectContext): void {

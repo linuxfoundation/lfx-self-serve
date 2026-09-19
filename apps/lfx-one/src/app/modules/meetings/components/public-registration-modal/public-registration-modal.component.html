@@ -57,8 +57,15 @@
         label="Email"
         placeholder="Enter email address"
         type="email"
+        [readonly]="emailIsIdentityDerived"
+        [describedBy]="emailIsIdentityDerived ? 'public-registration-email-hint' : null"
         data-testid="public-registration-email-input">
       </lfx-input-text>
+      @if (emailIsIdentityDerived) {
+        <p id="public-registration-email-hint" class="text-sm text-gray-500" data-testid="public-registration-email-hint">
+          Registering with the email address on your account.
+        </p>
+      }
       @if (form.get('email')?.errors?.['required'] && form.get('email')?.touched && form.get('email')?.dirty) {
         <p class="text-sm text-red-500">Email is required</p>
       }

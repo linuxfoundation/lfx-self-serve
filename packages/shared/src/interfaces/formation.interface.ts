@@ -461,6 +461,23 @@ export interface FormationTemplateItem {
   sub_items?: FormationTemplateSubItem[];
 }
 
+/**
+ * The four fields `FormationCardComponent` renders, resolved from whichever of its two sources is
+ * active — the `formation` input (a loaded {@link FormationChecklistResponse}) or
+ * `ProjectContextService`. Collapsing them into one object is what guarantees the card never mixes
+ * the two: on the foundation drill-down the context service describes the *parent foundation*, so
+ * a per-field fallback would show the foundation's slug beside a child project's checklist (#2719).
+ */
+export interface FormationCardView {
+  /** Project uid, used only for the card's own `auditor`/SFID lookups. `null` suppresses them. */
+  uid: string | null;
+  slug: string;
+  /** Output of `getFormationSubStageLabel`; `null` when the stage isn't a Formation sub-stage. */
+  subStageLabel: string | null;
+  /** Output of `formatAnnouncementDateLabel` — already a display string, `'Not set'` when absent. */
+  announcementLabel: string;
+}
+
 /** Response body for `GET /api/projects/:slug/formation`. */
 export interface FormationChecklistResponse {
   formation: Formation;
@@ -478,6 +495,17 @@ export interface FormationChecklistResponse {
    * context-derived writer flag can stand in for it.
    */
   can_write: boolean;
+  /**
+   * Whether the caller may move item statuses on this checklist — the advisory mirror of the
+   * gateway's `set_item_status` rule (`ruleset.yaml`, `lfx-v2-formation-service` v0.1.4), which
+   * requires BOTH `writer_guard` on the project AND `member` on `team:formation` (GH-2705; the
+   * pair is what stops an assignee closing their own item). {@link can_write} covers the writer
+   * half only; this flag is `can_write` ∧ the team-membership check (via the access-check
+   * service's `team`/`member` support, `FORMATION_TEAM_NAME`), fail-closed like `can_write`, so
+   * status controls are hidden rather than offered to a caller the gateway deterministically
+   * 403s. Advisory only — the gateway still enforces; the BFF adds no write guard of its own.
+   */
+  can_set_status: boolean;
 }
 
 /**
@@ -708,19 +736,28 @@ export interface MyFormationItemRow {
   title: string;
   /** Never `'done'` | `'skipped'` — filtered upstream of this shape by `isAssignedItemOpen`. */
   status: FormationItemStatus;
-  /** Drives the "Required for Active" marker on the Pending Actions row. */
+  /** Drives the "required for Active" segment of the Pending Actions row's meta line. */
   is_gating: boolean;
+  /** DATE-ONLY string, rendered as the row's "due <Mon D>" segment. */
   due_date: string | null;
-  action: FormationItemAction;
-  action_href: string | null;
   /**
-   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid} — Claim/Block both
-   * call `updateFormationItemStatus`, which upstream's gateway gates on `writer_guard` (an
-   * `auditor`-only assignee is a valid GH-1956 assignee but has no write access and would otherwise
-   * see an actionable button that always 403s). Drives whether `buildFormationItemActions` renders
-   * the row's action as clickable.
+   * Whether the caller has `writer` on {@link MyFormationItemRow.project_uid}, resolved per project
+   * from the same read that supplies the stage gate on `items[]`. No Me-lens UI reads it since
+   * #2732 — the row's one action navigates to the checklist unconditionally, and the checklist's
+   * own response carries the authoritative pair — so it stays only for parity with
+   * `FormationChecklistResponse`; dropping it is #2735.
    */
   can_write: boolean;
+  /**
+   * {@link can_write} ∧ `team:formation` membership (GH-2705) — the full pair the gateway's
+   * `set_item_status` rule checks, carried so the wire shape mirrors `FormationChecklistResponse`.
+   * No Me-lens UI reads it since #2732 (the row navigates to the checklist, whose own response
+   * carries the authoritative pair); it stays so a future consumer fails closed rather than
+   * inheriting the GH-2705 defect. The membership half is caller-scoped, so within one response it
+   * is the same for every row; it still lives per-row because `can_write` (the project half)
+   * varies per row.
+   */
+  can_set_status: boolean;
 }
 
 /**

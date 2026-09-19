@@ -11,6 +11,7 @@ The public meetings feature allows unauthenticated users to access specific meet
 The system exposes public endpoints that bypass user authentication:
 
 - **Public API Endpoint**: `/public/api/meetings/:id` - Returns meeting and project data
+- **Self-Registration Endpoint**: `POST /public/api/meetings/register` - Registers the caller for a public, non-restricted meeting. Mounted on the same optional-auth router, but the handler requires a session of its own — see [Self-Registration Contract](#self-registration-contract-post-publicapimeetingsregister)
 - **Frontend Route**: `/meetings/:id` - Displays the meeting page without authentication
 - **Access Control**: Meeting visibility levels and optional passcode protection
 
@@ -54,6 +55,48 @@ For private meetings:
 - **Passcode Validation**: Compares provided passcode with stored Zoom configuration
 - **Limited Data Exposure**: Returns only essential project information when passcode-protected
 - **Error Handling**: Returns authentication errors for invalid passcodes
+
+### Self-Registration Contract (`POST /public/api/meetings/register`)
+
+The one registrant **write** served from the `/public/api` surface. Being mounted there is not what
+decides its auth: the router is `auth: 'optional'`, but the handler rejects an anonymous caller before
+any shape check, so the reader of the response is always an authenticated self-registrant.
+
+**Authentication.** `registerForPublicMeeting` requires both `req.oidc.isAuthenticated()` and
+`req.bearerToken` — a refresh failure can leave the session flag true with no user token captured, and
+this route has to post _as the caller_. It answers `AuthenticationError` first so a prober is told to
+sign in rather than walked through the route's field rules. The M2M token this controller mints covers
+only the meeting lookup that decides whether the meeting is public and unrestricted; it is swapped back
+before the write, which travels under the registrant's own bearer token.
+
+**Inbound allowlist.** `toSelfRegistration` rebuilds the payload key by key from `unknown` rather than
+spreading `req.body` — the route mounts the handler bare, with no express-validator. Non-string values
+are dropped, free text is trimmed and truncated to `PUBLIC_REGISTRATION_FIELD_MAX_LENGTH`, and the three
+identifiers (`meeting_id`, `email`, `occurrence_id`) are trimmed but _rejected_ rather than truncated
+when over-length, so an unusable value can never become a different valid-looking one. `host` is forced
+to `false` and `committee_uid` is dropped: neither is the caller's to assert.
+
+**Upstream write allowlist.** `MeetingService.addMeetingRegistrantSelf` posts to
+`/itx/meetings/:id/registrants/self` with only `first_name`, `last_name`, and the optional `org`,
+`job_title` and `occurrence`. It deliberately sends neither `email` nor `username` — the meeting service
+reads the registrant's identity off their JWT, which is the whole point of the `self` endpoint. An empty
+or missing upstream body falls back to the submitted payload rather than reporting a registrant with
+every field blank.
+
+**Response allowlist.** The reply is narrowed to `PUBLIC_SELF_REGISTRATION_RESPONSE_KEYS`
+(`packages/shared/src/constants/meeting-registrant.constants.ts`): `uid`, `meeting_id`, `email`,
+`first_name`, `last_name`, `host`, `job_title`, `org_name`, `occurrence_id`, `avatar_url`, `created_at`,
+`updated_at`. Everything else the upstream row carries — committee attribution, attendance, and the
+`created_by` / `updated_by` audit objects, which are nested users rather than identifier strings — is
+withheld. The narrowing is about what a person may learn from registering themselves, not about who
+reached the endpoint.
+
+The client types the same response off that constant via `PublicMeetingRegistrationResponse`
+(`packages/shared/src/interfaces/meeting.interface.ts`), so a server-side narrowing cannot drift from a
+client that still believes it holds a full `MeetingRegistrant`. Every key is optional because the
+response omits what upstream did not return rather than stating it as `undefined`. Adding a key to the
+allowlist is therefore a deliberate two-sided contract change, and it is asserted in
+`public-meeting.controller.spec.ts`.
 
 ## 📁 Frontend Implementation
 

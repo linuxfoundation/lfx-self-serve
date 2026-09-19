@@ -11,9 +11,22 @@ const TOOLTIP_CARD_CLASS =
 /**
  * Chart.js `external` tooltip factory — white DOM card (no canvas clipping), flips off the right
  * viewport edge, clamps vertically. Requires `data-chart-tooltip-host` on a canvas ancestor; no-ops without it.
+ *
+ * Generic over the chart type purely so the handler fits a type-specific option slot: `TooltipModel`
+ * is invariant in its parameter (`dataPoints[].dataset` is typed per chart type — a line dataset's
+ * `data` is `(number | Point | null)[]`, a sankey's is `SankeyDataPoint[]`), so a `ChartType`-wide
+ * handler is not assignable to `ChartOptions<'line'>['plugins']['tooltip']['external']` even though
+ * the renderer below reads only fields every chart type declares. Without the parameter, a caller
+ * charting one known type has to widen its own `ChartOptions<'line'>` annotation to `ChartType` to
+ * make the assignment go through. TypeScript only reports that mismatch once the relation is
+ * checked at the top level rather than reached through a deeper one, so it surfaces and disappears
+ * with unrelated changes to the program — which is why this is stated in the types instead of left
+ * to chance.
  */
-export function buildChartExternalTooltip(options?: ChartExternalTooltipOptions): (args: { chart: Chart; tooltip: TooltipModel<ChartType> }) => void {
-  return ({ chart, tooltip }) => {
+export function buildChartExternalTooltip<TType extends ChartType = ChartType>(
+  options?: ChartExternalTooltipOptions
+): (args: { chart: Chart; tooltip: TooltipModel<TType> }) => void {
+  const render = ({ chart, tooltip }: { chart: Chart; tooltip: TooltipModel<ChartType> }): void => {
     // Explicit SSR guard: *.util.ts sits outside the ssr-safety rule's path globs.
     if (typeof document === 'undefined') return;
 
@@ -77,4 +90,8 @@ export function buildChartExternalTooltip(options?: ChartExternalTooltipOptions)
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
   };
+
+  // The one place the invariance noted above is crossed. The renderer touches nothing that differs
+  // between chart types, so narrowing the declared model is sound; the compiler cannot see that.
+  return render as (args: { chart: Chart; tooltip: TooltipModel<TType> }) => void;
 }

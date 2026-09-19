@@ -15,6 +15,7 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
+  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
 import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
@@ -36,8 +37,8 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
-  MentorshipEnrollRequest,
   MentorshipEnrollStep,
+  MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
@@ -161,7 +162,14 @@ export function getMentorshipTermDateErrors(
   return errors;
 }
 
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): MentorshipEnrollFieldErrors {
+/**
+ * Field-keyed validation errors for a single enroll wizard step.
+ *
+ * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
+ * — a temporary mock-backed allowlist that must be replaced with server-side validation
+ * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ */
+export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -169,7 +177,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     } else if (form.name.trim().length < MENTORSHIP_ENROLL_NAME_MIN || form.name.trim().length > MENTORSHIP_ENROLL_NAME_MAX) {
       errors.name = `Program name should be between ${MENTORSHIP_ENROLL_NAME_MIN} and ${MENTORSHIP_ENROLL_NAME_MAX} characters.`;
     }
-    if (isBlank(form.projectId)) errors.projectId = 'Select a Linux Foundation project.';
+    const projectId = form.projectId.trim();
+    if (!projectId) {
+      errors.projectId = 'Select a Linux Foundation project.';
+    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
+      // Temporary mock-backed allowlist — replace with server-side validation
+      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
+      errors.projectId = 'Select a valid Linux Foundation project.';
+    }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     if (mentorshipDescriptionLength(form.description) === 0) {
       errors.description = 'Program description is required.';
@@ -350,7 +365,7 @@ export function isMentorshipTermsAccepted(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): boolean {
+export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): boolean {
   return Object.keys(getMentorshipEnrollStepErrors(step, form)).length === 0;
 }
 
@@ -397,25 +412,6 @@ export function parseMentorshipDateOnly(value: string): Date | null {
 
 export function toMentorshipDateOnly(value: Date): string {
   return toLocalDateOnlyString(value);
-}
-
-/**
- * URL-safe slug from a program name. Empty names fall back to `program`.
- *
- * The first `.replace` collapses every run of non-alphanumerics into a single
- * `-`, so at most one leading and one trailing `-` can remain. Trimming those
- * with `slice` instead of a `/^-+|-+$/g` alternation removes the polynomial
- * ReDoS surface CodeQL flags (`js/polynomial-redos`) even when `name` comes
- * from an unvalidated caller — the shared util has no length guard of its own.
- */
-export function mentorshipProgramSlug(name: string): string {
-  let slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-');
-  if (slug.startsWith('-')) slug = slug.slice(1);
-  if (slug.endsWith('-')) slug = slug.slice(0, -1);
-  return slug || 'program';
 }
 
 export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {

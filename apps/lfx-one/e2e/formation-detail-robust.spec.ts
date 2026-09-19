@@ -50,6 +50,16 @@ test.describe('Formation checklist drill-down — structural contract', () => {
     await expect(container.getByTestId('formation-checklist-section')).toBeAttached();
   });
 
+  test('nests the checklist section and the formation card under the two-column wrapper (#2719)', async ({ page }) => {
+    const columns = page.getByTestId('formation-detail-columns');
+    await expect(columns.getByTestId('formation-checklist-section')).toBeAttached();
+
+    const sidebar = columns.getByTestId('formation-detail-sidebar');
+    await expect(sidebar).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+    await expect(sidebar.getByTestId('formation-people-card')).toBeAttached();
+  });
+
   test('hosts the readiness strip inside the checklist section', async ({ page }) => {
     const section = page.getByTestId('formation-checklist-section');
     await expect(section.getByTestId('formation-readiness-strip')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });

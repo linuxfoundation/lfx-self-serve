@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { CachePort, LockAcquireResult } from '@lfx-one/shared/interfaces';
+import { CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
@@ -73,37 +73,40 @@ export class ValkeyService implements CachePort {
         this.runWhenConnected(() => this.client!.get(key), timeoutMs),
         timeoutMs
       )) as string | null;
-      if (raw == null) return null;
-      // setJson caps our own writes, but another client (or a manual write) could store an oversized value.
-      // Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss before parsing.
-      const readSize = Buffer.byteLength(raw, 'utf8');
-      if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
-        // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
-        // queries can group and filter oversize events by cache family without substring-matching
-        // the redacted `cache_key` (which already carries the same segment in the default
-        // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
-        // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
-        // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
-        // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
-        // needs a slimmer projection or a fundamentally different caching strategy.
-        logger.warning(undefined, 'valkey_get', 'Cached value exceeds max size — treating as miss', {
-          cache_key: ValkeyService.redactKey(key),
-          cache_namespace: ValkeyService.extractNamespace(key),
-          size_bytes: readSize,
-          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
-        });
-        return null;
-      }
-      const parsed = JSON.parse(raw);
-      // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller.
-      if (accept && !accept(parsed)) {
-        logger.warning(undefined, 'valkey_get', 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
-        return null;
-      }
-      return parsed as T;
+      return this.parseCachedJson<T>(raw, key, 'valkey_get', accept);
     } catch (err) {
       logger.warning(undefined, 'valkey_get', 'Cache read failed — falling back to source', { err, cache_key: ValkeyService.redactKey(key) });
       return null;
+    }
+  }
+
+  /**
+   * Atomic read-and-delete (`GETDEL`) — the single-use counterpart to `getJson`. A plain `getJson`
+   * followed by `del` is two round trips: two concurrent callers can both `GET` the same key before
+   * either `DEL` lands, so both see it as valid. `GETDEL` closes that window server-side. Requires
+   * Redis/Valkey 6.2+ — guaranteed here since Valkey forks Redis 7.2 and `ioredis` (pinned ^5.11.1)
+   * types `getdel` natively.
+   *
+   * Returns a discriminated `GetDelResult`, not a bare `T | null` like `getJson` — a caller enforcing
+   * single-use/expiry semantics (`AuthStateService.consume`) needs to tell an ordinary `miss` (expired,
+   * already consumed, never existed — must be rejected outright) apart from a `fault` (the read itself
+   * errored or timed out — the record's true state is unknown, and a fail-soft caller may fall back to
+   * a secondary store here). Collapsing both to `null`, as this used to, let a caller's fallback path
+   * be reached by an ordinary miss and silently bypass the primary store's replay/expiry enforcement
+   * (#1938 review).
+   */
+  public async getdelJson<T>(key: string, accept?: (value: unknown) => boolean, timeoutMs: number = VALKEY_CACHE.OP_TIMEOUT_MS): Promise<GetDelResult<T>> {
+    if (!this.client) return { status: 'miss' };
+    try {
+      const raw = (await this.withTimeout(
+        this.runWhenConnected(() => this.client!.getdel(key), timeoutMs),
+        timeoutMs
+      )) as string | null;
+      const value = this.parseCachedJson<T>(raw, key, 'valkey_getdel', accept);
+      return value === null ? { status: 'miss' } : { status: 'hit', value };
+    } catch (err) {
+      logger.warning(undefined, 'valkey_getdel', 'Cache read-delete failed', { err, cache_key: ValkeyService.redactKey(key) });
+      return { status: 'fault' };
     }
   }
 
@@ -252,6 +255,46 @@ export class ValkeyService implements CachePort {
     } catch {
       this.client.disconnect();
     }
+  }
+
+  /** Shared miss/oversize/shape-check handling for `getJson` and `getdelJson` — `op` labels which operation is logging. */
+  private parseCachedJson<T>(raw: string | null, key: string, op: string, accept?: (value: unknown) => boolean): T | null {
+    if (raw == null) return null;
+    // The write path caps our own writes, but another client (or a manual write) could store an oversized
+    // value. Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss
+    // before parsing.
+    const readSize = Buffer.byteLength(raw, 'utf8');
+    if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+      // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
+      // queries can group and filter oversize events by cache family without substring-matching
+      // the redacted `cache_key` (which already carries the same segment in the default
+      // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
+      // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
+      // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
+      // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
+      // needs a slimmer projection or a fundamentally different caching strategy.
+      logger.warning(undefined, op, 'Cached value exceeds max size — treating as miss', {
+        cache_key: ValkeyService.redactKey(key),
+        cache_namespace: ValkeyService.extractNamespace(key),
+        size_bytes: readSize,
+        max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+      });
+      return null;
+    }
+    // A corrupt/legacy/partial entry must degrade to a miss, never surface as a fault to the caller —
+    // including malformed JSON itself, which JSON.parse would otherwise throw on (#1938 review).
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      logger.warning(undefined, op, 'Cached value is not valid JSON — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+      return null;
+    }
+    if (accept && !accept(parsed)) {
+      logger.warning(undefined, op, 'Cached value failed shape check — treating as miss', { cache_key: ValkeyService.redactKey(key) });
+      return null;
+    }
+    return parsed as T;
   }
 
   /**
@@ -411,6 +454,12 @@ function keyPrefix(): string {
 export function buildSessionCacheKey(sessionId: string): string | null {
   if (!isFilterSafeIdentifier(sessionId)) return null;
   return `${keyPrefix()}:${VALKEY_CACHE.SESSION_NAMESPACE}:${sessionId}`;
+}
+
+/** Flow C auth-state cache key for a CSRF state nonce (#1938); null (fail-closed) when the nonce isn't filter-safe, so it can't corrupt the `:`-delimited key. */
+export function buildAuthStateCacheKey(state: string): string | null {
+  if (!isFilterSafeIdentifier(state)) return null;
+  return `${keyPrefix()}:${VALKEY_CACHE.AUTH_STATE_NAMESPACE}:${state}`;
 }
 
 /** Per-org Snowflake-namespace cache key (account id + caller-chosen sub-resource); null (fail-closed → direct fetch) when the account id isn't filter-safe, so it can't corrupt the `:`-delimited key. */

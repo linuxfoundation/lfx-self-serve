@@ -14,7 +14,7 @@ import {
   UpdateUserRoleRequest,
   UploadProjectDocumentRequest,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, isFileTypeAllowed, isUuid } from '@lfx-one/shared/utils';
+import { computeIsFoundation, isFileTypeAllowed, isUuid, maskIdentifierForLogs } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -329,7 +329,8 @@ export class ProjectController {
 
       logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
-        identifier,
+        // Always the invitee's address on the manual-add path — masked like every sibling log in this chain.
+        identifier: maskIdentifierForLogs(identifier),
         role: userData.role,
         is_manual: !!manualUserInfo,
       });
@@ -347,7 +348,7 @@ export class ProjectController {
     const { uid, username } = req.params;
     const startTime = logger.startOperation(req, 'update_user_role_project_permissions', {
       uid,
-      username,
+      username: maskIdentifierForLogs(username),
     });
 
     try {
@@ -404,7 +405,7 @@ export class ProjectController {
 
       logger.success(req, 'update_user_role_project_permissions', startTime, {
         uid,
-        username,
+        username: maskIdentifierForLogs(username),
         new_role: roleData.role,
       });
 
@@ -498,7 +499,7 @@ export class ProjectController {
     const { uid, username } = req.params;
     const startTime = logger.startOperation(req, 'remove_user_project_permissions', {
       uid,
-      username,
+      username: maskIdentifierForLogs(username),
     });
 
     try {
@@ -529,7 +530,7 @@ export class ProjectController {
 
       logger.success(req, 'remove_user_project_permissions', startTime, {
         uid,
-        username,
+        username: maskIdentifierForLogs(username),
       });
 
       res.status(204).send();
@@ -1014,7 +1015,8 @@ export class ProjectController {
     }
 
     try {
-      // Public route has no session — obtain M2M token so meeting service calls succeed.
+      // `/public/api` is optional-auth, so a session may or may not exist. Fall back to an M2M token
+      // when there's no user bearer token, so meeting service calls succeed either way.
       if (!req.bearerToken) {
         req.bearerToken = await generateM2MToken(req);
       }

@@ -39,7 +39,6 @@ import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap,
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
-import { DashboardFormationItemDrawerHostComponent } from '../components/dashboard-formation-item-drawer-host/dashboard-formation-item-drawer-host.component';
 import { MyFormationsCardComponent } from '../components/my-formations-card/my-formations-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
@@ -54,7 +53,6 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
     CardComponent,
     TableComponent,
     DashboardCastDrawerHostComponent,
-    DashboardFormationItemDrawerHostComponent,
   ],
   templateUrl: './multi-persona-dashboard.component.html',
   styleUrl: './multi-persona-dashboard.component.scss',

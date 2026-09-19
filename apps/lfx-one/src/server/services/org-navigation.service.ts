@@ -220,7 +220,8 @@ export class OrgNavigationService {
       const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<B2bOrgIndexedDoc>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'b2b_org',
         tags: [`b2b_org_uid:${uid}`],
-        per_page: 1,
+        // query-service's Goa parameter is `page_size`; `per_page` is silently ignored upstream.
+        page_size: 1,
       });
 
       for (const resource of response?.resources ?? []) {
@@ -245,6 +246,7 @@ export class OrgNavigationService {
       isMember: doc.is_member ?? false,
       parentName: null,
       status: doc.status ?? null,
+      slug: doc.slug ?? null,
       isAssigned: false,
     };
   }
@@ -282,6 +284,9 @@ export class OrgNavigationService {
         isMember: doc.is_member ?? false,
         parentName: isInherited ? (role.parentName ?? null) : null,
         status: doc.status ?? null,
+        // Spec 050: the URL-identity slug rides the indexed doc (`data.slug`, derived from the
+        // org name by member-service). This is the uid→slug path for every in-app link.
+        slug: doc.slug ?? null,
         // Set explicitly rather than left to be inferred: grants and items load
         // independently on the client, so inference would flip rows between sections mid-render.
         isAssigned: true,

@@ -7,7 +7,11 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
+  GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
+  GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
@@ -20,7 +24,7 @@ import {
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
@@ -58,6 +62,8 @@ export class SidebarNavService {
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
+  private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
@@ -107,7 +113,7 @@ export class SidebarNavService {
         const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
         const formationItems = showFormationNav ? [this.formationNavItem] : [];
         const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
-        const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -461,6 +467,12 @@ export class SidebarNavService {
       });
 
       if (this.canSeeNewsletters()) {
+        // Same gate as the project lens: the flag decides the surface, the tenant allowlist decides
+        // whether the embed is offered at all. AAIF is a foundation, so this is the mount it
+        // actually uses — without this the foundation sidebar kept pointing at LFX's own page even
+        // where the embed was live.
+        const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedFoundation()?.slug);
+
         items.push({
           label: 'Communications',
           isSection: true,
@@ -469,7 +481,7 @@ export class SidebarNavService {
             {
               label: 'Newsletters',
               icon: 'fa-light fa-paper-plane',
-              routerLink: '/foundation/newsletters',
+              routerLink: embedEnabled ? GW_EMBED_FOUNDATION_NEWSLETTERS_LINK : '/foundation/newsletters',
               testId: 'sidebar-foundation-newsletters',
             },
           ],
@@ -615,7 +627,7 @@ export class SidebarNavService {
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
     icon: 'fa-light fa-list-check',
-    routerLink: '/project/formation',
+    routerLink: FORMATION_CHECKLIST_PATH,
     testId: 'sidebar-project-formation',
   };
 
@@ -662,21 +674,6 @@ export class SidebarNavService {
         label: 'Permissions',
         icon: 'fa-light fa-shield',
         routerLink: '/project/settings',
-      },
-    ],
-  };
-
-  // Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
-  private readonly projectCommunicationsSection: SidebarMenuItem = {
-    label: 'Communications',
-    isSection: true,
-    expanded: true,
-    items: [
-      {
-        label: 'Newsletters',
-        icon: 'fa-light fa-paper-plane',
-        routerLink: '/project/newsletters',
-        testId: 'sidebar-project-newsletters',
       },
     ],
   };
@@ -763,6 +760,51 @@ export class SidebarNavService {
       const at = afterContributions === 0 ? item.items.length : afterContributions;
       return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
     });
+  }
+
+  /**
+   * Project-lens Communications section; appended dynamically in sidebarItems().
+   *
+   * Visibility is `canSeeNewsletters()` — ED persona or writer — matching the route guards on both
+   * embed mounts. Only the link TARGETS depend on the pilot flag, for the reason below.
+   *
+   * Built per-call rather than held as a constant because the embed's routes only *match* while
+   * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to
+   * `/` otherwise. A fixed link to the embed would therefore bounce every ED and writer to the
+   * dashboard whenever the flag is off (its default), and take LFX's own newsletters page out of
+   * the sidebar with it. The visibility of this section and the target of its links have to be
+   * gated on the same thing.
+   */
+  private buildProjectCommunicationsSection(): SidebarMenuItem {
+    // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
+    // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
+    // the data-isolation half; the flag is only the rollout half.
+    // The PROJECT slot only, even though AAIF is a foundation. It occupies the project selection
+    // on this mount, so this still shows the embed for the tenant it is meant for — which is what
+    // an earlier version was reaching for when it accepted either slot.
+    //
+    // Accepting either was wrong here. `selectedFoundation` persists across lens switches, so a
+    // user who had visited AAIF in the Foundation Lens and then opened an unrelated project got
+    // Newsletters retargeted at the embed for that other tenant —
+    // the same class of stale-context bug as the route guard, reached from the sidebar instead.
+    const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
+
+    return {
+      label: 'Communications',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Newsletters',
+          icon: 'fa-light fa-paper-plane',
+          // With the flag on this points at the embedded Gatewaze newsletters module instead of
+          // LFX's own page. Both are gated identically, so this chooses the surface, not the
+          // audience — keep the conditional: the embed's routes only match while the flag is on.
+          routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
+          testId: 'sidebar-project-newsletters',
+        },
+      ],
+    };
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {
