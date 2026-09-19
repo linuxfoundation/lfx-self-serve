@@ -327,9 +327,9 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
       await menuButton.click();
       await expect(page.getByTestId('mobile-sidebar-drawer')).toBeVisible({ timeout: 10_000 });
     }
-    await page.getByTestId('org-selector').locator('visible=true').first().click();
-    await expect(page.getByTestId('org-selector-list').locator('visible=true').first()).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId(`org-item-${uid}`).locator('visible=true').first().click();
+    await page.getByTestId('org-selector').filter({ visible: true }).first().click();
+    await expect(page.getByTestId('org-selector-list').filter({ visible: true }).first()).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId(`org-item-${uid}`).filter({ visible: true }).first().click();
   }
 
   test('E11: switching organization on a detail page re-addresses it, keeping child segments, query and fragment; Back returns to the pre-switch org', async ({
