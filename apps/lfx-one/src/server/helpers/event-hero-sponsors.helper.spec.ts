@@ -20,6 +20,36 @@ describe('extractHeroAndSponsors', () => {
     expect(result.heroImageUrl).toBe('https://cdn.example.com/hero.png');
   });
 
+  it('decodes HTML entities in a scraped hero URL, keeping signed query params intact', () => {
+    // As it appears in real HTML SOURCE: a serializer must escape `&` inside an attribute.
+    const html = `<meta property="og:image" content="https://cdn.example.com/hero.png?width=1200&amp;sig=abc123&amp;exp=99" />`;
+    const result = extractHeroAndSponsors(html, BASE_URL);
+
+    // Parsed raw, this yields a parameter literally named `amp;sig` and NO `sig`, so a signed
+    // CDN image 403s and the hero silently disappears.
+    expect(result.heroImageUrl).toBe('https://cdn.example.com/hero.png?width=1200&sig=abc123&exp=99');
+    expect(new URL(result.heroImageUrl).searchParams.get('sig')).toBe('abc123');
+  });
+
+  it('decodes entities in sponsor logo URLs too, not just the hero', () => {
+    // The decode lives in the shared resolver, so every extractor gets it -- a new one cannot
+    // forget to call it.
+    const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme" class="sponsor" />`;
+    const result = extractHeroAndSponsors(html, BASE_URL);
+    if (result.sponsors.length > 0) {
+      expect(result.sponsors[0].logoUrl).not.toContain('amp;');
+    }
+  });
+
+  it('decodes &amp; LAST so an escaped entity does not become a real one', () => {
+    // `&amp;lt;` is the literal TEXT `&lt;`, not `<`. Decoding `&amp;` first would turn one
+    // escaped entity into a different real one -- the classic double-decode bug.
+    const html = `<meta property="og:image" content="https://cdn.example.com/a.png?q=&amp;lt;x" />`;
+    const result = extractHeroAndSponsors(html, BASE_URL);
+    expect(result.heroImageUrl).toContain('&lt;x');
+    expect(result.heroImageUrl).not.toContain('<x');
+  });
+
   it('falls back to JSON-LD Event.image when there is no og:image tag', () => {
     const html = `
       <script type="application/ld+json">

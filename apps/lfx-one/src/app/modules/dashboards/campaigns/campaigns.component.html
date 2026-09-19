@@ -772,6 +772,12 @@
                         <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
                           <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant A</span>
                           <p class="text-sm font-semibold text-gray-900">{{ emailCopy()?.subject || '(template subject)' }}</p>
+                          <!-- Preheader shown on BOTH cards: it is now a per-variant field, and it is
+                               the first thing an inbox renders after the subject. Omitting it hid the
+                               very difference the test measures, since opens are what pick a winner. -->
+                          <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-a">
+                            {{ emailCopy()?.preheader || '(template preheader)' }}
+                          </p>
                         </div>
                         <!-- Same hero/button/sponsors note as the single-variant preview above: both
                              variants share the hero image, CTA button, and sponsor logos -- only
@@ -803,6 +809,12 @@
                         <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
                           <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant B</span>
                           <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
+                          <!-- Blank B falls back to A's, matching what upstream actually does with an
+                               absent previewTextB -- so the preview states the real outcome rather
+                               than showing an empty line the send would not produce. -->
+                          <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-b">
+                            {{ abTestPreheaderB() || emailCopy()?.preheader || '(template preheader)' }}
+                          </p>
                         </div>
                         @if (emailHeroImageUrl(); as heroUrl) {
                           <img referrerpolicy="no-referrer" [src]="heroUrl" alt="Event banner" class="block w-full" />
