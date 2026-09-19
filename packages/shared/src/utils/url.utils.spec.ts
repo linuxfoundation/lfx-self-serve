@@ -211,6 +211,16 @@ describe('isPrivateHost', () => {
     // Exactly four groups, so this IS the address rather than interior IPv6 padding.
     ['a bare all-zero dash quad', '0-0-0-0.nip.io'],
     ['a bare this-host dash quad', '0-0-0-1.nip.io'],
+    // FAILS CLOSED, deliberately. These are PUBLIC addresses (Google DNS, doc range), but their
+    // expanded IPv6 zero run forms a `0.0.0.x` window and they are structurally identical to
+    // `0-0-0-5-dead-beef-0-0`, which resolves into 0.0.0.0/8. Four heuristics were tried --
+    // exclude by value, by range, by position, by label length -- and each admitted a private
+    // quad or refused a public address. Only the resolver knows which reading applies, so the
+    // guard refuses both. Refusing a wildcard-DNS host for a public v6 hero image is a rare
+    // cost; admitting a private quad is SSRF.
+    ['a public expanded IPv6, refused fail-closed', '2001-4860-4860-0-0-0-0-8888.sslip.io'],
+    ['a public expanded IPv6 in the doc range', '2001-db8-0-0-0-0-0-1.sslip.io'],
+    ['a public expanded IPv6 ending in a 1', '2600-1f18-0-0-0-0-0-1.sslip.io'],
     // `[::1]` and its expanded twin are the SAME address -- a string compare against '::1'
     // matched only the compressed spelling.
     ['a fully expanded IPv6 loopback', '[0000:0000:0000:0000:0000:0000:0000:0001]'],
@@ -269,14 +279,6 @@ describe('isPrivateHost', () => {
     // 32 hex digits is only an address under a wildcard-DNS suffix; elsewhere it is a word.
     ['a 32-hex label outside a wildcard suffix', 'deadbeefdeadbeefdeadbeefdeadbeef.example.com'],
     ['a 32-hex PUBLIC address under a wildcard suffix', '20010db8000000000000000000000001.sslip.io'],
-    // Expanded IPv6 contains runs like `0-0-0-0`, which the dash-QUAD scan would read as the
-    // IPv4 window `0.0.0.0`. A label already decoded as a complete IPv6 address must not be
-    // re-read as IPv4 digits -- this is Google public DNS.
-    ['a PUBLIC expanded dash-notation IPv6', '2001-4860-4860-0-0-0-0-8888.sslip.io'],
-    ['a public expanded IPv6 in the doc range', '2001-db8-0-0-0-0-0-1.sslip.io'],
-    // Its zero run yields `0.0.0.0` and `0.0.0.1`, which are interior padding here -- a real
-    // private quad always has a non-zero leading octet.
-    ['a public expanded IPv6 ending in a 1', '2600-1f18-0-0-0-0-0-1.sslip.io'],
     // `5a5a5a5a` is hex-only (not all-digits), so it has ONE reading: 90.90.90.90, public.
     // `08080808` is deliberately NOT used here -- it is 8.8.8.8 as hex but 0.123.77.168 as
     // decimal, and an ambiguous label is refused if EITHER reading is private.
