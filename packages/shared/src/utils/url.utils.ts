@@ -345,7 +345,7 @@ const LOOPBACK_WILDCARD_SUFFIXES = ['localtest.me', 'lvh.me', 'traefik.me'];
  * endpoint written in IPv6-mapped form, and matching text alone lets it straight through.
  * (`URL` already folds decimal and octal IPv4 into dotted-quad, so those arrive normalized.)
  *
- * WHAT THIS DOES, as of the hardening rounds on ss#2698: normalises the host (trailing root
+ * WHAT THIS DOES: normalises the host (trailing root
  * dots, IPv6 compression expanded) before judging it; decodes translated encodings that carry an
  * IPv4 destination (IPv4-mapped, IPv4-compatible, RFC 2765 translated, NAT64 64:ff9b::/96, 6to4
  * 2002::/16); denies literal private, loopback, link-local, site-local and CGNAT ranges; scans
@@ -648,6 +648,9 @@ export function isPrivateHost(hostname: string): boolean {
  * `http:` protocol, so returning the original forwards a non-network-absolute value. Userinfo is
  * dropped because these URLs are fetched server-side and rendered into a SENT email, so embedded
  * credentials would travel into the message and every log that records the fetch.
+ *
+ * @param value - A candidate URL from a scraped page, a restored brief, or a direct request
+ * @returns The canonical absolute http(s) URL with userinfo stripped, or '' when unusable
  */
 export function canonicalHttpUrl(value: unknown): string {
   if (typeof value !== 'string') return '';
