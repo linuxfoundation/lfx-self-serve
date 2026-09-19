@@ -280,7 +280,7 @@ export class OrgNavigationService {
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
-    this.accountContextService
+    void this.accountContextService
       .refreshCanonicalRecord(account)
       .catch(() => {
         // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.

@@ -94,6 +94,15 @@ describe('OrgLensNavigationService', () => {
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
     });
+
+    // The write is keyed to the organization for `reconcileAddress`; a selection that has a slug but
+    // no uid yet cannot be keyed, so it is not written.
+    it('is a no-op while the selection has a segment but no uid', () => {
+      selectedAccount.set({ ...acme, uid: undefined });
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      expect(navigate).not.toHaveBeenCalled();
+    });
   });
 
   describe('isOnNotFound', () => {
@@ -173,24 +182,49 @@ describe('OrgLensNavigationService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    // A guard cancelled or redirected the write (resolves `false`), or the router threw (rejects):
-    // nothing landed, nothing to reconcile, and no unhandled rejection either way.
+    // A guard cancelled the write (resolves `false`) or the router threw (rejects) and the address
+    // never moved: nothing to reconcile, and no unhandled rejection either way.
     it.each([
       ['cancelled', (): Promise<boolean> => Promise.resolve(false)],
       ['errored', (): Promise<boolean> => Promise.reject(new Error('navigation failed'))],
-    ])('forgets a write whose navigation %s and settles cleanly', async (_label, outcome) => {
+    ])('settles cleanly and leaves an address the %s write never reached', async (_label, outcome) => {
       navigate.mockReturnValueOnce(outcome());
       currentUrl = '/org/other-org/projects';
       service.navigateToSelectedOrg();
       navigate.mockClear();
       selectedUrlSegment.set('acme-incorporated');
-      currentUrl = '/org/acme-inc/projects';
 
       await expect(service.reconcileAddress()).resolves.toBeUndefined();
       expect(navigate).not.toHaveBeenCalled();
-      // Forgotten, not re-awaited: a later call is a plain no-op.
+    });
+
+    // A cancelled write is not necessarily a write that left nothing behind: a flag guard can redirect
+    // `/org/acme-inc/roi` to `/org/acme-inc/overview` — the original navigation resolves `false`, the
+    // organization segment is in the address all the same, and it still wants the canonical slug.
+    it('still reconciles when a redirected write left the written segment in the address', async () => {
+      navigate.mockReturnValueOnce(Promise.resolve(false));
+      currentUrl = '/org/other-org/roi';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/overview';
+      navigate.mockClear();
+      selectedUrlSegment.set('acme-incorporated');
+
       await service.reconcileAddress();
-      expect(navigate).not.toHaveBeenCalled();
+
+      expect(navigatedTo()).toBe('/org/acme-incorporated/overview');
+    });
+
+    // The reconciling navigation itself is stored for a later reconcile to await — so it must not be
+    // able to reject unhandled if a guard throws on the canonical address.
+    it('never lets its own navigation reject unhandled', async () => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects';
+      navigate.mockReturnValueOnce(Promise.reject(new Error('navigation failed')));
+      selectedUrlSegment.set('acme-incorporated');
+
+      await service.reconcileAddress();
+      await expect(service.reconcileAddress()).resolves.toBeUndefined();
     });
 
     it('is a no-op when the canonical segment matches what was written', async () => {

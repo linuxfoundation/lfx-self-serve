@@ -265,7 +265,7 @@ export class OrgSelectorComponent {
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
     // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
-    this.accountContextService
+    void this.accountContextService
       .refreshCanonicalRecord(account)
       .catch(() => {
         // Errors are already logged inside refreshCanonicalRecord — swallow here so the

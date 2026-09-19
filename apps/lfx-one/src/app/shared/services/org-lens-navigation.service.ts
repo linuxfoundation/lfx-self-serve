@@ -58,8 +58,7 @@ export class OrgLensNavigationService {
 
   /** True on the Org Lens not-found dead end (`ORG_NOT_FOUND_PATH`), the one page a same-organization pick may still leave. */
   public isOnNotFound(): boolean {
-    const [root, second] = this.currentPrimarySegments();
-    return `/${root}/${second}` === ORG_NOT_FOUND_PATH;
+    return this.isNotFoundAddress(this.currentPrimarySegments());
   }
 
   /**
@@ -89,7 +88,7 @@ export class OrgLensNavigationService {
     if (segments.length === 1) {
       // Nothing after `/org`: land on the organization's overview.
       child = ['overview'];
-    } else if (this.isOnNotFound()) {
+    } else if (this.isNotFoundAddress(segments)) {
       // The dead end: only the viewer's own pick may leave it, for that organization's overview.
       if (intent !== 'switch') {
         return;
@@ -116,7 +115,7 @@ export class OrgLensNavigationService {
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
-    this.lastWrite = { uid, segment, navigation };
+    this.lastWrite = { uid, segment, navigation: this.settled(navigation) };
   }
 
   /**
@@ -126,13 +125,15 @@ export class OrgLensNavigationService {
    * the page uses the new segment while the address bar still shows the old one — copied then, it
    * could reopen as not-found. Always a replacement: the viewer meant this page all along (FR-011).
    *
-   * Bounded three ways to the write this service itself made. It waits for that navigation to settle
+   * Bounded four ways to the write this service itself made. It waits for that navigation to settle
    * (the canonical fetch can win the race — `refreshCanonicalRecord` dedupes in-flight requests, so a
    * re-pick can be handed a promise that is already resolving — and `Router.url` only moves once a
-   * navigation activates). It acts only for the *same organization*: a later default selection of
-   * another organization must not re-address a page a switch wrote, however the segments compare. And
-   * it re-checks that the live address still carries the written segment, since the navigation may
-   * have been cancelled or redirected.
+   * navigation activates). It yields to a newer write, including a re-pick of the same organization.
+   * It acts only for the *same organization*: a later default selection of another organization must
+   * not re-address a page a switch wrote, however the segments compare. And it re-checks that the
+   * live address still carries the written segment — the navigation may have been cancelled or
+   * redirected, and a redirect under the same organization (a flag guard sending `/roi` to
+   * `/overview`) still leaves that segment in place and still wants the canonical slug.
    *
    * Deep links do not come through here on purpose: `orgPathParamGuard` canonicalizes from the
    * resolver's own answer, which is authoritative for the address it was asked about.
@@ -142,15 +143,11 @@ export class OrgLensNavigationService {
     if (!write) {
       return;
     }
-    // `Router.navigate` resolves `false` when a guard cancels or redirects the navigation and rejects
-    // on a navigation error; neither is this method's to report (the router already did), and a
-    // write that never landed has nothing to reconcile — so it is forgotten rather than re-awaited.
-    const activated = await write.navigation.catch(() => false);
+    // Settled either way — `false` for a guard cancel or redirect, rejection for a navigation error
+    // (both already handled at creation; neither is this method's to report). What the address
+    // holds afterwards is what the live check below decides on.
+    await write.navigation;
     if (this.lastWrite !== write) {
-      return;
-    }
-    if (!activated) {
-      this.lastWrite = null;
       return;
     }
     const selected = this.accountContext.selectedAccount();
@@ -167,7 +164,20 @@ export class OrgLensNavigationService {
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
-    this.lastWrite = { uid: write.uid, segment: canonical, navigation };
+    this.lastWrite = { uid: write.uid, segment: canonical, navigation: this.settled(navigation) };
+  }
+
+  /**
+   * A navigation promise that never rejects: `Router.navigate` rejects on a navigation error, which
+   * the router has already reported, and these promises are stored to be awaited later (or never) —
+   * an unhandled rejection is the only thing an unguarded one could add.
+   */
+  private settled(navigation: Promise<boolean>): Promise<boolean> {
+    return navigation.catch(() => false);
+  }
+
+  private isNotFoundAddress([root, second]: readonly string[]): boolean {
+    return `/${root}/${second}` === ORG_NOT_FOUND_PATH;
   }
 
   /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */

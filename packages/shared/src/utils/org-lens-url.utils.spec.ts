@@ -76,8 +76,9 @@ describe('orgLensPagePath shape rules', () => {
     }
   );
 
-  // SFIDs are case-sensitive upstream: the shape check must not lowercase one on the way through.
-  it('keeps a mixed-case SFID exactly as addressed', () => {
+  // The segment is passed through as addressed: SFIDs are case-sensitive upstream, and a slug's
+  // case is the path-param guard's to canonicalize on the next navigation, not this builder's.
+  it('passes the addressed segment through unchanged, whatever its letter case', () => {
     const mixed = '0014100000MgAaAaAa';
     expect(orgLensPagePath(['org', mixed, 'roi'], 'overview')).toBe(`/org/${mixed}/overview`);
     expect(orgLensPagePath(['org', 'ACME-Inc', 'roi'], 'overview')).toBe('/org/ACME-Inc/overview');
