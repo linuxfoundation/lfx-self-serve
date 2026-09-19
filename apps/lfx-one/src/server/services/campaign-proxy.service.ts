@@ -1464,13 +1464,15 @@ export class CampaignProxyService {
       }
 
       try {
-        const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
+        const { html: scrapedHtml, ok, status, finalUrl } = await fetchSafeUrl(safeUrl, signal);
         if (!ok) {
           yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
         }
         html = scrapedHtml;
-        ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, safeUrl));
+        // Resolved against the FINAL url, not the requested one: fetchSafeUrl follows up to 5
+        // redirects, and a relative `og:image` belongs to the page that served it.
+        ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, finalUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;

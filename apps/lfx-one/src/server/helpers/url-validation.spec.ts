@@ -47,6 +47,43 @@ const toLocalServer = (opts: https.RequestOptions, cb: (res: http.IncomingMessag
 
 vi.mock('node:https', () => ({ default: { request: toLocalServer }, request: toLocalServer }));
 
+describe('fetchSafeUrl final URL after redirects', () => {
+  let redirectServer: http.Server;
+
+  beforeAll(async () => {
+    redirectServer = http.createServer((req, res) => {
+      if (req.url === '/old') {
+        // Same host, DIFFERENT directory -- the case that silently breaks a relative og:image.
+        res.writeHead(302, { location: '/events/new/' });
+        res.end();
+        return;
+      }
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end('<meta property="og:image" content="hero.jpg" />');
+    });
+    await new Promise<void>((resolve) => redirectServer.listen(0, '127.0.0.1', resolve));
+    port = (redirectServer.address() as { port: number }).port;
+  });
+
+  afterAll(async () => {
+    await new Promise<void>((resolve) => redirectServer.close(() => resolve()));
+  });
+
+  it('reports the URL that actually served the response, not the one requested', async () => {
+    // Imported INSIDE the test, like the ceiling tests below: the module must load after the
+    // `node:https` mock is installed, or it captures the real transport.
+    const { fetchSafeUrl } = await import('./url-validation');
+    const result = await fetchSafeUrl('https://events.example.com/old', new AbortController().signal);
+
+    expect(result.ok).toBe(true);
+    // Resolving a relative `og:image` against the REQUESTED url yields
+    // https://events.example.com/hero.jpg -- a path that does not exist, so the hero silently
+    // disappears. Against the final url it is .../events/new/hero.jpg, which is the real one.
+    expect(result.finalUrl).toBe('https://events.example.com/events/new/');
+    expect(new URL('hero.jpg', result.finalUrl).href).toBe('https://events.example.com/events/new/hero.jpg');
+  });
+});
+
 describe('fetchSafeUrl response byte ceiling', () => {
   beforeAll(async () => {
     server = http.createServer((_req, res) => {
