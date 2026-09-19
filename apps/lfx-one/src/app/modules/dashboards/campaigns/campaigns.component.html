@@ -728,6 +728,16 @@
                     </div>
 
                     <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-preheader-b">Variant B preheader</label>
+                      <lfx-input-text
+                        [form]="abTestForm"
+                        control="preheaderB"
+                        inputId="abtest-preheader-b"
+                        placeholder="Leave blank to keep variant A's preheader"
+                        dataTest="campaigns-email-abtest-preheader-b" />
+                    </div>
+
+                    <div class="flex flex-col gap-1">
                       <label class="text-xs font-medium text-gray-700" for="abtest-body-b">Variant B body</label>
                       <lfx-textarea
                         [form]="abTestForm"

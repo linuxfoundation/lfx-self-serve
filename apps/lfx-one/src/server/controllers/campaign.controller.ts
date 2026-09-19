@@ -2191,6 +2191,8 @@ export class CampaignController {
     const subjectB = typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '';
     const rawBodyB = body.hubspotConfig?.bodyHtmlB;
     const bodyHtmlB = typeof rawBodyB === 'string' ? rawBodyB.trim() : '';
+    const rawPreheaderB = body.hubspotConfig?.preheaderB;
+    const preheaderB = typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '';
 
     // Same allow-list gap as above, but for the hero image and sponsor logos: campaign-service's
     // `hubspotConfig` (`internal/dispatch/hubspot.go`) has always accepted `heroImageUrl`,
@@ -2259,7 +2261,13 @@ export class CampaignController {
       // direct campaign-manager request bypasses it entirely, and upstream reads an empty string
       // as "blank this field" — so `||` here could still stage a variant whose body was cleared
       // by the very request meant to set it. Both are already trimmed above.
-      ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== '' ? { abTestEnabled, subjectB, bodyHtmlB } : {}),
+      // Renamed `preheaderB` -> `previewTextB` for the same reason `preheader` becomes
+      // `previewText` above: the Go decoder reads the latter and silently drops the former.
+      // Rides INSIDE the A/B gate and is dropped when blank -- upstream preserves the parent's
+      // preview text for an absent value, so forwarding '' would BLANK B's preheader.
+      ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== ''
+        ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
+        : {}),
     };
   }
 }

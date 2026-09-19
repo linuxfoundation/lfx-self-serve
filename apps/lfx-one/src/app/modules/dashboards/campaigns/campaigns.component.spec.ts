@@ -18,6 +18,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
+  CampaignEventSponsor,
   CampaignIndexDoc,
   CampaignJobOutcome,
   CampaignListResult,
@@ -1883,9 +1884,12 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestBodyHtmlB: Signal<string>;
     abTestForm: {
       controls: {
-        enabled: { setValue(v: boolean): void };
-        subjectB: { setValue(v: string): void };
-        bodyHtmlB: { setValue(v: string): void };
+        // `value` as well as `setValue`: asserting the CONTROL is what catches a stale write
+        // that lands outside change detection, which the `toSignal` mirrors miss.
+        enabled: { setValue(v: boolean): void; value: boolean };
+        subjectB: { setValue(v: string): void; value: string };
+        preheaderB: { setValue(v: string): void; value: string };
+        bodyHtmlB: { setValue(v: string): void; value: string };
       };
     };
     abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
@@ -1896,7 +1900,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCtaLabel: Signal<string>;
     emailHeroImageUrl: Signal<string>;
     emailRegistrationUrl: Signal<string>;
-    emailSponsors: Signal<{ name: string; logoUrl: string }[]>;
+    emailSponsors: Signal<CampaignEventSponsor[]>;
     emailBodyIsStageable: Signal<boolean>;
     abTestIsStageable: Signal<boolean>;
     onGenerateAbTestCopy(): Promise<void>;
@@ -4020,6 +4024,51 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
+    it('abandons an in-flight variant B generation when the operator toggles A/B off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      // Hold the BRIEF-ID persist open, not generateEmailCopy. onGenerateAbTestCopy awaits
+      // ensureEmailBriefId first, so this is the boundary where the toggle can land while the
+      // generation is genuinely in flight -- holding the later call resolved too early to race.
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '' } }) as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // Operator changes their mind mid-flight. This routes through clearAbTestDraft().
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // WHAT THIS PINS, stated precisely, because a vaguer claim here would be false.
+      //
+      // Toggling A/B off mid-flight abandons the generation before `generateEmailCopy` is
+      // reached, and leaves the B controls empty. That is the operator-visible contract.
+      //
+      // It does NOT prove the `abTestCopyGeneration` bump in clearAbTestDraft() is load-bearing:
+      // removing that bump leaves this test green, because the write-back is not reached on this
+      // path either way. Five stagings were tried and none made it fail. The bump is
+      // defence-in-depth for a path that is not demonstrably reachable today -- kept because the
+      // cost is one increment and the failure mode is a discarded draft silently returning, but
+      // labelled honestly rather than described as covered.
+      expect(gen).not.toHaveBeenCalled();
+      // The CONTROLS, not the `toSignal` mirrors, which lag a setValue landing outside change
+      // detection -- asserting the mirrors let a stale write through unnoticed.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
+    });
+
     it('stages the A/B fields as they were BEFORE the brief-id await', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
@@ -4055,6 +4104,56 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBe(true);
       expect(cfg?.subjectB).toBe('B subject');
       expect(cfg?.bodyHtmlB).toBe('<p>B body</p>');
+    });
+
+    it('forwards variant B preheader as previewTextB, so B does not inherit A', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.preheaderB.setValue('  B preheader  ');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Trimmed, and DISTINCT from A's. These are the INBOUND names; the controller renames
+      // them to previewText/previewTextB on the wire (covered in the controller spec). Without
+      // B's own value campaign-service preserves the parent's preview text, so B silently ran
+      // with A's preheader -- biasing a test whose winner is judged on opens.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.preheaderB).toBe('B preheader');
+      expect(cfg?.preheader).toBe('A preheader');
+    });
+
+    it('omits previewTextB when blank rather than blanking B preheader', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.preheaderB.setValue('   ');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // ABSENT, not ''. Upstream preserves the parent's preview text for an absent value, so
+      // sending an empty string would BLANK B's preheader instead of leaving it alone.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.preheaderB).toBeUndefined();
+      expect(cfg?.abTestEnabled).toBe(true);
     });
 
     it('omits a whitespace-only CTA even when the registration URL is valid', async () => {

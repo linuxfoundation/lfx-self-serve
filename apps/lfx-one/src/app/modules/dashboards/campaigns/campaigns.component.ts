@@ -131,6 +131,11 @@ export class CampaignsComponent {
   protected readonly abTestForm = new FormGroup({
     enabled: new FormControl<boolean>(false, { nonNullable: true }),
     subjectB: new FormControl<string>('', { nonNullable: true }),
+    // Variant B carries its OWN preheader. campaign-service accepts `previewTextB`
+    // (internal/dispatch/hubspot.go), and when it is omitted the rebuild preserves the parent's
+    // preview text -- so B silently inherited A's preheader. That biases an A/B test whose
+    // winner is judged on opens, which is the metric a preheader most directly moves.
+    preheaderB: new FormControl<string>('', { nonNullable: true }),
     bodyHtmlB: new FormControl<string>('', { nonNullable: true }),
   });
 
@@ -1124,6 +1129,11 @@ export class CampaignsComponent {
   });
 
   /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
+  /** Variant B's preheader — forwarded as `previewTextB` so B does not inherit A's. */
+  protected readonly abTestPreheaderB = toSignal(this.abTestForm.controls.preheaderB.valueChanges, {
+    initialValue: this.abTestForm.controls.preheaderB.value,
+  });
+
   protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
     initialValue: this.abTestForm.controls.bodyHtmlB.value,
   });
@@ -2176,6 +2186,7 @@ export class CampaignsComponent {
     // stage must not ride along into a create for the new one.
     this.abTestCopyGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');
@@ -2333,6 +2344,7 @@ export class CampaignsComponent {
     // while a regeneration fails lets `canStageEmail` still see it, so the operator reads an
     // error and stages the stale copy anyway.
     this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
 
     try {
@@ -2364,6 +2376,8 @@ export class CampaignsComponent {
       }
 
       this.abTestForm.controls.subjectB.setValue(result.copy.subject);
+      // The generator returns a preheader for B; dropping it here was what made B inherit A's.
+      this.abTestForm.controls.preheaderB.setValue(result.copy.preheader);
       this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body);
       this.abTestCopyState.set('idle');
     } catch {
@@ -2418,6 +2432,7 @@ export class CampaignsComponent {
     // hero: exactly the config-that-never-coexisted this block exists to prevent.
     const abTestEnabled = this.abTestEnabled() && this.abTestIsStageable();
     const abTestSubjectB = this.abTestSubjectB();
+    const abTestPreheaderB = this.abTestPreheaderB();
     const abTestBodyHtmlB = this.abTestBodyHtmlB();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
@@ -2532,7 +2547,17 @@ export class CampaignsComponent {
           // and upstream reads an empty string as "blank this field" rather than "leave it
           // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
           // comment above already said the Go side requires both non-empty; the gate now agrees.
-          ...(abTestEnabled ? { abTestEnabled: true, subjectB: abTestSubjectB, bodyHtmlB: abTestBodyHtmlB } : {}),
+          ...(abTestEnabled
+            ? {
+                abTestEnabled: true,
+                subjectB: abTestSubjectB,
+                bodyHtmlB: abTestBodyHtmlB,
+                // Local name, renamed to `previewTextB` by the controller exactly as `preheader`
+                // becomes `previewText`. Omitted when blank: upstream preserves the parent's
+                // preview text for an absent value, so '' would blank B's preheader instead.
+                ...(abTestPreheaderB.trim() !== '' ? { preheaderB: abTestPreheaderB.trim() } : {}),
+              }
+            : {}),
         },
       };
 
@@ -2910,6 +2935,7 @@ export class CampaignsComponent {
     // (2050, 4117) already bump for the same reason.
     this.abTestCopyGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');
@@ -4269,6 +4295,7 @@ export class CampaignsComponent {
     // Variant B belongs to the same brief as variant A — reset it alongside for the same reason.
     this.abTestForm.controls.enabled.setValue(false);
     this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
     this.abTestCopyState.set('idle');
     this.abTestCopyError.set('');

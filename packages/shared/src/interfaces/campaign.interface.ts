@@ -1180,6 +1180,20 @@ export interface HubSpotCampaignCreateRequest {
    */
   bodyHtmlB?: string;
   /**
+   * Variant B preview text, applied to the HubSpot-created A/B variant. Ignored when
+   * `abTestEnabled` is not set.
+   *
+   * Named `preheaderB` here and renamed to `previewTextB` on the wire, exactly as `preheader`
+   * becomes `previewText` -- the Go struct tag is `previewTextB`
+   * (`internal/dispatch/hubspot.go`), and the controller owns that boundary.
+   *
+   * OMITTED rather than sent empty when the operator has none: upstream preserves the parent's
+   * preview text for an absent value, so an empty string would BLANK B's preheader instead of
+   * leaving it alone. Without this field B silently inherited A's preheader, which biases an
+   * A/B test whose winner is judged on opens.
+   */
+  preheaderB?: string;
+  /**
    * CTA button label, rendered as a native HubSpot button widget immediately after the body
    * during the same full content rebuild (`internal/dispatch/hubspot.go`'s `ButtonText`).
    * OPTIONAL; ignored unless `buttonUrl` is also set. Upstream defaults to "Register Now" when
