@@ -270,9 +270,10 @@ export class OrgNavigationService {
           this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
-        // bar as a default's — written the same way. A default never leaves an addressed page or the
-        // not-found dead end alone, so this is a no-op everywhere but the bare form.
-        this.orgLensNavigation.navigateToSelectedOrg('default');
+        // bar as a default's — written the same way, canonical follow-up included: the cookie stub's
+        // own canonical fetch is usually still in flight here (deduped by uid, so this adds no request
+        // while it is), and when it lands with another slug the address must follow.
+        this.writeDefaultAddress(this.accountContextService.selectedAccount());
         return;
       }
     }
@@ -284,6 +285,18 @@ export class OrgNavigationService {
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
+    this.writeDefaultAddress(account);
+  }
+
+  /**
+   * Spec 050 US2: a selection applied by the app while already inside Org Lens is written into a
+   * legacy address (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first
+   * paint on. As a default — not a switch — it replaces the entry, never leaves `/org/not-found`, and
+   * never overrides an address that already names an organization. The canonical record is fetched
+   * (deduped by uid against one already in flight) and, once it lands, the written segment is
+   * reconciled against the slug it carried.
+   */
+  private writeDefaultAddress(account: Account): void {
     void this.accountContextService
       .refreshCanonicalRecord(account)
       .catch(() => {
@@ -295,10 +308,6 @@ export class OrgNavigationService {
       .catch(() => {
         // Reconciliation is best-effort: the address stays as written.
       });
-    // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
-    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
-    // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never
-    // overrides an address that already names an organization.
     this.orgLensNavigation.navigateToSelectedOrg('default');
   }
 

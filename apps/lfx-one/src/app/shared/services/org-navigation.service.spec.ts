@@ -34,6 +34,7 @@ describe('OrgNavigationService default selection', () => {
   let setAccount: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let reconcileAddress: ReturnType<typeof vi.fn>;
+  let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
 
@@ -43,6 +44,7 @@ describe('OrgNavigationService default selection', () => {
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     navigateToSelectedOrg = vi.fn();
     reconcileAddress = vi.fn();
+    refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -54,7 +56,7 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, reconcileAddress } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord: vi.fn(() => Promise.resolve()) },
+          useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord },
         },
       ],
     });
@@ -82,7 +84,7 @@ describe('OrgNavigationService default selection', () => {
   });
 
   it('still reconciles the written address when the canonical fetch fails', async () => {
-    TestBed.inject(AccountContextService).refreshCanonicalRecord = vi.fn(() => Promise.reject(new Error('canonical fetch failed')));
+    refreshCanonicalRecord.mockReturnValue(Promise.reject(new Error('canonical fetch failed')));
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
@@ -102,8 +104,9 @@ describe('OrgNavigationService default selection', () => {
   });
 
   // A restored selection on a legacy `/org/{page}` is the same uncopyable bar as a default's, so it is
-  // written the same way — as a default, which is a no-op on an addressed page or the dead end.
-  it('keeps a restored selection that is on the page and writes it into a legacy address as a default', () => {
+  // written the same way — as a default (a no-op on an addressed page or the dead end), canonical
+  // follow-up included: the cookie stub's fetch may land with another slug after the write.
+  it('keeps a restored selection that is on the page and writes it into a legacy address as a default', async () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
@@ -111,7 +114,8 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    expect(reconcileAddress).not.toHaveBeenCalled();
+    expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // A cookie-restored selection carries no slug; the indexed row does. Filling it is a patch to the
