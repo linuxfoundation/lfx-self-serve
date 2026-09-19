@@ -21,9 +21,13 @@ import { AccountContextService } from './account-context.service';
  *   Lens page, now addressed to the selected organization — same child segments, query and
  *   fragment. What it may touch, and whether history stacks, depends on who made the selection
  *   (`OrgLensAddressIntent`).
- * - `reconcileAddress()` is chained behind the canonical-record fetch by every caller of
- *   `navigateToSelectedOrg`: once the canonical slug is known and differs from the indexed row the
- *   address was written with, the written segment is replaced.
+ *
+ * The segment written comes from the selection at the time of the write — the indexed org row. It is
+ * deliberately not re-written when the canonical record (member-service) later arrives with a
+ * different slug: addresses are resolved against the index (`/api/orgs/resolve/:segment` reads
+ * query-service), and during index lag the canonical slug is the one the resolver cannot answer yet.
+ * The indexed slug is the copyable one; a rename reaches addresses when the index has caught up and
+ * the org list is next loaded.
  *
  * Two builders coexist on purpose. This one derives the organization from the *selection*, which is
  * right for links and for code that runs after a route has been recognized. Code that runs *during*
@@ -37,15 +41,6 @@ import { AccountContextService } from './account-context.service';
 export class OrgLensNavigationService {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
-
-  /**
-   * The address `navigateToSelectedOrg` last navigated toward — the organization (by uid) and the
-   * segment it was written with — plus the navigation itself. What `reconcileAddress` is allowed to
-   * replace, and only after that navigation has settled: the navigation may still be in flight when
-   * the canonical record lands, and it may have been cancelled or redirected (a guard failing closed),
-   * which is why the live address is re-checked rather than trusted.
-   */
-  private lastWrite: { uid: string; segment: string; navigation: Promise<boolean> } | null = null;
 
   /** Router commands for an Org Lens page under the current selection. */
   public orgLensLink(page: string, ...rest: (string | number)[]): string[] {
@@ -67,9 +62,8 @@ export class OrgLensNavigationService {
   /**
    * Re-address the current page to the selected organization. No-op outside Org Lens (a switch
    * from the Me or Project lens changes the selection only), on EasyCLA pages (DR-004: they stay
-   * on the legacy address in phase 1), when the selection has no segment or no uid yet (the uid is
-   * the key `reconcileAddress` binds the write to), or when the address already names the selected
-   * organization (FR-014).
+   * on the legacy address in phase 1), when no segment is known yet, or when the address already
+   * names the selected organization (FR-014).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -83,8 +77,7 @@ export class OrgLensNavigationService {
       return;
     }
     const segment = this.accountContext.selectedUrlSegment();
-    const uid = this.accountContext.selectedAccount().uid;
-    if (!segment || !uid) {
+    if (!segment) {
       return;
     }
 
@@ -114,70 +107,11 @@ export class OrgLensNavigationService {
     // A switch is pushed so Back returns to the pre-switch organization and page (US2 scenario 3);
     // a default is a canonicalizing rewrite of the address the viewer already meant, so it replaces
     // (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen.
-    const navigation = this.router.navigate(['/org', segment, ...child], {
+    void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default',
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
-    this.lastWrite = { uid, segment, navigation: this.settled(navigation) };
-  }
-
-  /**
-   * Re-canonicalizes the address after the selection's canonical record arrives. The segment written
-   * by `navigateToSelectedOrg` comes from the indexed org row; the canonical fetch that both callers
-   * start alongside it can carry a different slug (index lag, a rename), after which every link on
-   * the page uses the new segment while the address bar still shows the old one — copied then, it
-   * could reopen as not-found. Always a replacement: the viewer meant this page all along (FR-011).
-   *
-   * Bounded four ways to the write this service itself made. It waits for that navigation to settle
-   * (the canonical fetch can win the race — `refreshCanonicalRecord` dedupes in-flight requests, so a
-   * re-pick can be handed a promise that is already resolving — and `Router.url` only moves once a
-   * navigation activates). It yields to a newer write, including a re-pick of the same organization.
-   * It acts only for the *same organization*: a later default selection of another organization must
-   * not re-address a page a switch wrote, however the segments compare. And it re-checks that the
-   * live address still carries the written segment — the navigation may have been cancelled or
-   * redirected, and a redirect under the same organization (a flag guard sending `/roi` to
-   * `/overview`) still leaves that segment in place and still wants the canonical slug.
-   *
-   * Deep links do not come through here on purpose: `orgPathParamGuard` canonicalizes from the
-   * resolver's own answer, which is authoritative for the address it was asked about.
-   */
-  public async reconcileAddress(): Promise<void> {
-    const write = this.lastWrite;
-    if (!write) {
-      return;
-    }
-    // Settled either way — `false` for a guard cancel or redirect, rejection for a navigation error
-    // (both already handled at creation; neither is this method's to report). What the address
-    // holds afterwards is what the live check below decides on.
-    await write.navigation;
-    if (this.lastWrite !== write) {
-      return;
-    }
-    const selected = this.accountContext.selectedAccount();
-    const canonical = this.accountContext.selectedUrlSegment();
-    if (selected.uid !== write.uid || !canonical || canonical === write.segment) {
-      return;
-    }
-    const segments = this.currentPrimarySegments();
-    if (!this.isRewritableOrgAddress(segments) || segments[1] !== write.segment) {
-      return;
-    }
-    const navigation = this.router.navigate(['/org', canonical, ...segments.slice(2)], {
-      replaceUrl: true,
-      queryParamsHandling: 'preserve',
-      preserveFragment: true,
-    });
-    this.lastWrite = { uid: write.uid, segment: canonical, navigation: this.settled(navigation) };
-  }
-
-  /**
-   * A navigation promise that never rejects: `Router.navigate` rejects on a navigation error, which
-   * the router has already reported, and these promises are stored to be awaited later (or never) —
-   * an unhandled rejection is the only thing an unguarded one could add.
-   */
-  private settled(navigation: Promise<boolean>): Promise<boolean> {
-    return navigation.catch(() => false);
   }
 
   /** True when the address is exactly the not-found dead end (`ORG_NOT_FOUND_SEGMENTS`), not merely a path beneath it. */

@@ -30,7 +30,6 @@ describe('OrgSelectorComponent.selectItem', () => {
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnNotFound: ReturnType<typeof vi.fn>;
-  let reconcileAddress: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<OrgSelectorComponent>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
@@ -41,7 +40,6 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     navigateToSelectedOrg = vi.fn();
     isOnNotFound = vi.fn(() => false);
-    reconcileAddress = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -73,7 +71,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound, reconcileAddress } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
       ],
     }).compileComponents();
 
@@ -82,14 +80,12 @@ describe('OrgSelectorComponent.selectItem', () => {
     await fixture.whenStable();
   });
 
-  it('selects another organization and re-addresses the page as a switch', async () => {
+  it('selects another organization and re-addresses the page as a switch', () => {
     pick(rowB);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta-llc' }));
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
-    // Once the canonical record is in, the address is checked against the slug it carried.
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.
@@ -104,16 +100,13 @@ describe('OrgSelectorComponent.selectItem', () => {
   // On the dead end the selection is the cookie's or a bootstrap default that never made it into the
   // address, so the row shown as selected — for a single-organization viewer, the only row — is the
   // way out. Still no re-selection: the address moves, the account does not.
-  it('leaves the not-found dead end for the already selected organization, without re-selecting it', async () => {
+  it('leaves the not-found dead end for the already selected organization, without re-selecting it', () => {
     isOnNotFound.mockReturnValue(true);
 
     pick(rowA);
 
     expect(setAccount).not.toHaveBeenCalled();
+    expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
-    // The selection on the dead end is the cookie's or the bootstrap default's, whose canonical
-    // record may not be in yet — so this write gets the same follow-up as any other.
-    expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 });

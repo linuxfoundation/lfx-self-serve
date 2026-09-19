@@ -240,14 +240,6 @@ export class OrgSelectorComponent {
     // FR-014 forbids for a same-organization pick.
     if (item.uid === this.selectedAccountUid()) {
       if (this.orgLensNavigation.isOnNotFound()) {
-        // A write like any other: the selection here came from the cookie or the bootstrap default,
-        // whose canonical fetch may not have landed yet, so this address wants the same follow-up.
-        void this.accountContextService
-          .refreshCanonicalRecord(this.selectedAccount())
-          .then(() => this.orgLensNavigation.reconcileAddress())
-          .catch(() => {
-            // Reconciliation is best-effort: the address stays as written.
-          });
         this.orgLensNavigation.navigateToSelectedOrg('switch');
       }
       this.popoverRef()?.hide();
@@ -273,16 +265,10 @@ export class OrgSelectorComponent {
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
     // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
-    // `refreshCanonicalRecord` settles after the fetch either way (a failure is logged inside it and
-    // leaves the indexed snapshot). Then: the canonical record can carry a different slug than the
-    // indexed row, and the address written below must follow it or the bar stops being copyable
-    // (spec 050 FR-002) — a no-op after a failed fetch, since the slug is as it was.
-    void this.accountContextService
-      .refreshCanonicalRecord(account)
-      .then(() => this.orgLensNavigation.reconcileAddress())
-      .catch(() => {
-        // Reconciliation is best-effort: the address stays as written.
-      });
+    // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
+    // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
+    // arrives (it settles either way — failures are logged inside and leave the indexed snapshot).
+    void this.accountContextService.refreshCanonicalRecord(account);
     // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
     // re-addressed to the new selection (no-op outside Org Lens and on EasyCLA).
     this.orgLensNavigation.navigateToSelectedOrg('switch');

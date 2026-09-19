@@ -33,7 +33,6 @@ describe('OrgNavigationService default selection', () => {
   let isAddressedSelection: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
-  let reconcileAddress: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
@@ -43,7 +42,6 @@ describe('OrgNavigationService default selection', () => {
     isAddressedSelection = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     navigateToSelectedOrg = vi.fn();
-    reconcileAddress = vi.fn();
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [
@@ -53,7 +51,7 @@ describe('OrgNavigationService default selection', () => {
         MessageService,
         { provide: LensService, useValue: {} },
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, reconcileAddress } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
         {
           provide: AccountContextService,
           useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord },
@@ -71,14 +69,13 @@ describe('OrgNavigationService default selection', () => {
     http.expectOne((req) => req.url === '/api/nav/org-items').flush(page(items));
   };
 
-  it('selects the first organization and re-addresses the page as a default, not a switch', async () => {
+  it('selects the first organization and re-addresses the page as a default, not a switch', () => {
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A, slug: 'acme' }));
+    expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    // Once the canonical record is in, the written address is checked against the slug it carried.
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // The organization the address named was access-verified by the resolver a moment ago; whether or
@@ -94,18 +91,16 @@ describe('OrgNavigationService default selection', () => {
   });
 
   // A restored selection on a legacy `/org/{page}` is the same uncopyable bar as a default's, so it is
-  // written the same way — as a default (a no-op on an addressed page or the dead end), canonical
-  // follow-up included: the cookie stub's fetch may land with another slug after the write.
-  it('keeps a restored selection that is on the page and writes it into a legacy address as a default', async () => {
+  // written the same way — as a default, which is a no-op on an addressed page or the dead end.
+  it('keeps a restored selection that is on the page and writes it into a legacy address as a default', () => {
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
 
     expect(setAccount).not.toHaveBeenCalled();
+    expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
-    expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
-    await vi.waitFor(() => expect(reconcileAddress).toHaveBeenCalledTimes(1));
   });
 
   // A cookie-restored selection carries no slug; the indexed row does. Filling it is a patch to the
