@@ -49,7 +49,7 @@ describe('OrgNavigationService default selection', () => {
         MessageService,
         { provide: LensService, useValue: {} },
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, reconcileAddress: vi.fn() } },
         {
           provide: AccountContextService,
           useValue: { selectedAccount, isAddressedSelection, setAccount, refreshCanonicalRecord: vi.fn(() => Promise.resolve()) },

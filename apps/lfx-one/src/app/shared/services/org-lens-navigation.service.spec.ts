@@ -110,6 +110,56 @@ describe('OrgLensNavigationService', () => {
   });
 
   /**
+   * The canonical record can carry a different slug than the indexed row the address was written
+   * from (index lag, a rename). The address follows — but only the address this service wrote.
+   */
+  describe('reconcileAddress', () => {
+    it('replaces the segment it wrote when the selection canonicalizes to another one', () => {
+      currentUrl = '/org/other-org/projects/k8s?tab=active#top';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects/k8s?tab=active#top';
+      navigate.mockClear();
+
+      selectedUrlSegment.set('acme-incorporated');
+      service.reconcileAddress();
+
+      expect(navigatedTo()).toBe('/org/acme-incorporated/projects/k8s');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true }));
+    });
+
+    it('is a no-op when the canonical segment matches what was written', () => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      currentUrl = '/org/acme-inc/projects';
+      navigate.mockClear();
+
+      service.reconcileAddress();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('leaves an address it did not write alone, even when the segment changed', () => {
+      currentUrl = '/org/other-org/projects';
+      service.navigateToSelectedOrg();
+      // The viewer has moved on to a page this service did not address.
+      currentUrl = '/org/third-org/people';
+      navigate.mockClear();
+
+      selectedUrlSegment.set('acme-incorporated');
+      service.reconcileAddress();
+
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    it('is a no-op before anything was written', () => {
+      currentUrl = '/org/acme-inc/projects';
+      selectedUrlSegment.set('acme-incorporated');
+      service.reconcileAddress();
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
    * An automatic default is not a switch: it only fills an organization into an address that names
    * none, and it replaces the entry (FR-011) so Back cannot land on the bare, uncopyable form.
    */

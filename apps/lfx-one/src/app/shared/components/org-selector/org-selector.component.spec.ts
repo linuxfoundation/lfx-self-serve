@@ -30,6 +30,7 @@ describe('OrgSelectorComponent.selectItem', () => {
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnNotFound: ReturnType<typeof vi.fn>;
+  let reconcileAddress: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<OrgSelectorComponent>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
@@ -40,6 +41,7 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     navigateToSelectedOrg = vi.fn();
     isOnNotFound = vi.fn(() => false);
+    reconcileAddress = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -71,7 +73,7 @@ describe('OrgSelectorComponent.selectItem', () => {
             parentNameByUid: signal(new Map<string, string>()),
           },
         },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound, reconcileAddress } },
       ],
     }).compileComponents();
 
@@ -80,12 +82,15 @@ describe('OrgSelectorComponent.selectItem', () => {
     await fixture.whenStable();
   });
 
-  it('selects another organization and re-addresses the page as a switch', () => {
+  it('selects another organization and re-addresses the page as a switch', async () => {
     pick(rowB);
 
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta-llc' }));
     expect(refreshCanonicalRecord).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    // Once the canonical record is in, the address is checked against the slug it carried.
+    await Promise.resolve();
+    expect(reconcileAddress).toHaveBeenCalledTimes(1);
   });
 
   // FR-014 / US2 scenario 4: nothing reloads — not even the account signal page consumers refetch on.

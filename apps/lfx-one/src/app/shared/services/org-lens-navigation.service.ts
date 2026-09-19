@@ -35,6 +35,9 @@ export class OrgLensNavigationService {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
 
+  /** The organization segment `navigateToSelectedOrg` last wrote into the address; what `reconcileAddress` is allowed to replace. */
+  private lastWrittenSegment: string | null = null;
+
   /** Router commands for an Org Lens page under the current selection. */
   public orgLensLink(page: string, ...rest: (string | number)[]): string[] {
     const segment = this.accountContext.selectedUrlSegment();
@@ -101,11 +104,35 @@ export class OrgLensNavigationService {
     // A switch is pushed so Back returns to the pre-switch organization and page (US2 scenario 3);
     // a default is a canonicalizing rewrite of the address the viewer already meant, so it replaces
     // (FR-011) — otherwise Back would land on the bare, uncopyable form of the same screen.
+    this.lastWrittenSegment = segment;
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default',
       queryParamsHandling: 'preserve',
       preserveFragment: true,
     });
+  }
+
+  /**
+   * Re-canonicalizes the address after the selection's canonical record arrives. The segment written
+   * by `navigateToSelectedOrg` comes from the indexed org row; the canonical fetch that both callers
+   * start alongside it can carry a different slug (index lag, a rename), after which every link on
+   * the page uses the new segment while the address bar still shows the old one — copied then, it
+   * could reopen as not-found. Bounded to the address this service itself wrote: only when the
+   * current address still carries `lastWrittenSegment` and the selection now canonicalizes to
+   * something else, and always as a replacement — the viewer meant this page all along (FR-011).
+   */
+  public reconcileAddress(): void {
+    const written = this.lastWrittenSegment;
+    const canonical = this.accountContext.selectedUrlSegment();
+    if (!written || !canonical || canonical === written) {
+      return;
+    }
+    const segments = this.currentPrimarySegments();
+    if (segments[0] !== 'org' || segments[1] !== written) {
+      return;
+    }
+    this.lastWrittenSegment = canonical;
+    void this.router.navigate(['/org', canonical, ...segments.slice(2)], { replaceUrl: true, queryParamsHandling: 'preserve', preserveFragment: true });
   }
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */
