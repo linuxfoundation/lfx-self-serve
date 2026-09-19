@@ -73,11 +73,12 @@ describe('OrgNavigationService default selection', () => {
   // The default re-address reads the *current* address; mid-navigation that is the page being
   // left, so the write waits until the router is idle and then re-reads the destination. A cancel
   // that is immediately followed by another navigation (a guard redirect) is not idle yet.
-  it('defers the re-address until the router is idle, through a cancel-and-redirect', () => {
+  it('defers the re-address until the router is idle, through a cancel-and-redirect', async () => {
     const router = TestBed.inject(Router);
     const inFlight = vi.spyOn(router, 'getCurrentNavigation').mockReturnValue({} as Navigation);
     const events = new Subject<Event>();
     Object.defineProperty(router, 'events', { get: () => events.asObservable() });
+    const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
     bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
@@ -85,10 +86,15 @@ describe('OrgNavigationService default selection', () => {
 
     // The first navigation is cancelled by a redirect that is already in flight: still not idle.
     events.next(new NavigationCancel(1, '/org/roi', 'redirected'));
+    await settle();
     expect(navigateToSelectedOrg).not.toHaveBeenCalled();
 
-    inFlight.mockReturnValue(null);
+    // The router clears its current navigation only after emitting NavigationEnd (in the
+    // transition's finalize) — the idle check must therefore run after the event, not during it.
     events.next(new NavigationEnd(2, '/org/people', '/org/people'));
+    expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+    inFlight.mockReturnValue(null);
+    await settle();
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');

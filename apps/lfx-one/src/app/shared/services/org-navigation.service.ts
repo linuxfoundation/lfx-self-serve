@@ -8,7 +8,24 @@ import { NavigationCancel, NavigationEnd, NavigationError, Router } from '@angul
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, take, tap } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  from,
+  map,
+  merge,
+  Observable,
+  of,
+  scan,
+  skip,
+  Subject,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgLensNavigationService } from './org-lens-navigation.service';
@@ -306,6 +323,9 @@ export class OrgNavigationService {
    * one is left alone by the default's own rules (and its guard has decided it by then). "Idle", not
    * "first settle event": a guard redirect or a superseding click cancels one navigation and starts
    * the next in the same tick, and `router.url` still names the page being left until that one lands.
+   * The router clears its current navigation in the transition's `finalize`, *after* it emits
+   * `NavigationEnd`/`Cancel`/`Error` — so idleness is checked one microtask after each settle event,
+   * once that finalize has run, and a settle that left another navigation in flight keeps waiting.
    */
   private writeDefaultAddress(): void {
     if (!this.router.getCurrentNavigation()) {
@@ -315,6 +335,7 @@ export class OrgNavigationService {
     this.router.events
       .pipe(
         filter((event) => event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError),
+        switchMap(() => from(Promise.resolve())),
         filter(() => !this.router.getCurrentNavigation()),
         take(1)
       )
