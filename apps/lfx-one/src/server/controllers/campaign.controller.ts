@@ -1,6 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// Deep path, NOT the `@lfx-one/shared/utils` barrel, and deliberately so: the barrel
+// re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
+// barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
+// Verified by switching to the barrel and watching the suite fail.
+import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
+import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+
 import { NextFunction, Request, Response } from 'express';
 
 import type {
@@ -23,21 +30,21 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_STAGES,
   CAMPAIGN_METRICS_WINDOWS,
   CAMPAIGN_PLATFORMS,
+  MAX_BULK_KEYWORD_ACTIONS,
   META_GEO_CODE_PATTERN,
-  isMicrosoftMatchType,
   MICROSOFT_CONTROL_CHAR_RE,
   MICROSOFT_MAX_BUDGET,
   MICROSOFT_MAX_CPC_BID,
-  CAMPAIGN_EMAIL_STAGES,
-  isCanonicalGoogleAdsResourceId,
   MICROSOFT_MAX_GEO_TARGETS,
-  MAX_BULK_KEYWORD_ACTIONS,
   MICROSOFT_MAX_KEYWORDS,
   MICROSOFT_MAX_KEYWORD_TEXT_LENGTH,
   MICROSOFT_MIN_CPC_BID,
   VALID_CAMPAIGN_TOGGLE_STATUSES,
+  isCanonicalGoogleAdsResourceId,
+  isMicrosoftMatchType,
 } from '@lfx-one/shared/constants';
 
 import { META_ACCOUNTS, REDDIT_ACCOUNTS } from '../constants';
@@ -572,7 +579,10 @@ export class CampaignController {
       // comment on the same path and is no longer true of the contract.
       const rawStage = (req.body as { stage?: unknown } | undefined)?.stage;
       const stage = typeof rawStage === 'string' && rawStage.trim() !== '' ? rawStage.trim() : undefined;
-      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage);
+      // `variant` follows the same forward-without-validating shape as `stage` above.
+      const rawVariant = (req.body as { variant?: unknown } | undefined)?.variant;
+      const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
+      const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {
@@ -2157,14 +2167,90 @@ export class CampaignController {
     const rawBody = body.hubspotConfig?.bodyHtml;
     const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
 
-    // Each field is included only when set. Upstream treats both as OPTIONAL and leaves the
-    // template's own value in place when a field is absent, so sending "" would be a request to
-    // blank the draft's subject rather than to leave it alone.
+    // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
+    // would stay dropped even after the AI generates one, and a staged draft would keep the
+    // clone source's own preview_text widget on a real send.
+    const rawPreheader = body.hubspotConfig?.preheader;
+    const preheader = typeof rawPreheader === 'string' ? rawPreheader.trim() : '';
+
+    // Same allow-list gap as above, but for the CTA button: the frontend has always sent
+    // buttonText/buttonUrl when the AI generated a CTA, but neither was named here, so the
+    // button never reached campaign-service and no draft ever got a button widget.
+    const rawButtonText = body.hubspotConfig?.buttonText;
+    const buttonText = typeof rawButtonText === 'string' ? rawButtonText.trim() : '';
+    const rawButtonUrl = body.hubspotConfig?.buttonUrl;
+    const buttonUrl = canonicalHttpUrl(rawButtonUrl);
+
+    // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
+    // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
+    // on the Go side was always false regardless of what the toggle showed in the UI.
+    const abTestEnabled = body.hubspotConfig?.abTestEnabled === true;
+    const rawSubjectB = body.hubspotConfig?.subjectB;
+    const subjectB = typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '';
+    const rawBodyB = body.hubspotConfig?.bodyHtmlB;
+    const bodyHtmlB = typeof rawBodyB === 'string' ? rawBodyB.trim() : '';
+    const rawPreheaderB = body.hubspotConfig?.preheaderB;
+    const preheaderB = typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '';
+
+    // Same allow-list gap as above, but for the hero image and sponsor logos: campaign-service's
+    // `hubspotConfig` (`internal/dispatch/hubspot.go`) has always accepted `heroImageUrl`,
+    // `heroLinkUrl`, and `sponsors` and rendered each as its own module, but none was named here,
+    // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
+    // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
+    const rawHeroImageUrl = body.hubspotConfig?.heroImageUrl;
+    const heroImageUrl = canonicalHttpUrl(rawHeroImageUrl);
+    const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
+    const heroLinkUrl = canonicalHttpUrl(rawHeroLinkUrl);
+    const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
+      ? // The logo goes through the SAME validator as the other link fields: it becomes an
+        // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
+        // `javascript:` and `data:` reach that sink from a direct campaign-manager request.
+        // preSliceFactor 2: bounds the work BEFORE the per-entry URL parse, so a direct
+        // request cannot make this parse an unbounded list. The client's input is already
+        // bounded, so it passes the default.
+        normalizeSponsors(body.hubspotConfig.sponsors, 2)
+      : [];
+
+    // Each field is included only when set. Upstream treats all of these as OPTIONAL and leaves
+    // the template's own value (or no button/variant) in place when a field is absent, so sending
+    // "" would be a request to blank the draft rather than to leave it alone.
     return {
       sourceEmailId,
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(subject ? { subject } : {}),
       ...(bodyHtml ? { bodyHtml } : {}),
+      // Sent as `previewText`, NOT `preheader`. campaign-service decodes this config into a
+      // struct whose tag is `previewText` (internal/dispatch/hubspot.go), so a `preheader` key
+      // is silently ignored by the Go decoder -- the generated preview text was dropped and the
+      // cloned draft kept the template's own. The local field keeps its name; only the wire
+      // key changes, which is the boundary this mapper exists to own.
+      ...(preheader ? { previewText: preheader } : {}),
+      // Hero, button and sponsors require a NON-BLANK bodyHtml, for the same reason the A/B gate
+      // below requires both halves: the client gate stops the UI sending them without a body, but
+      // a direct campaign-manager request bypasses it entirely — and this one is DATA LOSS rather
+      // than a dropped field. campaign-service's RebuildEmailContent replaces the whole widget
+      // tree, so a rebuild carrying a hero and no body drops the cloned template's body
+      // (internal/dispatch/hubspot.go; TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone).
+      // `bodyHtml` is already trimmed above, so whitespace-only counts as absent.
+      ...(bodyHtml
+        ? {
+            ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
+            ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),
+            ...(sponsors.length > 0 ? { sponsors } : {}),
+          }
+        : {}),
+      // BOTH halves, matching `abTestIsStageable` on the client. This is the boundary that
+      // actually matters: the client gate stops the UI from sending a half-filled variant, but a
+      // direct campaign-manager request bypasses it entirely, and upstream reads an empty string
+      // as "blank this field" — so `||` here could still stage a variant whose body was cleared
+      // by the very request meant to set it. Both are already trimmed above.
+      // Renamed `preheaderB` -> `previewTextB` for the same reason `preheader` becomes
+      // `previewText` above: the Go decoder reads the latter and silently drops the former.
+      // Rides INSIDE the A/B gate and is dropped when blank -- upstream preserves the parent's
+      // preview text for an absent value, so forwarding '' would BLANK B's preheader.
+      ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== ''
+        ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
+        : {}),
     };
   }
 }

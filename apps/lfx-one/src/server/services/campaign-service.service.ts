@@ -10,20 +10,28 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignEventDetails,
+  CampaignEventSponsor,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
   CampaignKeyword,
-  CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
+  CampaignServiceAudience,
   CampaignServiceCampaign,
+  CampaignServiceCampaignResolution,
   CampaignServiceCreateResult,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
+  CampaignServiceKeywords,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
@@ -35,13 +43,6 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
-  CampaignServiceAudience,
-  CampaignServiceCampaignResolution,
-  CampaignServiceHubSpotCampaign,
-  CampaignServiceHubSpotCampaigns,
-  CampaignServiceKeywordActionInput,
-  CampaignServiceKeywordActions,
-  CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -121,12 +122,17 @@ interface CampaignServiceBriefInput {
  * for the same reason as on the input — the service validates none of them, so a value coming
  * back is not evidence of its shape and the adapter has to check rather than trust.
  */
-/** Upstream email-copy shape, snake_case-free but exactly as campaign-service returns it. */
+/**
+ * Upstream email-copy shape, exactly as campaign-service returns it (LFXV2-2775).
+ *
+ * There is no `body`/`cta` on the wire — content lives in `sections`, one entry per
+ * `rich_text`/`button`/`divider` block. `generateEmailCopy` below reconstructs the flat
+ * `EmailBriefCopy.body`/`.cta` the rest of this app expects from these sections.
+ */
 interface CampaignServiceEmailCopy {
   subject: string;
   preheader: string;
-  body: string;
-  cta: string;
+  sections: { type: string; html?: string; text?: string; url?: string }[];
 }
 
 /**
@@ -812,7 +818,7 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string, variant?: string): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
@@ -826,12 +832,16 @@ export class CampaignServiceClient {
       // It is a query param rather than a body attribute because declaring it in the body made
       // the body REQUIRED upstream, so a caller sending none got a 400 instead of default-stage
       // copy.
+      //
+      // `variant` is also a query param upstream (same reasoning as `stage`), so it joins `stage`
+      // in the same query object rather than the sixth (body) argument.
+      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
         'POST',
-        stage ? { stage } : undefined,
+        Object.keys(query).length > 0 ? query : undefined,
         undefined
       );
 
@@ -840,9 +850,37 @@ export class CampaignServiceClient {
         return { enabled: true, error: 'The generator returned no email copy.' };
       }
 
+      // Upstream returns `sections` (LFXV2-2775), not `body`/`cta` — fold them back into the flat
+      // shape `EmailBriefCopy` declares. `body` carries only the `rich_text` sections' html: the
+      // `button` section rides along as `cta` (and, at the call site, `buttonText`/`buttonUrl` on
+      // `hubspotConfig`) so it renders as its own native HubSpot button widget, matching the hero
+      // image/sponsors treatment. Baking it into `body` as well as an anchor tag used to render
+      // the CTA twice — once inline in the rich text, once as the native button — in both the
+      // operator preview and the live HubSpot draft.
+      const sections = copy.sections ?? [];
+      // Dividers become `<hr />` rather than being dropped. They carry no content of their own
+      // ("divider (no other fields)" in campaign-service's own generator), so the only thing a
+      // filter loses is their POSITION -- and position is exactly what a divider is for. The
+      // body is rendered with innerHTML here and lands in a rich-text widget upstream, so an
+      // `<hr />` survives both.
+      //
+      // This does NOT solve the ordered-sections gap: `bodyHtml` is one flat rich-text field on
+      // the wire (`BodyHTML string` in internal/dispatch/hubspot.go), so a second button and any
+      // button URL are still lost. That needs a contract change on both sides and is filed as a
+      // follow-up rather than widened into this PR.
+      const body = sections
+        .filter((section) => (section.type === 'rich_text' && section.html) || section.type === 'divider')
+        .map((section) => (section.type === 'divider' ? '<hr />' : section.html))
+        .join('');
+      const buttonSection = sections.find((section) => section.type === 'button');
+      const cta = buttonSection?.text ?? '';
+      // The generator OMITS `url` when registration is not the right destination for the stage,
+      // so an absent value must stay absent rather than be replaced downstream.
+      const ctaUrl = buttonSection?.url ?? '';
+
       return {
         enabled: true,
-        copy: { subject: copy.subject, preheader: copy.preheader, body: copy.body, cta: copy.cta },
+        copy: { subject: copy.subject, preheader: copy.preheader, body, cta, ctaUrl },
       };
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
@@ -2457,7 +2495,30 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     registrationUrl: asText(details['registrationUrl']),
     speakers: asTextList(details['speakers']),
     formatNotes: asText(details['formatNotes']),
+    // Scraped hero/sponsors are PERSISTED by toUpstreamEventDetails' `...details` spread but were
+    // not read back here, so a reload silently dropped them: the preview and onStageEmailSend then
+    // omitted the hero and logo modules in any session that restored the brief rather than
+    // scraping it fresh. A write path that spreads and a read path that allow-lists diverge by
+    // construction -- every field added to the former has to be added here too.
+    heroImageUrl: asText(details['heroImageUrl']),
+    // Filtered on logoUrl, mirroring planning-tab's own mapping: a sponsor with no logo renders
+    // as an empty image module rather than as nothing.
+    sponsors: asSponsorList(details['sponsors']),
   };
+}
+
+/** Sponsor rows with a usable logo, dropping malformed entries rather than rendering blanks. */
+function asSponsorList(value: unknown): CampaignEventSponsor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+    .map((entry) => ({
+      name: typeof entry['name'] === 'string' ? entry['name'] : '',
+      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+    }))
+    .filter((sponsor) => sponsor.logoUrl !== '');
 }
 
 /**

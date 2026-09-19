@@ -13,6 +13,7 @@ import type {
   CampaignCreateRequest,
   CampaignCreateResponse,
   CampaignCreateResult,
+  CampaignEventSponsor,
   CampaignJobStatus,
   CampaignKeyword,
   CampaignPlatform,
@@ -32,6 +33,7 @@ import { GoogleAdsApi, enums } from 'google-ads-api';
 import type { Customer } from 'google-ads-api';
 
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { extractHeroAndSponsors } from '../helpers/event-hero-sponsors.helper';
 import { validateScrapeUrl, fetchSafeUrl } from '../helpers/url-validation';
 import { executeLinkedInCampaignCreation, resolveGeoTargets } from './linkedin-ads.service';
 import { logger } from './logger.service';
@@ -1447,6 +1449,19 @@ export class CampaignProxyService {
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
+    // The URL that actually SERVED the page, after redirects. Declared alongside `html` because
+    // it has the same lifetime.
+    //
+    // Used by the two consumers that describe THIS fetch: the extraction prompt (which tells the
+    // model which URL it is reading) and the event-name fallback (which derives a slug from the
+    // path). Both used `body.url` -- raw user input, a hop further from the truth than even the
+    // requested URL -- so a redirected page was described by a URL it never served.
+    //
+    // The ad-copy prompts further down still use `body.url` deliberately: they run on a separate
+    // request that does no fetch of its own, so there is no final URL to speak of there.
+    let pageUrl = '';
+    let heroImageUrl = '';
+    let sponsors: CampaignEventSponsor[] = [];
 
     if (!isRefinement) {
       yield { type: 'status', data: `Scraping ${body.url}...` };
@@ -1460,12 +1475,16 @@ export class CampaignProxyService {
       }
 
       try {
-        const { html: scrapedHtml, ok, status } = await fetchSafeUrl(safeUrl, signal);
+        const { html: scrapedHtml, ok, status, finalUrl } = await fetchSafeUrl(safeUrl, signal);
+        pageUrl = finalUrl;
         if (!ok) {
           yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
         }
         html = scrapedHtml;
+        // Resolved against the FINAL url, not the requested one: fetchSafeUrl follows up to 5
+        // redirects, and a relative `og:image` belongs to the page that served it.
+        ({ heroImageUrl, sponsors } = extractHeroAndSponsors(html, finalUrl));
       } catch (error) {
         yield { type: 'error', data: `Failed to fetch ${pageLabel}: ${error instanceof Error ? error.message : 'Unknown error'}` };
         return;
@@ -1478,7 +1497,7 @@ export class CampaignProxyService {
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${pageUrl || body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
@@ -1494,6 +1513,8 @@ export class CampaignProxyService {
             speakers: Array.isArray(eventDetails['speakers']) ? eventDetails['speakers'] : [],
             slug: eventDetails['slug'] ?? '',
             formatNotes: eventDetails['format_notes'] ?? '',
+            heroImageUrl,
+            sponsors,
           },
         };
       } catch (error) {
@@ -1506,7 +1527,16 @@ export class CampaignProxyService {
         };
       }
 
-      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
+      // Tries the FINAL url first, then the requested one. A redirect to a MORE specific path is
+      // the case `pageUrl` exists for; one to a bare origin (`/kubecon-eu-2026` -> `/`) yields
+      // '' and now falls back to the slug the operator typed.
+      //
+      // NOT fully solved, and cannot be from here: a redirect to `/events/` yields "Events",
+      // which is a worse name but still a name, so no fallback fires. Distinguishing "a listing
+      // page" from "a legitimately short slug" needs knowledge this function does not have. The
+      // operator can override the name, and this is only a fallback for when the scrape found
+      // none -- so it degrades to a poor default rather than a wrong destination.
+      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(pageUrl || body.url) || extractEventNameFromUrl(body.url);
       if (eventName) {
         yield { type: 'status', data: 'Looking up HubSpot campaign...' };
         try {

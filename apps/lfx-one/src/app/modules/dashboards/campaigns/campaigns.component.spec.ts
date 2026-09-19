@@ -18,6 +18,7 @@ import type {
   CampaignBriefPersistenceState,
   CampaignImplementationDraft,
   CampaignDeliveryType,
+  CampaignEventSponsor,
   CampaignIndexDoc,
   CampaignJobOutcome,
   CampaignListResult,
@@ -30,7 +31,7 @@ import { provideRouter } from '@angular/router';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT } from '@lfx-one/shared/constants';
+import { EVENT_TERM_GENERIC, HUBSPOT_TEMPLATE_RENDER_LIMIT, MAX_SPONSOR_NAME_LENGTH } from '@lfx-one/shared/constants';
 import type { HubSpotMarketingEmail } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -1876,6 +1877,36 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailStagingMessage: WritableSignal<string>;
     canStageEmail: Signal<boolean>;
     onStageEmailSend(): Promise<void>;
+    // Read-only now: the form is the source of truth and these derive from it, so a test
+    // drives `abTestForm` (the same path the bound control uses) rather than the signal.
+    abTestEnabled: Signal<boolean>;
+    abTestSubjectB: Signal<string>;
+    abTestBodyHtmlB: Signal<string>;
+    abTestPreheaderBForSend: Signal<string>;
+    abTestPreheaderBPreview: Signal<string>;
+    emailPreheaderPreview: Signal<string>;
+    abTestForm: {
+      controls: {
+        // `value` as well as `setValue`: asserting the CONTROL is what catches a stale write
+        // that lands outside change detection, which the `toSignal` mirrors miss.
+        enabled: { setValue(v: boolean): void; value: boolean };
+        subjectB: { setValue(v: string): void; value: string };
+        preheaderB: { setValue(v: string): void; value: string };
+        bodyHtmlB: { setValue(v: string): void; value: string };
+      };
+    };
+    abTestCopyState: WritableSignal<'idle' | 'generating' | 'error'>;
+    abTestCopyError: WritableSignal<string>;
+    canGenerateAbTestCopy: Signal<boolean>;
+    selectedEmailStage: Signal<string>;
+    emailCtaIsStageable: Signal<boolean>;
+    emailCtaLabel: Signal<string>;
+    emailHeroImageUrl: Signal<string>;
+    emailRegistrationUrl: Signal<string>;
+    emailSponsors: Signal<CampaignEventSponsor[]>;
+    emailBodyIsStageable: Signal<boolean>;
+    abTestIsStageable: Signal<boolean>;
+    onGenerateAbTestCopy(): Promise<void>;
     selectorForm: {
       controls: {
         deliveryType: { setValue(v: CampaignDeliveryType): void };
@@ -2237,7 +2268,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/' },
     } as unknown as CampaignBriefOutput;
 
-    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register' };
+    const copy = { subject: 'Three days in Amsterdam', preheader: 'Sessions and labs', body: '<p>Hello</p>', cta: 'Register', ctaUrl: '' };
 
     let persist: ReturnType<typeof vi.fn>;
 
@@ -2964,6 +2995,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       preheader: 'Sessions and labs',
       body: '<p>Body</p>',
       cta: 'Register',
+      ctaUrl: '',
     };
 
     it('shows nothing until copy exists', () => {
@@ -2980,18 +3012,20 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(host.querySelector('[data-testid="campaigns-email-preview"]')).not.toBeNull();
     });
 
-    it('warns that a multi-widget template keeps its own body', () => {
+    it('warns that staging REPLACES the template content rather than merging into it', () => {
       selectEmail();
       internals().selectedEmailTab.set('implementation');
       internals().emailCopy.set(copy);
       fixture.detectChanges();
 
-      // Pinned because it is a REAL upstream limitation, not a temporary gap: the dispatcher
-      // applies bodyHtml only when the draft has exactly one rich-text widget, and silently
-      // leaves a multi-widget template alone. An operator who is not told this discovers it on
-      // a send. If the upstream rule changes, this test should fail and the note be reworded.
+      // The upstream rule this pinned did change, exactly as the previous version of this test
+      // said it should: bodyHtml used to apply only to a single-widget draft, so the note warned
+      // that a multi-widget template kept its own body. RebuildEmailContent now replaces the
+      // whole widget tree, so the warning that matters is the REVERSE one — the operator needs to
+      // know the template's own images and footer do not survive.
       const note = (fixture.nativeElement as HTMLElement).querySelector('[data-testid="campaigns-email-preview-note"]');
-      expect(note?.textContent).toContain('more than one text block');
+      expect(note?.textContent).toContain('replaced, not merged');
+      expect(note?.textContent).not.toContain('keeps its own body');
     });
   });
 
@@ -3127,7 +3161,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       const gen = vi
         .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
-        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' } }) as never);
+        .mockReturnValue(of({ enabled: true, copy: { subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c', ctaUrl: '' } }) as never);
 
       // The type is chosen BEFORE the brief id is cached, deliberately. An earlier revision set
       // `emailBriefId` first and then switched to a different stage, which pinned the id across a
@@ -3144,7 +3178,9 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // campaign-service enumerates STAGES, not type ids -- sending 'thank-you-survey' would be
       // refused by its enum. Several types share a stage, which is why the two are distinct.
-      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event');
+      // Variant A always requests the `urgency-fomo` draft; dropping it would silently
+      // generate default copy and make the A/B test compare A against A.
+      expect(gen).toHaveBeenCalledWith('tlf', 'brief-77', 'Post-Event', 'urgency-fomo');
     });
 
     it('ranks templates matching the selected type first, without removing any', () => {
@@ -3402,7 +3438,7 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     it('drops copy written for the previous type when the type changes', () => {
       selectEmail();
-      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '' } as never);
+      internals().emailCopy.set({ subject: 'CFP copy', preheader: '', body: '<p>x</p>', cta: '', ctaUrl: '' } as never);
 
       (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('thank-you-survey');
 
@@ -3416,7 +3452,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().emailBriefId.set('brief-77');
-      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '' } as never);
+      internals().emailCopy.set({ subject: 'Old subject', preheader: '', body: '<p>Old</p>', cta: '', ctaUrl: '' } as never);
       vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(of({ enabled: true, error: 'upstream refused' }) as never);
 
       await internals().onGenerateEmailCopy();
@@ -3853,13 +3889,951 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('done');
     });
 
+    it('clears variant B when the A/B toggle is switched off', async () => {
+      selectEmail();
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      // A re-enable must start clean. Leaving the draft behind would stage copy the operator
+      // never confirmed they still wanted -- and because the clearing now lives on the control's
+      // own stream, this also covers the programmatic resets, which a (change) handler missed.
+      expect(internals().abTestSubjectB()).toBe('');
+      expect(internals().abTestBodyHtmlB()).toBe('');
+    });
+
+    it.each([
+      ['only a subject', 'Variant B subject', ''],
+      ['only a body', '', '<p>Variant B body</p>'],
+    ])('omits the A/B fields when variant B has %s', async (_label, subjectB, bodyHtmlB) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue(subjectB);
+      internals().abTestForm.controls.bodyHtmlB.setValue(bodyHtmlB);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Sending the filled half with the other as '' is worse than sending neither: upstream
+      // reads an empty string as "blank this field", so a half-filled variant B would clear the
+      // very content it was meant to set.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(cfg?.bodyHtmlB).toBeUndefined();
+    });
+
+    it('omits the CTA when the registration URL is not an http(s) URL', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'javascript:alert(1)' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // The generator copies the Registration URL EXACTLY, so an unusable one arrives here
+      // unchanged -- `canonicalHttpUrl` is what refuses it.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: 'javascript:alert(1)' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The controller drops a non-http(s) buttonUrl, so a "non-empty" preview test would show a
+      // button the draft never gets. Both sides read one predicate precisely to avoid that.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaIsStageable()).toBe(false);
+    });
+
+    // These pin the CLASS, not one instance. Three review rounds on this PR were all the same
+    // defect: a predicate duplicated between the preview and the wire path, drifting apart so
+    // the operator previewed something the draft never got. Each case below is a value that
+    // passes a naive `!== ''` and is then dropped server-side.
+    it.each([
+      ['whitespace-only subject B', '   ', '<p>b</p>'],
+      ['whitespace-only body B', 'S', '   '],
+    ])('does not stage an A/B test for %s', async (_label, subjectB, bodyHtmlB) => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue(subjectB);
+      internals().abTestForm.controls.bodyHtmlB.setValue(bodyHtmlB);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The predicate and the wire must agree: buildHubSpotConfig trims, so an untrimmed check
+      // here would preview an A/B test that stages as single-variant.
+      expect(internals().abTestIsStageable()).toBe(false);
+      expect(create.mock.calls[0][0].hubspotConfig?.abTestEnabled).toBeUndefined();
+    });
+
+    it('generates variant B with ordinary stage copy and writes it into the B controls', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } }) as never);
+
+      await internals().onGenerateAbTestCopy();
+      fixture.detectChanges();
+
+      // Variant B takes ORDINARY stage copy -- variant A is the one that requests urgency-fomo.
+      // If B passed the same variant, both arms would be the same draft and the A/B test would
+      // compare a copy against itself, which no other test would notice.
+      expect(gen).toHaveBeenCalledWith(expect.any(String), 'brief-77', internals().selectedEmailStage());
+      expect(internals().abTestSubjectB()).toBe('B subject');
+      expect(internals().abTestBodyHtmlB()).toBe('<p>B body</p>');
+    });
+
+    it('sanitizes the previewed sponsor name, so preview and wire cannot disagree', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          sponsors: [{ name: 'Acme\u202Emoc.evil', logoUrl: 'https://cdn.example.com/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      // U+202E visually REVERSES what follows it. The controller strips it before staging, so
+      // leaving the preview unsanitised showed the operator a reversed name while the sent
+      // draft carried the cleaned one -- the preview lying about the result.
+      const [sponsor] = internals().emailSponsors();
+      expect(sponsor.name).toBe('Acmemoc.evil');
+      expect(sponsor.name).not.toContain('\u202E');
+    });
+
+    it('truncates a long sponsor name the same way the controller does', () => {
+      selectEmail();
+      // 150 code points, past the 100 the controller forwards. An astral character at the cut
+      // boundary proves the slice is by CODE POINT -- a UTF-16 slice would split the surrogate
+      // pair and emit a lone half.
+      const longName = `${'a'.repeat(99)}\u{1F600}${'b'.repeat(50)}`;
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          sponsors: [{ name: longName, logoUrl: 'https://cdn.example.com/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      const [sponsor] = internals().emailSponsors();
+      // The preview must show what the draft will carry. Showing the full name promised a label
+      // the sent email does not have.
+      expect([...sponsor.name].length).toBe(MAX_SPONSOR_NAME_LENGTH);
+      expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
+    });
+
+    it('keeps a subject typed during generation but still fills the untouched body', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const pending = new Subject<unknown>();
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(pending as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(gen).toHaveBeenCalled());
+
+      // The fields stay EDITABLE while generating -- making the operator wait to type would be
+      // worse -- so this is an ordinary thing to do, not an edge case.
+      internals().abTestForm.controls.subjectB.setValue('My own subject');
+      fixture.detectChanges();
+
+      pending.next({ enabled: true, copy: { subject: 'Generated subject', preheader: 'P', body: '<p>Generated body</p>', cta: '', ctaUrl: '' } });
+      pending.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // Per FIELD, not all-or-nothing: the typed subject survives, the untouched body is filled.
+      // `isCurrent()` tracks toggles and resets; a keystroke is neither, so without this guard
+      // the late response silently replaced what the operator had just written.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('My own subject');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('<p>Generated body</p>');
+    });
+
+    it('discards a variant B response that lands after the operator toggled A/B off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      // The SECOND await window: let the brief-id persist resolve so execution parks on
+      // `generateEmailCopy`, which is what the sibling test above cannot reach. This is where a
+      // late response would write back into the controls the toggle-off emptied.
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const pending = new Subject<unknown>();
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(pending as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(gen).toHaveBeenCalled());
+
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      pending.next({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } });
+      pending.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // The post-`generateEmailCopy` isCurrent() guard is what stops this write-back. Without
+      // it the discarded draft reappears in the cleared controls.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
+    });
+
+    it('abandons an in-flight variant B generation when the operator toggles A/B off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      // Hold the BRIEF-ID persist open, not generateEmailCopy. onGenerateAbTestCopy awaits
+      // ensureEmailBriefId first, so this is the boundary where the toggle can land while the
+      // generation is genuinely in flight -- holding the later call resolved too early to race.
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const gen = vi
+        .spyOn(TestBed.inject(CampaignService), 'generateEmailCopy')
+        .mockReturnValue(of({ enabled: true, copy: { subject: 'B subject', preheader: 'P', body: '<p>B body</p>', cta: '', ctaUrl: '' } }) as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // Operator changes their mind mid-flight. This routes through clearAbTestDraft().
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // WHAT THIS PINS: `clearAbTestDraft()`'s `abTestCopyGeneration` bump, for the FIRST await
+      // window (the brief-id persist).
+      //
+      // `onGenerateAbTestCopy` captures `++this.abTestCopyGeneration`; toggling off mid-flight
+      // runs `clearAbTestDraft`, which bumps it again. When the persist resolves, `isCurrent()`
+      // is false and the method returns BEFORE `generateEmailCopy` is called -- which is what
+      // `expect(gen).not.toHaveBeenCalled()` below asserts. Delete the bump and the guard is
+      // bypassed: the call happens and this test fails.
+      //
+      // The SECOND await window -- after `generateEmailCopy` resolves, where a late response
+      // would write back into the cleared controls -- is NOT covered here. Reaching it needs the
+      // generation call itself held open, not the persist.
+
+      expect(gen).not.toHaveBeenCalled();
+      // The CONTROLS, not the `toSignal` mirrors, which lag a setValue landing outside change
+      // detection -- asserting the mirrors let a stale write through unnoticed.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
+    });
+
+    it('keeps a terminal staging banner when the type changes after a completed stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailStaging.set('done');
+      internals().emailStagingMessage.set('Draft created');
+      fixture.detectChanges();
+
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('registration-launch');
+      fixture.detectChanges();
+
+      // A FINISHED stage has nothing to abandon. Cancelling unconditionally erased the
+      // operator's confirmation that the send they just made exists -- the state the banner is
+      // there to report.
+      expect(internals().emailStaging()).toBe('done');
+      expect(internals().emailStagingMessage()).toBe('Draft created');
+    });
+
+    it('does not leave the Stage button spinning when the type changes mid-stage', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailStaging.set('staging');
+      // A REAL subscription and a non-empty message, so the unsubscribe and the message clear are
+      // actually exercised rather than asserted against values that were already correct.
+      const polled = new Subject<unknown>();
+      const sub = polled.subscribe();
+      (fixture.componentInstance as unknown as { stagingJobSubscription: unknown }).stagingJobSubscription = sub;
+      internals().emailStagingMessage.set('Creating draft...');
+      fixture.detectChanges();
+
+      // `main-registration-push` maps to the SAME stage as the default, which is the whole
+      // point. A type change abandons an in-flight stage by bumping `emailStagingGeneration`,
+      // so `onStageEmailSend` returns at its `isCurrent()` check WITHOUT touching
+      // `emailStaging`. The stage-change branch that resets it does not run here, so
+      // invalidating without cleaning up left the button spinning until a reload. A
+      // different-stage type takes that other branch and would prove nothing.
+      expect(internals().selectedEmailStage()).toBe('Registration Push');
+
+      // `registration-launch`, not `main-registration-push`: the latter IS the default, so
+      // `onSelectEmailType` returns early and the test proves nothing.
+      (internals() as unknown as { onSelectEmailType(id: string): void }).onSelectEmailType('registration-launch');
+      fixture.detectChanges();
+
+      expect(internals().selectedEmailStage()).toBe('Registration Push');
+      expect(internals().emailStaging()).toBe('idle');
+      // The poll is CANCELLED, not merely bumped past: `pollStagingJob` never reads the
+      // generation counter, so a live subscription would keep writing done/error for the
+      // abandoned send.
+      expect(sub.closed).toBe(true);
+      expect(internals().emailStagingMessage()).toBe('');
+    });
+
+    it('drops variant B when A/B is toggled off and back ON during the await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      const staging = internals().onStageEmailSend();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // OFF then back ON, both inside the await. The toggle-off ran clearAbTestDraft and emptied
+      // the B controls; toggling back on does NOT restore them.
+      internals().abTestForm.controls.enabled.setValue(false);
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await staging;
+
+      // A live `abTestEnabled()` re-read sees TRUE again here and ships the pre-await snapshot --
+      // a variant whose controls the operator emptied. Only a monotonic discard counter survives
+      // the round trip, because a cancel cannot be un-bumped by a second toggle.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+    });
+
+    it('drops variant B when the operator toggles A/B off during the brief-id await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      // Hold the brief-id persist open so the operator's edit lands mid-stage -- the ordering in
+      // which a live read and a snapshot disagree.
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      const staging = internals().onStageEmailSend();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // Operator turns A/B off while the round trip is in flight.
+      internals().abTestForm.controls.enabled.setValue(false);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await staging;
+
+      // NARROWING wins. The snapshot stops a mid-stage edit producing a config that never
+      // coexisted, but "turn A/B off" is the operator explicitly cancelling -- honouring the
+      // snapshot there shipped a two-variant test they had just stopped, which recipients see
+      // and which cannot be undone after staging. So the variant is DROPPED.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(cfg?.bodyHtmlB).toBeUndefined();
+      // The rest of the snapshot still holds -- only the A/B triple narrows.
+      expect(cfg?.subject).toBe('S');
+    });
+
+    it('forwards variant B preheader as previewTextB, so B does not inherit A', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.preheaderB.setValue('  B preheader  ');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Trimmed, and DISTINCT from A's. These are the INBOUND names; the controller renames
+      // them to previewText/previewTextB on the wire (covered in the controller spec). Without
+      // B's own value campaign-service preserves the parent's preview text, so B silently ran
+      // with A's preheader -- biasing a test whose winner is judged on opens.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.preheaderB).toBe('B preheader');
+      expect(cfg?.preheader).toBe('A preheader');
+    });
+
+    it('omits previewTextB when blank rather than blanking B preheader', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'A preheader', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.preheaderB.setValue('   ');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // ABSENT, not ''. Upstream preserves the parent's preview text for an absent value, so
+      // sending an empty string would BLANK B's preheader instead of leaving it alone.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.preheaderB).toBeUndefined();
+      expect(cfg?.abTestEnabled).toBe(true);
+    });
+
+    it('still links the hero when the generator omitted the button url', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+          heroImageUrl: 'https://cdn.example.com/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // CFP Launch: a button with no destination, but the event page is still the right
+      // target for the hero image.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Speak</p>', cta: 'Submit Your Proposal', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Gating the hero link on the CTA predicate cost the image its link on exactly the stages
+      // where the generator withholds a button url -- a regression from repointing that
+      // predicate at the generator's destination.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroLinkUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
+      expect(cfg?.buttonUrl).toBeUndefined();
+    });
+
+    it('trims the previewed preheaders and falls B back to A', () => {
+      selectEmail();
+      internals().emailCopy.set({ subject: 'S', preheader: '  A preheader  ', body: '<p>b</p>', cta: '', ctaUrl: '' });
+      internals().abTestForm.controls.preheaderB.setValue('   ');
+      fixture.detectChanges();
+
+      // Whitespace-only reads as ABSENT on both cards, matching the wire: staging trims and
+      // omits, so an untrimmed preview showed a blank line the send would never produce.
+      expect(internals().emailPreheaderPreview()).toBe('A preheader');
+      expect(internals().abTestPreheaderBForSend()).toBe('');
+      // B with none of its own shows A's -- what upstream actually does with an absent
+      // previewTextB, rather than an empty line.
+      expect(internals().abTestPreheaderBPreview()).toBe('A preheader');
+
+      internals().abTestForm.controls.preheaderB.setValue('  B preheader  ');
+      fixture.detectChanges();
+      expect(internals().abTestPreheaderBForSend()).toBe('B preheader');
+      expect(internals().abTestPreheaderBPreview()).toBe('B preheader');
+    });
+
+    it('accepts a CTA url that differs from the brief only by a trailing slash', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Same page, no trailing slash. `canonicalHttpUrl` does NOT equalise this, so a strict
+      // comparison silently dropped the button for a generation that had followed its
+      // instructions.
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join</p>',
+        cta: 'Register',
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026');
+      expect(cfg?.buttonText).toBe('Register');
+    });
+
+    it('refuses a CTA url the brief never contained', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // A public-looking URL the model invented. The generator is told to copy the brief's
+      // Registration URL exactly or omit the field, so anything else is a model that did not
+      // follow its instructions.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join</p>', cta: 'Register', ctaUrl: 'https://evil.example.com/phish' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Checking only that the URL is public-looking would ship this button pointing at a host
+      // the brief never contained.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(cfg?.buttonText).toBeUndefined();
+    });
+
+    it('accepts a CTA url that matches the brief, modulo canonical form', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join</p>',
+        cta: 'Register',
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The equality check must not refuse the legitimate case -- that would be the
+      // over-denial this file keeps guarding against.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
+      expect(cfg?.buttonText).toBe('Register');
+    });
+
+    it('sends no button when the generator omitted its url, even with a registration URL', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // "Submit Your Proposal" on CFP Launch. The generator OMITS `url` for the stages where
+      // registration is the wrong destination -- it is told to copy the Registration URL exactly
+      // or omit the field, never invent one.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Speak with us</p>', cta: 'Submit Your Proposal', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Substituting the brief's registrationUrl here pointed "Submit Your Proposal" at the
+      // registration page -- a button that goes somewhere the operator never chose. No
+      // destination means no button.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(cfg?.buttonText).toBeUndefined();
+    });
+
+    it('omits a whitespace-only CTA even when the registration URL is valid', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '   ', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The destination is fine here; the LABEL is the problem. Without the trim this sent a
+      // blank buttonText the controller then dropped, so the preview showed a button the draft
+      // never got -- the same drift, reached from the other side.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaLabel()).toBe('');
+    });
+
+    it('omits heroLinkUrl when the registration URL is not an http(s) URL, but keeps the image', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'javascript:alert(1)',
+          heroImageUrl: 'https://events.example/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Copy is required for the hero to ship at all: a hero with no body reaches
+      // RebuildEmailContent with an empty body and drops the clone's body entirely.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The existing test used an EMPTY registrationUrl, which passes under either predicate, so
+      // the tightening from `!== ''` to emailCtaIsStageable() was untested. A non-http(s) value
+      // separates them: the image still ships, unlinked, which is the right degrade.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
+      expect(cfg?.heroLinkUrl).toBeUndefined();
+    });
+
+    it.each([
+      ['a whitespace-only body', '   '],
+      ['an empty body', ''],
+    ])('withholds the hero and sponsors for %s', async (_label, body) => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // Copy EXISTS — generation requires a subject, not a body — so `copy !== null` passed while
+      // the controller trimmed bodyHtml away and the hero shipped anyway. That is the data-loss
+      // case, reached from the one direction a null check cannot see.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body, cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toBeUndefined();
+      expect(internals().emailBodyIsStageable()).toBe(false);
+    });
+
+    it('canonicalizes the preview hero and drops blank-name sponsors, matching the controller', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://user:secret@cdn.example.com/hero.png',
+          sponsors: [
+            { name: '   ', logoUrl: 'https://cdn.example.com/blank.png' },
+            { name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' },
+          ],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      // The model returned the RAW trimmed value and kept blank-name sponsors, while the
+      // controller canonicalizes and filters on the name too — so the preview bound a
+      // credentialed <img src> and showed a logo the draft omits. Both now read one shared
+      // canonicalHttpUrl, so the two cannot restate the rule differently.
+      expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
+      expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('does not ship a hero from copy that was cleared mid-stage', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://cdn.example.com/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      // The persist resolves on a later tick; clear the copy while staging is mid-flight, the
+      // way a regeneration would.
+      persistBrief.mockReturnValue(
+        new Observable<{ status: string; approved: boolean; briefId: string; etag: null }>((sub) => {
+          setTimeout(() => {
+            internals().emailCopy.set(null);
+            sub.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+            sub.complete();
+          }, 0);
+        }) as never
+      );
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // `copy` is snapshotted before the await while the gates used to be read live, so a
+      // generation completing mid-stage made them disagree: bodyHtml from the old copy, hero
+      // from the new state -- or worse, a hero with no body at all. One snapshot, one config.
+      // UNCONDITIONAL. A first version of this guarded the assertion on the hero being present,
+      // which the race makes absent -- so the check was skipped exactly when it mattered and the
+      // mutation survived. The body was snapshotted BEFORE the clear, so it is still present;
+      // the hero must be too, because both now come from that same moment.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.bodyHtml).toBe('<p>Join us</p>');
+      expect(cfg?.heroImageUrl).toBe('https://cdn.example.com/hero.png');
+    });
+
+    it('sends the registration URL in the canonical form, without userinfo', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://user:secret@events.example/register',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // The generator copies the Registration URL EXACTLY, so a credentialed one arrives here
+      // with its userinfo intact -- which is what this test checks gets stripped.
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta: 'Register',
+        ctaUrl: 'https://user:secret@events.example/register',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The controller strips userinfo and canonicalizes, so sending the raw string made the
+      // PREVIEW show credentials and a different URL than the draft receives. Benign for the
+      // draft; not for a preview whose whole job is to match it.
+      expect(internals().emailRegistrationUrl()).toBe('https://events.example/register');
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonUrl).toBe('https://events.example/register');
+      expect(String(cfg?.buttonUrl)).not.toContain('secret');
+    });
+
+    it('does not preview or stage a hero the controller would drop', async () => {
+      selectEmail();
+      // A RESTORED brief: asEventDetails accepts any string, so a persisted blob can carry a
+      // host the controller later refuses. Binding it raw made the BROWSER fetch it, which no
+      // server-side guard can prevent.
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'http://169.254.169.254/hero.png',
+          sponsors: [
+            { name: 'Bad', logoUrl: 'http://127.0.0.1/logo.png' },
+            { name: 'Good', logoUrl: 'https://cdn.example.com/good.png' },
+          ],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // One validated model drives BOTH, so the preview cannot show what staging omits.
+      expect(internals().emailHeroImageUrl()).toBe('');
+      expect(internals().emailSponsors()).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toEqual([{ name: 'Good', logoUrl: 'https://cdn.example.com/good.png' }]);
+    });
+
+    it('withholds the CTA when the body is blank, even with a valid destination', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://events.example/register' },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // A real CTA label and a valid destination -- only the BODY is blank.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '   ', cta: 'Register', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // The button is written by the same full-tree rebuild as the hero, so a button with no body
+      // drops the cloned template's body exactly as a hero would -- the same data-loss path
+      // reached through a different field.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(internals().emailCtaLabel()).toBe('');
+    });
+
+    it('withholds the hero and sponsors when no copy was generated', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.example/register',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }],
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // No emailCopy: staging does not require it, so this path is reachable.
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // DATA LOSS, not a cosmetic gap: campaign-service's RebuildEmailContent replaces the whole
+      // widget tree, and a rebuild carrying a hero but no body drops the cloned template's body
+      // entirely. Sending the hero alone would quietly empty the draft the operator is about to
+      // send, so neither field goes without copy to put beside it.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroImageUrl).toBeUndefined();
+      expect(cfg?.sponsors).toBeUndefined();
+      // The template clone itself still proceeds — this withholds content, it does not block.
+      expect(cfg?.sourceEmailId).toBe('hs-123');
+    });
+
+    it('omits the CTA entirely when the brief has no registration URL to send it to', async () => {
+      selectEmail();
+      // normalizeEventDetails defaults an absent registrationUrl to '' -- a real shape, not a
+      // contrived one: a brief scraped from a page with no register link produces exactly this.
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: '',
+          heroImageUrl: 'https://events.example/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: 'Register', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Sending buttonText with a blank buttonUrl is worse than sending neither: the controller's
+      // allow-list drops the PAIR when the url is empty, so the CTA the operator previewed
+      // disappears with nothing anywhere reporting it. Withholding it here keeps the wire honest.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.buttonText).toBeUndefined();
+      expect(cfg?.buttonUrl).toBeUndefined();
+      // The rest of the copy still goes -- this gate is about the CTA, not the send.
+      expect(cfg?.bodyHtml).toBe('<p>Join us</p>');
+      // Same gate on heroLinkUrl, but the IMAGE still ships: the controller pairs heroLinkUrl
+      // inside the heroImageUrl gate, so an unlinked hero renders, which is the right degrade.
+      expect(cfg?.heroImageUrl).toBe('https://events.example/hero.png');
+      expect(cfg?.heroLinkUrl).toBeUndefined();
+    });
+
     it('carries the generated copy into hubspotConfig when copy exists', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
       // Staging requires a BUILT audience upstream; these predate that gate.
       internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
-      internals().emailCopy.set({ subject: 'Three days in Amsterdam', preheader: 'P', body: '<p>Join us</p>', cta: 'Register' });
+      // A "Register" button carries the registration URL, which is what the generator supplies
+      // for the stages where registration IS the destination.
+      internals().emailCopy.set({
+        subject: 'Three days in Amsterdam',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta: 'Register',
+        // Matches the brief's registrationUrl, because the generator is told to copy it exactly.
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      });
       fixture.detectChanges();
 
       persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
@@ -3868,15 +4842,21 @@ describe('CampaignsComponent — email delivery channel', () => {
       await internals().onStageEmailSend();
 
       // The VALUES, not merely that the keys exist: a staging call that sent the template id but
-      // dropped the copy would look identical in a shape-only assertion.
+      // dropped the copy -- or dropped only the preheader, leaving the clone source's own -- would
+      // look identical in a shape-only assertion.
+      // `buttonText`/`buttonUrl` ride as structured fields rather than an anchor inside
+      // `bodyHtml`, so the template renders its own native button once instead of twice.
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({
         sourceEmailId: 'hs-123',
         subject: 'Three days in Amsterdam',
         bodyHtml: '<p>Join us</p>',
+        preheader: 'P',
+        buttonText: 'Register',
+        buttonUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
       });
     });
 
-    it('omits subject and bodyHtml entirely when no copy was generated', async () => {
+    it('omits subject, bodyHtml, and preheader entirely when no copy was generated', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
       internals().selectedEmailTemplateId.set('hs-123');
@@ -3891,6 +4871,68 @@ describe('CampaignsComponent — email delivery channel', () => {
 
       // Empty strings would be wrong, not merely untidy: upstream reads a blank subject as
       // "leave the template's own", so sending '' claims copy that does not exist.
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+    });
+
+    it('carries abTestEnabled/subjectB/bodyHtmlB into hubspotConfig when the test is on and variant B has content', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({
+        sourceEmailId: 'hs-123',
+        abTestEnabled: true,
+        subjectB: 'Variant B subject',
+        bodyHtmlB: '<p>Variant B body</p>',
+      });
+    });
+
+    /**
+     * An enabled toggle with nothing typed must not stage a broken test: upstream's STEP 3B
+     * writes subject/body onto a variant it creates, so sending `abTestEnabled: true` with empty
+     * strings would claim a test exists when there is no B-side content to run it with.
+     */
+    it('omits the A/B fields entirely when the test is enabled but variant B has no content', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
+    });
+
+    /** Variant B content typed before the toggle is switched on must not leak onto the wire. */
+    it('omits the A/B fields when variant B has content but the toggle is off', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().abTestForm.controls.subjectB.setValue('Variant B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
       expect(create.mock.calls[0][0].hubspotConfig).toEqual({ sourceEmailId: 'hs-123' });
     });
 

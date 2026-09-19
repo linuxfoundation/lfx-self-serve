@@ -1365,3 +1365,31 @@ export const AUDIENCE_UNION_EXACT_CAP = 25_000;
 
 /** Debounce on the list typeahead, so a keystroke is not a HubSpot search. */
 export const AUDIENCE_LIST_TYPEAHEAD_DEBOUNCE_MS = 300;
+
+/**
+ * Recognised `variant` values for `generate-email-copy`. Currently just the one: a differently
+ * styled draft of the same stage's copy (urgency/FOMO-forward structure) instead of the stage's
+ * normal copy. Like `stage`, campaign-service treats an unrecognised or absent value as "no
+ * variant requested" rather than an error, so this list is for the UI's own selector rather than
+ * wire validation.
+ */
+export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+
+/**
+ * Most sponsor logos carried on a brief.
+ *
+ * Shared rather than helper-local because THREE sites enforce it — the scrape path, the
+ * controller's allow-list, and the client preview — and each entry is a server-side image fetch
+ * downstream. A cap that lives in one of them can silently diverge from the others, and the
+ * preview would then promise a logo the draft drops.
+ */
+export const MAX_SPONSORS = 10;
+
+/**
+ * Longest sponsor name forwarded, in CODE POINTS.
+ *
+ * Shared for the same reason as MAX_SPONSORS: the controller truncates and the preview must show
+ * the truncated form, or the preview promises a name the sent email does not carry. The name
+ * reaches a sent email as alt text and is caller-supplied display text with no upstream cap.
+ */
+export const MAX_SPONSOR_NAME_LENGTH = 100;

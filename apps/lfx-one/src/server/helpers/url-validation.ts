@@ -348,7 +348,7 @@ export async function validateScrapeUrl(url: string): Promise<string> {
  */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
+export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number; finalUrl: string }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
 
@@ -402,9 +402,19 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
     redirectCount++;
   }
 
+  // The FINAL url, after every hop. Relative values in the fetched HTML (`og:image`,
+  // sponsor `src`) must resolve against the page that actually served them: if `/old` redirects
+  // to another host or directory and returns `content="hero.jpg"`, resolving against the
+  // ORIGINAL url points at a path that does not exist and the image silently disappears.
+  //
+  // Safe to hand back without re-validating: `target` is the output of `resolveAndValidate` for
+  // whichever hop produced this response, so every url returned here has already passed the
+  // same SSRF checks as the first one.
+  const finalUrl = `https://${target.host}${target.path}`;
+
   if (result.statusCode < 200 || result.statusCode >= 300) {
-    return { html: '', ok: false, status: result.statusCode };
+    return { html: '', ok: false, status: result.statusCode, finalUrl };
   }
 
-  return { html: result.body, ok: true, status: result.statusCode };
+  return { html: result.body, ok: true, status: result.statusCode, finalUrl };
 }

@@ -3,7 +3,63 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+
+describe('sanitizeDisplayText', () => {
+  it('drops a BIDI override that would visually reverse the name', () => {
+    // U+202E reverses everything after it, so a name can RENDER as something other than what it
+    // contains -- a spoof invisible to any check that only looks at ASCII.
+    expect(sanitizeDisplayText('Acme\u202Emoc.evil')).toBe('Acmemoc.evil');
+    expect(sanitizeDisplayText('A\u2066B\u2069C')).toBe('ABC');
+  });
+
+  it('drops zero-width and C1 control characters', () => {
+    expect(sanitizeDisplayText('Acme\u200BCorp')).toBe('AcmeCorp');
+    expect(sanitizeDisplayText('Acme\uFEFFCorp')).toBe('AcmeCorp');
+    expect(sanitizeDisplayText('Acme\u0085Corp')).toBe('AcmeCorp');
+  });
+
+  it('keeps ordinary punctuation, which is not the risk', () => {
+    // Stripping quotes turned `O'Reilly` into `OReilly`. They were never the risk: every
+    // consumer escapes structurally -- Angular `[alt]` is a property binding, the Go side
+    // JSON-encodes -- so a quote cannot break out of either context.
+    expect(sanitizeDisplayText("O'Reilly")).toBe("O'Reilly");
+    expect(sanitizeDisplayText('The "Best" Corp')).toBe('The "Best" Corp');
+    expect(sanitizeDisplayText('Ben & Jerry’s')).toBe('Ben & Jerry’s');
+  });
+
+  it('keeps accented and non-Latin names intact', () => {
+    // Over-stripping would refuse legitimate sponsors, which is a real defect rather than a
+    // safe default -- the same trap the host denylist kept falling into.
+    expect(sanitizeDisplayText('Café München')).toBe('Café München');
+    expect(sanitizeDisplayText('日本語スポンサー')).toBe('日本語スポンサー');
+    expect(sanitizeDisplayText('Acme & Co')).toBe('Acme & Co');
+  });
+});
+
+describe('decodeHtmlEntities', () => {
+  it('leaves an out-of-range numeric entity as literal text instead of throwing', () => {
+    // `Number.isFinite(999999999)` is true but `String.fromCodePoint(999999999)` throws
+    // RangeError. This helper is reachable from SCRAPED third-party HTML, so a finite-only
+    // guard turned attacker-influenced input into an exception.
+    expect(() => decodeHtmlEntities('&#999999999;')).not.toThrow();
+    expect(decodeHtmlEntities('&#999999999;')).toBe('&#999999999;');
+    expect(decodeHtmlEntities('&#x110000;')).toBe('&#x110000;');
+  });
+
+  it('still decodes valid named, decimal and hex entities', () => {
+    expect(decodeHtmlEntities('&amp;')).toBe('&');
+    expect(decodeHtmlEntities('&#65;')).toBe('A');
+    expect(decodeHtmlEntities('&#x41;')).toBe('A');
+  });
+
+  it('decodes in a SINGLE pass, so an escaped entity cannot become a real one', () => {
+    // `&amp;#39;` is the literal text `&#39;`. A chained implementation would decode `&amp;`
+    // to `&` and then re-read `&#39;` as an apostrophe -- the double-unescape CodeQL flags.
+    expect(decodeHtmlEntities('&amp;#39;')).toBe('&#39;');
+    expect(decodeHtmlEntities('&amp;lt;')).toBe('&lt;');
+  });
+});
 
 describe('escapeHtml', () => {
   it('escapes all five HTML-significant characters', () => {

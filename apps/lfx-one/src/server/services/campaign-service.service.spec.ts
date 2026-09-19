@@ -1119,6 +1119,11 @@ describe('fromBriefResponse', () => {
       ...original,
       deliveryType: 'paid-marketing',
       emailStage: undefined,
+      // The reader normalises the scraped fields even when the brief carried none, so a restored
+      // brief always has them in hand. Asserted rather than relaxed to `objectContaining`: an
+      // exact match is what catches the next field that the write path spreads and the read path
+      // forgets, which is the defect this whole pair exists to prevent.
+      eventDetails: { ...original.eventDetails, heroImageUrl: '', sponsors: [] },
     });
   });
 
@@ -2361,7 +2366,15 @@ describe('CampaignServiceClient.buildAudience', () => {
 });
 
 describe('CampaignServiceClient.generateEmailCopy', () => {
-  const copy = { subject: 'Join us in Nairobi', preheader: 'Two days of MCP', body: '<p>Hello</p>', cta: 'Register' };
+  // Upstream's real wire shape (LFXV2-2775): `sections`, not `body`/`cta`.
+  const copy = {
+    subject: 'Join us in Nairobi',
+    preheader: 'Two days of MCP',
+    sections: [
+      { type: 'rich_text', html: '<p>Hello</p>' },
+      { type: 'button', text: 'Register', url: 'https://example.com' },
+    ],
+  };
 
   beforeEach(() => {
     proxyRequestWithResponse.mockReset();
@@ -2369,7 +2382,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
   });
 
   it('sends the stage as a QUERY param, not a body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
 
@@ -2382,8 +2395,31 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(call[5]).toBeUndefined();
   });
 
+  it('sends the variant alongside the stage, both as QUERY params', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event', 'urgency-fomo');
+
+    // Asserted at THIS boundary because every layer above mocks the client: the controller and
+    // component tests would all pass with `variant` dropped here, and the only symptom upstream
+    // is default copy -- variant A's arm and variant B's arm become identical and the A/B test
+    // compares a draft against itself.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ stage: 'Post-Event', variant: 'urgency-fomo' });
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('sends the variant with no stage when only a variant is named', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', undefined, 'urgency-fomo');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ variant: 'urgency-fomo' });
+  });
+
   it('sends no stage param at all when the caller names none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
@@ -2399,13 +2435,57 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('returns the generated copy', async () => {
+  it('returns the generated copy, folding sections back into body/cta', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.subject).toBe('Join us in Nairobi');
+    // The button section rides along as `cta`, NOT as an anchor baked into `body` — embedding it
+    // in both rendered the CTA twice, once inline and once as the native button.
     expect(result.copy?.body).toBe('<p>Hello</p>');
+    expect(result.copy?.cta).toBe('Register');
+  });
+
+  it('keeps the button section out of body entirely, so its text can never reach the innerHTML sink', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: '<script>alert(1)</script>', url: 'javascript:alert(1)' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // `body` is the only field rendered through `[innerHTML]`, so the button section must not
+    // reach it. The text rides on `cta`, which the template renders as an interpolated label
+    // (Angular escapes it) and the controller forwards as the `buttonText` field -- neither is
+    // an HTML sink, so it is carried through unmodified rather than escaped here.
+    expect(result.copy?.body).toBe('<p>Hello</p>');
+    expect(result.copy?.cta).toBe('<script>alert(1)</script>');
+  });
+
+  it('renders a divider as <hr /> rather than dropping it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [{ type: 'rich_text', html: '<p>First</p>' }, { type: 'divider' }, { type: 'rich_text', html: '<p>Second</p>' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A divider carries no content of its own ("divider (no other fields)" upstream), so the
+    // only thing dropping it loses is its POSITION -- which is the entire point of a divider.
+    // `body` is rendered with innerHTML here and lands in a rich-text widget upstream, so the
+    // `<hr />` survives both.
+    expect(result.copy?.body).toBe('<p>First</p><hr /><p>Second</p>');
+    expect(result.copy?.cta).toBe('');
   });
 
   it('treats a response with no subject as a failure', async () => {
@@ -3371,5 +3451,45 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
 
       expect(proxyRequest).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('fromBriefResponse — scraped hero and sponsors survive a reload', () => {
+  // The write path persists event details with a `...details` spread while the read path
+  // allow-lists fields, so the two diverge by construction: anything added to the brief is saved
+  // and then silently dropped on restore. Hero and sponsors were exactly that — the preview and
+  // onStageEmailSend omitted both modules in any session that restored a brief rather than
+  // scraping it fresh, which is every session after the first.
+  it('reads back heroImageUrl and sponsors', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [
+            { name: 'Acme', logoUrl: 'https://events.example/acme.png' },
+            // No logo: an empty image module is worse than no module, so it is dropped —
+            // mirroring planning-tab's own mapping.
+            { name: 'NoLogo', logoUrl: '' },
+          ],
+        },
+      })
+    );
+
+    expect(restored?.eventDetails?.heroImageUrl).toBe('https://events.example/hero.png');
+    expect(restored?.eventDetails?.sponsors).toEqual([{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }]);
+  });
+
+  it('returns an empty sponsor list rather than throwing on a malformed blob', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', sponsors: 'not-an-array' },
+      })
+    );
+
+    expect(restored?.eventDetails?.sponsors).toEqual([]);
   });
 });

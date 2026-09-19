@@ -19,7 +19,9 @@ vi.mock('../helpers/url-validation', () => ({
   // straight on to the copy stage. The `{ html, ok, status }` shape is load-bearing — the caller
   // checks `ok` and aborts the whole stream on a falsy value, which would make every assertion
   // below pass for the wrong reason.
-  fetchSafeUrl: vi.fn(async () => ({ html: '<html><body></body></html>', ok: true, status: 200 })),
+  // `finalUrl` included: without it `pageUrl` stayed undefined in every test and both call
+  // sites fell through to `body.url`, so the redirect behaviour was unexercised.
+  fetchSafeUrl: vi.fn(async (url: string) => ({ html: '<html><body></body></html>', ok: true, status: 200, finalUrl: url })),
 }));
 
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';

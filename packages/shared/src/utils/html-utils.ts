@@ -17,16 +17,71 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
  * fresh entity (e.g., `&amp;#39;` → `&#39;` → `'`), which is the
  * double-unescape pattern CodeQL flags. Pure string ops — SSR-safe.
  */
-function decodeHtmlEntities(s: string): string {
+/** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
+function isDecodableCodePoint(code: number): boolean {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
+}
+
+/**
+ * Strip from display text anything that decoding could have resurrected.
+ *
+ * Drops what cannot legitimately appear in a display name: control characters (C0, C1, DEL),
+ * BIDI overrides, and zero-width formatting. An earlier version checked only C0/DEL and five
+ * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
+ * after it, letting a sponsor name render as something other than what it contains. A denylist of control characters is
+ * easy to under-specify and trips `no-control-regex`, which exists because literal control
+ * characters in a pattern are hard to read and easy to get wrong.
+ *
+ * Shared because BOTH paths that produce a sponsor name feed the same sink (a HubSpot image
+ * module's `alt` in a sent email): the scrape path, which decodes entities and so can resurrect
+ * `<script>`, and the direct-request path, where the value is caller-supplied. Sanitising only
+ * the first left the second open -- the partial-fix shape this belongs in one place to prevent.
+ */
+export function sanitizeDisplayText(value: string): string {
+  return [...value]
+    .filter((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      // C0 controls and DEL.
+      if (code < 0x20 || code === 0x7f) return false;
+      // C1 controls (U+0080-U+009F): invisible, and some legacy decoders map them to punctuation.
+      if (code >= 0x80 && code <= 0x9f) return false;
+      // BIDI overrides and embeddings. U+202E alone visually REVERSES the text after it, so a
+      // sponsor name can render as something other than what it contains -- a spoof that
+      // survives any check that only looks at ASCII. U+2066-U+2069 are the isolate forms.
+      if (code >= 0x202a && code <= 0x202e) return false;
+      if (code >= 0x2066 && code <= 0x2069) return false;
+      // Zero-width and other invisible formatting: ZWSP/ZWNJ/ZWJ, LRM/RLM, word joiner, BOM.
+      if (code === 0x200b || code === 0x200c || code === 0x200d) return false;
+      if (code === 0x200e || code === 0x200f) return false;
+      if (code === 0x2060 || code === 0xfeff) return false;
+      // `<` and `>` only. Quotes, apostrophes and backticks are ordinary punctuation in real
+      // names -- stripping them turned `O'Reilly` into `OReilly`, which is the over-stripping
+      // this function's own doc warns against. They were never the risk: every consumer escapes
+      // structurally rather than by interpolation -- Angular `[alt]` is a property binding, and
+      // the Go side JSON-encodes the field -- so a quote cannot break out of either context.
+      // Angle brackets stay dropped because the value is decoded first, and decoding is what can
+      // turn `&lt;script&gt;` back into markup.
+      return ch !== '<' && ch !== '>';
+    })
+    .join('')
+    .trim();
+}
+
+export function decodeHtmlEntities(s: string): string {
   return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
     const lower = body.toLowerCase();
+    // RANGE-checked, not just finite-checked. `Number.isFinite(999999999)` is true while
+    // `String.fromCodePoint(999999999)` throws RangeError, and this function is reachable from
+    // scraped third-party HTML (`&#999999999;`), so a finite-only guard turned attacker-
+    // influenced input into an exception. An out-of-range escape is left as literal text --
+    // it names no character, so there is nothing to decode it to.
     if (lower.startsWith('#x')) {
       const code = parseInt(lower.slice(2), 16);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isDecodableCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     if (lower.startsWith('#')) {
       const code = Number(lower.slice(1));
-      return Number.isFinite(code) ? String.fromCodePoint(code) : match;
+      return isDecodableCodePoint(code) ? String.fromCodePoint(code) : match;
     }
     return NAMED_HTML_ENTITIES[lower] ?? match;
   });
