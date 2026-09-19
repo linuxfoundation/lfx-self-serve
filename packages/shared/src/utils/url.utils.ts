@@ -526,31 +526,75 @@ export function isPrivateHost(hostname: string): boolean {
       if (spelled !== '' && isPrivateHost(`[${spelled}]`)) return true;
     }
 
-    // A label recognised as a COMPLETE IPv6 address is scanned for an IPv4 quad only when its
-    // groups could BE one. Two failure modes meet here and both are real:
+    // Every label is scanned. Two failure modes meet here and both are real, so neither a blanket
+    // exclusion nor a blanket scan works:
     //
-    //   - Excluding such labels outright (my first attempt) let `10-0-0-1-2-3-4-5.nip.io`
-    //     through: 8 valid hex groups, so it parsed as IPv6, while the resolver maps the host
-    //     to the RFC1918 address its first four groups spell. A BYPASS.
-    //   - Scanning them blindly reads the `0-0-0-0` run inside an ordinary expanded address as
+    //   - Excluding IPv6-parseable labels let `10-0-0-1-2-3-4-5.nip.io` through: 8 hex groups,
+    //     so it parsed as IPv6, while the resolver maps the host to the RFC1918 address its
+    //     first four groups spell. A BYPASS. Narrowing that exclusion per LABEL still missed
+    //     `0169-0254-...` (zero-padded octets) and `10-0-0-1-dead-beef-0-0` (a hex group AFTER
+    //     the private quad) -- the predicate was asking the wrong question.
+    //   - Scanning blindly reads the `0-0-0-0` run inside an ordinary expanded address as
     //     `0.0.0.0`, refusing `2001-4860-4860-0-0-0-0-8888.sslip.io` (Google public DNS).
     //     A FALSE POSITIVE.
     //
-    // A group above 255 or longer than 3 digits cannot be an IPv4 octet, so a label containing
-    // one is a genuine IPv6 address and nothing else; anything else stays scannable.
-    const scannable = host
-      .split('.')
-      .filter((label) => {
-        if (dashNotationIPv6(label) === '') return true;
-        return label.split('-').every((g) => /^\d{1,3}$/.test(g) && Number(g) <= 255);
-      })
-      .join('.');
-    const numericParts = scannable.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
-    for (let i = 0; i + 3 < numericParts.length; i++) {
-      const quadParts = numericParts.slice(i, i + 4);
-      if (!quadParts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
-      const quad = quadParts.join('.');
-      if (quad !== scannable && isPrivateHost(quad)) return true;
+    // The question is not "could this LABEL be IPv4" but "does this WINDOW spell a private
+    // quad". A window of four groups that are all plain decimal octets is judged; one that
+    // contains a hex group or a >255 value is part of an IPv6 address and is skipped. So the
+    // private quad is still found wherever it sits, and an all-hex expanded address is not
+    // reinterpreted.
+    // Zero-padding is stripped (`0169` -> `169`): a resolver reads them the same, so leaving
+    // them un-normalised let `0169-0254-0169-0254-...` past the window test entirely.
+    // Scanned PER LABEL. The window's meaning depends on how many groups its own label has --
+    // `0-0-0-0.nip.io` IS the address, while the identical window inside an 8-group IPv6 label
+    // is interior padding -- and splitting the whole host loses that, because the dots merge
+    // every label into one sequence.
+    // TWO passes, because a quad can span labels (`169.254.169.254.nip.io`) or sit inside one
+    // (`10-0-0-1.nip.io`), and the zero-run exclusion is only meaningful for the second.
+    //
+    // Pass 1 is the whole host with no exclusion: a dotted spelling has no IPv6 label to be
+    // confused with. Pass 2 is per label, where a window's meaning depends on how many groups
+    // its own label has -- `0-0-0-0.nip.io` IS the address, while the identical window inside an
+    // 8-group IPv6 label is interior padding.
+    const passes: { parts: string[]; excludeZeroRun: boolean }[] = [
+      // DOT-separated only. A dotted quad (`169.254.169.254.nip.io`) spans labels, so it needs
+      // the whole host -- but splitting on dashes too would re-scan the interior of an IPv6
+      // label here, where the zero-run exclusion does not apply, undoing pass 2.
+      { parts: host.split('.').map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part)), excludeZeroRun: false },
+      ...host.split('.').map((label) => {
+        const parts = label.split('-').map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part));
+        return { parts, excludeZeroRun: parts.length > 4 };
+      }),
+      // MIXED spellings (`169.254-169.254.nip.io`) put the quad across both separators, so
+      // neither pass above sees all four groups. The zero-run exclusion applies here for the
+      // same reason as pass 2: an 8-group IPv6 label can appear in a mixed host too.
+      {
+        parts: host.split(/[.-]/).map((part) => (/^\d{1,5}$/.test(part) ? String(Number(part)) : part)),
+        excludeZeroRun: host.split('.').some((label) => label.split('-').length > 4),
+      },
+    ];
+    for (const { parts: numericParts, excludeZeroRun } of passes) {
+      for (let i = 0; i + 3 < numericParts.length; i++) {
+        const quadParts = numericParts.slice(i, i + 4);
+        if (!quadParts.every((part) => /^\d{1,3}$/.test(part) && Number(part) <= 255)) continue;
+        const quad = quadParts.join('.');
+        // Windows of the shape `0.0.0.x` are skipped. Those come from the zero RUN inside an
+        // ordinary expanded IPv6 label and nothing else: `2001-4860-4860-0-0-0-0-8888` (Google
+        // public DNS) and `2600-1f18-0-0-0-0-0-1` yield only `0.0.0.0` and `0.0.0.1`. A genuine
+        // private quad always has a NON-ZERO leading octet -- 10.x, 169.254.x, 192.168.x,
+        // 172.16-31.x, 127.x, 100.64-127.x -- so skipping this shape loses no coverage. Enumerated
+        // from the actual windows each spelling produces, not assumed.
+        //
+        // Earlier attempts excluded whole LABELS that parsed as IPv6, which was the wrong
+        // question: `10-0-0-1-2-3-4-5`, `0169-0254-...` and `10-0-0-1-dead-beef-0-0` all carry a
+        // private quad INSIDE a label that also parses as an address, so they went straight
+        // through. The decision belongs to the window, not the label.
+        // Only inside a LONGER label. `0-0-0-0.nip.io` is exactly four groups, so it IS the
+        // address and must still be refused; `2001-...-0-0-0-0-8888` is eight, so its zero run is
+        // interior padding rather than a destination.
+        if (excludeZeroRun && quadParts[0] === '0' && quadParts[1] === '0' && quadParts[2] === '0') continue;
+        if (quad !== host && isPrivateHost(quad)) return true;
+      }
     }
   }
 

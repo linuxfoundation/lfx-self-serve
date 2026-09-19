@@ -203,6 +203,14 @@ describe('isPrivateHost', () => {
     ['a dash-quad hiding inside an 8-group label', '10-0-0-1-2-3-4-5.nip.io'],
     ['link-local hiding inside an 8-group label', '169-254-169-254-1-2-3-4.nip.io'],
     ['RFC1918 hiding inside an 8-group label', '192-168-1-1-0-0-0-0.sslip.io'],
+    // Zero-PADDED octets read the same to a resolver, and a hex group AFTER the quad does not
+    // make the quad go away. Both slipped past a per-LABEL gate; the decision belongs to the
+    // window, not the label.
+    ['a zero-padded private quad in an 8-group label', '0169-0254-0169-0254-1-2-3-4.nip.io'],
+    ['a private quad followed by hex groups', '10-0-0-1-dead-beef-0-0.nip.io'],
+    // Exactly four groups, so this IS the address rather than interior IPv6 padding.
+    ['a bare all-zero dash quad', '0-0-0-0.nip.io'],
+    ['a bare this-host dash quad', '0-0-0-1.nip.io'],
     // `[::1]` and its expanded twin are the SAME address -- a string compare against '::1'
     // matched only the compressed spelling.
     ['a fully expanded IPv6 loopback', '[0000:0000:0000:0000:0000:0000:0000:0001]'],
@@ -266,6 +274,9 @@ describe('isPrivateHost', () => {
     // re-read as IPv4 digits -- this is Google public DNS.
     ['a PUBLIC expanded dash-notation IPv6', '2001-4860-4860-0-0-0-0-8888.sslip.io'],
     ['a public expanded IPv6 in the doc range', '2001-db8-0-0-0-0-0-1.sslip.io'],
+    // Its zero run yields `0.0.0.0` and `0.0.0.1`, which are interior padding here -- a real
+    // private quad always has a non-zero leading octet.
+    ['a public expanded IPv6 ending in a 1', '2600-1f18-0-0-0-0-0-1.sslip.io'],
     // `5a5a5a5a` is hex-only (not all-digits), so it has ONE reading: 90.90.90.90, public.
     // `08080808` is deliberately NOT used here -- it is 8.8.8.8 as hex but 0.123.77.168 as
     // decimal, and an ambiguous label is refused if EITHER reading is private.
