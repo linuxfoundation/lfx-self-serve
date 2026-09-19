@@ -1260,10 +1260,15 @@ export class CampaignsComponent {
    * credentials. Benign for the draft, which the controller fixes on receipt; not benign for the
    * preview, whose entire job is to match. Empty when the destination is not stageable.
    */
-  protected readonly emailRegistrationUrl = computed<string>(() => {
-    if (!this.emailCtaIsStageable()) return '';
-    return canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
-  });
+  protected readonly emailRegistrationUrl = computed<string>(() =>
+    // NOT gated on `emailCtaIsStageable` any more. The two were coupled while that predicate
+    // meant "the brief has a usable registration URL" -- it now means "the GENERATOR supplied a
+    // button destination", which is a different question. Leaving them coupled unlinked the HERO
+    // on exactly the stages where the generator withholds a button url (CFP Launch, Post-Event,
+    // Final Countdown): no "Submit Your Proposal" destination should not also cost the event
+    // image its link to the event page.
+    canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl)
+  );
 
   /**
    * The CTA label exactly as it will be staged: trimmed, and empty when it will not be sent.

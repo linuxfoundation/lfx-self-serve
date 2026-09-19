@@ -4332,6 +4332,36 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(cfg?.abTestEnabled).toBe(true);
     });
 
+    it('still links the hero when the generator omitted the button url', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+          heroImageUrl: 'https://cdn.example.com/hero.png',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      // CFP Launch: a button with no destination, but the event page is still the right
+      // target for the hero image.
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Speak</p>', cta: 'Submit Your Proposal', ctaUrl: '' });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      // Gating the hero link on the CTA predicate cost the image its link on exactly the stages
+      // where the generator withholds a button url -- a regression from repointing that
+      // predicate at the generator's destination.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.heroLinkUrl).toBe('https://events.linuxfoundation.org/kubecon-eu-2026/');
+      expect(cfg?.buttonUrl).toBeUndefined();
+    });
+
     it('sends no button when the generator omitted its url, even with a registration URL', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
