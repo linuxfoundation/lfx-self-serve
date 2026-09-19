@@ -11,7 +11,7 @@ import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 // The shared decoder rather than a local copy. It is SINGLE-PASS, so a decoded `&` cannot be
 // re-read as the start of a fresh entity (`&amp;#39;` -> `&#39;` -> `'`) -- the double-unescape
 // CodeQL flags -- and it covers every numeric form, not just a handful of named ones.
-import { decodeHtmlEntities } from '@lfx-one/shared/utils/html-utils';
+import { decodeHtmlEntities, sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;
 const CONTEXT_WINDOW_CHARS = 400;
@@ -84,9 +84,7 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
     // but decoding alone turns `&lt;script&gt;` back into live markup in a value that reaches a
     // sent email as an attribute. Decoding without re-sanitising trades a cosmetic bug for an
     // injection one.
-    const alt = decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? '')
-      .replace(/[<>"'`\u0000-\u001f\u007f]/g, '')
-      .trim();
+    const alt = sanitizeDisplayText(decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ''));
     // A page rarely marks sponsor logos with a dedicated attribute, so a nearby heading or
     // container class (e.g. "Our Sponsors", class="sponsor-grid") is the most reliable signal.
     const contextStart = Math.max(0, (imgMatch.index ?? 0) - CONTEXT_WINDOW_CHARS);

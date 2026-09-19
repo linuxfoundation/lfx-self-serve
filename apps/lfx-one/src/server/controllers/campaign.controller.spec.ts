@@ -1250,6 +1250,35 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['bodyHtmlB']).toBeUndefined();
   });
 
+  it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>b</p>',
+            sponsors: [{ name: 'Acme <script>alert(1)</script>', logoUrl: 'https://cdn.example.com/a.png' }],
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    // A direct campaign-manager request bypasses the scrape path entirely, so sanitising only
+    // there left this sink open -- the name lands in a HubSpot image module's alt attribute in
+    // a sent email.
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    const sponsors = sent['sponsors'] as { name: string }[];
+    expect(sponsors[0].name).not.toContain('<');
+    expect(sponsors[0].name).not.toContain('>');
+  });
+
   it('renames preheaderB to previewTextB on the wire, like preheader to previewText', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });

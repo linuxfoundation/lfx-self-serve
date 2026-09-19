@@ -22,6 +22,29 @@ function isDecodableCodePoint(code: number): boolean {
   return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
 }
 
+/**
+ * Strip from display text anything that decoding could have resurrected.
+ *
+ * An ALLOW-list -- keep printable characters, drop the rest. A denylist of control characters is
+ * easy to under-specify and trips `no-control-regex`, which exists because literal control
+ * characters in a pattern are hard to read and easy to get wrong.
+ *
+ * Shared because BOTH paths that produce a sponsor name feed the same sink (a HubSpot image
+ * module's `alt` in a sent email): the scrape path, which decodes entities and so can resurrect
+ * `<script>`, and the direct-request path, where the value is caller-supplied. Sanitising only
+ * the first left the second open -- the partial-fix shape this belongs in one place to prevent.
+ */
+export function sanitizeDisplayText(value: string): string {
+  return [...value]
+    .filter((ch) => {
+      const code = ch.codePointAt(0) ?? 0;
+      if (code < 0x20 || code === 0x7f) return false;
+      return !['<', '>', '"', "'", '`'].includes(ch);
+    })
+    .join('')
+    .trim();
+}
+
 export function decodeHtmlEntities(s: string): string {
   return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
     const lower = body.toLowerCase();

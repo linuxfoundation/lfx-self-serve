@@ -6,6 +6,7 @@
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
+import { sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 
 import { NextFunction, Request, Response } from 'express';
 
@@ -2220,7 +2221,10 @@ export class CampaignController {
           // mapper are trim-only; this one is caller-supplied display text with no upstream cap).
           // [...name] splits by CODE POINT, so a 100-char cut cannot land inside a surrogate
           // pair, and the second trim removes a space the cut may have left at the end.
-          .map((sponsor) => ({ name: [...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('').trim(), logoUrl: canonicalHttpUrl(sponsor.logoUrl) }))
+          .map((sponsor) => ({
+            name: sanitizeDisplayText([...sponsor.name.trim()].slice(0, MAX_SPONSOR_NAME_LENGTH).join('')),
+            logoUrl: canonicalHttpUrl(sponsor.logoUrl),
+          }))
           .filter((sponsor) => sponsor.name !== '' && sponsor.logoUrl !== '')
           // Same cap the scrape path applies (MAX_SPONSORS). Without it a direct request forwards
           // an unbounded array, and each entry is a server-side fetch downstream — fan-out the
