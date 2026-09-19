@@ -316,11 +316,20 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
   });
 
-  /** Opens the selector (drawer-hidden on the mobile project, so the trigger is clicked by test id, not visibility) and picks an organization row. */
+  /**
+   * Opens the selector and picks an organization row. The shell renders two selector instances — the
+   * desktop sidebar (`hidden lg:flex`) and the mobile drawer's copy — so on the `mobile-chrome` project
+   * the drawer is opened first and the visible instance is the one clicked; on desktop the sidebar's.
+   */
   async function switchOrg(page: Page, uid: string): Promise<void> {
-    await page.getByTestId('org-selector').click();
-    await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId(`org-item-${uid}`).click();
+    const menuButton = page.getByTestId('mobile-menu-button');
+    if (await menuButton.isVisible()) {
+      await menuButton.click();
+      await expect(page.getByTestId('mobile-sidebar-drawer')).toBeVisible({ timeout: 10_000 });
+    }
+    await page.getByTestId('org-selector').locator('visible=true').first().click();
+    await expect(page.getByTestId('org-selector-list').locator('visible=true').first()).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId(`org-item-${uid}`).locator('visible=true').first().click();
   }
 
   test('E11: switching organization on a detail page re-addresses it, keeping child segments, query and fragment; Back returns to the pre-switch org', async ({
