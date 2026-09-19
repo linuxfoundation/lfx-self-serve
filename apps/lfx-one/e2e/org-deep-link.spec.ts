@@ -35,8 +35,8 @@
  * selection other than the stubbed first row use org B, so the guard cannot take the
  * already-selected shortcut and the resolver request is observable.
  *
- * The selector is asserted by text, never visibility: the sidebar is CSS-hidden on the mobile
- * project and the drawer copy is not in the DOM until opened.
+ * The viewport is pinned to desktop (see `test.use` below), so the sidebar selector is the one
+ * instance on the page; assertions on it are by text.
  *
  * Scope: `page.route` stubs reach the browser only. A direct `page.goto` is server-rendered first,
  * and the guard's server run resolves against the real BFF (which answers 404 for these fixture
@@ -184,6 +184,12 @@ async function readSelectionCookie(page: Page): Promise<{ uid: string } | undefi
 }
 
 test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
+  // Desktop layout on every project, as the other Org Lens specs pin it: the shell renders a second
+  // selector copy inside the mobile drawer (a modal `p-drawer` whose content stays in the DOM once
+  // opened), and a switch scenario that opened it would leave every later `org-selector` assertion
+  // with two matches under strict mode.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test.beforeEach(async ({ page, context }) => {
     await context.clearCookies({ name: 'lfx-selected-account' });
     // Pin the Org Lens flag on so the scenarios do not depend on the environment's LaunchDarkly state
@@ -316,20 +322,11 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
   });
 
-  /**
-   * Opens the selector and picks an organization row. The shell renders two selector instances — the
-   * desktop sidebar (`hidden lg:flex`) and the mobile drawer's copy — so on the `mobile-chrome` project
-   * the drawer is opened first and the visible instance is the one clicked; on desktop the sidebar's.
-   */
+  /** Opens the (desktop) selector and picks an organization row. */
   async function switchOrg(page: Page, uid: string): Promise<void> {
-    const menuButton = page.getByTestId('mobile-menu-button');
-    if (await menuButton.isVisible()) {
-      await menuButton.click();
-      await expect(page.getByTestId('mobile-sidebar-drawer')).toBeVisible({ timeout: 10_000 });
-    }
-    await page.getByTestId('org-selector').filter({ visible: true }).first().click();
-    await expect(page.getByTestId('org-selector-list').filter({ visible: true }).first()).toBeVisible({ timeout: 10_000 });
-    await page.getByTestId(`org-item-${uid}`).filter({ visible: true }).first().click();
+    await page.getByTestId('org-selector').click();
+    await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId(`org-item-${uid}`).click();
   }
 
   test('E11: switching organization on a detail page re-addresses it, keeping child segments, query and fragment; Back returns to the pre-switch org', async ({
