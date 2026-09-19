@@ -118,6 +118,17 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.selectedUrlSegment()).toBe('bravo-llc');
     });
 
+    // A record for another organization (a stale response after a switch) is ignored entirely —
+    // including by the forget step, which must not compare it against the current selection.
+    it('ignores a rename of another organization, slug included', () => {
+      service.adoptFromAddress(addressedB);
+
+      service.updateCanonicalRecord({ uid: UID_A, accountId: UID_A, name: 'Alpha Renamed', slug: 'alpha-renamed' } as OrgCanonicalRecord);
+
+      expect(service.selectedAccount().accountName).toBe('Bravo');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
     // The FR-020 stub the path guard adopts when the resolver is unavailable is address-adopted, so
     // the org list never re-checks it; the guard's own resolve on the next navigation is what fills it.
     it('leaves a selection with no indexed slug on its SFID address', async () => {

@@ -242,7 +242,11 @@ export class AccountContextService {
    * the index; the background canonical fetch never does this (`applyCanonicalRecord`).
    */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
-    this.applyCanonicalRecord(canonical);
+    // Gated on the same selection match as the patch: a record for another organization (a stale
+    // response after a switch) must not forget the current one's slug either.
+    if (!this.applyCanonicalRecord(canonical)) {
+      return;
+    }
     const current = this.selectedAccount();
     if (
       canonical.slug !== undefined &&
@@ -254,7 +258,8 @@ export class AccountContextService {
     }
   }
 
-  private applyCanonicalRecord(canonical: OrgCanonicalRecord): void {
+  /** Applies the record to the selection it belongs to; false (nothing applied) when it belongs to another organization. */
+  private applyCanonicalRecord(canonical: OrgCanonicalRecord): boolean {
     const current = this.selectedAccount();
     // Only patch when the canonical record corresponds to the still-selected org —
     // a user that switches selection mid-flight should not have a stale canonical
@@ -262,7 +267,7 @@ export class AccountContextService {
     const matchesByUid = !!canonical.uid && canonical.uid === current.uid;
     const matchesByAccountId = !!canonical.accountId && canonical.accountId === current.accountId;
     if (!matchesByUid && !matchesByAccountId) {
-      return;
+      return false;
     }
     const next: Account = {
       ...current,
@@ -284,6 +289,7 @@ export class AccountContextService {
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
     // but covers the edge case where the indexed snapshot had a stale or null accountId).
     this.persistToStorage(next);
+    return true;
   }
 
   private refreshFromSnowflake(accountIds: string[]): void {
