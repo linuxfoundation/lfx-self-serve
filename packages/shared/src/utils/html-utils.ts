@@ -25,7 +25,10 @@ function isDecodableCodePoint(code: number): boolean {
 /**
  * Strip from display text anything that decoding could have resurrected.
  *
- * An ALLOW-list -- keep printable characters, drop the rest. A denylist of control characters is
+ * Drops what cannot legitimately appear in a display name: control characters (C0, C1, DEL),
+ * BIDI overrides, and zero-width formatting. An earlier version checked only C0/DEL and five
+ * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
+ * after it, letting a sponsor name render as something other than what it contains. A denylist of control characters is
  * easy to under-specify and trips `no-control-regex`, which exists because literal control
  * characters in a pattern are hard to read and easy to get wrong.
  *
@@ -38,7 +41,19 @@ export function sanitizeDisplayText(value: string): string {
   return [...value]
     .filter((ch) => {
       const code = ch.codePointAt(0) ?? 0;
+      // C0 controls and DEL.
       if (code < 0x20 || code === 0x7f) return false;
+      // C1 controls (U+0080-U+009F): invisible, and some legacy decoders map them to punctuation.
+      if (code >= 0x80 && code <= 0x9f) return false;
+      // BIDI overrides and embeddings. U+202E alone visually REVERSES the text after it, so a
+      // sponsor name can render as something other than what it contains -- a spoof that
+      // survives any check that only looks at ASCII. U+2066-U+2069 are the isolate forms.
+      if (code >= 0x202a && code <= 0x202e) return false;
+      if (code >= 0x2066 && code <= 0x2069) return false;
+      // Zero-width and other invisible formatting: ZWSP/ZWNJ/ZWJ, LRM/RLM, word joiner, BOM.
+      if (code === 0x200b || code === 0x200c || code === 0x200d) return false;
+      if (code === 0x200e || code === 0x200f) return false;
+      if (code === 0x2060 || code === 0xfeff) return false;
       return !['<', '>', '"', "'", '`'].includes(ch);
     })
     .join('')

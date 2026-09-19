@@ -3,7 +3,30 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+
+describe('sanitizeDisplayText', () => {
+  it('drops a BIDI override that would visually reverse the name', () => {
+    // U+202E reverses everything after it, so a name can RENDER as something other than what it
+    // contains -- a spoof invisible to any check that only looks at ASCII.
+    expect(sanitizeDisplayText('Acme\u202Emoc.evil')).toBe('Acmemoc.evil');
+    expect(sanitizeDisplayText('A\u2066B\u2069C')).toBe('ABC');
+  });
+
+  it('drops zero-width and C1 control characters', () => {
+    expect(sanitizeDisplayText('Acme\u200BCorp')).toBe('AcmeCorp');
+    expect(sanitizeDisplayText('Acme\uFEFFCorp')).toBe('AcmeCorp');
+    expect(sanitizeDisplayText('Acme\u0085Corp')).toBe('AcmeCorp');
+  });
+
+  it('keeps accented and non-Latin names intact', () => {
+    // Over-stripping would refuse legitimate sponsors, which is a real defect rather than a
+    // safe default -- the same trap the host denylist kept falling into.
+    expect(sanitizeDisplayText('Café München')).toBe('Café München');
+    expect(sanitizeDisplayText('日本語スポンサー')).toBe('日本語スポンサー');
+    expect(sanitizeDisplayText('Acme & Co')).toBe('Acme & Co');
+  });
+});
 
 describe('decodeHtmlEntities', () => {
   it('leaves an out-of-range numeric entity as literal text instead of throwing', () => {

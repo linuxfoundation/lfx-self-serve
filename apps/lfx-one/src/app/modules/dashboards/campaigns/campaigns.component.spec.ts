@@ -4024,6 +4024,37 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(sponsor.name.endsWith('\u{1F600}')).toBe(true);
     });
 
+    it('keeps a subject typed during generation but still fills the untouched body', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailBriefId.set('brief-77');
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const pending = new Subject<unknown>();
+      const gen = vi.spyOn(TestBed.inject(CampaignService), 'generateEmailCopy').mockReturnValue(pending as never);
+
+      const generating = internals().onGenerateAbTestCopy();
+      await vi.waitFor(() => expect(gen).toHaveBeenCalled());
+
+      // The fields stay EDITABLE while generating -- making the operator wait to type would be
+      // worse -- so this is an ordinary thing to do, not an edge case.
+      internals().abTestForm.controls.subjectB.setValue('My own subject');
+      fixture.detectChanges();
+
+      pending.next({ enabled: true, copy: { subject: 'Generated subject', preheader: 'P', body: '<p>Generated body</p>', cta: '' } });
+      pending.complete();
+      await generating;
+      fixture.detectChanges();
+
+      // Per FIELD, not all-or-nothing: the typed subject survives, the untouched body is filled.
+      // `isCurrent()` tracks toggles and resets; a keystroke is neither, so without this guard
+      // the late response silently replaced what the operator had just written.
+      expect(internals().abTestForm.controls.subjectB.value).toBe('My own subject');
+      expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('<p>Generated body</p>');
+    });
+
     it('discards a variant B response that lands after the operator toggled A/B off', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

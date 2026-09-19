@@ -2382,6 +2382,13 @@ export class CampaignsComponent {
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
+    // The state these controls are in once cleared. The fields stay EDITABLE while generating --
+    // making the operator wait to type would be worse -- so a field they have since typed into
+    // no longer matches this, and the late response must not overwrite it. `isCurrent()` only
+    // tracks toggles and resets; a keystroke is neither.
+    const clearedSubjectB = this.abTestForm.controls.subjectB.value;
+    const clearedPreheaderB = this.abTestForm.controls.preheaderB.value;
+    const clearedBodyHtmlB = this.abTestForm.controls.bodyHtmlB.value;
 
     try {
       const briefId = await this.ensureEmailBriefId(brief, projectSlug);
@@ -2411,10 +2418,20 @@ export class CampaignsComponent {
         return;
       }
 
-      this.abTestForm.controls.subjectB.setValue(result.copy.subject);
-      // The generator returns a preheader for B; dropping it here was what made B inherit A's.
-      this.abTestForm.controls.preheaderB.setValue(result.copy.preheader);
-      this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body);
+      // Per field, not all-or-nothing: an operator who typed a subject while the body generated
+      // keeps their subject AND gets the generated body.
+      if (this.abTestForm.controls.subjectB.value === clearedSubjectB) {
+        this.abTestForm.controls.subjectB.setValue(result.copy.subject);
+      }
+      if (this.abTestForm.controls.bodyHtmlB.value === clearedBodyHtmlB) {
+        this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body);
+      }
+      // Guarded like the others: this field HAS its own input, so an operator can type into it
+      // mid-generation exactly as they can the subject. (The generator returning a preheader for
+      // B is what stops B inheriting A's.)
+      if (this.abTestForm.controls.preheaderB.value === clearedPreheaderB) {
+        this.abTestForm.controls.preheaderB.setValue(result.copy.preheader);
+      }
       this.abTestCopyState.set('idle');
     } catch {
       if (!isCurrent()) {

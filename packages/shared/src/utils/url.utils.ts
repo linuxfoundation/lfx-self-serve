@@ -549,10 +549,6 @@ export function isPrivateHost(hostname: string): boolean {
     const allNumeric = labels.every((l) => /^[0-9]+$/.test(l));
     return !everyLabelValid || allNumeric;
   }
-  // ALL FOUR labels must be numeric octets before any range check. Destructuring only the first
-  // three left the fourth unexamined, so `10.0.0.com` -- an ordinary hostname -- reached the
-  // RFC1918 test with `a === 10` and was refused, silently dropping a legitimate hero or CTA.
-  // The same shape at 5+ labels already fails closed above; this is the 4-label case.
   // Is it a quad at all? A non-numeric label means this is a NAME, which is allowed: the
   // destructure below only read the first three, so `10.0.0.com` -- an ordinary hostname --
   // reached the RFC1918 test with `a === 10` and was refused, dropping a legitimate hero or CTA.
