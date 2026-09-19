@@ -51,38 +51,56 @@ describe('AccountContextService — address-adopted selection', () => {
   });
 
   // Spec 050: addresses resolve against the index, and member-service runs ahead of it during lag —
-  // so the canonical record never sets the URL slug: not over an indexed value, not over an indexed
-  // null, and not into a gap (a stub addresses as the SFID until an indexed row answers).
+  // so the canonical record never sets the URL slug. When it disagrees with the held indexed slug,
+  // neither value is safe to address by (the old name may already resolve to another organization,
+  // the new one may not resolve yet), so the slug becomes unknown and the SFID addresses the
+  // organization until an indexed row answers again.
   describe('canonical record and the URL slug', () => {
     const canonicalOf = (slug: string | null | undefined): OrgCanonicalRecord => ({ uid: UID_B, accountId: UID_B, name: 'Bravo', slug }) as OrgCanonicalRecord;
     const http = (): { get: ReturnType<typeof vi.fn> } => TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
 
-    it('keeps an indexed slug when the canonical record carries another', async () => {
+    it('keeps the indexed slug when the canonical record agrees', async () => {
       service.adoptFromAddress(addressedB);
-      http().get.mockReturnValue(of(canonicalOf('bravo-renamed')));
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
 
       await service.refreshCanonicalRecord(addressedB);
 
+      expect(service.selectedAccount().slug).toBe('bravo-llc');
       expect(service.selectedUrlSegment()).toBe('bravo-llc');
     });
 
-    it('keeps an indexed null slug (SFID address) when the canonical record already has one', async () => {
+    it.each([
+      ['another slug (a rename in flight)', 'bravo-renamed'],
+      ['no slug (the slug was removed)', null],
+    ])('drops to the SFID address while the canonical record carries %s', async (_label, slug) => {
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of(canonicalOf(slug)));
+
+      await service.refreshCanonicalRecord(addressedB);
+
+      expect(service.selectedAccount().slug).toBeUndefined();
+      expect(service.selectedUrlSegment()).toBe(UID_B);
+    });
+
+    it('drops an indexed null to unknown when the canonical record has a slug the index does not yet', async () => {
       service.adoptFromAddress({ ...addressedB, slug: null });
       http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
 
       await service.refreshCanonicalRecord({ ...addressedB, slug: null });
 
+      expect(service.selectedAccount().slug).toBeUndefined();
       expect(service.selectedUrlSegment()).toBe(UID_B);
     });
 
     // The FR-020 stub the path guard adopts when the resolver is unavailable is address-adopted, so
-    // the org list never re-checks it: a canonical fill here would stick for the session.
+    // the org list never re-checks it; the guard's own resolve on the next navigation is what fills it.
     it('leaves a selection with no indexed slug on its SFID address', async () => {
       service.adoptFromAddress({ ...addressedB, slug: undefined });
       http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
 
       await service.refreshCanonicalRecord({ ...addressedB, slug: undefined });
 
+      expect(service.selectedAccount().slug).toBeUndefined();
       expect(service.selectedUrlSegment()).toBe(UID_B);
     });
   });

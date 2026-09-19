@@ -62,9 +62,10 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     return failClosed();
   }
 
-  // `slug === null` is a confirmed "no slug"; `undefined` is a cookie-restored stub whose slug the
-  // canonical fetch has not filled yet — the resolver must still answer for it, or an SFID address to
-  // the cookie organization would never canonicalize (FR-002).
+  // `slug === null` is a confirmed "no slug"; `undefined` is a slug not known from the index — a
+  // cookie-restored or FR-020 stub no org-items row has answered for yet, or one the canonical record
+  // disagreed with (spec 050) — and the resolver must still answer for it: it is the one source that
+  // can learn the indexed slug here, without which an SFID address would never canonicalize (FR-002).
   const selected = accountContext.selectedAccount();
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || segment === selected.slug?.toLowerCase())) {
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;

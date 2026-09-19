@@ -144,8 +144,11 @@ describe('orgPathParamGuard', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
 
-    it('still resolves a cookie-restored stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
-      selectedAccount.set(account({ uid: UID_A })); // slug undefined: canonical fetch has not filled it
+    // Spec 050: the canonical record never fills the slug (addresses resolve against the index), so a
+    // stub — cookie-restored, or the FR-020 one adopted when the resolver was unavailable — keeps
+    // asking the resolver on each guard run until it answers; that is how the indexed slug is learned.
+    it('still resolves a stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
+      selectedAccount.set(account({ uid: UID_A })); // slug undefined: no indexed row has answered for it
       resolve.mockReturnValue(of(hit(UID_A, 'acme-inc')));
 
       expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe('/org/acme-inc/projects');
