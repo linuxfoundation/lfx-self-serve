@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
@@ -268,7 +269,7 @@ export class OrgNavigationService {
         // so in-app addresses and the path-param guard's no-round-trip path see the indexed segment;
         // `null` means the index has none.
         const indexedSlug = match.slug ?? null;
-        if (current.slug !== indexedSlug) {
+        if (orgUrlSegment({ uid: current.uid, slug: current.slug }) !== orgUrlSegment({ uid: current.uid, slug: indexedSlug })) {
           this.accountContextService.setAccount({ ...current, slug: indexedSlug });
         }
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable

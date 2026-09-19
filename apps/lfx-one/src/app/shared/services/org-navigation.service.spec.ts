@@ -120,6 +120,17 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
+  // Compared as address segments, not raw strings: a case-only difference is the same address and
+  // must not re-write the account (and the cookie) for nothing.
+  it('does not re-write a restored selection whose slug differs from the row only in case', () => {
+    selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'Beta' });
+
+    bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+    expect(setAccount).not.toHaveBeenCalled();
+    expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
+
   // A pre-spec-002 selection keyed by accountId rather than uid still finds its own row; that is a
   // default selection of the *same* organization, and takes the default path like any other.
   it('falls back to the row matching the restored accountId, still as a default', () => {

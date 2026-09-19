@@ -62,10 +62,10 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
     return failClosed();
   }
 
-  // `slug === null` is a confirmed "no slug"; `undefined` is a slug not known from the index — a
-  // cookie-restored or FR-020 stub no org-items row has answered for yet, or one the canonical record
-  // disagreed with (spec 050) — and the resolver must still answer for it: it is the one source that
-  // can learn the indexed slug here, without which an SFID address would never canonicalize (FR-002).
+  // `slug === null` is a confirmed "no slug"; `undefined` is a slug not known from the index yet — a
+  // cookie-restored or FR-020 stub no org-items row has answered for (spec 050: the canonical record
+  // never fills it) — and the resolver must still answer for it: it is the one source that can learn
+  // the indexed slug here, without which an SFID address would never canonicalize (FR-002).
   // A held slug is trusted for the shortcut only if it is slug-shaped (`isOrgSlugSegment`, which
   // rejects SFID-shaped values): an SFID-shaped "slug" equal to the addressed segment would otherwise
   // pass an SFID address for *another* organization off as the selected one without asking the

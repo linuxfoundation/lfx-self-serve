@@ -226,7 +226,7 @@ export class AccountContextService {
     return promise;
   }
 
-  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. The URL slug is the one field not propagated (spec 050): a rename makes the slug unknown, so addresses use the SFID until an indexed row answers again — the path guard's resolve on the next navigation, or the org list on the next bootstrap — since addresses resolve against the index and the new slug reaches it only when the indexer has caught up. */
+  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. The URL slug is the one field not propagated (spec 050): addresses resolve against the index, so the renamed slug reaches links and the address only once the indexer has caught up and an indexed row (resolver on the next navigation, org list on the next bootstrap) has answered with it. */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
     this.applyCanonicalRecord(canonical);
   }
@@ -251,13 +251,11 @@ export class AccountContextService {
       // Spec 050: the URL slug is the *index's*, never member-service's. Addresses resolve against
       // the index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs
       // ahead of it during lag — a slug taken from here could be one the resolver cannot answer yet.
-      // So the canonical record never *sets* a slug. It can *unset* one: when it disagrees with the
-      // held indexed slug (a rename in flight, a slug removed), neither value is safe to address by —
-      // the index's may already resolve to another organization that took the name, the canonical
-      // one may not resolve yet — so the slug becomes unknown and the organization addresses by its
-      // SFID, which resolves for everyone, until an indexed row answers again (the org list, or the
-      // resolver via the path guard, which does not take the no-round-trip path for an unknown slug).
-      slug: canonical.slug !== undefined && current.slug !== undefined && canonical.slug !== current.slug ? undefined : current.slug,
+      // So the canonical record never touches the slug, not even to unset it on a disagreement: the
+      // next org-segment navigation asks the resolver, which is the index and hands the indexed slug
+      // straight back — an unset would only flip-flop. A rename reaches addresses when the index has
+      // caught up, and a reused name resolves to whoever the index says (access-checked either way).
+      slug: current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,
