@@ -776,7 +776,7 @@
                                the first thing an inbox renders after the subject. Omitting it hid the
                                very difference the test measures, since opens are what pick a winner. -->
                           <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-a">
-                            {{ emailCopy()?.preheader || '(template preheader)' }}
+                            {{ emailPreheaderPreview() || '(template preheader)' }}
                           </p>
                         </div>
                         <!-- Same hero/button/sponsors note as the single-variant preview above: both

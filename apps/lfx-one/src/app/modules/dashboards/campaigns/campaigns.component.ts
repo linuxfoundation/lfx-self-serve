@@ -455,6 +455,8 @@ export class CampaignsComponent {
    * regenerated independently of variant A.
    */
   private abTestCopyGeneration = 0;
+  /** Bumped whenever variant B is discarded, so an in-flight stage can tell it was cancelled. */
+  private abTestDiscardGeneration = 0;
 
   /**
    * The persist a concurrent caller can join instead of starting a second one.
@@ -1144,8 +1146,17 @@ export class CampaignsComponent {
    */
   protected readonly abTestPreheaderBForSend = computed<string>(() => this.abTestPreheaderB().trim());
 
+  /**
+   * What the preview shows for variant A: trimmed, so a whitespace-only value reads as absent.
+   *
+   * A computed rather than a trim in the template, for the same reason B has one: the A card
+   * rendered `emailCopy()?.preheader` raw and so reintroduced on A the exact defect just fixed
+   * on B -- a whitespace-only value showing as a blank line the send would never produce.
+   */
+  protected readonly emailPreheaderPreview = computed<string>(() => (this.emailCopy()?.preheader ?? '').trim());
+
   /** What the preview shows for B: its own preheader, or A's when it has none -- matching send. */
-  protected readonly abTestPreheaderBPreview = computed<string>(() => this.abTestPreheaderBForSend() || (this.emailCopy()?.preheader ?? '').trim());
+  protected readonly abTestPreheaderBPreview = computed<string>(() => this.abTestPreheaderBForSend() || this.emailPreheaderPreview());
 
   /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
   protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
@@ -2199,6 +2210,11 @@ export class CampaignsComponent {
     // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
     // stage must not ride along into a create for the new one.
     this.abTestCopyGeneration++;
+    // Every path that CLEARS variant B is a discard, so every one bumps this. An in-flight stage
+    // cannot detect a cancel by re-reading `abTestEnabled()`: toggling off and back ON during
+    // the await reads true again while the controls it snapshotted have been emptied, so the
+    // discarded variant still shipped. A monotonic counter makes the cancel permanent.
+    this.abTestDiscardGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');
@@ -2445,6 +2461,7 @@ export class CampaignsComponent {
     // during the brief-id round trip staged post-await A/B state against pre-await copy and
     // hero: exactly the config-that-never-coexisted this block exists to prevent.
     const abTestEnabled = this.abTestEnabled() && this.abTestIsStageable();
+    const abTestDiscardAtSnapshot = this.abTestDiscardGeneration;
     const abTestSubjectB = this.abTestSubjectB();
     const abTestPreheaderB = this.abTestPreheaderBForSend();
     const abTestBodyHtmlB = this.abTestBodyHtmlB();
@@ -2570,7 +2587,11 @@ export class CampaignsComponent {
           // So: a variant that was on and is now off is DROPPED (the operator's explicit "stop"
           // wins), while everything else still comes from the snapshot. Turning A/B ON mid-await
           // is NOT honoured -- that would stage a half-filled variant assembled from two moments.
-          ...(abTestEnabled && this.abTestEnabled()
+          // Unchanged discard counter, not a live flag re-read. `this.abTestEnabled()` reads
+          // true again after an off->ON cycle during the await, while the controls this
+          // snapshotted were emptied by the toggle-off -- so the flag check shipped a variant
+          // the operator had discarded. The counter cannot be un-bumped.
+          ...(abTestEnabled && this.abTestDiscardGeneration === abTestDiscardAtSnapshot
             ? {
                 abTestEnabled: true,
                 subjectB: abTestSubjectB,
@@ -2957,6 +2978,11 @@ export class CampaignsComponent {
     // the operator just discarded back into the cleared controls. The other reset paths
     // (2050, 4117) already bump for the same reason.
     this.abTestCopyGeneration++;
+    // Every path that CLEARS variant B is a discard, so every one bumps this. An in-flight stage
+    // cannot detect a cancel by re-reading `abTestEnabled()`: toggling off and back ON during
+    // the await reads true again while the controls it snapshotted have been emptied, so the
+    // discarded variant still shipped. A monotonic counter makes the cancel permanent.
+    this.abTestDiscardGeneration++;
     this.abTestForm.controls.subjectB.setValue('');
     this.abTestForm.controls.preheaderB.setValue('');
     this.abTestForm.controls.bodyHtmlB.setValue('');

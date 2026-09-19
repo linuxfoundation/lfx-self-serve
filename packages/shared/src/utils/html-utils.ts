@@ -17,7 +17,7 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
  * fresh entity (e.g., `&amp;#39;` → `&#39;` → `'`), which is the
  * double-unescape pattern CodeQL flags. Pure string ops — SSR-safe.
  */
-function decodeHtmlEntities(s: string): string {
+export function decodeHtmlEntities(s: string): string {
   return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
     const lower = body.toLowerCase();
     if (lower.startsWith('#x')) {

@@ -8,29 +8,15 @@ import { MAX_SPONSORS } from '@lfx-one/shared/constants';
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
+// The SHARED decoder, not a local copy: it is SINGLE-PASS, so a decoded `&` cannot be
+// re-read as the start of a fresh entity (`&amp;#39;` -> `&#39;` -> `'`), the
+// double-unescape CodeQL flags. My private version avoided that only by careful
+// ordering of chained replaces, and covered five names where this covers every
+// numeric entity too.
+import { decodeHtmlEntities } from '@lfx-one/shared/utils/html-utils';
 
 const SPONSOR_KEYWORD_RE = /sponsor|partner|supporter|exhibitor/i;
 const CONTEXT_WINDOW_CHARS = 400;
-
-/**
- * HTML entities that can legally appear inside an attribute value.
- *
- * Only these five are needed: an attribute is delimited by its quote character, so the entities
- * a serializer is obliged to escape there are `&`, `<`, `>` and whichever quote is in use. The
- * numeric forms are handled too because serializers emit them interchangeably.
- */
-function decodeHtmlEntities(value: string): string {
-  return (
-    value
-      .replace(/&(?:#0*60|#[xX]0*3[cC]|lt);/g, '<')
-      .replace(/&(?:#0*62|#[xX]0*3[eE]|gt);/g, '>')
-      .replace(/&(?:#0*34|#[xX]0*22|quot);/g, '"')
-      .replace(/&(?:#0*39|#[xX]0*27|apos|#0*39);/g, "'")
-      // `&amp;` LAST, so `&amp;lt;` decodes to the literal text `&lt;` rather than to `<` --
-      // decoding it first would let one escaped entity become a different real one.
-      .replace(/&(?:#0*38|#[xX]0*26|amp);/g, '&')
-  );
-}
 
 function resolveUrl(candidate: string, baseUrl: string): string | null {
   try {

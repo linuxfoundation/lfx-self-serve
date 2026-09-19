@@ -1449,6 +1449,12 @@ export class CampaignProxyService {
     const isEducation = body.programType === 'education';
     const pageLabel = isEducation ? 'course page' : 'event page';
     let html = '';
+    // The URL that actually SERVED the page, after redirects. Declared alongside `html` because
+    // it has the same lifetime: everything downstream that describes "the page" must use it.
+    // The AI prompt and the event-name fallback both used `body.url` -- raw user input, a hop
+    // further from the truth than even the requested URL -- so a redirected event page was
+    // described to the model by a URL it never saw, and the slug came from the wrong path.
+    let pageUrl = '';
     let heroImageUrl = '';
     let sponsors: CampaignEventSponsor[] = [];
 
@@ -1465,6 +1471,7 @@ export class CampaignProxyService {
 
       try {
         const { html: scrapedHtml, ok, status, finalUrl } = await fetchSafeUrl(safeUrl, signal);
+        pageUrl = finalUrl;
         if (!ok) {
           yield { type: 'error', data: `Page returned HTTP ${status}` };
           return;
@@ -1485,7 +1492,7 @@ export class CampaignProxyService {
 
     if (!isRefinement) {
       try {
-        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${body.url}\n\nHTML:\n${extractableHtml(html)}`);
+        const extraction = await aiChat(getExtractionPrompt(body.programType), `URL: ${pageUrl || body.url}\n\nHTML:\n${extractableHtml(html)}`);
         eventDetails = JSON.parse(stripJsonFences(extraction)) as Record<string, unknown>;
         // Education extraction also yields price, certification_code, prerequisites — deferred until CampaignEventDetails supports them
         yield {
@@ -1515,7 +1522,7 @@ export class CampaignProxyService {
         };
       }
 
-      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(body.url);
+      const eventName = (eventDetails?.['name'] as string) || extractEventNameFromUrl(pageUrl || body.url);
       if (eventName) {
         yield { type: 'status', data: 'Looking up HubSpot campaign...' };
         try {

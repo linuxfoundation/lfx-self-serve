@@ -4069,6 +4069,43 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().abTestForm.controls.bodyHtmlB.value).toBe('');
     });
 
+    it('drops variant B when A/B is toggled off and back ON during the await', async () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({ subject: 'S', preheader: 'P', body: '<p>Join us</p>', cta: '' });
+      internals().abTestForm.controls.enabled.setValue(true);
+      internals().abTestForm.controls.subjectB.setValue('B subject');
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      const persisting = new Subject<unknown>();
+      persistBrief.mockReturnValue(persisting as never);
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      const staging = internals().onStageEmailSend();
+      await vi.waitFor(() => expect(persistBrief).toHaveBeenCalled());
+
+      // OFF then back ON, both inside the await. The toggle-off ran clearAbTestDraft and emptied
+      // the B controls; toggling back on does NOT restore them.
+      internals().abTestForm.controls.enabled.setValue(false);
+      internals().abTestForm.controls.enabled.setValue(true);
+      fixture.detectChanges();
+
+      persisting.next({ status: 'saved', approved: true, briefId: 'brief-77', etag: null });
+      persisting.complete();
+      await staging;
+
+      // A live `abTestEnabled()` re-read sees TRUE again here and ships the pre-await snapshot --
+      // a variant whose controls the operator emptied. Only a monotonic discard counter survives
+      // the round trip, because a cancel cannot be un-bumped by a second toggle.
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.abTestEnabled).toBeUndefined();
+      expect(cfg?.subjectB).toBeUndefined();
+      expect(internals().abTestForm.controls.subjectB.value).toBe('');
+    });
+
     it('drops variant B when the operator toggles A/B off during the brief-id await', async () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
