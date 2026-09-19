@@ -36,8 +36,8 @@ export class TimePickerComponent implements OnInit, OnDestroy {
   public readonly required = input<TimePickerProps['required']>(false);
   public readonly size = input<TimePickerProps['size']>('small');
   public readonly styleClass = input<string>('w-full');
-  // Pass-through id so external <label for="..."> associates with the rendered input
-  public readonly id = input<string>('');
+  // Forwarded to the inner input so an external `<label for>` can associate with it.
+  public readonly inputId = input<string | undefined>(undefined);
 
   // Optional armability window: when set, dropdown options that would combine with
   // `selectedDate` into an instant outside [minDateTime, maxDateTime] are hidden rather

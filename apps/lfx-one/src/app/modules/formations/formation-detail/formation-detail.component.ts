@@ -2,17 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ProjectService } from '@services/project.service';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
-import type { FormationDetailPageState } from '@lfx-one/shared/interfaces';
+import type { FormationChecklistResponse, FormationDetailPageState } from '@lfx-one/shared/interfaces';
 import { isPostFormationStage } from '@lfx-one/shared/utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
 
+import { FormationCardComponent } from '../../dashboards/components/formation-card/formation-card.component';
 import { FormationChecklistSectionComponent } from '../../dashboards/components/formation-checklist-section/formation-checklist-section.component';
+import { FormationPeopleCardComponent } from '../../dashboards/components/formation-people-card/formation-people-card.component';
 
 /**
  * Foundation-lens drill-down for one queue row (`/foundation/formations/:projectSlug`,
@@ -24,7 +26,7 @@ import { FormationChecklistSectionComponent } from '../../dashboards/components/
  */
 @Component({
   selector: 'lfx-formation-detail',
-  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationChecklistSectionComponent],
+  imports: [RouterLink, SkeletonModule, EmptyStateComponent, FormationCardComponent, FormationChecklistSectionComponent, FormationPeopleCardComponent],
   templateUrl: './formation-detail.component.html',
   styleUrl: './formation-detail.component.scss',
 })
@@ -56,12 +58,44 @@ export class FormationDetailComponent {
     return !!project && isPostFormationStage(project.stage);
   });
 
+  /**
+   * The checklist the section just fetched, which also feeds the sidebar card (#2719). The card
+   * cannot resolve itself here the way it does on the project dashboard: `ProjectContextService`
+   * describes the *parent foundation* on this page by design, so it would pair the foundation's
+   * slug with this child project's checklist. The response carries the child's own name, slug,
+   * sub-stage and announcement date, behind the same read that rendered the checklist.
+   *
+   * Tagged with the slug it was fetched for, and `activeChecklist` below only resolves on a match. The
+   * section cannot clear this itself on a project switch the way it does on `/project/formation`:
+   * a route-param change here sends `initState` back through its `startWith({ loading: true })`,
+   * which tears the whole resolved branch — section included — out of the template, so the
+   * remounted section is a fresh instance with nothing to compare against and emits no clear. An
+   * untagged copy would then pair the previous child's slug, date and admin-tool link with the new
+   * project's heading and loading checklist. The tag also covers a late emit from a section that
+   * was already showing a different slug.
+   */
+  protected readonly checklist = signal<{ slug: string; response: FormationChecklistResponse } | null>(null);
+  /**
+   * The slug-matched checklist response, or `null` — gates the rail so no blank fixed-width column
+   * is reserved while the checklist loads, and hands both rail cards (formation, people — #2724)
+   * the CHILD project's response rather than anything context-derived.
+   */
+  protected readonly activeChecklist = computed(() => {
+    const loaded = this.checklist();
+    return loaded && loaded.slug === this.project()?.slug ? loaded.response : null;
+  });
+
   public constructor() {
     bindLfxDocumentTitle(computed(() => this.project()?.name));
   }
 
   protected onRetry(): void {
     this.retry$.next(undefined);
+  }
+
+  protected onChecklistLoaded(response: FormationChecklistResponse | null): void {
+    const slug = this.project()?.slug;
+    this.checklist.set(response && slug ? { slug, response } : null);
   }
 
   private initState(): Signal<FormationDetailPageState> {

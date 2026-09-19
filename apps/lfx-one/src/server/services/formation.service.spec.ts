@@ -12,6 +12,14 @@ import type {
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
 } from '@lfx-one/shared/interfaces';
+import {
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+  LF_STAFF_EMAIL_DOMAIN,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { deriveFormationEntityType } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -24,12 +32,20 @@ const getProjectSettings = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
+const checkSingleAccess = vi.fn();
 
 vi.mock('./project.service', () => ({
   ProjectService: class {
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectSettings = getProjectSettings;
+  },
+}));
+// Backs `checkFormationTeamMembership` (GH-2705) — the `team:formation#member` half of
+// `can_set_status`. Mocked at the module boundary so the real class's proxy transport never runs.
+vi.mock('./access-check.service', () => ({
+  AccessCheckService: class {
+    public checkSingleAccess = (...args: unknown[]) => checkSingleAccess(...args);
   },
 }));
 vi.mock('./microservice-proxy.service', () => ({
@@ -45,8 +61,8 @@ vi.mock('./logger.service', () => ({
 // ROOT sentinel (`resolveRootProjectUid`) and the LF umbrella foundation `tlf` (
 // `resolveLfFoundationRootUid`) — both resolve through the same mocked `natsRequest`, since these
 // specs only need one resolved uid at a time to exercise each branch. No test in this file exercises
-// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the GH-2378
-// scope tests, which override this default — a resolved-but-empty response keeps every other test
+// the ROOT-collapse branch itself except the dedicated ROOT-collapse test below and the
+// GH-2378/GH-2699 scope tests, which override this default — a resolved-but-empty response keeps every other test
 // fast and keeps collapseRootParentUid a no-op.
 // `root-project.helper.ts` has its own dedicated spec (`root-project.helper.spec.ts`) covering the
 // cache/TTL/fail-closed behavior; this file only exercises it indirectly, through FormationService.
@@ -180,11 +196,364 @@ describe('FormationService', () => {
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
+    FormationService.resetUserMetadataCacheForTests();
     proxyRequest.mockReset();
     proxyRequestWithResponse.mockReset();
+    checkSingleAccess.mockReset();
+    // Default: caller is NOT on team:formation — matching production's provisioning state and the
+    // fail-closed posture; the can_set_status tests opt in explicitly.
+    checkSingleAccess.mockResolvedValue(false);
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
+  });
+
+  describe('getFormationPeople (#2724)', () => {
+    // Built from the constant rather than spelled out: check-fixture-emails.sh (GH-1674)
+    // denylists the LF domain itself in spec files.
+    const LF_STAFF_EMAIL = `alex.rivera@${LF_STAFF_EMAIL_DOMAIN}`;
+    const LF_STAFF_EMAIL_MIXED_CASE = `Alex.Rivera@${LF_STAFF_EMAIL_DOMAIN.replace('linux', 'Linux')}`;
+    const settingsWith = (overrides: Record<string, unknown> = {}) => ({
+      uid: 'live-project-1',
+      announcement_date: null,
+      writers: [],
+      auditors: [],
+      created_at: '2026-01-01T00:00:00Z',
+      updated_at: '2026-01-01T00:00:00Z',
+      ...overrides,
+    });
+    const metadataReply = (data: Record<string, unknown>) => ({ data: JSON.stringify({ success: true, username: 'x', data }) });
+
+    it('throws ResourceNotFoundError when the project does not exist for this caller', async () => {
+      getProjectIdBySlug.mockResolvedValue({ uid: undefined, exists: false });
+
+      await expect(service.getFormationPeople(buildReq(), 'does-not-exist')).rejects.toThrow(/not found/i);
+      expect(proxyRequest).not.toHaveBeenCalled();
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it.each([403, 404])('masks a checklist %s as not-found and never reads settings — the checklist read is the gate', async (status) => {
+      proxyRequest.mockRejectedValue(new MicroserviceError('denied', status, 'DENIED', { operation: 'x', service: 'x', path: '/x' }));
+
+      await expect(service.getFormationPeople(buildReq(), 'live-project')).rejects.toThrow(/not found/i);
+      expect(getProjectSettings).not.toHaveBeenCalled();
+    });
+
+    it('degrades a refused settings read to an unavailable list instead of failing (global-grant staff)', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockRejectedValue(new MicroserviceError('forbidden', 403, 'FORBIDDEN', { operation: 'x', service: 'x', path: '/x' }));
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'unavailable', people: [] });
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_formation_people',
+        expect.stringMatching(/unavailable/i),
+        expect.objectContaining({ status_code: 403 })
+      );
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('builds the list from settings roles: writers manage, auditors view, staff by LF domain, pending when username-less', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL_MIXED_CASE, username: 'alex.rivera' }],
+          auditors: [
+            { name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' },
+            { name: 'Jordan Lee', email: 'jordan.lee@partner-corp.example' },
+          ],
+        })
+      );
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', role: 'manage', group: 'staff', is_pending: false }),
+        expect.objectContaining({
+          key: 'jordan.lee@partner-corp.example',
+          username: null,
+          role: 'view',
+          group: 'invited',
+          is_pending: true,
+        }),
+        expect.objectContaining({ key: 'sam.chen', role: 'view', group: 'invited', is_pending: false }),
+      ]);
+      // One metadata read per person WITH a username — the pending entry has no account to look up.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      expect(natsRequest.mock.calls.map((call) => call[1]).sort()).toEqual(['alex.rivera', 'sam.chen']);
+    });
+
+    it('enriches title, organization and a fallback avatar from user metadata, keeping a settings avatar', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera', avatar: 'https://cdn.example/settings.png' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') return metadataReply({ job_title: ' Program Manager ', organization: '', picture: 'https://cdn.example/meta-a.png' });
+        return metadataReply({ job_title: 'Partner contact', organization: 'Cascade Data', picture: 'https://cdn.example/meta-s.png' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: 'Program Manager', organization: null, avatar: 'https://cdn.example/settings.png' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact', organization: 'Cascade Data', avatar: 'https://cdn.example/meta-s.png' }),
+      ]);
+    });
+
+    it('tolerates one failed metadata lookup — that person stays unenriched, the rest and the response are unaffected', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Alex Rivera', email: LF_STAFF_EMAIL, username: 'alex.rivera' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'alex.rivera') throw new Error('nats timeout');
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'alex.rivera', job_title: null, organization: null }),
+        expect.objectContaining({ key: 'sam.chen', job_title: 'Partner contact' }),
+      ]);
+      expect(logger.warning).toHaveBeenCalledWith(
+        expect.anything(),
+        'enrich_formation_people',
+        expect.stringMatching(/lookup failed/i),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('leaves a malformed profile (non-string metadata fields) unenriched instead of failing the endpoint', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+          auditors: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen')
+          return metadataReply({ job_title: 123 as unknown as string, organization: ['x'] as unknown as string, picture: null as unknown as string });
+        return metadataReply({ job_title: 'Program Manager' });
+      });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.state).toBe('loaded');
+      expect(result.people).toEqual([
+        expect.objectContaining({ key: 'kim.park', job_title: 'Program Manager' }),
+        expect.objectContaining({ key: 'sam.chen', job_title: null, organization: null, avatar: null }),
+      ]);
+    });
+
+    it('memoises only the three rendered fields, never the raw profile and its PII', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue(
+        metadataReply({
+          job_title: ' Partner contact ',
+          organization: '',
+          picture: 'https://cdn.example/s.png',
+          address: '1 Main St',
+          phone_number: '555-0100',
+          postal_code: '00000',
+          bio: 'private',
+        })
+      );
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: 'Partner contact', organization: null, avatar: 'https://cdn.example/s.png' }));
+      await expect(FormationService.userMetadataCacheValueForTests('sam.chen')).resolves.toEqual({
+        job_title: 'Partner contact',
+        organization: null,
+        picture: 'https://cdn.example/s.png',
+      });
+    });
+
+    it('treats an explicit metadata miss (success: false) as nothing to show, without a warning', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: false, error: 'not found' }) });
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result.people[0]).toEqual(expect.objectContaining({ job_title: null, organization: null, avatar: null }));
+      expect(logger.warning).not.toHaveBeenCalled();
+    });
+
+    it('memoises each person’s metadata across requests, including a resolved miss, but not a transport failure', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(
+        settingsWith({
+          writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }],
+          auditors: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }],
+        })
+      );
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'kim.park') return { data: JSON.stringify({ success: false }) };
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+      const second = await service.getFormationPeople(buildReq(), 'live-project');
+
+      // Two people, two reads total — the second request served both from the memo.
+      expect(natsRequest).toHaveBeenCalledTimes(2);
+      // Name-sorted: Kim Park (resolved miss → null) before Sam Chen.
+      expect(second.people.map((p) => p.job_title)).toEqual([null, 'Partner contact']);
+
+      // A transport failure is not memoised: the next read retries.
+      FormationService.resetUserMetadataCacheForTests();
+      natsRequest.mockRejectedValueOnce(new Error('nats timeout')).mockRejectedValueOnce(new Error('nats timeout'));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(6);
+    });
+
+    it('shares one in-flight lookup between concurrent requests for the same person', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+      natsRequest.mockImplementation(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        return metadataReply({ job_title: 'Partner contact' });
+      });
+
+      // SSR pre-render plus client hydration on first load: both miss an empty memo at once.
+      const [first, second] = await Promise.all([
+        service.getFormationPeople(buildReq(), 'live-project'),
+        service.getFormationPeople(buildReq(), 'live-project'),
+      ]);
+
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(first.people[0].job_title).toBe('Partner contact');
+      expect(second.people[0].job_title).toBe('Partner contact');
+    });
+
+    it('re-reads a person’s metadata once the memo TTL has elapsed', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        await service.getFormationPeople(buildReq(), 'live-project');
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS - 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(1);
+
+        vi.setSystemTime(new Date(Date.now() + 1));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(natsRequest).toHaveBeenCalledTimes(2);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('evicts expired memo entries on the next write, so the map does not grow with every user ever seen', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Sam Chen', email: 'sam.chen@cascade-data.example', username: 'sam.chen' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+
+        vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers: [{ name: 'Kim Park', email: 'kim.park@partner-corp.example', username: 'kim.park' }] }));
+        await service.getFormationPeople(buildReq(), 'live-project');
+
+        // sam.chen expired and was dropped by kim.park's write — only the live entry remains.
+        expect(FormationService.userMetadataCacheSizeForTests()).toBe(1);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('caps the memo at FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES by evicting the oldest live entry', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      natsRequest.mockResolvedValue(metadataReply({ job_title: 'Partner contact' }));
+      const writers = Array.from({ length: FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES + 1 }, (_, i) => ({
+        // Zero-padded so the name sort matches insertion order and "oldest" is deterministic.
+        name: `Person ${String(i).padStart(5, '0')}`,
+        email: `person${i}@partner-corp.example`,
+        username: `person${i}`,
+      }));
+      getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(FormationService.userMetadataCacheSizeForTests()).toBe(FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES);
+      // The first person written is the one evicted; the last is still memoised.
+      natsRequest.mockClear();
+      getProjectSettings.mockResolvedValue(settingsWith({ writers: [writers[0], writers[writers.length - 1]] }));
+      await service.getFormationPeople(buildReq(), 'live-project');
+      expect(natsRequest).toHaveBeenCalledTimes(1);
+      expect(natsRequest.mock.calls[0][1]).toBe('person0');
+    });
+
+    it('stops enriching once the wall-clock budget is spent and returns the rest unenriched, logging once', async () => {
+      vi.useFakeTimers();
+      try {
+        vi.setSystemTime(new Date('2026-09-18T12:00:00Z'));
+        proxyRequest.mockResolvedValue(checklist([rawItem()]));
+        const writers = Array.from({ length: FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE + 2 }, (_, i) => ({
+          name: `Person ${String(i).padStart(2, '0')}`,
+          email: `person${i}@partner-corp.example`,
+          username: `person${i}`,
+        }));
+        getProjectSettings.mockResolvedValue(settingsWith({ writers }));
+        natsRequest.mockImplementation(async () => {
+          // A slow responder: each read burns the whole budget, so only the first batch is issued.
+          vi.setSystemTime(new Date(Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS + 1));
+          return metadataReply({ job_title: 'Partner contact' });
+        });
+
+        const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+        expect(result.state).toBe('loaded');
+        expect(result.people).toHaveLength(writers.length);
+        expect(natsRequest).toHaveBeenCalledTimes(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === 'Partner contact')).toHaveLength(FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE);
+        expect(result.people.filter((p) => p.job_title === null)).toHaveLength(2);
+        // One summary line for the skipped people — not a warning per person.
+        expect(logger.warning).toHaveBeenCalledTimes(1);
+        expect(logger.warning).toHaveBeenCalledWith(
+          expect.anything(),
+          'enrich_formation_people',
+          expect.stringMatching(/budget/i),
+          expect.objectContaining({ skipped: 2 })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('returns an empty loaded list, with no metadata reads, for a formation nobody has been added to', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+      getProjectSettings.mockResolvedValue(settingsWith());
+
+      const result = await service.getFormationPeople(buildReq(), 'live-project');
+
+      expect(result).toEqual({ state: 'loaded', people: [] });
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
   });
 
   describe('getProjectFormation', () => {
@@ -240,6 +609,37 @@ describe('FormationService', () => {
       const result = await service.getProjectFormation(buildReq(), 'live-project');
 
       expect(result.can_write).toBe(false);
+    });
+
+    it('resolves can_set_status as writer AND team:formation membership (GH-2705)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_set_status).toBe(true);
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'team', id: 'formation', access: 'member' });
+    });
+
+    it('reports can_set_status false for a writer who is not on team:formation — the shipped production defect (GH-2705)', async () => {
+      // beforeEach default: writer true, membership false. The gateway's set_item_status rule ANDs
+      // writer_guard with team membership, so the writer half alone must not offer status controls.
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_write).toBe(true);
+      expect(result.can_set_status).toBe(false);
+    });
+
+    it('reports can_set_status false for a team member who is not a writer on this project', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null });
+      proxyRequest.mockResolvedValue(checklist([rawItem()]));
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.can_set_status).toBe(false);
     });
 
     it('masks an upstream 404 on the checklist read as a not-found Formation', async () => {
@@ -937,6 +1337,21 @@ describe('FormationService', () => {
       expect(call[3]).toBe('POST');
       expect(call[6]).toEqual({ 'If-Match': '7' });
     });
+
+    // The gateway's set_item_status rule refuses with an empty-bodied 403 when either half of its
+    // writer_guard + team:formation pair fails — bare "Forbidden" explains nothing to the caller
+    // (GH-2705). Status route only: a 403 on assignment/PATCH means a different guard failed.
+    it('maps a gateway 403 on the status route to AuthorizationError FORMATION_TEAM_REQUIRED with an explanatory message', async () => {
+      proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
+
+      const { AuthorizationError } = await import('../errors');
+      const error = await service.updateFormationItemStatus(buildReq(), 'live-project-1', 'item-key-1', '1', { status: 'done' }).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(AuthorizationError);
+      expect((error as InstanceType<typeof AuthorizationError>).code).toBe('FORMATION_TEAM_REQUIRED');
+      expect((error as InstanceType<typeof AuthorizationError>).statusCode).toBe(403);
+      expect((error as InstanceType<typeof AuthorizationError>).message).toMatch(/formation team/i);
+    });
   });
 
   describe('getFormationsQueue', () => {
@@ -1225,15 +1640,15 @@ describe('FormationService', () => {
         await expect(service.getFormationsQueue(buildReq(), undefined, undefined, 'aaif-uid-1')).rejects.toThrow(/query service unavailable/);
       });
 
-      // GH-2378: root scope regressed to 3 rows in production because the route always seeds a
-      // `foundation_uid`, and the seeded value on the default landing is the LF umbrella foundation
-      // `tlf`'s uid (NavigationService's default selection) — *not* the hidden NATS ROOT sentinel.
-      // `tlf`'s *immediate* children are only 3 of 126 formations, but root scope is defined
-      // (GH-2367) as "every formation" — so the `parent` filter must not be sent when the selected
-      // foundation is `tlf` itself. The mocked `natsRequest` here answers both
-      // `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`) identically,
-      // since these tests only need one resolved uid to exercise the `foundationUid` comparison,
-      // which is gated on `resolveLfFoundationRootUid`'s result.
+      // GH-2378/GH-2699: the route always seeds a `foundation_uid`, and the seeded value on the
+      // default landing is the LF umbrella foundation `tlf`'s uid (NavigationService's default
+      // selection) — *not* the hidden NATS ROOT sentinel. `tlf`'s *immediate* children are only a
+      // handful of formations, so the `parent` filter must not be sent when the selected foundation
+      // is `tlf` itself (GH-2378); instead the BFF partitions the fetch-all result to parentless
+      // rows plus tlf's direct children (GH-2699). Most tests here mock `natsRequest` to answer
+      // both `resolveRootProjectUid` (ROOT sentinel) and `resolveLfFoundationRootUid` (`tlf`)
+      // identically, since they only need one resolved uid to exercise the `foundationUid`
+      // comparison; the partition tests route by slug to give the two lookups distinct outcomes.
       describe('when the selected foundation is the LF umbrella foundation (tlf)', () => {
         it('sends no `parent` param when `foundationUid` is the tlf uid', async () => {
           natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
@@ -1246,36 +1661,83 @@ describe('FormationService', () => {
           expect(params).toMatchObject({ type: 'formation' });
         });
 
-        it('counts tiles over every row, restoring the full-queue shape', async () => {
-          natsRequest.mockResolvedValue({ data: 'tlf-uid-1' });
-          // Param-aware, unlike the beforeEach's flat stub: a regression that re-adds `parent` for
-          // tlf would narrow this to the single-row response and fail the `total: 2` assertion below.
-          proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, path: unknown, _method: unknown, params?: Record<string, unknown>) => {
-            if (path !== '/query/resources') {
-              return { resources: [] };
-            }
-            return params?.['parent']
-              ? ({ resources: [{ type: 'formation', id: rowA.formation_uid, data: rowA }] } satisfies QueryServiceResponse<UpstreamFormationQueueRow>)
-              : ({
-                  resources: [
-                    { type: 'formation', id: rowA.formation_uid, data: rowA },
-                    { type: 'formation', id: rowB.formation_uid, data: rowB },
-                  ],
-                } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
-          });
+        it("partitions the fetch-all result to parentless rows and tlf's direct children (GH-2699)", async () => {
+          // Distinct uids for the two slug lookups, routed by the identity-codec payload: the ROOT
+          // sentinel collapse and the tlf partition are different comparisons and must not share a
+          // value here, or a sentinel-parented fixture couldn't be told apart from a tlf child.
+          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === ROOT_PROJECT_SLUG ? 'root-uid-1' : 'tlf-uid-1' }));
+          const rowRootParented: UpstreamFormationQueueRow = { ...rowA, parent_uid: 'root-uid-1' };
+          const rowTlfChild: UpstreamFormationQueueRow = {
+            ...rowB,
+            formation_uid: 'formation:tlf-child-1',
+            project_uid: 'tlf-child-1',
+            project_name: 'Umbrella Child Fixture',
+            parent_uid: 'tlf-uid-1',
+          };
+          const rowForeignChild: UpstreamFormationQueueRow = {
+            ...rowA,
+            formation_uid: 'formation:foreign-child-1',
+            project_uid: 'foreign-child-1',
+            project_name: 'Foreign Child Fixture',
+            parent_uid: 'aaif-uid-1',
+          };
+          proxyRequest.mockResolvedValue({
+            resources: [
+              { type: 'formation', id: rowRootParented.formation_uid, data: rowRootParented },
+              { type: 'formation', id: rowTlfChild.formation_uid, data: rowTlfChild },
+              { type: 'formation', id: rowForeignChild.formation_uid, data: rowForeignChild },
+            ],
+          } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
 
           const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
-          // Same two rows the beforeEach above stubs (one engaged, one on_hold) — asserting both
-          // are present confirms the queue wasn't narrowed to tlf's direct children.
+          // The fetch stays unfiltered (no `parent` param); the partition is the BFF's. The
+          // ROOT-parented row survives via the ROOT→null collapse, the tlf child via the
+          // direct-parent match; the other foundation's child renders under that foundation only.
+          const params = (proxyRequest.mock.calls.find((c) => c[2] === '/query/resources')?.[4] ?? {}) as Record<string, unknown>;
+          expect(params).not.toHaveProperty('parent');
+          expect(result.rows.map((row) => row.project_uid)).toEqual(['live-project-1', 'tlf-child-1']);
           expect(result.tiles).toMatchObject({ engaged: 1, on_hold: 1, total: 2 });
+        });
+
+        it('warns and excludes sentinel-parented rows when the ROOT sentinel cannot be resolved under LF root scope', async () => {
+          // ROOT lookup fails (empty → null, never cached) while tlf resolves: without the
+          // sentinel, collapseRootParentUid leaves the raw sentinel parent_uid in place, so the
+          // parentless bucket fails both partition arms and drops out of the LF view — the
+          // warning is the only signal of that under-report.
+          natsRequest.mockImplementation(async (_subject: unknown, slug: unknown) => ({ data: slug === ROOT_PROJECT_SLUG ? '' : 'tlf-uid-1' }));
+          const rowSentinelParented: UpstreamFormationQueueRow = { ...rowA, parent_uid: 'root-uid-1' };
+          const rowTlfChild: UpstreamFormationQueueRow = {
+            ...rowB,
+            formation_uid: 'formation:tlf-child-1',
+            project_uid: 'tlf-child-1',
+            project_name: 'Umbrella Child Fixture',
+            parent_uid: 'tlf-uid-1',
+          };
+          proxyRequest.mockResolvedValue({
+            resources: [
+              { type: 'formation', id: rowSentinelParented.formation_uid, data: rowSentinelParented },
+              { type: 'formation', id: rowTlfChild.formation_uid, data: rowTlfChild },
+            ],
+          } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+          const result = await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
+
+          expect(result.rows.map((row) => row.project_uid)).toEqual(['tlf-child-1']);
+          expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+            expect.anything(),
+            'get_formations_queue',
+            expect.stringContaining('ROOT sentinel uid unresolved'),
+            { foundationUid: 'tlf-uid-1' }
+          );
         });
 
         it('still sends `parent` when the tlf uid cannot be resolved (fail-safe)', async () => {
           // Default beforeEach mock: natsRequest resolves to `{ data: '' }`, so
-          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given —
-          // rather than guessing it's tlf and dropping it — never widens a filter the caller asked
-          // to narrow.
+          // resolveLfFoundationRootUid returns null. Falling back to sending `parent` as given
+          // keeps an ordinary foundation correct; when the uid really was tlf, GH-2368's ancestry
+          // chain means this shows the wide subtree view until the transient lookup failure clears
+          // (a null is never cached) — warned, as asserted below.
           await service.getFormationsQueue(buildReq(), undefined, undefined, 'tlf-uid-1');
 
           const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
@@ -1337,7 +1799,7 @@ describe('FormationService', () => {
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
-    it('builds items[] from open, live-checklist items only, mapping action/action_href/can_write, and reports state complete', async () => {
+    it('builds items[] from open, live-checklist items only, mapping can_write, and reports state complete', async () => {
       getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
       mockQueryResources(
         [
@@ -1378,6 +1840,51 @@ describe('FormationService', () => {
       expect(result.formations).toEqual([]);
     });
 
+    // #2732: the `assignee:` tag is the primary filter; this backstop guarantees that a tag-matching
+    // or projection defect can never surface someone else's (or an unassigned) item on a caller's
+    // dashboard — Pending Actions lists only items assigned to the signed-in user.
+    it('never returns an index row assigned to someone else, or unassigned, even if the assignee tag is somehow ignored upstream (client-side backstop)', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false });
+      mockQueryResources(
+        [
+          itemIndexRow({ object_id: 'item-mine', assignee: 'alice' }),
+          itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' }),
+          itemIndexRow({ object_id: 'item-unassigned', assignee: undefined }),
+        ],
+        [formationIndexRow({ progress: { not_started: 3 } })]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'auth0|alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-mine']);
+      expect(result.formations[0]).toMatchObject({ assigned_to_do: 1, assigned_done: 0, assigned_skipped: 0 });
+      // A drop means the upstream tag or projection misbehaved — surfaced at WARN, not buried at DEBUG.
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 2 }
+      );
+    });
+
+    it('returns a complete empty result, skipping the formation-aggregate query, when every returned row belongs to someone else', async () => {
+      mockQueryResources([itemIndexRow({ object_id: 'item-theirs', assignee: 'bob' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+      expect(getProjectById).not.toHaveBeenCalled();
+      // A total drop is the loudest case, not a silent one: the WARN is gated on any mismatch, so
+      // zero survivors out of a non-empty tag match still logs the full count (#2734 review).
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('not assigned to the caller'),
+        { dropped: 1 }
+      );
+    });
+
     it('keeps a blocked item in items[] — isAssignedItemOpen treats every non-terminal status as still open', async () => {
       mockQueryResources([itemIndexRow({ object_id: 'item-blocked', status: 'blocked' })], [formationIndexRow()]);
 
@@ -1408,6 +1915,30 @@ describe('FormationService', () => {
 
       expect(result.state).toBe('complete');
       expect(result.items[0].can_write).toBe(false);
+    });
+
+    it('stamps can_set_status per row as can_write AND team:formation membership, checked once per request (GH-2705)', async () => {
+      checkSingleAccess.mockResolvedValue(true);
+      mockQueryResources(
+        [itemIndexRow({ object_id: 'item-1', status: 'not_started' }), itemIndexRow({ object_id: 'item-2', status: 'in_progress' })],
+        [formationIndexRow()]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(checkSingleAccess).toHaveBeenCalledTimes(1);
+      expect(checkSingleAccess).toHaveBeenCalledWith(expect.anything(), { resource: 'team', id: 'formation', access: 'member' });
+      expect(result.items.every((item) => item.can_set_status === true)).toBe(true);
+    });
+
+    it('a writer who is not on team:formation gets can_write true but can_set_status false on every row (GH-2705)', async () => {
+      // beforeEach default: membership false.
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'not_started' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items[0].can_write).toBe(true);
+      expect(result.items[0].can_set_status).toBe(false);
     });
 
     it('builds formations[] bucket counts from every assigned item on the formation, including done/skipped, and whole-formation totals from the formation-aggregate row', async () => {
@@ -1448,6 +1979,38 @@ describe('FormationService', () => {
       // Not a data-availability failure — the aggregate row arrived, it's just out-of-gate. Never
       // reads as `state: 'partial'`, which would incorrectly suggest something is missing.
       expect(result.state).toBe('complete');
+    });
+
+    // #2734 review (Cursor Bugbot): the row's View item links into `/project/formation`, whose guard
+    // admits only Formation-stage projects. Production checklists stay `live` after a project goes
+    // Active (GH-2328), so gating items[] on lifecycle alone would hand out a link that bounces to
+    // the overview. The per-project read the can_write fan-out already makes carries the stage.
+    it('drops an open item whose project has left the Formation stage, so View item never links into a route its guard would bounce', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true, stage: 'Active' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow({ sub_stage: 'Active' })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items).toEqual([]);
+      expect(result.state).toBe('complete');
+    });
+
+    it('keeps an open item on a Formation-stage project, including Confidential', async () => {
+      getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: false, stage: 'Formation - Confidential' });
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+    });
+
+    it('keeps an open item whose stage is unknown because the project lookup failed, rather than hiding real work on a transient error', async () => {
+      getProjectById.mockRejectedValue(new Error('project lookup failed'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
     });
 
     it('excludes a Disengaged formation (the one terminal Formation sub-stage) but keeps a Confidential one visible to an assignee who holds access to it', async () => {

@@ -7,7 +7,6 @@ import {
   MENTORSHIP_INVITABLE_USER_PAGE_SIZE,
   MENTORSHIP_LF_PROJECT_PAGE_SIZE,
   MENTORSHIP_PROGRAM_STATUSES,
-  MENTORSHIP_PROJECT_OPTIONS,
   MOCK_MENTORSHIP_INVITABLE_USERS,
   MOCK_MENTORSHIP_LF_PROJECTS,
   MOCK_MENTORSHIP_MENTOR_PROFILE,
@@ -18,7 +17,6 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipCiiBadge,
-  MentorshipEnrollRequest,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
   MentorshipMentorProfileResponse,
@@ -32,11 +30,10 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId, mentorshipProgramSlug } from '@lfx-one/shared/utils';
+import { buildMentorshipMentorProgramDetail, buildMentorshipProgramDetail, isMentorshipCiiProjectId } from '@lfx-one/shared/utils';
 import { Request } from 'express';
-import { randomUUID } from 'node:crypto';
 
-import { ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 
 import { logger } from './logger.service';
 
@@ -45,10 +42,11 @@ const MAX_LIMIT = 50;
 const CII_BADGE_TIMEOUT_MS = 10_000;
 
 /**
- * In-memory store so POST enrollments show up on the admin list in this
- * process. Replaced when the upstream mentorship-service is wired up.
+ * Read-only mock seed data — the admin list has data to show while the upstream
+ * mentorship-service is not yet wired. No writes; enrollment shows a coming-soon
+ * toast instead.
  */
-const programsStore: MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
+const mockPrograms: readonly MentorshipProgram[] = MOCK_MENTORSHIP_PROGRAMS.map((program) => ({ ...program }));
 
 function paginateOffsetLimit<T>(items: readonly T[], offset: number, limit: number): { data: T[]; total: number } {
   const start = Math.max(0, offset);
@@ -76,7 +74,7 @@ export class MentorshipService {
   ): Promise<MentorshipProgramsResponse> {
     logger.debug(req, 'mentorship_get_programs', 'Filtering mentorship programs', options);
 
-    let filtered: MentorshipProgram[] = programsStore;
+    let filtered: readonly MentorshipProgram[] = mockPrograms;
     if (options.status) {
       filtered = filtered.filter((p) => p.status === options.status);
     }
@@ -139,42 +137,10 @@ export class MentorshipService {
     return detail;
   }
 
-  public async enrollProgram(req: Request, input: MentorshipEnrollRequest): Promise<MentorshipProgram> {
-    logger.debug(req, 'mentorship_enroll_program', 'Enrolling mentorship program', { name: input.name });
-
-    const name = input.name.trim();
-    const slug = mentorshipProgramSlug(name);
-    const taken = programsStore.some((program) => program.name.trim().toLowerCase() === name.toLowerCase() || program.slug === slug);
-    if (taken) {
-      throw new ConflictError('A mentorship program with this name already exists.', 'CONFLICT', { operation: 'mentorship_enroll_program' });
-    }
-
-    const now = new Date().toISOString();
-    const projectLabel = MENTORSHIP_PROJECT_OPTIONS.find((option) => option.value === input.projectId)?.label ?? input.projectId;
-    const firstTerm = input.terms[0];
-
-    const program: MentorshipProgram = {
-      id: `mp_${randomUUID()}`,
-      slug,
-      name,
-      projectName: projectLabel,
-      term: firstTerm?.name ?? 'TBD',
-      status: 'pending-review',
-      stats: { mentors: 0, mentees: 0, graduated: 0 },
-      createdOn: now,
-      updatedOn: now,
-    };
-
-    programsStore.unshift(program);
-
-    logger.debug(req, 'mentorship_enroll_program', 'Mentorship program created', { id: program.id, slug: program.slug });
-    return program;
-  }
-
   public async isProgramNameAvailable(req: Request, name: string): Promise<MentorshipNameAvailability> {
     logger.debug(req, 'mentorship_name_available', 'Checking mentorship program name availability', { name });
     const needle = name.trim().toLowerCase();
-    const taken = programsStore.some((program) => program.name.trim().toLowerCase() === needle);
+    const taken = mockPrograms.some((program) => program.name.trim().toLowerCase() === needle);
     logger.debug(req, 'mentorship_name_available', 'Mentorship program name availability resolved', { available: !taken });
     return { available: !taken };
   }
@@ -271,7 +237,7 @@ export class MentorshipService {
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */
   private findProgram(programId: string): MentorshipProgram | undefined {
-    return programsStore.find((item) => item.id === programId) ?? programsStore.find((item) => item.slug === programId);
+    return mockPrograms.find((item) => item.id === programId) ?? mockPrograms.find((item) => item.slug === programId);
   }
 
   /** Mentor programs resolve by id (default) or slug, matching `/mentorship/mentor/programs/:programId`. */

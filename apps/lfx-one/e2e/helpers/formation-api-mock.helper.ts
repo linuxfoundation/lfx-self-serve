@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FormationItem, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
+import { FormationItem, FormationPeopleResponse, FormationsQueueResponse } from '@lfx-one/shared/interfaces';
 // Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
 // statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
 // @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
@@ -9,7 +9,14 @@ import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils
 import { isPostFormationStage } from '@lfx-one/shared/utils/project-stage.utils';
 import { Page } from '@playwright/test';
 
-import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationsQueue, mockFormationTemplate } from '../fixtures/mock-data';
+import {
+  getMockFormation,
+  getMockFormationItems,
+  mockFormationActivity,
+  mockFormationPeopleResponse,
+  mockFormationsQueue,
+  mockFormationTemplate,
+} from '../fixtures/mock-data';
 
 /**
  * Helper class for mocking the Formation Checklist / Formations queue endpoints (GH-1958) in
@@ -23,7 +30,7 @@ export class FormationApiMockHelper {
    * /api/formations/:slug/checklist` (foundation drill-down, explicit-slug mode — LFXV2-3386).
    * Same response either way, mirroring the real BFF's shared controller.
    */
-  static async setupProjectFormationMock(page: Page, slug: string): Promise<void> {
+  static async setupProjectFormationMock(page: Page, slug: string, opts: { canWrite?: boolean } = {}): Promise<void> {
     const fulfillChecklist = async (route: Parameters<Parameters<Page['route']>[1]>[0]): Promise<void> => {
       const formation = getMockFormation(slug);
 
@@ -38,13 +45,30 @@ export class FormationApiMockHelper {
         contentType: 'application/json',
         // can_write mirrors the real BFF's per-caller writer flag (GH-2694) — true here, since these
         // specs exercise the editable drawer; without it the assignee/due-date fields render
-        // read-only and every editing flow fails.
-        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: true }),
+        // read-only and every editing flow fails. can_set_status likewise mirrors the GH-2705
+        // writer ∧ team:formation pair; without it every status control is hidden.
+        body: JSON.stringify({ formation, template: mockFormationTemplate, items, can_write: opts.canWrite ?? true, can_set_status: true }),
       });
     };
 
     await page.route('**/api/projects/*/formation', fulfillChecklist);
     await page.route('**/api/formations/*/checklist', fulfillChecklist);
+  }
+
+  /**
+   * Mocks `GET /api/projects/:slug/formation/people` for the sidebar people card (#2724). Its own
+   * route: the checklist glob above (`**\/api/projects/*\/formation`) doesn't match this longer
+   * path, since `*` never crosses `/`. Pass a response to exercise the `unavailable`/empty states.
+   */
+  static async setupFormationPeopleMock(page: Page, response: FormationPeopleResponse = mockFormationPeopleResponse): Promise<void> {
+    await page.route('**/api/projects/*/formation/people', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback();
+        return;
+      }
+
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
+    });
   }
 
   /** Mocks `GET /api/formations/:projectUid/items/:itemKey` for the item drawer (GH-2267 Phase 2 addressing). */

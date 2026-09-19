@@ -25,6 +25,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Auth-state (Flow C CSRF nonce) interfaces
+export * from './auth-state.interface';
+
 // API interfaces
 export * from './api.interface';
 
@@ -348,6 +351,9 @@ export * from './icp.interface';
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
 
+// Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
+export * from './gw-embed.interface';
+
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
 
@@ -356,3 +362,4 @@ export * from './feature-flag.interface';
 
 // Formation checklist + Formations queue interfaces (GH-1958)
 export * from './formation-checklist.interface';
+export * from './formation-people.interface';

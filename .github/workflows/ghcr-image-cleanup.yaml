@@ -1,0 +1,224 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+---
+name: "Cleanup Stale Container Images"
+
+"on":
+  schedule:
+    # Sundays at 00:00 UTC.
+    - cron: "0 0 * * 0"
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Preview candidate deletions without deleting anything."
+        type: boolean
+        required: false
+        default: true
+      cut-off:
+        description: "Minimum age an image version must reach before it is eligible for deletion (e.g. 30d, 4w 2d)."
+        type: string
+        required: false
+        default: "30d"
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Cleanup Stale Container Images
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+      pull-requests: read
+    env:
+      # v3.1.0, pinned by digest (not the `@<sha>` action alias, which only
+      # pins action metadata while still executing whatever container tag
+      # that metadata points at) since this container holds a token capable
+      # of deleting packages. The capture path is composed in bash from
+      # $RUNNER_TEMP; the runner context is not available on job-level env.
+      CLEANUP_IMAGE: ghcr.io/snok/container-retention-policy@sha256:884037f146d6ef574b61fbcc59bef490f887322e6b9dc2eefcf364cb4e9b4112
+      CLEANUP_LOG_NAME: container-retention-policy.log
+    steps:
+      # Invoked with `docker run` rather than `uses: docker://...` so stdout
+      # can be teed for the summary step. A raw docker image has no
+      # action.yaml, so every required CLI flag is passed explicitly;
+      # `--keep-n-most-recent` / `--timestamp-to-use` are omitted because
+      # the CLI defaults (`0` / `updated_at`) already match. tag-selection=both
+      # covers tagged and untagged versions; account/image-names stay fixed
+      # to keep this job scoped to one package. --shas-to-skip is required
+      # by the CLI's arg parser even when empty. --image-tags is quoted
+      # because it's space-separated: negative patterns protect any version
+      # carrying a matching tag, so "!*.*.*" and "!*.*" protect release
+      # semver tags (Self Serve omits the v prefix on release images),
+      # "!latest" is a defense-in-depth backstop, and "!development"
+      # protects the current default-branch build. Open deploy-preview
+      # PRs get per-PR "!ui-pr-<N>" filters so live previews are not
+      # deleted while the PR still carries the label; closed/stale ui-pr
+      # images remain eligible once past cut-off. Multi-arch child
+      # manifests still referenced by a retained parent are protected
+      # automatically by snok/container-retention-policy.
+      - name: Build active preview tag filters
+        id: preview-tags
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          filters="!development !latest !*.*.* !*.*"
+          # Capture gh output in a variable so set -e aborts on API/auth
+          # failures; --limit avoids the default 30-result cap.
+          preview_prs="$(
+            gh pr list \
+              --repo "${GITHUB_REPOSITORY}" \
+              --state open \
+              --label deploy-preview \
+              --limit 1000 \
+              --json number \
+              --jq '.[].number'
+          )"
+          while IFS= read -r pr_number; do
+            [[ -n "$pr_number" ]] || continue
+            filters+=" !ui-pr-${pr_number}"
+          done <<< "${preview_prs}"
+          echo "filters=${filters}" >> "$GITHUB_OUTPUT"
+
+      - name: Delete stale image versions
+        env:
+          RUST_LOG: container_retention_policy=INFO
+          GHCR_CLEANUP_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_TAGS: ${{ steps.preview-tags.outputs.filters }}
+          CUT_OFF: ${{ github.event.inputs.cut-off || '30d' }}
+          # GITHUB_TOKEN can delete package versions when image-names is an
+          # exact match (not a wildcard); requires `permissions: packages:
+          # write` above. Scheduled runs default dry-run to false so cleanup
+          # actually happens; workflow_dispatch still defaults to true so a
+          # maintainer can preview a manual run before deleting anything.
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.dry-run || 'true' }}
+        run: |
+          set -euo pipefail
+          cleanup_log="${RUNNER_TEMP}/${CLEANUP_LOG_NAME}"
+          docker pull "$CLEANUP_IMAGE"
+          docker run --rm \
+            -e RUST_LOG \
+            "$CLEANUP_IMAGE" \
+            --account=linuxfoundation \
+            --image-names=lfx-self-serve \
+            --image-tags="$IMAGE_TAGS" \
+            --shas-to-skip= \
+            --tag-selection=both \
+            --token="$GHCR_CLEANUP_TOKEN" \
+            --cut-off="$CUT_OFF" \
+            --dry-run="$DRY_RUN" \
+            2>&1 | tee "$cleanup_log"
+
+      # Counts unique GHCR package versions from the captured log. snok
+      # v3.1.0 never writes `deleted`/`failed` to the GITHUB_OUTPUT file
+      # (it concatenates onto the path string and calls env::set_var), and
+      # a raw docker image has no action.yaml outputs anyway. One version
+      # with several tags is several log lines; the summary counts unique
+      # version IDs, not lines.
+      - name: Write run summary
+        if: always()
+        env:
+          TRIGGER: ${{ github.event_name }}
+          DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || github.event.inputs.dry-run || 'true' }}
+          CUT_OFF: ${{ github.event.inputs.cut-off || '30d' }}
+        run: |
+          set -euo pipefail
+          cleanup_log="${RUNNER_TEMP}/${CLEANUP_LOG_NAME}"
+          deleted=0
+          failed=0
+          would_delete=0
+          selected_tagged=
+          selected_untagged=
+          protected=
+
+          if [[ -f "$cleanup_log" ]]; then
+            stripped="${cleanup_log}.plain"
+            sed $'s/\033\\[[0-9;]*[mK]//g' "$cleanup_log" > "$stripped"
+
+            # Portable awk (no GNU 3-arg match): unique IDs, not log lines.
+            deleted="$(awk '
+              /Deleted / && match($0, /package_version_id=[0-9]+/) {
+                id = substr($0, RSTART + 19, RLENGTH - 19)
+                if (!(id in seen)) { seen[id] = 1; n++ }
+              }
+              END { print n+0 }
+            ' "$stripped")"
+
+            would_delete="$(awk '
+              /dry-run: Would have deleted/ && match($0, /package_version=[0-9]+/) {
+                id = substr($0, RSTART + 16, RLENGTH - 16)
+                if (!(id in seen)) { seen[id] = 1; n++ }
+              }
+              END { print n+0 }
+            ' "$stripped")"
+
+            failed="$(awk '
+              match($0, /Failed to delete package version [0-9]+/) {
+                rest = substr($0, RSTART)
+                match(rest, /[0-9]+/)
+                id = substr(rest, RSTART, RLENGTH)
+                if (!(id in seen)) { seen[id] = 1; n++ }
+              }
+              match($0, /Failed to create deletion URL for package .* and version [0-9]+/) {
+                rest = substr($0, RSTART)
+                match(rest, /version [0-9]+/)
+                id = substr(rest, RSTART + 8, RLENGTH - 8)
+                if (!(id in seen)) { seen[id] = 1; n++ }
+              }
+              /Service failed to become ready:/ {
+                if (!($0 in task_seen)) { task_seen[$0] = 1; task_n++ }
+              }
+              /Failed to join task:/ {
+                if (!($0 in task_seen)) { task_seen[$0] = 1; task_n++ }
+              }
+              END { print n + task_n + 0 }
+            ' "$stripped")"
+
+            selected_line="$(
+              grep -E 'Selected [0-9]+ tagged and [0-9]+ untagged' \
+                "$stripped" | tail -n 1 || true
+            )"
+            sel_re='Selected[[:space:]]([0-9]+)[[:space:]]tagged[[:space:]]and[[:space:]]([0-9]+)'
+            if [[ "$selected_line" =~ $sel_re ]]; then
+              selected_tagged="${BASH_REMATCH[1]}"
+              selected_untagged="${BASH_REMATCH[2]}"
+            fi
+
+            protected_line="$(
+              grep -E 'Protected [0-9]+ multi-arch child' \
+                "$stripped" | tail -n 1 || true
+            )"
+            if [[ "$protected_line" =~ Protected[[:space:]]([0-9]+)[[:space:]]multi-arch ]]; then
+              protected="${BASH_REMATCH[1]}"
+            fi
+          fi
+
+          {
+            echo "### Container image cleanup"
+            echo ""
+            echo "- Trigger: \`$TRIGGER\`"
+            echo "- Dry run: \`$DRY_RUN\`"
+            echo "- Cut-off: \`$CUT_OFF\`"
+            if [[ -n "$selected_tagged" ]]; then
+              echo "- Selected: ${selected_tagged} tagged, ${selected_untagged} untagged"
+            fi
+            if [[ -n "$protected" ]]; then
+              echo "- Protected multi-arch children: ${protected}"
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "- Would delete: ${would_delete} versions"
+              echo "- Deleted: 0"
+            else
+              echo "- Deleted: ${deleted} versions"
+            fi
+            echo "- Failed: ${failed}"
+            if [[ ! -f "$cleanup_log" ]]; then
+              echo "- Cleanup log: missing"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$failed" -gt 0 ]]; then
+            echo "Cleanup reported ${failed} failed deletion(s)." >&2
+            exit 1
+          fi

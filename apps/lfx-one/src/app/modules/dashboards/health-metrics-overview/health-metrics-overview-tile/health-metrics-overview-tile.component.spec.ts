@@ -46,4 +46,10 @@ describe('HealthMetricsOverviewTileComponent', () => {
     expect(link.getAttribute('href')).toBe('https://insights.lfx.dev/foundation-slug');
     expect(fixture.nativeElement.textContent).not.toContain('Needs action');
   });
+
+  it('renders no "as of" label for a never-evaluated (empty evaluatedAt) tile', async () => {
+    await render({ evaluatedAt: '' });
+
+    expect(fixture.nativeElement.textContent).not.toContain('as of');
+  });
 });

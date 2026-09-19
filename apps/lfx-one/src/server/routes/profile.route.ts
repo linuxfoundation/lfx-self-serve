@@ -48,7 +48,7 @@ function handlePictureUploadParseError(err: unknown, req: Request, _res: Respons
 
 // Flow C: Profile auth routes for Auth0 Management API token
 // GET /api/profile/auth/start - Initiate Flow C authorization
-router.get('/auth/start', blockDuringImpersonation, (req, res) => profileController.startProfileAuth(req, res));
+router.get('/auth/start', blockDuringImpersonation, (req, res, next) => profileController.startProfileAuth(req, res, next));
 
 // GET /api/profile/auth/callback - Handle Auth0 callback
 router.get('/auth/callback', blockDuringImpersonation, (req, res) => profileController.handleProfileAuthCallback(req, res));

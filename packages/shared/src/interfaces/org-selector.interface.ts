@@ -24,6 +24,12 @@ export interface OrgItem {
   status?: string | null;
   /** False only for a row surfaced by LF-team catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
   isAssigned?: boolean;
+  /**
+   * Lowercase URL-identity slug from the indexed `b2b_org` doc (`data.slug`, derived by member-service
+   * from the org name, spec 050 DR-007). Null/absent when the org has none — callers fall back to
+   * `uid` for the `/org/{segment}/…` address (spec 050, DR-001). Never generated client-side.
+   */
+  slug?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -111,6 +117,21 @@ export interface RoleGrantsResponse {
   degraded: boolean;
 }
 
+/**
+ * Response of `GET /api/orgs/resolve/:segment` (spec 050). Resolves a `/org/{segment}/…` address
+ * segment — a lowercase slug or an 18-char SFID — to the organization it names, **only** when the
+ * caller can read it: resolution rides query-service with the caller's context, so an organization
+ * the caller does not hold is a 404 indistinguishable from an unknown segment (DR-002).
+ */
+export interface OrgResolveResponse {
+  /** Org account id (18-char SFID). */
+  uid: string;
+  /** Lowercase URL-identity slug; null when the org has none (address uses `uid`). */
+  slug: string | null;
+  /** Display name — only ever returned for an org the caller has just proven `auditor` on. */
+  name: string;
+}
+
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
 export interface OrgCanonicalRecord {
   /** Org account id (18-char SFID); equals `accountId`. */
@@ -131,6 +152,8 @@ export interface OrgCanonicalRecord {
   updatedAt?: string | null;
   /** Parent org account id (18-char SFID); null for top-level orgs. */
   parentUid?: string | null;
+  /** Lowercase URL-identity slug from member-service; null when the org has none (spec 050). */
+  slug?: string | null;
   isMember: boolean;
 }
 
@@ -237,6 +260,8 @@ export interface B2bOrgIndexedDoc {
   status?: string | null;
   /** LFXV2-3029 — already published by the indexer; the upward-traversal edge for the connected-component walk. Absent for top-level orgs. */
   parent_uid?: string | null;
+  /** Spec 050 — lowercase URL-identity slug derived by member-service from the org name (spec 050 DR-007); absent when the name yields none. */
+  slug?: string | null;
   /** LFXV2-3029 — denormalized parent name/logo, already published; avoids a second lookup for the source-organization name in the provenance tooltip. Absent for top-level orgs. */
   parent_detail?: {
     uid?: string | null;
@@ -288,6 +313,8 @@ export interface MemberServiceB2bOrgResponse {
   website?: string | null;
   primary_domain?: string | null;
   logo_url?: string | null;
+  /** Spec 050 — lowercase slug derived from the org name by member-service (DR-007); `omitempty` upstream. */
+  slug?: string | null;
   industry?: string | null;
   sector?: string | null;
   number_of_employees?: number | null;

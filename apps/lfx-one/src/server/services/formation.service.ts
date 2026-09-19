@@ -8,6 +8,9 @@ import type {
   FormationItemMapContext,
   FormationItemStatus,
   FormationItemWriteState,
+  FormationPeopleResponse,
+  FormationPerson,
+  FormationPersonMetadata,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
@@ -16,38 +19,56 @@ import type {
   MyFormationWorkResponse,
   MyFormationWorkState,
   Project,
+  ProjectSettings,
   UpstreamFormationActivityPage,
   UpstreamFormationChecklist,
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
-import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
+import {
+  createUnavailableFormationPeopleResponse,
+  FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE,
+  FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+  FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
+  FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+  FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_TEAM_NAME,
+  NATS_CONFIG,
+} from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import {
+  buildFormationPeople,
   deriveFormationEntityType,
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
   isPostFormationStage,
+  maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
   summarizeMyFormationItems,
 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { isMicroserviceError, PreconditionFailedError, ResourceNotFoundError, ServiceValidationError, ConflictError, InvalidRequestError } from '../errors';
-import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
 import {
-  deriveItemAction,
-  mapUpstreamFormationChecklist,
-  mapUpstreamFormationItem,
-  resolveActionHref,
-  sectionTitlesFromChecklist,
-} from '../helpers/formation-mapper.helper';
+  AuthorizationError,
+  isMicroserviceError,
+  PreconditionFailedError,
+  ResourceNotFoundError,
+  ServiceValidationError,
+  ConflictError,
+  InvalidRequestError,
+} from '../errors';
+import { fetchItemFormationActivity, FORMATION_ACTIVITY_PAGE_LIMIT } from '../helpers/formation-activity.helper';
+import { mapUpstreamFormationChecklist, mapUpstreamFormationItem, sectionTitlesFromChecklist } from '../helpers/formation-mapper.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { collapseRootParentUid, resolveLfFoundationRootUid, resolveRootProjectUid } from '../helpers/root-project.helper';
+import { BatchDeadlineExceededError, settleInBatches } from '../helpers/settle-in-batches.helper';
 import { stripAuthPrefix } from '../utils/auth-helper';
+import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
@@ -69,6 +90,7 @@ export class FormationService {
   private readonly projectService = new ProjectService();
   private readonly natsService = new NatsService();
   private readonly microserviceProxy = new MicroserviceProxyService();
+  private readonly accessCheckService = new AccessCheckService();
   /**
    * The real 5-value status enum (`internal/domain/model/status.go`, `lfx-v2-formation-service`
    * v0.1.4) — used only to validate the shape of an incoming `status` field before forwarding it;
@@ -93,6 +115,24 @@ export class FormationService {
   // the same `projectUid` within one request — share a single upstream checklist fetch instead of
   // fanning the gate check into a second one.
   private readonly checklistByRequestCache = new WeakMap<Request, Map<string, UpstreamFormationChecklist>>();
+  /**
+   * Process-wide, time-bounded memo for {@link readUserMetadata}, keyed by username (#2724). The
+   * people card issues one metadata read per listed person on every mount, on both checklist
+   * hosts, and a title/organization pair changes rarely — so a revisit inside
+   * `FORMATION_PEOPLE_METADATA_CACHE_TTL_MS` replays no NATS fan-out. The in-flight promise is
+   * what gets memoised, so two concurrent first-load requests for the same person (SSR pre-render
+   * plus client hydration) share one lookup instead of both missing an empty cache. A resolved
+   * miss (`null`) is cached like a hit; a transport failure evicts its entry, so the next read
+   * retries. Bounded like `github-readme.service.ts`'s README cache: every write first evicts
+   * expired entries, then the oldest one if `FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES` is still
+   * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
+   * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
+   * across requests — that is the point of it. Values are the projected
+   * {@link FormationPersonMetadata} (title, organization, picture), never the raw profile: the
+   * auth-service reply also carries address, phone and other PII this card never renders, and
+   * nothing that isn't rendered is retained.
+   */
+  private static readonly userMetadataCache = new Map<string, { value: Promise<FormationPersonMetadata | null>; expiresAt: number }>();
 
   public async getProjectFormation(req: Request, projectSlug: string): Promise<FormationChecklistResponse> {
     logger.debug(req, 'get_project_formation', 'Fetching formation checklist', { projectSlug });
@@ -120,7 +160,7 @@ export class FormationService {
     // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
     // (which degrades to null on its own failure — see its .catch() below — independently of the
     // other two).
-    const [project, rootUid, announcementDate] = await Promise.all([
+    const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
       // flag the gateway's `writer_guard` gates `POST .../assignment` on (GH-2694), resolved via the
@@ -130,16 +170,25 @@ export class FormationService {
       // failure of the project GET itself (which the access-less read would hit identically) fails
       // the load.
       this.projectService.getProjectById(req, uid, true),
+      this.checkFormationTeamMembership(req),
       resolveRootProjectUid(req, this.natsService),
       // announcement_date has no field on the checklist read itself (upstream's checklist_reader.go
       // reads it from project settings but doesn't return it) — read it from the same source the
       // indexer projection uses for the queue's own announcement_date, so the checklist and
-      // /foundation/formations agree by construction. A settings-read failure degrades to null
-      // rather than failing the whole checklist (precedent: CommitteeService's inherited-permissions
-      // walk). No auditor-vs-writer auth-tier mismatch here: `lfx-v2-helm`'s generated
-      // `PERMISSIONS.md` ("View project settings" row) grants Auditor the same unconditional read
-      // access as Writer/Executive Director, so a checklist reader who could reach this far can
-      // always read settings too — the .catch() below is for genuine failures, not routine 403s.
+      // /foundation/formations agree by construction. Since #2719 this is what the sidebar
+      // formation card renders on both checklist hosts: on `/project/formation` the card no longer
+      // *renders* the date its own `/permissions` call returns (that call still fires — the
+      // dashboard sidebar's card reads the same eagerly-subscribed
+      // `ProjectContextService.activeProjectAnnouncementDate`, so this is a correctness change
+      // there, not a removed request), and on the foundation drill-down this is the only
+      // per-project date source there is, because ProjectContextService describes the parent
+      // foundation there. A settings-read failure degrades to null rather than failing the whole
+      // checklist (precedent: CommitteeService's inherited-permissions walk). The .catch() below
+      // covers genuine failures AND one routine 403: upstream gates this settings GET on the bare
+      // project `auditor` relation, while the checklist read the caller just cleared accepts
+      // `auditor_guard` — so LF staff whose access is a global team grant (not a direct or inherited
+      // project grant) pass the checklist and are refused here. `getFormationPeople` below degrades
+      // the same refusal the same way (`state: 'unavailable'`); the two reads share one guard model.
       this.projectService
         .getProjectSettings(req, uid)
         .then((settings) => settings.announcement_date ?? null)
@@ -164,7 +213,83 @@ export class FormationService {
 
     logger.debug(req, 'get_project_formation', 'Returning formation checklist', { projectSlug, item_count: items.length });
 
-    return { formation, template, items, can_write: project.writer === true };
+    return {
+      formation,
+      template,
+      items,
+      can_write: project.writer === true,
+      // The gateway's `set_item_status` rule ANDs `writer_guard` with `member` on `team:formation`
+      // (GH-2705) — mirror the full pair so status controls are hidden from callers it would 403.
+      can_set_status: project.writer === true && isFormationTeamMember,
+    };
+  }
+
+  /**
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724). A
+   * formation invite is a project invite (#2147), so the list IS the project's settings roles:
+   * `writers` (Manage) and `auditors` (View), each entry deduped, grouped by email domain, and
+   * flagged pending while it has no username (upstream `lfx-v2-project-service` emails every
+   * email-only entry and promotes it in place on acceptance — `docs/lfid-invite-flow.md`).
+   *
+   * The checklist read stays first and is the masking gate (403/404 → the same not-found), exactly
+   * like {@link getProjectFormation}. The settings read is the data source and can legitimately be
+   * refused for a caller the checklist admitted: upstream gates `GET /projects/{uid}/settings` on
+   * the bare project `auditor` relation, while the checklist accepts `auditor_guard`, so LF staff
+   * whose access is a global team grant clear the first and 403 on the second. That degrades to
+   * `state: 'unavailable'` rather than failing the card (the same degrade the announcement date
+   * takes above) — deliberately no M2M read here; the user's own token decides what they see.
+   *
+   * Enrichment (title / organization / avatar fallback from the auth-service user-metadata read)
+   * is best-effort, bounded, and memoised across requests: a failed lookup leaves that person's
+   * fields `null` and never fails the response. Assigned-item counts are NOT on this response —
+   * the card derives them from the checklist items its host already holds, so this read never
+   * fetches a second checklist payload for a number the client can compute.
+   */
+  public async getFormationPeople(req: Request, projectSlug: string): Promise<FormationPeopleResponse> {
+    logger.debug(req, 'get_formation_people', 'Resolving project for the formation people list', { projectSlug });
+
+    const { uid, exists } = await this.projectService.getProjectIdBySlug(req, projectSlug);
+    if (!exists || !uid) {
+      throw new ResourceNotFoundError('Project', projectSlug, { operation: 'get_formation_people', service: 'formation_service', path: req.path });
+    }
+
+    // The masking gate only — its payload is deliberately unused here (see the class doc above).
+    await this.fetchLiveChecklistOrDenyNotFound(req, uid, projectSlug, {
+      resource: 'Formation',
+      operation: 'get_formation_people',
+    });
+
+    let settings: ProjectSettings;
+    try {
+      settings = await this.projectService.getProjectSettings(req, uid);
+    } catch (error) {
+      logger.warning(req, 'get_formation_people', 'Project settings unreadable for this caller; returning an unavailable people list', {
+        projectSlug,
+        status_code: isMicroserviceError(error) ? error.statusCode : undefined,
+        err: error,
+      });
+      return createUnavailableFormationPeopleResponse();
+    }
+
+    const people = buildFormationPeople(settings);
+    logger.debug(req, 'get_formation_people', 'Built the people list from project settings', { projectSlug, count: people.length });
+
+    return { state: 'loaded', people: await this.enrichFormationPeople(req, people) };
+  }
+
+  /** Test seam for the cross-request user-metadata memo — same shape as `resetRootProjectUidCacheForTests`. */
+  public static resetUserMetadataCacheForTests(): void {
+    FormationService.userMetadataCache.clear();
+  }
+
+  /** Test seam: how many usernames the memo currently holds (live or expired-but-not-yet-evicted). */
+  public static userMetadataCacheSizeForTests(): number {
+    return FormationService.userMetadataCache.size;
+  }
+
+  /** Test seam: exactly what the memo holds for one username — lets a spec prove the raw profile never enters it. */
+  public static userMetadataCacheValueForTests(username: string): Promise<FormationPersonMetadata | null> | undefined {
+    return FormationService.userMetadataCache.get(username)?.value;
   }
 
   /**
@@ -248,15 +373,33 @@ export class FormationService {
     if (patch.reason !== undefined) body['reason'] = patch.reason;
     if (patch.sub_items !== undefined) body['sub_items'] = patch.sub_items;
 
-    const { data: raw, etag } = await this.mutateLiveItemWithEtag(
-      req,
-      `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/status`,
-      'POST',
-      ifMatch,
-      body,
-      'update_formation_item_status',
-      `${projectUid}/${itemKey}`
-    );
+    let raw: UpstreamFormationItem;
+    let etag: string | null;
+    try {
+      ({ data: raw, etag } = await this.mutateLiveItemWithEtag(
+        req,
+        `/formations/${encodeURIComponent(projectUid)}/items/${encodeURIComponent(itemKey)}/status`,
+        'POST',
+        ifMatch,
+        body,
+        'update_formation_item_status',
+        `${projectUid}/${itemKey}`
+      ));
+    } catch (error) {
+      // Status-route only (assignment/PATCH 403s mean different guards): the gateway's
+      // `set_item_status` rule ANDs `writer_guard` with `member` on `team:formation` and refuses
+      // with an empty-bodied 403 the generic toast can't explain (GH-2705). Reached only when the
+      // UI's `can_set_status` gate is stale — e.g. a page loaded before a grant was revoked.
+      if (isMicroserviceError(error) && error.statusCode === 403) {
+        throw new AuthorizationError("Changing an item's status requires project write access and formation team membership", {
+          operation: 'update_formation_item_status',
+          service: 'formation_service',
+          path: req.path,
+          code: 'FORMATION_TEAM_REQUIRED',
+        });
+      }
+      throw error;
+    }
     const { item: updated, item_state } = await this.mapLiveItemOrDegrade(req, projectUid, raw, 'update_formation_item_status');
     logger.info(req, 'update_formation_item_status', 'Formation item status changed', { item_uid: updated.uid, status: updated.status, item_state });
     return { item: updated, etag, item_state };
@@ -446,7 +589,17 @@ export class FormationService {
     // Client-side backstop, not a substitute for the tag above — a document the tag failed to
     // exclude, for any reason, still can't reach `items[]`/`formations[]`.
     const liveItems = rawItems.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
-    if (liveItems.length === 0) {
+    // #2732 — Pending Actions lists only items assigned to the signed-in user. The `assignee:` tag
+    // above is the primary filter; this backstop mirrors the lifecycle one so a tag-matching or
+    // projection defect can never surface someone else's (or an unassigned) item on a caller's
+    // dashboard, nor count it into their "My formations" buckets. A non-zero drop means the tag or
+    // the projection misbehaved upstream — a data-quality defect worth an on-call-visible WARN, not
+    // caller-controlled input (the username comes from the session, the rows from the index).
+    const mineItems = liveItems.filter((row) => row.assignee === normalizedUsername);
+    if (mineItems.length !== liveItems.length) {
+      logger.warning(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
+    }
+    if (mineItems.length === 0) {
       // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure
       // dead weight when there's nothing for either to enrich, and this is the overwhelming common
       // case (every caller with zero currently-assigned live items, not just zero ever). Also avoids
@@ -489,22 +642,33 @@ export class FormationService {
       }
     }
 
-    // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live) items.
-    const openItems = liveItems.filter((row) => isAssignedItemOpen(row.status));
+    // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live, caller-assigned) items.
+    const openItems = mineItems.filter((row) => isAssignedItemOpen(row.status));
 
     // can_write is resolved once per DISTINCT project_uid behind an open item, not per item — only
-    // `items[]` rows ever thread this into the formation-item-drawer's Mark complete/Skip gate (GH-2613
-    // review removed Claim/Block from this surface entirely — see `formationCanWrite`'s doc comment in
-    // components.interface.ts for why), so a project reachable only through a done/skipped item costs
-    // no lookup. Via the single-project getProjectById (the same `project.writer` flag `/assignment` is
-    // gated on alone upstream — `/status` additionally requires `team:formation` membership, which no
-    // client-visible signal covers), not a batch getProjects call (this codebase has a known class of bug where a batch access-check's
+    // `items[]` rows carry it (and, ANDed with the team check below, `can_set_status`, GH-2705), so
+    // a project reachable only through a done/skipped item costs no lookup. Since #2732 no Me-lens
+    // UI reads either flag (the row navigates to the checklist, whose own response carries the
+    // authoritative pair); both stay on the wire for parity with `FormationChecklistResponse` —
+    // dropping this fan-out from the Pending Actions path is the tracked follow-up #2735, not done
+    // here (see `MyFormationItemRow.can_set_status`). Via the single-project getProjectById (the same
+    // `project.writer` flag `/assignment` is gated on alone upstream), not a batch getProjects call
+    // (this codebase has a known class of bug where a batch access-check's
     // per-item writer flags are unreliable — see LFXV2-2823). Bounded at 10 concurrent, mirroring
     // `document.service.ts`'s `fetchProjectNames` — each lookup is two upstream round trips (the
     // project GET plus its FGA access check), so an assignee spread across dozens of formations
     // must not turn one dashboard load into an unbounded burst against the project service.
     const distinctProjectUids = [...new Set(openItems.map((item) => item.project_uid))];
     const writerByProject = new Map<string, boolean>();
+    // The same read carries the project's stage, which gates `items[]` below (#2734 review) — so
+    // the fan-out is load-bearing for the row's link, not only for the unread write flags; #2735
+    // must source the stage elsewhere (the `formation` aggregate row) before dropping it.
+    const stageByProject = new Map<string, string>();
+    // Caller-scoped, so one check covers every row — kicked off here so it overlaps the
+    // per-project writer fan-out below instead of adding a serial round trip, and skipped
+    // entirely when there is no row to stamp (the overwhelmingly common dashboard load has no
+    // open formation items) (GH-2705).
+    const teamMembershipPromise = openItems.length > 0 ? this.checkFormationTeamMembership(req) : Promise.resolve(false);
     const CAN_WRITE_LOOKUP_CONCURRENCY = 10;
     for (let i = 0; i < distinctProjectUids.length; i += CAN_WRITE_LOOKUP_CONCURRENCY) {
       const batch = distinctProjectUids.slice(i, i + CAN_WRITE_LOOKUP_CONCURRENCY);
@@ -513,6 +677,7 @@ export class FormationService {
           try {
             const project = await this.projectService.getProjectById(req, projectUid, true);
             writerByProject.set(projectUid, project.writer === true);
+            if (typeof project.stage === 'string') stageByProject.set(projectUid, project.stage);
           } catch (error) {
             // Fail-closed: an item whose write access can't be confirmed never renders an
             // actionable Claim/Block button. Does not itself degrade `state` — nothing here is
@@ -523,7 +688,24 @@ export class FormationService {
       );
     }
 
-    const items = openItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true));
+    const isFormationTeamMember = await teamMembershipPromise;
+    // Stage gate on items[] (#2734 review, Cursor Bugbot): the row's View item links into
+    // `/project/formation`, whose `formationProjectEnabledGuard` admits only Formation-stage
+    // projects, and production checklists stay `lifecycle: live` after a project goes Active
+    // (GH-2328) — so lifecycle alone would hand out a link that bounces to the overview. Same
+    // `isFormationStageGate` the formations[] join applies below. An unknown stage (the lookup
+    // failed) keeps the row: hiding the caller's real work on a transient error is worse than a
+    // link that may redirect.
+    const stagedItems = openItems.filter((row) => {
+      const stage = stageByProject.get(row.project_uid);
+      return stage === undefined || isFormationStageGate(stage);
+    });
+    if (stagedItems.length !== openItems.length) {
+      logger.debug(req, 'get_my_formation_work', 'Dropped open items whose project has left the Formation stage', {
+        dropped: openItems.length - stagedItems.length,
+      });
+    }
+    const items = stagedItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
 
     // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
     // status rather than just the open subset above (summarizeMyFormationItems needs the
@@ -537,7 +719,7 @@ export class FormationService {
     let anyFormationDropped = false;
     if (includeFormations) {
       const itemsByFormation = new Map<string, UpstreamFormationItemRow[]>();
-      for (const row of liveItems) {
+      for (const row of mineItems) {
         const bucket = itemsByFormation.get(row.formation_uid) ?? [];
         bucket.push(row);
         itemsByFormation.set(row.formation_uid, bucket);
@@ -558,8 +740,8 @@ export class FormationService {
         // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
         // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
         // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
-        // Deliberately not applied to `items[]`: Pending Actions gates purely on checklist lifecycle
-        // (#2334), not project stage.
+        // `items[]` applies the same gate above, off the project read (#2734 review), so a row is
+        // never handed a checklist link its route guard would bounce.
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
@@ -636,20 +818,26 @@ export class FormationService {
    * is needed here.
    *
    * `foundationUid`, when present, is sent as `parent: project:<uid>` — the documented query-service
-   * navigation filter that matches a formation's *immediate* `parent_refs` (GH-2367). No foundation
-   * selected sends no `parent` key at all, returning every formation, same as before this change.
+   * navigation filter over the projection's `parent_refs`. Since GH-2368 (formation-service
+   * v0.1.5, `a2126e516`) that array carries the row's whole ancestor chain, itself included, so
+   * the filter resolves a foundation's formations at any depth plus the foundation's own row —
+   * before v0.1.5 it matched the immediate parent only (GH-2367's direct-children scoping).
+   * `data.parent_uid` still carries exactly the direct parent, which is what the partition below
+   * reads. No foundation selected sends no `parent` key at all, returning every formation.
    *
-   * GH-2378: the UI always sends a `foundationUid` on the default landing — `NavigationService`'s
-   * persona-priority default selection seeds the LF umbrella foundation there (`tlf`, resolved via
-   * `resolveLfFoundationRootUid` — *not* the hidden NATS ROOT sentinel `resolveRootProjectUid`
-   * resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment for why these are different projects),
-   * since root scope is meant to mean "every formation" (GH-2367's decision). But `tlf`'s
-   * *immediate* children are BUILD Foundation, C4SB Fund and Open Data Consortium only; the other
-   * 123 of 126 formations sit under one of 33 intermediate parents. So a bare
-   * `parent: project:<tlf uid>` silently narrowed the "everything" view to 3 rows. The fix below
-   * resolves `tlf`'s uid up front and skips the `parent` filter when `foundationUid` *is* `tlf`,
-   * restoring the decided behaviour rather than changing it. This becomes a deletion once #2368's
-   * ancestry key lands and root scope can be expressed as a normal (correct-at-any-depth) filter.
+   * GH-2378/GH-2699: the UI always sends a `foundationUid` on the default landing, and for LF
+   * staff `NavigationService.applyDefaultSelection`'s persona-priority pick lands on the LF
+   * umbrella foundation (`tlf`, resolved via `resolveLfFoundationRootUid` — *not* the hidden NATS
+   * ROOT sentinel `resolveRootProjectUid` resolves; see `LF_FOUNDATION_ROOT_SLUG`'s doc comment
+   * for why these are different projects). With `tlf` selected the queue is partitioned by direct
+   * parent (GH-2699, superseding GH-2367's root-scope-means-everything decision): `tlf` shows only
+   * its own formations — parentless rows plus its direct children — never rows that belong under
+   * another foundation. The query service can't express "no parent", and `parent: project:<tlf uid>`
+   * misses the parentless rows (they hang off the ROOT sentinel, outside tlf's subtree), so the
+   * tlf case fetches every formation with no `parent` filter and partitions post-fetch below, once
+   * `normalizeQueueRow`'s ROOT→null collapse has made "no parent" testable. GH-2368's ancestry
+   * chain landed upstream but doesn't retire this partition — it widens the non-tlf scope to a
+   * full subtree, while the LF bucket stays a BFF concern.
    * `subStage`/`search` stay client-side below even though a server-side `sub_stage:` tag does exist
    * upstream (indexer_publisher.go's `projectionTags()`): `buildQueueTilesFromRows` needs every
    * sub_stage present in `normalizedRows` to count them, so pushing the filter into the query would
@@ -665,25 +853,44 @@ export class FormationService {
     // separately below for `collapseRootParentUid`'s ROOT→null parent collapse — that is unrelated
     // to this scoping fix and must keep using the hidden NATS sentinel, not `tlf`.
     const [rootUid, lfFoundationRootUid] = await Promise.all([resolveRootProjectUid(req, this.natsService), resolveLfFoundationRootUid(req, this.natsService)]);
-    // Drop the `parent` filter when the caller selected the LF umbrella foundation (`tlf`): its
-    // *immediate* children are not "every formation" — see the doc comment above (GH-2378). If
+    // With the LF umbrella foundation (`tlf`) selected, drop the upstream `parent` filter and
+    // partition post-fetch instead — see the doc comment above (GH-2378/GH-2699). If
     // `lfFoundationRootUid` couldn't be resolved (null), fall back to sending `parent` as given
-    // rather than guessing: a missed match keeps today's (narrower, already-live) behaviour, while a
-    // wrong match would silently widen a filter the caller asked to narrow — same fail-safe
-    // direction as `collapseRootParentUid` below.
-    const effectiveFoundationUid = foundationUid && foundationUid !== lfFoundationRootUid ? foundationUid : undefined;
+    // rather than guessing: for an ordinary foundation that is simply correct, and treating an
+    // unverified uid as tlf would apply the LF partition to a foundation that asked for its own
+    // subtree. The cost when the unresolved uid really was tlf: `parent: project:<tlf uid>` now
+    // matches tlf's whole ancestor-chain subtree (GH-2368), so the queue temporarily shows the
+    // wide pre-GH-2699 view — an auditor-only over-report on a transient NATS failure (a null is
+    // never cached), warned about below.
+    const isLfRootScope = Boolean(foundationUid && lfFoundationRootUid && foundationUid === lfFoundationRootUid);
+    const effectiveFoundationUid = foundationUid && !isLfRootScope ? foundationUid : undefined;
     if (foundationUid && lfFoundationRootUid === null) {
-      // Can't tell whether `foundationUid` was `tlf` (the common case, since NavigationService's
-      // default selection seeds `tlf` on every unscoped landing) — if it was, this request silently
-      // under-reports the same way #2378 did, with no other signal since `resolveLfFoundationRootUid`
+      // Can't tell whether `foundationUid` was `tlf` (the common case — LF staff land there via
+      // NavigationService's persona-priority default) — if it was, this request silently shows the
+      // wide pre-GH-2699 subtree view, with no other signal since `resolveLfFoundationRootUid`
       // only logs the slug lookup, not this caller. Surfacing it here, not just there, makes a
       // repeat diagnosable. This also fires for an ordinary (non-root) foundation during the same
       // NATS outage, where the fallback is correct — the message below is phrased conditionally so
-      // it doesn't assert an under-report that may not be happening.
+      // it doesn't assert an over-report that may not be happening.
       logger.warning(
         req,
         'get_formations_queue',
-        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue under-reports',
+        'LF foundation root uid unresolved — sending `parent` as given; if this foundation is the LF root, the queue shows its whole subtree instead of the GH-2699 partition',
+        {
+          foundationUid,
+        }
+      );
+    }
+    if (isLfRootScope && rootUid === null) {
+      // The partition below can only recognise "no parent" after `collapseRootParentUid` has
+      // collapsed the ROOT sentinel; without a resolved sentinel every parentless row keeps its
+      // raw sentinel parent_uid, fails both partition arms, and silently vanishes from the LF view
+      // and the tiles built from it. Same diagnosability argument as the unresolved-tlf warning
+      // above — the helper only logs the slug lookup, not this caller's consequence.
+      logger.warning(
+        req,
+        'get_formations_queue',
+        'ROOT sentinel uid unresolved under LF root scope — parentless formations are excluded from the LF partition',
         {
           foundationUid,
         }
@@ -706,6 +913,22 @@ export class FormationService {
     // formations-table.component.ts's progress/blocked-title rendering).
     const normalizedRows = rawRows.map((row) => this.normalizeQueueRow(row, rootUid));
 
+    // GH-2699: the tlf partition — LF's own formations are the rows with no parent (ROOT-collapsed
+    // to null just above) plus tlf's direct children; everything else renders under its own
+    // foundation's scope instead. Fail-safe: if the ROOT sentinel didn't resolve, a parentless row
+    // keeps its raw sentinel parent_uid and drops out of the LF view — an under-report, never a
+    // widened filter, matching `collapseRootParentUid`'s direction (warned above). DEBUG'd because
+    // this drop is large by design (~123 of 126 rows on GH-2699's prod data) and "why is my
+    // formation missing from the LF queue?" needs a trace, same rationale as the unmapped
+    // sub_stage log below.
+    const scopedRows = isLfRootScope ? normalizedRows.filter((row) => row.parent_uid === null || row.parent_uid === lfFoundationRootUid) : normalizedRows;
+    if (isLfRootScope) {
+      logger.debug(req, 'get_formations_queue', 'Partitioned to LF-own formations', {
+        fetched: normalizedRows.length,
+        kept: scopedRows.length,
+      });
+    }
+
     // The queue is "formations between Prospect and Active" — a project that completed (or was
     // retired from) Formation is noise for the formation team, so post-Formation rows are dropped
     // from BOTH the rows and every tile below (LFXV2-3386). A named deny-list (Active/Archived),
@@ -713,7 +936,7 @@ export class FormationService {
     // visible, and `Formation - Disengaged` deliberately stays in the queue. `gates_cleared`/
     // `is_activating` rows keep their `Formation - *` stage until the formation team flips the
     // project Active, so "Ready to activate" rows survive this filter by construction.
-    const inFormationRows = normalizedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+    const inFormationRows = scopedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
 
     // DEBUG, not WARN — `Formation - Disengaged` (and any unrecognized stage) is a modeled,
     // expected shape with no queue-taxonomy equivalent (see normalizeFormationSubStage), not an
@@ -744,10 +967,10 @@ export class FormationService {
     // above — tiles and rows must agree on which projects are in the queue at all), not the
     // filtered `rows` below, so they describe the whole queue rather than the filtered view. With
     // a non-root foundation selected, inFormationRows is already narrowed to that foundation's
-    // rows by the `parent` query param above, so "the whole queue" here correctly means "the whole
-    // queue within that foundation". With ROOT selected (GH-2378), no `parent` param is sent at
-    // all, so inFormationRows is the global set and tiles correctly count every formation — no
-    // separate foundation-aware tile computation is needed either way.
+    // rows by the `parent` query param above; with tlf selected it is narrowed by the GH-2699
+    // partition above — either way "the whole queue" correctly means "the whole queue within the
+    // selected foundation", and no separate foundation-aware tile computation is needed. Unscoped
+    // (no foundation_uid at all — the root-auditor API view) stays the global set.
     const tiles = this.buildQueueTilesFromRows(inFormationRows);
 
     return { tiles, rows };
@@ -775,8 +998,171 @@ export class FormationService {
     };
   }
 
+  /**
+   * Whether the caller is a `member` of `team:formation` (GH-2705) — the second, caller-scoped
+   * check the gateway's `set_item_status` rule runs (no resource in the object: the question is
+   * "is this person on the formation team", not what they hold on any project). Fail-closed:
+   * `checkSingleAccess` degrades to `false` on an access-check failure, so an FGA outage hides
+   * status controls rather than offering writes that can only 403.
+   */
+  private async checkFormationTeamMembership(req: Request): Promise<boolean> {
+    return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
+   * Fills `job_title` / `organization` (and `avatar`, when settings carry none) from the
+   * auth-service user-metadata read, one request per person WITH a username — a pending,
+   * email-only entry has no account to look up. Bounded two ways by `settleInBatches`: batches of
+   * `FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE` so a long list never fans every request out at once,
+   * and a `FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS` wall-clock budget so a slow auth-service
+   * responder (each read can wait `NATS_CONFIG.REQUEST_TIMEOUT`) cannot stall the card for the
+   * whole list — once spent, no further batch starts and the rest render unenriched. Best-effort
+   * throughout: a rejected lookup is logged (username masked) and leaves that person's fields
+   * `null`; people the budget skipped are logged once, as a count; nothing here can fail the
+   * response.
+   */
+  private async enrichFormationPeople(req: Request, people: FormationPerson[]): Promise<FormationPerson[]> {
+    const targets = people.filter((person): person is FormationPerson & { username: string } => !!person.username);
+    if (targets.length === 0) {
+      return people;
+    }
+
+    logger.debug(req, 'enrich_formation_people', 'Enriching formation people with user metadata', { total: people.length, lookups: targets.length });
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (person) => this.readUserMetadata(req, person.username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
+
+    const metadataByUsername = new Map<string, FormationPersonMetadata>();
+    let skippedByBudget = 0;
+    results.forEach((result, index) => {
+      const username = targets[index].username;
+      if (result.status === 'fulfilled') {
+        if (result.value) {
+          metadataByUsername.set(username, result.value);
+        }
+        return;
+      }
+
+      if (result.reason instanceof BatchDeadlineExceededError) {
+        skippedByBudget += 1;
+        return;
+      }
+
+      logger.warning(req, 'enrich_formation_people', 'User metadata lookup failed; leaving title and organization empty', {
+        username: maskIdentifierForLogs(username),
+        err: result.reason,
+      });
+    });
+
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_people', 'Enrichment budget exhausted; returning the remaining people unenriched', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        lookups: targets.length,
+        skipped: skippedByBudget,
+      });
+    }
+
+    return people.map((person) => {
+      const metadata = person.username ? metadataByUsername.get(person.username) : undefined;
+      if (!metadata) {
+        return person;
+      }
+
+      return {
+        ...person,
+        job_title: metadata.job_title,
+        organization: metadata.organization,
+        avatar: person.avatar ?? metadata.picture,
+      };
+    });
+  }
+
+  /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
+  private static metadataText(value: unknown): string | null {
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  /**
+   * One `USER_METADATA_READ` request by username. Resolves `null` for an explicit miss
+   * (`success: false`) or an unusable body — both mean "nothing to show", not an outage — and
+   * rejects on a transport or parse failure, which {@link enrichFormationPeople} absorbs per
+   * person. Not `ProjectService.getUserInfo` (throws on a miss and adds an email→username hop
+   * this caller never needs) nor `UserService` (its constructor stands up Snowflake and other
+   * services this read has no use for).
+   */
+  private readUserMetadata(req: Request, username: string): Promise<FormationPersonMetadata | null> {
+    const now = Date.now();
+    const cached = FormationService.userMetadataCache.get(username);
+    if (cached && now < cached.expiresAt) {
+      return cached.value;
+    }
+
+    // Bounded write (see the field doc): drop every expired entry, then the oldest live one if the
+    // cap is still reached, before inserting — re-inserting refreshes both value and position.
+    for (const [key, existing] of FormationService.userMetadataCache) {
+      if (existing.expiresAt <= now) {
+        FormationService.userMetadataCache.delete(key);
+      }
+    }
+    FormationService.userMetadataCache.delete(username);
+    if (FormationService.userMetadataCache.size >= FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES) {
+      const oldest = FormationService.userMetadataCache.keys().next();
+      if (!oldest.done) {
+        FormationService.userMetadataCache.delete(oldest.value);
+      }
+    }
+
+    const entry = {
+      value: this.fetchUserMetadata(req, username).catch((error: unknown) => {
+        // Not memoised: drop this entry (and only this one — a newer entry may have replaced it) so
+        // the next read retries rather than replaying a transport failure for the whole TTL.
+        if (FormationService.userMetadataCache.get(username) === entry) {
+          FormationService.userMetadataCache.delete(username);
+        }
+        throw error;
+      }),
+      expiresAt: now + FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
+    };
+    FormationService.userMetadataCache.set(username, entry);
+    return entry.value;
+  }
+
+  /**
+   * The uncached half of {@link readUserMetadata}: one `USER_METADATA_READ` round trip, projected
+   * to {@link FormationPersonMetadata} BEFORE it is returned (and therefore before it is memoised).
+   * Each field is runtime-checked, not just null-guarded: the NATS body is a type assertion, so a
+   * malformed profile (`job_title: 123`) must leave the field empty, not throw outside the settled
+   * batch.
+   */
+  private async fetchUserMetadata(req: Request, username: string): Promise<FormationPersonMetadata | null> {
+    const codec = this.natsService.getCodec();
+    const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+    const parsed = JSON.parse(codec.decode(response.data)) as UserMetadataUpdateResponse | null;
+
+    if (!parsed || typeof parsed !== 'object' || parsed.success === false) {
+      logger.debug(req, 'enrich_formation_people', 'No user metadata for username', { username: maskIdentifierForLogs(username) });
+      return null;
+    }
+
+    const profile = parsed.data;
+    if (!profile || typeof profile !== 'object') {
+      return null;
+    }
+
+    return {
+      job_title: FormationService.metadataText(profile.job_title),
+      organization: FormationService.metadataText(profile.organization),
+      picture: FormationService.metadataText(profile.picture),
+    };
+  }
+
   /** Maps one `formation_item` index row onto the wire shape (GH-1956). */
-  private mapMyFormationItemRow(row: UpstreamFormationItemRow, canWrite: boolean): MyFormationItemRow {
+  private mapMyFormationItemRow(row: UpstreamFormationItemRow, canWrite: boolean, isFormationTeamMember: boolean): MyFormationItemRow {
     return {
       item_uid: row.object_id,
       template_item_key: row.item_key,
@@ -787,9 +1173,8 @@ export class FormationService {
       status: row.status,
       is_gating: row.gate,
       due_date: row.due_date ?? null,
-      action: deriveItemAction(row),
-      action_href: resolveActionHref(row.action_link, row.project_slug),
       can_write: canWrite,
+      can_set_status: canWrite && isFormationTeamMember,
     };
   }
 

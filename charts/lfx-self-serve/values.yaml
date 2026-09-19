@@ -558,6 +558,44 @@ environment:
   LFX_MARKETING_OPS_FGA_ENABLED:
     value:
 
+  # Server-side kill switch for the /api/gw proxy. It does NOT gate the Angular routes — the
+  # client-side `gatewaze-embed-enabled` flag controls route matching and chunk loading, and both
+  # must be on for the pilot to work.
+  #
+  # Leave unset until GW_API_URL below is pointed at a real deployment. Once on, access is gated by
+  # `requireGwEmbedAccess`: ED persona, root writer, or a writer grant on any foundation/project.
+  # An earlier version of this note said the pilot was reachable by every authenticated caller with
+  # Gatewaze as the only boundary; that predates the BFF gate and is no longer true.
+  LFX_GATEWAZE_EMBED_ENABLED:
+    value:
+
+  # Optional per-environment tuning for the /api/gw proxy. Both fall back to their compiled
+  # defaults when unset or invalid (60000ms; 104857600 bytes) rather than failing the request.
+  GW_PROXY_TIMEOUT_MS:
+    value:
+
+  GW_PROXY_MAX_BODY_BYTES:
+    value:
+
+  # Base URL of the Gatewaze admin API that /api/gw proxies to. https:// is enforced outside
+  # dev/local/test, and a trailing slash is rejected (the proxy resolves the request path against this base, and a trailing slash would skew the escape check).
+  GW_API_URL:
+    value:
+
+  # Supabase project the embed authenticates against. Both reach the browser through
+  # RuntimeConfig, so GW_SUPABASE_ANON_KEY must be the publishable anon key and never the
+  # service-role key. With either unset the embed refuses to mount and shows a configuration
+  # error, so enabling the two flags above without these yields a dead page.
+  GW_SUPABASE_URL:
+    value:
+
+  GW_SUPABASE_ANON_KEY:
+    value:
+
+  # Where the embed's "Sign in with LFID" button sends the user. The host appends a return_url
+  # carrying a single-use nonce and adopts the returned session only if that nonce comes back.
+  GW_LFID_START_URL:
+    value:
   # Serves PATCH /api/campaigns/:campaignId/status from campaign-service instead of the
   # per-platform SDK calls in campaign-proxy.service.ts (LFXV2-3226).
   #
@@ -829,8 +867,11 @@ environment:
   SNOWFLAKE_LOCK_STRATEGY:
     value: "memory"
 
-  # Shared Valkey cache connection URL (rediss:// enables TLS in transit; credentials, if any,
-  # are embedded in the URL). Unset disables caching (direct-fetch fallback).
+  # Shared Valkey cache connection URL (credentials, if any, are embedded in the URL). Required to be
+  # rediss:// (TLS) in production — the app refuses to start otherwise. Unset disables caching
+  # (direct-fetch fallback). This TLS requirement now applies whenever VALKEY_URL alone is set
+  # (previously it only fired when SESSION_STORE_ENABLED was also true) — a deployment with an
+  # existing plaintext VALKEY_URL must switch to rediss:// before upgrading past PR #2604.
   VALKEY_URL:
     value:
 

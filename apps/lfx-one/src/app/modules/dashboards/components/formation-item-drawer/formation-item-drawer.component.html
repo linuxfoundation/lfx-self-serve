@@ -55,12 +55,11 @@
           <div class="flex items-center gap-2">
             <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
                  status menu instead (formation-checklist-row.component.ts). canMarkDone()
-                 (available_actions-derived, item-state) gates the button — not a caller-standing
-                 prediction: whether THIS caller may actually complete a gating item is enforced
-                 entirely by the API gateway (writer_guard + team:formation membership on
-                 POST .../status, GH-2576 Phase 2), which this component has no signal for and does not
-                 try to guess; a caller lacking that access gets a plain 403, surfaced as an error toast
-                 (Decision #3). -->
+                 (available_actions-derived, item-state) covers the ITEM half; the CALLER half is
+                 statusActionsDisabled()'s canSetStatus gate (GH-2705), the BFF's fail-closed mirror
+                 of the gateway's writer_guard + team:formation pair on POST .../status. The gateway
+                 still enforces — the flag is advisory, so a stale page's attempt gets the
+                 FORMATION_TEAM_REQUIRED toast. -->
             @if (currentItem.status === 'in_progress') {
               <lfx-button
                 label="Mark complete"
@@ -87,13 +86,13 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (!canWrite()) {
+          @if (!canSetStatus() && statusControlsRendered()) {
             <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. Scoped to Mark
-                 complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). No separate "requires formation-team access"
-                 message: that would be predicting the gateway's team:formation check client-side, which GH-2576 deliberately does not do — a caller who fails it gets a plain 403-and-toast
-                 on the attempt instead. -->
+                 complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). Gated on canSetStatus, matching the buttons'
+                 own statusActionsDisabled gate (GH-2705) — gating it on canWrite alone left a writer outside the formation team with disabled buttons and no visible reason. One
+                 message names both halves of the gateway's pair. -->
             <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
-              >You need write access to this project to mark this item complete or skip it.</span
+              >You need project write access and formation team membership to mark this item complete or skip it.</span
             >
           }
           <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always

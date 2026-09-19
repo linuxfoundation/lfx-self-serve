@@ -9,6 +9,7 @@ import {
   AI_RECONCILIATION_SYSTEM_PROMPT,
   AI_REQUEST_CONFIG,
   DURATION_ESTIMATION,
+  MEETING_AGENDA_MAX_LENGTH,
   NEWSLETTER_AI_MAX_TOKENS,
   WEEKLY_BRIEF_ACTION_ITEM_OWNER_ROLE_MAX_LENGTH,
   WEEKLY_BRIEF_ACTION_ITEM_TEXT_MAX_LENGTH,
@@ -28,6 +29,7 @@ import {
   ReconcileAttendeesRequest,
   ReconcileAttendeesResponse,
 } from '@lfx-one/shared/interfaces';
+import { truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -55,15 +57,30 @@ export class AiService {
   public async generateMeetingAgenda(req: Request, request: GenerateAgendaRequest): Promise<GenerateAgendaResponse> {
     this.assertConfigured();
 
+    // Shapes, not values: the title, the goal and the project name are all organizer-authored content
+    // that ends up in the prompt, and the controller's own truncation telemetry logs lengths only for
+    // exactly that reason. The success log downstream already reports `has_project_name`.
     const startTime = logger.startOperation(req, 'generate_meeting_agenda', {
-      meetingType: request.meetingType,
-      title: request.title,
+      // `meetingType` is typed as the enum but arrives from a request body, and a type is not a
+      // runtime guarantee — an unrecognized value would be logged verbatim. `getMeetingTypeDescription`
+      // already defaults anything off the enum to a generic descriptor, so it never reaches the
+      // prompt. The only HTTP caller now narrows before calling, so this is the second of two gates
+      // rather than the last one; it stays because nothing stops a future caller from skipping the first.
+      meetingType: AiService.knownMeetingType(request.meetingType) ?? null,
+      titleLength: request.title?.length ?? 0,
       hasContext: !!request.context,
-      projectName: request.projectName,
+      hasProjectName: !!request.projectName,
     });
 
     try {
-      const prompt = this.buildPrompt(request);
+      // Resolved once and then used everywhere: the same cap is asked of the model (in the schema and
+      // in the prompt) and enforced on the way back out, so the three can't disagree. A non-positive
+      // `maxCharacters` falls back to the default rather than being floored at 1, matching the policy
+      // `resolveAgendaMaxCharacters` already states at the HTTP boundary — a cap of 1 is honoured
+      // nonsense that guarantees a useless completion. `maxCharacters` is a plain optional number on
+      // the request, so this service defends itself rather than trusting its callers to pre-validate.
+      const agendaMaxCharacters = request.maxCharacters && request.maxCharacters > 0 ? request.maxCharacters : MEETING_AGENDA_MAX_LENGTH;
+      const prompt = this.buildPrompt({ ...request, maxCharacters: agendaMaxCharacters });
       const chatRequest: OpenAIChatRequest = {
         model: this.model,
         messages: [
@@ -89,9 +106,8 @@ export class AiService {
                 agenda: {
                   type: 'string',
                   description:
-                    'Well-structured meeting agenda with time allocations and clear objectives. ' +
-                    `Must not exceed ${request.maxCharacters || 2000} characters.`,
-                  maxLength: request.maxCharacters || 2000,
+                    'Well-structured meeting agenda with time allocations and clear objectives. ' + `Must not exceed ${agendaMaxCharacters} characters.`,
+                  maxLength: agendaMaxCharacters,
                 },
                 duration: {
                   type: 'number',
@@ -107,7 +123,7 @@ export class AiService {
       };
 
       const response = await this.makeAiRequest(chatRequest);
-      const result = this.extractAgendaAndDuration(req, response);
+      const result = this.extractAgendaAndDuration(req, response, agendaMaxCharacters);
 
       logger.success(req, 'generate_meeting_agenda', startTime, {
         estimatedDuration: result.estimatedDuration,
@@ -116,7 +132,9 @@ export class AiService {
       return result;
     } catch (error) {
       logger.error(req, 'generate_meeting_agenda', startTime, error);
-      throw new Error('Failed to generate meeting agenda');
+      // The upstream failure is logged above and the message stays generic for the caller; the cause
+      // rides along so a handler that inspects `error.cause` still reaches the original stack.
+      throw new Error('Failed to generate meeting agenda', { cause: error });
     }
   }
 
@@ -188,7 +206,7 @@ export class AiService {
       return result;
     } catch (error) {
       logger.error(req, 'generate_newsletter', startTime, error);
-      throw new Error('Failed to generate newsletter');
+      throw new Error('Failed to generate newsletter', { cause: error });
     }
   }
 
@@ -515,9 +533,24 @@ export class AiService {
     }
   }
 
+  /**
+   * Every descriptor is optional, including the meeting type — in edit mode the composer's rail
+   * imposes no section locking, so the organizer can ask for an agenda with the title cleared, and the
+   * client's project context resolves asynchronously. Each clause is only appended when there's
+   * something to say; the controller guarantees at least a title or a goal.
+   */
   private buildPrompt(request: GenerateAgendaRequest): string {
     let prompt = `Generate a meeting agenda for a ${this.getMeetingTypeDescription(request.meetingType)} meeting`;
-    prompt += ` titled "${request.title}" for the ${request.projectName} project.`;
+
+    if (request.title) {
+      prompt += ` titled "${request.title}"`;
+    }
+
+    if (request.projectName) {
+      prompt += ` for the ${request.projectName} project`;
+    }
+
+    prompt += '.';
 
     if (request.context) {
       prompt += ` Additional context: ${request.context}`;
@@ -532,7 +565,8 @@ export class AiService {
     return prompt;
   }
 
-  private getMeetingTypeDescription(meetingType: MeetingType): string {
+  /** `default` also covers an unset type — the helper is reachable before one is chosen. */
+  private getMeetingTypeDescription(meetingType?: MeetingType): string {
     switch (meetingType) {
       case MeetingType.BOARD:
         return 'board governance';
@@ -551,6 +585,18 @@ export class AiService {
       default:
         return 'project team';
     }
+  }
+
+  /**
+   * Returns the value only when it is an actual `MeetingType` member, else `undefined`.
+   *
+   * Duplicated in `MeetingController.readMeetingType` on purpose rather than shared: this service is
+   * a library its callers can reach directly, and `generateMeetingAgenda` takes a request object
+   * whose `meetingType` is typed but not validated. The controller's copy exists so the HTTP
+   * boundary rejects junk early; this one exists so the service is safe even when it doesn't.
+   */
+  private static knownMeetingType(value: unknown): MeetingType | undefined {
+    return typeof value === 'string' && (Object.values(MeetingType) as string[]).includes(value) ? (value as MeetingType) : undefined;
   }
 
   private assertConfigured(): void {
@@ -585,7 +631,18 @@ export class AiService {
     return response.json();
   }
 
-  private extractAgendaAndDuration(req: Request, response: OpenAIChatResponse): GenerateAgendaResponse {
+  /**
+   * @param maxCharacters Hard cap applied to the returned agenda.
+   *
+   * The cap is enforced here rather than trusted from the response schema's `maxLength` hint, which
+   * the model is free to overshoot (`MAX_TOKENS` leaves ample room to), and which the text-extraction
+   * fallback below bypasses entirely by returning the whole completion. That matters beyond tidiness:
+   * the composer writes this string straight into its `description` control, which carries
+   * `Validators.maxLength(MEETING_AGENDA_MAX_LENGTH)`. An over-length agenda would therefore make the
+   * composer's whole form invalid and silently disable Save — the same class of dead button GH-1464
+   * fixed for the AI goal, reached through the AI helper itself.
+   */
+  private extractAgendaAndDuration(req: Request, response: OpenAIChatResponse, maxCharacters: number): GenerateAgendaResponse {
     if (!response.choices || response.choices.length === 0) {
       throw new Error('No agenda generated');
     }
@@ -612,7 +669,7 @@ export class AiService {
       const cappedDuration = Math.max(DURATION_ESTIMATION.MINIMUM_DURATION, Math.min(parsed.duration, DURATION_ESTIMATION.MAXIMUM_DURATION));
 
       return {
-        agenda: parsed.agenda.trim(),
+        agenda: AiService.capAgendaLength(req, parsed.agenda.trim(), maxCharacters, 'json'),
         estimatedDuration: cappedDuration,
       };
     } catch (parseError) {
@@ -630,9 +687,28 @@ export class AiService {
       const cappedFallbackDuration = Math.max(DURATION_ESTIMATION.MINIMUM_DURATION, Math.min(fallbackDuration, DURATION_ESTIMATION.MAXIMUM_DURATION));
 
       return {
-        agenda: content.trim(),
+        agenda: AiService.capAgendaLength(req, content.trim(), maxCharacters, 'text_fallback'),
         estimatedDuration: cappedFallbackDuration,
       };
     }
+  }
+
+  /**
+   * Trims an agenda to the requested cap, logging when it had to. Truncated rather than rejected: a
+   * shortened agenda is still a usable draft the organizer can edit, whereas a thrown error costs
+   * them the whole generation.
+   */
+  private static capAgendaLength(req: Request, agenda: string, maxCharacters: number, source: 'json' | 'text_fallback'): string {
+    if (agenda.length <= maxCharacters) {
+      return agenda;
+    }
+
+    logger.warning(req, 'generate_meeting_agenda', 'Agenda exceeded the requested cap, truncating', {
+      agenda_length: agenda.length,
+      max_characters: maxCharacters,
+      source,
+    });
+
+    return truncateToUtf16Units(agenda, maxCharacters);
   }
 }

@@ -1,12 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, Signal, signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
+import { FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -18,10 +21,11 @@ import type {
   ReasonPromptDialogResult,
 } from '@lfx-one/shared/interfaces';
 import { collectFormationOrphanItems, groupFormationItemsBySection, isFormationLifecycleLive } from '@lfx-one/shared/utils';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, of, switchMap, take, tap } from 'rxjs';
 
 import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 
@@ -51,6 +55,9 @@ export class FormationChecklistSectionComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   /**
    * Renders another project's checklist by explicit slug, without touching the project context —
@@ -60,6 +67,19 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /**
+   * The checklist response this component just fetched, so a host can render alongside it without
+   * re-reading the checklist — both hosts use it for their `lfx-formation-card` sidebar rail
+   * (#2719), whose rendered fields then need no request or permission probe of their own (the
+   * card's admin-tool link still makes its own, and fails closed).
+   *
+   * Emits `null` in three cases, so a host clears rather than pairing a stale card with a fresh
+   * (or empty) checklist: a failed load, no slug, and a genuine project switch — the last one
+   * before the new response arrives, which is the case the #2719-style mixing bugs come from. A
+   * first mount and a same-slug refresh deliberately emit no clear.
+   */
+  public readonly responseLoaded = output<FormationChecklistResponse | null>();
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
   private readonly loadFailed = signal(false);
@@ -102,15 +122,6 @@ export class FormationChecklistSectionComponent {
   protected readonly template = computed(() => this.response()?.template ?? null);
   protected readonly items = computed(() => this.response()?.items ?? []);
   /**
-   * The readiness strip's announcement-date override (LFXV2-3386): in explicit-slug mode the
-   * context service describes the foundation, not this checklist's project, so the date rides in on
-   * the checklist response (the BFF sources it from the same project-settings read the context
-   * service uses). `undefined` in context mode = the strip's "no override" sentinel — it keeps
-   * reading `ProjectContextService` as before. The strip only renders in the `ready` state, so
-   * `formation()` is non-null whenever the override value matters.
-   */
-  protected readonly stripAnnouncementDate = computed(() => (this.projectSlug() ? (this.formation()?.announcement_date ?? null) : undefined));
-  /**
    * GH-2328: true whenever the formation's upstream `lifecycle` isn't (recognizably) `'live'` —
    * `isFormationLifecycleLive` fails closed, so a `null` formation (still loading) or an
    * unrecognized `lifecycle` both count as read-only, never as live. Passed down to every row and
@@ -126,6 +137,14 @@ export class FormationChecklistSectionComponent {
    * then refused the save.
    */
   protected readonly canWrite = computed(() => this.response()?.can_write === true);
+  /**
+   * GH-2705: the full pair the gateway's `set_item_status` rule checks — `can_write` plus
+   * `team:formation` membership (see `FormationChecklistResponse.can_set_status`). Gates every
+   * status-moving affordance (row status menu, skip entry, quick action, drawer Mark
+   * complete/Skip), which `canWrite` alone cannot honestly gate: a writer outside the formation
+   * team was offered a status dropdown whose every write the gateway deterministically 403'd.
+   */
+  protected readonly canSetStatus = computed(() => this.response()?.can_set_status === true);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();
@@ -148,10 +167,18 @@ export class FormationChecklistSectionComponent {
   protected readonly pageState: Signal<FormationChecklistPageState> = computed(() => {
     if (this.loading()) return 'loading';
     if (this.loadFailed()) return 'error';
+    // response() is null before the first fetch lands (loading.set(true) runs post-CD, so there
+    // is a brief window where loading=false and response=null). Treat that as loading so
+    // initDeepLink's terminal-state filter doesn't fire before data has arrived.
+    if (!this.response()) return 'loading';
     if (!this.template()) return 'no-template';
     if (this.items().length === 0) return 'no-items';
     return 'ready';
   });
+
+  constructor() {
+    this.initDeepLink();
+  }
 
   protected onRetry(): void {
     this.loading.set(true);
@@ -190,7 +217,7 @@ export class FormationChecklistSectionComponent {
         next: () => this.refresh$.next(),
         error: (error: unknown) => {
           console.error('[FormationChecklistSection] Row action failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not complete this action.' });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not complete this action.') });
         },
       });
   }
@@ -209,7 +236,7 @@ export class FormationChecklistSectionComponent {
         next: () => this.refresh$.next(),
         error: (error: unknown) => {
           console.error('[FormationChecklistSection] Row status change failed', error);
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not change this item’s status.') });
         },
       });
   }
@@ -270,7 +297,7 @@ export class FormationChecklistSectionComponent {
           },
           error: (error: unknown) => {
             console.error('[FormationChecklistSection] Status change failed', error);
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Could not change this item’s status.' });
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: serverAuthoredMessage(error, 'Could not change this item’s status.') });
           },
         });
     });
@@ -318,6 +345,39 @@ export class FormationChecklistSectionComponent {
     this.onRowReasonedStatusRequested({ item, status: 'skipped' });
   }
 
+  private initDeepLink(): void {
+    // Only run in the browser — router.navigate() on the server manipulates Angular's
+    // internal URL before hydration, risking NG0500 mismatches. This feature targets
+    // browser-opened email deep-links only.
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    // Read once from the snapshot — ?item= is navigation intent from an email deep-link,
+    // not reactive state. This component is destroyed on navigation so one-time reads
+    // are the right semantic; a same-tab re-navigation with a new ?item= starts a fresh mount.
+    const itemKey = this.route.snapshot.queryParamMap.get(FORMATION_ITEM_QUERY_PARAM);
+    if (!itemKey) return;
+
+    // Wait for the first non-error terminal pageState, then clear ?item= from the URL.
+    // 'error' is deliberately excluded so the subscription stays alive: an in-page retry
+    // (onRetry) can still open the drawer once the fetch succeeds.
+    // queryParamsHandling: 'merge' preserves any other active params (e.g. ?project=).
+    toObservable(this.pageState)
+      .pipe(
+        filter((state) => state === 'ready' || state === 'no-template' || state === 'no-items'),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((state) => {
+        if (state === 'ready') {
+          const item = this.items().find((i) => i.template_item_key === itemKey);
+          if (item) {
+            this.onOpenDrawer(item);
+          }
+        }
+        void this.router.navigate([], { queryParams: { [FORMATION_ITEM_QUERY_PARAM]: null }, queryParamsHandling: 'merge', replaceUrl: true });
+      });
+  }
+
   private initResponse(): Signal<FormationChecklistResponse | null> {
     // Explicit `projectSlug` input first (foundation drill-down, LFXV2-3386), else the active
     // project context (`/project/formation`). Projected to the slug and deduped — activeContext()
@@ -344,13 +404,24 @@ export class FormationChecklistSectionComponent {
             // return to A as "same slug" and skip the loading state a genuine reload needs.
             lastSlug = null;
             this.loading.set(false);
+            this.responseLoaded.emit(null);
             return of(null);
           }
 
           this.loadFailed.set(false);
           if (slug !== lastSlug) {
+            const isSwitch = lastSlug !== null;
             lastSlug = slug;
             this.loading.set(true);
+            // On a genuine project switch, clear the host's copy in the same tick the panels flash
+            // to skeletons (#2719): a rail left holding the previous project's response would keep
+            // showing its slug, sub-stage, date and — since the card's `projectUid` derives from
+            // that same response — a live, uid-matched admin-tool link for the project just
+            // navigated away from. Only on a switch: first mount has nothing to clear, and a
+            // same-slug refresh$ tick must keep the card, since nothing about the project changed.
+            if (isSwitch) {
+              this.responseLoaded.emit(null);
+            }
           }
           // Explicit-slug mode is the auditor drill-down, which must use the requireAuditor-gated
           // read so the queue's root-auditor contract holds server-side too (#2690 review); context
@@ -359,10 +430,14 @@ export class FormationChecklistSectionComponent {
           // to it re-emits slug$, so the mode can never be stale for the slug being fetched.
           const checklist$ = this.projectSlug() ? this.formationService.getQueueFormationChecklist(slug) : this.formationService.getProjectFormation(slug);
           return checklist$.pipe(
-            tap((response) => this.logOrphanSectionKeys(response)),
+            tap((response) => {
+              this.logOrphanSectionKeys(response);
+              this.responseLoaded.emit(response);
+            }),
             catchError((error: unknown) => {
               console.error('[FormationChecklistSection] Failed to load formation checklist', error);
               this.loadFailed.set(true);
+              this.responseLoaded.emit(null);
               return of(null);
             }),
             finalize(() => this.loading.set(false))

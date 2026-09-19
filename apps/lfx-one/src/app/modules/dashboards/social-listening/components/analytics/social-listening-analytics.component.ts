@@ -27,7 +27,7 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, debounceTime, map, Observable, of, startWith, switchMap } from 'rxjs';
 
-import type { ChartData, ChartOptions, ChartType } from 'chart.js';
+import type { ChartData, ChartOptions } from 'chart.js';
 
 import type {
   LoadableState,
@@ -157,7 +157,7 @@ export class SocialListeningAnalyticsComponent {
   );
 
   // === Chart options — plain class properties, never computed() (rule 7.8) ===
-  protected readonly overTimeOptions: ChartOptions<ChartType> = {
+  protected readonly overTimeOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index', intersect: false },
@@ -168,7 +168,7 @@ export class SocialListeningAnalyticsComponent {
         labels: { usePointStyle: true, pointStyle: 'line', padding: 15, color: lfxColors.gray[600] },
       },
       // The canvas-drawn tooltip is clipped to the chart area, cutting off projects when many series are shown — render it in DOM instead.
-      tooltip: { enabled: false, external: buildChartExternalTooltip() },
+      tooltip: { enabled: false, external: buildChartExternalTooltip<'line'>() },
     },
     elements: {
       line: { tension: 0.4, fill: false },

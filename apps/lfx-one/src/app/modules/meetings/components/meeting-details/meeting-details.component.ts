@@ -14,7 +14,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared';
+import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared/interfaces';
 import { MEETING_DURATION_OPTIONS, RECURRING_MEETING_FEATURE, TIMEZONES, YOUTUBE_MAX_MEETING_TITLE_LENGTH } from '@lfx-one/shared/constants';
 import { MeetingUserInfo, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { composeFullName, formatUserLabel, getTimezoneUtcOffsetString, getWeekOfMonth } from '@lfx-one/shared/utils';
@@ -24,7 +24,7 @@ import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { finalize, map, merge, of, startWith, switchMap, take, tap } from 'rxjs';
 
-import { AgendaTemplateSelectorComponent } from '../agenda-template-selector/agenda-template-selector.component';
+import { AgendaTemplateSelectorV1Component } from '../agenda-template-selector-v1/agenda-template-selector-v1.component';
 import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern/meeting-recurrence-pattern.component';
 
 @Component({
@@ -42,7 +42,7 @@ import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern
     TimePickerComponent,
     UserSearchComponent,
     TooltipModule,
-    AgendaTemplateSelectorComponent,
+    AgendaTemplateSelectorV1Component,
     MeetingRecurrencePatternComponent,
   ],
   templateUrl: './meeting-details.component.html',

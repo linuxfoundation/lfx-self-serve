@@ -52,6 +52,22 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(strip.getByTestId('formation-readiness-strip-counts')).toBeAttached();
       await expect(strip.getByTestId('formation-readiness-strip-gating')).toBeAttached();
     });
+
+    test('carries no announcement-date block — it moved to the page sidebar (GH-2702)', async ({ page }) => {
+      await expect(page.getByTestId('formation-readiness-strip-announcement')).toHaveCount(0);
+    });
+  });
+
+  test.describe('Page sidebar (GH-2702)', () => {
+    test('nests the checklist section and the formation card under the two-column wrapper', async ({ page }) => {
+      const columns = page.getByTestId('formation-page-columns');
+      await expect(columns.getByTestId('formation-checklist-section')).toBeAttached();
+
+      const sidebar = columns.getByTestId('formation-page-sidebar');
+      await expect(sidebar).toBeAttached();
+      await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+      await expect(sidebar.getByTestId('formation-people-card')).toBeAttached();
+    });
   });
 
   test.describe('Checklist panels', () => {
@@ -127,7 +143,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable, can_write: true, can_set_status: true }),
         })
       );
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -149,7 +165,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled, can_write: true, can_set_status: true }),
         })
       );
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
@@ -228,6 +244,19 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await closeButton.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
+    // #2732: arriving with `?item=<template_item_key>` yields the same nested drawer with no click.
+    test('a deep-linked item nests the same drawer containers without any row click', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.goto(`/project/formation?project=${FORMATION_PROJECT_SLUG}&item=${item.template_item_key}`, { waitUntil: 'domcontentloaded' });
+
+      const drawer = page.getByTestId('formation-item-drawer');
+      await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(drawer.getByTestId('formation-item-drawer-notes')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-assignee')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-history')).toBeAttached();
+      await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    });
+
     test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';
@@ -237,7 +266,7 @@ test.describe('Formation checklist section — structural contract', () => {
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, can_write: true }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, can_write: true, can_set_status: true }),
         })
       );
       // The drawer fetches item detail from a separate GET (`/api/formations/:projectUid/items/:itemKey`)

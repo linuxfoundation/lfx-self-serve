@@ -3,8 +3,9 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { CanMatchFn, Router } from '@angular/router';
+import { CanMatchFn, Router, UrlTree } from '@angular/router';
 import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { orgLensPagePath } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 
@@ -18,13 +19,21 @@ export const orgLensRoiEnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
+  // Fallback stays in the organization the address names (`/org/{segment}/overview`, spec 050): this
+  // CanMatch runs during recognition, before `orgPathParamGuard` has adopted the segment, and an
+  // absolute `/org/overview` would land on the cookie/default organization instead.
+  const fallback = (): UrlTree => {
+    const target = router.getCurrentNavigation()?.extractedUrl;
+    const segments = target?.root.children['primary']?.segments.map((segment) => segment.path) ?? [];
+    return router.parseUrl(orgLensPagePath(segments, 'overview'));
+  };
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be
   // overridden. Non-production builds only; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
   const override = featureFlagService.getFlagOverride(ORG_LENS_ROI_ENABLED_FLAG);
   if (override !== undefined) {
-    return override ? true : router.parseUrl('/org/overview');
+    return override ? true : fallback();
   }
 
   if (!featureFlagService.providerReady()) {
@@ -39,9 +48,9 @@ export const orgLensRoiEnabledGuard: CanMatchFn = async () => {
     // Revisit at GA: once the flag is on for everyone, failing open becomes the better trade and
     // this should match its sibling.
     if (!ready) {
-      return router.parseUrl('/org/overview');
+      return fallback();
     }
   }
 
-  return featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false)() ? true : router.parseUrl('/org/overview');
+  return featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false)() ? true : fallback();
 };

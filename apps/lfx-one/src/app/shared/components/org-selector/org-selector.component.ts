@@ -242,6 +242,8 @@ export class OrgSelectorComponent {
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
+      slug: item.slug ?? null,
     };
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already

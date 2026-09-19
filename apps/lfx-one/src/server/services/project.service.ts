@@ -11,6 +11,7 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_RANGES,
   isHealthMetricsRange,
   NATS_CONFIG,
@@ -90,10 +91,13 @@ import {
   FoundationValueConcentrationRow,
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
+  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
+  HealthMetricsOverviewArea,
   HealthMetricsOverviewFoundationSummary,
   HealthMetricsOverviewRevenue,
   HealthMetricsRange,
+  HealthOverviewKpisRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
   KeywordPerformanceRow,
@@ -154,12 +158,15 @@ import {
 import type { AccessCheckRequest, MoMDirection, PaidProjectPerformance, ResolvedPeriodRange, WriterSummary } from '@lfx-one/shared/interfaces';
 import {
   computeIsFoundation,
+  formatCurrency,
+  formatNumber,
   getDefaultMarketingImpactMonth,
   maskEmailForLogs,
   maskIdentifierForLogs,
   normalizeHealthScoreCategoryV2,
   normalizeToUrl,
   nullifyEmptyStrings,
+  resolveHealthMetricsOverviewKpiClassification,
   resolvePeriodRange,
   summarizeWriterGrants,
 } from '@lfx-one/shared/utils';
@@ -167,7 +174,7 @@ import { Request } from 'express';
 import FormData from 'form-data';
 
 import { QUERY_SERVICE_PAGE_SIZE } from '../constants';
-import { AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError, ConflictError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { isInvalidIdentifierError } from '../helpers/snowflake-error.helper';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
@@ -627,7 +634,10 @@ export class ProjectService {
   }
 
   /**
-   * Unified method to update project permissions using ETag for safe updates
+   * Unified method to update project permissions using ETag for safe updates. `add` is an add,
+   * not an upsert: a person already on the project is refused with a 409 rather than silently
+   * re-filed under the submitted role (which would demote a writer to auditor with a success
+   * response); role changes go through `update`.
    */
   public async updateProjectPermissions(
     req: Request,
@@ -637,6 +647,20 @@ export class ProjectService {
     role?: 'view' | 'manage',
     manualUserInfo?: { name: string; email: string; username?: string; avatar?: string }
   ): Promise<ProjectSettings> {
+    // Step 0: Authorize before touching anything — the gate `updateProjectStaff` runs, for the same
+    // reason. Upstream gates the settings PUT at writer, but the directory lookup below runs first
+    // and answers "is this address known?" with a distinguishable 404, so without this gate a
+    // read-only caller could probe directory membership through this route off the 404-vs-403
+    // split. Strict so an access-service outage fails closed instead of degrading to "not a writer".
+    const canWrite = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: uid, access: 'writer' });
+
+    if (!canWrite) {
+      throw new AuthorizationError('You do not have permission to manage project permissions', {
+        operation: `${operation}_user_project_permissions`,
+        service: 'project_service',
+      });
+    }
+
     // Step 1: Fetch current settings with ETag first.
     // Settings must be fetched before resolveEmailToUsername so that manually-added users
     // (not present in the NATS directory) can be matched by email fallback and skip
@@ -686,6 +710,14 @@ export class ProjectService {
     // Capture the user's existing UserInfo before removal — used by the 'update' path to
     // avoid a NATS roundtrip when only the role is changing.
     const existingUserInfo = updatedSettings.writers.find(matchesUser) || updatedSettings.auditors.find(matchesUser);
+
+    // See the method doc: an add of someone already listed is a conflict, never a silent re-file.
+    if (operation === 'add' && existingUserInfo) {
+      throw new ConflictError('This person is already on the project', 'ALREADY_ON_PROJECT', {
+        operation: 'add_user_project_permissions',
+        service: 'project_service',
+      });
+    }
 
     // Remove user from both arrays first (for all operations)
     updatedSettings.writers = updatedSettings.writers.filter((u) => !matchesUser(u));
@@ -6159,6 +6191,111 @@ export class ProjectService {
       total,
       streams: rows.map((row) => ({ key: row.REVENUE_DOMAIN.toLowerCase(), value: row.REVENUE_USD ?? 0 })),
     };
+  }
+
+  /**
+   * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365). Events, Training,
+   * Members, Non-Members, and Code all have stat columns in this table — only Engagement isn't part
+   * of its contract and stays fixture-backed on the frontend until LFXV2-3364 ships its `hm_area_state`
+   * row. Members/Non-Members columns aren't period-suffixed (unlike Events/Training/Code). Code has
+   * no paired `_STATUS` column, so its classification is always `'none'` — the tile renders an LFX
+   * Insights link instead of a status word for this area anyway.
+   */
+  public async getHealthOverviewKpis(foundationSlug: string, range: HealthMetricsRange = 'YTD'): Promise<HealthMetricsAreaState[]> {
+    logger.debug(undefined, 'get_health_overview_kpis', 'Fetching health overview KPIs', { foundation_slug: foundationSlug, range });
+
+    const suffix = this.getRangeSuffix(range);
+    const query = `
+      SELECT
+        events_pct_of_registration_goal${suffix} AS EVENTS_PCT_OF_REGISTRATION_GOAL,
+        events_status${suffix} AS EVENTS_STATUS,
+        certifications_earned_count${suffix} AS CERTIFICATIONS_EARNED_COUNT,
+        training_status${suffix} AS TRAINING_STATUS,
+        contributors_count${suffix} AS CONTRIBUTORS_COUNT,
+        members_renewing_90d_value_usd AS MEMBERS_RENEWING_90D_VALUE_USD,
+        members_status AS MEMBERS_STATUS,
+        non_members_pipeline_value_usd AS NON_MEMBERS_PIPELINE_VALUE_USD,
+        non_members_status AS NON_MEMBERS_STATUS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.HEALTH_OVERVIEW_KPIS
+      WHERE foundation_slug = ?
+      LIMIT 1
+    `;
+    // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
+    // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
+
+    const result = await this.snowflakeService.execute<HealthOverviewKpisRow>(query, [foundationSlug]);
+    const row = result.rows?.[0];
+
+    if (!row) {
+      logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug, range });
+      return [];
+    }
+
+    // HEALTH_OVERVIEW_KPIS carries no evaluated_at column, and the query's a point-in-time read, not
+    // a per-period evaluation — empty, like the neutral placeholder tiles, rather than "as of today".
+    const evaluatedAt = '';
+    const eventsGoalPct = row.EVENTS_PCT_OF_REGISTRATION_GOAL;
+    const certificationsEarned = row.CERTIFICATIONS_EARNED_COUNT;
+    const contributorsCount = row.CONTRIBUTORS_COUNT;
+    const membersRenewingValue = row.MEMBERS_RENEWING_90D_VALUE_USD;
+    // NON_MEMBERS_PIPELINE_VALUE_USD is always NULL pending upstream ticket DL-1383 — render blank
+    // rather than a misleading "$0" until that data lands.
+    const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
+
+    // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
+    // missing its builder here is dropped from the response instead of the two silently drifting.
+    const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
+      evt: () => ({
+        area: 'evt',
+        statValue: eventsGoalPct == null ? '—' : `${Math.round(eventsGoalPct)}%`,
+        statLabel: eventsGoalPct == null ? 'no registration goal set' : 'of registration goal',
+        statSource: 'HEALTH_OVERVIEW_KPIS.events_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.EVENTS_STATUS),
+        evaluatedAt,
+        // Hide only when there's truly nothing to say (no goal, no status). Any goal or any status
+        // present shows the chip — a set goal with no status yet renders "Awaiting data", matching
+        // how trn/mem/non already treat a null status column.
+        showStatus: eventsGoalPct != null || row.EVENTS_STATUS != null,
+      }),
+      trn: () => ({
+        area: 'trn',
+        statValue: certificationsEarned == null ? '—' : formatNumber(certificationsEarned),
+        statLabel: 'certifications earned',
+        statSource: 'HEALTH_OVERVIEW_KPIS.training_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.TRAINING_STATUS),
+        evaluatedAt,
+      }),
+      mem: () => ({
+        area: 'mem',
+        statValue: membersRenewingValue == null ? '—' : formatCurrency(membersRenewingValue),
+        statLabel: 'renewing in next 90 days',
+        statSource: 'HEALTH_OVERVIEW_KPIS.members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.MEMBERS_STATUS),
+        evaluatedAt,
+      }),
+      non: () => ({
+        area: 'non',
+        statValue: nonMembersPipelineValue == null ? '—' : formatCurrency(nonMembersPipelineValue),
+        statLabel: 'pipeline value',
+        statSource: 'HEALTH_OVERVIEW_KPIS.non_members_status',
+        classification: resolveHealthMetricsOverviewKpiClassification(row.NON_MEMBERS_STATUS),
+        evaluatedAt,
+      }),
+      code: () => ({
+        area: 'code',
+        statValue: contributorsCount == null ? '—' : formatNumber(contributorsCount),
+        statLabel: 'active contributors',
+        // No _STATUS column backs this area (see method doc), so unlike the sibling areas above,
+        // statSource names the stat's own column rather than a status column.
+        statSource: 'HEALTH_OVERVIEW_KPIS.contributors_count',
+        classification: 'none',
+        evaluatedAt,
+      }),
+    };
+
+    return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
+      .map((area) => areaStateBuilders[area]?.())
+      .filter((state): state is HealthMetricsAreaState => state !== undefined);
   }
 
   /**

@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { BOARD_SCOPED_PERSONA_PRIORITY, LENS_DEFAULT_ROUTES, NAV_SEARCH_DEBOUNCE_MS, PROJECT_SCOPED_PERSONA_PRIORITY } from '@lfx-one/shared/constants';
 import { LensItem, LensItemsResponse, LensPage, LensState, NavLens, PersonaType, TaggedLensPage } from '@lfx-one/shared/interfaces';
-import { lensItemToProjectContext } from '@lfx-one/shared/utils';
+import { lensItemToProjectContext, shouldSkipNavDefaultSelection } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
 
@@ -145,6 +145,13 @@ export class NavigationService {
 
   private applyDefaultSelection(lens: NavLens, page: LensPage): void {
     const state = this.getState(lens);
+    const queryParams = this.router.parseUrl(this.router.url).queryParams;
+    // Key presence drives URL writes (#949): do not inject ?project= onto entity URLs that omit it.
+    // Slug truthiness drives skip: empty `?project=` matches the guard (`if (!slug)`) and must not
+    // suppress default selection.
+    const syncUrl = 'project' in queryParams;
+    const hasExplicitProjectSlug = !!queryParams['project'];
+    const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
 
     if (page.items.length === 0) {
       // Client-side filtering (e.g. hiding foundations from the project lens) can empty a page
@@ -155,6 +162,19 @@ export class NavigationService {
         return;
       }
       state.pendingDefaultSelection.set(false);
+      // Same skip policy as the non-empty path: a non-empty `?project=` (#2697) or an already-
+      // resolved entity context (#960) is authoritative even when this lens page is empty.
+      // Still surface a fetch failure, but do not clear context or redirect to Me.
+      if (shouldSkipNavDefaultSelection(hasExplicitProjectSlug, existing?.uid)) {
+        if (page.upstreamFailed) {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to load',
+            detail: 'We were unable to load your data. Please try again in a moment.',
+          });
+        }
+        return;
+      }
       if (lens === 'foundation') {
         this.projectContextService.clearFoundation();
       } else {
@@ -166,21 +186,10 @@ export class NavigationService {
 
     state.pendingDefaultSelection.set(false);
 
-    // Only write ?project= to the URL if it was already present — prevents the default
-    // selection from injecting a wrong project slug into entity-specific URLs (e.g.
-    // /project/groups/:id) that a user navigated to without an explicit project context.
-    const syncUrl = 'project' in this.router.parseUrl(this.router.url).queryParams;
-
     // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
-    const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
-    if (existing?.uid && page.items.some((item) => item.uid === existing.uid)) {
-      return;
-    }
-
-    // On entity deep-link pages (no ?project= in URL), preserve any context already set by
-    // syncEntityProjectContext — even if the owning entity's project isn't in this lens's items
-    // (e.g. a foundation-owned entity accessed via the project lens, like a TLF mailing list).
-    if (!syncUrl && existing?.uid) {
+    // `?project=` deep links are also authoritative even when missing from this first page (#2697).
+    // Entity pages without `?project=` keep syncEntityProjectContext (#960).
+    if (shouldSkipNavDefaultSelection(hasExplicitProjectSlug, existing?.uid)) {
       return;
     }
 
