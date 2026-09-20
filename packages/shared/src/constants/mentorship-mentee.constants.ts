@@ -215,12 +215,14 @@ export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastO
   'not-selected': 'Not selected',
   withdrawn: 'Withdrawn',
   accepted: 'Accepted',
+  graduated: 'Graduated',
 };
 
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePastOutcome, string> = {
-  'not-selected': 'text-red-600',
-  withdrawn: 'text-gray-500',
-  accepted: 'text-green-700',
+  'not-selected': 'bg-red-100 text-red-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
+  accepted: 'bg-green-100 text-green-700',
+  graduated: 'bg-green-100text-green-700',
 };
 
 export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
@@ -234,18 +236,20 @@ export const MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE = 'Past Applications';
 // ---------------------------------------------------------------------------
 
 export const MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL = 'Active';
-export const MENTORSHIP_MENTEE_YOUR_MENTOR_LABEL = 'YOUR MENTOR';
+export const MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL = 'YOUR MENTORS';
 export const MENTORSHIP_MENTEE_UP_NEXT_TITLE = 'Up Next';
 export const MENTORSHIP_MENTEE_ALL_TASKS_LABEL = 'All tasks';
 
 export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS: Record<MentorshipMenteeUpNextTaskStatus, string> = {
   'in-progress': 'In Progress',
   pending: 'To Do',
+  incomplete: 'To Do',
 };
 
 export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': 'border border-blue-200 bg-blue-50 text-blue-700',
-  pending: 'border border-gray-200 bg-gray-50 text-gray-500',
+  'in-progress': ' bg-blue-100 text-blue-600',
+  pending: 'bg-gray-100 text-gray-600',
+  incomplete: 'bg-gray-100 text-gray-600',
 };
 
 // ---------------------------------------------------------------------------
@@ -270,36 +274,39 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
   applications: [
     {
       id: 'app_apicurio',
+      programId: 'prog_apicurio',
       orgAbbreviation: 'AR',
       projectName: 'CNCF',
-      term: 'Fall 2026',
+      term: { id: 'term_apicurio_fall26', name: 'Fall 2026' },
       programName: 'Apicurio Registry: Prompt Template Playground',
       status: 'in-progress',
-      submittedDate: 'Jun 28, 2026',
+      lastTaskUpdatedOn: 'Jun 28, 2026',
       decisionExpectedDate: 'Jul 22, 2026',
       prerequisiteTasksCompleted: 1,
       prerequisiteTasksTotal: 3,
     },
     {
       id: 'app_zephyr',
+      programId: 'prog_zephyr',
       orgAbbreviation: 'ZR',
       projectName: 'Zephyr Project',
-      term: 'Winter 2026',
+      term: { id: 'term_zephyr_win26', name: 'Winter 2026' },
       programName: 'Zephyr RTOS: Power Management Test Harness',
       status: 'in-progress',
-      submittedDate: 'Jul 1, 2026',
+      lastTaskUpdatedOn: 'Jul 1, 2026',
       decisionExpectedDate: 'Aug 5, 2026',
       prerequisiteTasksCompleted: 1,
       prerequisiteTasksTotal: 2,
     },
     {
       id: 'app_janusgraph',
+      programId: 'prog_janusgraph',
       orgAbbreviation: 'JA',
       projectName: 'LF AI & Data',
-      term: 'Fall 2026',
+      term: { id: 'term_janusgraph_fall26', name: 'Fall 2026' },
       programName: 'JanusGraph: Adjacency Cache Instrumentation',
       status: 'awaiting-review',
-      submittedDate: 'Jul 4, 2026',
+      lastTaskUpdatedOn: 'Jul 4, 2026',
       decisionExpectedDate: 'Jul 29, 2026',
       prerequisiteTasksCompleted: 3,
       prerequisiteTasksTotal: 3,
@@ -309,17 +316,19 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
     {
       id: 'past_backstage',
       programName: 'Backstage: Plugin Accessibility Audit',
-      projectTerm: 'CNCF \u00b7 Summer 2026',
-      submittedDate: 'Feb 12, 2026',
-      decidedDate: 'Apr 20, 2026',
+      projectName: 'CNCF',
+      termName: 'Summer 2026',
+      lastTaskUpdatedOn: 'Feb 12, 2026',
+      decidedOn: 'Apr 20, 2026',
       outcome: 'not-selected',
     },
     {
       id: 'past_openapi',
       programName: 'OpenAPI Tools: Type-Safe Client Generation',
-      projectTerm: 'OpenAPI Initiative \u00b7 Spring 2026',
-      submittedDate: 'Nov 8, 2025',
-      decidedDate: 'Jan 19, 2026',
+      projectName: 'OpenAPI Initiative',
+      termName: 'Spring 2026',
+      lastTaskUpdatedOn: 'Nov 8, 2025',
+      decidedOn: 'Jan 19, 2026',
       outcome: 'not-selected',
     },
   ],
@@ -329,20 +338,17 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
   phase: 'accepted',
   openTaskCount: 3,
   program: {
-    id: 'prog_gridflow',
+    id: 'app_gridflow',
+    programId: 'prog_gridflow',
     projectName: 'LF Energy',
     programName: 'GridFlow: Time-Series Ingestion Pipeline',
     tasksCompleted: 7,
     tasksTotal: 12,
-    mentor: {
-      name: 'Priya Raman',
-      role: 'Maintainer',
-      org: 'LF Energy',
-    },
+    mentors: [{ name: 'Priya Raman' }, { name: 'Sarah Chen' }],
     upNextTasks: [
-      { id: 'unt_1', title: 'Implement replay from durable buffer', status: 'in-progress', dueDate: 'Sep 18' },
-      { id: 'unt_2', title: 'Benchmark 1M points per minute', status: 'pending', dueDate: 'Sep 25' },
-      { id: 'unt_3', title: 'Write contributor onboarding doc', status: 'pending', dueDate: 'Oct 2' },
+      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: 'Sep 18' },
+      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: 'Sep 25' },
+      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: 'Oct 2' },
     ],
   },
 };

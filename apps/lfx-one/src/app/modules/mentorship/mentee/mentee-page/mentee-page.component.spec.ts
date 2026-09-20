@@ -143,7 +143,9 @@ describe('MenteePageComponent', () => {
 
   it('does not show a task count badge for the empty phase', async () => {
     await bootstrap();
-    expect(element().querySelectorAll('.rounded-full.bg-primary-100').length).toBe(0);
+    const tabs = tabButtons();
+    const hasOpenText = tabs.some((btn) => btn.textContent?.includes('open'));
+    expect(hasOpenText).toBe(false);
   });
 
   it('shows the open task count badge on the tasks tab', async () => {
@@ -151,8 +153,8 @@ describe('MenteePageComponent', () => {
     component.onPhaseChange('applicant');
     component.onOpenTaskCountChange(3);
     fixture.detectChanges();
-    const badge = element().querySelector('.rounded-full.bg-primary-100');
-    expect(badge?.textContent?.trim()).toBe('3');
+    const tasksTab = tabButtons().find((btn) => btn.textContent?.includes('Application Tasks'));
+    expect(tasksTab?.textContent).toContain('3 open');
   });
 
   // ---- Find a Program visibility --------------------------------------------

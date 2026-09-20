@@ -8,6 +8,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
+import { TableComponent } from '@components/table/table.component';
 import {
   EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE,
   MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL,
@@ -32,7 +33,7 @@ import {
   MENTORSHIP_MENTEE_VIEW_TASKS_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY,
-  MENTORSHIP_MENTEE_YOUR_MENTOR_LABEL,
+  MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplication,
@@ -60,7 +61,7 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass],
+  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -100,7 +101,7 @@ export class MenteeOverviewComponent {
   protected readonly withdrawLabel = MENTORSHIP_MENTEE_WITHDRAW_LABEL;
   protected readonly pastApplicationsTitle = MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE;
   protected readonly activeBadgeLabel = MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL;
-  protected readonly yourMentorLabel = MENTORSHIP_MENTEE_YOUR_MENTOR_LABEL;
+  protected readonly yourMentorsLabel = MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL;
   protected readonly upNextTitle = MENTORSHIP_MENTEE_UP_NEXT_TITLE;
   protected readonly allTasksLabel = MENTORSHIP_MENTEE_ALL_TASKS_LABEL;
 
