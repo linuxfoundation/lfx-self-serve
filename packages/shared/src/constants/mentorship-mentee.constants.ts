@@ -199,7 +199,10 @@ export const MENTORSHIP_MENTEE_EMPTY_SUBTITLE =
 
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX = 'applications under review';
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY =
-  'Program admins review submissions after the application window closes. Finish the prerequisite tasks to be considered. You can hold three applications at a time and you are at the limit \u2014 withdraw one before you apply to another program.';
+  'Program admins review submissions after the application window closes. Finish the prerequisite tasks to be considered.';
+export const MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX =
+  ' You can hold three applications at a time and you are at the limit \u2014 withdraw one before you apply to another program.';
+export const MENTORSHIP_MENTEE_APPLICATION_LIMIT = 3;
 
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMenteeApplicationStatus, string> = {
   'in-progress': 'In Progress',
@@ -229,6 +232,8 @@ export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
 export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY = 'Coming Soon';
 export const MENTORSHIP_MENTEE_WITHDRAW_TOAST_DETAIL = 'Withdraw will be available once the backend endpoint is live.';
 export const MENTORSHIP_MENTEE_VIEW_TASKS_LABEL = 'View Tasks';
+export const MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY = 'Coming Soon';
+export const MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY = 'Coming Soon';
 export const MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE = 'Past Applications';
 
 // ---------------------------------------------------------------------------
@@ -349,9 +354,9 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
       { id: 'mentor_2', name: 'Test Mentor B' },
     ],
     upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18' },
-      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25' },
-      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02' },
+      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18T00:00:00Z' },
+      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25T00:00:00Z' },
+      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02T00:00:00Z' },
     ],
   },
 };
@@ -371,37 +376,37 @@ const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
     title: 'Complete onboarding checklist',
     description: 'Set up your dev environment and review the contributor guide.',
     status: 'completed',
-    dueDate: '2026-09-15',
-    submittedDate: '2026-09-12',
+    dueDate: '2026-09-15T00:00:00Z',
+    submittedDate: '2026-09-12T00:00:00Z',
   },
   {
     id: 'mt_2',
     title: 'First contribution PR',
     description: 'Submit your first pull request to the project repository.',
     status: 'submitted',
-    dueDate: '2026-09-30',
-    submittedDate: '2026-09-28',
+    dueDate: '2026-09-30T00:00:00Z',
+    submittedDate: '2026-09-28T00:00:00Z',
   },
   {
     id: 'mt_3',
     title: 'Write a design document',
     description: 'Document the architecture for the ingestion pipeline feature.',
     status: 'in-progress',
-    dueDate: '2026-10-15',
+    dueDate: '2026-10-15T00:00:00Z',
   },
   {
     id: 'mt_4',
     title: 'Implement time-series parser',
     description: 'Build the core parser module for time-series data.',
     status: 'pending',
-    dueDate: '2026-10-30',
+    dueDate: '2026-10-30T00:00:00Z',
   },
   {
     id: 'mt_5',
     title: 'Final project presentation',
     description: 'Present your completed work to the mentors and community.',
     status: 'pending',
-    dueDate: '2026-11-20',
+    dueDate: '2026-11-20T00:00:00Z',
   },
 ];
 

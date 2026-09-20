@@ -225,4 +225,17 @@ describe('MenteeOverviewComponent', () => {
     component['onWithdraw'](app);
     expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
   });
+
+  it('calls comingSoonService.notify on view tasks', async () => {
+    await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
+    const app = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0];
+    component['onViewTasks'](app);
+    expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
+  });
+
+  it('calls comingSoonService.notify on all tasks', async () => {
+    await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED);
+    component['onAllTasks']();
+    expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
+  });
 });

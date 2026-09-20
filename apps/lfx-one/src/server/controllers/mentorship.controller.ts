@@ -232,7 +232,13 @@ export class MentorshipController {
       }
 
       const rawPhase = parseTrimmedString(req.query['phase']);
-      const phase = rawPhase === 'empty' || rawPhase === 'applicant' || rawPhase === 'accepted' ? rawPhase : undefined;
+      const validPhases = ['empty', 'applicant', 'accepted'] as const;
+      if (rawPhase !== undefined && !validPhases.includes(rawPhase as (typeof validPhases)[number])) {
+        throw ServiceValidationError.forField('phase', `phase must be one of: ${validPhases.join(', ')}`, {
+          operation: 'get_mentorship_mentee_overview',
+        });
+      }
+      const phase = rawPhase as (typeof validPhases)[number] | undefined;
       const overview = await this.mentorshipService.getMenteeOverview(req, phase);
       logger.success(req, 'get_mentorship_mentee_overview', startTime, { phase: overview.phase });
       res.json(overview);

@@ -16,6 +16,8 @@ import {
   MENTORSHIP_MENTEE_ALL_TASKS_LABEL,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX,
+  MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX,
+  MENTORSHIP_MENTEE_APPLICATION_LIMIT,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL,
@@ -33,8 +35,10 @@ import {
   MENTORSHIP_MENTEE_UP_NEXT_TITLE,
   MENTORSHIP_MENTEE_VIEW_TASKS_LABEL,
   MENTORSHIP_MENTEE_WITHDRAW_LABEL,
+  MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY,
   MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY,
   MENTORSHIP_MENTEE_YOUR_MENTORS_LABEL,
+  MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeApplication,
@@ -97,7 +101,12 @@ export class MenteeOverviewComponent {
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
   protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
   protected readonly bannerTitleSuffix = MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX;
-  protected readonly bannerBody = MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY;
+
+  /** Conditionally appends the application-limit sentence when the user has reached the limit. */
+  protected readonly bannerBody = computed(() => {
+    const base = MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY;
+    return this.applicationCount() >= MENTORSHIP_MENTEE_APPLICATION_LIMIT ? base + MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX : base;
+  });
   protected readonly viewTasksLabel = MENTORSHIP_MENTEE_VIEW_TASKS_LABEL;
   protected readonly withdrawLabel = MENTORSHIP_MENTEE_WITHDRAW_LABEL;
   protected readonly pastApplicationsTitle = MENTORSHIP_MENTEE_PAST_APPLICATIONS_TITLE;
@@ -148,9 +157,18 @@ export class MenteeOverviewComponent {
 
   // -- Actions ----------------------------------------------------------------
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- app param reserved for real task navigation
+  protected onViewTasks(_app: MentorshipMenteeApplication): void {
+    this.comingSoonService.notify(MENTORSHIP_MENTEE_VIEW_TASKS_TOAST_SUMMARY);
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- app param reserved for real withdraw API
   protected onWithdraw(_app: MentorshipMenteeApplication): void {
     this.comingSoonService.notify(MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY);
+  }
+
+  protected onAllTasks(): void {
+    this.comingSoonService.notify(MENTORSHIP_MENTEE_ALL_TASKS_TOAST_SUMMARY);
   }
 
   /** Dev shortcut: switch to a different phase. */

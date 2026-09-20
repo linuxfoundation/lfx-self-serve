@@ -62,7 +62,7 @@
           <!-- Banner text -->
           <div class="flex flex-1 flex-col gap-1">
             <p class="text-sm font-semibold text-gray-900">{{ applicationCount() }} {{ bannerTitleSuffix }}</p>
-            <p class="text-sm text-gray-500">{{ bannerBody }}</p>
+            <p class="text-sm text-gray-500">{{ bannerBody() }}</p>
           </div>
           <!-- Banner actions -->
           <div class="flex shrink-0 items-center gap-4">
@@ -130,7 +130,8 @@
               <button
                 type="button"
                 data-testid="mentee-overview-view-tasks"
-                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                (click)="onViewTasks(app)">
                 {{ viewTasksLabel }}
               </button>
               <button
@@ -251,7 +252,7 @@
           <div class="rounded-xl border border-gray-200 bg-white px-6 pb-2 pt-5">
             <div class="flex items-center justify-between">
               <h3 class="text-base font-semibold text-gray-900">{{ upNextTitle }}</h3>
-              <button type="button" data-testid="mentee-overview-all-tasks" class="text-sm font-medium text-primary-600 hover:underline">
+              <button type="button" data-testid="mentee-overview-all-tasks" class="text-sm font-medium text-primary-600 hover:underline" (click)="onAllTasks()">
                 {{ allTasksLabel }}
               </button>
             </div>
@@ -264,7 +265,8 @@
                     {{ upNextStatusLabel(task.status) }}
                   </span>
                   <span class="text-sm text-gray-700">{{ task.name }}</span>
-                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate | date: 'MMM d, y' }}</span>
+                  <!-- Format in UTC to prevent date-only values from shifting a day in western timezones -->
+                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate | date: 'MMM d, y' : 'UTC' }}</span>
                 </div>
               }
             </div>
