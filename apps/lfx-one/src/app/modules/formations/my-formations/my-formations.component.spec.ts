@@ -189,7 +189,7 @@ describe('MyFormationsComponent (#2753)', () => {
     await settle(fixture);
     expect(rowIds(fixture)).toEqual(['my-formations-row-cascade']);
 
-    (fixture.componentInstance as unknown as { resetFilters: () => void }).resetFilters();
+    fixture.componentInstance['resetFilters']();
     await settle(fixture);
     expect(rowIds(fixture)).toHaveLength(2);
     expect(search.value).toBe('');
@@ -206,24 +206,24 @@ describe('MyFormationsComponent (#2753)', () => {
         Array.from({ length: 12 }, (_, i) => formation({ formation_uid: `f-${i}`, project_name: `Project ${i}`, sub_stage: i < 6 ? 'engaged' : 'exploratory' }))
       )
     );
-    const component = fixture.componentInstance as unknown as { first: { (): number; set: (v: number) => void }; onPage: (e: { first?: number }) => void };
+    const component = fixture.componentInstance;
 
     // Land on page 2, as the paginator would report it.
-    component.onPage({ first: 10 });
-    expect(component.first()).toBe(10);
+    component['onPage']({ first: 10, rows: 10 });
+    expect(component['first']()).toBe(10);
 
     (byTestId(fixture, 'filter-pill-engaged') as HTMLButtonElement).click();
     await settle(fixture);
 
-    expect(component.first()).toBe(0);
+    expect(component['first']()).toBe(0);
     expect(rowIds(fixture)).toHaveLength(6);
 
-    component.onPage({ first: 10 });
-    fixture.componentInstance.searchForm.controls.search.setValue('Project 1');
+    component['onPage']({ first: 10, rows: 10 });
+    component.searchForm.controls.search.setValue('Project 1');
     await new Promise((resolve) => setTimeout(resolve, 250));
     await settle(fixture);
 
-    expect(component.first()).toBe(0);
+    expect(component['first']()).toBe(0);
   });
 
   it('shows the in-card "No results" state with a Reset that restores every row', async () => {

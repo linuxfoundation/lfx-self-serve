@@ -15,6 +15,7 @@ import { FORMATION_CHECKLIST_PATH, FORMATION_STAGE_TAB_OPTIONS } from '@lfx-one/
 import type { DecoratedMyFormation, FilterPillOption, MyFormationWorkResponse } from '@lfx-one/shared/interfaces';
 import { compareMyFormationsByNeed, decorateMyFormation } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
+import type { TablePageEvent } from 'primeng/table';
 import { debounceTime, tap } from 'rxjs';
 
 /**
@@ -105,8 +106,8 @@ export class MyFormationsComponent {
     this.stageTab.set(tab);
   }
 
-  protected onPage(event: { first?: number }): void {
-    this.first.set(event.first ?? 0);
+  protected onPage(event: TablePageEvent): void {
+    this.first.set(event.first);
   }
 
   // The signal is set directly so the table clears now rather than after the debounce; the form reset
