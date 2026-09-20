@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, TitleCasePipe } from '@angular/common';
-import { Component, DestroyRef, Signal, computed, inject, input, output, signal } from '@angular/core';
+import { DecimalPipe, TitleCasePipe, isPlatformBrowser, isPlatformServer } from '@angular/common';
+import { Component, DestroyRef, PLATFORM_ID, Signal, TransferState, computed, inject, input, makeStateKey, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AKRITES_TRIAGE_COLUMNS, lfxColors } from '@lfx-one/shared/constants';
 import {
@@ -10,6 +10,7 @@ import {
   AkritesPackage,
   AkritesSortKey,
   AkritesTriageBoardColumnConfig,
+  AkritesTriageBoardPageState,
   AkritesTriageColumnState,
   AkritesTriagePackageVM,
   AkritesTriageStatus,
@@ -17,7 +18,7 @@ import {
 import { AkritesService } from '@shared/services/akrites.service';
 import { ProjectContextService } from '@shared/services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { catchError, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
+import { catchError, forkJoin, map, of, startWith, switchMap, take, tap } from 'rxjs';
 import { AkritesAssignStewardModalComponent } from '../akrites-assign-steward-modal/akrites-assign-steward-modal.component';
 
 @Component({
@@ -30,6 +31,12 @@ export class AkritesTriageTabComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly transferState = inject(TransferState);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  // Persists the SSR-resolved board so the client's first paint matches the server DOM instead
+  // of tearing it down at hydration (GH-2080). Same pattern as `PublicProjectGroupsComponent`.
+  private readonly stateKey = makeStateKey<AkritesTriageBoardPageState>('akritesTriageBoardState');
 
   public readonly reloadTrigger = input<number>(0);
   public readonly sortBy = input<AkritesSortKey>('risk');
@@ -38,25 +45,19 @@ export class AkritesTriageTabComponent {
   public readonly stewardshipChanged = output<void>();
 
   protected readonly TRIAGE_COLUMNS = AKRITES_TRIAGE_COLUMNS;
-  protected readonly loading = signal(true);
   protected readonly actionLoading = signal(false);
   protected readonly assignModalVisible = signal(false);
   protected readonly assignTargetPackage = signal<AkritesTriagePackageVM | null>(null);
   protected readonly canWrite = computed(() => this.projectContextService.canWrite());
 
-  protected readonly boardData = this.initBoardData();
-
-  /** Keyed lookup so the template avoids per-cycle method calls. */
-  protected readonly columnStates = computed<Record<AkritesTriageStatus, AkritesTriageColumnState>>(() => {
-    const empty: AkritesTriageColumnState = { packages: [], total: 0, loading: true, error: false };
-    const data = this.boardData();
-    if (!data) return Object.fromEntries(AKRITES_TRIAGE_COLUMNS.map((c) => [c.status, empty])) as Record<AkritesTriageStatus, AkritesTriageColumnState>;
-    return data;
-  });
+  // Single source of truth for the async board; loading/boardData derive from it.
+  private readonly boardState = this.initBoardState();
+  protected readonly loading = computed(() => this.boardState().loading);
+  protected readonly boardData = computed(() => this.boardState().board);
 
   protected readonly allColumnsEmpty = computed(() => {
     const data = this.boardData();
-    if (data === undefined) return false;
+    if (!data) return false;
     return AKRITES_TRIAGE_COLUMNS.every((col) => {
       const state = data[col.status];
       if (!state || state.error) return false;
@@ -160,30 +161,50 @@ export class AkritesTriageTabComponent {
     return vulnSeverity ? (colors[vulnSeverity] ?? lfxColors.gray[400]) : lfxColors.gray[400];
   }
 
-  private initBoardData(): Signal<Record<AkritesTriageStatus, AkritesTriageColumnState> | undefined> {
+  private initBoardState(): Signal<AkritesTriageBoardPageState> {
+    const initial: AkritesTriageBoardPageState = { loading: true, board: null };
+    // Seed the client's first paint from the SSR-serialized state (matches the server's resolved
+    // branch, no skeleton flash). Null on the server and on client navigations with no prior SSR state.
+    const transferred = this.transferState.get(this.stateKey, null);
+    // Consume the SSR state exactly once so a later re-creation of this component (e.g. a different
+    // project context) can't paint the previous board under the new URL.
+    if (isPlatformBrowser(this.platformId) && transferred) {
+      this.transferState.remove(this.stateKey);
+    }
+
     const source = computed(() => ({ reload: this.reloadTrigger(), sort: this.sortBy() }));
     return toSignal(
       toObservable(source).pipe(
-        tap(() => this.loading.set(true)),
-        switchMap(({ sort }) => {
+        switchMap(({ sort }, index) => {
           const requests = AKRITES_TRIAGE_COLUMNS.map((col) =>
             this.akritesService.getPackages({ status: col.status, pageSize: 50, sortBy: sort }).pipe(
               map((res) => ({ status: col.status, packages: (res.packages ?? []).map((p) => this.toVM(p)), total: res.total ?? 0, error: false })),
               catchError(() => of({ status: col.status, packages: [] as AkritesTriagePackageVM[], total: 0, error: true }))
             )
           );
-          return forkJoin(requests);
+          return forkJoin(requests).pipe(
+            map((results): AkritesTriageBoardPageState => {
+              const board: Partial<Record<AkritesTriageStatus, AkritesTriageColumnState>> = {};
+              for (const r of results) {
+                board[r.status as AkritesTriageStatus] = { packages: r.packages, total: r.total, loading: false, error: r.error };
+              }
+              return { loading: false, board: board as Record<AkritesTriageStatus, AkritesTriageColumnState> };
+            }),
+            // During SSR, persist each resolved (non-loading) state so the client can hydrate to the
+            // same branch. Angular defers serialization until this tracked HTTP call settles.
+            tap((state) => {
+              if (isPlatformServer(this.platformId) && !state.loading) {
+                this.transferState.set(this.stateKey, state);
+              }
+            }),
+            // Seed the first client emission from the SSR state to avoid a loading flash and a
+            // hydration mismatch; every later fetch (sort/reload) re-enters loading.
+            startWith(index === 0 && transferred ? transferred : initial)
+          );
         }),
-        map((results) => {
-          const data: Partial<Record<AkritesTriageStatus, AkritesTriageColumnState>> = {};
-          for (const r of results) {
-            data[r.status as AkritesTriageStatus] = { packages: r.packages, total: r.total, loading: false, error: r.error };
-          }
-          return data as Record<AkritesTriageStatus, AkritesTriageColumnState>;
-        }),
-        tap(() => this.loading.set(false)),
         takeUntilDestroyed(this.destroyRef)
-      )
+      ),
+      { initialValue: transferred ?? initial }
     );
   }
 }

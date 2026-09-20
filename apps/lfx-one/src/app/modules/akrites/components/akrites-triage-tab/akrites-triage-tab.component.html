@@ -27,13 +27,10 @@
       </div>
     }
   </div>
-}
-
-<!-- Board -->
-@if (!loading() && boardData() !== undefined) {
+} @else if (boardData(); as board) {
   <div class="flex gap-3.5 overflow-x-auto pb-2" data-testid="akrites-triage-board">
     @for (col of TRIAGE_COLUMNS; track col.status) {
-      @let state = columnStates()[col.status];
+      @let state = board[col.status];
       <div
         class="flex-1 min-w-[240px] max-w-[320px] border border-gray-200 rounded-[14px] p-3 flex flex-col gap-2.5"
         [style.background]="'linear-gradient(180deg, ' + col.color + '12 0%, #fff 38%)'"
