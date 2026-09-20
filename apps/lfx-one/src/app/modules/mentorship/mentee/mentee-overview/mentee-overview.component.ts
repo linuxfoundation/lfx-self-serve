@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
+import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, EventEmitter, inject, Output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -9,6 +9,7 @@ import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { TableComponent } from '@components/table/table.component';
+import { InitialsPipe } from '@pipes/initials.pipe';
 import {
   EMPTY_MENTORSHIP_MENTEE_OVERVIEW_RESPONSE,
   MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL,
@@ -54,14 +55,14 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
  *
  * 1. **Empty** — no applications; CTA to browse programs
  * 2. **Applicant** — active application cards + past applications table
- * 3. **Accepted** — active program card with mentor + "Up Next" tasks
+ * 3. **Accepted** — active program card with mentors + "Up Next" tasks
  *
  * Emits `phaseChange` and `openTaskCountChange` so the parent shell can
  * update its tab bar.
  */
 @Component({
   selector: 'lfx-mentorship-mentee-overview',
-  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent],
+  imports: [EmptyStateComponent, RouteLoadingComponent, NgClass, TableComponent, DatePipe, InitialsPipe],
   templateUrl: './mentee-overview.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

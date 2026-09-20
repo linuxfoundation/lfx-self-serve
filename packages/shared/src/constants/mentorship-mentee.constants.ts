@@ -221,8 +221,8 @@ export const MENTORSHIP_MENTEE_PAST_OUTCOME_LABELS: Record<MentorshipMenteePastO
 export const MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES: Record<MentorshipMenteePastOutcome, string> = {
   'not-selected': 'bg-red-100 text-red-600',
   withdrawn: 'bg-gray-100 text-gray-600',
-  accepted: 'bg-green-100 text-green-700',
-  graduated: 'bg-green-100text-green-700',
+  accepted: 'bg-emerald-100 text-emerald-700',
+  graduated: 'bg-emerald-100 text-emerald-700',
 };
 
 export const MENTORSHIP_MENTEE_WITHDRAW_LABEL = 'Withdraw';
@@ -344,11 +344,11 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
     programName: 'GridFlow: Time-Series Ingestion Pipeline',
     tasksCompleted: 7,
     tasksTotal: 12,
-    mentors: [{ name: 'Priya Raman' }, { name: 'Sarah Chen' }],
+    mentors: [{ name: 'Test Mentor A' }, { name: 'Test Mentor B' }],
     upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: 'Sep 18' },
-      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: 'Sep 25' },
-      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: 'Oct 2' },
+      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18' },
+      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25' },
+      { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02' },
     ],
   },
 };

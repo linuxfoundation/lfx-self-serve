@@ -89,7 +89,7 @@
                 </span>
               </div>
               <p class="text-sm font-semibold text-gray-900">{{ app.programName }}</p>
-              <p class="text-xs text-gray-400">Submitted {{ app.lastTaskUpdatedOn }} · Decision expected {{ app.decisionExpectedDate }}</p>
+              <p class="text-xs text-gray-400">Last updated {{ app.lastTaskUpdatedOn }} · Decision expected {{ app.decisionExpectedDate }}</p>
             </div>
             <!-- Prerequisite tasks + actions -->
             <div class="flex shrink-0 items-center gap-4">
@@ -135,7 +135,7 @@
               <ng-template #header>
                 <tr>
                   <th class="w-[40%] px-4 py-3 !text-sm !font-medium !text-gray-500">Program</th>
-                  <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-500">Submitted</th>
+                  <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-500">Last Updated</th>
                   <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-500">Decided</th>
                   <th class="w-[20%] px-4 py-3 !text-sm !font-medium !text-gray-500">Outcome</th>
                 </tr>
@@ -154,12 +154,6 @@
                       {{ pastOutcomeLabel(past.outcome) }}
                     </span>
                   </td>
-                </tr>
-              </ng-template>
-
-              <ng-template #emptymessage>
-                <tr>
-                  <td colspan="4" class="px-4 py-10 text-center text-sm text-gray-500">No past applications.</td>
                 </tr>
               </ng-template>
             </lfx-table>
@@ -207,13 +201,13 @@
           <div class="mt-6 border-t border-gray-100 pt-5">
             <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{{ yourMentorsLabel }}</p>
             <div class="mt-3 flex flex-wrap gap-3">
-              @for (mentor of data.program.mentors; track mentor.name) {
+              @for (mentor of data.program.mentors; track $index) {
                 <div class="flex items-center gap-3">
                   @if (mentor.avatarUrl) {
                     <img [src]="mentor.avatarUrl" [alt]="mentor.name" class="h-10 w-10 rounded-full object-cover" />
                   } @else {
-                    <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium lowercase text-primary-700">
-                      {{ mentor.name.charAt(0) }}
+                    <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
+                      {{ mentor.name | initials: 1 }}
                     </div>
                   }
                   <span class="text-sm font-semibold text-gray-900">{{ mentor.name }}</span>
@@ -239,7 +233,7 @@
                     {{ upNextStatusLabel(task.status) }}
                   </span>
                   <span class="text-sm text-gray-700">{{ task.name }}</span>
-                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate }}</span>
+                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate | date: 'MMM d' }}</span>
                 </div>
               }
             </div>
