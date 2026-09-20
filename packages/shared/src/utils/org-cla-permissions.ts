@@ -17,18 +17,17 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
 }
 
 /**
- * The project/foundation half of an ACS `project|organization` pair, matching how Sign already
- * chooses `projectSfid`: foundation when the CLA Group is foundation-level, otherwise the sole
- * covered project. Ambiguous coverage (several projects, no foundation id) yields nothing so the
- * caller can fail closed rather than guess.
+ * The project/foundation half of an ACS `project|organization` pair, matching
+ * `resolveApprovalContext`: first covered project SFID, else foundation. A parent foundation id
+ * is ancestry, not grain — signing grants `cla-manager` on mapped projects, not the parent.
+ * Yields nothing only when there is no project id and no foundation id, so the caller can hide Add.
  */
 export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects'>): string | undefined {
-  const foundation = group.foundationSfid?.trim();
-  if (foundation) return foundation;
+  const covered = group.projects.find((project) => !!project.projectSfid?.trim())?.projectSfid?.trim();
+  if (covered) return covered;
 
-  if (group.projects.length !== 1) return undefined;
-  const only = group.projects[0]?.projectSfid?.trim();
-  return only || undefined;
+  const foundation = group.foundationSfid?.trim();
+  return foundation || undefined;
 }
 
 export function buildOrgClaAcsPermission(input: { action: OrgClaPermissionAction; projectOrFoundationSfid: string; companySfid: string }): string {

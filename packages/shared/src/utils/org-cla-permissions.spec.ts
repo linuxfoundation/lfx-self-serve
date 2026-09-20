@@ -19,15 +19,27 @@ describe('isOrgClaPermissionAction', () => {
 });
 
 describe('orgClaPairProjectSfid', () => {
-  it('prefers the foundation id when the CLA Group is foundation-level', () => {
-    expect(orgClaPairProjectSfid({ foundationSfid: PROJECT, projects: [{ projectSfid: 'other', projectName: 'Cascade' }] })).toBe(PROJECT);
+  it('uses the foundation id when there are no covered projects', () => {
+    expect(orgClaPairProjectSfid({ foundationSfid: PROJECT, projects: [] })).toBe(PROJECT);
+  });
+
+  it('uses the first covered project even when a parent foundation id is also present', () => {
+    expect(
+      orgClaPairProjectSfid({
+        foundationSfid: 'a09410000182dFOUND',
+        projects: [
+          { projectSfid: PROJECT, projectName: 'Cascade' },
+          { projectSfid: 'a09410000182dD3AAI', projectName: 'Driftwood' },
+        ],
+      })
+    ).toBe(PROJECT);
   });
 
   it('uses the sole covered project when there is no foundation id', () => {
     expect(orgClaPairProjectSfid({ projects: [{ projectSfid: PROJECT, projectName: 'Cascade' }] })).toBe(PROJECT);
   });
 
-  it('yields nothing when several projects are covered without a foundation id', () => {
+  it('uses the first covered project when several are listed without a foundation id', () => {
     expect(
       orgClaPairProjectSfid({
         projects: [
@@ -35,7 +47,12 @@ describe('orgClaPairProjectSfid', () => {
           { projectSfid: 'a09410000182dD3AAI', projectName: 'Driftwood' },
         ],
       })
-    ).toBeUndefined();
+    ).toBe(PROJECT);
+  });
+
+  it('yields nothing when there is no project id and no foundation id', () => {
+    expect(orgClaPairProjectSfid({ projects: [] })).toBeUndefined();
+    expect(orgClaPairProjectSfid({ foundationSfid: '   ', projects: [{ projectSfid: '  ', projectName: 'Blank' }] })).toBeUndefined();
   });
 });
 
