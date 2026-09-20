@@ -358,15 +358,23 @@ export async function gotoProjectFormationItem(page: Page, slug: string, itemKey
 }
 
 /**
- * One mocked project in the **Project** lens so the selector resolves on `/project/*` pages — the
- * project-lens counterpart of `stubNavLensItems`. Also stubs the sfid lookup `ProjectContextService`
- * fires for the selected context. Shared by the formation-sidebar spec pair (#2754).
+ * The given projects in the **Project** lens so the selector resolves on `/project/*` pages (and can
+ * switch between them) — the project-lens counterpart of `stubNavLensItems`. Also stubs the sfid
+ * lookup `ProjectContextService` fires for the selected context. Shared by the formation-sidebar
+ * spec pair (#2754).
  */
-export async function stubProjectLensItems(page: Page, project: Pick<Project, 'uid' | 'slug' | 'name'>): Promise<void> {
-  const item: LensItem = { uid: project.uid, slug: project.slug, name: project.name, logoUrl: null, isFoundation: false, formationSubStage: null };
+export async function stubProjectLensItems(page: Page, ...projects: Pick<Project, 'uid' | 'slug' | 'name'>[]): Promise<void> {
+  const lensItems: LensItem[] = projects.map((project) => ({
+    uid: project.uid,
+    slug: project.slug,
+    name: project.name,
+    logoUrl: null,
+    isFoundation: false,
+    formationSubStage: null,
+  }));
   await page.route('**/api/nav/lens-items*', (route) => {
     const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'project';
-    const items = requestedLens === 'project' ? [item] : [];
+    const items = requestedLens === 'project' ? lensItems : [];
     return route.fulfill({
       status: 200,
       contentType: 'application/json',

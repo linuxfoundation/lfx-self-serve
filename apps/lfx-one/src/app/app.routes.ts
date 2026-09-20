@@ -244,11 +244,15 @@ export const routes: Routes = [
       },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now). A project in a
       // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
-      // so its redirect wins over `projectQueryParamGuard` (#2754).
+      // so its redirect wins over `projectQueryParamGuard` (#2754). The guards must also re-run when
+      // only `?project=` changes — the project selector re-enters the lens that way while already on
+      // this route (`SidebarComponent.redirectOnContextSwitch`), and the default `paramsChange`
+      // policy would let that navigation complete without re-deciding the landing page.
       {
         path: 'project/overview',
         title: 'Project Dashboard',
         data: { lens: 'project' },
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
         canActivate: [formationOverviewRedirectGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },

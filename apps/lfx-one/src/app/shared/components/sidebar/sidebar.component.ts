@@ -10,7 +10,15 @@ import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { MY_CLAS_ENABLED_FLAG, OPEN_PROFILE_BANNER_LINK_CLICKED, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_PATH,
+  LENS_DEFAULT_ROUTES,
+  MY_CLAS_ENABLED_FLAG,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  ORG_LENS_ENABLED_FLAG,
+  PERSONA_OPTIONS,
+  PERSONA_PRIORITY,
+} from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -214,7 +222,8 @@ export class SidebarComponent {
   }
 
   // Keep the URL's lens prefix in sync with the selected context so a hard refresh restores it
-  // (syncLensFromRoute + projectQueryParamGuard). Redirect on lens-type change or off an entity page.
+  // (syncLensFromRoute + projectQueryParamGuard). Redirect on lens-type change, off an entity page,
+  // or off the Project lens landing/checklist pages (see `onLandingDecisionPage`).
   private redirectOnContextSwitch(projectSlug: string): void {
     const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
     const currentPrefix = segments[0];
@@ -226,7 +235,14 @@ export class SidebarComponent {
     const targetLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
     const lensTypeChanged = currentPrefix !== targetLens;
     const onEntityPage = segments.length === 3;
-    if (lensTypeChanged || onEntityPage) {
+    // The Project lens landing page is decided per project by `formationOverviewRedirectGuard`
+    // (#2754): a formation-stage project lands on its checklist, anything else on the dashboard. A
+    // same-lens switch otherwise keeps the page and only rewrites `?project=` (`Location.replaceState`,
+    // which never re-runs guards), so on the two pages that decision owns, re-enter the lens through
+    // a real navigation and let the guard choose again for the new project.
+    const currentPath = `/${segments.join('/')}`;
+    const onLandingDecisionPage = targetLens === 'project' && (currentPath === LENS_DEFAULT_ROUTES.project || currentPath === FORMATION_CHECKLIST_PATH);
+    if (lensTypeChanged || onEntityPage || onLandingDecisionPage) {
       this.router.navigate([`/${targetLens}`, 'overview'], { queryParams: { project: projectSlug } });
     }
   }
