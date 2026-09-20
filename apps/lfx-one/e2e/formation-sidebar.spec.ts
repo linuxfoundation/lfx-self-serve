@@ -99,6 +99,13 @@ test.describe('Project lens sidebar for a formation-stage project (#2754)', () =
       await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
       await expect(sidebarLink(page, 'Formation')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       await expect(sidebarLink(page, 'Dashboard')).toHaveCount(0);
+
+      // The page the user came from must survive as its own history entry (Bugbot on #2757): Back
+      // returns to the active project's dashboard rather than to a URL the guards bounce forward.
+      await page.goBack({ waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(new RegExp(`/project/overview\\?project=${ACTIVE_PROJECT_SLUG}`), { timeout: SIDEBAR_LOAD_TIMEOUT });
+      await expect(sidebarLink(page, 'Dashboard')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+      await expect(sidebarLink(page, 'Formation')).toHaveCount(0);
     });
 
     test('from a forming project back to an active one lands on the dashboard with the usual links', async ({ page }) => {

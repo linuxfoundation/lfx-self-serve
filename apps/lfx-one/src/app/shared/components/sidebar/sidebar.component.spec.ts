@@ -144,7 +144,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
 
       selectItem(sidebar, betaItem);
 
-      expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }));
+      expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), false);
       expect(navigate).toHaveBeenCalledWith(['/project', 'overview'], { queryParams: { project: 'beta' } });
     }
   );
@@ -154,7 +154,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
 
     selectItem(sidebar, betaItem);
 
-    expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }));
+    expect(setProject).toHaveBeenCalledWith(expect.objectContaining({ slug: 'beta' }), true);
     expect(navigate).not.toHaveBeenCalled();
   });
 });
