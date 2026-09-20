@@ -70,7 +70,7 @@ export class PendingActionsComponent {
 
   protected readonly buttonIcons = PENDING_ACTION_BUTTON_ICON;
   protected readonly typeLabels = PENDING_ACTION_LABEL;
-  /** GH-1956 — mirrors the flag gate on `lfx-my-formations-card` / the "In formation" tile so a
+  /** GH-1956 — mirrors the flag gate on the "In formation" tile (and the My Formations route, #2753) so a
    *  user with the flag off never sees FormationItem rows here either, even though the server
    *  aggregator itself is unflagged (see `FORMATION_ENABLED_FLAG`'s doc comment). */
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
