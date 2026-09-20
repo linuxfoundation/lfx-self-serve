@@ -1,0 +1,65 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="org-easycla-add-manager-dialog">
+  <p class="text-sm text-gray-600 m-0">{{ copy.addDialogIntro }}</p>
+
+  <div class="flex flex-col gap-2">
+    <label for="org-easycla-add-manager-first-name" class="text-sm font-medium text-gray-700">First name</label>
+    <lfx-input-text
+      [form]="form"
+      control="firstName"
+      inputId="org-easycla-add-manager-first-name"
+      autocomplete="given-name"
+      [maxlength]="nameMaxLength"
+      [invalid]="!!firstNameError()"
+      [describedBy]="firstNameError() ? 'org-easycla-add-manager-first-name-error' : undefined"
+      dataTest="org-easycla-add-manager-first-name" />
+    @if (firstNameError()) {
+      <p id="org-easycla-add-manager-first-name-error" role="alert" class="text-xs text-red-600 m-0" data-testid="org-easycla-add-manager-first-name-error">
+        {{ firstNameError() }}
+      </p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="org-easycla-add-manager-last-name" class="text-sm font-medium text-gray-700">Last name</label>
+    <lfx-input-text
+      [form]="form"
+      control="lastName"
+      inputId="org-easycla-add-manager-last-name"
+      autocomplete="family-name"
+      [maxlength]="nameMaxLength"
+      [invalid]="!!lastNameError()"
+      [describedBy]="lastNameError() ? 'org-easycla-add-manager-last-name-error' : undefined"
+      dataTest="org-easycla-add-manager-last-name" />
+    @if (lastNameError()) {
+      <p id="org-easycla-add-manager-last-name-error" role="alert" class="text-xs text-red-600 m-0" data-testid="org-easycla-add-manager-last-name-error">
+        {{ lastNameError() }}
+      </p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2">
+    <label for="org-easycla-add-manager-email" class="text-sm font-medium text-gray-700">Email address</label>
+    <lfx-input-text
+      [form]="form"
+      control="email"
+      type="email"
+      inputId="org-easycla-add-manager-email"
+      autocomplete="email"
+      [invalid]="!!emailError()"
+      [describedBy]="emailError() ? 'org-easycla-add-manager-email-error' : undefined"
+      dataTest="org-easycla-add-manager-email" />
+    @if (emailError()) {
+      <p id="org-easycla-add-manager-email-error" role="alert" class="text-xs text-red-600 m-0" data-testid="org-easycla-add-manager-email-error">
+        {{ emailError() }}
+      </p>
+    }
+  </div>
+
+  <div class="flex justify-end gap-2 pt-2">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="cancel()" data-testid="org-easycla-add-manager-cancel" />
+    <lfx-button label="Add" (onClick)="submit()" data-testid="org-easycla-add-manager-submit" />
+  </div>
+</div>

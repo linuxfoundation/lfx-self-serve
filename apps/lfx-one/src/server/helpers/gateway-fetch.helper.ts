@@ -20,6 +20,18 @@ export interface GatewayFetchOptions {
   bearerToken?: string;
   /** Suppresses upstream response bodies from logs and client-visible error metadata. */
   redactResponseBody?: boolean;
+  /**
+   * Keeps a non-OK upstream body out of the log while still attaching it to the thrown error, for
+   * the callers that must read a producer-authored refusal — the body is the only place that
+   * sentence exists, so `redactResponseBody` would discard it along with the message.
+   *
+   * Attaching is not the end of the story: `MicroserviceError#getLogContext` puts `errorBody` in
+   * the error handler's own log line. A caller using this owes it to drop the body once it has
+   * taken what it needs out, or the leak simply moves one layer up.
+   *
+   * Ignored when `redactResponseBody` is set, which discards the body outright.
+   */
+  redactResponseBodyFromLogs?: boolean;
 }
 
 /**
@@ -84,10 +96,11 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     const body = options.redactResponseBody
       ? await discardResponseBody(upstream.body)
       : (await upstream.text().catch(() => '')).slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const loggableBody = options.redactResponseBodyFromLogs ? undefined : body;
     const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      ...(body === undefined ? { body_redacted: true } : { body }),
+      ...(loggableBody === undefined ? { body_redacted: true } : { body: loggableBody }),
     };
 
     logger.warning(req, options.operation, 'Upstream returned non-OK response', logContext);
@@ -121,11 +134,18 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
     return JSON.parse(rawBody) as T;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    const truncatedBody = options.redactResponseBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
+    const withheldBody = options.redactResponseBody || options.redactResponseBodyFromLogs;
+    const truncatedBody = withheldBody ? undefined : rawBody.slice(0, UPSTREAM_ERROR_BODY_LIMIT);
     const logContext = {
       status: upstream.status,
       status_text: upstream.statusText,
-      ...(truncatedBody === undefined ? { body_redacted: true } : { body: truncatedBody, error: message }),
+      // Under redaction the parse message is withheld along with the body, because it quotes the
+      // body: V8 reports `Unexpected token 'S', "SECRET-VALUE" is not valid JSON`, so logging it
+      // would hand over the first of exactly the content being redacted. The exception name is
+      // safe — it is a class name — and still distinguishes a parse failure from anything else.
+      ...(truncatedBody === undefined
+        ? { body_redacted: true, error_name: error instanceof Error ? error.name : 'Error' }
+        : { body: truncatedBody, error: message }),
     };
 
     logger.warning(req, options.operation, 'Upstream returned invalid JSON response', logContext);

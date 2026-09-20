@@ -12,6 +12,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { UserService } from '@services/user.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -33,6 +34,9 @@ describe('OrgEasyclaDetailComponent', () => {
 
   const getClaGroups = vi.fn();
   const getPdfUrl = vi.fn();
+  const getManagers = vi.fn();
+  const addManager = vi.fn();
+  const removeManager = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
 
@@ -65,8 +69,9 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
-        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl } },
+        { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getManagers, addManager, removeManager } },
         { provide: MessageService, useValue: { add: addMessage } },
+        { provide: UserService, useValue: { viewerUsername: signal(null) } },
       ],
     }).compileComponents();
 
@@ -94,6 +99,8 @@ describe('OrgEasyclaDetailComponent', () => {
     paramMap.next(convertToParamMap({ signatureId: 'signature-uuid-1' }));
     getClaGroups.mockReset();
     getPdfUrl.mockReset();
+    getManagers.mockReset();
+    getManagers.mockReturnValue(of({ signatureId: 'signature-uuid-1', managers: [] }));
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup()] }));
     getPdfUrl.mockReturnValue(of({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 }));
     addMessage.mockReset();
@@ -212,7 +219,7 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-download')).toBeNull();
   });
 
-  it('opens Overview by default and leaves other tabs empty', async () => {
+  it('opens Overview by default and fills the Managers tab, leaving the rest empty', async () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeTruthy();
@@ -221,8 +228,23 @@ describe('OrgEasyclaDetailComponent', () => {
     fixture.detectChanges();
 
     expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeNull();
-    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-managers')).toBeTruthy();
     expect(getPdfUrl).not.toHaveBeenCalled();
+  });
+
+  it('still leaves the tabs this feature does not build empty', async () => {
+    const fixture = await render();
+
+    byTestId(fixture, 'org-easycla-detail-tab-approval')?.click();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();
+  });
+
+  it('fetches no roster on first paint', async () => {
+    await render();
+
+    expect(getManagers).not.toHaveBeenCalled();
   });
 
   it('shows the manager count and approval count on the tab bar, and no acknowledgments count', async () => {

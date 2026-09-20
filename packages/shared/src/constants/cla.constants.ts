@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -214,3 +214,41 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
   'not-started': 'Not yet signed',
   sanctioned: 'Unavailable',
 };
+
+export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
+
+export const ORG_CLA_MANAGER_REFUSAL_COPY: Record<OrgClaManagerRefusal, string> = {
+  'no-lf-login': 'This person needs an LF Login account before they can be added as a CLA Manager. Ask them to create one, then try again.',
+  'not-authorized': 'You do not have permission to change the CLA Managers for this CLA.',
+  'last-manager': 'A CLA must always have at least one CLA Manager, so this person cannot be removed. Add another CLA Manager first.',
+  'already-manager': 'This person is already a CLA Manager for this CLA.',
+  unknown: 'Something went wrong. Please try again.',
+};
+
+export const ORG_CLA_MANAGERS_COPY = {
+  heading: 'CLA Managers',
+  addAction: 'Add CLA Manager',
+  intro:
+    "CLA Managers maintain this CLA's approval list. If a CLA Manager also plans to contribute code themselves, they should add themselves to the Approved List.",
+  unsignedTitle: 'CLA Managers become available once this CLA is signed',
+  unsignedBody: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
+  loadFailed: 'Could not load the CLA Managers for this CLA.',
+  retry: 'Try again',
+  empty: 'This CLA has no CLA Managers yet.',
+  lastManagerHint: 'A CLA must always have at least one CLA Manager.',
+  addDialogTitle: 'Add CLA Manager',
+  addDialogIntro: "Add someone as a CLA Manager for this CLA. They'll be able to maintain its approval list and manage contributor approvals.",
+  addedTitle: 'CLA Manager added',
+  removeAction: 'Remove',
+  removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+} as const;
+
+export const ORG_CLA_MANAGER_REMOVE_COPY = {
+  title: (name: string): string => `Remove ${name} as CLA Manager?`,
+  self: 'You are removing yourself as a CLA Manager for this CLA. You will lose the ability to manage its approval list and add or remove other CLA Managers — this takes effect immediately.',
+  other: (name: string): string => `${name} will no longer be able to manage this CLA's approval list or add other CLA Managers.`,
+} as const;
+
+/** Name-part bounds, matching what the CLA service accepts. */
+export const ORG_CLA_MANAGER_NAME_MIN = 2;
+export const ORG_CLA_MANAGER_NAME_MAX = 30;

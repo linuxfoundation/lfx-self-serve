@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
+import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_DETAIL_TABS, ORG_CLA_MANAGER_REFUSALS } from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -719,3 +719,33 @@ export interface OrgClaCoverageDialogData {
   foundationName?: string;
   projects: OrgClaGroupProject[];
 }
+
+export interface OrgClaManager {
+  lfUsername: string;
+  name?: string;
+  email?: string;
+  addedOn?: string;
+}
+
+export interface OrgClaManagerList {
+  signatureId: string;
+  managers: OrgClaManager[];
+}
+
+export interface OrgClaManagerRow {
+  manager: OrgClaManager;
+  displayName: string;
+  removeLabel: string;
+  mailtoHref: string | null;
+  addedLabel: string;
+}
+
+export interface OrgClaManagerAddRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+export type OrgClaManagerAddField = keyof OrgClaManagerAddRequest;
+
+export type OrgClaManagerRefusal = (typeof ORG_CLA_MANAGER_REFUSALS)[number];

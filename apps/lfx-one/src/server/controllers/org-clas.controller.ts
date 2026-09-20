@@ -1,6 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CLA_GROUP_ID_PATTERN, PERSON_KEY_PATTERN } from '@lfx-one/shared/constants';
+import type { OrgClaManagerAddRequest } from '@lfx-one/shared/interfaces';
+import { hasOrgClaManagerAddErrors, validateOrgClaManagerAdd } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -74,5 +77,109 @@ export class OrgClasController {
     } catch (error) {
       next(error);
     }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/managers
+  public async listManagers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'list_org_cla_managers');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'list_org_cla_managers');
+
+      const result = await this.orgClaService.getManagers(req, orgUid, signatureId);
+
+      // Ahead of the branch so the 404 carries it too.
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!result) {
+        logger.success(req, 'list_org_cla_managers', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'Agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'list_org_cla_managers', startTime, { org_uid: orgUid, signature_id: signatureId, manager_count: result.managers.length });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/cla-groups/:signatureId/managers
+  public async addManager(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'add_org_cla_manager');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'add_org_cla_manager');
+
+      const body = (req.body ?? {}) as Partial<OrgClaManagerAddRequest>;
+      const validation = validateOrgClaManagerAdd(body);
+      if (hasOrgClaManagerAddErrors(validation)) {
+        throw ServiceValidationError.fromFieldErrors(validation as Record<string, string>, 'Validation failed', { operation: 'add_org_cla_manager' });
+      }
+
+      const manager = await this.orgClaService.addManager(req, orgUid, signatureId, {
+        firstName: body.firstName!.trim(),
+        lastName: body.lastName!.trim(),
+        email: body.email!.trim(),
+      });
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!manager) {
+        logger.success(req, 'add_org_cla_manager', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'Agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'add_org_cla_manager', startTime, { org_uid: orgUid, signature_id: signatureId });
+      res.status(201).json(manager);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // DELETE /api/orgs/:orgUid/lens/cla-groups/:signatureId/managers/:lfUsername
+  public async removeManager(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'remove_org_cla_manager');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'remove_org_cla_manager');
+
+      const lfUsername = (req.params['lfUsername'] ?? '').trim();
+      if (!PERSON_KEY_PATTERN.test(lfUsername)) {
+        throw ServiceValidationError.forField('lfUsername', 'A valid lfUsername path parameter is required', { operation: 'remove_org_cla_manager' });
+      }
+
+      const removed = await this.orgClaService.removeManager(req, orgUid, signatureId, lfUsername);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!removed) {
+        logger.success(req, 'remove_org_cla_manager', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'Agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'remove_org_cla_manager', startTime, { org_uid: orgUid, signature_id: signatureId });
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  private async requireAgreementContext(req: Request, operation: string): Promise<{ orgUid: string; signatureId: string }> {
+    if (!(await getUsernameFromAuth(req))) {
+      throw new AuthenticationError('User authentication required', { operation });
+    }
+
+    const orgUid = req.params['orgUid'];
+    assertOrgUid(orgUid, operation);
+
+    const signatureId = (req.params['signatureId'] ?? '').trim();
+    if (!CLA_GROUP_ID_PATTERN.test(signatureId)) {
+      throw ServiceValidationError.forField('signatureId', 'A valid signatureId path parameter is required', { operation });
+    }
+
+    return { orgUid, signatureId };
   }
 }

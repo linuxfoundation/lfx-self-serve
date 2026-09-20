@@ -8,10 +8,27 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import type { OrgClaGroup, OrgClaGroupList, OrgClaGroupProject, OrgClaGroupStatus, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import type {
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaGroupProject,
+  OrgClaGroupStatus,
+  OrgClaManager,
+  OrgClaManagerAddRequest,
+  OrgClaManagerList,
+  PdfUrlResponse,
+} from '@lfx-one/shared/interfaces';
+import { classifyOrgClaManagerRefusal } from '@lfx-one/shared/utils';
 import type { Request } from 'express';
 
-import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaSignedDocument } from '../types/cla.types';
+import type {
+  EasyClaCompanyClaGroup,
+  EasyClaCompanyClaGroupList,
+  EasyClaCompanyClaManager,
+  EasyClaCompanyClaManagerList,
+  EasyClaSignedDocument,
+  ManagerTarget,
+} from '../types/cla.types';
 import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
@@ -120,6 +137,72 @@ function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   return entry.signed === true ? 'signed' : 'not-started';
 }
 
+function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
+  const name = entry.name?.trim() ?? '';
+  const email = entry.email?.trim() ?? '';
+  const addedOn = entry.added_on?.trim() ?? '';
+
+  return {
+    lfUsername: entry.lf_username?.trim() ?? '',
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(addedOn ? { addedOn } : {}),
+  };
+}
+
+/**
+ * Sorted before taking the first so the same agreement keys the same way on every call. Upstream
+ * orders by project name, which is display order and can change when a project is renamed; keying
+ * a write on something that reorders under you turns one viewer's refusal into an intermittent one.
+ */
+function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
+  const projectSfids = (entry.projects ?? []).map((project) => project.projectSFID?.trim() ?? '').filter((sfid) => !!sfid);
+
+  return projectSfids.sort()[0] ?? entry.foundationSFID?.trim() ?? '';
+}
+
+/**
+ * The write endpoints key on the project, and an empty id would compose `…/project//cla-manager` —
+ * a path the caller cannot tell from a well-formed one. Only the write paths require it: listing
+ * managers keys on the CLA group alone, so an agreement covering no project still lists.
+ */
+function requireProjectSfid(target: ManagerTarget, operation: string): string {
+  if (!target.projectSfid) {
+    throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its project id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      operation,
+      service: SERVICE,
+    });
+  }
+
+  return target.projectSfid;
+}
+
+function asManagerRefusal(error: unknown, operation: string, errorMessage: string): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  // `gatewayFetch` attaches the upstream body to the error on every non-OK status, and the error
+  // middleware logs it. The upstream refusal sentence names the target person and their
+  // organization, so it is dropped on this path too — not only on the classified one below.
+  // `redactResponseBodyFromLogs` closes the fetch-helper leak; this closes the error-handler one.
+  if (error.statusCode >= 500 || error.transportFailure) {
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation,
+      service: SERVICE,
+      transportFailure: error.transportFailure,
+    });
+  }
+
+  const refusal = classifyOrgClaManagerRefusal(error.statusCode, error.errorBody);
+
+  // `errorBody.error` is the existing route by which an upstream discriminator reaches the client:
+  // `toResponse` forwards it as `upstreamCode`.
+  return new MicroserviceError(`${errorMessage}: refused (${refusal})`, error.statusCode, error.code, {
+    operation,
+    service: SERVICE,
+    errorBody: { error: refusal },
+  });
+}
+
 export class OrgClaService {
   /**
    * Lists the organization's corporate CLAs.
@@ -138,49 +221,7 @@ export class OrgClaService {
    * only one of them is a claim about a company's legal position.
    */
   public async listClaGroups(req: Request, orgUid: string): Promise<OrgClaGroupList> {
-    const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
-      {
-        operation: 'org_cla_list_cla_groups',
-        service: SERVICE,
-        errorMessage: 'Failed to fetch organization CLA groups',
-        errorCode: 'UPSTREAM_ERROR',
-        // This response carries CLA managers by id and LF username. The mapper drops them, but
-        // that boundary only covers the browser: on a non-OK status or unparseable body the
-        // fetch helper logs the raw payload, which would put manager identities in application
-        // logs. Redaction closes the second path (same reason as rewards.service.ts).
-        redactResponseBody: true,
-        // The route authorizes the impersonated user, so the upstream call must run as that
-        // user too. Without this it runs as the impersonator, which is audited as the wrong
-        // identity and fails outright where only the target holds the organization scope.
-        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
-      }
-    );
-
-    // A malformed response is a failure, not an answer. `gatewayFetch` returns null on a 204,
-    // and a 200 can arrive without the list the contract guarantees; both would otherwise fall
-    // through to an empty list and be rendered as "this organization has signed nothing" —
-    // precisely the false claim the paragraph above refuses to make for a failed request.
-    if (!upstream || !Array.isArray(upstream.list)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: 'org_cla_list_cla_groups',
-        service: SERVICE,
-      });
-    }
-
-    // A row without its signature id is malformed for the same reason the envelope above is: the
-    // id is the row's identity, and the list renders keyed on it. Substituting an empty string
-    // makes every such row share one key, which lets the view reuse one card's DOM for another
-    // agreement — a worse outcome than the load failure this raises instead.
-    if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
-      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: 'org_cla_list_cla_groups',
-        service: SERVICE,
-      });
-    }
-
-    const entries = upstream.list;
+    const entries = await this.fetchClaGroupEntries(req, orgUid);
     const companyName = entries.find((entry) => !!entry.companyName)?.companyName ?? '';
 
     return {
@@ -266,5 +307,167 @@ export class OrgClaService {
     // would be invented. The URL is presigned and short-lived, but its lifetime is upstream's to
     // state, and `0` would read to a consumer as already expired.
     return { url };
+  }
+
+  public async getManagers(req: Request, orgUid: string, signatureId: string): Promise<OrgClaManagerList | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
+    if (!target) return null;
+
+    const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
+      {
+        operation: 'org_cla_list_managers',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA managers',
+        errorCode: 'UPSTREAM_ERROR',
+        redactResponseBody: true,
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+      }
+    );
+
+    const list = Array.isArray(upstream?.list) ? upstream.list : [];
+
+    return {
+      signatureId,
+      managers: list.filter((entry): entry is EasyClaCompanyClaManager => !!entry?.lf_username?.trim()).map((entry) => toOrgClaManager(entry)),
+    };
+  }
+
+  public async addManager(req: Request, orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Promise<OrgClaManager | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_add_manager');
+    if (!target) return null;
+
+    const projectSfid = requireProjectSfid(target, 'org_cla_add_manager');
+
+    let result: EasyClaCompanyClaManager | null;
+    try {
+      result = await gatewayFetch<EasyClaCompanyClaManager>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager`,
+        {
+          operation: 'org_cla_add_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to add the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body: { firstName: request.firstName, lastName: request.lastName, userEmail: request.email },
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_add_manager', 'Failed to add the CLA manager');
+    }
+
+    if (!result?.lf_username?.trim()) {
+      throw new MicroserviceError('Failed to add the CLA manager: upstream returned no manager record', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_add_manager',
+        service: SERVICE,
+      });
+    }
+
+    logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
+    return toOrgClaManager(result);
+  }
+
+  public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_remove_manager');
+    if (!target) return false;
+
+    const projectSfid = requireProjectSfid(target, 'org_cla_remove_manager');
+
+    try {
+      await gatewayFetch<null>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager/${encodeURIComponent(lfUsername)}`,
+        {
+          operation: 'org_cla_remove_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to remove the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'DELETE',
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_remove_manager', 'Failed to remove the CLA manager');
+    }
+
+    logger.debug(req, 'org_cla_remove_manager', 'removed a cla manager', { org_uid: orgUid, signature_id: signatureId });
+    return true;
+  }
+
+  private async fetchClaGroupEntries(
+    req: Request,
+    orgUid: string,
+    operation: string = 'org_cla_list_cla_groups'
+  ): Promise<(EasyClaCompanyClaGroup & { signatureID: string })[]> {
+    const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}/cla-groups`,
+      {
+        operation,
+        service: SERVICE,
+        errorMessage: 'Failed to fetch organization CLA groups',
+        errorCode: 'UPSTREAM_ERROR',
+        // This response carries CLA managers by id and LF username. The mapper drops them, but
+        // that boundary only covers the browser: on a non-OK status or unparseable body the
+        // fetch helper logs the raw payload, which would put manager identities in application
+        // logs. Redaction closes the second path (same reason as rewards.service.ts).
+        redactResponseBody: true,
+        // The route authorizes the impersonated user, so the upstream call must run as that
+        // user too. Without this it runs as the impersonator, which is audited as the wrong
+        // identity and fails outright where only the target holds the organization scope.
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+      }
+    );
+
+    // A malformed response is a failure, not an answer. `gatewayFetch` returns null on a 204,
+    // and a 200 can arrive without the list the contract guarantees; both would otherwise fall
+    // through to an empty list and be rendered as "this organization has signed nothing" —
+    // precisely the false claim the paragraph above refuses to make for a failed request.
+    if (!upstream || !Array.isArray(upstream.list)) {
+      throw new MicroserviceError('Failed to fetch organization CLA groups: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    // A row without its signature id is malformed for the same reason the envelope above is: the
+    // id is the row's identity, and the list renders keyed on it. Substituting an empty string
+    // makes every such row share one key, which lets the view reuse one card's DOM for another
+    // agreement — a worse outcome than the load failure this raises instead.
+    if (!upstream.list.every((entry): entry is EasyClaCompanyClaGroup & { signatureID: string } => !!entry?.signatureID)) {
+      throw new MicroserviceError('Failed to fetch organization CLA groups: upstream row is missing its signature id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return upstream.list;
+  }
+
+  /**
+   * Returns null when the signature is not on this organization's list, which is both the
+   * not-found answer and the authorization gate.
+   */
+  private async resolveManagerTarget(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ManagerTarget | null> {
+    const entries = await this.fetchClaGroupEntries(req, orgUid, operation);
+    const entry = entries.find((candidate) => candidate.signatureID === signatureId);
+    if (!entry) {
+      logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
+      return null;
+    }
+
+    const companyId = entry.companyID?.trim() ?? '';
+    const claGroupId = entry.claGroupID?.trim() ?? '';
+    if (!companyId || !claGroupId) {
+      throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its company or CLA group id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return { companyId, claGroupId, projectSfid: pickProjectSfid(entry) };
   }
 }

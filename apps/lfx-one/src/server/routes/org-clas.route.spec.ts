@@ -7,12 +7,22 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups, getPdfUrl } = vi.hoisted(() => ({ listClaGroups: vi.fn(), getPdfUrl: vi.fn() }));
+const { listClaGroups, getPdfUrl, listManagers, addManager, removeManager, impersonating } = vi.hoisted(() => ({
+  listClaGroups: vi.fn(),
+  getPdfUrl: vi.fn(),
+  listManagers: vi.fn(),
+  addManager: vi.fn(),
+  removeManager: vi.fn(),
+  impersonating: { value: false },
+}));
 
 vi.mock('../controllers/org-clas.controller', () => ({
   OrgClasController: class {
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
+    public listManagers = listManagers;
+    public addManager = addManager;
+    public removeManager = removeManager;
   },
 }));
 
@@ -23,7 +33,7 @@ vi.mock('../services/org-role-grants.service', () => ({
     public getAccessAwareOrgs = getAccessAwareOrgs;
   },
 }));
-vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'alice', isImpersonating: () => false }));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'alice', isImpersonating: () => impersonating.value }));
 vi.mock('../services/logger.service', () => ({
   logger: {
     info: vi.fn(),
@@ -58,6 +68,10 @@ beforeAll(async () => {
   const orgsLike = express.Router();
   orgsLike.use('/:orgUid/lens', genericLensGuard);
   app.use('/api/orgs', orgsLike);
+  app.use((err: { statusCode?: number; code?: string }, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (res.headersSent) return next(err);
+    res.status(err.statusCode ?? 500).json({ code: err.code });
+  });
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -77,6 +91,10 @@ beforeEach(() => {
     res.json({ url: 'https://s3.example.org/ccla.pdf' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
+  impersonating.value = false;
+  listManagers.mockImplementation((_req: express.Request, res: express.Response) => res.json({ signatureId: 'signature-uuid-1', managers: [] }));
+  addManager.mockImplementation((_req: express.Request, res: express.Response) => res.status(201).json({ lfUsername: 'aporter' }));
+  removeManager.mockImplementation((_req: express.Request, res: express.Response) => res.status(204).send());
 });
 
 describe('org-clas router', () => {
@@ -118,5 +136,57 @@ describe('org-clas router', () => {
     expect(res.status).toBe(200);
     expect(getPdfUrl).toHaveBeenCalled();
     expect(await res.json()).toEqual({ url: 'https://s3.example.org/ccla.pdf' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLA Managers (#1984)
+// ---------------------------------------------------------------------------
+
+const MANAGERS = 'lens/cla-groups/signature-uuid-1/managers';
+
+describe('org-clas router — CLA managers', () => {
+  describe.each([
+    ['read', 'GET', MANAGERS, () => listManagers],
+    ['add', 'POST', MANAGERS, () => addManager],
+    ['remove', 'DELETE', `${MANAGERS}/aporter`, () => removeManager],
+  ] as const)('%s', (_name, method, path, handler) => {
+    it('refuses an org the caller holds no grant on', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(handler()).not.toHaveBeenCalled();
+    });
+
+    it('admits a granted org', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method });
+
+      expect(res.status).toBeLessThan(400);
+      expect(handler()).toHaveBeenCalled();
+    });
+  });
+
+  describe('while impersonating', () => {
+    beforeEach(() => {
+      impersonating.value = true;
+    });
+
+    it('still allows the read', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${MANAGERS}`);
+
+      expect(res.status).toBe(200);
+      expect(listManagers).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['add', 'POST', MANAGERS, () => addManager],
+      ['remove', 'DELETE', `${MANAGERS}/aporter`, () => removeManager],
+    ] as const)('blocks the %s before it reaches the controller', async (_name, method, path, handler) => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(await res.json()).toEqual({ code: 'IMPERSONATION_READ_ONLY' });
+      expect(handler()).not.toHaveBeenCalled();
+    });
   });
 });

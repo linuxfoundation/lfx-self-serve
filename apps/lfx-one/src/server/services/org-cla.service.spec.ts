@@ -1,11 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service now reaches the shared utils barrel for the refusal classifier, and that barrel
+// pulls in partially-compiled Angular declarations. Same reason the route specs import it.
+import '@angular/compiler';
+
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
 import type { EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList } from '../types/cla.types';
+import { MicroserviceError } from '../errors';
+import { customErrorSerializer } from '../helpers/error-serializer';
 
 const { gatewayFetch, isImpersonating } = vi.hoisted(() => ({ gatewayFetch: vi.fn(), isImpersonating: vi.fn(() => false) }));
 
@@ -636,5 +642,286 @@ describe('OrgClaService.getPdfUrl — the organization scope gate', () => {
       `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}/cla-groups`,
       expect.objectContaining({ operation: 'org_cla_list_cla_groups' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLA Managers (#1984)
+// ---------------------------------------------------------------------------
+
+function upstreamManager(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    lf_username: 'aporter',
+    name: 'Ada Porter',
+    email: 'ada.porter@example.org',
+    user_sfid: '0054100000Te2ovAAB',
+    added_on: '2024-05-02T11:00:00Z',
+    project_id: 'project-uuid-1',
+    project_sfid: 'a09410000182dD3AAI',
+    organization_id: 'company-uuid-1',
+    organization_sfid: ORG_UID,
+    cla_group_name: 'Nimbus Foundation CLA',
+    ...overrides,
+  };
+}
+
+describe('OrgClaService.getManagers', () => {
+  it('maps only the four fields the tab renders, and drops the Salesforce user id', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
+  });
+
+  it('omits a missing name rather than mapping it to an empty string', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager({ name: '  ' })] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers[0]).not.toHaveProperty('name');
+    expect(result?.managers[0].lfUsername).toBe('aporter');
+  });
+
+  it('omits a missing address rather than blank-filling it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager({ email: '' })] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0]).not.toHaveProperty('email');
+  });
+
+  it('drops a record with no LF username, which no removal could address', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: '' }), upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('drops a null row rather than throwing while reading its LF username', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [null, upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('reads an absent list as an agreement with no managers', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toEqual([]);
+  });
+
+  it('calls upstream with the internal company id, never the Salesforce organization id', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
+
+    await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers' })
+    );
+  });
+
+  it('never lets the manager list body reach a log', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
+
+    await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().getManagers(req(), ORG_UID, 'signature-another-org-signed')).toBeNull();
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+});
+
+describe('OrgClaService.addManager', () => {
+  const request = { firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' };
+
+  it('sends camelCase and renames the address field, unlike its snake_case neighbours', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining('/company/company-uuid-1/project/a09410000182dD3AAI/cla-manager'),
+      expect.objectContaining({ method: 'POST', body: { firstName: 'Ada', lastName: 'Porter', userEmail: 'ada.porter@example.org' } })
+    );
+  });
+
+  it('keys the write on a covered project, not on the foundation', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    const url = gatewayFetch.mock.calls[1][1] as string;
+    expect(url).toContain('/project/a09410000182dD3AAI/');
+    expect(url).not.toContain('a09410000182dD2AAI');
+  });
+
+  it('picks the same project every time regardless of the order upstream sent them', async () => {
+    const reversed = upstreamEntry({
+      projects: [
+        { projectSFID: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+        { projectSFID: 'a09410000182dD3AAI', projectName: 'Cascade' },
+      ],
+    });
+    gatewayFetch.mockResolvedValueOnce(upstreamList(reversed)).mockResolvedValueOnce(upstreamManager());
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD3AAI/');
+  });
+
+  it('falls back to the foundation only when the agreement covers no project', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [] }))).mockResolvedValueOnce(upstreamManager());
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD2AAI/');
+  });
+
+  it('fails rather than compose an empty project segment when the row names no project at all', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })));
+
+    await expect(new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request)).rejects.toThrow(/missing its project id/);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a 200 carrying no manager record rather than reporting an anonymous success', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+
+    await expect(new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request)).rejects.toThrow(/no manager record/);
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().addManager(req(), ORG_UID, 'signature-other', request)).toBeNull();
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrgClaService.removeManager', () => {
+  it('addresses the removal by LF username on a covered project', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/project/a09410000182dD3AAI/cla-manager/aporter',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().removeManager(req(), ORG_UID, 'signature-other', 'aporter')).toBe(false);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails rather than compose an empty project segment when the row names no project at all', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })));
+
+    await expect(new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter')).rejects.toThrow(/missing its project id/);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Refusals — classified name only, refusal sentence never logged
+// ---------------------------------------------------------------------------
+
+const REFUSAL_SENTENCE = 'user jdelacroix does not have an LF Login account for company company-uuid-1 on project a09410000182dD3AAI';
+
+function upstreamRefusal(status = 400, body: string = JSON.stringify({ Message: REFUSAL_SENTENCE })): MicroserviceError {
+  return new MicroserviceError(`Failed: ${status}`, status, 'UPSTREAM_ERROR', { operation: 'op', service: 'cla', errorBody: body });
+}
+
+function everythingLogged(error: unknown): string {
+  const contextual = error instanceof MicroserviceError ? error.getLogContext() : {};
+  return JSON.stringify({ contextual, serialized: customErrorSerializer(error), message: (error as Error)?.message });
+}
+
+describe.each([
+  [
+    'addManager',
+    (service: InstanceType<typeof OrgClaService>) =>
+      service.addManager(req(), ORG_UID, 'signature-uuid-1', { firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }),
+  ],
+  ['removeManager', (service: InstanceType<typeof OrgClaService>) => service.removeManager(req(), ORG_UID, 'signature-uuid-1', 'jdelacroix')],
+] as const)('%s refusals', (_name, invoke) => {
+  async function refusalFrom(status: number, body?: string): Promise<unknown> {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(status, body));
+    return invoke(new OrgClaService()).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+  }
+
+  it.each([
+    ['no-lf-login', 400, JSON.stringify({ Message: REFUSAL_SENTENCE })],
+    ['last-manager', 400, JSON.stringify({ Message: "Can't delete the only remaining CLA Manager for this CLA Group" })],
+    ['not-authorized', 400, JSON.stringify({ Message: 'user aporter is not authorized for project a09410000182dD3AAI' })],
+    ['already-manager', 409, ''],
+    ['unknown', 400, JSON.stringify({ Message: 'the request could not be completed at this time' })],
+  ] as const)('classifies the refusal as %s and carries only that name', async (expected, status, body) => {
+    const error = (await refusalFrom(status, body)) as MicroserviceError;
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.errorBody).toEqual({ error: expected });
+  });
+
+  it('publishes no part of the refusal sentence to any log surface', async () => {
+    const error = await refusalFrom(400);
+    const logged = everythingLogged(error);
+
+    expect(logged).not.toContain(REFUSAL_SENTENCE);
+    expect(logged).not.toContain('jdelacroix');
+    expect(logged).not.toContain('company-uuid-1');
+    expect(logged).not.toContain('a09410000182dD3AAI');
+    expect(logged).toContain('no-lf-login');
+  });
+
+  it('keeps the sentence out of the message the failure log line is built from', async () => {
+    const error = (await refusalFrom(400)) as Error;
+
+    expect(error.message).not.toContain(REFUSAL_SENTENCE);
+    expect(error.message).toContain('no-lf-login');
+  });
+
+  it('asks the fetch helper to keep the body out of the log while still attaching it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+
+    await invoke(new OrgClaService()).catch(() => undefined);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.objectContaining({ redactResponseBodyFromLogs: true }));
+  });
+
+  it('leaves a transport failure alone rather than dressing it as a refusal', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(504, ''));
+
+    const error = (await invoke(new OrgClaService()).then(
+      () => undefined,
+      (caught: unknown) => caught
+    )) as MicroserviceError;
+
+    expect(error.statusCode).toBe(504);
+    expect(error.errorBody).toBe('');
   });
 });

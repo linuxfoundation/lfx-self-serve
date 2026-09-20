@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import type { OrgClaGroupList, PdfUrlResponse } from '@lfx-one/shared/interfaces';
+import type { OrgClaGroupList, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerList, PdfUrlResponse } from '@lfx-one/shared/interfaces';
 import { Observable } from 'rxjs';
 
 /**
@@ -26,5 +26,21 @@ export class OrgLensClaService {
 
   public getPdfUrl(orgUid: string, signatureId: string): Observable<PdfUrlResponse> {
     return this.http.get<PdfUrlResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/pdf-url`);
+  }
+
+  public getManagers(orgUid: string, signatureId: string): Observable<OrgClaManagerList> {
+    return this.http.get<OrgClaManagerList>(`${this.managersUrl(orgUid, signatureId)}`);
+  }
+
+  public addManager(orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Observable<OrgClaManager> {
+    return this.http.post<OrgClaManager>(`${this.managersUrl(orgUid, signatureId)}`, request);
+  }
+
+  public removeManager(orgUid: string, signatureId: string, lfUsername: string): Observable<void> {
+    return this.http.delete<void>(`${this.managersUrl(orgUid, signatureId)}/${encodeURIComponent(lfUsername)}`);
+  }
+
+  private managersUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/managers`;
   }
 }

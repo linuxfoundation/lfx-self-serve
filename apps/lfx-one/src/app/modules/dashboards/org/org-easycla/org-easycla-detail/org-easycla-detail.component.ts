@@ -27,10 +27,20 @@ import { OpenIntercomDirective } from '@shared/directives/open-intercom.directiv
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
-  imports: [BreadcrumbComponent, ButtonComponent, EmptyStateComponent, MessageComponent, OpenIntercomDirective, SkeletonModule, TagComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    EmptyStateComponent,
+    MessageComponent,
+    OpenIntercomDirective,
+    OrgEasyclaManagersComponent,
+    SkeletonModule,
+    TagComponent,
+  ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -51,9 +61,11 @@ export class OrgEasyclaDetailComponent {
   protected readonly downloading = signal(false);
   protected readonly fetchError = signal(false);
   private readonly claLoadingState = signal(false);
+  private readonly loadedManagerCount = signal<{ signatureId: string; count: number } | null>(null);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
+  protected readonly selectedOrgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
 
   protected readonly hasNoOrgAccess: Signal<boolean> = computed(
     () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
@@ -129,7 +141,7 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumbItems());
 
-  protected readonly managersBadge = computed(() => String(this.claGroup()?.claManagersCount ?? 0));
+  protected readonly managersBadge = computed(() => this.initManagersBadge());
 
   protected readonly approvalBadge = computed(() => this.initApprovalBadge());
 
@@ -137,6 +149,10 @@ export class OrgEasyclaDetailComponent {
 
   protected selectTab(tab: OrgClaDetailTab): void {
     this.activeTab.set(tab);
+  }
+
+  protected onManagerCountChanged(count: number): void {
+    this.loadedManagerCount.set({ signatureId: this.signatureId(), count });
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -245,6 +261,12 @@ export class OrgEasyclaDetailComponent {
   private initApprovalBadge(): string {
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
+  }
+
+  private initManagersBadge(): string {
+    const loaded = this.loadedManagerCount();
+    const current = loaded?.signatureId === this.signatureId() ? loaded.count : undefined;
+    return String(current ?? this.claGroup()?.claManagersCount ?? 0);
   }
 
   private initTabs(): OrgClaDetailTabView[] {

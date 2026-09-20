@@ -6,13 +6,22 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { listClaGroups, getPdfUrl } = vi.hoisted(() => ({ listClaGroups: vi.fn(), getPdfUrl: vi.fn() }));
+const { listClaGroups, getPdfUrl, getManagers, addManager, removeManager } = vi.hoisted(() => ({
+  listClaGroups: vi.fn(),
+  getPdfUrl: vi.fn(),
+  getManagers: vi.fn(),
+  addManager: vi.fn(),
+  removeManager: vi.fn(),
+}));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../services/org-cla.service', () => ({
   OrgClaService: class {
     public listClaGroups = listClaGroups;
     public getPdfUrl = getPdfUrl;
+    public getManagers = getManagers;
+    public addManager = addManager;
+    public removeManager = removeManager;
   },
 }));
 vi.mock('../services/logger.service', () => ({
@@ -124,5 +133,55 @@ describe('OrgClasController.getPdfUrl', () => {
     expect(getPdfUrl).toHaveBeenCalledWith(req, '0014100000Te2ovAAB', 'signature-uuid-1');
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
     expect(res.json).toHaveBeenCalledWith({ url: 'https://s3.example.org/ccla.pdf', expiresInSeconds: 0 });
+  });
+});
+
+describe('OrgClasController — CLA manager path parameters', () => {
+  const ORG_UID = '0014100000Te2ovAAB';
+  const SIGNATURE_ID = '0f9b8c7d-1234-4abc-89de-0123456789ab';
+
+  it('rejects a signature id that is not UUID-shaped before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: '../../admin' } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getManagers).not.toHaveBeenCalled();
+  });
+
+  it('rejects an LF username outside the person-key shape before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().removeManager(
+      { params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'a porter/../..' } } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(removeManager).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when the agreement is not on this organization list', async () => {
+    getManagers.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'list_org_cla_managers', expect.anything(), expect.objectContaining({ found: false }));
+  });
+
+  it('answers a removal with 204 and no body', async () => {
+    removeManager.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'aporter' } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
