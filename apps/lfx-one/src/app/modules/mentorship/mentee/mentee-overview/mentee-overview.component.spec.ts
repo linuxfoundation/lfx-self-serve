@@ -10,7 +10,7 @@ import {
 import { MentorshipMenteeOverviewResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { of, take, throwError } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeOverviewComponent } from './mentee-overview.component';
@@ -74,8 +74,8 @@ describe('MenteeOverviewComponent', () => {
 
     const phaseSpy = vi.fn();
     const taskCountSpy = vi.fn();
-    component.phaseChange.pipe(take(1)).subscribe(phaseSpy);
-    component.openTaskCountChange.pipe(take(1)).subscribe(taskCountSpy);
+    component.phaseChange.subscribe(phaseSpy);
+    component.openTaskCountChange.subscribe(taskCountSpy);
 
     fixture.detectChanges();
     await fixture.whenStable();
@@ -139,8 +139,8 @@ describe('MenteeOverviewComponent', () => {
 
     const phaseSpy = vi.fn();
     const taskCountSpy = vi.fn();
-    component.phaseChange.pipe(take(1)).subscribe(phaseSpy);
-    component.openTaskCountChange.pipe(take(1)).subscribe(taskCountSpy);
+    component.phaseChange.subscribe(phaseSpy);
+    component.openTaskCountChange.subscribe(taskCountSpy);
 
     fixture.detectChanges();
     await fixture.whenStable();

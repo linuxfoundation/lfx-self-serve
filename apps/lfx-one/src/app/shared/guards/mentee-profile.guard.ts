@@ -4,7 +4,7 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
 import { MentorshipService } from '@services/mentorship.service';
-import { catchError, map, of } from 'rxjs';
+import { map } from 'rxjs';
 import { firstValueFrom } from 'rxjs';
 
 /**
@@ -14,20 +14,14 @@ import { firstValueFrom } from 'rxjs';
  * - **No profile** (404 / error / mock default) → returns `true`, letting the
  *   register page render.
  *
- * The mock BFF always returns `{ hasProfile: false }` today, so the guard always
- * allows the register page. When the real profiles endpoint lands, users with an
- * existing mentee profile will be redirected to the tabbed shell automatically.
+ * The service's `hasMenteeProfile()` already catches HTTP errors and returns
+ * `{ hasProfile: false }`, so no guard-level `catchError` is needed.
  */
 export const menteeRegisterGuard: CanActivateFn = async () => {
   const mentorshipService = inject(MentorshipService);
   const router = inject(Router);
 
-  const hasProfile = await firstValueFrom(
-    mentorshipService.hasMenteeProfile().pipe(
-      map((response) => response.hasProfile),
-      catchError(() => of(false))
-    )
-  );
+  const hasProfile = await firstValueFrom(mentorshipService.hasMenteeProfile().pipe(map((response) => response.hasProfile)));
 
   if (hasProfile) {
     return router.createUrlTree(['/mentorship/mentee/overview']);

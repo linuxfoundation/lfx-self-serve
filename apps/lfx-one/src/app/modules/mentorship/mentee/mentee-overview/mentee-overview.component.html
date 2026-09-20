@@ -4,10 +4,16 @@
 @if (!hasLoaded()) {
   <!-- Loading -->
   <lfx-route-loading />
-} @else if (loadError()) {
+} @else if (loadError(); as errorMessage) {
   <!-- Error -->
-  <lfx-empty-state icon="fa-light fa-triangle-exclamation" [title]="loadError()!" subtitle="Check your connection and try again.">
-    <button type="button" class="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" (click)="retry()">Retry</button>
+  <lfx-empty-state icon="fa-light fa-triangle-exclamation" [title]="errorMessage" subtitle="Check your connection and try again.">
+    <button
+      type="button"
+      data-testid="mentee-overview-retry"
+      class="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+      (click)="retry()">
+      Retry
+    </button>
   </lfx-empty-state>
 } @else {
   <!-- ============================================================= -->
@@ -24,14 +30,17 @@
         [href]="findProgramUrl"
         target="_blank"
         rel="noopener noreferrer"
+        data-testid="mentee-overview-find-program"
         class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-primary-700">
         {{ findProgramLabel }}
         <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
       </a>
-      <!-- Dev shortcut -->
-      <button type="button" class="text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('applicant')">
-        {{ devViewApplicantLabel }}
-      </button>
+      <!-- Dev shortcut (hidden in production) -->
+      @if (isDevMode) {
+        <button type="button" class="text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('applicant')">
+          {{ devViewApplicantLabel }}
+        </button>
+      }
     </div>
   }
 
@@ -59,17 +68,20 @@
               [href]="findProgramUrl"
               target="_blank"
               rel="noopener noreferrer"
+              data-testid="mentee-overview-find-program"
               class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
               <i class="fa-light fa-magnifying-glass text-sm" aria-hidden="true"></i>
               {{ findProgramLabel }}
             </a>
-            <!-- Dev shortcuts -->
-            <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('accepted')">
-              {{ devViewAcceptedLabel }}
-            </button>
-            <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
-              {{ devViewEmptyLabel }}
-            </button>
+            <!-- Dev shortcuts (hidden in production) -->
+            @if (isDevMode) {
+              <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('accepted')">
+                {{ devViewAcceptedLabel }}
+              </button>
+              <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
+                {{ devViewEmptyLabel }}
+              </button>
+            }
           </div>
         </div>
 
@@ -95,6 +107,7 @@
             <div class="flex shrink-0 items-center gap-4">
               <!-- Prerequisite progress -->
               <div class="flex w-36 flex-col gap-1">
+                <!-- text-[10px]: design spec — matches small-caps label in the design -->
                 <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Prerequisite Tasks</span>
                 <div class="flex items-center gap-2">
                   <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
@@ -106,11 +119,15 @@
                 </div>
               </div>
               <!-- Action buttons -->
-              <button type="button" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+              <button
+                type="button"
+                data-testid="mentee-overview-view-tasks"
+                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
                 {{ viewTasksLabel }}
               </button>
               <button
                 type="button"
+                data-testid="mentee-overview-withdraw"
                 class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
                 (click)="onWithdraw(app)">
                 <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
@@ -186,6 +203,7 @@
 
           <!-- Progress bar -->
           <div class="mt-4 flex items-center">
+            <!-- h-[5px]: design spec — progress bar height per design -->
             <div class="h-[5px] flex-1 overflow-hidden rounded-full bg-gray-200">
               <div
                 class="h-full rounded-full bg-primary-500 transition-all"
@@ -199,6 +217,7 @@
 
           <!-- Mentors section -->
           <div class="mt-6 border-t border-gray-100 pt-5">
+            <!-- text-[10px]: design spec — matches small-caps label in the design -->
             <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{{ yourMentorsLabel }}</p>
             <div class="mt-3 flex flex-wrap gap-3">
               @for (mentor of data.program.mentors; track mentor.id) {
@@ -224,7 +243,9 @@
           <div class="rounded-xl border border-gray-200 bg-white px-6 pb-2 pt-5">
             <div class="flex items-center justify-between">
               <h3 class="text-base font-semibold text-gray-900">{{ upNextTitle }}</h3>
-              <button type="button" class="text-sm font-medium text-primary-600 hover:underline">{{ allTasksLabel }}</button>
+              <button type="button" data-testid="mentee-overview-all-tasks" class="text-sm font-medium text-primary-600 hover:underline">
+                {{ allTasksLabel }}
+              </button>
             </div>
             <div class="mt-3 flex flex-col divide-y divide-gray-100">
               @for (task of data.program.upNextTasks; track task.id) {
@@ -242,10 +263,12 @@
           </div>
         }
 
-        <!-- Dev shortcut -->
-        <button type="button" class="self-start text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
-          {{ devViewEmptyLabel }}
-        </button>
+        <!-- Dev shortcut (hidden in production) -->
+        @if (isDevMode) {
+          <button type="button" class="self-start text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
+            {{ devViewEmptyLabel }}
+          </button>
+        }
       </div>
     }
   }

@@ -10,6 +10,7 @@
         [href]="findProgramUrl"
         target="_blank"
         rel="noopener noreferrer"
+        data-testid="mentee-page-find-program"
         class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2">
         <i class="fa-light fa-magnifying-glass text-sm" aria-hidden="true"></i>
         {{ findProgramLabel }}
@@ -24,6 +25,7 @@
         #tabBtn
         type="button"
         role="tab"
+        [attr.data-testid]="'mentee-page-tab-' + tab.value"
         [attr.aria-selected]="activeTab() === tab.value"
         class="relative pb-3 text-sm font-medium transition-colors hover:text-gray-900 focus-visible:outline-none"
         [class.text-primary-700]="activeTab() === tab.value"
@@ -31,7 +33,7 @@
         (click)="onTabClick(tab.value)"
         (keydown)="onTabKeydown($event)">
         {{ tab.label }}
-        @if (showTabCount(tab.value)) {
+        @if (tabWithCount() === tab.value) {
           <span class="ml-1 text-xs font-normal text-gray-400">{{ openTaskCount() }} open</span>
         }
         @if (activeTab() === tab.value) {

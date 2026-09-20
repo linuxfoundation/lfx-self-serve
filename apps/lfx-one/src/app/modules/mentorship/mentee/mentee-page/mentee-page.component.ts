@@ -48,13 +48,13 @@ export class MenteePageComponent {
   /** Open task count reported by the overview child. */
   readonly openTaskCount = signal(0);
 
-  private static readonly TAB_CONFIGS: Record<MentorshipMenteePhase, readonly { value: MentorshipMenteePageTab; label: string }[]> = {
+  private static readonly tabConfigs: Record<MentorshipMenteePhase, readonly { value: MentorshipMenteePageTab; label: string }[]> = {
     empty: MENTORSHIP_MENTEE_TABS_EMPTY,
     applicant: MENTORSHIP_MENTEE_TABS_APPLICANT,
     accepted: MENTORSHIP_MENTEE_TABS_ACCEPTED,
   };
 
-  protected readonly tabs = computed(() => MenteePageComponent.TAB_CONFIGS[this.phase()]);
+  protected readonly tabs = computed(() => MenteePageComponent.tabConfigs[this.phase()]);
 
   protected readonly showFindProgram = computed(() => this.phase() !== 'empty');
 
@@ -62,7 +62,10 @@ export class MenteePageComponent {
 
   protected readonly activeTab = computed<MentorshipMenteePageTab>(() => this.resolveActiveTab(this.currentUrl()));
 
-  /** Called by the overview child (via EventEmitter or directly) when phase is known. */
+  /** The tab value that should show the open-task count badge, or null if none. */
+  protected readonly tabWithCount = computed<MentorshipMenteePageTab | null>(() => (this.openTaskCount() > 0 ? 'tasks' : null));
+
+  /** Called by the overview child (via output signal or directly) when phase is known. */
   onPhaseChange(phase: MentorshipMenteePhase): void {
     this.phase.set(phase);
   }
@@ -73,18 +76,18 @@ export class MenteePageComponent {
   }
 
   /**
-   * Wire up `EventEmitter` outputs from the routed child. Only the overview
-   * component emits `phaseChange` and `openTaskCountChange`; other children
-   * simply lack those properties and the wiring is a no-op. Each subscription
-   * is scoped to this shell's `DestroyRef` so it never outlives the parent.
+   * Wire up `output()` signal subscriptions from the routed child. Only the
+   * overview component emits `phaseChange` and `openTaskCountChange`; other
+   * children simply lack those properties and the wiring is a no-op.
+   * `OutputEmitterRef.subscribe` returns a cleanup-managed subscription.
    */
   onChildActivate(child: unknown): void {
     const c = child as {
-      phaseChange?: import('@angular/core').EventEmitter<MentorshipMenteePhase>;
-      openTaskCountChange?: import('@angular/core').EventEmitter<number>;
+      phaseChange?: import('@angular/core').OutputEmitterRef<MentorshipMenteePhase>;
+      openTaskCountChange?: import('@angular/core').OutputEmitterRef<number>;
     };
-    c.phaseChange?.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((phase) => this.onPhaseChange(phase));
-    c.openTaskCountChange?.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((count) => this.onOpenTaskCountChange(count));
+    c.phaseChange?.subscribe((phase) => this.onPhaseChange(phase));
+    c.openTaskCountChange?.subscribe((count) => this.onOpenTaskCountChange(count));
   }
 
   protected onTabClick(tab: MentorshipMenteePageTab): void {
@@ -106,11 +109,6 @@ export class MenteePageComponent {
     if (isPlatformBrowser(this.platformId)) {
       this.tabBtns()[next]?.nativeElement.focus();
     }
-  }
-
-  /** Whether a tab should show the open-task count badge. */
-  protected showTabCount(tabValue: MentorshipMenteePageTab): boolean {
-    return tabValue === 'tasks' && this.openTaskCount() > 0;
   }
 
   private initCurrentUrl(): Signal<string> {

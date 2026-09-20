@@ -163,19 +163,19 @@ import type {
 export const MENTORSHIP_MENTEE_TABS_EMPTY = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'profile' as const, label: 'Mentee Profile' },
-];
+] as const;
 
 export const MENTORSHIP_MENTEE_TABS_APPLICANT = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'tasks' as const, label: 'My Application Tasks' },
   { value: 'profile' as const, label: 'Mentee Profile' },
-];
+] as const;
 
 export const MENTORSHIP_MENTEE_TABS_ACCEPTED = [
   { value: 'overview' as const, label: 'Overview' },
   { value: 'tasks' as const, label: 'My Tasks' },
   { value: 'profile' as const, label: 'Mentee Profile' },
-];
+] as const;
 
 // ---------------------------------------------------------------------------
 // Shell labels
@@ -207,7 +207,7 @@ export const MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS: Record<MentorshipMente
 };
 
 export const MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES: Record<MentorshipMenteeApplicationStatus, string> = {
-  'in-progress': 'bg-green-50 text-green-700',
+  'in-progress': 'bg-emerald-50 text-emerald-700',
   'awaiting-review': 'bg-amber-50 text-amber-700',
 };
 
@@ -247,7 +247,7 @@ export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_LABELS: Record<MentorshipMenteeUpN
 };
 
 export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES: Record<MentorshipMenteeUpNextTaskStatus, string> = {
-  'in-progress': ' bg-blue-100 text-blue-600',
+  'in-progress': 'bg-blue-100 text-blue-600',
   pending: 'bg-gray-100 text-gray-600',
   incomplete: 'bg-gray-100 text-gray-600',
 };

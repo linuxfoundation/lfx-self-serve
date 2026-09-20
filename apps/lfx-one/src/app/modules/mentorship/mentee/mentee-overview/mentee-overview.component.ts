@@ -3,7 +3,7 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, EventEmitter, inject, Output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, isDevMode, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -71,9 +71,9 @@ export class MenteeOverviewComponent {
   private readonly comingSoonService = inject(MentorshipComingSoonService);
 
   /** Emitted when the API response phase is known. */
-  @Output() readonly phaseChange = new EventEmitter<MentorshipMenteePhase>();
+  readonly phaseChange = output<MentorshipMenteePhase>();
   /** Emitted when the open task count is known. */
-  @Output() readonly openTaskCountChange = new EventEmitter<number>();
+  readonly openTaskCountChange = output<number>();
 
   protected readonly hasLoaded = signal(false);
   protected readonly loadError = signal<string | null>(null);
@@ -106,11 +106,15 @@ export class MenteeOverviewComponent {
   protected readonly upNextTitle = MENTORSHIP_MENTEE_UP_NEXT_TITLE;
   protected readonly allTasksLabel = MENTORSHIP_MENTEE_ALL_TASKS_LABEL;
 
-  // -- Dev shortcuts ----------------------------------------------------------
+  // -- Dev shortcuts (hidden in production) ------------------------------------
 
+  protected readonly isDevMode = isDevMode();
   protected readonly devViewEmptyLabel = MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL;
   protected readonly devViewApplicantLabel = MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL;
   protected readonly devViewAcceptedLabel = MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL;
+
+  /** The banner shows "N applications under review". */
+  protected readonly applicationCount = computed(() => this.applicantData()?.applications?.length ?? 0);
 
   // -- Status helpers ---------------------------------------------------------
 
@@ -143,13 +147,9 @@ export class MenteeOverviewComponent {
     return Math.round((completed / total) * 100);
   }
 
-  /** The banner shows "N applications under review". */
-  protected applicationCount(): number {
-    return this.applicantData()?.applications?.length ?? 0;
-  }
-
   // -- Actions ----------------------------------------------------------------
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- app param reserved for real withdraw API
   protected onWithdraw(_app: MentorshipMenteeApplication): void {
     this.comingSoonService.notify(MENTORSHIP_MENTEE_WITHDRAW_TOAST_SUMMARY);
   }
