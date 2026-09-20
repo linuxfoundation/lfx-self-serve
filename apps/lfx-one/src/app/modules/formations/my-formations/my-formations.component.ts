@@ -58,11 +58,27 @@ export class MyFormationsComponent {
   protected readonly loading = signal(true);
   protected readonly searchTerm = signal('');
   protected readonly stageTab = signal<string>('all');
+  /**
+   * Paginator offset. Tracked so that narrowing the list sends the table back to the first page —
+   * PrimeNG keeps its own offset when the value array shrinks underneath it, which would otherwise
+   * leave a caller with more than a page of formations on a page that no longer exists (mirrors
+   * `applicants-tab.component.ts`).
+   */
+  protected readonly first = signal(0);
 
   // === Computed Signals ===
   private readonly formationWork: Signal<MyFormationWorkResponse | null> = this.initFormationWork();
-  /** `'unavailable'` only — `'partial'` keeps the rows that did arrive, the better failure mode than hiding all of them. */
-  protected readonly hasError: Signal<boolean> = computed(() => !this.loading() && this.formationWork()?.state === 'unavailable');
+  /**
+   * `'unavailable'` always; `'partial'` only when it left nothing to show. A partial read that still
+   * carries rows renders them (the better failure mode than hiding all of them), but a partial read
+   * with none must not be mistaken for the genuine "No formations yet" — the caller has assigned
+   * items, the aggregate query just failed to describe their formations, so Retry is the honest offer.
+   */
+  protected readonly hasError: Signal<boolean> = computed(() => {
+    if (this.loading()) return false;
+    const work = this.formationWork();
+    return work?.state === 'unavailable' || (work?.state === 'partial' && work.formations.length === 0);
+  });
   private readonly rows: Signal<DecoratedMyFormation[]> = this.initRows();
   protected readonly filteredRows: Signal<DecoratedMyFormation[]> = this.initFilteredRows();
   protected readonly hasActiveFilters: Signal<boolean> = computed(() => this.stageTab() !== 'all' || !!this.searchTerm().trim());
@@ -77,20 +93,27 @@ export class MyFormationsComponent {
     // memory would outlive `resetFilters()` — a term typed again right after "Reset filters" (inside
     // the debounce window, so the reset's own empty value never reaches it) would be swallowed,
     // leaving the box showing a term the table isn't applying.
-    this.searchForm.controls.search.valueChanges
-      .pipe(debounceTime(200), takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => this.searchTerm.set(value ?? ''));
+    this.searchForm.controls.search.valueChanges.pipe(debounceTime(200), takeUntilDestroyed(this.destroyRef)).subscribe((value) => {
+      this.first.set(0);
+      this.searchTerm.set(value ?? '');
+    });
   }
 
   // === Protected Methods ===
   protected onStageTabChange(tab: string): void {
+    this.first.set(0);
     this.stageTab.set(tab);
+  }
+
+  protected onPage(event: { first?: number }): void {
+    this.first.set(event.first ?? 0);
   }
 
   // The signal is set directly so the table clears now rather than after the debounce; the form reset
   // still emits so the debounced pipeline and the control agree on the empty value.
   protected resetFilters(): void {
     this.searchForm.reset({ search: '' });
+    this.first.set(0);
     this.searchTerm.set('');
     this.stageTab.set('all');
   }

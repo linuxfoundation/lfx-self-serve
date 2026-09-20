@@ -409,13 +409,20 @@ export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
   buildMyFormationSummary(),
 ];
 
+/** One stubbed `GET /api/user/formation-work` response; a non-200 `status` needs no `body`. */
+export interface MyFormationsStubResponse {
+  status: number;
+  body?: MyFormationWorkResponse;
+}
+
 export interface MyFormationsGotoOptions {
   flagEnabled?: boolean;
   /**
-   * Responses for successive `GET /api/user/formation-work` calls; the last one repeats. A non-200
-   * status exercises the page's error state (the service maps it to `state: 'unavailable'`).
+   * Responses for successive `GET /api/user/formation-work` calls; the last one repeats, so the
+   * list must hold at least one. A non-200 status exercises the page's error state (the service
+   * maps it to `state: 'unavailable'`).
    */
-  responses?: { status: number; body?: MyFormationWorkResponse }[];
+  responses?: [MyFormationsStubResponse, ...MyFormationsStubResponse[]];
 }
 
 /**

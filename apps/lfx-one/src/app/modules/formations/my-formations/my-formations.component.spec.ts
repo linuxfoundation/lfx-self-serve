@@ -200,6 +200,32 @@ describe('MyFormationsComponent (#2753)', () => {
     expect(rowIds(fixture)).toEqual(['my-formations-row-cascade']);
   });
 
+  it('sends the paginator back to the first page when a filter narrows the list', async () => {
+    const { fixture } = await render(
+      complete(
+        Array.from({ length: 12 }, (_, i) => formation({ formation_uid: `f-${i}`, project_name: `Project ${i}`, sub_stage: i < 6 ? 'engaged' : 'exploratory' }))
+      )
+    );
+    const component = fixture.componentInstance as unknown as { first: { (): number; set: (v: number) => void }; onPage: (e: { first?: number }) => void };
+
+    // Land on page 2, as the paginator would report it.
+    component.onPage({ first: 10 });
+    expect(component.first()).toBe(10);
+
+    (byTestId(fixture, 'filter-pill-engaged') as HTMLButtonElement).click();
+    await settle(fixture);
+
+    expect(component.first()).toBe(0);
+    expect(rowIds(fixture)).toHaveLength(6);
+
+    component.onPage({ first: 10 });
+    fixture.componentInstance.searchForm.controls.search.setValue('Project 1');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await settle(fixture);
+
+    expect(component.first()).toBe(0);
+  });
+
   it('shows the in-card "No results" state with a Reset that restores every row', async () => {
     const { fixture } = await render(complete([formation({ formation_uid: 'exploratory-1', sub_stage: 'exploratory' })]));
 
@@ -225,11 +251,18 @@ describe('MyFormationsComponent (#2753)', () => {
     expect(byTestId(fixture, 'my-formations-error')).toBeNull();
   });
 
-  it('treats a partial response as data, not an error', async () => {
+  it('treats a partial response that still carries rows as data, not an error', async () => {
     const { fixture } = await render({ formations: [formation()], items: [], state: 'partial' });
 
     expect(rowIds(fixture)).toEqual(['my-formations-row-formation-1']);
     expect(byTestId(fixture, 'my-formations-error')).toBeNull();
+  });
+
+  it('shows the error state, not the empty state, for a partial response with no rows', async () => {
+    const { fixture } = await render({ formations: [], items: [], state: 'partial' });
+
+    expect(byTestId(fixture, 'my-formations-error')).not.toBeNull();
+    expect(byTestId(fixture, 'my-formations-empty-state')).toBeNull();
   });
 
   it('shows the inline error when the read is unavailable, and Retry re-arms loading, invalidates the shared read and renders the new response', async () => {

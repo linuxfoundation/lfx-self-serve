@@ -72,5 +72,11 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
     const nav = page.getByTestId('sidebar-my-formations');
     await expect(nav).toBeAttached();
     await expect(nav.locator('a').first()).toHaveAttribute('href', '/formations');
+
+    // Every menu item inside a section carries a `sidebar-*` test id (sidebar.component.html's
+    // menuItem template), so the section's last such descendant is its last entry.
+    const engagement = page.getByTestId('sidebar-item-my-engagement');
+    await expect(engagement).toBeAttached();
+    await expect(engagement.locator('[data-testid^="sidebar-"]').last()).toHaveAttribute('data-testid', 'sidebar-my-formations');
   });
 });

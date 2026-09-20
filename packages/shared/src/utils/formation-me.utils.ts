@@ -145,6 +145,10 @@ export function buildFormationPendingActionView(item: PendingActionItem): Format
  *   3. Nearer `announcement_date` first, nulls last (ISO `YYYY-MM-DD` strings compare lexically).
  *   4. `project_name`, then `formation_uid`, as deterministic tiebreaks, so the list never
  *      reshuffles between renders of the same data even when two formations share a project name.
+ *      Both pin the `'en'` collation (as `committee.utils.ts` and `org-cla-approval.utils.ts` do):
+ *      the page server-renders, and an unpinned `localeCompare` follows each runtime's default
+ *      locale, so Node and the browser could order accented names differently and hydrate a
+ *      mismatched table.
  */
 export function compareMyFormationsByNeed(a: MyFormationSummary, b: MyFormationSummary): number {
   if (a.assigned_to_do !== b.assigned_to_do) return b.assigned_to_do - a.assigned_to_do;
@@ -157,9 +161,9 @@ export function compareMyFormationsByNeed(a: MyFormationSummary, b: MyFormationS
   const bDate = b.announcement_date ?? '￿';
   if (aDate !== bDate) return aDate < bDate ? -1 : 1;
 
-  if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name);
+  if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name, 'en');
 
-  return a.formation_uid.localeCompare(b.formation_uid);
+  return a.formation_uid.localeCompare(b.formation_uid, 'en');
 }
 
 /**
