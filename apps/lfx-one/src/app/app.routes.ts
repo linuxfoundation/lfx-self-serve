@@ -17,6 +17,7 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { gwEmbedTenantGuard } from './shared/guards/gw-embed-tenant.guard';
@@ -241,12 +242,14 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
       },
-      // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
+      // Project Lens dashboard (placeholder — reuses DashboardComponent for now). A project in a
+      // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
+      // so its redirect wins over `projectQueryParamGuard` (#2754).
       {
         path: 'project/overview',
         title: 'Project Dashboard',
         data: { lens: 'project' },
-        canActivate: [projectQueryParamGuard],
+        canActivate: [formationOverviewRedirectGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
       // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched

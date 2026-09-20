@@ -5,7 +5,7 @@
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import type { FormationPeopleResponse, LensItem, PendingActionItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
-import { Page, test } from '@playwright/test';
+import { expect, Page, test } from '@playwright/test';
 
 import { getMockFormationItems, MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
 import { FormationApiMockHelper } from './formation-api-mock.helper';
@@ -355,4 +355,29 @@ export async function gotoProjectFormationItem(page: Page, slug: string, itemKey
   skipWhenAuthMissing(page);
   await page.goto(`/project/formation?project=${slug}&item=${itemKey}`, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
+}
+
+/**
+ * One mocked project in the **Project** lens so the selector resolves on `/project/*` pages — the
+ * project-lens counterpart of `stubNavLensItems`. Also stubs the sfid lookup `ProjectContextService`
+ * fires for the selected context. Shared by the formation-sidebar spec pair (#2754).
+ */
+export async function stubProjectLensItems(page: Page, project: Pick<Project, 'uid' | 'slug' | 'name'>): Promise<void> {
+  const item: LensItem = { uid: project.uid, slug: project.slug, name: project.name, logoUrl: null, isFoundation: false, formationSubStage: null };
+  await page.route('**/api/nav/lens-items*', (route) => {
+    const requestedLens = new URL(route.request().url()).searchParams.get('lens') ?? 'project';
+    const items = requestedLens === 'project' ? [item] : [];
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items, next_page_token: null, upstream_failed: false, lens: requestedLens }),
+    });
+  });
+  await page.route('**/api/projects/*/sfid*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ sfid: null }) }));
+}
+
+/** The sidebar renders its items only once the lens has loaded (loading skeleton gone). */
+export async function waitForSidebar(page: Page, timeout = 20_000): Promise<void> {
+  await expect(page.getByTestId('sidebar')).toBeVisible({ timeout });
+  await expect(page.getByTestId('sidebar-menu-loading')).toHaveCount(0, { timeout });
 }

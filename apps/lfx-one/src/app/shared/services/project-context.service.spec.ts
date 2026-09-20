@@ -189,6 +189,45 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     TestBed.inject(ApplicationRef).tick();
     expect(service.canWrite()).toBe(false);
   });
+
+  it('reports the stage as unresolved until its fetch answers, so a nav gated on it can wait instead of guessing (#2754)', () => {
+    const pending = new Subject<Project | null>();
+    getProject.mockReturnValue(pending);
+    service.setProject({ ...CONTEXT, uid: 'stage-pending' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectStageResolved()).toBe(false);
+    expect(service.activeProjectStage()).toBeNull();
+
+    pending.next(project('Formation - Engaged'));
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectStageResolved()).toBe(true);
+    expect(service.activeProjectStage()).toBe('Formation - Engaged');
+  });
+
+  it("drops the previous project's stage while the next fetch is in flight — unlike activeProject, nothing takes a transient null here as an access loss", () => {
+    getProject.mockReturnValue(of(project('Formation - Engaged')));
+    service.setProject({ ...CONTEXT, uid: 'stage-first' }, false);
+    TestBed.inject(ApplicationRef).tick();
+    expect(service.activeProjectStage()).toBe('Formation - Engaged');
+
+    const pending = new Subject<Project | null>();
+    getProject.mockReturnValue(pending);
+    service.setProject({ ...CONTEXT, uid: 'stage-next' }, false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectStageResolved()).toBe(false);
+    expect(service.activeProjectStage()).toBeNull();
+  });
+
+  it('counts an unauthenticated session as resolved with no stage', () => {
+    userService.authenticated.set(false);
+    TestBed.inject(ApplicationRef).tick();
+
+    expect(service.activeProjectStageResolved()).toBe(true);
+    expect(service.activeProjectStage()).toBeNull();
+  });
 });
 
 /**

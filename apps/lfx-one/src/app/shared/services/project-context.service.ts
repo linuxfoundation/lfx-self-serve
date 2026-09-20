@@ -135,9 +135,20 @@ export class ProjectContextService {
    * `activeContext`, not a derivation of it. That call is cached per slug for the service's
    * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
    * stage as of its first fetch this session, not a live re-check on every context change. `null`
-   * while resolving, absent, or unauthenticated.
+   * while resolving, absent, or unauthenticated — `activeProjectStageResolved` tells those apart.
    */
-  public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
+  public readonly activeProjectStage: Signal<string | null> = computed(() => this.activeProjectStageFetch() ?? null);
+
+  /**
+   * False from a context change until that context's stage fetch answers (#2754). `SidebarNavService`
+   * renders no project-lens items in that window rather than a nav shape the resolved stage may then
+   * collapse. Unlike `activeProject`, this pipeline does clear the previous value when a fetch starts:
+   * nothing reads a transient null here as an access loss (contrast `initActiveProjectDetails`).
+   */
+  public readonly activeProjectStageResolved: Signal<boolean> = computed(() => this.activeProjectStageFetch() !== undefined);
+
+  /** `undefined` while a stage fetch is in flight for the current context; otherwise the resolved stage, or `null`. */
+  private readonly activeProjectStageFetch: Signal<string | null | undefined> = this.initActiveProjectStageFetch();
 
   /**
    * Meeting-authoring permission for the current active context, paired with the context uid it was
@@ -398,17 +409,22 @@ export class ProjectContextService {
     );
   }
 
-  private initActiveProjectStage(): Signal<string | null> {
+  private initActiveProjectStageFetch(): Signal<string | null | undefined> {
     return toSignal(
       combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
         switchMap(([ctx, authenticated]) => {
           if (!ctx?.slug || !authenticated) {
             return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(map((project) => project?.stage ?? null));
+          return this.projectService.getProject(ctx.slug, false).pipe(
+            map((project): string | null => project?.stage ?? null),
+            // Marks the fetch as in flight the moment the context changes; a cached slug answers
+            // synchronously, so consumers never observe the marker for a project already seen.
+            startWith(undefined)
+          );
         })
       ),
-      { initialValue: null }
+      { initialValue: undefined }
     );
   }
 
