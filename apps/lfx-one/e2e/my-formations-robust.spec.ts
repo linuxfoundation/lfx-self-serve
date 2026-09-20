@@ -52,7 +52,10 @@ test.describe('Me-lens My Formations page structural contract (#2753)', () => {
     await expect(open).toHaveAttribute('href', /\/project\/formation\?project=.+/);
     await expect(open).toHaveAttribute('aria-label', /formation checklist$/);
 
-    await expect(row.getByTestId(`my-formations-stage-${CASCADE}`).locator('lfx-tag, [data-testid$="tag"]').first()).toBeAttached();
+    // The stage test id sits on the lfx-tag host itself, so assert on the resolved element.
+    const stage = row.getByTestId(`my-formations-stage-${CASCADE}`);
+    await expect(stage).toBeAttached();
+    expect(await stage.evaluate((el) => el.tagName)).toBe('LFX-TAG');
     await expect(row.getByTestId(`my-formations-items-${CASCADE}`)).toBeAttached();
 
     const progress = row.getByTestId(`my-formations-progress-${CASCADE}`).locator('[role="progressbar"]');

@@ -175,6 +175,31 @@ describe('MyFormationsComponent (#2753)', () => {
     expect(rowIds(fixture)).toEqual(['my-formations-row-cascade']);
   });
 
+  it('applies the same search term again after Reset filters (the reset clears the debounce memory)', async () => {
+    const { fixture } = await render(
+      complete([
+        formation({ formation_uid: 'acme', project_name: 'Acme Project' }),
+        formation({ formation_uid: 'cascade', project_name: 'Cascade Data Alliance' }),
+      ])
+    );
+    const search = fixture.componentInstance.searchForm.controls.search;
+
+    search.setValue('cascade');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await settle(fixture);
+    expect(rowIds(fixture)).toEqual(['my-formations-row-cascade']);
+
+    (fixture.componentInstance as unknown as { resetFilters: () => void }).resetFilters();
+    await settle(fixture);
+    expect(rowIds(fixture)).toHaveLength(2);
+    expect(search.value).toBe('');
+
+    search.setValue('cascade');
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await settle(fixture);
+    expect(rowIds(fixture)).toEqual(['my-formations-row-cascade']);
+  });
+
   it('shows the in-card "No results" state with a Reset that restores every row', async () => {
     const { fixture } = await render(complete([formation({ formation_uid: 'exploratory-1', sub_stage: 'exploratory' })]));
 

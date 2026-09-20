@@ -11,11 +11,11 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_CHECKLIST_PATH, FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS } from '@lfx-one/shared/constants';
+import { FORMATION_CHECKLIST_PATH, FORMATION_STAGE_TAB_OPTIONS } from '@lfx-one/shared/constants';
 import type { DecoratedMyFormation, FilterPillOption, MyFormationWorkResponse } from '@lfx-one/shared/interfaces';
 import { compareMyFormationsByNeed, decorateMyFormation } from '@lfx-one/shared/utils';
 import { FormationService } from '@services/formation.service';
-import { debounceTime, distinctUntilChanged, tap } from 'rxjs';
+import { debounceTime, tap } from 'rxjs';
 
 /**
  * Me-lens "My Formations" page (#2753) — one row per formation the caller has at least one
@@ -44,10 +44,7 @@ export class MyFormationsComponent {
 
   // === Template constants ===
   protected readonly checklistPath = FORMATION_CHECKLIST_PATH;
-  protected readonly stageTabOptions: FilterPillOption[] = [
-    { id: 'all', label: 'All' },
-    ...FORMATION_QUEUE_SUB_STAGES.map((stage) => ({ id: stage, label: FORMATION_SUB_STAGE_LABELS[stage] })),
-  ];
+  protected readonly stageTabOptions: FilterPillOption[] = FORMATION_STAGE_TAB_OPTIONS;
 
   // === Forms ===
   public readonly searchForm = new FormGroup({
@@ -76,8 +73,12 @@ export class MyFormationsComponent {
 
   // === Constructor ===
   public constructor() {
+    // No `distinctUntilChanged`: the signal already ignores a repeated value, and the operator's
+    // memory would outlive `resetFilters()` — a term typed again right after "Reset filters" (inside
+    // the debounce window, so the reset's own empty value never reaches it) would be swallowed,
+    // leaving the box showing a term the table isn't applying.
     this.searchForm.controls.search.valueChanges
-      .pipe(debounceTime(200), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+      .pipe(debounceTime(200), takeUntilDestroyed(this.destroyRef))
       .subscribe((value) => this.searchTerm.set(value ?? ''));
   }
 
@@ -86,8 +87,10 @@ export class MyFormationsComponent {
     this.stageTab.set(tab);
   }
 
+  // The signal is set directly so the table clears now rather than after the debounce; the form reset
+  // still emits so the debounced pipeline and the control agree on the empty value.
   protected resetFilters(): void {
-    this.searchForm.reset({ search: '' }, { emitEvent: false });
+    this.searchForm.reset({ search: '' });
     this.searchTerm.set('');
     this.stageTab.set('all');
   }

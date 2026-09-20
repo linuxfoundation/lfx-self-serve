@@ -11,7 +11,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { FORMATION_QUEUE_SUB_STAGES, FORMATION_SUB_STAGE_LABELS } from '@lfx-one/shared/constants';
+import { FORMATION_STAGE_TAB_OPTIONS } from '@lfx-one/shared/constants';
 import type { FilterPillOption, FormationQueueRow, FormationsQueueFilterState, FormationSubStage, FormationTableRow } from '@lfx-one/shared/interfaces';
 import { formatAnnouncementDateLabel, getFormationQueueStageDisplay } from '@lfx-one/shared/utils';
 import { debounceTime, distinctUntilChanged, map } from 'rxjs';
@@ -44,10 +44,7 @@ export class FormationsTableComponent {
   protected readonly sortField = signal<FormationSortableField | null>('announcement_date');
   protected readonly sortOrder = signal<'ASC' | 'DESC'>('ASC');
 
-  protected readonly statusTabOptions: Signal<FilterPillOption[]> = computed(() => [
-    { id: 'all', label: 'All' },
-    ...FORMATION_QUEUE_SUB_STAGES.map((stage) => ({ id: stage, label: FORMATION_SUB_STAGE_LABELS[stage] })),
-  ]);
+  protected readonly statusTabOptions: FilterPillOption[] = FORMATION_STAGE_TAB_OPTIONS;
 
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
   protected readonly displayRows: Signal<FormationTableRow[]> = this.initDisplayRows();
