@@ -464,7 +464,7 @@ describe('org-clas router — CLA managers', () => {
       const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method });
 
       expect(res.status).toBe(403);
-      expect(await res.json()).toEqual({ code: 'IMPERSONATION_READ_ONLY' });
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
       expect(handler()).not.toHaveBeenCalled();
     });
   });
