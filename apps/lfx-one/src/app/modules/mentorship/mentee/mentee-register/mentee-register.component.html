@@ -3,6 +3,19 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentee-register">
   <div class="flex flex-col gap-6 mt-3">
+    <!-- Dev shortcut — remove once the real profile API drives the guard -->
+    <div class="flex justify-end" data-testid="mentorship-mentee-register-dev-shortcut">
+      <lfx-button
+        [label]="devDashboardLabel"
+        severity="secondary"
+        size="small"
+        [outlined]="true"
+        icon="fa-light fa-arrow-right"
+        iconPos="right"
+        (onClick)="onMyDashboard()"
+        data-testid="mentorship-mentee-dev-dashboard" />
+    </div>
+
     <header class="flex flex-col gap-2">
       <h1 class="font-display font-light text-2xl md:text-3xl text-gray-900" data-testid="mentorship-mentee-register-title">{{ title }}</h1>
       <p class="max-w-3xl text-sm text-gray-600">{{ subtitlePrefix }}<span class="text-red-500">*</span>{{ subtitleSuffix }}</p>

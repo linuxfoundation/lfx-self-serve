@@ -1,0 +1,243 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!hasLoaded()) {
+  <!-- Loading -->
+  <lfx-route-loading />
+} @else if (loadError()) {
+  <!-- Error -->
+  <lfx-empty-state icon="fa-light fa-triangle-exclamation" [title]="loadError()!" subtitle="Check your connection and try again.">
+    <button type="button" class="mt-4 rounded-lg bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700" (click)="retry()">Retry</button>
+  </lfx-empty-state>
+} @else {
+  <!-- ============================================================= -->
+  <!-- EMPTY PHASE (screen 1)                                        -->
+  <!-- ============================================================= -->
+  @if (phase() === 'empty') {
+    <div class="flex flex-col items-center gap-6 rounded-xl border border-gray-200 bg-white px-8 py-16 text-center">
+      <i class="fa-solid fa-user-graduate text-3xl text-gray-400" aria-hidden="true"></i>
+      <div class="flex flex-col gap-2">
+        <h2 class="text-lg font-semibold text-gray-900">{{ emptyTitle }}</h2>
+        <p class="max-w-md text-sm text-gray-500">{{ emptySubtitle }}</p>
+      </div>
+      <a
+        [href]="findProgramUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="inline-flex items-center gap-2 rounded-lg bg-primary-600 px-5 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-primary-700">
+        {{ findProgramLabel }}
+        <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+      </a>
+      <!-- Dev shortcut -->
+      <button type="button" class="text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('applicant')">
+        {{ devViewApplicantLabel }}
+      </button>
+    </div>
+  }
+
+  <!-- ============================================================= -->
+  <!-- APPLICANT PHASE (screen 2)                                    -->
+  <!-- ============================================================= -->
+  @if (phase() === 'applicant') {
+    @let data = applicantData();
+    @if (data) {
+      <div class="flex flex-col gap-6">
+        <!-- Info banner -->
+        <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5">
+          <!-- Info icon -->
+          <div class="mt-0.5 shrink-0">
+            <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
+          </div>
+          <!-- Banner text -->
+          <div class="flex flex-1 flex-col gap-1">
+            <p class="text-sm font-semibold text-gray-900">{{ applicationCount() }} {{ bannerTitleSuffix }}</p>
+            <p class="text-sm text-gray-500">{{ bannerBody }}</p>
+          </div>
+          <!-- Banner actions -->
+          <div class="flex shrink-0 items-center gap-4">
+            <a
+              [href]="findProgramUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+              <i class="fa-light fa-magnifying-glass text-sm" aria-hidden="true"></i>
+              {{ findProgramLabel }}
+            </a>
+            <!-- Dev shortcuts -->
+            <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('accepted')">
+              {{ devViewAcceptedLabel }}
+            </button>
+            <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
+              {{ devViewEmptyLabel }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Application cards -->
+        @for (app of data.applications; track app.id) {
+          <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5">
+            <!-- Org abbreviation badge -->
+            <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-sm font-bold text-gray-600">
+              {{ app.orgAbbreviation }}
+            </div>
+            <!-- Details -->
+            <div class="flex flex-1 flex-col gap-0.5">
+              <div class="flex items-center gap-2 text-xs text-gray-500">
+                <span>{{ app.projectName }} · {{ app.term }}</span>
+                <span class="inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium" [ngClass]="applicationStatusClass(app.status)">
+                  {{ applicationStatusLabel(app.status) }}
+                </span>
+              </div>
+              <p class="text-sm font-semibold text-gray-900">{{ app.programName }}</p>
+              <p class="text-xs text-gray-400">Submitted {{ app.submittedDate }} · Decision expected {{ app.decisionExpectedDate }}</p>
+            </div>
+            <!-- Prerequisite tasks + actions -->
+            <div class="flex shrink-0 items-center gap-4">
+              <!-- Prerequisite progress -->
+              <div class="flex w-36 flex-col gap-1">
+                <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Prerequisite Tasks</span>
+                <div class="flex items-center gap-2">
+                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      class="h-full rounded-full bg-primary-600 transition-all"
+                      [style.width.%]="taskProgress(app.prerequisiteTasksCompleted, app.prerequisiteTasksTotal)"></div>
+                  </div>
+                  <span class="text-xs text-gray-500">{{ app.prerequisiteTasksCompleted }} of {{ app.prerequisiteTasksTotal }}</span>
+                </div>
+              </div>
+              <!-- Action buttons -->
+              <button type="button" class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                {{ viewTasksLabel }}
+              </button>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
+                (click)="onWithdraw(app)">
+                <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                {{ withdrawLabel }}
+              </button>
+            </div>
+          </div>
+        }
+
+        <!-- Past Applications -->
+        @if (data.pastApplications.length > 0) {
+          <div class="rounded-xl border border-gray-200 bg-white p-6">
+            <h3 class="mb-4 text-base font-semibold text-gray-900">{{ pastApplicationsTitle }}</h3>
+            <table class="w-full text-left text-sm">
+              <thead>
+                <tr class="border-b border-gray-200">
+                  <th class="pb-3 font-medium text-gray-500">Program</th>
+                  <th class="pb-3 font-medium text-gray-500">Submitted</th>
+                  <th class="pb-3 font-medium text-gray-500">Decided</th>
+                  <th class="pb-3 font-medium text-gray-500">Outcome</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-100">
+                @for (past of data.pastApplications; track past.id) {
+                  <tr>
+                    <td class="py-3">
+                      <p class="font-medium text-gray-900">{{ past.programName }}</p>
+                      <p class="text-xs text-gray-400">{{ past.projectTerm }}</p>
+                    </td>
+                    <td class="py-3 text-gray-600">{{ past.submittedDate }}</td>
+                    <td class="py-3 text-gray-600">{{ past.decidedDate }}</td>
+                    <td class="py-3">
+                      <span class="text-sm font-medium" [ngClass]="pastOutcomeClass(past.outcome)">
+                        {{ pastOutcomeLabel(past.outcome) }}
+                      </span>
+                    </td>
+                  </tr>
+                }
+              </tbody>
+            </table>
+          </div>
+        }
+      </div>
+    }
+  }
+
+  <!-- ============================================================= -->
+  <!-- ACCEPTED PHASE (screen 3)                                     -->
+  <!-- ============================================================= -->
+  @if (phase() === 'accepted') {
+    @let data = acceptedData();
+    @if (data) {
+      <div class="flex flex-col gap-6">
+        <!-- Active program card -->
+        <div class="rounded-xl border border-gray-200 bg-white px-6 pb-6 pt-5">
+          <!-- Header: project name + Active badge -->
+          <div class="flex items-start justify-between">
+            <div class="flex flex-col gap-0.5">
+              <p class="text-xs text-gray-400">{{ data.program.projectName }}</p>
+              <h3 class="text-lg font-semibold text-gray-900">{{ data.program.programName }}</h3>
+            </div>
+            <span class="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
+              <span class="h-2 w-2 rounded-full bg-blue-500" aria-hidden="true"></span>
+              {{ activeBadgeLabel }}
+            </span>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="mt-4 flex items-center">
+            <div class="h-[5px] flex-1 overflow-hidden rounded-full bg-gray-200">
+              <div
+                class="h-full rounded-full bg-primary-500 transition-all"
+                [style.width.%]="taskProgress(data.program.tasksCompleted, data.program.tasksTotal)"></div>
+            </div>
+            <p class="ml-4 text-right text-sm text-gray-400">
+              {{ taskProgress(data.program.tasksCompleted, data.program.tasksTotal) }}% &middot; {{ data.program.tasksCompleted }} of
+              {{ data.program.tasksTotal }} tasks
+            </p>
+          </div>
+
+          <!-- Mentor section -->
+          <div class="mt-6 border-t border-gray-100 pt-5">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{{ yourMentorLabel }}</p>
+            <div class="mt-3 flex items-center gap-3">
+              @if (data.program.mentor.avatarUrl) {
+                <img [src]="data.program.mentor.avatarUrl" [alt]="data.program.mentor.name" class="h-10 w-10 rounded-full object-cover" />
+              } @else {
+                <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium lowercase text-primary-700">
+                  {{ data.program.mentor.name.charAt(0) }}
+                </div>
+              }
+              <div class="flex flex-col">
+                <span class="text-sm font-semibold text-gray-900">{{ data.program.mentor.name }}</span>
+                <span class="text-xs text-gray-400">{{ data.program.mentor.role }} &middot; {{ data.program.mentor.org }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Up Next card -->
+        @if (data.program.upNextTasks.length > 0) {
+          <div class="rounded-xl border border-gray-200 bg-white px-6 pb-2 pt-5">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-semibold text-gray-900">{{ upNextTitle }}</h3>
+              <button type="button" class="text-sm font-medium text-primary-600 hover:underline">{{ allTasksLabel }}</button>
+            </div>
+            <div class="mt-3 flex flex-col divide-y divide-gray-100">
+              @for (task of data.program.upNextTasks; track task.id) {
+                <div class="flex items-center justify-between py-3.5">
+                  <div class="flex items-center gap-3">
+                    <span class="inline-flex items-center justify-center rounded px-2 py-1 text-xs font-medium" [ngClass]="upNextStatusClass(task.status)">
+                      {{ upNextStatusLabel(task.status) }}
+                    </span>
+                    <span class="text-sm text-gray-700">{{ task.title }}</span>
+                  </div>
+                  <span class="text-sm text-gray-400">{{ task.dueDate }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Dev shortcut -->
+        <button type="button" class="self-start text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
+          {{ devViewEmptyLabel }}
+        </button>
+      </div>
+    }
+  }
+}

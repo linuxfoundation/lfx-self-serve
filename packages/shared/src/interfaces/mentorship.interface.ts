@@ -634,3 +634,144 @@ export interface MentorshipMentorProfileResponse {
   profile: MentorshipMentorProfileDetails;
   history: MentorshipMentoringHistoryEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Mentee page types
+// ---------------------------------------------------------------------------
+
+/** Underline tabs on the mentee shell at `/mentorship/mentee/*`. */
+export type MentorshipMenteePageTab = 'overview' | 'tasks' | 'profile';
+
+/** Mentee task lifecycle on the My Application Tasks tab. */
+export type MentorshipMenteeTaskStatus = 'pending' | 'in-progress' | 'submitted' | 'completed';
+
+/** One task row on the mentee My Application Tasks tab. */
+export interface MentorshipMenteeTask {
+  id: string;
+  title: string;
+  description: string;
+  status: MentorshipMenteeTaskStatus;
+  dueDate?: string;
+  submittedDate?: string;
+}
+
+/** Response body from `GET /api/mentorship/mentee/tasks`. */
+export interface MentorshipMenteeTasksResponse {
+  data: MentorshipMenteeTask[];
+  total: number;
+}
+
+/** Mentee's own profile detail fields on `/mentorship/mentee/profile`. */
+export interface MentorshipMenteeProfileDetails {
+  /** Rich-text HTML or plain text authored on the Become a Mentee form. */
+  aboutMe: string;
+  skillsHave: string[];
+  skillsWant: string[];
+  /** Optional resume file name, matching the picker on the register form. */
+  resumeFileName?: string;
+  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
+  resumeUrl?: string;
+}
+
+/** Response body from `GET /api/mentorship/mentee/profile`. */
+export interface MentorshipMenteeProfileResponse {
+  profile: MentorshipMenteeProfileDetails;
+}
+
+// ---------------------------------------------------------------------------
+// Mentee overview — three-phase model
+// ---------------------------------------------------------------------------
+
+/** The mentee overview progresses through three phases. */
+export type MentorshipMenteePhase = 'empty' | 'applicant' | 'accepted';
+
+/** Application status on the applicant-phase cards. */
+export type MentorshipMenteeApplicationStatus = 'in-progress' | 'awaiting-review';
+
+/** One application card on the applicant overview (screen 2). */
+export interface MentorshipMenteeApplication {
+  id: string;
+  /** Two-letter org abbreviation shown in the left badge, e.g. "AR", "ZR". */
+  orgAbbreviation: string;
+  projectName: string;
+  term: string;
+  programName: string;
+  status: MentorshipMenteeApplicationStatus;
+  submittedDate: string;
+  decisionExpectedDate: string;
+  prerequisiteTasksCompleted: number;
+  prerequisiteTasksTotal: number;
+}
+
+/** Outcome for a past application row. */
+export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'accepted';
+
+/** One row in the Past Applications table (screen 2). */
+export interface MentorshipMenteePastApplication {
+  id: string;
+  programName: string;
+  projectTerm: string;
+  submittedDate: string;
+  decidedDate: string;
+  outcome: MentorshipMenteePastOutcome;
+}
+
+/** Mentor info shown on the accepted-phase card (screen 3). */
+export interface MentorshipMenteeActiveMentor {
+  name: string;
+  avatarUrl?: string;
+  role: string;
+  org: string;
+}
+
+/** Task status on the accepted "Up Next" list. */
+export type MentorshipMenteeUpNextTaskStatus = 'in-progress' | 'pending';
+
+/** One upcoming task row on the accepted-phase card (screen 3). */
+export interface MentorshipMenteeUpNextTask {
+  id: string;
+  title: string;
+  status: MentorshipMenteeUpNextTaskStatus;
+  dueDate: string;
+}
+
+/** The single accepted program on the accepted-phase overview (screen 3). */
+export interface MentorshipMenteeActiveProgram {
+  id: string;
+  projectName: string;
+  programName: string;
+  tasksCompleted: number;
+  tasksTotal: number;
+  mentor: MentorshipMenteeActiveMentor;
+  upNextTasks: MentorshipMenteeUpNextTask[];
+}
+
+// -- Discriminated union response -------------------------------------------
+
+export interface MentorshipMenteeOverviewEmpty {
+  phase: 'empty';
+}
+
+export interface MentorshipMenteeOverviewApplicant {
+  phase: 'applicant';
+  applications: MentorshipMenteeApplication[];
+  pastApplications: MentorshipMenteePastApplication[];
+  openTaskCount: number;
+}
+
+export interface MentorshipMenteeOverviewAccepted {
+  phase: 'accepted';
+  program: MentorshipMenteeActiveProgram;
+  openTaskCount: number;
+}
+
+/** Response body from `GET /api/mentorship/mentee/overview`. */
+export type MentorshipMenteeOverviewResponse =
+  | MentorshipMenteeOverviewEmpty
+  | MentorshipMenteeOverviewApplicant
+  | MentorshipMenteeOverviewAccepted;
+
+/** Response body from `GET /api/mentorship/mentee/has-profile`. */
+export interface MentorshipMenteeHasProfileResponse {
+  hasProfile: boolean;
+}
