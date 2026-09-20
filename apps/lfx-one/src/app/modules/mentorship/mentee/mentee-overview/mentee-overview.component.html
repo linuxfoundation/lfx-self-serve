@@ -35,12 +35,14 @@
         {{ findProgramLabel }}
         <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
       </a>
-      <!-- Dev shortcut (hidden in production) -->
-      @if (isDevMode) {
-        <button type="button" class="text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('applicant')">
-          {{ devViewApplicantLabel }}
-        </button>
-      }
+      <!-- Mock shortcut — will be removed when integrating with real data -->
+      <button
+        type="button"
+        data-testid="mentee-overview-dev-applicant"
+        class="text-sm font-medium text-primary-600 hover:underline"
+        (click)="switchPhase('applicant')">
+        {{ devViewApplicantLabel }}
+      </button>
     </div>
   }
 
@@ -73,15 +75,21 @@
               <i class="fa-light fa-magnifying-glass text-sm" aria-hidden="true"></i>
               {{ findProgramLabel }}
             </a>
-            <!-- Dev shortcuts (hidden in production) -->
-            @if (isDevMode) {
-              <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('accepted')">
-                {{ devViewAcceptedLabel }}
-              </button>
-              <button type="button" class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
-                {{ devViewEmptyLabel }}
-              </button>
-            }
+            <!-- Mock shortcuts — will be removed when integrating with real data -->
+            <button
+              type="button"
+              data-testid="mentee-overview-dev-accepted"
+              class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline"
+              (click)="switchPhase('accepted')">
+              {{ devViewAcceptedLabel }}
+            </button>
+            <button
+              type="button"
+              data-testid="mentee-overview-dev-empty"
+              class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline"
+              (click)="switchPhase('empty')">
+              {{ devViewEmptyLabel }}
+            </button>
           </div>
         </div>
 
@@ -256,19 +264,21 @@
                     {{ upNextStatusLabel(task.status) }}
                   </span>
                   <span class="text-sm text-gray-700">{{ task.name }}</span>
-                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate | date: 'MMM d' }}</span>
+                  <span class="ml-auto whitespace-nowrap text-sm text-gray-400">{{ task.dueDate | date: 'MMM d, y' }}</span>
                 </div>
               }
             </div>
           </div>
         }
 
-        <!-- Dev shortcut (hidden in production) -->
-        @if (isDevMode) {
-          <button type="button" class="self-start text-sm font-medium text-primary-600 hover:underline" (click)="switchPhase('empty')">
-            {{ devViewEmptyLabel }}
-          </button>
-        }
+        <!-- Mock shortcut — will be removed when integrating with real data -->
+        <button
+          type="button"
+          data-testid="mentee-overview-dev-empty"
+          class="self-start text-sm font-medium text-primary-600 hover:underline"
+          (click)="switchPhase('empty')">
+          {{ devViewEmptyLabel }}
+        </button>
       </div>
     }
   }

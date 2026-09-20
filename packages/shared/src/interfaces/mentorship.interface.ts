@@ -797,10 +797,7 @@ export interface MentorshipMenteeOverviewAccepted {
 }
 
 /** Response body from `GET /api/mentorship/mentee/overview`. */
-export type MentorshipMenteeOverviewResponse =
-  | MentorshipMenteeOverviewEmpty
-  | MentorshipMenteeOverviewApplicant
-  | MentorshipMenteeOverviewAccepted;
+export type MentorshipMenteeOverviewResponse = MentorshipMenteeOverviewEmpty | MentorshipMenteeOverviewApplicant | MentorshipMenteeOverviewAccepted;
 
 /** Response body from `GET /api/mentorship/mentee/has-profile`. */
 export interface MentorshipMenteeHasProfileResponse {

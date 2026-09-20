@@ -3,7 +3,7 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, isDevMode, output, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -106,9 +106,8 @@ export class MenteeOverviewComponent {
   protected readonly upNextTitle = MENTORSHIP_MENTEE_UP_NEXT_TITLE;
   protected readonly allTasksLabel = MENTORSHIP_MENTEE_ALL_TASKS_LABEL;
 
-  // -- Dev shortcuts (hidden in production) ------------------------------------
+  // -- Mock shortcuts (will be removed when integrating with real data) --------
 
-  protected readonly isDevMode = isDevMode();
   protected readonly devViewEmptyLabel = MENTORSHIP_MENTEE_DEV_VIEW_EMPTY_LABEL;
   protected readonly devViewApplicantLabel = MENTORSHIP_MENTEE_DEV_VIEW_APPLICANT_LABEL;
   protected readonly devViewAcceptedLabel = MENTORSHIP_MENTEE_DEV_VIEW_ACCEPTED_LABEL;

@@ -175,7 +175,7 @@ describe('MenteeOverviewComponent', () => {
     expect(text).toContain('Implement replay from durable buffer');
     expect(text).toContain('In Progress');
     expect(text).toContain('To Do');
-    expect(text).toContain('Sep 18');
+    expect(text).toContain('Sep 18, 2026');
   });
 
   it('renders the progress bar with percentage', async () => {

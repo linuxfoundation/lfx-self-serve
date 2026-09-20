@@ -116,7 +116,9 @@ export class MentorshipService {
   public getMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
     let params = new HttpParams();
     if (phase) params = params.set('phase', phase);
-    return this.http.get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params }).pipe(catchError(this.rethrowError('getMenteeOverview')));
+    return this.http
+      .get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params })
+      .pipe(catchError(this.rethrowError('getMenteeOverview')));
   }
 
   public getMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
