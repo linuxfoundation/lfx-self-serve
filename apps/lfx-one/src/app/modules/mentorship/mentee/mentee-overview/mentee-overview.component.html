@@ -75,7 +75,7 @@
 
         <!-- Application cards -->
         @for (app of data.applications; track app.id) {
-          <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5">
+          <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5" data-testid="mentee-application-card">
             <!-- Org abbreviation badge -->
             <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-sm font-bold text-gray-600">
               {{ app.orgAbbreviation }}
@@ -206,7 +206,9 @@
                   @if (mentor.avatarUrl) {
                     <img [src]="mentor.avatarUrl" [alt]="mentor.name" class="h-10 w-10 rounded-full object-cover" />
                   } @else {
-                    <div class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700">
+                    <div
+                      class="flex h-10 w-10 items-center justify-center rounded-full bg-primary-100 text-sm font-medium text-primary-700"
+                      data-testid="mentor-avatar-fallback">
                       {{ mentor.name | initials: 1 }}
                     </div>
                   }

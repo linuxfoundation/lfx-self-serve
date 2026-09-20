@@ -10,7 +10,7 @@ import {
 import { MentorshipMenteeOverviewResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { of, throwError } from 'rxjs';
+import { of, take, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeOverviewComponent } from './mentee-overview.component';
@@ -74,8 +74,8 @@ describe('MenteeOverviewComponent', () => {
 
     const phaseSpy = vi.fn();
     const taskCountSpy = vi.fn();
-    component.phaseChange.subscribe(phaseSpy);
-    component.openTaskCountChange.subscribe(taskCountSpy);
+    component.phaseChange.pipe(take(1)).subscribe(phaseSpy);
+    component.openTaskCountChange.pipe(take(1)).subscribe(taskCountSpy);
 
     fixture.detectChanges();
     await fixture.whenStable();
@@ -89,7 +89,7 @@ describe('MenteeOverviewComponent', () => {
 
   it('renders application cards with nested term name', async () => {
     await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
-    const cards = element().querySelectorAll('.rounded-xl.border');
+    const cards = element().querySelectorAll('[data-testid="mentee-application-card"]');
     expect(cards.length).toBeGreaterThan(0);
     const text = element().textContent ?? '';
     expect(text).toContain('Fall 2026');
@@ -139,8 +139,8 @@ describe('MenteeOverviewComponent', () => {
 
     const phaseSpy = vi.fn();
     const taskCountSpy = vi.fn();
-    component.phaseChange.subscribe(phaseSpy);
-    component.openTaskCountChange.subscribe(taskCountSpy);
+    component.phaseChange.pipe(take(1)).subscribe(phaseSpy);
+    component.openTaskCountChange.pipe(take(1)).subscribe(taskCountSpy);
 
     fixture.detectChanges();
     await fixture.whenStable();
@@ -163,7 +163,7 @@ describe('MenteeOverviewComponent', () => {
 
   it('renders mentor avatar fallback initials via InitialsPipe', async () => {
     await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED);
-    const avatarFallbacks = element().querySelectorAll('.rounded-full.bg-primary-100');
+    const avatarFallbacks = element().querySelectorAll('[data-testid="mentor-avatar-fallback"]');
     expect(avatarFallbacks.length).toBe(2);
     expect(avatarFallbacks[0].textContent?.trim()).toBe('T');
     expect(avatarFallbacks[1].textContent?.trim()).toBe('T');
