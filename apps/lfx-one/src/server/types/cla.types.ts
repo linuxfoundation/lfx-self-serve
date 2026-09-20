@@ -505,3 +505,26 @@ export interface EasyClaSignatureApprovalLists {
   gitlabUsernameApprovalList?: string[] | null;
   gitlabOrgApprovalList?: string[] | null;
 }
+
+
+/**
+ * One entry of `GET /v4/company/{companyID}/cla-group/{claGroupID}/cla-managers`
+ * (`#/definitions/company-cla-manager`), snake_case as the CLA service sends it.
+ */
+export interface EasyClaCompanyClaManager {
+  lf_username?: string;
+  name?: string;
+  email?: string;
+  added_on?: string;
+}
+
+export interface EasyClaCompanyClaManagerList {
+  list?: EasyClaCompanyClaManager[];
+}
+
+export interface ManagerTarget {
+  /** The CLA service's internal company id — never sent to the browser. */
+  companyId: string;
+  claGroupId: string;
+  projectSfid: string;
+}

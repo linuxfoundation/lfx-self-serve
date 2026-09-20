@@ -8,6 +8,9 @@ import type {
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaGroupList,
+  OrgClaManager,
+  OrgClaManagerAddRequest,
+  OrgClaManagerList,
   OrgClaPermissionAction,
   OrgClaPermissionCheckRequest,
   OrgClaPermissionCheckResponse,
@@ -102,7 +105,23 @@ export class OrgLensClaService {
     return this.http.put<OrgClaApprovalList>(this.approvalListUrl(orgUid, signatureId), update);
   }
 
+  public getManagers(orgUid: string, signatureId: string): Observable<OrgClaManagerList> {
+    return this.http.get<OrgClaManagerList>(`${this.managersUrl(orgUid, signatureId)}`);
+  }
+
+  public addManager(orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Observable<OrgClaManager> {
+    return this.http.post<OrgClaManager>(`${this.managersUrl(orgUid, signatureId)}`, request);
+  }
+
+  public removeManager(orgUid: string, signatureId: string, lfUsername: string): Observable<void> {
+    return this.http.delete<void>(`${this.managersUrl(orgUid, signatureId)}/${encodeURIComponent(lfUsername)}`);
+  }
+
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
+  }
+
+  private managersUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/managers`;
   }
 }

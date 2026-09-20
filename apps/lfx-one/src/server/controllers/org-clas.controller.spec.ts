@@ -6,18 +6,31 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList, checkAcs } = vi.hoisted(
-  () => ({
-    listClaGroups: vi.fn(),
-    getPdfUrl: vi.fn(),
-    getCclaPreview: vi.fn(),
-    getSignOptions: vi.fn(),
-    requestCorporateSignature: vi.fn(),
-    getApprovalList: vi.fn(),
-    updateApprovalList: vi.fn(),
-    checkAcs: vi.fn(),
-  })
-);
+const {
+  listClaGroups,
+  getPdfUrl,
+  getCclaPreview,
+  getSignOptions,
+  requestCorporateSignature,
+  getApprovalList,
+  updateApprovalList,
+  checkAcs,
+  getManagers,
+  addManager,
+  removeManager,
+} = vi.hoisted(() => ({
+  listClaGroups: vi.fn(),
+  getPdfUrl: vi.fn(),
+  getCclaPreview: vi.fn(),
+  getSignOptions: vi.fn(),
+  requestCorporateSignature: vi.fn(),
+  getApprovalList: vi.fn(),
+  updateApprovalList: vi.fn(),
+  checkAcs: vi.fn(),
+  getManagers: vi.fn(),
+  addManager: vi.fn(),
+  removeManager: vi.fn(),
+}));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../services/org-cla.service', () => ({
@@ -29,6 +42,9 @@ vi.mock('../services/org-cla.service', () => ({
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
+    public getManagers = getManagers;
+    public addManager = addManager;
+    public removeManager = removeManager;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -918,5 +934,55 @@ describe('OrgClasController.checkPermission', () => {
 
     expect(res.json).toHaveBeenCalledWith({ allowed: false });
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+});
+
+describe('OrgClasController — CLA manager path parameters', () => {
+  const ORG_UID = '0014100000Te2ovAAB';
+  const SIGNATURE_ID = '0f9b8c7d-1234-4abc-89de-0123456789ab';
+
+  it('rejects a signature id that is not UUID-shaped before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: '../../admin' } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getManagers).not.toHaveBeenCalled();
+  });
+
+  it('rejects an LF username outside the person-key shape before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().removeManager(
+      { params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'a porter/../..' } } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(removeManager).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when the agreement is not on this organization list', async () => {
+    getManagers.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'list_org_cla_managers', expect.anything(), expect.objectContaining({ found: false }));
+  });
+
+  it('answers a removal with 204 and no body', async () => {
+    removeManager.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'aporter' } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });

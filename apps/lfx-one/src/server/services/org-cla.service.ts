@@ -9,7 +9,7 @@
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
-import { isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import { classifyOrgClaManagerRefusal, isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -21,6 +21,9 @@ import type {
   OrgClaGroupList,
   OrgClaGroupProject,
   OrgClaGroupStatus,
+  OrgClaManager,
+  OrgClaManagerAddRequest,
+  OrgClaManagerList,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
@@ -32,6 +35,9 @@ import type {
   EasyClaApprovalListUpdateRequest,
   EasyClaCompanyClaGroup,
   EasyClaCompanyClaGroupList,
+  EasyClaCompanyClaManager,
+  EasyClaCompanyClaManagerList,
+  ManagerTarget,
   EasyClaCorporateSignature,
   EasyClaCorporateSignatureList,
   EasyClaSearchList,
@@ -271,6 +277,61 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   if (entry.sanctioned === true) return 'sanctioned';
   return entry.signed === true ? 'signed' : 'not-started';
+}
+
+
+function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
+  const name = entry.name?.trim() ?? '';
+  const email = entry.email?.trim() ?? '';
+  const addedOn = entry.added_on?.trim() ?? '';
+
+  return {
+    lfUsername: entry.lf_username?.trim() ?? '',
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(addedOn ? { addedOn } : {}),
+  };
+}
+
+/**
+ * Sorted before taking the first so the same agreement keys the same way on every call. Upstream
+ * orders by project name, which is display order and can change when a project is renamed; keying
+ * a write on something that reorders under you turns one viewer's refusal into an intermittent one.
+ */
+function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
+  const projectSfids = (entry.projects ?? []).map((project) => project.projectSFID?.trim() ?? '').filter((sfid) => !!sfid);
+
+  return projectSfids.sort()[0] ?? entry.foundationSFID?.trim() ?? '';
+}
+
+/**
+ * The write endpoints key on the project, and an empty id would compose `…/project//cla-manager` —
+ * a path the caller cannot tell from a well-formed one. Only the write paths require it: listing
+ * managers keys on the CLA group alone, so an agreement covering no project still lists.
+ */
+function requireProjectSfid(target: ManagerTarget, operation: string): string {
+  if (!target.projectSfid) {
+    throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its project id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      operation,
+      service: SERVICE,
+    });
+  }
+
+  return target.projectSfid;
+}
+
+function asManagerRefusal(error: unknown, operation: string, errorMessage: string): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  if (error.statusCode >= 500 || error.transportFailure) return error;
+
+  const refusal = classifyOrgClaManagerRefusal(error.statusCode, error.errorBody);
+
+  return new MicroserviceError(`${errorMessage}: refused (${refusal})`, error.statusCode, error.code, {
+    operation,
+    service: SERVICE,
+    errorBody: { error: refusal },
+  });
 }
 
 export class OrgClaService {
@@ -853,6 +914,95 @@ export class OrgClaService {
    * browser that loads the list page. The mapper's boundary holds; this is the server-side door
    * behind it.
    */
+
+  public async getManagers(req: Request, orgUid: string, signatureId: string): Promise<OrgClaManagerList | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
+    if (!target) return null;
+
+    const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
+      {
+        operation: 'org_cla_list_managers',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA managers',
+        errorCode: 'UPSTREAM_ERROR',
+        redactResponseBody: true,
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+      }
+    );
+
+    const list = Array.isArray(upstream?.list) ? upstream.list : [];
+
+    return {
+      signatureId,
+      managers: list.filter((entry): entry is EasyClaCompanyClaManager => !!entry?.lf_username?.trim()).map((entry) => toOrgClaManager(entry)),
+    };
+  }
+
+  public async addManager(req: Request, orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Promise<OrgClaManager | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_add_manager');
+    if (!target) return null;
+
+    const projectSfid = requireProjectSfid(target, 'org_cla_add_manager');
+
+    let result: EasyClaCompanyClaManager | null;
+    try {
+      result = await gatewayFetch<EasyClaCompanyClaManager>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager`,
+        {
+          operation: 'org_cla_add_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to add the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body: { firstName: request.firstName, lastName: request.lastName, userEmail: request.email },
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_add_manager', 'Failed to add the CLA manager');
+    }
+
+    if (!result?.lf_username?.trim()) {
+      throw new MicroserviceError('Failed to add the CLA manager: upstream returned no manager record', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_add_manager',
+        service: SERVICE,
+      });
+    }
+
+    logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
+    return toOrgClaManager(result);
+  }
+
+  public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_remove_manager');
+    if (!target) return false;
+
+    const projectSfid = requireProjectSfid(target, 'org_cla_remove_manager');
+
+    try {
+      await gatewayFetch<null>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager/${encodeURIComponent(lfUsername)}`,
+        {
+          operation: 'org_cla_remove_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to remove the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'DELETE',
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_remove_manager', 'Failed to remove the CLA manager');
+    }
+
+    logger.debug(req, 'org_cla_remove_manager', 'removed a cla manager', { org_uid: orgUid, signature_id: signatureId });
+    return true;
+  }
+
   private async fetchUpstreamClaGroups(req: Request, orgUid: string): Promise<(EasyClaCompanyClaGroup & { signatureID: string })[]> {
     const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
       req,
@@ -906,6 +1056,31 @@ export class OrgClaService {
    * `null` means the signature is not on this organization's list — answered without ever calling
    * the approval endpoints.
    */
+
+  /**
+   * Returns null when the signature is not on this organization's list, which is both the
+   * not-found answer and the authorization gate.
+   */
+  private async resolveManagerTarget(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ManagerTarget | null> {
+    const entries = await this.fetchUpstreamClaGroups(req, orgUid);
+    const entry = entries.find((candidate) => candidate.signatureID === signatureId);
+    if (!entry) {
+      logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
+      return null;
+    }
+
+    const companyId = entry.companyID?.trim() ?? '';
+    const claGroupId = entry.claGroupID?.trim() ?? '';
+    if (!companyId || !claGroupId) {
+      throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its company or CLA group id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return { companyId, claGroupId, projectSfid: pickProjectSfid(entry) };
+  }
+
   private async resolveApprovalContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => candidate.signatureID === signatureId);
