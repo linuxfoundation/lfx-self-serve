@@ -344,7 +344,10 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
     programName: 'GridFlow: Time-Series Ingestion Pipeline',
     tasksCompleted: 7,
     tasksTotal: 12,
-    mentors: [{ name: 'Test Mentor A' }, { name: 'Test Mentor B' }],
+    mentors: [
+      { id: 'mentor_1', name: 'Test Mentor A' },
+      { id: 'mentor_2', name: 'Test Mentor B' },
+    ],
     upNextTasks: [
       { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18' },
       { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25' },

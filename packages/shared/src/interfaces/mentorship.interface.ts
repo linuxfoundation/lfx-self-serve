@@ -686,44 +686,37 @@ export interface MentorshipMenteeProfileResponse {
 export type MentorshipMenteePhase = 'empty' | 'applicant' | 'accepted';
 
 /**
- * Display status on applicant-phase cards. These are **BFF-derived**, not stored:
- * - `'in-progress'` = `applications.status = 'pending'` AND `tasks_submitted = false`
- * - `'awaiting-review'` = `applications.status = 'pending'` AND `tasks_submitted = true`
+ * Display status on applicant-phase cards.
+ *
+ * When the real BFF lands, these will be derived (not stored):
+ * - `'in-progress'` — application pending, tasks not yet submitted
+ * - `'awaiting-review'` — application pending, all tasks submitted
  */
 export type MentorshipMenteeApplicationStatus = 'in-progress' | 'awaiting-review';
 
-/** Lightweight term reference for application cards; the object is needed for navigation. */
+/** Lightweight term reference for application cards. */
 export interface MentorshipMenteeTermRef {
-  /** `program_terms.id` */
   id: string;
-  /** `program_terms.name` */
+  /** Display name for the term (e.g. "Fall 2026"). */
   name: string;
 }
 
 /** One application card on the applicant overview (screen 2). */
 export interface MentorshipMenteeApplication {
-  /** `applications.id` */
   id: string;
-  /** `programs.id` — needed for "View Tasks" navigation. */
   programId: string;
-  /** BFF-computed two-letter abbreviation derived from project data. */
+  /** Two-letter abbreviation derived from project data. */
   orgAbbreviation: string;
-  /** Source: project (via program's 1:many relation). */
   projectName: string;
-  /** Term object from `program_terms`. */
   term: MentorshipMenteeTermRef;
-  /** `programs.name` */
   programName: string;
   status: MentorshipMenteeApplicationStatus;
-  /** Latest `tasks.updated_on` for this application's prerequisite tasks. */
+  /** Latest prerequisite-task update timestamp. */
   lastTaskUpdatedOn: string;
-  /** BFF-computed from `program_terms.application_end_date`. */
+  /** Expected decision date for this application. */
   decisionExpectedDate: string;
-  /** BFF-computed: count of prerequisite tasks with `status IN (submitted, complete)`. */
   prerequisiteTasksCompleted: number;
-  /** BFF-computed: total prerequisite tasks for this application. */
   prerequisiteTasksTotal: number;
-  /** `programs.logo_url` — fallback for the org badge. */
   programLogoUrl?: string;
 }
 
@@ -737,18 +730,18 @@ export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'accept
 export interface MentorshipMenteePastApplication {
   id: string;
   programName: string;
-  /** Source: project (via program relation). */
   projectName: string;
-  /** `program_terms.name` */
   termName: string;
-  /** Latest `tasks.updated_on` for this application's prerequisite tasks. */
+  /** Latest prerequisite-task update timestamp. */
   lastTaskUpdatedOn: string;
   decidedOn: string;
   outcome: MentorshipMenteePastOutcome;
 }
 
-/** Mentor info shown on the accepted-phase card (screen 3). Source: `program_members` + `users`. */
+/** Mentor info shown on the accepted-phase card (screen 3). */
 export interface MentorshipMenteeActiveMentor {
+  /** Stable user/member identifier for tracking. */
+  id: string;
   name: string;
   avatarUrl?: string;
 }
@@ -763,30 +756,23 @@ export type MentorshipMenteeUpNextTaskStatus = 'in-progress' | 'pending' | 'inco
 /** One upcoming task row on the accepted-phase card (screen 3). */
 export interface MentorshipMenteeUpNextTask {
   id: string;
-  /** `tasks.name` */
   name: string;
   status: MentorshipMenteeUpNextTaskStatus;
-  /** `tasks.due_date` (YYYY-MM-DD). */
+  /** ISO date string (YYYY-MM-DD). */
   dueDate: string;
-  /** `tasks.category` — `'prerequisite' | 'non_prerequisite'`. */
-  category?: string;
+  /** `tasks.category` */
+  category?: 'prerequisite' | 'non_prerequisite';
 }
 
 /** The single accepted program on the accepted-phase overview (screen 3). */
 export interface MentorshipMenteeActiveProgram {
-  /** `applications.id` */
   id: string;
-  /** `programs.id` */
   programId: string;
-  /** Source: project (via program relation). */
   projectName: string;
-  /** `programs.name` */
   programName: string;
-  /** BFF-computed from `tasks` counts. */
   tasksCompleted: number;
-  /** BFF-computed from `tasks` counts. */
   tasksTotal: number;
-  /** All active mentors for this program. Source: `program_members` WHERE `member_type = 'mentor'` AND `status = 'active'`, joined with `users`. */
+  /** All active mentors for this program. */
   mentors: MentorshipMenteeActiveMentor[];
   upNextTasks: MentorshipMenteeUpNextTask[];
 }
