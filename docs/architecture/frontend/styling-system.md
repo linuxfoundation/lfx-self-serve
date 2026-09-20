@@ -105,10 +105,12 @@ export default {
 
 ### Font Loading
 
-Fonts are loaded via Google Fonts for optimal performance:
+Fonts are loaded from Google Fonts via `<link rel="preconnect">` and a stylesheet tag in `index.html` (not a CSS `@import`, which serializes behind `styles.css`):
 
 - **Inter**: Primary sans-serif font for all UI text
 - **Roboto Slab**: Display font for headings and emphasis
+- **JetBrains Mono**: Monospace / code
+- `display=swap` so text can paint with a fallback before the webfont arrives
 
 ### Custom Font Sizes
 
@@ -200,7 +202,7 @@ When utilities aren't sufficient, use component-specific styles:
 
 ### Font Awesome Pro
 
-Icons are loaded via Font Awesome kits (not npm packages):
+Icons are loaded via a Font Awesome kit script in `index.html` (not an npm package). The kit is `defer`red so `kit.fontawesome.com` does not block HTML parse or first paint. First-load spinners that are LCP candidates (for example `/invite`) should use a CSS spinner, not an `<i class="fa-…">` icon.
 
 ```html
 <!-- Icon usage -->

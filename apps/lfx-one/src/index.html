@@ -9,7 +9,16 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
-    <script src="https://kit.fontawesome.com/736c27f195.js" crossorigin="anonymous"></script>
+    <!-- DNS/TLS before the stylesheet and kit requests. Google Fonts used to be a CSS
+         @import, which could not start until styles.css downloaded and parsed (GH-2290). -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://kit.fontawesome.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&family=Roboto+Slab:wght@100..900&display=swap" />
+    <!-- defer: kit.fontawesome.com must not block HTML parse / first paint (GH-2290). -->
+    <script defer src="https://kit.fontawesome.com/736c27f195.js" crossorigin="anonymous"></script>
     <script type="speculationrules">
       {
         "prefetch": [

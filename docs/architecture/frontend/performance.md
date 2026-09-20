@@ -153,7 +153,7 @@ Angular prints the per-chunk summary at the end of `yarn build`; use it to spot 
 
 1. **Dynamic Imports**: Route-based code splitting via `loadChildren` in `app.routes.ts`.
 2. **Tree Shaking**: Direct imports of PrimeNG modules (never barrel exports) so unused components drop out.
-3. **Font Optimization**: Google Fonts with `display=swap` and preconnect hints in `index.html`.
+3. **Font / icon loading**: Google Fonts are a `<link>` in `index.html` with `preconnect` to `fonts.googleapis.com` / `fonts.gstatic.com` and `display=swap`. Do not `@import` them from `styles.scss` — that cannot start until the main stylesheet has downloaded. The Font Awesome kit is `defer`red so it is not parser-blocking.
 4. **Image Optimization**: WebP with fallbacks, plus Angular's built-in `NgOptimizedImage` where images are in the critical path.
 
 ## 🚀 Runtime Performance
