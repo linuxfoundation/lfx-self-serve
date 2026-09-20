@@ -78,10 +78,3 @@ export const EMAIL_REGEX = /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/;
 
 /** Org People `person_key` — LFID or opaque `cdp:`-prefixed id; 4–128 URL-safe chars (request-boundary bound, not a schema). */
 export const PERSON_KEY_PATTERN = /^(cdp:)?[A-Za-z0-9_-]{4,128}$/;
-
-/**
- * A CLA Group / signature UUID, hyphenated or not — the two spellings the EasyCLA producer's own
- * pattern accepts, which is why this is not `UUID_REGEX` (that one requires the hyphens).
- * Anchored with fixed-length runs, so it cannot backtrack.
- */
-export const CLA_GROUP_ID_PATTERN = /^[0-9a-f]{8}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{4}-?[0-9a-f]{12}$/i;
