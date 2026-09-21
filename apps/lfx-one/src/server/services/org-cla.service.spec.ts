@@ -2050,6 +2050,22 @@ describe('OrgClaService.getManagers', () => {
     expect(await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).not.toBeNull();
   });
 
+  it('fails closed when two signatures share the same company and CLA group, because manager APIs are not signature-scoped', async () => {
+    gatewayFetch.mockResolvedValueOnce(
+      upstreamList(
+        upstreamEntry({ signatureID: 'signature-a', signingEntityName: 'Vertex Robotics GmbH' }),
+        upstreamEntry({ signatureID: 'signature-b', signingEntityName: 'Vertex Robotics KK' })
+      )
+    );
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-b')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AMBIGUOUS_MANAGER_TARGET',
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
   it('finds the agreement when the path spells the signature UUID without hyphens', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: '0f9b8c7d-1234-4abc-89de-0123456789ab' })))

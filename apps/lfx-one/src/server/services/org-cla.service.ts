@@ -1097,7 +1097,34 @@ export class OrgClaService {
       });
     }
 
+    this.assertUnambiguousManagerTarget(entries, entry, operation);
+
     return { companyId, claGroupId, projectSfid: pickProjectSfid(entry), signed: entry.signed === true };
+  }
+
+  /**
+   * The company CLA-group manager endpoints are not signature-scoped. When this organization holds
+   * more than one signature on the same pair, upstream resolves the first match — the same class of
+   * bug the approval-list read avoids by filtering on `signatureID`.
+   */
+  private assertUnambiguousManagerTarget(
+    entries: readonly (EasyClaCompanyClaGroup & { signatureID: string })[],
+    entry: EasyClaCompanyClaGroup & { signatureID: string },
+    operation: string
+  ): void {
+    const companyId = entry.companyID?.trim() ?? '';
+    const claGroupId = entry.claGroupID?.trim() ?? '';
+    const peers = entries.filter(
+      (candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId
+    );
+    if (peers.length <= 1) return;
+
+    throw new MicroserviceError(
+      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
+      409,
+      'AMBIGUOUS_MANAGER_TARGET',
+      { operation, service: SERVICE }
+    );
   }
 
   private async resolveApprovalContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {

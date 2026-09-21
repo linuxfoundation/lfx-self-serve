@@ -122,6 +122,10 @@ describe('validateOrgClaManagerAdd', () => {
     expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, email: 'ada+cla@eng.example.org' }))).toBe(false);
   });
 
+  it('accepts an underscore in the domain portion, which EasyCLA userEmail allows', () => {
+    expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, email: 'user@team_name.example.org' }))).toBe(false);
+  });
+
   it.each([
     ['a one-letter TLD the producer rejects', 'ada@example.c'],
     ['a TLD longer than ten letters', 'ada@example.engineering'],

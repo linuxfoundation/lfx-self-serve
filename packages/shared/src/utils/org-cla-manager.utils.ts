@@ -6,10 +6,10 @@ import type { OrgClaManagerAddRequest, OrgClaManagerAddValidation, OrgClaManager
 import { codePointLength } from './string.utils';
 
 /**
- * Matches EasyCLA `cla-manager-user.userEmail`: alphanumeric/`_+.-` local part and a 2–10 letter
- * TLD. The app-wide email regex accepts values the producer rejects as invalid email.
+ * Matches EasyCLA `cla-manager-user.userEmail`: alphanumeric/`_+.-` local part, `_` allowed in domain
+ * labels, and a 2–10 letter TLD. The app-wide email regex accepts values the producer rejects.
  */
-const ORG_CLA_MANAGER_ADD_EMAIL_PATTERN = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,10}$/;
+const ORG_CLA_MANAGER_ADD_EMAIL_PATTERN = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9_](?:[A-Za-z0-9_-]*[A-Za-z0-9_])?\.)+[A-Za-z]{2,10}$/;
 
 export function isOrgClaManagerAddEmail(value: string): boolean {
   return ORG_CLA_MANAGER_ADD_EMAIL_PATTERN.test(value);
