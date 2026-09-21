@@ -63,7 +63,7 @@
       title="This CLA Group can't be previewed here yet"
       subtitle="Your organization hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
       ctaLabel="Back to EasyCLA"
-      [ctaRoute]="orgLens.orgLensLink('easycla')" />
+      [ctaRoute]="easyclaListLink()" />
   } @else if (notFound()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-not-found-state"
@@ -71,7 +71,7 @@
       title="This CLA was not found"
       subtitle="It may have been removed, or the link is for a different organization."
       ctaLabel="Back to EasyCLA"
-      [ctaRoute]="orgLens.orgLensLink('easycla')" />
+      [ctaRoute]="easyclaListLink()" />
   } @else if (claGroup(); as group) {
     <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="org-easycla-detail-breadcrumb" />
 

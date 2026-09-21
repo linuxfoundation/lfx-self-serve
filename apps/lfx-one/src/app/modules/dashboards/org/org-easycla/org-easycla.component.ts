@@ -41,7 +41,7 @@ export class OrgEasyclaComponent {
   private static readonly pageSize = 8;
 
   private readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
@@ -221,6 +221,8 @@ export class OrgEasyclaComponent {
    * object on every change-detection pass, and the key is a shared constant that templates have no
    * computed-key syntax for. One lookup per row keeps both the identity and the constant stable.
    */
+  /** Per-card detail link, keyed by signature id — hoisted from the template, which may only read signals (frontend-checklist §4). Rows without a group id have none. */
+  protected readonly cardLinks: Signal<Record<string, string[]>> = this.initCardLinks();
   protected readonly cardSignatureParams: Signal<Record<string, Record<string, string>>> = this.initCardSignatureParams();
   protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
@@ -521,6 +523,16 @@ export class OrgEasyclaComponent {
       const start = this.currentPage() * OrgEasyclaComponent.pageSize;
       return this.filteredClaGroups().slice(start, start + OrgEasyclaComponent.pageSize);
     });
+  }
+
+  private initCardLinks(): Signal<Record<string, string[]>> {
+    return computed(() =>
+      Object.fromEntries(
+        this.pagedClaGroups().flatMap((claGroup) =>
+          claGroup.claGroupId ? [[claGroup.id, this.orgLens.orgLensLink('easycla', claGroup.claGroupId)] as const] : []
+        )
+      )
+    );
   }
 
   private initCardSignatureParams(): Signal<Record<string, Record<string, string>>> {

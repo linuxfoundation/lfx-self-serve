@@ -169,9 +169,11 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * two conditions is not covered.
  *
  * `query` is the usual place a request-derived value may enter, kept out of `path` so a value
- * cannot break out of the query string. The corporate hand-off still names the organization it
- * was opened for here, because the signer comes back through a cross-site navigation and the
- * selected organization survives only in a `SameSite=Lax` cookie. A bare path leaves the page to
+ * cannot break out of the query string. The corporate hand-off names the organization it was
+ * opened for — in the path once the `ORG_EASYCLA_RETURN_IN_PATH_ENV` rollout gate is on (spec 050,
+ * `orgEasyclaReturnPath`, an SFID the guard resolves on arrival), in `?org=` on the leftover address
+ * until then — because the signer comes back through a cross-site navigation and the selected
+ * organization survives only in a `SameSite=Lax` cookie. An address naming none leaves the page to
  * guess, and it guesses the first organization in the viewer's list. Written through
  * `searchParams`, so a value cannot append a path or a second origin to a URL that EasyCLA stores
  * and later redirects to verbatim.

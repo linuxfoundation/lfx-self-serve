@@ -222,6 +222,14 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
+ * The leftover EasyCLA address, `/org/easycla` (#1983): still routed for one release after
+ * lfx-self-serve#2743 so corporate-signing returns minted before that deploy — and by any replica
+ * still running the previous release — land somewhere that can read them. Not used for new in-app
+ * links (those go through `OrgLensNavigationService`) and scheduled for removal with #2743 item 4.
+ */
+export const ORG_EASYCLA_PATH = '/org/easycla';
+
+/**
  * Where EasyCLA returns a signatory after signing a corporate CLA (#1983, #2352): the CLA Group's
  * own address under the organization the signing was opened for — `/org/{orgUid}/easycla/{claGroupId}`
  * (spec 050 address scheme, lfx-self-serve#2743). Mirrors the `easycla` child of the
@@ -237,6 +245,16 @@ export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agree
 export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
   return `/org/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
 }
+
+/**
+ * Rollout gate for the return address the BFF mints (lfx-self-serve#2743, GPT/F1 on #2770). A
+ * `return_url` is fixed when the DocuSign session opens and is served by *whichever* replica takes
+ * the return — during a rolling deploy, or after a rollback, that can be a release that only routes
+ * the leftover `/org/easycla/{claGroupId}?org={uid}` shape. So the twin route ships first with the
+ * mint unchanged; the mint flips to `orgEasyclaReturnPath` once the release carrying the twin route
+ * is the rollback floor. Env `ORG_EASYCLA_RETURN_IN_PATH=true` enables it.
+ */
+export const ORG_EASYCLA_RETURN_IN_PATH_ENV = 'ORG_EASYCLA_RETURN_IN_PATH';
 
 /**
  * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,

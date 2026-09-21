@@ -10,14 +10,15 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
+import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
 
-export const EASYCLA_URL = '/org/easycla';
+/** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
+export const EASYCLA_URL = ORG_EASYCLA_PATH;
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';

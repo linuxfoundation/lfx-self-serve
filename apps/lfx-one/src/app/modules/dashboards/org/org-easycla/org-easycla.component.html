@@ -127,14 +127,14 @@
               organization holds two agreements at one group through two signing entities.
 
               Rendered as a link only when the row carries a group id. The contract marks it
-              optional, and a card linking to `/org/easycla/undefined` would resolve to nothing —
+              optional, and a card linking to `/org/{organization}/easycla/undefined` would resolve to nothing —
               so an id-less row is card-only rather than a link that cannot land. It deliberately
               does not fall back to the signature id, which would reintroduce a second address
               shape for this page.
             -->
             @if (claGroup.claGroupId) {
               <a
-                [routerLink]="orgLens.orgLensLink('easycla', claGroup.claGroupId)"
+                [routerLink]="cardLinks()[claGroup.id]"
                 [queryParams]="cardSignatureParams()[claGroup.id]"
                 class="absolute inset-0 z-0 rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                 [attr.aria-label]="orgClaOpenLabel(claGroup)"

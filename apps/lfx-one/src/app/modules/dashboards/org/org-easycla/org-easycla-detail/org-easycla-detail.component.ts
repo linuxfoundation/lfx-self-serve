@@ -131,7 +131,7 @@ export class OrgEasyclaDetailComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly accountContext = inject(AccountContextService);
-  protected readonly orgLens = inject(OrgLensNavigationService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
@@ -514,6 +514,8 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly signedByName = computed(() => this.initSignedByName());
 
+  /** The EasyCLA list under the current organization — hoisted from the CTAs, which may only read signals (frontend-checklist §4). */
+  protected readonly easyclaListLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('easycla'));
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumbItems());
 
   protected readonly managersBadge = computed(() => String(this.claGroup()?.claManagersCount ?? 0));
@@ -986,7 +988,7 @@ export class OrgEasyclaDetailComponent {
 
   private initBreadcrumbItems(): MenuItem[] {
     const name = this.claGroup()?.claGroupName;
-    const root: MenuItem = { label: 'EasyCLA', routerLink: this.orgLens.orgLensLink('easycla') };
+    const root: MenuItem = { label: 'EasyCLA', routerLink: this.easyclaListLink() };
     return name ? [root, { label: name }] : [root];
   }
 
@@ -1040,7 +1042,7 @@ export class OrgEasyclaDetailComponent {
    *
    * That gate used to be the route shape: the preview lived at its own segment and carried no
    * `signatureId`, so the presence of that parameter was a reliable this-is-an-agreement signal.
-   * Both modes now share `/org/easycla/:claGroupId`, so the signal is gone — and it was load-bearing,
+   * Both modes now share `/org/{organization}/easycla/:claGroupId`, so the signal is gone — and it was load-bearing,
    * because the previous route's `history.state` is still what `location.getState()` returns until
    * Angular has written the new entry, so the fallback below would otherwise latch a stale
    * selection under an unrelated group.
@@ -1076,7 +1078,7 @@ export class OrgEasyclaDetailComponent {
    * the organization-switch path is precisely the wrong one.
    */
   private leaveForList(): void {
-    void this.router.navigate(this.orgLens.orgLensLink('easycla'), { replaceUrl: true });
+    void this.router.navigate(this.easyclaListLink(), { replaceUrl: true });
   }
 
   private initClaData(): Signal<OrgClaGroupList | null | undefined> {

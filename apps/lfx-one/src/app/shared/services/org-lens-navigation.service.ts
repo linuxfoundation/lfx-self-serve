@@ -72,24 +72,27 @@ export class OrgLensNavigationService {
    * and may not have adopted it yet when the org list answers.
    */
   public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
-    const segments = this.currentPrimarySegments();
+    const tree = this.router.parseUrl(this.router.url);
+    const segments = tree.root.children['primary']?.segments.map((s) => s.path) ?? [];
     if (!this.isRewritableOrgAddress(segments)) {
       return;
     }
     // Legacy `/org/easycla/…` for one release after lfx-self-serve#2743: a corporate-signing return
-    // minted before the deploy arrives here as `?org={uid}&signed=1`, and the org list can answer
+    // minted on the leftover shape arrives as `?org={uid}&signed=1`, and the org list can answer
     // before `OrgClaReturnService.adopt` has run — a default insert then would write the *default*
     // organization into the address while the page adopts the named one from `?org=` (the DR-004
-    // Option-B trace). The viewer's own switch may still re-address it; only the automatic default
-    // leaves the legacy EasyCLA address alone. New returns carry the organization in the path and
-    // are address-adopted, so they never reach a default in the first place.
-    if (intent === 'default' && segments[1] === 'easycla') {
+    // Option-B trace). Only such a return is left alone, and only for the automatic default: a plain
+    // leftover `/org/easycla` visit is inserted like any other legacy page, and the viewer's own
+    // switch may re-address either. New returns carry the organization in the path and are
+    // address-adopted, so they never reach a default in the first place.
+    const legacyEasycla = segments[1] === 'easycla';
+    if (intent === 'default' && legacyEasycla && tree.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
       return;
     }
     // A viewer's switch off that legacy address must not carry the return state with it: preserved,
     // `?org={A}` would be re-adopted by the re-mounted page under B's address (undoing the switch),
     // and `?signed=1` would resume a wait for A's row under B. The organization is in the path now.
-    const leavingLegacyReturn = segments[1] === 'easycla';
+    const leavingLegacyReturn = legacyEasycla;
     const segment = this.accountContext.selectedUrlSegment();
     if (!segment) {
       return;

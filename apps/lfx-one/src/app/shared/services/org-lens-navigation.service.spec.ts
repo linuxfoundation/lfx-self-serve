@@ -183,10 +183,18 @@ describe('OrgLensNavigationService', () => {
     // DR-004 Option-B trace: a pre-deploy corporate-signing return on the legacy EasyCLA address
     // names its organization in `?org=`, which the page adopts after the org list has answered — a
     // default insert in between would address the default organization instead.
-    it.each(['/org/easycla', '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1'])('leaves the legacy EasyCLA address alone (%s)', (url) => {
-      currentUrl = url;
+    it('leaves a legacy EasyCLA return address alone', () => {
+      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // Without the return parameter there is nothing to adopt later; a plain leftover visit is a
+    // legacy page like any other and gets its organization inserted.
+    it.each(['/org/easycla', '/org/easycla/abc-123?sig=s1'])('inserts the organization on a plain legacy EasyCLA address (%s)', (url) => {
+      currentUrl = url;
+      service.navigateToSelectedOrg('default');
+      expect(navigatedTo()).toMatch(/^\/org\/acme-inc\/easycla/);
     });
 
     // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;

@@ -5,7 +5,9 @@
 
 Internal support note. Not Help Center copy.
 
-## Who can open `/org/easycla`
+## Who can open `/org/{organization}/easycla`
+
+The organization-addressed form is the page's address (spec 050 phase 2, lfx-self-serve#2743). The leftover `/org/easycla` stays readable for one release so corporate-signing returns minted before that deploy still land, and is scheduled for removal under #2743 item 4.
 
 Anyone with an Organization Lens **Writer**, **Viewer** (auditor), or **Staff** grant on that organization. This is the page see-gate. It did not change.
 

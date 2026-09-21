@@ -5,7 +5,7 @@
 // Angular-dependent siblings. Without the compiler the suite fails to collect at all.
 import '@angular/compiler';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
@@ -739,6 +739,16 @@ describe('OrgClaService.getSignOptions', () => {
 });
 
 describe('OrgClaService.requestCorporateSignature', () => {
+  // The return address is gated (spec 050 phase 2 rollout, #2743): this block runs with the gate ON —
+  // the target shape once every replica routes `/org/{org}/easycla`; the leftover shape is pinned
+  // separately below.
+  beforeEach(() => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', 'true');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const upstreamOk = {
     signature_id: 'signature-uuid-1',
     sign_url: 'https://docusign.example.org/session/1',
@@ -846,6 +856,22 @@ describe('OrgClaService.requestCorporateSignature', () => {
   });
 
   // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.
+  // Gate OFF (the default): a `return_url` is fixed when the session opens and may be served by a
+  // replica still on the previous release — during the rolling deploy or after a rollback — which
+  // only routes the leftover shape. Every release reads this one.
+  it('mints the leftover return address, organization in the query, while the rollout gate is off', async () => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', '');
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+    const returned = new URL(body.return_url);
+    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.get('org')).toBe(ORG_UID);
+    expect(returned.searchParams.get('signed')).toBe('1');
+  });
+
   it('sends none of the designee or send-by-email fields', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
