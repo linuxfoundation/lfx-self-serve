@@ -644,7 +644,7 @@ export interface OrgClaGroup {
   projects: OrgClaGroupProject[];
   /**
    * First covered-project SFID from upstream, captured before nameless projects are dropped
-   * from `projects` for display. Approval-list ACS pair — the same id `resolveApprovalContext`
+   * from `projects` for display. Approval-list ACS pair — the same id `resolveClaGroupContext`
    * keys the PUT on. Absent when upstream sent no project SFID.
    */
   pairProjectSfid?: string;

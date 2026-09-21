@@ -750,7 +750,7 @@ export class OrgClaService {
    * an empty and uneditable list rather than as absent.
    */
   public async getApprovalList(req: Request, orgUid: string, signatureId: string): Promise<OrgClaApprovalList | null> {
-    const context = await this.resolveApprovalContext(req, orgUid, signatureId, 'org_cla_get_approval_list');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_approval_list');
     if (!context) return null;
 
     if (!context.signed) {
@@ -782,7 +782,7 @@ export class OrgClaService {
    * five.
    */
   public async updateApprovalList(req: Request, orgUid: string, signatureId: string, update: OrgClaApprovalListUpdate): Promise<OrgClaApprovalUpdateOutcome> {
-    const context = await this.resolveApprovalContext(req, orgUid, signatureId, 'org_cla_update_approval_list');
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_update_approval_list');
     if (!context) return { outcome: 'not-found' };
 
     if (!context.signed) {
@@ -915,7 +915,7 @@ export class OrgClaService {
    * `null` means the signature is not on this organization's list — answered without ever calling
    * the approval endpoints.
    */
-  private async resolveApprovalContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
+  private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => candidate.signatureID === signatureId);
     if (!entry) {
