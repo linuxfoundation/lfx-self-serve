@@ -19,12 +19,19 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
 /**
  * The project/foundation half of an ACS `project|organization` pair, matching
  * `resolveApprovalContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
- * project SFID, else foundation. Deliberately not Sign's `signingChoiceFrom`, which stays
- * foundation-first. A parent foundation id is ancestry, not grain — signing grants `cla-manager`
- * on mapped projects, not the parent. Yields nothing only when there is no project id and no
- * foundation id, so the caller can hide Add.
+ * project SFID, else foundation. `pairProjectSfid` is that scan taken before the mapper drops
+ * nameless projects from `projects` for display — prefer it so a covered project with an id and
+ * no name still beats a parent foundation. Deliberately not Sign's `signingChoiceFrom`, which
+ * stays foundation-first. A parent foundation id is ancestry, not grain — signing grants
+ * `cla-manager` on mapped projects, not the parent. Yields nothing only when there is no project
+ * id and no foundation id, so the caller can hide Add.
  */
-export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects'>): string | undefined {
+export function orgClaPairProjectSfid(
+  group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>
+): string | undefined {
+  const pinned = group.pairProjectSfid?.trim();
+  if (pinned) return pinned;
+
   const covered = group.projects.find((project) => !!project.projectSfid?.trim())?.projectSfid?.trim();
   if (covered) return covered;
 

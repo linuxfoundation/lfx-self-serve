@@ -58,6 +58,16 @@ describe('orgClaPairProjectSfid', () => {
     ).toBe(PROJECT);
   });
 
+  it('uses a pinned pair SFID even when display projects are empty and a foundation id is present', () => {
+    expect(
+      orgClaPairProjectSfid({
+        pairProjectSfid: PROJECT,
+        foundationSfid: 'a09410000182dFOUND',
+        projects: [],
+      })
+    ).toBe(PROJECT);
+  });
+
   it('yields nothing when there is no project id and no foundation id', () => {
     expect(orgClaPairProjectSfid({ projects: [] })).toBeUndefined();
     expect(orgClaPairProjectSfid({ foundationSfid: '   ', projects: [{ projectSfid: '  ', projectName: 'Blank' }] })).toBeUndefined();
