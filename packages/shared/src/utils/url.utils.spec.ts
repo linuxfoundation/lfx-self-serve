@@ -477,4 +477,34 @@ describe('canonicalHttpUrl', () => {
     expect(isPrivateHost(expanded)).toBe(false);
     expect(isPrivateHost(`[${expanded}]`)).toBe(false);
   });
+  /**
+   * RFC 8215's local-use NAT64 block, `64:ff9b:1::/48`, is DENIED wholesale rather than decoded.
+   *
+   * Its layout is not the well-known /96 one, so the embedded IPv4 is not in the last two
+   * groups: `64:ff9b:1:a9fe:a9:fe00:808:808` embeds 169.254.169.254 while its trailing groups
+   * spell the public 8.8.8.8. Decoding it as if it were /96 judged the wrong address and let the
+   * metadata endpoint through.
+   *
+   * This matches campaign-service's dial-time guard, which carries the same /48 in its forbidden
+   * nets: an address under a prefix nobody declared cannot be decoded, and refusing is the
+   * fail-closed answer.
+   */
+  it.each([
+    ['a local-use NAT64 address whose tail spells a PUBLIC one', '64:ff9b:1:a9fe:a9:fe00:808:808'],
+    ['a compressed local-use NAT64 address', '64:ff9b:1::808:808'],
+    ['a zero-padded spelling of the same block', '0064:ff9b:0001::808:808'],
+  ])('denies %s', (_label, host) => {
+    expect(isPrivateHost(host)).toBe(true);
+  });
+
+  it.each([
+    ['the WELL-KNOWN /96 carrying a private address', '64:ff9b::a9fe:a9fe', true],
+    ['the WELL-KNOWN /96 carrying a public address', '64:ff9b::808:808', false],
+    ['6to4 carrying a private address', '2002:a9fe:a9fe::', true],
+    ['6to4 carrying a public address', '2002:808:808::', false],
+  ])('still judges %s by its EMBEDDED address', (_label, host, expected) => {
+    // The /48 denial must not swallow the prefixes that ARE decodable -- denying 64:ff9b::/96
+    // outright would refuse every NAT64-reachable public host.
+    expect(isPrivateHost(host)).toBe(expected);
+  });
 });

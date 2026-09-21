@@ -548,6 +548,19 @@ export function isPrivateHost(hostname: string): boolean {
     // 2002::/16 is 6to4 (RFC 3056). campaign-service's dial-time guard decodes NAT64 for exactly
     // this reason; mirroring it here keeps the persisted value from carrying the payload at all.
     // The last two groups are the embedded IPv4 in both encodings.
+    // RFC 8215 sets aside 64:ff9b:1::/48 for LOCAL-USE NAT64 prefixes -- the block an operator
+    // picks their own prefix from. Its layout is not the well-known one, so the embedded IPv4 is
+    // not in the last two groups: `64:ff9b:1:a9fe:a9:fe00:808:808` embeds 169.254.169.254 while
+    // its trailing groups spell the public 8.8.8.8. Decoding it as if it were /96 therefore
+    // judged the WRONG address and allowed the metadata endpoint through.
+    //
+    // Denied wholesale rather than decoded, matching campaign-service's dial-time guard, which
+    // carries this same /48 in its forbidden nets: an address under a prefix nobody declared
+    // cannot be decoded, and refusing is the fail-closed answer. This layer has no prefix
+    // configuration to consult, so every address in the block is undeclared here.
+    const isLocalUseNat64 = /^0*64:ff9b:0*1:/.test(addr);
+    if (isLocalUseNat64) return true;
+
     const isNat64 = /^0*64:ff9b:/.test(addr);
     const is6to4 = /^2002:/.test(addr);
     if (isNat64 || is6to4) {
