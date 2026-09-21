@@ -1292,6 +1292,14 @@ export class CampaignsComponent {
    */
   protected readonly emailCtaUnlinkedLabel = computed<string>(() => {
     if (this.emailCtaIsStageable() || !this.emailBodyIsStageable()) return '';
+    // ONLY when a url was supplied and then refused -- never when it was omitted.
+    //
+    // An omitted `ctaUrl` is the CFP / Feedback / See-You-There case, and the server already
+    // keeps that label INLINE in `body` (its filter is `!section.url`). Rendering it here too
+    // showed the call to action twice, once in the body and once as the grey label. The test for
+    // "was a url supplied" mirrors the server's own `!section.url` exactly, so the two sides
+    // agree on which case each is handling rather than each guessing.
+    if ((this.emailCopy()?.ctaUrl ?? '').trim() === '') return '';
     return (this.emailCopy()?.cta ?? '').trim();
   });
 

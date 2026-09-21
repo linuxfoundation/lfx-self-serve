@@ -2359,6 +2359,26 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('Register now');
     });
 
+    it('does not double-render a CTA whose url was OMITTED, since body already carries it', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        // The server keeps a URL-less button's label inline in `body` (its filter is
+        // `!section.url`), so showing it again here renders the call to action twice.
+        body: '<p>Hello</p><div class="lfx-block lfx-button"><strong>Submit Your Proposal</strong></div>',
+        cta: 'Submit Your Proposal',
+        ctaUrl: '',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailCtaLabel()).toBe('');
+      expect(internals().emailCtaUnlinkedLabel()).toBe('');
+    });
+
     it('does not double-render a CTA whose destination is accepted', () => {
       selectEmail();
       internals().emailBriefOutput.set({
