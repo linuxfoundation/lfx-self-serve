@@ -15,9 +15,19 @@
   data-testid="formation-item-drawer">
   <ng-template #header>
     <div class="flex items-start gap-3 w-full">
-      <div class="flex items-center justify-center w-10 h-10 rounded-full shrink-0" [ngClass]="statusTileClass()" aria-hidden="true">
-        <i [class]="statusGlyph().icon + ' text-lg'"></i>
-      </div>
+      <!-- The tile skeletons alongside the title while the open fetch is in flight; with no item
+           (a failed load, nothing selected) there is no status to show, so nothing renders. -->
+      @if (loading()) {
+        <p-skeleton shape="circle" size="2.5rem" styleClass="shrink-0" />
+      } @else if (item()) {
+        <div
+          class="flex items-center justify-center w-10 h-10 rounded-full shrink-0"
+          [ngClass]="statusTileClass()"
+          aria-hidden="true"
+          data-testid="formation-item-drawer-status-tile">
+          <i [class]="statusGlyph().icon + ' text-lg'"></i>
+        </div>
+      }
       <div class="flex flex-col gap-1.5 flex-1 min-w-0">
         <!-- Always rendered (a skeleton stands in while loading) so onDrawerShow can land focus on it
              before the item arrives; `tabindex="-1"` keeps it out of the Tab order. `title` is a
@@ -29,14 +39,21 @@
           class="text-lg font-semibold text-gray-900 break-words focus:outline-none"
           [attr.title]="item()?.title">
           @if (loading()) {
+            <!-- The dialog's accessible name resolves the moment focus lands here — before the fetch
+                 returns — so the heading must carry real text, not only a skeleton. -->
+            <span class="sr-only">Loading item details</span>
             <p-skeleton width="16rem" height="1.5rem" />
+          } @else if (item(); as currentItem) {
+            {{ currentItem.title }}
           } @else {
-            {{ item()?.title }}
+            <!-- A failed load (or nothing selected) still needs a dialog name; the body's card carries the visible explanation. -->
+            <span class="sr-only">Item details</span>
           }
         </h2>
         @if (item(); as currentItem) {
-          <p class="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
-            <span class="truncate">{{ currentItem.section_title }}</span>
+          <!-- section_title is API-sourced, so it wraps rather than truncates (no hover tooltip could expose a clipped value to keyboard users). -->
+          <p class="flex flex-wrap items-baseline gap-x-1.5 text-sm text-gray-500 min-w-0">
+            <span class="break-words">{{ currentItem.section_title }}</span>
             @if (ownerTeamLabel(); as team) {
               <span aria-hidden="true">·</span>
               <span class="shrink-0" [attr.data-testid]="'formation-item-drawer-owner-team-' + currentItem.uid"
@@ -336,13 +353,18 @@
                       <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{{ row.summary }}</span>
                     </span>
                   }
-                  <!-- Relative inside FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS, a short date beyond it; the title always carries the exact timestamp. -->
+                  <!-- Visible: relative inside FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS, a short date beyond it. The exact
+                       timestamp is in the hover title AND an sr-only span — a <time> is not focusable, so the title alone
+                       would never reach a keyboard or screen-reader user. -->
                   <time class="shrink-0 text-xs text-gray-400" [attr.datetime]="row.entry.created_at" [attr.title]="row.entry.created_at | date: 'medium'">
-                    @if (row.relativeTime) {
-                      {{ row.relativeTime }}
-                    } @else {
-                      {{ row.entry.created_at | date: 'mediumDate' }}
-                    }
+                    <span aria-hidden="true">
+                      @if (row.relativeTime) {
+                        {{ row.relativeTime }}
+                      } @else {
+                        {{ row.entry.created_at | date: 'mediumDate' }}
+                      }
+                    </span>
+                    <span class="sr-only">{{ row.entry.created_at | date: 'medium' }}</span>
                   </time>
                 </div>
                 @if (row.detail) {

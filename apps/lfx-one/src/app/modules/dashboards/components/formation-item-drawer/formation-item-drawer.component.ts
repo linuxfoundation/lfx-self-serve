@@ -3,7 +3,7 @@
 
 import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, effect, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -61,7 +61,7 @@ import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
+import { catchError, filter, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 import { FormationSubItemListComponent } from '../formation-sub-item-list/formation-sub-item-list.component';
 
@@ -421,7 +421,14 @@ export class FormationItemDrawerComponent {
    * query), so hiding is a class, not an `@if` around the template.
    */
   protected readonly drawerPt = computed(() => ({
-    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'formation-item-drawer-title' },
+    root: {
+      role: 'dialog',
+      'aria-modal': 'true',
+      'aria-labelledby': 'formation-item-drawer-title',
+      // Tells assistive tech an update is coming while the open fetch is in flight — the title
+      // announces "Loading item details" until then.
+      ...(this.loading() ? { 'aria-busy': 'true' } : {}),
+    },
     footer: { class: this.readOnly() || !this.item() ? 'hidden' : 'border-t border-gray-200' },
   }));
   /**
@@ -497,11 +504,15 @@ export class FormationItemDrawerComponent {
     // Hand focus back on EVERY close path (#2801). PrimeNG only emits `onHide` from its own
     // hide(emit=true) (Escape/mask); this drawer's custom close button and the section's
     // post-Mark-complete close both set `visible` programmatically, which runs hide(false) and
-    // never emits — so key off the model itself. Idempotent: the captured element is nulled after
-    // the first restore, and the initial `false` finds nothing to restore.
-    effect(() => {
-      if (!this.visible()) this.restoreFocus();
-    });
+    // never emits — so key off the model itself. A subscription rather than an `effect()`, per the
+    // frontend checklist §5. Idempotent: the captured element is nulled after the first restore,
+    // and the initial `false` finds nothing to restore.
+    toObservable(this.visible)
+      .pipe(
+        filter((visible) => !visible),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => this.restoreFocus());
   }
 
   protected onClose(): void {
@@ -978,7 +989,7 @@ export class FormationItemDrawerComponent {
     });
   }
 
-  /** The close-side half of {@link onDrawerShow} — see the constructor's `visible()` effect for why this is not wired to `(onHide)`. */
+  /** The close-side half of {@link onDrawerShow} — see the constructor's `visible` subscription for why this is not wired to `(onHide)`. */
   private restoreFocus(): void {
     if (!isPlatformBrowser(this.platformId)) return;
     if (this.previouslyFocusedElement?.isConnected) {

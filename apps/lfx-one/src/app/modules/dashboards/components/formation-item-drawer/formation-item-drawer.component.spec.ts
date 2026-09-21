@@ -18,6 +18,7 @@ import {
   FORMATION_ASSIGNEE_LOADING_PLACEHOLDER,
   FORMATION_ASSIGNEE_PENDING_NOTE,
   FORMATION_ASSIGNEE_PLACEHOLDER,
+  FORMATION_ITEM_STATUS_TILE_CLASSES,
 } from '@lfx-one/shared/constants';
 import { FormationItem, FormationItemDetail, FormationPeopleResponse, FormationPerson, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -1288,13 +1289,37 @@ describe('FormationItemDrawerComponent', () => {
       await render(item, false);
 
       expect(query(`[data-testid="formation-item-drawer-status-${item.uid}"]`)?.textContent).toContain('In progress');
-      expect(query('[role="dialog"] .bg-amber-50')).not.toBeNull();
+      // Pinned to the shared map, not a literal palette class, so a colour change stays a one-file edit.
+      const tile = query('[data-testid="formation-item-drawer-status-tile"]');
+      for (const token of FORMATION_ITEM_STATUS_TILE_CLASSES.in_progress.split(' ')) {
+        expect(tile?.classList.contains(token)).toBe(true);
+      }
+    });
+
+    it('skeletons the header tile while loading, keeps the dialog named, and marks it busy', async () => {
+      await render(buildItem({}), false, { getFormationItem: vi.fn().mockReturnValue(NEVER) });
+
+      expect(query('[data-testid="formation-item-drawer-status-tile"]')).toBeNull();
+      expect(query('[role="dialog"] p-skeleton')).not.toBeNull();
+      // Focus lands on the title before the fetch returns, so the accessible name must exist already.
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Loading item details');
+      expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBe('true');
+    });
+
+    it('drops aria-busy and names the dialog by the item once loaded', async () => {
+      await render(buildItem({ title: 'Loaded item' }), false);
+
+      expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBeNull();
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Loaded item');
+      expect(query('#formation-item-drawer-title')?.textContent).not.toContain('Loading item details');
     });
 
     it('lets the assignee search span its row (the field used to render a third of the width)', async () => {
       await render(buildItem({}), false);
 
-      expect(query('[data-testid="formation-item-drawer-assignee"] .p-autocomplete.w-full')).not.toBeNull();
+      // The wrapper's own inputs are the contract — every other lfx-user-search caller passes these.
+      expect(queryUserSearch().styleClass()).toBe('w-full');
+      expect(queryUserSearch().inputStyleClass()).toContain('w-full');
     });
 
     describe('Unsaved changes indicator', () => {
@@ -1412,7 +1437,9 @@ describe('FormationItemDrawerComponent', () => {
         expect(history?.textContent).toContain('changed the assignee');
         expect(history?.textContent).toContain('Unassigned → jdoe');
         const time = history?.querySelector('time');
-        expect(time?.textContent?.trim()).toBe('2 hr ago');
+        expect(time?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('2 hr ago');
+        // The exact timestamp reaches assistive tech through an sr-only span, not only the hover title.
+        expect(time?.querySelector('.sr-only')?.textContent).toMatch(/\d{4}/);
         expect(time?.getAttribute('datetime')).toBe(createdAt);
         expect(time?.getAttribute('title')).toBeTruthy();
       });
@@ -1439,7 +1466,8 @@ describe('FormationItemDrawerComponent', () => {
         await render(item, false, { getFormationItem: vi.fn().mockReturnValue(of(detail)) });
 
         const time = query('[data-testid="formation-item-drawer-history"] time');
-        expect(time?.textContent?.trim()).toBe('Mar 14, 2024');
+        expect(time?.querySelector('[aria-hidden="true"]')?.textContent?.trim()).toBe('Mar 14, 2024');
+        expect(time?.querySelector('.sr-only')?.textContent).toContain('Mar 14, 2024');
         expect(time?.textContent).not.toContain('ago');
       });
 
