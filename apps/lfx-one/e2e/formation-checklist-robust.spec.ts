@@ -349,7 +349,33 @@ test.describe('Formation checklist section — structural contract', () => {
       await page.getByTestId(`formation-checklist-row-title-${itemWithHistory.uid}`).click();
       const history = page.getByTestId('formation-item-drawer-history');
       await expect(history).toBeVisible();
-      await expect(history.getByText('No activity yet.')).toHaveCount(0);
+      await expect(history.getByText('No activity yet')).toHaveCount(0);
+    });
+
+    // #2801: the empty and failed-load states are distinct surfaces — a bordered "No activity yet"
+    // card, and an error card whose Try again re-runs the item fetch — so each gets its own guard.
+    test('an item without history nests the empty-activity card', async ({ page }) => {
+      const itemWithoutHistory = ITEMS.find((item) => !mockFormationActivity[item.uid]?.length);
+      if (!itemWithoutHistory) throw new Error('Expected a seeded item without activity history.');
+
+      await page.getByTestId(`formation-checklist-row-title-${itemWithoutHistory.uid}`).click();
+      const empty = page.getByTestId('formation-item-drawer-history-empty');
+      await expect(empty).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(empty).toContainText('No activity yet');
+    });
+
+    test('a failed item load nests the error card, and Try again re-fetches the item', async ({ page }) => {
+      const item = ITEMS[0];
+      // Fail only the first detail GET; the retry falls through to the default mock registered by the fixture.
+      await page.route('**/api/formations/*/items/*', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 });
+
+      await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
+      const error = page.getByTestId('formation-item-drawer-error');
+      await expect(error).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+      await page.getByTestId('formation-item-drawer-retry').locator('button').click();
+      await expect(error).toBeHidden();
+      await expect(page.getByTestId('formation-item-drawer-history')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     });
   });
 
