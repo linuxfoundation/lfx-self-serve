@@ -339,6 +339,8 @@ export class OrgEasyclaManagersComponent implements OnInit {
     this.dismissPendingWrites();
     this.managers.set(null);
     this.loadFailed.set(false);
+    // Cancelled roster GETs do not run `next`/`error`, so `loading` can still be true here.
+    this.loading.set(false);
 
     if (this.signed()) this.fetchManagers();
   }

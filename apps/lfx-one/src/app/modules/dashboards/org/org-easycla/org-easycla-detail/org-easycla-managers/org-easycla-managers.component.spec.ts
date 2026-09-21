@@ -221,6 +221,25 @@ describe('OrgEasyclaManagersComponent', () => {
     expect(getManagers).toHaveBeenLastCalledWith(ORG_UID, 'signature-uuid-2');
   });
 
+  it('starts a replacement fetch when context changes during a pending roster GET', async () => {
+    const first = new Subject<{ signatureId: string; managers: OrgClaManager[] }>();
+    getManagers.mockReturnValueOnce(first).mockReturnValueOnce(of({ signatureId: 'signature-uuid-2', managers: [manager()] }));
+    await render();
+    component.loadIfNeeded();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-loading"]')).toBeTruthy();
+
+    fixture.componentRef.setInput('signatureId', 'signature-uuid-2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getManagers).toHaveBeenCalledTimes(2);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-table"]')).toBeTruthy();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-loading"]')).toBeFalsy();
+  });
+
   it('re-fetches when the organization changes for a same-id agreement', async () => {
     await render();
     component.loadIfNeeded();
