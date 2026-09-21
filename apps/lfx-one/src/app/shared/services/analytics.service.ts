@@ -28,9 +28,9 @@ import {
   FoundationProjectsLifecycleDistributionResponse,
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
-  HealthMetricsAreaState,
   HealthMetricsDailyResponse,
-  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewKpisByRange,
+  HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
   OrgContributorsMonthlyResponse,
   OrgContributorsProjectDistributionResponse,
@@ -87,7 +87,6 @@ import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-  HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
@@ -1308,30 +1307,36 @@ export class AnalyticsService {
     );
   }
 
-  public getHealthOverviewRevenue(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsOverviewRevenue> {
-    const params: Record<string, string> = { foundationSlug };
-    if (range && range !== 'YTD') {
-      params['range'] = range;
-    }
-    return this.http
-      .get<HealthMetricsOverviewRevenue>('/api/analytics/health-overview-revenue', { params })
-      .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY)));
+  /**
+   * Fetches every selectable period's revenue summary in one call — `HEALTH_OVERVIEW_REVENUE` carries
+   * the period as a column suffix, so the period selector projects this map instead of refetching.
+   */
+  public getHealthOverviewRevenue(foundationSlug: string): Observable<HealthMetricsOverviewRevenueByRange> {
+    const params = { foundationSlug };
+    // Empty map on failure: callers index by the selected range and fall back to the zero-filled
+    // default for a missing key, so an absent entry already means "no data for this period".
+    return this.http.get<HealthMetricsOverviewRevenueByRange>('/api/analytics/health-overview-revenue', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-revenue failed', { foundationSlug, error });
+        return of({});
+      })
+    );
   }
 
   /**
-   * Fetches the live Events/Training/Members/Non-Members/Code area-state rows from `HEALTH_OVERVIEW_KPIS`.
-   * Engagement isn't part of that table's contract, so callers merge this with a fixture row for that
-   * area. Degrades to an empty array on failure — the caller then renders a neutral no-data placeholder
-   * for the live areas rather than falling back to their fixture.
+   * Fetches the live Events/Training/Members/Non-Members/Code area-state rows from `HEALTH_OVERVIEW_KPIS`,
+   * for every selectable period in one call. Engagement isn't part of that table's contract, so callers
+   * merge each period's rows with a fixture row for that area. Degrades to an empty map on failure — the
+   * caller then renders a neutral no-data placeholder for the live areas, never their fixture numbers.
    */
-  public getHealthOverviewKpis(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsAreaState[]> {
-    const params: Record<string, string> = { foundationSlug };
-    if (range && range !== 'YTD') {
-      params['range'] = range;
-    }
-    return this.http
-      .get<HealthMetricsAreaState[]>('/api/analytics/health-overview-kpis', { params })
-      .pipe(catchError(() => of([] as HealthMetricsAreaState[])));
+  public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
+    const params = { foundationSlug };
+    return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
+        return of({});
+      })
+    );
   }
 
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {
