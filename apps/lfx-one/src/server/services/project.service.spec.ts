@@ -261,6 +261,44 @@ describe('ProjectService — create picker methods', () => {
     service = new ProjectService();
   });
 
+  describe('getDirectGrantProjectRows', () => {
+    it('returns every direct-grant project row without an access check, so a view-only (auditor) grant survives', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a', stage: 'Formation - Engaged' },
+          { uid: 'b', slug: 'b', stage: 'Active' },
+        ])
+      );
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct' });
+      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('excludes the ROOT pseudo-project and follows page tokens to the end', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf(
+          [
+            { uid: 'root', slug: 'root' },
+            { uid: 'a', slug: 'a' },
+          ],
+          'next'
+        )
+      );
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_token: 'next' });
+    });
+  });
+
   describe('getDirectGrantProjects', () => {
     it('queries filter_grants=direct and returns only writer-permitted projects', async () => {
       proxyRequest.mockResolvedValueOnce(

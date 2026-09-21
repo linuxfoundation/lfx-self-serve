@@ -374,8 +374,9 @@ export function buildMyFormationSummary(overrides: Partial<MyFormationSummary> =
 
 /**
  * Three rows in deliberately wrong order for the page's need-based sort (#2753): the fixture
- * project (2 to do, blocked), an exploratory one with 1 to do and no announcement date, and one
- * whose upstream `sub_stage` has no queue-taxonomy equivalent (rendered verbatim, only under "All").
+ * project (2 to do, blocked), an exploratory one with 1 to do and no announcement date, and an
+ * invited-only one (#2795 — a direct project grant, nothing assigned, all-zero buckets) whose
+ * upstream `sub_stage` has no queue-taxonomy equivalent (rendered verbatim, only under "All").
  */
 export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
   buildMyFormationSummary({
@@ -387,7 +388,7 @@ export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
     sub_stage_raw: 'Formation - Disengaged',
     announcement_date: null,
     assigned_to_do: 0,
-    assigned_done: 2,
+    assigned_done: 0,
     items_done: 17,
     items_total: 17,
     blocking_item_title: null,

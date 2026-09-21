@@ -456,12 +456,19 @@ export class ProjectService {
   }
 
   /**
-   * Direct-FGA-grant projects for the create picker's default tree — NOT a full enumeration.
-   * `filter_grants=direct` narrows the query-service result set to resources the caller holds a
-   * direct OpenFGA tuple on, before any of our own access-check runs. Small by construction (a
-   * user's own direct grants), unlike `getProjects`'s unscoped pull.
+   * Every project the caller holds a direct OpenFGA tuple on, as the index stores it — NOT a full
+   * enumeration, and NOT access-checked here. `filter_grants=direct` has the query service read the
+   * caller's own `user:<username>` tuples on `project:*` objects (any relation — `writer`, `auditor`,
+   * `meeting_coordinator`, ...; the relation itself is discarded upstream) and narrow the result set
+   * to those objects before its normal access filter runs. Direct means direct: a tuple held through
+   * a `team:…#member` userset or inherited from a parent project does not match. Small by
+   * construction (a user's own direct grants), unlike `getProjects`'s unscoped pull.
+   *
+   * Callers that need a particular relation must check it themselves — `getDirectGrantProjects`
+   * below narrows to writers/coordinators for the create picker; `FormationService.getMyFormationWork`
+   * (#2795) deliberately does not, because a view-only formation invite is an `auditor` grant.
    */
-  public async getDirectGrantProjects(req: Request, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+  public async getDirectGrantProjectRows(req: Request): Promise<Project[]> {
     const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         type: 'project',
@@ -469,8 +476,17 @@ export class ProjectService {
         ...(pageToken && { page_token: pageToken }),
       })
     );
-    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
+  /**
+   * Direct-FGA-grant projects for the create picker's default tree — `getDirectGrantProjectRows`
+   * narrowed to the projects the caller can create under (writer, or meeting coordinator when
+   * requested), via the same access-check pass the picker's search path uses.
+   */
+  public async getDirectGrantProjects(req: Request, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
+    const rows = await this.getDirectGrantProjectRows(req);
+    return this.filterToCreatableProjects(req, rows, includeMeetingCoordinator);
   }
 
   /**

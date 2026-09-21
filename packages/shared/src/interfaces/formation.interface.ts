@@ -809,12 +809,14 @@ export interface MyFormationItemRow {
 }
 
 /**
- * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
- * with at least one item assigned to me — the direct-grant definition in the issue body is not
- * satisfiable, see the ticket's third comment). Built server-side from the same `type=formation_item`
- * index read that produces {@link MyFormationItemRow} — one row per `formation_uid` the caller has
- * an assigned item on, joined against the matching assignee-tagged {@link FormationQueueRow} for the
- * whole-formation aggregates (`getMyFormationWork`, `formation.service.ts`).
+ * One live formation the caller holds a direct project grant on (a formation invite — GH-1956's
+ * original "My formations" definition, satisfied via the query service's `filter_grants=direct`,
+ * #2795) or has at least one assigned item on. Built server-side by `getMyFormationWork`
+ * (`formation.service.ts`): the caller's direct-grant Formation-stage projects plus the
+ * `type=formation_item` index read that produces {@link MyFormationItemRow}, joined against the
+ * {@link FormationQueueRow} aggregates of that assigned-or-invited set. An invited-only row carries
+ * all-zero `assigned_*` buckets — there is deliberately no "invited" flag or label, since the grant
+ * alone can't say more than that truthfully (see the ticket's third comment).
  */
 export interface MyFormationSummary {
   formation_uid: string;

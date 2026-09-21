@@ -549,19 +549,27 @@ export class FormationService {
   }
 
   /**
-   * GH-1956 Me lens: "My formations" = every formation with at least one checklist item assigned to
-   * the caller (decision 2 in the ticket's third comment — a direct-grant-only definition can't be
-   * satisfied by the permission model, since it can't distinguish a direct grant from one inherited
-   * via a parent project or `lf-staff`/`lf-contractor`). Backed by two independent
-   * access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
+   * GH-1956 Me lens: "My formations" = every live formation the caller holds a **direct project
+   * grant** on, plus every one with at least one checklist item assigned to them (#2795). The
+   * direct-grant half is the ticket body's original definition. Its third comment dropped it as
+   * unsatisfiable, but the query service's `filter_grants=direct` reads exactly the caller's own
+   * `user:` OpenFGA tuples — no `team:…#member` usersets, no parent inheritance — so a formation
+   * invite (a settings `writers[]`/`auditors[]` entry, published upstream as a direct tuple) is
+   * precisely what it matches, while staff whose access is team-wide still see nothing here. That
+   * read is on `type=project` (`ProjectService.getDirectGrantProjectRows`), not `type=formation`:
+   * the formation documents have no FGA objects of their own — their access object is the
+   * project's — so the filter would match nothing on them.
+   *
+   * Backed by access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
    * `type=formation_item` for the caller's assigned items (this method's `items` half, and the
-   * per-formation bucket math for `formations`), and `type=formation` for the whole-formation
-   * aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) — the item index has no
-   * per-formation rollup of its own, and the checklist document already carries the same
-   * `assignee:` tag. Both queries are access-filtered upstream (the caller's own bearer token,
-   * carried by `req`); an unauthenticated/unauthorized caller simply gets empty results back, not
-   * an error — see {@link MyFormationWorkState}'s doc comment for how failure is distinguished from
-   * "the caller has nothing assigned".
+   * per-formation bucket math for `formations`), and one `type=formation` read for the
+   * whole-formation aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) of the
+   * assigned OR invited set — `tags` (OR) over the `assignee:` tag and one `project_uid:` tag per
+   * direct-grant formation project, `tags_all` (AND) on `lifecycle:live`. The item index has no
+   * per-formation rollup of its own. Every read carries the caller's own bearer token (via `req`);
+   * an unauthenticated/unauthorized caller simply gets empty results back, not an error — see
+   * {@link MyFormationWorkState}'s doc comment for how failure is distinguished from "the caller
+   * has nothing here".
    */
   public async getMyFormationWork(req: Request, username: string, options: { includeFormations?: boolean } = {}): Promise<MyFormationWorkResponse> {
     // `getUserPendingActions` (Me-lens Pending Actions) only ever reads `.items` off this method's
@@ -581,6 +589,12 @@ export class FormationService {
     const normalizedUsername = stripAuthPrefix(username);
     const assigneeTag = `assignee:${normalizedUsername}`;
     logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
+
+    // The invited half (#2795) — kicked off before the item query is awaited so the two upstream
+    // reads overlap, and only issued when the caller wants `formations` at all (Pending Actions
+    // never does). Never rejects: `readFormationGrantProjectUids` degrades internally, so an early
+    // `'unavailable'` return below can leave it un-awaited without an unhandled rejection.
+    const grantProjectsPromise = includeFormations ? this.readFormationGrantProjectUids(req) : Promise.resolve({ uids: new Set<string>(), degraded: false });
 
     let rawItems: UpstreamFormationItemRow[];
     try {
@@ -622,13 +636,17 @@ export class FormationService {
     if (mineItems.length !== liveItems.length) {
       logger.warning(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
     }
-    if (mineItems.length === 0) {
+    const { uids: grantProjectUids, degraded: grantsDegraded } = await grantProjectsPromise;
+    if (mineItems.length === 0 && grantProjectUids.size === 0) {
       // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure
       // dead weight when there's nothing for either to enrich, and this is the overwhelming common
-      // case (every caller with zero currently-assigned live items, not just zero ever). Also avoids
-      // a dishonest `'partial'`: if that unused query happened to fail, nothing was actually missing.
-      logger.debug(req, 'get_my_formation_work', 'No assigned live items; skipping the formation-aggregate query');
-      return { formations: [], items: [], state: 'complete' };
+      // case (every caller with zero currently-assigned live items and no formation invite, not
+      // just zero ever). Also avoids a dishonest `'partial'` from the unused aggregate query.
+      // `grantsDegraded` is the one honest exception: the direct-grant read failed, so this caller
+      // may well be invited somewhere — `'partial'` with no rows makes the page offer Retry rather
+      // than assert "No formations yet".
+      logger.debug(req, 'get_my_formation_work', 'No assigned live items and no direct-grant formation project; skipping the formation-aggregate query');
+      return { formations: [], items: [], state: grantsDegraded ? 'partial' : 'complete' };
     }
 
     // The formation-aggregate query is independent of the items query above (a different indexed
@@ -639,12 +657,17 @@ export class FormationService {
     let formationsDegraded = false;
     if (includeFormations) {
       try {
+        // One read for the assigned-OR-invited set (#2795): the query service OR's `tags` (a
+        // `should` clause with minimum_should_match 1) and AND's `tags_all` (`must` terms) in the
+        // same body, and the `formation` document carries both an `assignee:<username>` tag per
+        // assignee and a `project_uid:<uid>` tag (indexer_publisher.go's `projectionTags`).
         const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
           req,
           (pageToken) =>
             this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
               type: 'formation',
-              tags_all: [assigneeTag, 'lifecycle:live'],
+              tags: [assigneeTag, ...[...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`)],
+              tags_all: ['lifecycle:live'],
               page_size: 100,
               ...(pageToken && { page_token: pageToken }),
             }),
@@ -737,14 +760,17 @@ export class FormationService {
     }
     const items = stagedItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
 
-    // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
-    // status rather than just the open subset above (summarizeMyFormationItems needs the
-    // done/skipped counts too), joined against the formation-aggregate row for the whole-formation
-    // totals. A formation missing its aggregate row (independent-query lag, or that query having
-    // failed above) is dropped rather than fabricated, and flips `state` to `'partial'`. Skipped
-    // entirely when `!includeFormations` — every formation_uid would otherwise look "missing its
-    // aggregate row" (nothing populates `formationRows` in that branch) and dishonestly report
-    // `'partial'` for a caller that never asked for `formations` in the first place.
+    // formations[] — one row per (lifecycle-live) aggregate row the caller is invited to (a direct
+    // grant on its project, #2795) or has an assigned item on. The assigned items are bucketed by
+    // formation_uid over every status rather than just the open subset above
+    // (summarizeMyFormationItems needs the done/skipped counts too); an invited-only formation gets
+    // all-zero buckets. An aggregate row matching neither — an `assignee:` tag the projection still
+    // carries for an item the caller no longer holds live — is skipped. An assigned formation
+    // missing its aggregate row (independent-query lag, or that query having failed above) is
+    // dropped rather than fabricated, and flips `state` to `'partial'`. Skipped entirely when
+    // `!includeFormations` — every formation_uid would otherwise look "missing its aggregate row"
+    // (nothing populates `formationRows` in that branch) and dishonestly report `'partial'` for a
+    // caller that never asked for `formations` in the first place.
     const formations: MyFormationSummary[] = [];
     let anyFormationDropped = false;
     if (includeFormations) {
@@ -754,13 +780,16 @@ export class FormationService {
         bucket.push(row);
         itemsByFormation.set(row.formation_uid, bucket);
       }
-      const formationRowByUid = new Map(formationRows.map((row) => [row.formation_uid, row]));
 
-      for (const [formationUid, assignedItems] of itemsByFormation) {
-        const aggregateRow = formationRowByUid.get(formationUid);
-        if (!aggregateRow) {
-          anyFormationDropped = true;
-          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+      const seenFormationUids = new Set<string>();
+      for (const aggregateRow of formationRows) {
+        if (seenFormationUids.has(aggregateRow.formation_uid)) continue;
+        seenFormationUids.add(aggregateRow.formation_uid);
+        const assignedItems = itemsByFormation.get(aggregateRow.formation_uid) ?? [];
+        if (assignedItems.length === 0 && !grantProjectUids.has(aggregateRow.project_uid)) {
+          logger.debug(req, 'get_my_formation_work', 'Aggregate row neither invited nor assigned to the caller; skipping', {
+            formationUid: aggregateRow.formation_uid,
+          });
           continue;
         }
         // Usually not the Active gate, despite where it sits. `formationRows` is already
@@ -813,9 +842,16 @@ export class FormationService {
           blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
         });
       }
+
+      for (const formationUid of itemsByFormation.keys()) {
+        if (!seenFormationUids.has(formationUid)) {
+          anyFormationDropped = true;
+          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+        }
+      }
     }
 
-    const state: MyFormationWorkState = formationsDegraded || anyFormationDropped ? 'partial' : 'complete';
+    const state: MyFormationWorkState = formationsDegraded || anyFormationDropped || grantsDegraded ? 'partial' : 'complete';
     logger.debug(req, 'get_my_formation_work', 'Returning live formation work', { formation_count: formations.length, item_count: items.length, state });
     return { formations, items, state };
   }
@@ -1094,6 +1130,26 @@ export class FormationService {
    */
   private async checkFormationTeamMembership(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
+   * The projects the caller holds a direct grant on that are currently in a Formation stage — the
+   * "invited" half of {@link getMyFormationWork} (#2795). `isFormationStageGate` is the same gate
+   * the aggregate rows pass there, applied here first so the aggregate query carries one
+   * `project_uid:` tag per formation project rather than one per direct grant of any stage. Never
+   * throws: a failed read is a WARN plus `degraded: true`, so the caller's assigned formations still
+   * render and only `state` records that invited ones may be missing.
+   */
+  private async readFormationGrantProjectUids(req: Request): Promise<{ uids: Set<string>; degraded: boolean }> {
+    try {
+      const rows = await this.projectService.getDirectGrantProjectRows(req);
+      const uids = new Set(rows.filter((project) => typeof project.stage === 'string' && isFormationStageGate(project.stage)).map((project) => project.uid));
+      logger.debug(req, 'get_my_formation_work', 'Resolved direct-grant formation projects', { direct_grant_count: rows.length, formation_count: uids.size });
+      return { uids, degraded: false };
+    } catch (error) {
+      logger.warning(req, 'get_my_formation_work', 'Direct-grant project read failed; invited formations will be missing', { err: error });
+      return { uids: new Set<string>(), degraded: true };
+    }
   }
 
   /**

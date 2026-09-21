@@ -22,7 +22,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await gotoMyFormations(page);
 
     await expect(page.getByTestId('my-formations-title')).toHaveText('My Formations', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('my-formations-description')).toContainText('checklist items assigned to you');
+    await expect(page.getByTestId('my-formations-description')).toContainText("Formations you're invited to");
 
     // Sidebar: last item of My Engagement, right after My Documents.
     const nav = page.getByTestId('sidebar-my-formations');
@@ -44,7 +44,9 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(page.getByTestId(`my-formations-blocking-${CASCADE}`)).toContainText('Contribution agreement executed');
 
     // An upstream stage outside the queue taxonomy renders verbatim; missing data reads honestly.
+    // Orbit Ledger is the invited-only row (#2795): nothing assigned yet, so "Your items" is a dash.
     await expect(page.getByTestId('my-formations-stage-formation-orbit-ledger')).toContainText('Formation - Disengaged');
+    await expect(page.getByTestId('my-formations-items-formation-orbit-ledger')).toHaveText('—');
     await expect(page.getByTestId('my-formations-announcement-formation-orbit-ledger')).toContainText('Not set');
     await expect(page.getByTestId('my-formations-blocking-formation-orbit-ledger')).toHaveText('—');
 
