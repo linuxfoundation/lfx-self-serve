@@ -1038,6 +1038,58 @@ describe('FormationService', () => {
       // No NATS call should be issued for the system actor.
       expect(natsRequest).not.toHaveBeenCalled();
     });
+
+    it('enriches before.assignee and after.assignee with display names on assignee_changed entries', async () => {
+      mockRoutes([
+        activityPage([
+          activityEntry({
+            actor: 'sam.chen',
+            action: 'assignee_changed',
+            before: { status: null, assignee: null },
+            after: { status: null, assignee: 'andrest50dev' },
+          }),
+        ]),
+      ]);
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        if (username === 'andrest50dev') return { data: JSON.stringify({ success: true, data: { given_name: 'Andres', family_name: 'Tobon' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      // Actor enriched the same as before.
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+      // Assignee snapshot in after.assignee replaced with display name, not raw username.
+      expect(result.history[0].after?.assignee).toBe('Andres Tobon');
+      // before.assignee was null (Unassigned) — must stay null, not be turned into a name.
+      expect(result.history[0].before?.assignee).toBeNull();
+    });
+
+    it('leaves before/after assignee as username when metadata lookup fails for the assignee', async () => {
+      mockRoutes([
+        activityPage([
+          activityEntry({
+            actor: 'sam.chen',
+            action: 'assignee_changed',
+            before: { status: null, assignee: null },
+            after: { status: null, assignee: 'unknown.user' },
+          }),
+        ]),
+      ]);
+      // Only the actor resolves; the assignee lookup fails.
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return Promise.reject(new Error('user not found'));
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      // Actor enriched successfully.
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+      // Assignee falls back gracefully to the raw username.
+      expect(result.history[0].after?.assignee).toBe('unknown.user');
+    });
   });
 
   describe('getFormationItemOrThrow — project-scoped read access', () => {
