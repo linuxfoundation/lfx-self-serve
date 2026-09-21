@@ -57,6 +57,7 @@ describe('sanitizeDisplayText', () => {
     ['a zero-width space', 'a\u200Bb'],
     ['a left-to-right mark', 'a\u200Eb'],
     ['a right-to-left mark', 'a\u200Fb'],
+    ['an arabic letter mark', 'a\u061Cb'],
     ['a word joiner', 'a\u2060b'],
     ['a byte-order mark', 'a\uFEFFb'],
     ['an isolate', 'a\u2066b'],
@@ -272,6 +273,33 @@ describe('stripResourceLoadingHtml', () => {
     // residue of a spliced tag (`g src="…">t`) contains none either way, so the assertion
     // passed with the escaping removed. The quote and `>` are what actually change.
     expect(out).not.toMatch(/["'<>]/);
+  });
+
+  // A raw `<` in ordinary copy is NOT a tag opener. Treating it as one consumed everything to
+  // the next `>`, so `<p>5 < 10 and more</p>` came out as `<p>5 ` -- silent data loss on
+  // perfectly valid email copy, which is worse than the fetch this function exists to stop.
+  it.each([
+    ['a less-than in copy', '<p>5 < 10 and more</p>', '<p>5 &lt; 10 and more</p>'],
+    ['a less-than before more markup', '<p>price < $5</p><p>keep</p>', '<p>price &lt; $5</p><p>keep</p>'],
+    ['a lone less-than', 'a < b', 'a &lt; b'],
+  ])('preserves %s', (_label, input, want) => {
+    expect(stripResourceLoadingHtml(input)).toBe(want);
+  });
+
+  // Text nodes are decoded before re-escaping, for the same reason attribute values are: the
+  // source is already html-escaped, so escaping again showed the reader a literal `&amp;`.
+  // Fixed for attributes first and missed here, one line away.
+  it.each([
+    ['an ampersand entity', '<p>Tom &amp; Jerry</p>', '<p>Tom &amp; Jerry</p>'],
+    ['an escaped less-than', '<p>5 &lt; 10</p>', '<p>5 &lt; 10</p>'],
+  ])('round-trips %s in text', (_label, input, want) => {
+    expect(stripResourceLoadingHtml(input)).toBe(want);
+  });
+
+  it('does not double-escape an attribute value', () => {
+    // The source value is already html-escaped, so re-escaping turned `a&b` into `a&amp;amp;b`
+    // in the rendered link.
+    expect(stripResourceLoadingHtml('<a href="https://x.test/a&amp;b">t</a>')).toBe('<a href="https://x.test/a&amp;b">t</a>');
   });
 
   it('keeps the TEXT of a disallowed tag, but drops code content', () => {

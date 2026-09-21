@@ -65,7 +65,11 @@ export function sanitizeDisplayText(value: string): string {
       if (code === 0x200b) return false;
       // LRM/RLM are directional MARKS, not joiners: they alter how the surrounding run is laid
       // out, which is the same class as the overrides denied above.
-      if (code === 0x200e || code === 0x200f) return false;
+      // LRM/RLM/ALM are directional MARKS, not joiners: they alter how the surrounding run is
+      // laid out, which is the same class as the overrides denied above. U+061C (ARABIC LETTER
+      // MARK) belongs with them and was missed -- it is invisible and directional, so it does
+      // the spoofing job of LRM in Arabic-script text.
+      if (code === 0x200e || code === 0x200f || code === 0x061c) return false;
       // WORD JOINER and BOM: invisible, and neither is orthography in any script.
       if (code === 0x2060 || code === 0xfeff) return false;
       // `<` and `>` only. Quotes, apostrophes and backticks are ordinary punctuation in real
@@ -330,14 +334,23 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
   while (index < html.length) {
     const lt = html.indexOf('<', index);
     if (lt === -1) {
-      if (skipDepth === 0) out += escapeHtml(html.slice(index));
+      if (skipDepth === 0) out += escapeHtml(decodeHtmlEntities(html.slice(index)));
       break;
     }
     // Text between tags is ESCAPED, not copied. A spliced tag such as `<im<img>g src="…">`
     // leaves `g src="…">` as text once the inner tag is removed, and copying it verbatim put
     // raw attribute text into the preview -- inert, but it is markup residue the reader sees.
     // Escaping makes the output's text nodes structurally unable to reopen a tag.
-    if (skipDepth === 0) out += escapeHtml(html.slice(index, lt));
+    if (skipDepth === 0) out += escapeHtml(decodeHtmlEntities(html.slice(index, lt)));
+
+    // A `<` only starts a TAG when a name follows it. `5 < 10` is ordinary copy, and treating it
+    // as a tag opener consumed everything to the next `>` -- so `<p>5 < 10 and more</p>` came out
+    // as `<p>5 `, silently deleting the rest of the email body. Anything else is text.
+    if (!/^<\/?[a-zA-Z]/.test(html.slice(lt, lt + 3))) {
+      if (skipDepth === 0) out += escapeHtml('<');
+      index = lt + 1;
+      continue;
+    }
 
     const gt = html.indexOf('>', lt);
     if (gt === -1) break;
@@ -374,7 +387,7 @@ function allowedAttributes(rawTag: string): string {
       // `href` is the one attribute that can name a destination, so it is scheme-checked. A
       // relative or non-http(s) href is dropped rather than rewritten.
       if (key !== 'href' || /^https?:\/\//i.test(value)) {
-        attrs += ` ${key}="${escapeHtml(value)}"`;
+        attrs += ` ${key}="${escapeHtml(decodeHtmlEntities(value))}"`;
       }
     }
     match = pattern.exec(rawTag);
