@@ -109,6 +109,33 @@ export async function stubAccountContext(page: Page): Promise<void> {
     total: 1,
   });
 
+  // Spec 050: an org-addressed EasyCLA address (`/org/{segment}/easycla/…`) goes through the
+  // resolver on arrival. The mock organization publishes no slug, so its canonical address is the
+  // SFID form — which is also what the BFF mints for a signing return.
+  await page.route('**/api/orgs/resolve/*', (route) => {
+    const segment = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() ?? '');
+    if (segment !== MOCK_ACCOUNT_ID) {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Organization not found' }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uid: MOCK_ACCOUNT_ID, slug: null, name: MOCK_ACCOUNT_NAME }) });
+  });
+  await page.route('**/api/orgs/uid/*', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: MOCK_ACCOUNT_ID,
+        accountId: MOCK_ACCOUNT_ID,
+        name: MOCK_ACCOUNT_NAME,
+        slug: null,
+        parentUid: null,
+        isMember: true,
+        logoUrl: null,
+      }),
+    });
+  });
+
   await page.context().addCookies([{ name: ACCOUNT_COOKIE_KEY, value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }), domain: 'localhost', path: '/' }]);
 }
 

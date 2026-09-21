@@ -61,6 +61,12 @@ function stubList(page: Page) {
  * The address EasyCLA sends the signatory back to, built from the same shared constants the BFF
  * composes it from — so a rename on either side fails here rather than passing against a literal.
  */
+/** The return address minted once the `ORG_EASYCLA_RETURN_IN_PATH` rollout gate is on: organization in the path, no `?org=`. */
+function orgAddressedReturnAddress(): string {
+  return `/org/${MOCK_ACCOUNT_ID}/easycla/${STUB_CLA_GROUP_ID}?${ORG_EASYCLA_RETURN_SIGNED_PARAM}=${ORG_EASYCLA_RETURN_SIGNED_VALUE}`;
+}
+
+/** The leftover return address (rollout gate off, and every return minted before it): organization in `?org=`. */
 function returnAddress(): string {
   const params = new URLSearchParams({
     [ORG_EASYCLA_RETURN_ORG_PARAM]: MOCK_ACCOUNT_ID,
@@ -247,6 +253,25 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
   });
 
   /**
+   * The same return trip on the address the BFF mints once the `ORG_EASYCLA_RETURN_IN_PATH` rollout
+   * gate is on (spec 050 phase 2): the organization is the path's own segment, resolved by the path
+   * guard on arrival, and no `?org=` rides along. The mock organization publishes no slug, so its
+   * canonical address is the SFID form and the guard leaves it as addressed.
+   */
+  test('returns the signatory to the agreement on the organization-addressed address', async ({ page }) => {
+    await gotoEasyclaList(page, async (p) => {
+      await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup({ id: 'sig-new', claGroupId: STUB_CLA_GROUP_ID })]));
+      await stubHandoff(p);
+    });
+
+    await page.goto(orgAddressedReturnAddress(), { waitUntil: 'domcontentloaded' });
+
+    await expect(page.getByTestId('org-easycla-detail-title')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // Organization kept in the path; the spent flag stripped.
+    await expect(page).toHaveURL(new RegExp(`/org/${MOCK_ACCOUNT_ID}/easycla/${STUB_CLA_GROUP_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
+  });
+
+  /**
    * The wait, and where it leaves the signatory when it is spent.
    *
    * EasyCLA writes the signature when DocuSign calls it back, and that callback races the return
@@ -364,7 +389,8 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/org\/easycla/);
+    // The picker addressed the preview under the organization (spec 050 phase 2); the failure keeps it there.
+    await expect(page).toHaveURL(new RegExp(`/org/${MOCK_ACCOUNT_ID}/easycla/`));
   });
 
   // A CLA Group with no resolvable project cannot be signed corporately. It stays on screen with
