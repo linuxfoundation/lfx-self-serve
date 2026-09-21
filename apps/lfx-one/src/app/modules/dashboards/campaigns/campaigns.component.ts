@@ -1276,11 +1276,12 @@ export class CampaignsComponent {
    * The CTA text to show when the generator produced a label but its destination was REFUSED.
    *
    * Without this the call to action disappears entirely, from every surface at once. The server
-   * keeps a button's label inline in `body` only when its url is BLANK, while this component
-   * additionally refuses a url that does not canonicalise or does not match the brief's
-   * registration URL -- so a hallucinated destination is dropped server-side (the url was
-   * truthy) and refused client-side (the url was wrong), and nothing reports it. Two encodings
-   * of one question that disagree on the middle case.
+   * keeps a button's label inline in `body` only when its url is FALSY (`!section.url`, so a
+   * whitespace-only value counts as supplied), while this component additionally refuses a url
+   * that does not canonicalise or does not match the brief's registration URL -- so a
+   * hallucinated destination is dropped server-side (the url was truthy) and refused
+   * client-side (the url was wrong), and nothing reports it. Two encodings of one question that
+   * disagree on the middle case.
    *
    * The check cannot be consolidated server-side: `generateEmailCopy` has only the project slug
    * and brief id, so comparing against the brief's registrationUrl would mean fetching the
@@ -1305,7 +1306,7 @@ export class CampaignsComponent {
     // and the call to action would vanish through the very gap this helper closes. Two encodings
     // of one question drift the moment they stop being identical -- which is how the vanishing
     // CTA arose in the first place.
-    if (!(this.emailCopy()?.ctaUrl ?? '')) return '';
+    if (!this.emailCopy()?.ctaUrl) return '';
     return (this.emailCopy()?.cta ?? '').trim();
   });
 

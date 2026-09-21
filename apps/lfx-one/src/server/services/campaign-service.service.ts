@@ -885,10 +885,14 @@ export class CampaignServiceClient {
         .map((section) => {
           if (section.type === 'divider') return '<hr />';
           // The whole element changed, not just the class: `<p class="lfx-cta-text">` became
-          // `<div class="lfx-block lfx-button"><strong>`, which is exactly what campaign-service's
-          // own renderer emits for a button section
-          // (`internal/service/email_wizard_sections.go`). The two producers of this markup now
-          // agree, and `<strong>` carries the emphasis a CTA needs in clients that drop CSS.
+          // `<div class="lfx-block lfx-button"><strong>`, byte-identical to what campaign-service
+          // emits for a URL-LESS button in `internal/service/email_wizard_sections.go`:
+          //
+          //     b.WriteString(`<div class="lfx-block lfx-button"><strong>` + label + "</strong></div>\n")
+          //
+          // guarded there by the same reasoning -- "a button with nowhere to go is rendered as
+          // TEXT, never as href='#'". The two producers of this markup now agree, and `<strong>`
+          // carries the emphasis a CTA needs in clients that drop CSS.
           //
           // The previous `lfx-cta-text` was invented here, defined by no stylesheet and matching
           // nothing upstream -- dead markup that also read as part of a convention it did not

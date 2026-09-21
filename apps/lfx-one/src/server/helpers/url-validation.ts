@@ -284,7 +284,7 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
   // sampled addresses that isPrivateHost rejects sailed through this, the REAL fetch path.
   //
   // Two encodings of one rule always drift, and the one nobody is hardening is the one that
-  // matters. Deleted rather than extended, so there is one place to fix next time.
+  // matters. The local list was deleted rather than extended, so there is one place to fix.
   if (isPrivateHost(hostname)) {
     throw new Error('URLs targeting private/internal hosts are not allowed');
   }
@@ -312,8 +312,8 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
   }
   for (const addr of allAddresses) {
     // isPrivateHost normalises the IPv4-mapped form itself, so there is no strip to do here --
-    // and judging a hand-stripped copy alongside it would be a second encoding of the same rule,
-    // which is what this file was just fixed for.
+    // and judging a hand-stripped copy alongside it would be a second encoding of the same rule
+    // this file already delegates to the shared judge.
     if (isPrivateHost(addr)) {
       throw new Error('Blocked host: resolves to private IP');
     }

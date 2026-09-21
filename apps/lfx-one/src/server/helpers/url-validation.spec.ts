@@ -267,7 +267,10 @@ describe('resolved-address SSRF gate uses the shared judge', () => {
     } catch (error) {
       rejection = error instanceof Error ? error.message : String(error);
     }
-    expect(vi.mocked(dns.promises.resolve4)).toHaveBeenCalled();
+    // Asserts the resolver was called FOR THIS URL, not merely that it has ever been called:
+    // nothing clears these mocks between tests, so a bare toHaveBeenCalled() is satisfied by the
+    // nine cases above and can never fail -- a control that proves nothing.
+    expect(vi.mocked(dns.promises.resolve4)).toHaveBeenCalledWith('events.example.com');
     expect(rejection).not.toMatch(/private IP/);
   });
 });

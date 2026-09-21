@@ -2387,11 +2387,11 @@ describe('CampaignsComponent — email delivery channel', () => {
       internals().emailCopy.set({
         subject: 's',
         preheader: 'p',
+        body: '<p>Hello</p>',
+        cta: 'Register now',
         // `"   "` is TRUTHY, so the server's `!section.url` filter drops the label from body.
         // Trimming on this side would call it omitted and hide it here too -- the CTA would
         // vanish from both, through the gap this helper exists to close.
-        body: '<p>Hello</p>',
-        cta: 'Register now',
         ctaUrl: '   ',
       } as unknown as EmailBriefCopy);
       fixture.detectChanges();
