@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ActivatedRoute, provideRouter, Router } from '@angular/router';
+import { ActivatedRoute, provideRouter } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
@@ -409,68 +410,69 @@ describe('FormationChecklistSectionComponent', () => {
         ],
       }).compileComponents();
 
-      const router = TestBed.inject(Router);
-      const navigateSpy = vi.spyOn(router, 'navigate').mockResolvedValue(true);
+      // location.replaceState is used instead of router.navigate to strip ?item= without
+      // triggering a new Angular navigation cycle (which would re-run CanMatch/CanActivate
+      // guards and risk a redirect away from this page).
+      const location = TestBed.inject(Location);
+      const replaceStateSpy = vi.spyOn(location, 'replaceState').mockImplementation(() => undefined);
 
       const f = TestBed.createComponent(FormationChecklistSectionComponent);
       f.detectChanges();
       await f.whenStable();
       f.detectChanges();
 
-      return { fixture: f, navigateSpy, formationMock };
+      return { fixture: f, replaceStateSpy, formationMock };
     }
 
-    const wantNavigateArgs = { queryParams: { item: null }, queryParamsHandling: 'merge', replaceUrl: true };
-
     it('opens the matching item drawer and clears ?item= from the URL', async () => {
-      const { fixture, navigateSpy } = await renderWithItem('test-item');
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item');
 
       expect(fixture.componentInstance.drawerVisible()).toBe(true);
       expect(fixture.componentInstance.drawerItemAddress()).toEqual({ projectUid: 'project:test', itemKey: 'test-item' });
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
     it('clears ?item= without opening a drawer when the key matches no item', async () => {
-      const { fixture, navigateSpy } = await renderWithItem('unknown-key');
+      const { fixture, replaceStateSpy } = await renderWithItem('unknown-key');
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
     it('clears ?item= on a terminal no-items state without opening a drawer', async () => {
       const emptyChecklist: FormationChecklistResponse = { ...buildResponse('live', 'live'), items: [] };
-      const { fixture, navigateSpy } = await renderWithItem('test-item', { response: emptyChecklist });
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', { response: emptyChecklist });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
     it('clears ?item= on a terminal no-template state without opening a drawer', async () => {
       const noTemplateResponse: FormationChecklistResponse = { ...buildResponse('live', 'live'), template: null };
-      const { fixture, navigateSpy } = await renderWithItem('test-item', { response: noTemplateResponse });
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', { response: noTemplateResponse });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
     it('preserves ?item= on the retryable error state so an in-page retry can still open the drawer', async () => {
-      const { fixture, navigateSpy } = await renderWithItem('test-item', {
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', {
         fetchResult: throwError(() => new Error('network error')),
       });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(replaceStateSpy).not.toHaveBeenCalled();
     });
 
     it('opens the drawer and clears ?item= after an in-page retry succeeds', async () => {
       const response = buildResponse('live', 'live');
       // First call errors; second call (after onRetry) succeeds.
-      const { fixture, navigateSpy, formationMock } = await renderWithItem('test-item', {
+      const { fixture, replaceStateSpy, formationMock } = await renderWithItem('test-item', {
         fetchResult: throwError(() => new Error('network error')),
       });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(replaceStateSpy).not.toHaveBeenCalled();
 
       // Wire the retry to succeed, then trigger it.
       formationMock.mockReturnValue(of(response));
@@ -480,14 +482,14 @@ describe('FormationChecklistSectionComponent', () => {
       fixture.detectChanges();
 
       expect(fixture.componentInstance.drawerVisible()).toBe(true);
-      expect(navigateSpy).toHaveBeenCalledWith([], expect.objectContaining(wantNavigateArgs));
+      expect(replaceStateSpy).toHaveBeenCalledOnce();
     });
 
     it('does not open a drawer or clear ?item= when running on the server (SSR guard)', async () => {
-      const { fixture, navigateSpy } = await renderWithItem('test-item', { platformId: 'server' });
+      const { fixture, replaceStateSpy } = await renderWithItem('test-item', { platformId: 'server' });
 
       expect(fixture.componentInstance.drawerVisible()).toBe(false);
-      expect(navigateSpy).not.toHaveBeenCalled();
+      expect(replaceStateSpy).not.toHaveBeenCalled();
     });
   });
 });
