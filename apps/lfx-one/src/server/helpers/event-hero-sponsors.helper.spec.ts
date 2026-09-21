@@ -218,4 +218,40 @@ describe('extractHeroAndSponsors — URL canonicalization', () => {
 
     expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/img/hero.png');
   });
+  /**
+   * A sponsor image with no usable `alt` falls back to a name derived from its URL, and that
+   * name is forwarded as recipient-visible alt text in the sent email. Deriving it from the
+   * whole URL therefore put a scraped signed URL's credentials into everyone's inbox:
+   * `logo.png?X-Amz-Credential=AKIA...&X-Amz-Signature=...` became the sponsor NAME.
+   *
+   * Asserting on the absence of the credential rather than only on the happy-path string,
+   * because a future change that reintroduces the query would still produce a name starting
+   * with "acme logo" and pass a naive equality check on a prefix.
+   */
+  it('derives a fallback sponsor name from the PATH only, never a signed URL query', () => {
+    const signed = 'https://cdn.example.com/logos/acme-logo.png?X-Amz-Credential=AKIAIOSFODNN7EXAMPLE&X-Amz-Signature=deadbeef';
+    const html = `<div class="partners"><h2>Our Sponsors</h2><img src="${signed}" alt="" /></div>`;
+
+    const [sponsor] = extractHeroAndSponsors(html, BASE_URL).sponsors;
+
+    expect(sponsor.name).toBe('acme logo');
+    expect(sponsor.name).not.toContain('AKIA');
+    expect(sponsor.name).not.toContain('Signature');
+    // The extension strip only worked once the query was gone: with it attached, the `\.[a-z0-9]+$`
+    // anchor matched nothing and the name kept its `.png` as well.
+    expect(sponsor.name).not.toContain('.png');
+    // The logo URL itself is untouched -- the query is load-bearing for FETCHING a signed asset.
+    expect(sponsor.logoUrl).toBe(signed);
+  });
+
+  it('falls back to a generic name rather than a best-effort substring when the URL will not parse', () => {
+    const html = `<div class="partners"><h2>Our Sponsors</h2><img src="https://cdn.example.com/logos/" alt="" /></div>`;
+
+    const sponsors = extractHeroAndSponsors(html, BASE_URL).sponsors;
+
+    // Either dropped or named generically -- never named after a URL fragment.
+    for (const sponsor of sponsors) {
+      expect(sponsor.name).toBe('Sponsor');
+    }
+  });
 });

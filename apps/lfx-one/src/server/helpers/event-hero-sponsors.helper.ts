@@ -67,6 +67,43 @@ function extractHeroImage(html: string, baseUrl: string): string {
   return '';
 }
 
+/**
+ * Derives a display name from a logo URL, for a sponsor image with no usable `alt`.
+ *
+ * The PATHNAME only, never the whole URL. This name is forwarded as recipient-visible alt text
+ * in the email, and a scraped `src` may be a signed URL -- `logo.png?X-Amz-Credential=AKIA...
+ * &X-Amz-Signature=...` put an access key id and signature straight into the sponsor name, and
+ * from there into everyone's inbox. Parsing also fixes a second, quieter bug: with the query
+ * still attached, the extension strip below matched nothing, so the name kept its `.png` too.
+ *
+ * A URL that will not parse yields 'Sponsor' rather than a best-effort substring -- guessing at
+ * the shape of a string that already defeated the parser is how the query ends up in the name
+ * again.
+ */
+function sponsorFallbackName(resolved: string): string {
+  let pathname: string;
+  try {
+    pathname = new URL(resolved).pathname;
+  } catch {
+    return 'Sponsor';
+  }
+  const base = pathname.split('/').pop() ?? '';
+  const cleaned = decodeSafely(base)
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[-_]+/g, ' ')
+    .trim();
+  return cleaned || 'Sponsor';
+}
+
+/** Decodes percent-escapes, falling back to the raw value when the input is malformed. */
+function decodeSafely(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): CampaignEventSponsor[] {
   const sponsors: CampaignEventSponsor[] = [];
   const seen = new Set<string>();
@@ -96,8 +133,7 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
     if (!resolved || seen.has(resolved)) continue;
     seen.add(resolved);
 
-    const fallbackName = (resolved.split('/').pop() ?? 'Sponsor').replace(/\.[a-z0-9]+$/i, '').replace(/[-_]+/g, ' ');
-    sponsors.push({ name: alt || fallbackName, logoUrl: resolved });
+    sponsors.push({ name: alt || sponsorFallbackName(resolved), logoUrl: resolved });
   }
 
   return sponsors;
