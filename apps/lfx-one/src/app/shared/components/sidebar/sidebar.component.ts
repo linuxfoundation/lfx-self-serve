@@ -20,7 +20,7 @@ import {
   PERSONA_PRIORITY,
 } from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
+import { buildProfileTabs, lensItemToProjectContext, orgLensDestinationKey, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -40,6 +40,14 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'board-member': 'fa-light fa-building-columns',
   maintainer: 'fa-light fa-code',
   contributor: 'fa-light fa-code',
+};
+
+/** `SidebarMenuItem` as rendered: derived test id, external-link flag and `@for` track key filled in at every level. */
+type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
+  testId: string;
+  trackKey: string;
+  external: boolean | undefined;
+  items?: DecoratedSidebarMenuItem[];
 };
 
 @Component({
@@ -127,26 +135,9 @@ export class SidebarComponent {
   protected readonly profileTabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
   protected readonly profileMenu = viewChild<Popover>('profileMenu');
 
-  protected readonly itemsWithTestIds = computed(() =>
-    this.items().map((item) => ({
-      ...item,
-      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-      external: item.url ? this.isExternalUrl(item.url) : undefined,
-      items: item.items?.map((childItem) => ({
-        ...childItem,
-        testId: childItem.testId || `sidebar-item-${childItem.label.toLowerCase().replace(/\s+/g, '-')}`,
-        external: childItem.url ? this.isExternalUrl(childItem.url) : undefined,
-      })),
-    }))
-  );
+  protected readonly itemsWithTestIds = computed(() => this.items().map((item) => this.decorate(item)));
 
-  protected readonly footerItemsWithTestIds = computed(() =>
-    this.footerItems().map((item) => ({
-      ...item,
-      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-      external: item.url ? this.isExternalUrl(item.url) : undefined,
-    }))
-  );
+  protected readonly footerItemsWithTestIds = computed(() => this.footerItems().map((item) => this.decorate(item)));
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -306,6 +297,27 @@ export class SidebarComponent {
 
       return [toTag(this.personaService.currentPersona())];
     });
+  }
+
+  /** Test id, external-link flag and `@for` track key for an item and, recursively, its children. */
+  private decorate(item: SidebarMenuItem): DecoratedSidebarMenuItem {
+    return {
+      ...item,
+      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
+      trackKey: this.trackKey(item),
+      external: item.url ? this.isExternalUrl(item.url) : undefined,
+      items: item.items?.map((childItem) => this.decorate(childItem)),
+    };
+  }
+
+  /**
+   * Stable per-destination identity for the `@for` loops. The destination, not the address: Org Lens
+   * links carry the selected organization (`/org/{segment}/{page}`, spec 050), so tracking by the
+   * raw `routerLink` would key every row on the organization and a switch would tear down and
+   * rebuild the whole nav — re-baking every Font Awesome icon on the way — when only the hrefs moved.
+   */
+  private trackKey(item: SidebarMenuItem): string {
+    return item.routerLink ? orgLensDestinationKey(item.routerLink) : (item.url ?? item.label);
   }
 
   private isExternalUrl(url: string): boolean {

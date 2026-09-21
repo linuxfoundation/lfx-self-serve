@@ -19,6 +19,7 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -34,6 +35,7 @@ describe('SidebarNavService', () => {
   const orgLensEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
+  const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const formationEnabled = signal(false);
   const activeProjectStage = signal<string | null>(null);
@@ -63,6 +65,7 @@ describe('SidebarNavService', () => {
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
+    orgSegment.set(null);
     mentorshipEnabled.set(false);
     formationEnabled.set(false);
     activeProjectStage.set(null);
@@ -126,6 +129,10 @@ describe('SidebarNavService', () => {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
         },
+        // Spec 050 US2: Org Lens items address the selected organization. Most cases assert the tree
+        // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
+        // the cases that assert the org-scoped form.
+        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
       ],
     });
   });
@@ -387,6 +394,31 @@ describe('SidebarNavService', () => {
     const engagementLabels = labels(sectionItems(items, 'Organization Engagement'));
 
     // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
+    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+  });
+
+  // The flag-gated items are placed by looking their neighbours up by address; both sides must
+  // agree on the org-scoped form or ROI/EasyCLA silently fall to the end of their section.
+  it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
+    activeLens.set('org');
+    orgLensEnabled.set(true);
+    orgEasyclaEnabled.set(true);
+    orgRoiEnabled.set(true);
+    orgSegment.set('acme-inc');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagement = sectionItems(items, 'Organization Engagement');
+    const itemLabels = labels(items);
+    const engagementLabels = labels(engagement);
+
+    expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
+    expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
+    // DR-004: EasyCLA is the one Org Lens item that keeps the legacy address in this release.
+    expect(findByLink(engagement, '/org/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA' }));
+    const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
+    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual(['/org/easycla']);
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
   });

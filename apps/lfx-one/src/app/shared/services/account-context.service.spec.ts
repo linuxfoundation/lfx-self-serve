@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Account } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -48,6 +48,100 @@ describe('AccountContextService — address-adopted selection', () => {
       ],
     });
     service = TestBed.inject(AccountContextService);
+  });
+
+  // Spec 050: addresses resolve against the index, and member-service runs ahead of it during lag —
+  // so the canonical record never touches the URL slug: not over an indexed value, not over an
+  // indexed null, not into a gap, and not even to unset a disagreeing one (the resolver — the index —
+  // would hand it straight back on the next navigation).
+  describe('canonical record and the URL slug', () => {
+    const canonicalOf = (slug: string | null | undefined): OrgCanonicalRecord => ({ uid: UID_B, accountId: UID_B, name: 'Bravo', slug }) as OrgCanonicalRecord;
+    const http = (): { get: ReturnType<typeof vi.fn> } => TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
+
+    it('keeps the indexed slug when the canonical record agrees', async () => {
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
+
+      await service.refreshCanonicalRecord(addressedB);
+
+      expect(service.selectedAccount().slug).toBe('bravo-llc');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
+    it.each([
+      ['another slug (a rename in flight)', 'bravo-renamed'],
+      ['no slug (the slug was removed)', null],
+      ['the same slug in another case', 'Bravo-LLC'],
+    ])('keeps the indexed slug when the canonical record carries %s', async (_label, slug) => {
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of(canonicalOf(slug)));
+
+      await service.refreshCanonicalRecord(addressedB);
+
+      expect(service.selectedAccount().slug).toBe('bravo-llc');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
+    it('keeps an indexed null (SFID address) when the canonical record has a slug the index does not yet', async () => {
+      service.adoptFromAddress({ ...addressedB, slug: null });
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
+
+      await service.refreshCanonicalRecord({ ...addressedB, slug: null });
+
+      expect(service.selectedAccount().slug).toBeNull();
+      expect(service.selectedUrlSegment()).toBe(UID_B);
+    });
+
+    // Spec 021 FR-009: the Org Profile rename hook patches display fields; the URL slug still waits
+    // for the index (forgetting the old one would not help — the next resolve hands it straight back).
+    it.each([
+      ['a renamed slug', 'bravo-renamed'],
+      ['the same slug in another case', 'Bravo-LLC'],
+      ['no slug field', undefined],
+    ])('does not change the URL slug from the Org Profile edit hook carrying %s', (_label, slug) => {
+      service.adoptFromAddress(addressedB);
+
+      service.updateCanonicalRecord({ ...canonicalOf(slug), name: 'Bravo Renamed' });
+
+      expect(service.selectedAccount().accountName).toBe('Bravo Renamed');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
+    // A slug-only patch from the org list must not rebuild the selection from the Snowflake row:
+    // a name the canonical record has since patched (a rename not yet in Snowflake) would flip back.
+    it('setIndexedSlug keeps display fields the canonical record patched', async () => {
+      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo (Snowflake)' }]);
+      service.adoptFromAddress(addressedB);
+      http().get.mockReturnValue(of({ ...canonicalOf('bravo-llc'), name: 'Bravo Renamed' }));
+      await service.refreshCanonicalRecord(addressedB);
+      expect(service.selectedAccount().accountName).toBe('Bravo Renamed');
+
+      service.setIndexedSlug('bravo-llc-2');
+
+      expect(service.selectedAccount().accountName).toBe('Bravo Renamed');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc-2');
+    });
+
+    it('ignores a record of another organization entirely', () => {
+      service.adoptFromAddress(addressedB);
+
+      service.updateCanonicalRecord({ uid: UID_A, accountId: UID_A, name: 'Alpha Renamed', slug: 'alpha-renamed' } as OrgCanonicalRecord);
+
+      expect(service.selectedAccount().accountName).toBe('Bravo');
+      expect(service.selectedUrlSegment()).toBe('bravo-llc');
+    });
+
+    // The FR-020 stub the path guard adopts when the resolver is unavailable is address-adopted, so
+    // the org list never re-checks it; the guard's own resolve on the next navigation is what fills it.
+    it('leaves a selection with no indexed slug on its SFID address', async () => {
+      service.adoptFromAddress({ ...addressedB, slug: undefined });
+      http().get.mockReturnValue(of(canonicalOf('bravo-llc')));
+
+      await service.refreshCanonicalRecord({ ...addressedB, slug: undefined });
+
+      expect(service.selectedAccount().slug).toBeUndefined();
+      expect(service.selectedUrlSegment()).toBe(UID_B);
+    });
   });
 
   it('survives a staff re-seed with no organizations, which otherwise resets to the placeholder', () => {

@@ -11,6 +11,9 @@
 /** In-shell not-found page for unresolvable / inaccessible / unavailable Org Lens addresses (FR-022). Declared as a sibling of the `org` route node so a `canMatch` fail-closed redirect cannot loop back into itself. */
 export const ORG_NOT_FOUND_PATH = '/org/not-found';
 
+/** `ORG_NOT_FOUND_PATH` as primary URL segments, for callers that compare an address segment by segment. */
+export const ORG_NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
+
 /**
  * Org Lens page segments. A URL segment equal to any of these is a page, never an organization:
  * static routes are declared first, and the `:orgSegment` matcher rejects them as belt-and-braces.

@@ -119,6 +119,20 @@ describe('orgPathParamGuard', () => {
   });
 
   describe('already-selected organization (no round trip)', () => {
+    // The shortcut trusts the held slug only when it is slug-shaped: an SFID-shaped "slug" equal to
+    // the addressed segment would pass another organization's SFID address off as the selected one.
+    // Such a segment goes to the resolver, which classifies SFID syntax first.
+    it('does not take the shortcut on an SFID-shaped held slug, even when it equals the address', async () => {
+      // All-lowercase on both sides, so the only thing standing between this address and the
+      // shortcut is the slug-shape check — with it removed, the segment would equal the held slug.
+      const sfidShaped = UID_B.toLowerCase();
+      selectedAccount.set(account({ uid: UID_A, slug: sfidShaped }));
+      resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
+
+      expect(await outcome(sfidShaped, `/org/${sfidShaped}/projects`)).toBe('/org/bravo-llc/projects');
+      expect(resolve).toHaveBeenCalledWith(sfidShaped, UID_A);
+    });
+
     it('is a no-op when the address already uses the selected slug', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome('acme-inc', '/org/acme-inc/projects?tab=active#top')).toBe(true);
@@ -144,8 +158,11 @@ describe('orgPathParamGuard', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
 
-    it('still resolves a cookie-restored stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
-      selectedAccount.set(account({ uid: UID_A })); // slug undefined: canonical fetch has not filled it
+    // Spec 050: the canonical record never fills the slug (addresses resolve against the index), so a
+    // stub — cookie-restored, or the FR-020 one adopted when the resolver was unavailable — keeps
+    // asking the resolver on each guard run until it answers; that is how the indexed slug is learned.
+    it('still resolves a stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
+      selectedAccount.set(account({ uid: UID_A })); // slug undefined: no indexed row has answered for it
       resolve.mockReturnValue(of(hit(UID_A, 'acme-inc')));
 
       expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe('/org/acme-inc/projects');

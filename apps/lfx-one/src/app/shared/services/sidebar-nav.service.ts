@@ -28,6 +28,7 @@ import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/u
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -50,6 +51,7 @@ export class SidebarNavService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
 
   /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
   private readonly orgEngagementSectionLabel = 'Organization Engagement';
@@ -162,13 +164,15 @@ export class SidebarNavService {
   });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(this.orgLensItems) : this.orgLensItems;
+    const base = this.orgLensItems();
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
     if (!this.isOrgLensRoiEnabled()) return items;
-    const projectsIndex = items.findIndex((item) => item.routerLink === '/org/projects');
+    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
+    const roi = this.orgRoiNavItem();
     // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...items, this.orgRoiNavItem];
+    if (projectsIndex === -1) return [...items, roi];
     const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), this.orgRoiNavItem, ...items.slice(afterProjects)];
+    return [...items.slice(0, afterProjects), roi, ...items.slice(afterProjects)];
   });
 
   // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
@@ -719,13 +723,14 @@ export class SidebarNavService {
     ],
   };
 
-  private readonly orgRoiNavItem: SidebarMenuItem = {
+  private readonly orgRoiNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'ROI Metrics',
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
-    routerLink: '/org/roi',
+    routerLink: this.orgLensNavigation.orgLensPath('roi'),
     testId: 'sidebar-org-roi',
-  };
+  }));
 
+  /** EasyCLA stays on the legacy address in phase 1 (spec 050 DR-004) — the one Org Lens item that does not carry the organization. */
   private readonly orgEasyclaNavItem: SidebarMenuItem = {
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
@@ -733,61 +738,69 @@ export class SidebarNavService {
     testId: 'sidebar-org-easycla',
   };
 
-  private readonly orgLensItems: SidebarMenuItem[] = [
-    {
-      label: 'Dashboard',
-      icon: 'fa-light fa-grid-2',
-      routerLink: '/org/overview',
-    },
-    {
-      label: 'Memberships',
-      icon: 'fa-light fa-folder-bookmark',
-      routerLink: '/org/memberships',
-    },
-    {
-      label: 'Projects',
-      icon: 'fa-light fa-folder',
-      routerLink: '/org/projects',
-    },
-    // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
-    // top-level item or a section when re-enabled.
-    {
-      label: this.orgEngagementSectionLabel,
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'People',
-          icon: 'fa-light fa-people-group',
-          routerLink: '/org/people',
-        },
-        {
-          label: 'Code Contributions',
-          icon: 'fa-light fa-code',
-          routerLink: '/org/contributions',
-        },
-        {
-          label: 'Events',
-          icon: 'fa-light fa-ticket',
-          routerLink: '/org/events',
-        },
-        {
-          label: 'Training & Certification',
-          icon: 'fa-light fa-graduation-cap',
-          routerLink: '/org/training',
-        },
-        { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
-        { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
-      ],
-    },
-    // Org admin — divider only (no section label); Profile sits under it.
-    {
-      label: 'Organization Profile',
-      icon: 'fa-light fa-memo',
-      routerLink: '/org/profile',
-      dividerBefore: true,
-    },
-  ];
+  /**
+   * Org Lens items address the selected organization (`/org/{segment}/{page}`, spec 050 US2) and
+   * re-render on every switch; while nothing is selected they fall back to the legacy `/org/{page}`
+   * form, which the default-organization redirect resolves.
+   */
+  private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
+    const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
+    return [
+      {
+        label: 'Dashboard',
+        icon: 'fa-light fa-grid-2',
+        routerLink: org('overview'),
+      },
+      {
+        label: 'Memberships',
+        icon: 'fa-light fa-folder-bookmark',
+        routerLink: org('memberships'),
+      },
+      {
+        label: 'Projects',
+        icon: 'fa-light fa-folder',
+        routerLink: org('projects'),
+      },
+      // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
+      // top-level item or a section when re-enabled.
+      {
+        label: this.orgEngagementSectionLabel,
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'People',
+            icon: 'fa-light fa-people-group',
+            routerLink: org('people'),
+          },
+          {
+            label: 'Code Contributions',
+            icon: 'fa-light fa-code',
+            routerLink: org('contributions'),
+          },
+          {
+            label: 'Events',
+            icon: 'fa-light fa-ticket',
+            routerLink: org('events'),
+          },
+          {
+            label: 'Training & Certification',
+            icon: 'fa-light fa-graduation-cap',
+            routerLink: org('training'),
+          },
+          { label: 'Meetings', icon: 'fa-light fa-video', routerLink: org('meetings') },
+          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: org('groups') },
+        ],
+      },
+      // Org admin — divider only (no section label); Profile sits under it.
+      {
+        label: 'Organization Profile',
+        icon: 'fa-light fa-memo',
+        routerLink: org('profile'),
+        dividerBefore: true,
+      },
+    ];
+  });
 
   /**
    * The M3 prototype places EasyCLA inside Organization Engagement, between Code Contributions
@@ -797,7 +810,7 @@ export class SidebarNavService {
   private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     return items.map((item) => {
       if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
-      const afterContributions = item.items.findIndex((child) => child.routerLink === '/org/contributions') + 1;
+      const afterContributions = item.items.findIndex((child) => child.routerLink === this.orgLensNavigation.orgLensPath('contributions')) + 1;
       const at = afterContributions === 0 ? item.items.length : afterContributions;
       return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
     });

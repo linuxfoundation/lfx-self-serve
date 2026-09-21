@@ -2,15 +2,34 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+import { computed, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  from,
+  map,
+  merge,
+  Observable,
+  of,
+  scan,
+  skip,
+  Subject,
+  Subscription,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -24,9 +43,14 @@ export class OrgNavigationService {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly destroyRef = inject(DestroyRef);
 
   private readonly state: OrgListState = this.createOrgListState();
+
+  /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
+  private pendingDefaultWrite: Subscription | null = null;
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
@@ -262,11 +286,20 @@ export class OrgNavigationService {
       const match = page.items.find((item) => item.uid === current.uid);
       if (match) {
         // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
-        // indexed row does (spec 050). Fill it once so in-app addresses and the path-param guard's
-        // no-round-trip path see the canonical segment; `null` here means member-service published none.
-        if (current.slug === undefined) {
-          this.accountContextService.setAccount({ ...current, slug: match.slug ?? null });
+        // indexed row's is the one addresses resolve against (spec 050). Apply it whenever the
+        // tri-state differs — `undefined` (not known) becomes the row's value or an indexed `null`, a
+        // stale slug becomes the current one — so in-app addresses see the indexed segment and the
+        // path guard, which keys its no-round-trip shortcut on the slug being *known*, can take it.
+        // Compared as normalized slugs, not raw strings: a case-only difference is the same address.
+        const indexedSlug = match.slug?.trim().toLowerCase() ?? null;
+        const heldSlug = typeof current.slug === 'string' ? current.slug.trim().toLowerCase() : current.slug;
+        if (heldSlug !== indexedSlug) {
+          this.accountContextService.setIndexedSlug(indexedSlug);
         }
+        // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
+        // bar as a default's — written the same way. A default never touches an addressed page or the
+        // not-found dead end, so this is a no-op everywhere but the bare legacy form.
+        this.writeDefaultAddress();
         return;
       }
     }
@@ -278,9 +311,51 @@ export class OrgNavigationService {
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
-    this.accountContextService.refreshCanonicalRecord(account).catch(() => {
-      // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
-    });
+    // Fire-and-forget: it settles either way (failures are logged inside and leave the indexed snapshot).
+    void this.accountContextService.refreshCanonicalRecord(account);
+    // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
+    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
+    // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never
+    // overrides an address that already names an organization.
+    this.writeDefaultAddress();
+  }
+
+  /**
+   * The `'default'` re-address reads the router's *current* address. If a navigation is in flight
+   * when the org-items page lands (the viewer clicked a link while the bootstrap fetch was pending),
+   * that address is the one being left, not the one being entered — so the write waits until the
+   * router is idle and then re-reads: a legacy destination still gets its organization, an addressed
+   * one is left alone by the default's own rules (and its guard has decided it by then). "Idle", not
+   * "first settle event": a guard redirect or a superseding click cancels one navigation and starts
+   * the next in the same tick, and `router.url` still names the page being left until that one lands.
+   * The router clears its current navigation in the transition's `finalize`, *after* it emits
+   * `NavigationEnd`/`Cancel`/`Error` — so idleness is checked one microtask after each settle event,
+   * once that finalize has run, and a settle that left another navigation in flight keeps waiting.
+   */
+  private writeDefaultAddress(): void {
+    // One pending write at most: a later bootstrap (selector re-enabled, CLA return) supersedes an
+    // earlier one still waiting, so a stale deferred write cannot fire an unrelated re-address later.
+    this.pendingDefaultWrite?.unsubscribe();
+    this.pendingDefaultWrite = null;
+    if (!this.router.getCurrentNavigation()) {
+      this.orgLensNavigation.navigateToSelectedOrg('default');
+      return;
+    }
+    this.pendingDefaultWrite = this.router.events
+      .pipe(
+        filter(
+          (event) =>
+            event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped
+        ),
+        switchMap(() => from(Promise.resolve())),
+        filter(() => !this.router.getCurrentNavigation()),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.pendingDefaultWrite = null;
+        this.orgLensNavigation.navigateToSelectedOrg('default');
+      });
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {

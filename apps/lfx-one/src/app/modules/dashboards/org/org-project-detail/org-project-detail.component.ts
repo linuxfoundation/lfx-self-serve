@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensProjectDetailService } from '@services/org-lens-project-detail.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { buildChartExternalTooltip } from '@shared/utils/chart-tooltip.util';
 import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
@@ -109,6 +110,7 @@ export class OrgProjectDetailComponent {
   private readonly ecoTrackRef = viewChild<ElementRef<HTMLElement>>('ecosystemTrack');
 
   protected readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly detailService = inject(OrgLensProjectDetailService);
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
@@ -162,6 +164,11 @@ export class OrgProjectDetailComponent {
   ];
 
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly projectsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('projects'));
+  /** Breadcrumb home, as one stable object: an inline literal in the template would be a new object per change-detection pass. */
+  protected readonly breadcrumbHome: Signal<MenuItem> = computed(() => ({ icon: 'fa-light fa-house', routerLink: this.projectsLink(), styleClass: 'sr-only' }));
 
   protected readonly activeTab: Signal<OrgLensProjectDetailTab> = computed(() => this.initActiveTab());
   protected readonly metric = computed<OrgLensLeaderboardMetric>(() => this.initMetric());
@@ -825,7 +832,7 @@ export class OrgProjectDetailComponent {
 
   private initBreadcrumb(): MenuItem[] {
     const hero = this.hero();
-    const root: MenuItem = { label: 'Projects', routerLink: ['/org/projects'] };
+    const root: MenuItem = { label: 'Projects', routerLink: this.projectsLink() };
     return hero ? [root, { label: hero.projectName }] : [root];
   }
 

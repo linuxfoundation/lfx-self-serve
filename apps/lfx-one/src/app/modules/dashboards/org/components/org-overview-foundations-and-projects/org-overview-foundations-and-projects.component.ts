@@ -2,12 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { DecimalPipe } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router, RouterLink } from '@angular/router';
 import { SkeletonModule } from 'primeng/skeleton';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensFoundationsService } from '@services/org-lens-foundations.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PlausibleService } from '@services/plausible.service';
 import { catchError, combineLatest, map, of, skip, startWith, switchMap, tap } from 'rxjs';
 
@@ -27,12 +28,16 @@ import { FoundationsStatStripComponent } from './components/foundations-stat-str
 export class OrgOverviewFoundationsAndProjectsComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly foundationsService = inject(OrgLensFoundationsService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly plausibleService = inject(PlausibleService);
   private readonly router = inject(Router);
 
   private readonly retryTrigger = signal(0);
   private readonly expansionState = signal<Record<string, boolean>>({});
   private readonly viewedOrgs = new Set<string>();
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly membershipsLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('memberships'));
 
   protected readonly companyName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Your Organization');
 
@@ -128,7 +133,7 @@ export class OrgOverviewFoundationsAndProjectsComponent {
   protected onProjectRowClick(project: OrgLensFoundationRow['projects'][number]): void {
     if (!project.isLfProject) return;
     this.onProjectClick({ projectId: project.projectId, projectName: project.projectName });
-    void this.router.navigate(['/org/projects', project.projectSlug || project.projectId]);
+    void this.router.navigate(this.orgLens.orgLensLink('projects', project.projectSlug || project.projectId));
   }
 
   protected onProjectRowKeydown(event: KeyboardEvent, project: OrgLensFoundationRow['projects'][number]): void {
