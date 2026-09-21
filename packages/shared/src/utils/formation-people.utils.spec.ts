@@ -251,6 +251,13 @@ describe('toAssigneeSearchOption', () => {
     expect(option).toEqual(expect.objectContaining({ uid: 'pat@partner.example', username: null, disabled: true, note: FORMATION_ASSIGNEE_PENDING_NOTE }));
     expect(option.organization).toBeNull();
   });
+
+  it('leaves the name empty for an entry whose name fell back to its email, so the address is not shown twice', () => {
+    const option = toAssigneeSearchOption(person({ key: 'pat@partner.example', username: null, name: 'pat@partner.example', email: 'pat@partner.example', is_pending: true }));
+
+    expect(option.first_name).toBe('');
+    expect(option.email).toBe('pat@partner.example');
+  });
 });
 
 describe('findFormationPersonByUsername', () => {

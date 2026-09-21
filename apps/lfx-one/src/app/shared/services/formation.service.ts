@@ -58,12 +58,14 @@ export class FormationService {
    * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724) and,
    * since #2772, the item drawer's assignee picker on every open. Memoised per slug: the BFF read
    * behind it re-runs the checklist gate, the settings read and a per-person metadata fan-out, so
-   * both hosts share one answer for the page's lifetime, and a successful invite — the one event
-   * that changes the list — drops it through {@link invalidateFormationPeople}. Degrades to the
-   * `unavailable` shape on any HTTP failure (repo GET convention), which the card renders as its
-   * unavailable state — the same shape the BFF itself returns when the caller cleared the
-   * checklist read but upstream refused the settings read. An unavailable answer is never kept,
-   * so a transient failure is retried by the next reader.
+   * both hosts share one answer. The memo lives as long as this root-provided service — the whole
+   * SPA session, across navigations and projects; nothing clears it on route change. It is dropped
+   * only by {@link invalidateFormationPeople}, which `PermissionsService.invalidateProjectSettings`
+   * calls for every permission, staff and invite write (the list is a projection of the project
+   * settings that cache holds), and by an `unavailable` answer, which is never kept so a transient
+   * failure is retried by the next reader. Degrades to that `unavailable` shape on any HTTP failure
+   * (repo GET convention), which the card renders as its unavailable state — the same shape the BFF
+   * itself returns when the caller cleared the checklist read but upstream refused the settings read.
    */
   public getFormationPeople(projectSlug: string): Observable<FormationPeopleResponse> {
     const memoised = this.formationPeople.get(projectSlug);
@@ -91,8 +93,17 @@ export class FormationService {
     return read$;
   }
 
-  /** Drops the per-slug memo so the next {@link getFormationPeople} reads afresh — after a successful invite. */
-  public invalidateFormationPeople(projectSlug: string): void {
+  /**
+   * Drops the people memo so the next {@link getFormationPeople} reads afresh — one slug, or every
+   * slug when none is given. The settings cache that feeds this list is keyed by project uid while
+   * the memo is keyed by slug, so its invalidation clears everything rather than mapping between
+   * the two; the memo is cheap to rebuild and a stale list is the failure this exists to prevent.
+   */
+  public invalidateFormationPeople(projectSlug?: string): void {
+    if (projectSlug === undefined) {
+      this.formationPeople.clear();
+      return;
+    }
     this.formationPeople.delete(projectSlug);
   }
 

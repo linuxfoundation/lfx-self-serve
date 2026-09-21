@@ -192,6 +192,28 @@ describe('UserSearchComponent', () => {
       expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
     });
 
+    // The search is driven by completeMethod alone, not by the search control's valueChanges — the
+    // fix for a spinner PrimeNG left stuck when a synchronous local answer landed before its
+    // `search()` had opened the panel and the de-duplicated completeMethod then had nothing new to
+    // emit. These two pin that design against a "why not valueChanges?" cleanup.
+    it('does not search when the internal control is written directly — only completeMethod drives a search', async () => {
+      await render();
+
+      (fixture.componentInstance as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue('jane');
+      await fixture.whenStable();
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+    });
+
+    it('re-runs the search for a repeated identical completeMethod query, so PrimeNG always gets a fresh suggestions emission', async () => {
+      await render();
+
+      await typeAndSettle('jane');
+      await typeAndSettle('jane');
+
+      expect(searchUsersMock).toHaveBeenCalledTimes(2);
+    });
+
     it('reports a consumer that binds neither searchType nor candidates instead of failing silently', async () => {
       const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       await render({ searchType: null });

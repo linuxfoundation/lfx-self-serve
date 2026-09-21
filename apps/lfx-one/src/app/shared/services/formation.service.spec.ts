@@ -69,6 +69,22 @@ describe('FormationService', () => {
     http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
   });
 
+  it('invalidateFormationPeople with no slug drops every memo — what the settings-cache invalidation calls', async () => {
+    const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    await first;
+    const second = new Promise((resolve) => service.getFormationPeople('other-project').subscribe(resolve));
+    http.expectOne('/api/projects/other-project/formation/people').flush({ state: 'loaded', people: [] });
+    await second;
+
+    service.invalidateFormationPeople();
+    service.getFormationPeople('cascade-data-alliance').subscribe();
+    service.getFormationPeople('other-project').subscribe();
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    http.expectOne('/api/projects/other-project/formation/people').flush({ state: 'loaded', people: [] });
+  });
+
   it('getFormationPeople never keeps an unavailable answer, so a transient failure is retried', async () => {
     const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
     http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush('nope', { status: 500, statusText: 'Server Error' });

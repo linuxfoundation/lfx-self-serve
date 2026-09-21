@@ -29,13 +29,16 @@
     <!-- optionDisabled only styles the row and marks it aria-disabled; a pick on it is refused in onUserSelected. -->
     <div class="w-full flex justify-between items-center gap-2" [class.cursor-not-allowed]="user.disabled">
       <div class="flex flex-col">
+        <!-- A row with no name leads with its address instead of repeating it on the line below. -->
         <div class="text-sm flex gap-1 items-center">
-          <span>{{ user.fullName }}</span>
+          <span>{{ user.fullName || user.email }}</span>
           @if (user.organization?.name) {
             <span class="text-xs text-gray-500"> ({{ user.organization?.name }}) </span>
           }
         </div>
-        <span class="text-xs text-gray-500">{{ user.email }}</span>
+        @if (user.fullName) {
+          <span class="text-xs text-gray-500">{{ user.email }}</span>
+        }
         @if (user.note) {
           <span class="text-xs text-amber-700" [attr.data-testid]="dataTestId() + '-option-note'">{{ user.note }}</span>
         }

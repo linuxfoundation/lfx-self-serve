@@ -22,10 +22,12 @@ export class UserSearchComponent {
   private readonly searchService = inject(SearchService);
   private readonly destroyRef = inject(DestroyRef);
 
-  // Required inputs
+  // Required input
   public form = input.required<FormGroup>();
-  // The query-index corpus to search. Required unless `candidates` is supplied, in which case
-  // the directory is never called and this is ignored.
+
+  // Search source — exactly one of the two must be bound: `searchType` names the query-index
+  // corpus for a directory search, or `candidates` (below, under local mode) supplies the list to
+  // search, in which case the directory is never called and `searchType` is ignored.
   public searchType = input<UserSearchType>();
 
   // Optional inputs for form control names
@@ -145,16 +147,18 @@ export class UserSearchComponent {
           return of(filterUserSearchCandidates(candidates, trimmedTerm));
         }
 
-        // A consumer that binds neither `searchType` nor `candidates` would otherwise render a box
-        // that looks functional and answers nothing forever — indistinguishable from an empty corpus.
-        const searchType = this.searchType();
-        if (!searchType) {
-          console.error('[UserSearchComponent] requires either searchType or candidates');
+        // Only fetch suggestions when user types at least 2 characters
+        if (trimmedTerm.length < 2) {
           return of([]);
         }
 
-        // Only fetch suggestions when user types at least 2 characters
-        if (trimmedTerm.length < 2) {
+        // A consumer that binds neither `searchType` nor `candidates` would otherwise render a box
+        // that looks functional and answers nothing forever — indistinguishable from an empty corpus.
+        // Checked only for a real query: the pipeline's initial empty emission runs before the
+        // inputs are bound, and must not cry wolf on every instantiation.
+        const searchType = this.searchType();
+        if (!searchType) {
+          console.error('[UserSearchComponent] requires either searchType or candidates');
           return of([]);
         }
 

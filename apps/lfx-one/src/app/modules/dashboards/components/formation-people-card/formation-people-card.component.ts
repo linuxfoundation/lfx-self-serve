@@ -127,9 +127,8 @@ export class FormationPeopleCardComponent {
     ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((outcome: FormationInviteOutcome | undefined) => {
       if (outcome) {
         // The service memoises the people read per slug (the item drawer's assignee picker replays
-        // it on every open); a successful invite is the one event that changes the list, so drop
-        // the memo before re-reading.
-        this.formationService.invalidateFormationPeople(this.projectSlug());
+        // it on every open); the dialog's own `invalidateProjectSettings` on success has already
+        // dropped that memo along with the settings cache, so this re-read lands fresh.
         this.refresh$.next();
       }
     });

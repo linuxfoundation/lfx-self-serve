@@ -14,7 +14,6 @@ import { FormationPeopleCardComponent } from './formation-people-card.component'
 describe('FormationPeopleCardComponent', () => {
   let fixture: ComponentFixture<FormationPeopleCardComponent>;
   let getFormationPeople: ReturnType<typeof vi.fn>;
-  let invalidateFormationPeople: ReturnType<typeof vi.fn>;
   let open: ReturnType<typeof vi.fn>;
   /** Stands in for the dialog's own close stream so each test drives the result it needs. */
   let onClose: Subject<unknown>;
@@ -72,7 +71,6 @@ describe('FormationPeopleCardComponent', () => {
 
   beforeEach(() => {
     getFormationPeople = vi.fn(() => of<FormationPeopleResponse>({ state: 'loaded', people: [staff, person(), pending] }));
-    invalidateFormationPeople = vi.fn();
     onClose = new Subject<unknown>();
     open = vi.fn(() => ({ onClose }));
   });
@@ -84,7 +82,7 @@ describe('FormationPeopleCardComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [FormationPeopleCardComponent],
-      providers: [{ provide: FormationService, useValue: { getFormationPeople, invalidateFormationPeople } }],
+      providers: [{ provide: FormationService, useValue: { getFormationPeople } }],
     })
       // The card provides its own DialogService (component-scoped, like the checklist section);
       // override at the component level so the mock wins over that provider.
@@ -246,13 +244,10 @@ describe('FormationPeopleCardComponent', () => {
       onClose.next(undefined);
       await settle();
       expect(getFormationPeople).not.toHaveBeenCalled();
-      expect(invalidateFormationPeople).not.toHaveBeenCalled();
 
       (byTestId('formation-people-invite-btn') as HTMLButtonElement).click();
       onClose.next('invite_sent');
       await settle();
-      // The service memoises the read per slug (#2772), so a successful invite drops the memo before re-reading.
-      expect(invalidateFormationPeople).toHaveBeenCalledWith('cascade-data-alliance');
       expect(getFormationPeople).toHaveBeenCalledTimes(1);
     });
   });
