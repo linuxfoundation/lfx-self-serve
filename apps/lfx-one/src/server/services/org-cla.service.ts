@@ -1114,9 +1114,7 @@ export class OrgClaService {
   ): void {
     const companyId = entry.companyID?.trim() ?? '';
     const claGroupId = entry.claGroupID?.trim() ?? '';
-    const peers = entries.filter(
-      (candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId
-    );
+    const peers = entries.filter((candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId);
     if (peers.length <= 1) return;
 
     throw new MicroserviceError(
