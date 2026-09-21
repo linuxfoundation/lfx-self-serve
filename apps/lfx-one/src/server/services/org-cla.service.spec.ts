@@ -2004,7 +2004,9 @@ describe('OrgClaService.getManagers', () => {
   it('omits optional manager fields that are not strings instead of throwing while trimming', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
-      .mockResolvedValueOnce({ list: [upstreamManager({ name: 42 as unknown as string, email: 99 as unknown as string, added_on: false as unknown as string })] });
+      .mockResolvedValueOnce({
+        list: [upstreamManager({ name: 42 as unknown as string, email: 99 as unknown as string, added_on: false as unknown as string })],
+      });
 
     const manager = (await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0];
     expect(manager?.lfUsername).toBe('aporter');
