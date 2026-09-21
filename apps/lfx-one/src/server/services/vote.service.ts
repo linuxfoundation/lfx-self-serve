@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
+import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
@@ -32,6 +32,56 @@ import { ProjectService } from './project.service';
  * Service for handling vote/poll business logic with microservice proxy
  */
 export class VoteService {
+  /**
+   * Enable-PUT retry grid for the FGA replication gap (GH-1637): bounded at 3 attempts, 600 ms
+   * apart — paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell
+   * apart); the happy path pays nothing. Attempt counts and fixed sleeps alone can't bound
+   * wall-clock time (a slow 403 returns as late as the request timeout), so the loop runs under
+   * the shared `enableEndToEndMaxDurationMs` deadline.
+   */
+  private static readonly enableMaxAttempts = 3;
+  private static readonly enableRetryDelayMs = 600;
+
+  /**
+   * End-to-end wall-clock cap for one `enableVote` call (GH-1637), sized as the 10.5 s enable poll
+   * window plus the 2 × 600 ms 403-retry backoff = 11.7 s. That sum is a sizing rationale, not an
+   * additive split — PUT request time is paid from the same budget, so after slow denials the poll
+   * inherits less than 10.5 s. One deadline, established before the PUT retry
+   * loop, is shared by the retries and the index poll — every PUT receives only the remaining
+   * budget as its request timeout (each PUT otherwise carried the API client's 30 s default, and
+   * three slow denials plus a fresh poll window could take ~100 s to surface), each backoff sleep
+   * is truncated to the deadline, and the poll gets min(remaining, 10.5 s). A backoff that would
+   * leave less than `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is
+   * rethrown with the exhaustion warning instead, since a sub-floor attempt would abort as a 408
+   * and mask the denial the loop actually saw.
+   */
+  private static readonly enableEndToEndMaxDurationMs = 11700;
+
+  /**
+   * Vote index-confirmation poll budget (GH-1637), shared by create/delete/enable at one 300 ms
+   * cadence. The cap is wall-clock, not attempt-count: `maxDurationMs` includes request duration
+   * (attempt counts alone can't bound wall-clock time — each query takes as long as its request,
+   * up to the API client's timeout), and each poll query receives only the remaining budget as its
+   * request timeout, so an in-flight request can't overshoot the deadline. Create/delete cap at 8 s
+   * and enable at 10.5 s (+ the 2 × 600 ms 403-retry backoff = 11.7 s end to end) — each inside
+   * its pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time, the
+   * 7-attempt/2 s grid 12 s plus request time); enable's 11.7 s end to end is enforced by the
+   * shared `enableEndToEndMaxDurationMs` deadline. The attempt counts are only iteration upper bounds
+   * for fast queries; the deadline binds first once queries slow. Nothing that confirmed before
+   * falls back now, while the happy path resolves on the first few attempts (convergence typically
+   * lands in <2 s). Worst-case fan-out is 27 (create/delete) or 36 (enable) query-service requests
+   * per vote write, bounded only by these budgets and the blanket `apiRateLimiter` — paid only
+   * while the index lags. Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
+   * without a vote-uid tag, so `tags` can never match a vote by uid. A `tags` regression silently
+   * turns create/enable into a fixed full-budget wait followed by the fallback, and makes delete
+   * (predicate `resources.length === 0`) resolve instantly without confirming removal.
+   */
+  private static readonly voteIndexPollMaxAttempts = 27;
+  private static readonly voteIndexPollEnableMaxAttempts = 36;
+  private static readonly voteIndexPollRetryDelayMs = 300;
+  private static readonly voteIndexPollMaxDurationMs = 8000;
+  private static readonly voteIndexPollEnableMaxDurationMs = 10500;
+
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
@@ -138,29 +188,43 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'create_vote', 'Creating vote payload', sanitizedPayload);
 
-    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData, {
-      ['X-Sync']: 'true',
-    });
+    // No X-Sync header: the voting service neither declares nor honors it (verified end to end —
+    // GH-1637; the header is absent from its OpenAPI spec — linuxfoundation/lfx-v2-voting-service#56).
+    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
 
     // After creating, poll the query service until the vote is indexed.
     // The query service uses eventual consistency, so the vote may not appear immediately.
     const voteUid = newVote.uid;
     let fetchedVote: Vote | undefined;
 
+    // Poll until indexed on the shared fine grid — see voteIndexPoll* for the budget rationale
+    // and the filters-on-vote_uid (never tags) invariant.
     const resolved = await pollEndpoint({
       req,
       operation: 'create_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          tags: voteUid,
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         if (resources.length > 0) {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
           return true;
         }
         return false;
       },
+      maxRetries: VoteService.voteIndexPollMaxAttempts,
+      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
       metadata: { vote_uid: voteUid },
     });
 
@@ -194,17 +258,30 @@ export class VoteService {
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'DELETE');
 
-    // Poll the query service until the vote is removed from the index
+    // Poll the query service until the vote is removed from the index, on the shared fine grid —
+    // see voteIndexPoll* for the budget rationale and the filters-on-vote_uid (never tags) invariant.
     await pollEndpoint({
       req,
       operation: 'delete_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          tags: voteUid,
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         return resources.length === 0;
       },
+      maxRetries: VoteService.voteIndexPollMaxAttempts,
+      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
       metadata: { vote_uid: voteUid },
     });
   }
@@ -217,19 +294,99 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}/enable`, 'PUT');
+    // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
+    // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags index visibility —
+    // the voting service is observed to publish the indexer message before the fga-sync one
+    // (verified in lfx-v2-voting-service). With the create poll now resolving at
+    // index-visibility, an immediate enable can land inside that replication gap. A genuine
+    // permission denial gets the same bounded retry and then surfaces unchanged — the BFF cannot
+    // distinguish it from the gap.
+    // One wall-clock deadline covers this loop and the index poll below, so the documented 11.7 s
+    // end-to-end cap holds even when a 403 is slow to return — every PUT gets only the remaining
+    // budget as its request timeout and each backoff sleep is truncated to the deadline.
+    const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
 
-    // Poll the query service until the indexed vote status is 'active'.
+    // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
+    // pattern is visible independent of the benign-race framing — the BFF cannot tell
+    // the two apart (see the loop comment above). apiErrorHandler logs the rethrow.
+    const logExhaustedForbidden = (attempts: number) =>
+      logger.warning(
+        req,
+        'enable_vote',
+        'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+        { vote_uid: voteUid, attempts }
+      );
+
+    for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
+      try {
+        await this.microserviceProxy.proxyRequestWithResponse<Vote>(
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${this.encodeVoteUid(voteUid)}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: Math.max(deadline - Date.now(), 1) }
+        );
+        break;
+      } catch (error) {
+        const retryableForbidden = error instanceof MicroserviceError && error.statusCode === 403;
+        const budgetLeftMs = deadline - Date.now();
+        if (!retryableForbidden || attempt === VoteService.enableMaxAttempts || budgetLeftMs <= 0) {
+          if (retryableForbidden) {
+            logExhaustedForbidden(attempt);
+          }
+          throw error;
+        }
+        const delayMs = Math.min(VoteService.enableRetryDelayMs, budgetLeftMs);
+        // Re-check what the backoff leaves before looping: a remainder under the minimum viable
+        // request budget dooms the next PUT to a sub-round-trip timeout whose 408 would replace
+        // the 403 actually observed — and skip the exhaustion warning, since a 408 is not
+        // `retryableForbidden`. Emit the signal and rethrow the 403 rather than issue a request
+        // that cannot complete.
+        if (budgetLeftMs - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
+        logger.debug(req, 'enable_vote', 'Enable PUT returned 403, retrying to allow for possible FGA replication lag', {
+          vote_uid: voteUid,
+          attempt,
+          next_retry_ms: delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        // The sleep itself can resume late under event-loop load — same floor as the pre-sleep
+        // check above, re-verified against what the backoff actually left.
+        if (deadline - Date.now() < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
+      }
+    }
+
+    // Poll the query service until the indexed vote status is 'active', on the shared fine grid
+    // (enable uses the longer window) — see voteIndexPoll* for the rationale; the poll inherits
+    // only the end-to-end budget the retry loop left, still capped at the 10.5 s enable window;
+    // on exhaustion we still return `{ uid, status: 'active' }` below.
     let fetchedVote: Vote | undefined;
 
     const resolved = await pollEndpoint({
       req,
       operation: 'enable_vote',
-      pollFn: async () => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          type: 'vote',
-          tags: voteUid,
-        });
+      pollFn: async ({ remainingMs }) => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'vote',
+            filters: [`vote_uid:${voteUid}`],
+          },
+          undefined,
+          undefined,
+          { timeoutMs: remainingMs }
+        );
         if (resources.length > 0 && resources[0].data.status === 'active') {
           fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
           return true;
@@ -237,7 +394,9 @@ export class VoteService {
         return false;
       },
       metadata: { vote_uid: voteUid },
-      maxRetries: 7,
+      maxRetries: VoteService.voteIndexPollEnableMaxAttempts,
+      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
+      maxDurationMs: Math.min(Math.max(deadline - Date.now(), 0), VoteService.voteIndexPollEnableMaxDurationMs),
     });
 
     if (resolved && fetchedVote) {
@@ -313,9 +472,9 @@ export class VoteService {
       answer_count: payload.user_vote_content?.length ?? 0,
     });
 
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload, {
-      ['X-Sync']: 'true',
-    });
+    // No X-Sync header: the voting service neither declares nor honors it (verified end to end —
+    // GH-1637; the header is absent from its OpenAPI spec — linuxfoundation/lfx-v2-voting-service#56).
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', '/vote_responses', 'POST', undefined, payload);
 
     logger.debug(req, 'create_vote_response', 'Ballot accepted by upstream voting service, polling query service', {
       vote_uid: payload.vote_uid,
