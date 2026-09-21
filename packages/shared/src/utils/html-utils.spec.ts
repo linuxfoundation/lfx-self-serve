@@ -183,17 +183,11 @@ describe('htmlClipboardToText', () => {
     const html = '<p>Check out the <a href="https://example.com/post">new post</a> — <strong>big</strong> update!</p>';
     expect(htmlClipboardToText(html)).toBe('Check out the [new post](https://example.com/post) — big update!');
   });
-  /**
-   * ZWJ (U+200D) and ZWNJ (U+200C) are ORTHOGRAPHY, not decoration.
-   *
-   * They select conjunct and joined forms in Devanagari, Telugu, Bengali, Arabic and Persian, so
-   * stripping them corrupts correctly-spelled sponsor names -- `नमस्‍ते` came back as `नमस्ते`.
-   * That is the same over-stripping that once turned `O'Reilly` into `OReilly`.
-   *
-   * Safe to keep for the threat this function exists to stop: a joiner cannot REORDER text the
-   * way a BIDI override can, only render two adjacent glyphs as one. The deny list below is
-   * asserted alongside, because the fix must not have widened into "keep every invisible".
-   */
+});
+
+describe('sanitizeDisplayText — joiner carve-out', () => {
+  // Why the joiners are kept lives in html-utils.ts; this pins the BEHAVIOUR, in both
+  // directions plus the joiner-only floor between them.
   it.each([
     ['Devanagari with ZWJ', 'नमस्\u200Dते'],
     ['Telugu with ZWNJ', 'అమ్\u200Cమ'],
@@ -201,6 +195,8 @@ describe('htmlClipboardToText', () => {
     ['a curly apostrophe', 'O\u2019Reilly'],
     ['an accent', 'Nestlé'],
     ['an Arabic name', 'مرحبا'],
+    ['a joiner between real letters', 'a\u200Db'],
+    ['a joiner at the end of real text', 'Acme\u200C'],
   ])('keeps %s intact', (_label, name) => {
     expect(sanitizeDisplayText(name)).toBe(name);
   });
@@ -216,5 +212,17 @@ describe('htmlClipboardToText', () => {
     ['an isolate', 'a\u2066b'],
   ])('still strips %s', (_label, input) => {
     expect(sanitizeDisplayText(input)).toBe('ab');
+  });
+
+  // The floor between the two tables above. A joiner-only value renders BLANK while reading as
+  // non-empty, so `normalizeSponsors`' `name !== ''` check would admit it and the email would
+  // carry a sponsor whose name shows nothing.
+  it.each([
+    ['a single ZWJ', '\u200D'],
+    ['a single ZWNJ', '\u200C'],
+    ['several joiners', '\u200D\u200C\u200D'],
+    ['joiners around whitespace', '\u200D \u200C'],
+  ])('returns empty for %s', (_label, input) => {
+    expect(sanitizeDisplayText(input)).toBe('');
   });
 });

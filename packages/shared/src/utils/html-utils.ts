@@ -19,7 +19,12 @@ function isDecodableCodePoint(code: number): boolean {
  * Strip from display text anything that decoding could have resurrected.
  *
  * Drops what cannot legitimately appear in a display name: control characters (C0, C1, DEL),
- * BIDI overrides, and zero-width formatting. An earlier version checked only C0/DEL and five
+ * BIDI overrides and marks, and invisible formatting -- with ONE carve-out: U+200C (ZWNJ) and
+ * U+200D (ZWJ) are kept, because they are required orthography in Devanagari, Telugu, Bengali,
+ * Arabic and Persian rather than formatting. A value consisting ONLY of joiners still comes back
+ * empty, since it would render blank while reading as non-empty downstream.
+ *
+ * An earlier version checked only C0/DEL and five
  * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
  * after it, letting a sponsor name render as something other than what it contains.
  *
@@ -35,7 +40,7 @@ function isDecodableCodePoint(code: number): boolean {
  * the first left the second open -- the partial-fix shape this belongs in one place to prevent.
  */
 export function sanitizeDisplayText(value: string): string {
-  return [...value]
+  const cleaned = [...value]
     .filter((ch) => {
       const code = ch.codePointAt(0) ?? 0;
       // C0 controls and DEL.
@@ -47,7 +52,6 @@ export function sanitizeDisplayText(value: string): string {
       // survives any check that only looks at ASCII. U+2066-U+2069 are the isolate forms.
       if (code >= 0x202a && code <= 0x202e) return false;
       if (code >= 0x2066 && code <= 0x2069) return false;
-      // Zero-width and other invisible formatting: ZWSP/ZWNJ/ZWJ, LRM/RLM, word joiner, BOM.
       // ZERO WIDTH SPACE only. U+200C (ZWNJ) and U+200D (ZWJ) are KEPT: they are required
       // orthography in Devanagari, Telugu, Bengali, Arabic and Persian, where they select
       // conjunct or joined forms -- stripping them corrupts real sponsor names. `नमस्‍ते` and
@@ -75,6 +79,18 @@ export function sanitizeDisplayText(value: string): string {
     })
     .join('')
     .trim();
+
+  // A joiner-only result is EMPTY in every sense that matters downstream.
+  //
+  // ZWJ/ZWNJ are kept because they are orthography, but they are orthography ATTACHED TO TEXT.
+  // A value made of nothing else renders as blank while reading as non-empty, so
+  // `normalizeSponsors`' `name !== ''` check would admit it and the email would carry a sponsor
+  // with an invisible name. The carve-out needs this floor, or it trades an over-strip for a
+  // silently blank field.
+  // Whitespace does not count as real text here: `"\u200D \u200C"` survives the trim (the
+  // joiners are not whitespace, so they anchor the ends) and would otherwise read as a name made
+  // of one space. The test is for a character that actually renders.
+  return /[^\s\u200C\u200D]/u.test(cleaned) ? cleaned : '';
 }
 
 /**
