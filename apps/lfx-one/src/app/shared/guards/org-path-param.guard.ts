@@ -84,12 +84,10 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const heldSlug = typeof selected.slug === 'string' ? selected.slug.trim().toLowerCase() : null;
   const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || slugMatches)) {
-    // The address names the selection, so the selection is addressed — pinned as an address if it is
-    // not pinned yet (lfx-self-serve#2570); an existing `'default'` pin keeps its kind, because this
-    // route is the one the default write just produced and the shortcut verifies nothing the org-items
-    // list did not — upgrading here would exempt every default from the reload release. Without a pin
-    // at all, a later persona refresh may re-seed over the selection under the address it does not
-    // match.
+    // The address names the selection, so the selection is addressed — pinned exactly as a resolver
+    // hit would be (lfx-self-serve#2570). Without this a selection that reached the address by any
+    // other route (the org-items default, the cookie) stays unpinned here and a later persona refresh
+    // may re-seed over it under the address it does not match.
     accountContext.pinSelection('address');
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }

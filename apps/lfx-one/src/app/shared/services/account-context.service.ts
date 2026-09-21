@@ -64,7 +64,7 @@ export class AccountContextService {
    * same way.
    *
    * Two kinds of pin, one uid (`pinSource`). An **address** pin (resolver hit, FR-020 stub, or a URL
-   * that names a selection nobody had pinned yet) was access-verified for this viewer and is honoured by every
+   * that already names the selection) was access-verified for this viewer and is honoured by every
    * bootstrap path, including a later org-items reload — inherited or catalogue-only access need not
    * appear on the first page. A **default** pin (the org-items default or cookie-restored match) came
    * *from* the org-items list, so it holds only against the persona re-seed: a later authoritative
@@ -223,21 +223,17 @@ export class AccountContextService {
    * names the selection (the path guard's no-round-trip shortcut) — an `'address'` pin, exactly as a
    * resolver hit. See `addressedUid` for what each kind holds against. Not a `setAccount`: that would
    * re-merge the live Snowflake row and revert display fields the canonical record has since patched.
-   *
-   * Never changes the kind of an existing pin on the same organization. In particular the guard
-   * shortcut does not upgrade a `'default'` pin to `'address'`: it runs on the very route the default
-   * write just produced, and the shortcut verifies nothing the org-items list did not — an upgrade
-   * there would make every default look resolver-adopted and no reload could ever release it. Only
-   * `adoptFromAddress` (a resolver answer) sets `'address'` over a default. No-op on the placeholder.
+   * A `'default'` pin never downgrades an existing `'address'` pin on the same organization. No-op on
+   * the placeholder — there is nothing to pin.
    */
   public pinSelection(source: 'address' | 'default'): void {
     const uid = this.selectedAccount().uid ?? null;
     if (!uid) {
       return;
     }
-    const existing = this.addressedUid() === uid ? this.pinSource() : null;
+    const keepAddress = source === 'default' && this.addressedUid() === uid && this.pinSource() === 'address';
     this.addressedUid.set(uid);
-    this.pinSource.set(existing ?? source);
+    this.pinSource.set(keepAddress ? 'address' : source);
   }
 
   public getAccountId(): string {
