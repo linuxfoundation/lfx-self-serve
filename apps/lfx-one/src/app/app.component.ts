@@ -23,6 +23,7 @@ import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
+import { isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
 
 const ACCESS_DENIED_MESSAGES: Record<string, string> = {
   meetings: "You don't have permission to schedule meetings for this project.",
@@ -106,11 +107,12 @@ export class AppComponent {
       }
     });
 
-    // Initialize Segment tracking
-    this.segmentService.initialize();
+    const onInviteLanding = isBrowserInviteLandingPath();
 
-    // Initialize Plausible analytics
-    this.plausibleService.initialize();
+    if (!onInviteLanding) {
+      this.segmentService.initialize();
+      this.plausibleService.initialize();
+    }
 
     const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as {
       auth: AuthContext;
@@ -144,27 +146,25 @@ export class AppComponent {
       this.userService.canImpersonate.set(Boolean(this.auth?.canImpersonate));
 
       const isImpersonating = Boolean(this.auth?.impersonating);
-      this.segmentService.setImpersonating(isImpersonating);
-      this.plausibleService.setImpersonating(isImpersonating);
       this.dataDogRumService.setImpersonating(isImpersonating);
       this.userService.impersonating.set(isImpersonating);
       this.userService.impersonator.set(isImpersonating ? (this.auth.impersonator ?? null) : null);
 
-      this.segmentService.identifyUser(this.auth.user);
-
       const authedUser = this.auth.user;
 
-      // Initialize feature flags with user context
-      this.featureFlagService.initialize(authedUser).catch((error) => {
-        console.error('Failed to initialize feature flags:', error);
-      });
-
-      if (!isImpersonating) {
-        this.bootIntercom(authedUser);
+      if (!onInviteLanding) {
+        this.segmentService.setImpersonating(isImpersonating);
+        this.plausibleService.setImpersonating(isImpersonating);
+        this.segmentService.identifyUser(authedUser);
+        this.featureFlagService.initialize(authedUser).catch((error) => {
+          console.error('Failed to initialize feature flags:', error);
+        });
+        if (!isImpersonating) {
+          this.bootIntercom(authedUser);
+        }
       }
 
-      // Set DataDog RUM user context for session tracking
-      this.dataDogRumService.setUser(this.auth.user);
+      this.dataDogRumService.setUser(authedUser);
     }
 
     this.initAccessDeniedToast();

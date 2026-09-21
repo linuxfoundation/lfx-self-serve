@@ -4,6 +4,7 @@
 import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
+import { isInviteLandingPath } from '@lfx-one/shared/utils';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
@@ -44,7 +45,18 @@ async function initializeOpenFeature(): Promise<void> {
       logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
     });
 
-    await OpenFeature.setProviderAndWait(provider);
+    const ready = OpenFeature.setProviderAndWait(provider);
+    // Invite landing is a spinner/error shell — do not block hydration on LaunchDarkly (GH-2290).
+    // Init still runs in the background so a later full-page navigation has a warm provider.
+    if (isInviteLandingPath(window.location.pathname)) {
+      void ready.catch((error) => {
+        console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
+        dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), { source: 'initializeOpenFeature' });
+      });
+      return;
+    }
+
+    await ready;
   } catch (error) {
     console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
     // App continues without feature flags — but the provider never reaches READY, so every

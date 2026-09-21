@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { extractUrls, isProfileHubPath, isRelativeInAppPath } from './url.utils';
+import { extractUrls, isInviteLandingPath, isProfileHubPath, isRelativeInAppPath } from './url.utils';
 
 describe('extractUrls', () => {
   it('extracts http and https URLs from prose', () => {
@@ -77,6 +77,32 @@ describe('isProfileHubPath', () => {
     expect(isProfileHubPath('/org/profile')).toBe(false);
     expect(isProfileHubPath('/meetings')).toBe(false);
     expect(isProfileHubPath('/')).toBe(false);
+  });
+});
+
+describe('isInviteLandingPath', () => {
+  it('matches /invite and /invite/error exactly', () => {
+    expect(isInviteLandingPath('/invite')).toBe(true);
+    expect(isInviteLandingPath('/invite/error')).toBe(true);
+  });
+
+  it('accepts a trailing slash', () => {
+    expect(isInviteLandingPath('/invite/')).toBe(true);
+    expect(isInviteLandingPath('/invite/error/')).toBe(true);
+  });
+
+  it('strips query and fragment before matching', () => {
+    expect(isInviteLandingPath('/invite?token=abc')).toBe(true);
+    expect(isInviteLandingPath('/invite/error?reason=expired')).toBe(true);
+    expect(isInviteLandingPath('/invite#top')).toBe(true);
+  });
+
+  it('does not match sibling or nested lookalikes', () => {
+    expect(isInviteLandingPath('/invites')).toBe(false);
+    expect(isInviteLandingPath('/invite/error-extra')).toBe(false);
+    expect(isInviteLandingPath('/invite/extra')).toBe(false);
+    expect(isInviteLandingPath('/')).toBe(false);
+    expect(isInviteLandingPath('/meetings')).toBe(false);
   });
 });
 

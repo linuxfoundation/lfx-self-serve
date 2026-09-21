@@ -41,6 +41,9 @@ describe('AppComponent — meetings v2 flag', () => {
   let currentPersona: WritableSignal<string>;
   /** `MeetingComposerService.isOpen()`. Only the last two tests move it off `false`. */
   let composerOpen: WritableSignal<boolean>;
+  let segmentInitialize: ReturnType<typeof vi.fn>;
+  let plausibleInitialize: ReturnType<typeof vi.fn>;
+  let featureFlagInitialize: ReturnType<typeof vi.fn>;
 
   /** The two protected reads under test, surfaced the way the template sees them. */
   const flagState = (fixture: ComponentFixture<AppComponent>): { enabled: boolean; prefetch: boolean } => {
@@ -56,7 +59,7 @@ describe('AppComponent — meetings v2 flag', () => {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled, initialize: vi.fn(() => Promise.resolve()) } },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: () => meetingsV2Enabled, initialize: featureFlagInitialize } },
         { provide: ProjectContextService, useValue: { canWrite, selectedFoundation: signal(null), selectedProject: signal(null) } },
         { provide: PersonaService, useValue: { currentPersona } },
         { provide: MeetingComposerService, useValue: { isOpen: composerOpen } },
@@ -70,8 +73,8 @@ describe('AppComponent — meetings v2 flag', () => {
             impersonator: signal(null),
           },
         },
-        { provide: SegmentService, useValue: { initialize: vi.fn(), setImpersonating: vi.fn(), identifyUser: vi.fn() } },
-        { provide: PlausibleService, useValue: { initialize: vi.fn(), setImpersonating: vi.fn() } },
+        { provide: SegmentService, useValue: { initialize: segmentInitialize, setImpersonating: vi.fn(), identifyUser: vi.fn() } },
+        { provide: PlausibleService, useValue: { initialize: plausibleInitialize, setImpersonating: vi.fn() } },
         { provide: DataDogRumService, useValue: { setImpersonating: vi.fn(), setUser: vi.fn() } },
         { provide: AccountContextService, useValue: { initializeUserOrganizations: vi.fn() } },
         { provide: IntercomService, useValue: { boot: vi.fn() } },
@@ -93,6 +96,9 @@ describe('AppComponent — meetings v2 flag', () => {
     canWrite = signal(true);
     currentPersona = signal('maintainer');
     composerOpen = signal(false);
+    segmentInitialize = vi.fn();
+    plausibleInitialize = vi.fn();
+    featureFlagInitialize = vi.fn(() => Promise.resolve());
   });
 
   it('reads the flag off, so the host is left out of the tree', async () => {
@@ -196,5 +202,23 @@ describe('AppComponent — meetings v2 flag', () => {
     await fixture.whenStable();
 
     expect(flagState(fixture)).toEqual({ enabled: true, prefetch: true });
+  });
+
+  it('does not initialize Segment or Plausible on /invite (GH-2290)', async () => {
+    window.history.pushState({}, '', '/invite');
+    try {
+      await mount();
+      expect(segmentInitialize).not.toHaveBeenCalled();
+      expect(plausibleInitialize).not.toHaveBeenCalled();
+      expect(featureFlagInitialize).not.toHaveBeenCalled();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('initializes Segment and Plausible on a product route', async () => {
+    await mount();
+    expect(segmentInitialize).toHaveBeenCalledTimes(1);
+    expect(plausibleInitialize).toHaveBeenCalledTimes(1);
   });
 });
