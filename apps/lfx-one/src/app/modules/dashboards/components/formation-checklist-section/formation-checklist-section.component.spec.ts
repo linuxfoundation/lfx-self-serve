@@ -425,6 +425,11 @@ describe('FormationChecklistSectionComponent', () => {
       f.detectChanges();
       await f.whenStable();
       f.detectChanges();
+      // afterNextRender defers drawerVisible.set(true) to the next render cycle so that
+      // [itemProjectUid]/[itemKey] inputs are fully propagated before openTrigger$ fires.
+      // One extra detectChanges runs that post-render hook and propagates the visible change.
+      await f.whenStable();
+      f.detectChanges();
 
       return { fixture: f, replaceStateSpy, formationMock };
     }
@@ -483,6 +488,9 @@ describe('FormationChecklistSectionComponent', () => {
       formationMock.mockReturnValue(of(response));
       fixture.componentInstance['onRetry']();
       fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      // Same afterNextRender cycle needed as in renderWithItem.
       await fixture.whenStable();
       fixture.detectChanges();
 
