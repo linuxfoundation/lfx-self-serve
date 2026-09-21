@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { NextFunction, Request, Response } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter } from './rate-limit.middleware';
+import { aiRateLimiter, voteWriteRateLimiter } from './rate-limit.middleware';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -82,8 +82,11 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
   return res as unknown as Response & { statusCode?: number; headers: Record<string, string> };
 }
 
-/** Drives the limiter once and reports whether the request was allowed through. */
-async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
+/** Drives the given limiter once and reports whether the request was allowed through. */
+async function requestWith(
+  limiter: RequestHandler,
+  opts: { sub?: string; ip?: string } = {}
+): Promise<{
   allowed: boolean;
   statusCode?: number;
   headers: Record<string, string>;
@@ -93,7 +96,7 @@ async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
 
-  await aiRateLimiter(req, res, next);
+  await limiter(req, res, next);
 
   const sent = res.send as unknown as ReturnType<typeof vi.fn>;
 
@@ -104,6 +107,11 @@ async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
     // `undefined` when the limiter let the request through — it only writes a body on reject.
     body: sent.mock.calls[0]?.[0],
   };
+}
+
+/** Drives `aiRateLimiter` once — the default limiter for this file's original suite. */
+async function request(opts: { sub?: string; ip?: string } = {}) {
+  return requestWith(aiRateLimiter, opts);
 }
 
 describe('aiRateLimiter', () => {
@@ -171,5 +179,46 @@ describe('aiRateLimiter', () => {
     // A different /56 is a different caller and keeps its own budget. The fourth group's *high* byte
     // is what has to differ — `0100` and above leave the exhausted /56.
     expect((await request({ ip: `${prefix}:0100:0:0:0:1` })).allowed).toBe(true);
+  });
+});
+
+// Each `rateLimit()` instance has its own MemoryStore, so `voteWriteRateLimiter`'s counter is
+// independent of `aiRateLimiter`'s — but the per-test-unique-`sub` discipline still holds, since
+// the limiter instance itself is shared across every test in this describe.
+describe('voteWriteRateLimiter', () => {
+  const VOTE_WRITE_LIMIT = 10;
+
+  it('allows the first ten vote writes in the window and rejects the eleventh with 429', async () => {
+    const sub = testSub();
+
+    for (let attempt = 1; attempt <= VOTE_WRITE_LIMIT; attempt++) {
+      const result = await requestWith(voteWriteRateLimiter, { sub });
+
+      expect(result.allowed, `request ${attempt} should be allowed`).toBe(true);
+    }
+
+    const rejected = await requestWith(voteWriteRateLimiter, { sub });
+
+    // A fused create+open fans out to as many as 31 upstream calls, so exhausting this budget has
+    // to stop the request, not just annotate it.
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+  });
+
+  it('keys on the authenticated sub so one user cannot exhaust a shared egress IP', async () => {
+    const sharedIp = '198.51.100.7';
+    const noisyNeighbour = `${testSub()}|noisy`;
+    const innocentBystander = `${testSub()}|innocent`;
+
+    // Burn the whole budget for one user behind the shared IP.
+    for (let attempt = 1; attempt <= VOTE_WRITE_LIMIT; attempt++) {
+      await requestWith(voteWriteRateLimiter, { sub: noisyNeighbour, ip: sharedIp });
+    }
+
+    expect((await requestWith(voteWriteRateLimiter, { sub: noisyNeighbour, ip: sharedIp })).allowed).toBe(false);
+
+    // A different user on the same IP still has their own budget — these routes are auth-gated,
+    // so the `sub` key is effectively always present and a corporate NAT can't pool strangers.
+    expect((await requestWith(voteWriteRateLimiter, { sub: innocentBystander, ip: sharedIp })).allowed).toBe(true);
   });
 });

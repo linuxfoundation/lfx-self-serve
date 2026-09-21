@@ -238,6 +238,9 @@ export interface Vote {
   response_status?: VoteResponseStatus;
 }
 
+/** Enable-vote response (PUT /votes/:uid/enable, GH-2730): the BFF returns right after the synchronous upstream write with only the fields it knows — the full Vote is not refetched. */
+export type EnableVoteResponse = Pick<Vote, 'uid' | 'status'>;
+
 /** Precomputed display fields for votes-table rows (avoids per-CD template method calls). */
 export interface VoteTableRow extends Vote {
   endedEarlyTooltip: string | null;

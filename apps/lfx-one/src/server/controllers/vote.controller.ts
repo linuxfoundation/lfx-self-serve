@@ -139,6 +139,11 @@ export class VoteController {
       // vote in its real status in all non-error paths; the frontend branches on vote.status.
       const open = req.query['open'] === 'true';
 
+      // No client-disconnect abort (matches every BFF write endpoint): a navigate-away leaves the
+      // create(+open) completing server-side — the vote lands created (and opened when the enable
+      // succeeded) and is recoverable from the list; the same property held pre-change across the
+      // two-request flow. Accepted per GH-2729 review m-8.
+
       const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts }, { open });
 
       logger.success(req, 'create_vote', startTime, {

@@ -54,6 +54,29 @@ export const aiRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for vote write endpoints (GH-2729 review m-10).
+ *
+ * Applied per-route to `POST /api/votes` (create) and `PUT /api/votes/:uid/enable`. A fused
+ * create+open fans out to as many as 31 upstream calls while convergence lags (1 POST + 27
+ * FGA-readiness probes + 3 enable PUTs — see VoteService's budget constants), so the global
+ * 500/min/IP `apiRateLimiter` would still allow ~16 such actions per minute; 10/min per user is
+ * far above human admin pacing. Keyed on the authenticated user — these routes are auth-gated,
+ * so the `sub` key is effectively always present — with the /56-masked IP key as the anonymous
+ * fallback. `POST /api/votes/:uid/responses` is deliberately not throttled here: a room of voters
+ * can share a NAT IP.
+ *
+ * The counter lives in the default in-process MemoryStore, so the effective ceiling is
+ * `limit × replicas` (exact today: `ecosystem.config.js` runs a single instance).
+ */
+export const voteWriteRateLimiter = rateLimit({
+  windowMs: 60_000, // 1 minute window
+  max: 10, // limit each user to 10 vote writes per window
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.oidc?.user?.['sub'] || ipKeyGenerator(req.ip ?? ''),
+});
+
+/**
  * Stricter rate limiter for authentication endpoints.
  *
  * Applied to /login, /passwordless/*, and /social/* routes

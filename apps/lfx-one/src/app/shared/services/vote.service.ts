@@ -9,6 +9,7 @@ import {
   CommentResponseInput,
   CreateVoteRequest,
   CreateVoteResponseRequest,
+  EnableVoteResponse,
   MyVoteResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
@@ -172,8 +173,8 @@ export class VoteService {
     return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }
 
-  public enableVote(voteUid: string): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
+  public enableVote(voteUid: string): Observable<EnableVoteResponse> {
+    return this.http.put<EnableVoteResponse>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
@@ -218,10 +219,12 @@ export class VoteService {
   }
 
   /**
-   * Merges the recently-opened carrier over a fetched votes page (GH-2730): rows still showing a
-   * carried vote as not-yet-active get the known-open status substituted; rows that came back
-   * `active` evict their entry (the server value has converged). Self-healing — once the index
-   * catches up, the fetched value flows through unchanged and the carrier empties.
+   * Merges the recently-opened carrier over a fetched votes page (GH-2730): only rows still
+   * showing a carried vote as `disabled` get the known-open status substituted; rows that came
+   * back with any other status have converged — the server's value wins and the entry is evicted
+   * (a just-opened vote can end early inside the TTL via ITX's `EndPollIfAllResponded`, so
+   * non-disabled ≠ active). Self-healing — once the index catches up, the fetched value flows
+   * through unchanged and the carrier empties.
    */
   public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
     const recentlyOpened = this.getLiveRecentlyOpenedVotes();
@@ -233,7 +236,7 @@ export class VoteService {
       if (!recentlyOpened.has(vote.uid)) {
         return vote;
       }
-      if (vote.status === PollStatus.ACTIVE) {
+      if (vote.status !== PollStatus.DISABLED) {
         this.evictRecentlyOpenedVote(vote.uid);
         return vote;
       }

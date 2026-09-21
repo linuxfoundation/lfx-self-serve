@@ -419,11 +419,13 @@ export class VoteManageComponent {
             this.navigateBack();
             return;
           }
-          // Partial failure — created but not opened: the draft is on the list; recoverable (AC-2).
+          // Partial failure — the state is genuinely uncertain: usually a draft, rarely
+          // opened-but-unconfirmed (enable 408 after ITX's PutPoll) or deleted concurrently —
+          // and the list shows the truth in all three, so the copy doesn't claim "draft" (AC-2).
           this.messageService.add({
             severity: 'warn',
             summary: 'Warning',
-            detail: `${this.voteLabel.singular} created as a draft — open it from the list`,
+            detail: `${this.voteLabel.singular} created — couldn't confirm it opened; check the list`,
           });
           this.submitting.set(false);
           this.navigateBack();

@@ -1,15 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { RECENTLY_OPENED_VOTE_TTL_MS } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteService } from './vote.service';
 
-import type { Vote } from '@lfx-one/shared/interfaces';
+import type { CreateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
 
 function buildVote(overrides: Partial<Vote> = {}): Vote {
   return {
@@ -67,6 +68,20 @@ describe('VoteService', () => {
       expect(merged[0].status).toBe(PollStatus.DISABLED);
     });
 
+    it('lets a converged non-disabled row flow through and evicts the carry', () => {
+      service.markVoteOpened('v1');
+
+      // A just-opened vote can end early inside the TTL (ITX's EndPollIfAllResponded), so any
+      // converged non-disabled status — not just `active` — is the server's truth and must not be
+      // overlaid back to active.
+      const converged = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.ENDED })]);
+      expect(converged[0].status).toBe(PollStatus.ENDED);
+
+      // The carry was evicted on convergence — a subsequent stale row flows through unchanged.
+      const after = service.mergeRecentlyOpenedVotes([buildVote({ uid: 'v1', status: PollStatus.DISABLED })]);
+      expect(after[0].status).toBe(PollStatus.DISABLED);
+    });
+
     it('keeps overlaying inside the TTL window', () => {
       vi.useFakeTimers();
       try {
@@ -112,6 +127,30 @@ describe('VoteService', () => {
 
     it('evictRecentlyOpenedVote is a no-op for uids that are not carried', () => {
       expect(() => service.evictRecentlyOpenedVote('never-marked')).not.toThrow();
+    });
+  });
+
+  // GH-2731: the open flag rides the create POST as `?open=true` — pin the param wiring so the
+  // fused create+open contract can't silently revert to the two-request flow.
+  describe('createVote open flag', () => {
+    it('sends open=true as a query param when the option is set', () => {
+      http.post.mockReturnValue(of(buildVote()));
+
+      const data = { name: 'New ballot' } as unknown as CreateVoteRequest;
+      service.createVote(data, { open: true }).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes', data, { params: expect.any(HttpParams) });
+      const params = http.post.mock.calls[0][2].params as HttpParams;
+      expect(params.get('open')).toBe('true');
+    });
+
+    it('sends no params when the option is absent', () => {
+      http.post.mockReturnValue(of(buildVote()));
+
+      const data = { name: 'New ballot' } as unknown as CreateVoteRequest;
+      service.createVote(data).subscribe();
+
+      expect(http.post).toHaveBeenCalledWith('/api/votes', data, { params: undefined });
     });
   });
 });

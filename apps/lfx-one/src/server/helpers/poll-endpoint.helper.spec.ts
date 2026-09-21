@@ -57,9 +57,9 @@ describe('pollEndpoint', () => {
   });
 
   it('never invokes pollFn when the wall-clock budget is already spent (maxDurationMs: 0)', async () => {
-    // Pins the `=== undefined` discrimination: 0 is a real budget — enableVote's trailing poll
-    // legitimately passes it after slow retries — and a refactor to a truthy check would
-    // silently restore unbounded polling on exactly this boundary.
+    // Pins the `=== undefined` discrimination on its own merit: 0 is a real budget — "spent",
+    // not "unset" — and the `=== undefined` check is all that stops a truthy-check refactor from
+    // turning a spent budget into unbounded polling on exactly this boundary.
     const pollFn = vi.fn().mockResolvedValue(true);
 
     const resolved = await pollEndpoint({ req: undefined, operation: 'test_op', pollFn, maxRetries: 5, retryDelayMs: 1, maxDurationMs: 0 });

@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -32,8 +33,9 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 // GET /votes/:uid - get a single vote
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
-// POST /votes - create a new vote
-router.post('/', (req, res, next) => voteController.createVote(req, res, next));
+// POST /votes - create a new vote (per-user write throttle: a fused create+open fans out to as
+// many as 31 upstream calls while convergence lags — see voteWriteRateLimiter)
+router.post('/', voteWriteRateLimiter, (req, res, next) => voteController.createVote(req, res, next));
 
 // PUT /votes/:uid - update a vote
 router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next));
@@ -41,7 +43,8 @@ router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next
 // DELETE /votes/:uid - delete a vote
 router.delete('/:uid', (req, res, next) => voteController.deleteVote(req, res, next));
 
-// PUT /votes/:uid/enable - enable a vote
-router.put('/:uid/enable', (req, res, next) => voteController.enableVote(req, res, next));
+// PUT /votes/:uid/enable - enable a vote (same per-user write throttle; `POST /responses` is
+// deliberately unthrottled — a room of voters can share a NAT IP)
+router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteController.enableVote(req, res, next));
 
 export default router;
