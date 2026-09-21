@@ -47,19 +47,26 @@ export function isFormationStageGate(stage: ProjectStage | string | undefined | 
 }
 
 /**
- * Stages where the project has completed (or been retired from) Formation entirely — the formations
- * queue must not list it (LFXV2-3386: an `Active` project's row and tile counts are noise for the
- * formation team). Deliberately a small named deny-list and NOT `!isFormationStageGate`: GH-2366's
- * fail-open rule keeps rows with unrecognized or malformed stages visible (rendered verbatim,
- * counted as unmapped), and `Formation - Disengaged` — terminal for the checklist gate above —
- * deliberately stays visible in the queue so the formation team can still see disengaged work.
- * Inverting the allow-list gate would silently hide both.
+ * Stages where the project has completed (or been retired from) Formation entirely. Deliberately a
+ * small named deny-list and NOT `!isFormationStageGate`: GH-2366's fail-open rule keeps
+ * unrecognized or malformed stages out of this set, so nothing is treated as finished merely
+ * because it wasn't recognized.
+ *
+ * `Formation - Disengaged` is absent on purpose, and it is the one omission worth understanding.
+ * A disengaged project has left formation, so it no longer belongs in the formations queue — but
+ * the queue stopped consulting this set in GH-2584 and now reads the formation service's published
+ * lifecycle instead. What remains here is the checklist page's gate, and there Disengaged must
+ * NOT be present: its checklist is frozen, not absent, and GH-2328 requires that history stay
+ * readable by direct link. Adding it here would blank that page.
  */
 const POST_FORMATION_STAGES: ReadonlySet<string> = new Set([ProjectStage.Active, ProjectStage.Archived]);
 
 /**
- * True when a project's stage is post-Formation ({@link POST_FORMATION_STAGES}) — the formations
- * queue's row/tile exclusion predicate (LFXV2-3386). Accepts a bare string for the same
+ * True when a project's stage is post-Formation ({@link POST_FORMATION_STAGES}). Sole caller is
+ * the formation checklist page, which renders an empty state for a project that has finished
+ * forming. It was also the formations queue's row/tile exclusion predicate (LFXV2-3386) until
+ * GH-2584 moved the queue onto the published lifecycle; the two questions looked identical and
+ * are not, which is why they no longer share this. Accepts a bare string for the same
  * tolerate-unindexed-values reason as {@link isFormationStageGate}.
  */
 export function isPostFormationStage(stage: ProjectStage | string | undefined | null): boolean {

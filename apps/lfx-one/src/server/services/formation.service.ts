@@ -45,7 +45,6 @@ import {
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
-  isPostFormationStage,
   maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
@@ -901,6 +900,7 @@ export class FormationService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
+          tags_all: ['lifecycle:live'],
           ...(effectiveFoundationUid && { parent: `project:${effectiveFoundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
@@ -929,23 +929,33 @@ export class FormationService {
       });
     }
 
-    // The queue is "formations between Prospect and Active" — a project that completed (or was
-    // retired from) Formation is noise for the formation team, so post-Formation rows are dropped
-    // from BOTH the rows and every tile below (LFXV2-3386). A named deny-list (Active/Archived),
-    // not `!isFormationStageGate`: GH-2366's fail-open rule keeps unrecognized/malformed stages
-    // visible, and `Formation - Disengaged` deliberately stays in the queue. `gates_cleared`/
-    // `is_activating` rows keep their `Formation - *` stage until the formation team flips the
-    // project Active, so "Ready to activate" rows survive this filter by construction.
-    const inFormationRows = scopedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+    // The queue is "formations between Prospect and Active", and the formation service already
+    // decides which those are: `lifecycle` is `live` while forming, `completed` on Active, and
+    // `frozen` on Archived or Disengaged (model.LifecycleForStage). Reading that instead of
+    // re-deriving from the stage is GH-2584's "apply it in one place" — the earlier stage
+    // deny-list named Active/Archived and so kept `Formation - Disengaged`, which is the bug.
+    //
+    // Repeating the query's `lifecycle:live` filter here is deliberate, not redundant. It is the
+    // only thing that still holds if `tags_all` is ever not honoured upstream: that failure
+    // returns a valid superset and raises no error, and the e2e suite mocks the query service, so
+    // nothing else in this repo would catch it. Same shape as getMyFormationWork above.
+    //
+    // Unrecognized stages stay visible either way — an unmapped `Formation - *` sub-stage is still
+    // `live`, so GH-2366's fail-open rule survives without naming any stage here. `gates_cleared`/
+    // `is_activating` rows likewise keep their `Formation - *` stage until the formation team
+    // flips the project Active, so "Ready to activate" rows survive by construction.
+    const inFormationRows = scopedRows.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
 
-    // DEBUG, not WARN — `Formation - Disengaged` (and any unrecognized stage) is a modeled,
-    // expected shape with no queue-taxonomy equivalent (see normalizeFormationSubStage), not an
-    // anomaly: it recurs on every request against current production data, so a WARN here would
-    // repeat every time for a case the system already knows about and models on purpose, not a
-    // genuine data-quality problem worth an operator's attention. Still logged (not silent) since
-    // it's worth finding while debugging why a row is missing from every stage tile and every
-    // stage filter (GH-2366). `Active`/`Archived` rows no longer reach this log — they are dropped
-    // from the queue entirely above (LFXV2-3386).
+    // What reaches this log has narrowed to one case: a formation still in progress whose
+    // `Formation - *` sub-stage has no queue-taxonomy equivalent (see normalizeFormationSubStage).
+    // `Active`/`Archived` (LFXV2-3386) and now `Formation - Disengaged` (GH-2584) are dropped
+    // above, so a non-zero count here means a new sub-stage has appeared upstream that the queue's
+    // tiles and stage filter cannot represent — which is why the count is kept after GH-2584
+    // removed the tile line that used to surface it.
+    //
+    // DEBUG, not WARN: the row is shown, not lost, and the queue is not wrong — it just can't
+    // label it. That is a taxonomy gap to notice while debugging "why is this row in no tile?"
+    // (GH-2366), not a data-quality fault worth waking anyone for.
     const unmappedRows = inFormationRows.filter((row) => row.sub_stage === null);
     if (unmappedRows.length > 0) {
       logger.debug(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {

@@ -45,13 +45,20 @@ export class FormationDetailComponent {
   protected readonly loadFailed = computed(() => this.state().error);
   protected readonly project = computed(() => this.state().project);
   /**
-   * The exact complement of the queue's row predicate (`isPostFormationStage`, LFXV2-3386): every
-   * row the queue lists — including `Formation - Disengaged` and unrecognized stages, which the
-   * queue deliberately keeps visible (GH-2366 fail-open) — must open here, so only a stale deep
-   * link to a project that has actually gone Active/Archived gets the in-place explanation.
-   * Deliberately NOT `!isFormationStageGate` (the `/project/formation` guard's gate): that would
-   * dead-end Disengaged/unknown-stage rows the queue itself just linked. In-place beats bouncing
-   * to the project overview — which would also switch context, the very thing this page avoids.
+   * Which projects get the in-place "formation is over" explanation instead of their checklist:
+   * only those that have actually gone Active or Archived (`isPostFormationStage`, LFXV2-3386).
+   *
+   * This used to be described as the exact complement of the queue's row predicate, and since
+   * GH-2584 it isn't — the queue now excludes `Formation - Disengaged`, which still opens here.
+   * That asymmetry is the point, not drift: leaving the queue is not the same as losing the
+   * checklist. A disengaged project's checklist is frozen and its history stays readable by
+   * direct link (GH-2328, GH-2584's sixth criterion), so widening this predicate to match the
+   * queue would blank exactly the page someone followed a link to read.
+   *
+   * Still deliberately NOT `!isFormationStageGate` (the `/project/formation` guard's gate): that
+   * would dead-end unrecognized stages, which GH-2366 keeps visible rather than fail closed.
+   * In-place beats bouncing to the project overview — which would also switch context, the very
+   * thing this page avoids.
    */
   protected readonly postFormation = computed(() => {
     const project = this.project();

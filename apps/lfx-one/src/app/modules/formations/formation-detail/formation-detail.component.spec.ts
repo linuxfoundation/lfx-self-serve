@@ -144,9 +144,10 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('h1')?.textContent).toContain('Durable Agents');
   });
 
-  // The gate is the exact complement of the queue's isPostFormationStage predicate (LFXV2-3386): a
-  // stale deep link to a since-activated project explains itself in place instead of bouncing (and
-  // context-switching) to that project's overview.
+  // A stale deep link to a since-activated project explains itself in place instead of bouncing
+  // (and context-switching) to that project's overview (LFXV2-3386). This gate is no longer the
+  // complement of the queue's row predicate — since GH-2584 the queue also excludes Disengaged,
+  // which still opens here (see below).
   it.each(['Active', 'Archived'])('shows the not-in-formation state for a post-Formation (%s) project', async (stage) => {
     getProjectStrict.mockReturnValue(of(buildProject({ stage })));
 
@@ -157,9 +158,11 @@ describe('FormationDetailComponent', () => {
     expect(fixture.nativeElement.querySelector('h1')).toBeNull();
   });
 
-  // The queue deliberately keeps Disengaged and unrecognized-stage rows visible (GH-2366 fail-open)
-  // — this page must open every row the queue links, so those render the checklist, not a dead end.
-  it.each(['Formation - Disengaged', 'Some Unrecognized Stage'])('renders the checklist for a queue-visible %s project', async (stage) => {
+  // Neither stage may dead-end, for different reasons. An unrecognized stage stays in the queue
+  // (GH-2366 fail-open) and so must open here. Disengaged is no longer in the queue (GH-2584) but
+  // must still open by direct link, because its checklist is frozen rather than gone (GH-2328) —
+  // this is the guard against "fixing" GH-2584 by adding Disengaged to isPostFormationStage.
+  it.each(['Formation - Disengaged', 'Some Unrecognized Stage'])('renders the checklist for a %s project', async (stage) => {
     getProjectStrict.mockReturnValue(of(buildProject({ stage })));
 
     await render('child-project');

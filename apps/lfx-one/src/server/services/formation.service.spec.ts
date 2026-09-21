@@ -1494,14 +1494,28 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      // `Active` is dropped from the queue entirely (LFXV2-3386) — see the dedicated exclusion
-      // test below; the two unmapped survivors here are Disengaged + the unrecognized stage.
-      const rawSubStages = ['Formation - Exploratory', 'Formation - Engaged', 'Formation - On Hold', 'Formation - Disengaged', 'Active', 'not-a-real-stage'];
-      const rows = rawSubStages.map((rawSubStage, i) => ({
+      // `Active` and `Formation - Disengaged` are dropped from the queue entirely — see the
+      // dedicated exclusion test below — so the only unmapped survivor here is the unrecognized
+      // stage, which is still a live formation and stays visible (GH-2366 fail-open).
+      //
+      // Each row carries the lifecycle the formation service would really publish for its stage
+      // (model.LifecycleForStage). Pairing a finished stage with `live` is a combination upstream
+      // cannot produce, and a fixture that does it can no longer tell a working filter from a
+      // broken one.
+      const rawSubStages: [string, string][] = [
+        ['Formation - Exploratory', 'live'],
+        ['Formation - Engaged', 'live'],
+        ['Formation - On Hold', 'live'],
+        ['Formation - Disengaged', 'frozen'],
+        ['Active', 'completed'],
+        ['not-a-real-stage', 'live'],
+      ];
+      const rows = rawSubStages.map(([rawSubStage, lifecycle], i) => ({
         ...baseRow,
         formation_uid: `formation:p${i}`,
         project_uid: `p${i}`,
         sub_stage: rawSubStage,
+        lifecycle,
       }));
       proxyRequest.mockResolvedValue({
         resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
@@ -1509,9 +1523,14 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null]);
-      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages.filter((stage) => stage !== 'Active'));
-      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null]);
+      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual([
+        'Formation - Exploratory',
+        'Formation - Engaged',
+        'Formation - On Hold',
+        'not-a-real-stage',
+      ]);
+      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 1, total: 4 });
 
       // An unmapped row is never counted in a stage filter — same as `null !== 'engaged'`.
       const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
@@ -1519,13 +1538,21 @@ describe('FormationService', () => {
       expect(engagedOnly.rows[0].project_uid).toBe('p1');
       // Tiles stay scoped to the full queue even when `rows` is narrowed by the subStage filter —
       // `buildQueueTilesFromRows` runs on `inFormationRows`, before filtering (formation.service.ts).
-      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 1, total: 4 });
     });
 
-    // LFXV2-3386: a project that completed (or was retired from) Formation is dropped from the
-    // queue's rows AND tiles — but only via the named Active/Archived deny-list: Disengaged,
-    // unknown stages (GH-2366 fail-open), and gates-cleared rows still in `Formation - *` all stay.
-    it('excludes post-Formation (Active/Archived) rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
+    // A formation that has left Formation — completed it (Active), been retired from it
+    // (Archived), or walked away from it (Disengaged) — is dropped from the queue's rows AND its
+    // tiles. GH-2584 replaced the old Active/Archived stage deny-list with the lifecycle the
+    // formation service publishes, which is what finally covers Disengaged: it is `frozen`, the
+    // same value Archived gets, because leaving formation is one outcome upstream and not two.
+    //
+    // Unknown stages (GH-2366 fail-open) and gates-cleared rows still in `Formation - *` stay —
+    // both are still `live`, so the new rule keeps them without naming any stage.
+    //
+    // This is the only test that exercises the real filter. The Playwright suite mocks the BFF, so
+    // it can prove the page renders what the BFF returns but never what the BFF decides.
+    it('excludes Active, Archived and Disengaged rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
       const baseRow: UpstreamFormationQueueRow = {
         formation_uid: 'formation:p',
         project_uid: 'p',
@@ -1543,8 +1570,9 @@ describe('FormationService', () => {
         assignees: [],
       };
       const rows: UpstreamFormationQueueRow[] = [
-        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active' },
-        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived' },
+        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active', lifecycle: 'completed' },
+        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived', lifecycle: 'frozen' },
+        { ...baseRow, formation_uid: 'formation:disengaged', project_uid: 'disengaged', sub_stage: 'Formation - Disengaged', lifecycle: 'frozen' },
         { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', gates_cleared: true, is_activating: true },
         { ...baseRow, formation_uid: 'formation:unknown', project_uid: 'unknown', sub_stage: 'not-a-real-stage' },
       ];
@@ -1557,6 +1585,45 @@ describe('FormationService', () => {
       expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown']);
       expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
       expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 1, total: 2, foundations: 0, projects: 2 });
+    });
+
+    // The filter fails CLOSED on a lifecycle it doesn't recognise: `normalizeFormationLifecycle`
+    // maps anything outside live/completed/frozen to null, and `isFormationLifecycleLive(null)` is
+    // false, so the row is dropped. That is the opposite of GH-2366's fail-open treatment of an
+    // unrecognised sub_stage, and the asymmetry is deliberate — an unreadable stage label is
+    // cosmetic, an unreadable lifecycle means we cannot tell whether formation is over.
+    //
+    // Pinned because it is a decision, not a consequence, and because it is the one way this
+    // change can hide work that is genuinely in progress. A row whose stage still says
+    // `Formation - *` while its lifecycle is missing or stale is exactly that case.
+    it.each([
+      ['missing', ''],
+      ['unrecognised', 'retired'],
+    ])('drops a row whose lifecycle is %s, even though its stage says it is still forming', async (_label, lifecycle) => {
+      const row: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:no-lifecycle',
+        project_uid: 'no-lifecycle',
+        project_name: 'No Lifecycle',
+        project_slug: 'no-lifecycle',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle,
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      proxyRequest.mockResolvedValue({
+        resources: [{ type: 'formation', id: row.formation_uid, data: row }],
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows).toEqual([]);
+      expect(result.tiles).toMatchObject({ total: 0, unmapped: 0 });
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
@@ -1601,7 +1668,10 @@ describe('FormationService', () => {
         expect(call).toBeDefined();
         const params = call?.[4] as Record<string, unknown>;
         expect(params).not.toHaveProperty('parent');
-        expect(params).toMatchObject({ type: 'formation' });
+        // `tags_all` asserted here and below because nothing else can: the client-side filter
+        // would still produce a correct queue if this parameter were dropped, so its absence is
+        // invisible to every other test in this file (GH-2584).
+        expect(params).toMatchObject({ type: 'formation', tags_all: ['lifecycle:live'] });
       });
 
       it('sends `parent: project:<uid>` exactly when a foundation is selected', async () => {
@@ -1609,7 +1679,7 @@ describe('FormationService', () => {
 
         const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
         const params = call?.[4] as Record<string, unknown>;
-        expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1' });
+        expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1', tags_all: ['lifecycle:live'] });
       });
 
       it('counts tiles over the foundation-scoped rows, not a global set', async () => {

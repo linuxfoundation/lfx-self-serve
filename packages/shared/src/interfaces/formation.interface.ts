@@ -522,9 +522,16 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   projects: number;
   /**
    * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
-   * `"Active"`, `"Formation - Disengaged"`, or any other unrecognized value. Included in `total`
-   * but in none of the three sub-stage counts, so `total` can legitimately exceed
-   * `exploratory + engaged + on_hold`; that gap is this count. See {@link FormationQueueRow.sub_stage}.
+   * `"Formation - Confidential"` or any other unrecognized value. `"Active"` and
+   * `"Formation - Disengaged"` no longer reach this count: since GH-2584 the queue lists only
+   * formations still in progress, and both have left. Included in `total` but in none of the three
+   * sub-stage counts, so `total` can legitimately exceed `exploratory + engaged + on_hold`; that
+   * gap is this count. See {@link FormationQueueRow.sub_stage}.
+   *
+   * Nothing renders this — GH-2584 removed the tile line that did, because "outside formation
+   * stages" described no row once the queue had excluded everything outside. It is kept because a
+   * non-zero value means a new `Formation - *` sub-stage has appeared upstream that the tiles and
+   * the stage filter cannot represent, which the BFF logs at DEBUG (`formation.service.ts`).
    */
   unmapped: number;
 };
@@ -552,10 +559,13 @@ export interface FormationQueueRow {
   /**
    * Normalized via `normalizeFormationSubStage` (GH-2366) from the upstream projection's full
    * `ProjectStage` string — see {@link sub_stage_raw} for that original value. `null` when the
-   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Active"`,
-   * `"Formation - Disengaged"`); such a row still appears in the queue (never dropped) but in none
-   * of the three stage tiles/filters — see {@link FormationQueueTiles.unmapped}. Whether an
-   * unmapped row belongs in "In formation" at all is #2328's question, not this field's.
+   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Formation - Confidential"`).
+   *
+   * An unmapped row still appears in the queue, rendered verbatim, but in none of the three stage
+   * tiles/filters — see {@link FormationQueueTiles.unmapped}. Being unmapped is never itself a
+   * reason to drop a row: since GH-2584 presence is decided by the formation service's published
+   * lifecycle, which is why `"Active"` and `"Formation - Disengaged"` are no longer examples here
+   * despite also normalizing to `null` — they are gone before this field is consulted.
    */
   sub_stage: FormationSubStage | null;
   /** The upstream projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-2366). */
