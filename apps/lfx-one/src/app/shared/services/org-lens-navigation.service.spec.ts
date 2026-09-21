@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, provideRouter, Router } from '@angular/router';
+import { ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
@@ -224,6 +225,57 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/projects/k8s';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // A gated corporate-signing return (`/org/{A}/easycla/{g}?signed=1`) is an addressed page
+    // with a wait in flight. The default must leave it — and its `?signed=` — exactly as it is:
+    // the strip belongs to the viewer's own switch off the page, never to the automatic default.
+    it('never touches an organization-addressed EasyCLA return, wait state included', () => {
+      currentUrl = '/org/other-org/easycla/abc-123?signed=1';
+      service.navigateToSelectedOrg('default');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  // The one predicate both EasyCLA pages use to decide whether a client-supplied `?org=` may
+  // name the organization. Driven through the real router over the real route shape (the
+  // `:orgSegment` parameter lives on an ancestor of the page's own route), not a hand-built
+  // `pathFromRoot`, so a narrowing to `route.paramMap` would fail here.
+  describe('isOrgAddressed', () => {
+    @Component({ selector: 'lfx-org-lens-nav-spec-page', template: '' })
+    class Page {}
+
+    async function leafSnapshotAt(url: string): Promise<ActivatedRouteSnapshot> {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([
+            {
+              path: 'org',
+              children: [
+                { path: 'easycla/:claGroupId', component: Page },
+                { path: `:${ORG_SEGMENT_PARAM}`, children: [{ path: 'easycla/:claGroupId', component: Page }] },
+              ],
+            },
+          ]),
+          { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment } },
+        ],
+      });
+      const realRouter = TestBed.inject(Router);
+      await realRouter.navigateByUrl(url);
+      let leaf = realRouter.routerState.snapshot.root;
+      while (leaf.firstChild) leaf = leaf.firstChild;
+      return leaf;
+    }
+
+    it('is true under /org/:orgSegment/easycla/…', async () => {
+      const leaf = await leafSnapshotAt('/org/acme-inc/easycla/abc-123');
+      expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(true);
+    });
+
+    it('is false on the leftover /org/easycla/… mount', async () => {
+      const leaf = await leafSnapshotAt('/org/easycla/abc-123');
+      expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(false);
     });
   });
 });

@@ -28,6 +28,7 @@ import {
   CLA_GROUPS_ROUTE,
   EASYCLA_URL,
   fulfillJson,
+  MOCK_ACCOUNT_ID,
   MOCK_ACCOUNT_NAME,
   PAGE_LOAD_TIMEOUT,
   stubAccountContext,
@@ -97,9 +98,11 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
   test('renders the page and the nav item once the flag is on', async ({ page }) => {
     await deepLinkToEasycla(page, true);
 
-    // A bare legacy deep link gets its organization inserted by the default selection shortly
-    // after hydration (spec 050), so either shape may be what the poll sees.
-    await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?easycla/, { timeout: PAGE_LOAD_TIMEOUT });
+    // A bare legacy deep link is canonicalized by the default selection shortly after hydration
+    // (spec 050): the organization is inserted into the address. The mock organization publishes
+    // no slug, so its segment is the SFID. Asserting the final shape exactly, so a regression that
+    // left the leftover address in place — or inserted a different organization — would fail here.
+    await expect(page).toHaveURL(new RegExp(`/org/${MOCK_ACCOUNT_ID}/easycla$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME);
     await expect(page.getByTestId('org-easycla-empty-state')).toBeVisible();

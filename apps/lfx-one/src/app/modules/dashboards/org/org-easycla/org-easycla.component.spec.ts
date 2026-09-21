@@ -1151,7 +1151,7 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true }));
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
@@ -1218,7 +1218,7 @@ describe('OrgEasyclaComponent', () => {
     it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
       const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
 
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
@@ -1269,7 +1269,7 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(resetAndReload).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     it('touches nothing on an ordinary visit that carries no organization', async () => {

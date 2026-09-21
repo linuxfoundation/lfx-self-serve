@@ -2,11 +2,17 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { CCLA_SIGN_COPY, ORG_CLA_SIGN_SELECTION_STATE, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants';
+import {
+  CCLA_SIGN_COPY,
+  ORG_CLA_SIGN_SELECTION_STATE,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_PARAMS_RESET,
+  ORG_EASYCLA_SIGNATURE_PARAM,
+} from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -52,6 +58,7 @@ export class OrgEasyclaComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
 
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -442,9 +449,11 @@ export class OrgEasyclaComponent {
     // after the `ORG_EASYCLA_RETURN_IN_PATH` gate flips). Under `/org/:orgSegment/easycla` the path
     // names it and `orgPathParamGuard` is the authority — a `?org=` there is stale or crafted, so it
     // is not adopted, but it is still taken off the address: left on, a reload or a copied link
-    // would keep presenting a parameter the page ignores.
+    // would keep presenting a parameter the page ignores. Deferred past the first render so the
+    // strip is a follow-up navigation rather than one issued from inside the activation it would
+    // otherwise supersede (re-running this address's guards a second time).
     if (this.orgLens.isOrgAddressed(this.route.snapshot)) {
-      this.stripReturnOrganizationFromAddress();
+      afterNextRender(() => this.stripReturnOrganizationFromAddress(), { injector: this.injector });
       return;
     }
 
@@ -463,7 +472,7 @@ export class OrgEasyclaComponent {
   private stripReturnOrganizationFromAddress(): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
+      queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

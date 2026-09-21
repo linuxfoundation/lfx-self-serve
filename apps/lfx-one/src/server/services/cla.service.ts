@@ -160,23 +160,25 @@ const PREVIEW_RETURN_HOSTNAME = /^ui-pr-\d{1,10}\.dev\.v2\.cluster\.linuxfound\.
  * `path` selects where the signer lands: the contributor's own CLAs by default, or the Org Lens
  * EasyCLA page for the corporate hand-off (#1983). A parameter rather than a second function
  * because the host check above is the security-critical part, and it must exist exactly once.
- * Callers pass a shared path constant, never a request-derived value — with one exception: the
- * corporate hand-off appends the CLA Group id as a single path segment, and only when both of
- * these hold: `CLA_GROUP_ID_PATTERN` is enforced at the controller and throws rather than falling
- * through (`request_org_cla_corporate_signature`), and the segment is `encodeURIComponent`'d
- * (`org-cla.service.ts`). Host-check of the origin is independent of `path`; encoded slashes
+ * Callers pass a shared path constant, never a request-derived value — with exactly two
+ * exceptions, both in the corporate hand-off (`org-cla.service.ts`), and each admitted only
+ * because a pattern is enforced upstream that throws rather than falls through, and the value is
+ * then `encodeURIComponent`'d as a single segment: the CLA Group id (`CLA_GROUP_ID_PATTERN` at
+ * the controller, `request_org_cla_corporate_signature`), and — once the
+ * `ServerFeatureFlag.OrgEasyclaReturnInPath` rollout gate is on — the organization SFID
+ * (`assertOrgUid` / `ORG_ACCOUNT_ID_PATTERN` in `requireOrgLensAccess`, before the service runs;
+ * `orgEasyclaReturnPath`). Host-check of the origin is independent of `path`; encoded slashes
  * cannot move `.host`. A later caller putting a request-derived value in `path` without those
- * two conditions is not covered.
+ * two conditions is not covered, and this list is the place to name it.
  *
  * `query` is the usual place a request-derived value may enter, kept out of `path` so a value
  * cannot break out of the query string. The corporate hand-off names the organization it was
- * opened for — in the path once the `ServerFeatureFlag.OrgEasyclaReturnInPath` rollout gate is on (spec 050,
- * `orgEasyclaReturnPath`, an SFID the guard resolves on arrival), in `?org=` on the leftover address
- * until then — because the signer comes back through a cross-site navigation and the selected
- * organization survives only in a `SameSite=Lax` cookie. An address naming none leaves the page to
- * guess, and it guesses the first organization in the viewer's list. Written through
- * `searchParams`, so a value cannot append a path or a second origin to a URL that EasyCLA stores
- * and later redirects to verbatim.
+ * opened for — in the path once the gate above is on (spec 050, an SFID the path guard resolves
+ * on arrival), in `?org=` on the leftover address until then — because the signer comes back
+ * through a cross-site navigation and the selected organization survives only in a
+ * `SameSite=Lax` cookie. An address naming none leaves the page to guess, and it guesses the
+ * first organization in the viewer's list. Written through `searchParams`, so a value cannot
+ * append a path or a second origin to a URL that EasyCLA stores and later redirects to verbatim.
  */
 export function claReturnUrl(req: Request, path: string = MY_CLAS_PATH, query?: Readonly<Record<string, string>>): string {
   const host = req.get('host');

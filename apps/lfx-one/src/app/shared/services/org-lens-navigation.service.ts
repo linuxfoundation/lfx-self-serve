@@ -5,7 +5,7 @@ import { inject, Injectable } from '@angular/core';
 import { ActivatedRouteSnapshot, Router, UrlTree } from '@angular/router';
 import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
-  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+  ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_LENS_PAGE_SEGMENTS,
   ORG_NOT_FOUND_SEGMENTS,
   ORG_SEGMENT_PARAM,
@@ -13,9 +13,6 @@ import {
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
-
-/** Corporate-signing return parameters, nulled on a `merge` so the rest of the query survives a switch. */
-const EASYCLA_RETURN_PARAMS_RESET: Record<string, null> = { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null };
 
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
@@ -77,7 +74,7 @@ export class OrgLensNavigationService {
    * The query is preserved across the rewrite — a filter, a `?sig=` picker choice, a `utm_*` all
    * still describe the page — with one exception: leaving an EasyCLA address, on either mount,
    * drops the corporate-signing return parameters `?org=` and `?signed=`. Those describe a trip
-   * opened for one organization and never belong to another (see `EASYCLA_RETURN_PARAMS_RESET`).
+   * opened for one organization and never belong to another (`ORG_EASYCLA_RETURN_PARAMS_RESET`).
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -151,7 +148,7 @@ export class OrgLensNavigationService {
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
       preserveFragment: true,
-      ...(leavingEasycla ? { queryParamsHandling: 'merge', queryParams: EASYCLA_RETURN_PARAMS_RESET } : { queryParamsHandling: 'preserve' }),
+      ...(leavingEasycla ? { queryParamsHandling: 'merge', queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET } } : { queryParamsHandling: 'preserve' }),
     });
   }
 

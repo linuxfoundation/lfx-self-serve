@@ -326,6 +326,16 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
 
+/**
+ * The corporate-signing return parameters (`?org=`, `?signed=`) nulled for a `queryParamsHandling:
+ * 'merge'` navigation — the one shape every strip uses (the switch off an EasyCLA address, the
+ * wait's settle, the addressed-mount strip), so the set cannot drift between them.
+ */
+export const ORG_EASYCLA_RETURN_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
+  [ORG_EASYCLA_RETURN_ORG_PARAM]: null,
+  [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null,
+});
+
 /** The only value {@link ORG_EASYCLA_RETURN_SIGNED_PARAM} is written with; any other is ignored. */
 export const ORG_EASYCLA_RETURN_SIGNED_VALUE = '1';
 

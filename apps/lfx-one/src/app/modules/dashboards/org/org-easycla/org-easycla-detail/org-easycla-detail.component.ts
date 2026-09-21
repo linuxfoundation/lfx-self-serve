@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -28,6 +28,7 @@ import {
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   ORG_EASYCLA_SIGNATURE_PARAM,
@@ -1180,7 +1181,9 @@ export class OrgEasyclaDetailComponent {
     const addressed = this.orgLens.isOrgAddressed(this.route.snapshot);
     const named = addressed ? null : carried;
     if (!named && !this.awaitingSignedRow()) {
-      if (addressed && carried) this.settleReturn();
+      // Deferred past the first render: a follow-up navigation, not one issued from inside the
+      // activation it would otherwise supersede.
+      if (addressed && carried) afterNextRender(() => this.settleReturn(), { injector: this.injector });
       return;
     }
 
@@ -1357,7 +1360,7 @@ export class OrgEasyclaDetailComponent {
 
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null },
+      queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
