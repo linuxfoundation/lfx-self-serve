@@ -279,6 +279,8 @@ export class VotesDashboardComponent {
           return this.fetchVotePage(project.uid, rows, pageIndex, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
             tap(() => this.loading.set(false)),
             map((response: PaginatedResponse<Vote>) => response.data),
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale index rows.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => {
               this.loading.set(false);
               return of([]);

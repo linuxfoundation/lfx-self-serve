@@ -135,7 +135,11 @@ export class VoteController {
 
       const validatedCommentPrompts = this.validateCommentPrompts(voteData.poll_comment_prompts, validationContext);
 
-      const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts });
+      // ?open=true fuses create+open into one BFF operation (GH-2731) — the response carries the
+      // vote in its real status in all non-error paths; the frontend branches on vote.status.
+      const open = req.query['open'] === 'true';
+
+      const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts }, { open });
 
       logger.success(req, 'create_vote', startTime, {
         uid: vote.uid,

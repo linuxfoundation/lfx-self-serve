@@ -16,6 +16,7 @@ import {
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { PollStatus } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
 import {
   buildCreateVoteRequest,
@@ -378,6 +379,7 @@ export class VoteManageComponent {
                 detail: `${this.voteLabel.singular} opened successfully`,
               });
               this.submitting.set(false);
+              this.voteService.markVoteOpened(this.voteId()!);
               this.navigateBack();
             },
             error: (error) => {
@@ -402,30 +404,29 @@ export class VoteManageComponent {
       });
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
-      // Create the vote first, then enable it to open immediately
-      this.voteService.createVote(createRequest).subscribe({
+      // Create and open in one BFF operation (GH-2731): the response carries the vote in its real
+      // status — 'active' only when the inline enable succeeded.
+      this.voteService.createVote(createRequest, { open: true }).subscribe({
         next: (createdVote) => {
-          // After creating, enable the vote to open it
-          this.voteService.enableVote(createdVote.uid).subscribe({
-            next: () => {
-              this.messageService.add({
-                severity: 'success',
-                summary: 'Success',
-                detail: `${this.voteLabel.singular} opened successfully`,
-              });
-              this.submitting.set(false);
-              this.navigateBack();
-            },
-            error: (error) => {
-              this.messageService.add({
-                severity: 'error',
-                summary: 'Error',
-                detail: `${this.voteLabel.singular} created but failed to enable: ${error.message || 'Unknown error'}`,
-              });
-              this.submitting.set(false);
-              this.navigateBack();
-            },
+          if (createdVote.status === PollStatus.ACTIVE) {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: `${this.voteLabel.singular} opened successfully`,
+            });
+            this.submitting.set(false);
+            this.voteService.markVoteOpened(createdVote.uid);
+            this.navigateBack();
+            return;
+          }
+          // Partial failure — created but not opened: the draft is on the list; recoverable (AC-2).
+          this.messageService.add({
+            severity: 'warn',
+            summary: 'Warning',
+            detail: `${this.voteLabel.singular} created as a draft — open it from the list`,
           });
+          this.submitting.set(false);
+          this.navigateBack();
         },
         error: (error) => {
           this.messageService.add({
