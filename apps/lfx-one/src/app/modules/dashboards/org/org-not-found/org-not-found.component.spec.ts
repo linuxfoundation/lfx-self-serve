@@ -4,14 +4,16 @@
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
-import { OrgItem, OrgLensEmptyStateName, OrgLensLookupBlocker, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
+import { Account, OrgItem, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
+import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
+import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { OrgNotFoundComponent } from './org-not-found.component';
@@ -27,7 +29,8 @@ interface Harness {
   lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   orgLensEnabled: WritableSignal<boolean>;
-  retry: Mock<() => void>;
+  refresh: Mock<() => unknown>;
+  resetAndReload: Mock<(uid?: string | null) => void>;
   setAccount: Mock<() => void>;
   navigateToSelectedOrg: Mock<(intent: string) => void>;
 }
@@ -40,38 +43,67 @@ function setup(): Harness {
   const lookupOutcome = signal<OrgLensLookupOutcome>('ok');
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const orgLensEnabled = signal(true);
-  const retry: Mock<() => void> = vi.fn();
+  const refresh: Mock<() => unknown> = vi.fn(() => of(undefined));
+  const resetAndReload: Mock<(uid?: string | null) => void> = vi.fn();
   const setAccount: Mock<() => void> = vi.fn();
   const navigateToSelectedOrg: Mock<(intent: string) => void> = vi.fn();
+  const empty = new Set<string>();
 
-  // The real outage head (FR-016 rules 2–4), so the dead end is tested against the page's own rules.
-  const classifyLookup = (holdsAnything: boolean): OrgLensLookupBlocker | null => {
-    const outcome = lookupOutcome();
-    if (outcome === 'failed' || (outcome === 'partial' && !holdsAnything)) {
-      return 'could-not-load';
-    }
-    return staffCheck() === 'failed' ? 'staff-check-failed' : null;
-  };
-
+  // The REAL `OrgLensEmptyStateService` runs here, so the dead end is tested against the page's own
+  // outage head — a regression in `classifyLookup` fails these cells too.
   TestBed.configureTestingModule({
     providers: [
       provideRouter([]),
       MessageService,
+      OrgLensEmptyStateService,
       { provide: FeatureFlagService, useValue: { getBooleanFlag: () => orgLensEnabled } },
-      { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, upstreamFailed: listFailed } },
+      { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, upstreamFailed: listFailed, resetAndReload } },
       { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
-      { provide: OrgRoleGrantsService, useValue: { isStaff, lookupOutcome, staffCheck, correlationId: signal('ref-1') } },
-      { provide: OrgLensEmptyStateService, useValue: { settled: signal(true), classifyLookup, retry } },
+      {
+        provide: OrgRoleGrantsService,
+        useValue: {
+          loaded: signal(true),
+          isStaff,
+          lookupOutcome,
+          staffCheck,
+          correlationId: signal('ref-1'),
+          writerSet: signal(empty),
+          auditorSet: signal(empty),
+          inheritedWriterSet: signal(empty),
+          inheritedAuditorSet: signal(empty),
+          refresh,
+        },
+      },
+      { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       {
         provide: AccountContextService,
-        useValue: { hasOrgSelectorAccess: signal(true), setAccount, refreshCanonicalRecord: vi.fn(() => Promise.resolve()) },
+        useValue: {
+          selectedAccount: signal<Account>({ accountId: '', accountName: '', accountSlug: '', membershipTier: '', logoUrl: null, uid: '', slug: null }),
+          hasOrgSelectorAccess: signal(true),
+          getStoredUid: () => 'cookie-uid',
+          setAccount,
+          refreshCanonicalRecord: vi.fn(() => Promise.resolve()),
+        },
       },
     ],
   });
 
   const fixture = TestBed.createComponent(OrgNotFoundComponent);
   fixture.detectChanges();
-  return { fixture, items, listLoaded, listFailed, isStaff, lookupOutcome, staffCheck, orgLensEnabled, retry, setAccount, navigateToSelectedOrg };
+  return {
+    fixture,
+    items,
+    listLoaded,
+    listFailed,
+    isStaff,
+    lookupOutcome,
+    staffCheck,
+    orgLensEnabled,
+    refresh,
+    resetAndReload,
+    setAccount,
+    navigateToSelectedOrg,
+  };
 }
 
 function renderedState(h: Harness): string | null {
@@ -148,13 +180,14 @@ describe('OrgNotFoundComponent.state', () => {
     expect((h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-title"]')?.textContent?.trim()).toBe('Organization not found');
   });
 
-  it('retries through the shared Retry', () => {
+  it('retries through the shared Retry: role grants, then the already-fetched list pinned to the cookie selection', () => {
     h.lookupOutcome.set('failed');
     h.fixture.detectChanges();
 
     ((h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-retry"] button') as HTMLButtonElement).click();
 
-    expect(h.retry).toHaveBeenCalledTimes(1);
+    expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(h.resetAndReload).toHaveBeenCalledWith('cookie-uid');
   });
 
   it('picks a held organization through the switcher\u2019s own selection path', () => {
