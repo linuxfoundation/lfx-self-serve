@@ -10,6 +10,7 @@ import {
   formatFormationOwnerTeam,
   getFormationActivityDisplay,
   getFormationQueueStageDisplay,
+  isFormationItemExternal,
   isFormationLifecycleLive,
   normalizeFormationActivityAction,
   normalizeFormationItemAudience,
@@ -116,6 +117,20 @@ describe('normalizeFormationItemAudience (#2689)', () => {
   it('returns null for an off-taxonomy value', () => {
     expect(normalizeFormationItemAudience('manual')).toBeNull();
     expect(normalizeFormationItemAudience('constructor')).toBeNull();
+  });
+});
+
+describe('isFormationItemExternal (#2774)', () => {
+  it('is true for the two audiences that involve people outside the LF', () => {
+    expect(isFormationItemExternal('external')).toBe(true);
+    expect(isFormationItemExternal('both')).toBe(true);
+  });
+
+  // internal and "no audience" both hide the row's globe icon — neither is an external signal.
+  it('is false for internal, null and undefined', () => {
+    expect(isFormationItemExternal('internal')).toBe(false);
+    expect(isFormationItemExternal(null)).toBe(false);
+    expect(isFormationItemExternal(undefined)).toBe(false);
   });
 });
 

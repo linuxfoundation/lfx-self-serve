@@ -127,6 +127,8 @@ export const lfxFontSizes = {
 
 ```javascript
 // tailwind.config.js
+import containerQueries from '@tailwindcss/container-queries';
+import typography from '@tailwindcss/typography';
 import PrimeUI from 'tailwindcss-primeui';
 import { lfxColors } from '@lfx-one/shared/constants';
 import { lfxFontSizes } from '@lfx-one/shared/constants';
@@ -144,7 +146,7 @@ export default {
       },
     },
   },
-  plugins: [PrimeUI],
+  plugins: [PrimeUI, typography, containerQueries],
 };
 ```
 
@@ -160,6 +162,12 @@ The `tailwindcss-primeui` plugin provides:
 - Consistent spacing and sizing
 - Integrated design tokens
 - Responsive utilities
+
+### Container Queries
+
+`@tailwindcss/container-queries` adds `@container` (marks an element as the query container) and `@sm:` … `@7xl:` variants that respond to that container's width instead of the viewport's. Reach for them when the width that decides a layout is a panel's, not the page's — the formation checklist rows are the precedent: beside the nav rail and the page sidebar, a 1440px viewport leaves the checklist panel about 720px wide, so viewport breakpoints could not tell whether its columns fit. The section panel is the `@container`, and the rows switch from stacked (below `@2xl`, 42rem) to a compact grid to full aligned columns (from `@5xl`, 64rem). The grid templates live in `FORMATION_CHECKLIST_GRID_CLASSES` in `@lfx-one/shared` and are safelisted like every other shared class map.
+
+The variant sizes are rem-based, so they scale with the 14px root font size (`@5xl` is 64rem = 896px here).
 
 ## 🎨 Component Styling Guidelines
 

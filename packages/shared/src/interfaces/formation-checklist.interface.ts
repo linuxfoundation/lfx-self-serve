@@ -13,14 +13,16 @@ import type {
 } from './formation.interface';
 
 /**
- * The readiness strip's per-item segment bar and status tally — everything
- * `deriveFormationReadinessSummary` computes client-side from the raw item list.
- * `isActivating`/`openGatingItems`/`totalGatingItems` are not part of this shape: they come
- * straight from the server (`Formation.is_activating`/`gating_items_open`/`gating_items_total`),
- * so consumers read those off the formation directly instead of through this interface.
+ * A per-entry segment bar and status tally — everything `deriveFormationReadinessSummary`
+ * computes client-side from a list of status-bearing entries: the checklist's items for the
+ * readiness strip, or one item's `sub_items` for the row disclosure and
+ * `lfx-formation-sub-item-list` (#2774). `isActivating`/`openGatingItems`/`totalGatingItems` are
+ * not part of this shape: they come straight from the server
+ * (`Formation.is_activating`/`gating_items_open`/`gating_items_total`), so consumers read those off
+ * the formation directly instead of through this interface.
  */
 export interface FormationReadinessSummary {
-  /** One entry per checklist item, in template order — the literal per-item segment bar (not a 2-color fill/total bar). */
+  /** One entry per input entry, in the input list's order — the literal per-entry segment bar (not a 2-color fill/total bar). */
   segments: FormationItemStatus[];
   totalItems: number;
   counts: Record<FormationItemStatus, number>;
@@ -97,6 +99,15 @@ export interface FormationRowActionConfig {
  */
 export interface FormationLinkRowActionConfig {
   testidPrefix: string;
+}
+
+/**
+ * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape (#2774) — the FontAwesome class and Tailwind text
+ * color `lfx-formation-sub-item-list` leads each sub-item row with.
+ */
+export interface FormationItemStatusGlyph {
+  icon: string;
+  colorClass: string;
 }
 
 /**

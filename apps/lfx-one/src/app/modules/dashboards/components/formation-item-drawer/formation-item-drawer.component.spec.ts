@@ -165,6 +165,68 @@ describe('FormationItemDrawerComponent', () => {
     expect(query('[data-testid="formation-item-drawer-save"]')).not.toBeNull();
   });
 
+  // #2774: the header carries the same three facts the checklist row shows, and sub-items render
+  // through the shared lfx-formation-sub-item-list instead of an inline title + status-chip list.
+  describe('header meta line and sub-items (#2774)', () => {
+    it('spells out "Required for Active" behind the red asterisk for a gating item', async () => {
+      const item = buildItem({ is_gating: true });
+      await render(item, false);
+
+      const gating = query(`[data-testid="formation-item-drawer-gates-active-${item.uid}"]`);
+      expect(gating?.textContent).toContain('*');
+      expect(gating?.textContent).toContain('Required for Active');
+      expect(gating?.querySelector('lfx-tag')).toBeNull();
+    });
+
+    it('renders no gating text for a non-gating item', async () => {
+      const item = buildItem({ is_gating: false });
+      await render(item, false);
+
+      expect(query(`[data-testid="formation-item-drawer-gates-active-${item.uid}"]`)).toBeNull();
+    });
+
+    it('shows the humanized owner team and the full audience label with a globe for an external-involving audience', async () => {
+      const item = buildItem({ owner_team: 'brand_counsel', audience: 'both' });
+      await render(item, false);
+
+      expect(query(`[data-testid="formation-item-drawer-owner-team-${item.uid}"]`)?.textContent).toContain('Brand Counsel');
+      const audience = query(`[data-testid="formation-item-drawer-audience-${item.uid}"]`);
+      expect(audience?.textContent).toContain('Internal + External');
+      expect(audience?.querySelector('i.fa-globe')).not.toBeNull();
+    });
+
+    it('shows an internal audience as text without the globe', async () => {
+      const item = buildItem({ audience: 'internal' });
+      await render(item, false);
+
+      const audience = query(`[data-testid="formation-item-drawer-audience-${item.uid}"]`);
+      expect(audience?.textContent).toContain('Internal');
+      expect(audience?.querySelector('i.fa-globe')).toBeNull();
+    });
+
+    it('renders sub-items through the shared list with a done count and status glyphs, not status chips', async () => {
+      const item = buildItem({
+        sub_items: [
+          { uid: 'sub_a', title: 'Create workspace', status: 'done' },
+          { uid: 'sub_b', title: 'Configure channels', status: 'not_started' },
+        ],
+      });
+      await render(item, false);
+
+      const block = query('[data-testid="formation-item-drawer-sub-items"]');
+      expect(block?.textContent).toContain('1 of 2 done');
+      expect(block?.querySelectorAll('[data-testid^="formation-sub-item-row-"]').length).toBe(2);
+      expect(block?.querySelector('[data-testid="formation-sub-item-row-sub_a"] i.fa-circle-check')).not.toBeNull();
+      expect(block?.querySelector('lfx-tag')).toBeNull();
+    });
+
+    it('renders no sub-items block for an item without sub-items', async () => {
+      await render(buildItem({ sub_items: [] }), false);
+
+      expect(query('[data-testid="formation-item-drawer-sub-items"]')).toBeNull();
+    });
+  });
+
   // GH-2576 (Copilot review, PR #2596): Mark complete/Skip gate on `available_actions` via
   // canMarkDone()/canSkip() — cover each signal's positive and negative path so a dropped gate (or a
   // fixture silently defaulting to no actions) can't leave a disabled button looking correct.

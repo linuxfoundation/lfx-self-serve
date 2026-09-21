@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-2" data-testid="formation-sub-item-list">
+  @if (showSummary()) {
+    <div class="flex flex-col gap-1.5">
+      <span class="text-xs font-medium text-gray-500 uppercase tracking-wide" data-testid="formation-sub-item-list-summary"
+        >Sub-items · {{ summaryLabel() }}</span
+      >
+      <div class="flex gap-0.5 h-1.5" role="img" [attr.aria-label]="barLabel()" data-testid="formation-sub-item-list-bar">
+        @for (seg of indexedSegments(); track seg.id) {
+          <div class="flex-1 rounded-sm" [ngClass]="segmentColorClass[seg.status]"></div>
+        }
+      </div>
+    </div>
+  }
+  <!-- Display-only rows: #2775 puts a checkbox toggle at the head of each one. -->
+  <ul class="flex flex-col gap-1.5 m-0 p-0 list-none">
+    @for (row of rows(); track row.uid) {
+      <li class="flex items-center gap-2 text-sm" [attr.data-testid]="'formation-sub-item-row-' + row.uid">
+        <i class="{{ row.glyph.icon }} {{ row.glyph.colorClass }} shrink-0 w-4 text-center" aria-hidden="true"></i>
+        <!-- Titles are upstream-supplied and the list renders at drawer and inline-panel widths, so they wrap rather than truncate. -->
+        <span class="flex-1 min-w-0 text-gray-700">{{ row.title }}</span>
+        <span class="shrink-0 text-xs text-gray-500">{{ row.statusLabel }}</span>
+      </li>
+    }
+  </ul>
+</div>

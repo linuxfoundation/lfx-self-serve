@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser, Location } from '@angular/common';
+import { isPlatformBrowser, Location, NgClass } from '@angular/common';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -9,7 +9,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import { FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
+import { FORMATION_CHECKLIST_GRID_CLASSES, FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -38,6 +38,7 @@ import { FormationReadinessStripComponent } from '../formation-readiness-strip/f
   // ReasonPromptDialogComponent is deliberately not here — it's opened dynamically via
   // DialogService.open(), never referenced in this component's own template.
   imports: [
+    NgClass,
     SkeletonModule,
     EmptyStateComponent,
     MessageComponent,
@@ -68,6 +69,9 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /** The full-tier grid template (#2774) — the same one `lfx-formation-checklist-row` binds, so the header captions sit over the columns they label. */
+  protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
 
   /**
    * The checklist response this component just fetched, so a host can render alongside it without
