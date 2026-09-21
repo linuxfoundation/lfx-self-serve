@@ -258,6 +258,22 @@ describe('stripResourceLoadingHtml', () => {
     expect(stripResourceLoadingHtml(input)).toBe(input);
   });
 
+  // A SPLICED tag: removing the inner `<img>` leaves `g src="…">` behind as text. That residue
+  // is inert -- it cannot reopen a tag -- but copying it verbatim showed raw attribute markup in
+  // the preview, so text nodes are escaped rather than passed through.
+  it.each([
+    ['a spliced img', '<im<img>g src="https://evil.test/x">t'],
+    ['a spliced script', '<scr<script>ipt>evil()</script>t'],
+    ['a > inside an attribute value', '<img src="a>b" onerror=x>t'],
+  ])('leaves no live markup from %s', (_label, input) => {
+    const out = stripResourceLoadingHtml(input);
+    expect(out).not.toMatch(/<(img|image|script|iframe)\b/i);
+    // The residue is ESCAPED, not merely tag-free. Asserting only "no `<`" was vacuous: the
+    // residue of a spliced tag (`g src="…">t`) contains none either way, so the assertion
+    // passed with the escaping removed. The quote and `>` are what actually change.
+    expect(out).not.toMatch(/["'<>]/);
+  });
+
   it('keeps the TEXT of a disallowed tag, but drops code content', () => {
     expect(stripResourceLoadingHtml('<marquee>keep this</marquee>')).toBe('keep this');
     expect(stripResourceLoadingHtml('<p>a</p><script>evil()</script><p>b</p>')).toBe('<p>a</p><p>b</p>');

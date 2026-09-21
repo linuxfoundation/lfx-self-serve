@@ -330,10 +330,14 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
   while (index < html.length) {
     const lt = html.indexOf('<', index);
     if (lt === -1) {
-      if (skipDepth === 0) out += html.slice(index);
+      if (skipDepth === 0) out += escapeHtml(html.slice(index));
       break;
     }
-    if (skipDepth === 0) out += html.slice(index, lt);
+    // Text between tags is ESCAPED, not copied. A spliced tag such as `<im<img>g src="…">`
+    // leaves `g src="…">` as text once the inner tag is removed, and copying it verbatim put
+    // raw attribute text into the preview -- inert, but it is markup residue the reader sees.
+    // Escaping makes the output's text nodes structurally unable to reopen a tag.
+    if (skipDepth === 0) out += escapeHtml(html.slice(index, lt));
 
     const gt = html.indexOf('>', lt);
     if (gt === -1) break;
