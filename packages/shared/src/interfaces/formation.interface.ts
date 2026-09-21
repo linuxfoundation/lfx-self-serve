@@ -809,12 +809,14 @@ export interface MyFormationItemRow {
 }
 
 /**
- * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
- * with at least one item assigned to me — the direct-grant definition in the issue body is not
- * satisfiable, see the ticket's third comment). Built server-side from the same `type=formation_item`
- * index read that produces {@link MyFormationItemRow} — one row per `formation_uid` the caller has
- * an assigned item on, joined against the matching assignee-tagged {@link FormationQueueRow} for the
- * whole-formation aggregates (`getMyFormationWork`, `formation.service.ts`).
+ * One live formation the caller holds a direct project grant on (a formation invite — GH-1956's
+ * original "My formations" definition, satisfied via the query service's `filter_grants=direct`,
+ * #2795) or has at least one assigned item on. Built server-side by `getMyFormationWork`
+ * (`formation.service.ts`): the caller's direct-grant Formation-stage projects plus the
+ * `type=formation_item` index read that produces {@link MyFormationItemRow}, joined against the
+ * {@link FormationQueueRow} aggregates of that assigned-or-invited set. An invited-only row carries
+ * all-zero `assigned_*` buckets — there is deliberately no "invited" flag or label, since the grant
+ * alone can't say more than that truthfully (see the ticket's third comment).
  */
 export interface MyFormationSummary {
   formation_uid: string;
@@ -863,12 +865,17 @@ export interface MyFormationSummary {
 /**
  * Distinguishes why `getMyFormationWork`'s response looks the way it does (GH-1956) — mirrors
  * {@link FormationActivityHistoryState}'s pattern: a genuinely-empty result must never look like a
- * failed one. `'complete'`: both the item-assignment query and the formation-aggregate query
- * succeeded — `formations`/`items` may still be empty, meaning the caller has nothing assigned.
- * `'partial'`: the item query succeeded (so `items` is trustworthy) but the formation-aggregate
- * query failed, or was missing a row for at least one formation the caller has an assigned item on
- * — such a formation is dropped from `formations` rather than fabricated. `'unavailable'`: the item
- * query itself failed — nothing in this response can be trusted, and both arrays are forced empty.
+ * failed one. Three upstream reads feed the response: the item-assignment query, the direct-grant
+ * project read that defines the invited set (#2795), and the formation-aggregate read(s).
+ * `'complete'`: all three succeeded — `formations`/`items` may still be empty, meaning the caller
+ * has nothing assigned and no formation invite. `'partial'`: the item query succeeded (so `items`
+ * is trustworthy) but at least one of the other two did not — the direct-grant read failed (so
+ * invited-but-unassigned formations may be missing entirely, including when `formations` is
+ * empty), or an aggregate batch failed, or an aggregate row was missing for a formation the caller
+ * has an assigned item on (such a formation is dropped from `formations` rather than fabricated).
+ * A consumer must therefore treat an empty `'partial'` as "retry", never as "nothing here".
+ * `'unavailable'`: the item query itself failed — nothing in this response can be trusted, and both
+ * arrays are forced empty.
  */
 export type MyFormationWorkState = 'complete' | 'partial' | 'unavailable';
 

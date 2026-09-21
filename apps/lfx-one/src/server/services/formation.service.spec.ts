@@ -29,6 +29,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const getProjectSettings = vi.fn();
+const getDirectGrantProjectRows = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -39,6 +40,7 @@ vi.mock('./project.service', () => ({
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectSettings = getProjectSettings;
+    public getDirectGrantProjectRows = getDirectGrantProjectRows;
   },
 }));
 // Backs `checkFormationTeamMembership` (GH-2705) — the `team:formation#member` half of
@@ -207,6 +209,9 @@ describe('FormationService', () => {
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
+    // Default: the caller holds no direct project grant (#2795) — the invited-formation tests opt in.
+    getDirectGrantProjectRows.mockReset();
+    getDirectGrantProjectRows.mockResolvedValue([]);
   });
 
   describe('getFormationPeople (#2724)', () => {
@@ -2048,10 +2053,185 @@ describe('FormationService', () => {
       const itemCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation_item');
       const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');
       expect(itemCall?.[4]).toMatchObject({ type: 'formation_item', tags_all: ['assignee:alice', 'lifecycle:live'] });
-      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags_all: ['assignee:alice', 'lifecycle:live'] });
+      // No direct-grant formation project (the beforeEach default), so the OR'd `tags` is the
+      // assignee tag alone (#2795).
+      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags: ['assignee:alice'], tags_all: ['lifecycle:live'] });
     });
 
-    it('returns a complete empty result and skips the formation-aggregate query entirely when the caller has no assigned live items', async () => {
+    it('lists a formation the caller holds a direct project grant on even with nothing assigned — a view-only invite is enough (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([], [formationIndexRow({ assignees: [], progress: { not_started: 17 } })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.items).toEqual([]);
+      expect(result.formations).toHaveLength(1);
+      expect(result.formations[0]).toMatchObject({
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        assigned_to_do: 0,
+        assigned_done: 0,
+        assigned_skipped: 0,
+        items_done: 0,
+        items_total: 17,
+      });
+      // The grant set is the invite membership itself, so a silently-partial page set would drop
+      // invited formations under a `'complete'` state — the read must fail into the degrade path.
+      expect(getDirectGrantProjectRows).toHaveBeenCalledWith(expect.anything(), { failOnPartial: true });
+      // One aggregate read for "assigned OR invited": the assignee tag and one project_uid tag per
+      // direct-grant formation project OR'd via `tags`, lifecycle AND'd via `tags_all`.
+      const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');
+      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags: ['assignee:alice', 'project_uid:live-project-1'], tags_all: ['lifecycle:live'] });
+      // No open items, so no can_write fan-out.
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('chunks the project_uid tags across aggregate reads so a caller granted on many formations never overflows the request line (#2795)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      // Every aggregate read returns both rows, so the join must also dedupe across batches.
+      mockQueryResources(
+        [],
+        [
+          formationIndexRow({ formation_uid: 'formation:formation-project-0', project_uid: 'formation-project-0' }),
+          formationIndexRow({ formation_uid: 'formation:formation-project-149', project_uid: 'formation-project-149' }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      const formationCalls = proxyRequest.mock.calls
+        .filter((c) => (c[4] as { type: string }).type === 'formation')
+        .map((c) => c[4] as { tags: string[]; tags_all: string[] });
+      expect(formationCalls).toHaveLength(2);
+      expect(formationCalls[0].tags).toHaveLength(101);
+      expect(formationCalls[0].tags[0]).toBe('assignee:alice');
+      expect(formationCalls[0].tags[1]).toBe('project_uid:formation-project-0');
+      expect(formationCalls[1].tags).toHaveLength(50);
+      expect(formationCalls[1].tags).not.toContain('assignee:alice');
+      expect(formationCalls[1].tags[49]).toBe('project_uid:formation-project-149');
+      expect(formationCalls.every((call) => call.tags_all.join() === 'lifecycle:live')).toBe(true);
+      expect(result.state).toBe('complete');
+      expect(result.formations.map((f) => f.formation_uid).sort()).toEqual(['formation:formation-project-0', 'formation:formation-project-149']);
+    });
+
+    it('keeps the aggregate rows from batches that succeeded and reports partial when one batch fails (PR #2799 review)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string; tags?: string[] };
+        if (params.type === 'formation_item') {
+          const item = itemIndexRow({ object_id: 'item-1' });
+          return Promise.resolve({ resources: [{ type: 'formation_item', id: item.object_id, data: item }] });
+        }
+        // The second batch (tags 101..150) fails; the first, which also carries the assignee tag, succeeds.
+        if (params.tags?.includes('project_uid:formation-project-149')) {
+          return Promise.reject(new Error('batch failed'));
+        }
+        const row = formationIndexRow();
+        return Promise.resolve({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] });
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('formations will be incomplete'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('folds an assigned formation the caller is also invited to into one row, with its buckets (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'done' })], [formationIndexRow({ progress: { done: 1, not_started: 2 } })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.formations).toHaveLength(1);
+      expect(result.formations[0]).toMatchObject({
+        formation_uid: 'formation:live-project-1',
+        assigned_done: 1,
+        assigned_to_do: 0,
+        items_done: 1,
+        items_total: 3,
+      });
+    });
+
+    it('ignores a direct grant on a project that is not in a Formation stage (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([
+        { uid: 'active-project', slug: 'active-project', stage: 'Active' },
+        { uid: 'prospect-project', slug: 'prospect-project', stage: 'Prospect' },
+      ]);
+      mockQueryResources([], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('skips an aggregate row that still carries the caller as an assignee but has no live item of theirs and no grant (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources(
+        [],
+        [
+          formationIndexRow(),
+          formationIndexRow({ formation_uid: 'formation:stale-project', project_uid: 'stale-project-1', project_slug: 'stale-project', assignees: ['alice'] }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+    });
+
+    it('reports partial, with the assigned formations intact, when the direct-grant read fails (#2795)', async () => {
+      getDirectGrantProjectRows.mockRejectedValue(new Error('read_tuples timed out'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('Direct-grant project read failed'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('reports partial rather than a false "nothing here" when the direct-grant read fails and nothing is assigned (#2795)', async () => {
+      getDirectGrantProjectRows.mockRejectedValue(new Error('read_tuples timed out'));
+      mockQueryResources([], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'partial' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('never issues the direct-grant read or the aggregate query on the items-only path (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice', { includeFormations: false });
+
+      expect(result.formations).toEqual([]);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(getDirectGrantProjectRows).not.toHaveBeenCalled();
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('returns a complete empty result and skips the formation-aggregate query entirely when the caller has no assigned live items and no direct-grant formation project', async () => {
       mockQueryResources([], []);
 
       const result = await service.getMyFormationWork(buildReq(), 'alice');

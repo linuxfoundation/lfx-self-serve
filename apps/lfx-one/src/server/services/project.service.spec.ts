@@ -261,6 +261,62 @@ describe('ProjectService — create picker methods', () => {
     service = new ProjectService();
   });
 
+  describe('getDirectGrantProjectRows', () => {
+    it('returns every direct-grant project row without an access check, so a view-only (auditor) grant survives', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a', stage: 'Formation - Engaged' },
+          { uid: 'b', slug: 'b', stage: 'Active' },
+        ])
+      );
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      // page_size 100, not the query service's default 50: this read is on the My Formations
+      // render path now, and pagination is sequential (PR #2799 review).
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
+      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('excludes the ROOT pseudo-project and follows page tokens to the end', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf(
+          [
+            { uid: 'root', slug: 'root' },
+            { uid: 'a', slug: 'a' },
+          ],
+          'next'
+        )
+      );
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_token: 'next' });
+    });
+
+    it('throws when a later page fails and the caller asked for failOnPartial (a silent prefix would misstate the grant set)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getDirectGrantProjectRows(req, { failOnPartial: true })).rejects.toThrow('page-fail');
+    });
+
+    it('returns the pages it got by default when a later page fails (the create picker tolerates a prefix)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a']);
+    });
+  });
+
   describe('getDirectGrantProjects', () => {
     it('queries filter_grants=direct and returns only writer-permitted projects', async () => {
       proxyRequest.mockResolvedValueOnce(

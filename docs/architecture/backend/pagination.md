@@ -9,17 +9,18 @@ The application uses cursor-based pagination (via `page_token`) rather than offs
 
 ## Query Service API Parameters
 
-| Parameter    | Type       | Description                                                                                |
-| ------------ | ---------- | ------------------------------------------------------------------------------------------ |
-| `page_token` | `string`   | Opaque cursor from a previous response. Omit for the first page.                           |
-| `page_size`  | `number`   | Items per page (default: 50, range: 1–1000)                                                |
-| `name`       | `string`   | Typeahead search (multi_match with bool_prefix); the last term matches as a prefix         |
-| `filters`    | `string[]` | Field filtering (`field:value`, auto-prefixed with `data.`)                                |
-| `tags`       | `string`   | Exact tag matching                                                                         |
-| `tags_all`   | `string`   | Multiple tag matching (AND logic)                                                          |
-| `type`       | `string`   | Resource type filter                                                                       |
-| `parent`     | `string`   | Parent resource filter                                                                     |
-| `sort`       | `string`   | Sort order: `name_asc` (default), `name_desc`, `updated_asc`, `updated_desc`, `best_match` |
+| Parameter       | Type       | Description                                                                                                                                                                                                                       |
+| --------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `page_token`    | `string`   | Opaque cursor from a previous response. Omit for the first page.                                                                                                                                                                  |
+| `page_size`     | `number`   | Items per page (default: 50, range: 1–1000)                                                                                                                                                                                       |
+| `name`          | `string`   | Typeahead search (multi_match with bool_prefix); the last term matches as a prefix                                                                                                                                                |
+| `filters`       | `string[]` | Field filtering (`field:value`, auto-prefixed with `data.`)                                                                                                                                                                       |
+| `tags`          | `string[]` | Exact tag matching, OR logic (any tag matches); combinable with `tags_all` in one request                                                                                                                                         |
+| `tags_all`      | `string[]` | Exact tag matching, AND logic (every tag must match)                                                                                                                                                                              |
+| `type`          | `string`   | Resource type filter                                                                                                                                                                                                              |
+| `parent`        | `string`   | Parent resource filter                                                                                                                                                                                                            |
+| `filter_grants` | `string`   | `direct` narrows to resources the caller holds a direct OpenFGA `user:` tuple on (no team usersets, no parent inheritance); requires `type`, and only for types that are FGA objects themselves (e.g. `project`, not `formation`) |
+| `sort`          | `string`   | Sort order: `name_asc` (default), `name_desc`, `updated_asc`, `updated_desc`, `best_match`                                                                                                                                        |
 
 > **Note**: Use `page_size` (not `limit`) for consistency with the query service API.
 
