@@ -393,6 +393,10 @@ describe('FormationChecklistSectionComponent', () => {
       const fetchResult = opts.fetchResult ?? of(response);
       const contextSignal = signal({ uid: 'project:test', name: 'Test Project', slug: 'test-project' });
       const formationMock = vi.fn().mockReturnValue(fetchResult);
+      // Captured so callers can assert the drawer actually attempted the fetch with the right
+      // project uid and item key — the regression being tested is that these inputs are non-null
+      // when openTrigger$ fires (afterNextRender guarantees this).
+      const getFormationItemSpy = vi.fn().mockReturnValue(new Subject());
 
       await TestBed.configureTestingModule({
         imports: [FormationChecklistSectionComponent],
@@ -406,7 +410,7 @@ describe('FormationChecklistSectionComponent', () => {
             useValue: {
               getProjectFormation: formationMock,
               getQueueFormationChecklist: formationMock,
-              getFormationItem: vi.fn().mockReturnValue(new Subject()),
+              getFormationItem: getFormationItemSpy,
               getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())),
             },
           },
@@ -425,16 +429,25 @@ describe('FormationChecklistSectionComponent', () => {
       f.detectChanges();
       await f.whenStable();
       f.detectChanges();
+      // afterNextRender defers drawerVisible.set(true) to the next render cycle so that
+      // [itemProjectUid]/[itemKey] inputs are fully propagated before openTrigger$ fires.
+      // One extra detectChanges runs that post-render hook and propagates the visible change.
+      await f.whenStable();
+      f.detectChanges();
 
-      return { fixture: f, replaceStateSpy, formationMock };
+      return { fixture: f, replaceStateSpy, formationMock, getFormationItemSpy };
     }
 
     it('opens the matching item drawer and clears ?item= from the URL', async () => {
-      const { fixture, replaceStateSpy } = await renderWithItem('test-item');
+      const { fixture, replaceStateSpy, getFormationItemSpy } = await renderWithItem('test-item');
 
       expect(fixture.componentInstance.drawerVisible()).toBe(true);
       expect(fixture.componentInstance.drawerItemAddress()).toEqual({ projectUid: 'project:test', itemKey: 'test-item' });
       expect(replaceStateSpy).toHaveBeenCalledOnce();
+      // Regression guard for GH-2573: the drawer must call getFormationItem with the correct
+      // inputs. If afterNextRender is removed and drawerVisible fires before the inputs propagate,
+      // the drawer short-circuits with null values and getFormationItem is never called.
+      expect(getFormationItemSpy).toHaveBeenCalledWith('project:test', 'test-item');
     });
 
     it('clears ?item= without opening a drawer when the key matches no item', async () => {
@@ -472,7 +485,7 @@ describe('FormationChecklistSectionComponent', () => {
     it('opens the drawer and clears ?item= after an in-page retry succeeds', async () => {
       const response = buildResponse('live', 'live');
       // First call errors; second call (after onRetry) succeeds.
-      const { fixture, replaceStateSpy, formationMock } = await renderWithItem('test-item', {
+      const { fixture, replaceStateSpy, formationMock, getFormationItemSpy } = await renderWithItem('test-item', {
         fetchResult: throwError(() => new Error('network error')),
       });
 
@@ -485,9 +498,14 @@ describe('FormationChecklistSectionComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
+      // Same afterNextRender cycle needed as in renderWithItem.
+      await fixture.whenStable();
+      fixture.detectChanges();
 
       expect(fixture.componentInstance.drawerVisible()).toBe(true);
       expect(replaceStateSpy).toHaveBeenCalledOnce();
+      // Same regression guard as the direct open case.
+      expect(getFormationItemSpy).toHaveBeenCalledWith('project:test', 'test-item');
     });
 
     it('does not open a drawer or clear ?item= when running on the server (SSR guard)', async () => {
