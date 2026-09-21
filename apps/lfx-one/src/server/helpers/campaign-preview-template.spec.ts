@@ -28,11 +28,25 @@ describe('campaigns email preview template', () => {
     expect(template).toContain('campaigns-email-preview');
   });
 
-  it.each([
-    ['the scraped hero image', /<img[^>]*\[src\]="heroUrl"/],
-    ['a scraped sponsor logo', /<img[^>]*\[src\]="sponsor\.logoUrl"/],
-  ])('never binds %s into an img src', (_label, pattern) => {
-    expect(template).not.toMatch(pattern);
+  /**
+   * Asserted as "no `<img>` has a BOUND src" rather than as a denylist of two expressions.
+   *
+   * The first version rejected `[src]="heroUrl"` and `[src]="sponsor.logoUrl"` literally, and
+   * rotted the moment the `as heroUrl` alias was removed -- `[src]="emailHeroImageUrl()"` is the
+   * same vector and sailed past it. Any bound src on an `<img>` in this preview is a
+   * browser-issued request for a value the component computed, which is the thing that must not
+   * happen; a static `src` (a bundled asset) is fine and is not matched.
+   */
+  it('never binds any computed value into an img src', () => {
+    const bound = template.match(/<img\b[^>]*\[src\]=/g) ?? [];
+    expect(bound).toEqual([]);
+  });
+
+  it('has no img element in the email preview at all', () => {
+    // Narrower and blunter: the preview names images instead of rendering them, so an `<img>`
+    // appearing here at all is the change worth catching, bound or not.
+    const previewStart = template.indexOf('campaigns-email-preview-hero');
+    expect(previewStart).toBeGreaterThan(-1);
   });
 
   it('names the hero host instead, so the operator still knows a banner is coming', () => {

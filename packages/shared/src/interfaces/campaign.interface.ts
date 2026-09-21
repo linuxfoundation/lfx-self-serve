@@ -754,14 +754,15 @@ export interface BuildAudienceResult {
  *
  * NOT the upstream type. campaign-service returns an ordered `sections` array (rich_text /
  * button / divider), and `CampaignServiceClient.generateEmailCopy` flattens it into the
- * `body` / `cta` / `ctaUrl` fields here. An earlier version of this comment described the BFF
- * as a thin proxy mirroring upstream exactly, which the adapter made false.
+ * `body` / `cta` / `ctaUrl` fields here.
  *
- * The adaptation is deliberate rather than incidental: the UI renders `body` through a single
- * `[innerHTML]` binding and the CTA as its own control, so the flat shape is what the template
- * needs. It is also lossy in one known way — only the FIRST button survives, while the
- * `urgency-fomo` prompt may return up to three — tracked as a follow-up, because unflattening
- * it is a contract change on both sides of the pair.
+ * The adaptation is deliberate: the UI renders `body` through a single `[innerHTML]` binding
+ * and the CTA as its own control, so the flat shape is what the template needs.
+ *
+ * It is LOSSY, and precisely so: `body` keeps every `rich_text` section and every `divider`,
+ * while `cta`/`ctaUrl` take the FIRST `button` section only. A second or later button is
+ * dropped entirely — not reordered, not merged. Preserving them is a contract change on both
+ * sides of the pair, so it is tracked as a follow-up rather than done here.
  *
  * `body` is therefore assembled HERE, not generated upstream as one string.
  */
