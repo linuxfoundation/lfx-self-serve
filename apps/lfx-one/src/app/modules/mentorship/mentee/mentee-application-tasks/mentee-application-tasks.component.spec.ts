@@ -55,7 +55,7 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('renders application cards with prerequisite tasks', async () => {
     await bootstrap('applicant');
-    const cards = element().querySelectorAll('[data-testid="mentee-tasks-application-card"]');
+    const cards = element().querySelectorAll('[data-testid^="mentee-tasks-application-card-"]');
     expect(cards.length).toBe(3);
     const text = element().textContent ?? '';
     expect(text).toContain('Apicurio Registry');
@@ -64,7 +64,7 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('renders task rows inside each application card', async () => {
     await bootstrap('applicant');
-    const taskRows = element().querySelectorAll('[data-testid="mentee-tasks-task-row"]');
+    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
     expect(taskRows.length).toBeGreaterThanOrEqual(3);
   });
 
@@ -84,14 +84,22 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('shows upload button for tasks needing upload', async () => {
     await bootstrap('applicant');
-    const uploadBtns = element().querySelectorAll('[data-testid="mentee-tasks-upload"]');
+    const uploadBtns = element().querySelectorAll('[data-testid^="mentee-tasks-upload-"]');
     expect(uploadBtns.length).toBeGreaterThan(0);
   });
 
   it('shows view/download icons for uploaded files', async () => {
     await bootstrap('applicant');
-    const viewBtns = element().querySelectorAll('[data-testid="mentee-tasks-view-file"]');
+    const viewBtns = element().querySelectorAll('[data-testid^="mentee-tasks-view-file-"]');
     expect(viewBtns.length).toBeGreaterThan(0);
+  });
+
+  it('adds aria-label on icon-only file buttons', async () => {
+    await bootstrap('applicant');
+    const viewBtn = element().querySelector('[data-testid^="mentee-tasks-view-file-"]');
+    expect(viewBtn?.getAttribute('aria-label')).toContain('View submission for');
+    const downloadBtn = element().querySelector('[data-testid^="mentee-tasks-download-file-"]');
+    expect(downloadBtn?.getAttribute('aria-label')).toContain('Download submission for');
   });
 
   it('fires Coming Soon toast on status change', async () => {
@@ -131,6 +139,16 @@ describe('MenteeApplicationTasksComponent', () => {
     expect(component['applicantError']()).toBeTruthy();
   });
 
+  it('retries applicant data on retry click', async () => {
+    await bootstrap('applicant');
+    const callsBefore = getMenteeOverview.mock.calls.length;
+    component['retryApplicant']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(getMenteeOverview.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
   // ---- Accepted phase -------------------------------------------------------
 
   it('renders task list with filter chips', async () => {
@@ -138,6 +156,14 @@ describe('MenteeApplicationTasksComponent', () => {
     const chips = element().querySelectorAll('[data-testid="mentee-tasks-filter-chips"] button');
     expect(chips.length).toBe(4);
     expect(chips[0].textContent?.trim()).toBe('All');
+  });
+
+  it('adds aria-pressed on filter chips', async () => {
+    await bootstrap('accepted');
+    const allChip = element().querySelector('[data-testid="mentee-tasks-filter-all"]');
+    expect(allChip?.getAttribute('aria-pressed')).toBe('true');
+    const submittedChip = element().querySelector('[data-testid="mentee-tasks-filter-submitted"]');
+    expect(submittedChip?.getAttribute('aria-pressed')).toBe('false');
   });
 
   it('shows submitted summary count', async () => {
@@ -149,7 +175,7 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('renders task rows for accepted phase', async () => {
     await bootstrap('accepted');
-    const taskRows = element().querySelectorAll('[data-testid="mentee-tasks-task-row"]');
+    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
     expect(taskRows.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
   });
 
@@ -159,8 +185,19 @@ describe('MenteeApplicationTasksComponent', () => {
     component['onFilterChange']('submitted');
     fixture.detectChanges();
 
-    const taskRows = element().querySelectorAll('[data-testid="mentee-tasks-task-row"]');
+    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
     expect(taskRows.length).toBeLessThan(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+  });
+
+  it('submitted filter includes complete status tasks', async () => {
+    await bootstrap('accepted');
+
+    component['onFilterChange']('submitted');
+    fixture.detectChanges();
+
+    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
+    const completeTasks = MOCK_MENTORSHIP_MENTEE_TASKS.data.filter((t) => t.status === 'submitted' || t.status === 'complete');
+    expect(taskRows.length).toBe(completeTasks.length);
   });
 
   it('shows all tasks when "All" filter is selected', async () => {
@@ -171,7 +208,7 @@ describe('MenteeApplicationTasksComponent', () => {
     component['onFilterChange'](null);
     fixture.detectChanges();
 
-    const taskRows = element().querySelectorAll('[data-testid="mentee-tasks-task-row"]');
+    const taskRows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
     expect(taskRows.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
   });
 
@@ -183,8 +220,18 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('shows upload button for accepted tasks needing upload', async () => {
     await bootstrap('accepted');
-    const uploadBtns = element().querySelectorAll('[data-testid="mentee-tasks-upload"]');
+    const uploadBtns = element().querySelectorAll('[data-testid^="mentee-tasks-upload-"]');
     expect(uploadBtns.length).toBeGreaterThan(0);
+  });
+
+  it('retries accepted data on retry click', async () => {
+    await bootstrap('accepted');
+    const callsBefore = getMenteeTasks.mock.calls.length;
+    component['retryAccepted']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    expect(getMenteeTasks.mock.calls.length).toBeGreaterThan(callsBefore);
   });
 
   // ---- Empty phase ----------------------------------------------------------

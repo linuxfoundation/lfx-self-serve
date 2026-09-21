@@ -26,7 +26,7 @@
             <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Application {{ idx + 1 }} of {{ data.applications.length }}</p>
 
             <!-- Application card -->
-            <div class="rounded-xl border border-gray-200 bg-white" data-testid="mentee-tasks-application-card">
+            <div class="rounded-xl border border-gray-200 bg-white" [attr.data-testid]="'mentee-tasks-application-card-' + app.id">
               <!-- Card header -->
               <div class="flex flex-col gap-1 border-b border-gray-100 px-6 py-4 bg-gray-50">
                 <div class="flex items-center gap-3">
@@ -49,7 +49,7 @@
                 <hr class="mb-3 border-gray-100" />
                 <div class="flex flex-col divide-y divide-gray-100">
                   @for (task of app.tasks; track task.id) {
-                    <div class="flex flex-col gap-3 py-3 md:flex-row md:items-center md:gap-4" data-testid="mentee-tasks-task-row">
+                    <div class="flex flex-col gap-3 py-3 md:flex-row md:items-center md:gap-4" [attr.data-testid]="'mentee-tasks-task-row-' + task.id">
                       <!-- Check icon -->
                       <div class="flex items-center gap-3">
                         @if (isTaskSubmitted(task.status)) {
@@ -70,25 +70,30 @@
                       <!-- File actions -->
                       <div class="flex items-center gap-2">
                         @if (hasUploadedFile(task)) {
-                          <button
-                            type="button"
-                            class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                            data-testid="mentee-tasks-view-file"
-                            (click)="onViewFile(task.fileUrl!)">
-                            <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
-                          </button>
-                          <button
-                            type="button"
-                            class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                            data-testid="mentee-tasks-download-file"
-                            (click)="onDownloadFile(task.fileUrl!)">
-                            <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
-                          </button>
+                          @if (task.fileUrl; as fileUrl) {
+                            <button
+                              type="button"
+                              class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                              [attr.data-testid]="'mentee-tasks-view-file-' + task.id"
+                              [attr.aria-label]="'View submission for ' + task.name"
+                              (click)="onViewFile(fileUrl)">
+                              <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+                            </button>
+                            <button
+                              type="button"
+                              class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                              [attr.data-testid]="'mentee-tasks-download-file-' + task.id"
+                              [attr.aria-label]="'Download submission for ' + task.name"
+                              (click)="onDownloadFile(fileUrl)">
+                              <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+                            </button>
+                          }
                         } @else if (needsUpload(task)) {
                           <button
                             type="button"
                             class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                            data-testid="mentee-tasks-upload"
+                            [attr.data-testid]="'mentee-tasks-upload-' + task.id"
+                            [attr.aria-label]="'Upload submission for ' + task.name"
                             (click)="onUpload(task.id)">
                             <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
                             Upload
@@ -107,14 +112,14 @@
                           size="small"
                           variant="filled"
                           [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
-                          [dataTest]="'mentee-tasks-status-dropdown'"
+                          [dataTest]="'mentee-tasks-status-dropdown-' + task.id"
                           (onChange)="onStatusChange(task.id)" />
                       </div>
 
                       <!-- Date -->
                       <div class="shrink-0 text-right text-xs text-gray-500" style="min-width: 90px">
                         @if (isTaskSubmitted(task.status) && task.submittedOn) {
-                          Submitted {{ task.submittedOn | date: 'MMM d, yyyy' }}
+                          Submitted {{ task.submittedOn }}
                         } @else {
                           Due {{ task.dueDate | date: 'MMM d, yyyy' : 'UTC' }}
                         }
@@ -159,6 +164,8 @@
               [ngClass]="
                 activeFilter() === opt.value ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
               "
+              [attr.aria-pressed]="activeFilter() === opt.value"
+              [attr.data-testid]="'mentee-tasks-filter-' + (opt.value ?? 'all')"
               (click)="onFilterChange(opt.value)">
               {{ opt.label }}
             </button>
@@ -175,7 +182,7 @@
       <div class="rounded-xl border border-gray-200 bg-white">
         <div class="flex flex-col divide-y divide-gray-100">
           @for (task of filteredTasks(); track task.id) {
-            <div class="flex flex-col gap-3 px-6 py-4 md:flex-row md:items-center md:gap-4" data-testid="mentee-tasks-task-row">
+            <div class="flex flex-col gap-3 px-6 py-4 md:flex-row md:items-center md:gap-4" [attr.data-testid]="'mentee-tasks-task-row-' + task.id">
               <!-- Check icon -->
               <div class="flex items-center gap-3">
                 @if (isTaskSubmitted(task.status)) {
@@ -198,25 +205,30 @@
               <!-- File actions -->
               <div class="flex items-center gap-2">
                 @if (hasUploadedFile(task)) {
-                  <button
-                    type="button"
-                    class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                    data-testid="mentee-tasks-view-file"
-                    (click)="onViewFile(task.fileUrl!)">
-                    <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
-                  </button>
-                  <button
-                    type="button"
-                    class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
-                    data-testid="mentee-tasks-download-file"
-                    (click)="onDownloadFile(task.fileUrl!)">
-                    <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
-                  </button>
+                  @if (task.fileUrl; as fileUrl) {
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                      [attr.data-testid]="'mentee-tasks-view-file-' + task.id"
+                      [attr.aria-label]="'View submission for ' + task.title"
+                      (click)="onViewFile(fileUrl)">
+                      <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+                    </button>
+                    <button
+                      type="button"
+                      class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                      [attr.data-testid]="'mentee-tasks-download-file-' + task.id"
+                      [attr.aria-label]="'Download submission for ' + task.title"
+                      (click)="onDownloadFile(fileUrl)">
+                      <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+                    </button>
+                  }
                 } @else if (needsUpload(task)) {
                   <button
                     type="button"
                     class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                    data-testid="mentee-tasks-upload"
+                    [attr.data-testid]="'mentee-tasks-upload-' + task.id"
+                    [attr.aria-label]="'Upload submission for ' + task.title"
                     (click)="onUpload(task.id)">
                     <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
                     Upload
@@ -235,14 +247,14 @@
                   size="small"
                   variant="filled"
                   [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
-                  [dataTest]="'mentee-tasks-status-dropdown'"
+                  [dataTest]="'mentee-tasks-status-dropdown-' + task.id"
                   (onChange)="onStatusChange(task.id)" />
               </div>
 
               <!-- Date -->
               <div class="shrink-0 text-right text-xs text-gray-500" style="min-width: 90px">
                 @if (isTaskSubmitted(task.status) && task.submittedDate) {
-                  Submitted {{ task.submittedDate | date: 'MMM d, yyyy' }}
+                  Submitted {{ task.submittedDate }}
                 } @else if (task.dueDate) {
                   Due {{ task.dueDate | date: 'MMM d, yyyy' : 'UTC' }}
                 }

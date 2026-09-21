@@ -3,7 +3,7 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
@@ -56,54 +56,17 @@ export class MenteeApplicationTasksComponent {
   // ---- Phase (writable — set by the shell via onChildActivate) ---------------
   public readonly phase = signal<MentorshipMenteePhase>('applicant');
 
-  // ---- Applicant phase data -------------------------------------------------
-  private readonly overviewData = toSignal(
-    toObservable(this.phase).pipe(
-      filter((p): p is 'applicant' => p === 'applicant'),
-      switchMap(() =>
-        this.mentorshipService.getMenteeOverview('applicant').pipe(
-          map((res: MentorshipMenteeOverviewResponse) => {
-            if (res.phase === 'applicant') return res as MentorshipMenteeOverviewApplicant;
-            return null;
-          }),
-          catchError((err: unknown) => {
-            const msg =
-              err instanceof HttpErrorResponse
-                ? serverAuthoredMessage(err, 'Could not load application tasks. Please retry.')
-                : 'Could not load application tasks. Please retry.';
-            this.applicantError.set(msg);
-            return of(null);
-          })
-        )
-      )
-    ),
-    { initialValue: null }
-  );
+  /** Reload trigger — bumped by retry handlers to force re-fetch. */
+  private readonly reloadTrigger = signal(0);
 
+  // ---- Applicant phase data -------------------------------------------------
+  private readonly overviewData = this.initOverviewData();
   protected readonly applicantError = signal<string | null>(null);
   protected readonly applicantData = computed(() => this.overviewData());
   protected readonly applicantLoaded = computed(() => this.phase() !== 'applicant' || this.overviewData() !== null || this.applicantError() !== null);
 
   // ---- Accepted phase data --------------------------------------------------
-  private readonly tasksData = toSignal(
-    toObservable(this.phase).pipe(
-      filter((p): p is 'accepted' => p === 'accepted'),
-      switchMap(() =>
-        this.mentorshipService.getMenteeTasks().pipe(
-          catchError((err: unknown) => {
-            const msg =
-              err instanceof HttpErrorResponse
-                ? serverAuthoredMessage(err, 'Could not load your tasks. Please retry.')
-                : 'Could not load your tasks. Please retry.';
-            this.acceptedError.set(msg);
-            return of({ data: [], total: 0 } as MentorshipMenteeTasksResponse);
-          })
-        )
-      )
-    ),
-    { initialValue: null }
-  );
-
+  private readonly tasksData = this.initTasksData();
   protected readonly acceptedError = signal<string | null>(null);
   protected readonly acceptedTasks = computed(() => this.tasksData()?.data ?? []);
   protected readonly acceptedLoaded = computed(() => this.phase() !== 'accepted' || this.tasksData() !== null || this.acceptedError() !== null);
@@ -117,6 +80,7 @@ export class MenteeApplicationTasksComponent {
     const f = this.activeFilter();
     if (f === null) return tasks;
     if (f === 'pending') return tasks.filter((t) => t.status === 'pending' || t.status === 'incomplete');
+    if (f === 'submitted') return tasks.filter((t) => t.status === 'submitted' || t.status === 'complete');
     return tasks.filter((t) => t.status === f);
   });
 
@@ -128,40 +92,8 @@ export class MenteeApplicationTasksComponent {
   });
 
   // ---- Form groups (one FormControl per task, keyed by task ID) --------------
-
-  /** FormGroup for applicant-phase tasks — rebuilt when data changes. */
-  protected readonly applicantForm = computed(() => {
-    const data = this.applicantData();
-    const controls: Record<string, FormControl<string>> = {};
-    if (data?.applications) {
-      for (const app of data.applications) {
-        for (const task of app.tasks ?? []) {
-          controls[task.id] = new FormControl(this.normaliseForDropdown(task.status), { nonNullable: true });
-        }
-      }
-    }
-    return new FormGroup(controls);
-  });
-
-  /** FormGroup for accepted-phase tasks — rebuilt when data changes. */
-  protected readonly acceptedForm = computed(() => {
-    const tasks = this.acceptedTasks();
-    const controls: Record<string, FormControl<string>> = {};
-    for (const task of tasks) {
-      controls[task.id] = new FormControl(this.normaliseForDropdown(task.status), { nonNullable: true });
-    }
-    return new FormGroup(controls);
-  });
-
-  /**
-   * Normalise a task status to a dropdown-compatible value.
-   * `incomplete` → `pending` (both mean "To Do"), `complete` → `submitted` (both mean "Submitted").
-   */
-  private normaliseForDropdown(status: string): string {
-    if (status === 'incomplete') return 'pending';
-    if (status === 'complete') return 'submitted';
-    return status;
-  }
+  protected readonly applicantForm = this.initApplicantForm();
+  protected readonly acceptedForm = this.initAcceptedForm();
 
   // ---- Template constants ---------------------------------------------------
   protected readonly prerequisiteLabel = MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL;
@@ -192,7 +124,7 @@ export class MenteeApplicationTasksComponent {
   }
 
   protected hasUploadedFile(task: { submitFile: string | null; fileUrl?: string }): boolean {
-    return task.submitFile === 'required' && !!task.fileUrl;
+    return (task.submitFile === 'required' && !!task.fileUrl) || (!!task.submitFile && task.submitFile !== 'required');
   }
 
   protected needsUpload(task: { submitFile: string | null; fileUrl?: string }): boolean {
@@ -227,11 +159,99 @@ export class MenteeApplicationTasksComponent {
 
   protected retryApplicant(): void {
     this.applicantError.set(null);
-    this.phase.set('applicant');
+    this.reloadTrigger.update((n) => n + 1);
   }
 
   protected retryAccepted(): void {
     this.acceptedError.set(null);
-    this.phase.set('accepted');
+    this.reloadTrigger.update((n) => n + 1);
+  }
+
+  // ---- Private initializers -------------------------------------------------
+
+  private initOverviewData(): Signal<MentorshipMenteeOverviewApplicant | null> {
+    return toSignal(
+      toObservable(this.phase).pipe(
+        filter((p): p is 'applicant' => p === 'applicant'),
+        switchMap(() => toObservable(this.reloadTrigger)),
+        switchMap(() =>
+          this.mentorshipService.getMenteeOverview('applicant').pipe(
+            map((res: MentorshipMenteeOverviewResponse) => {
+              if (res.phase === 'applicant') return res as MentorshipMenteeOverviewApplicant;
+              return null;
+            }),
+            catchError((err: unknown) => {
+              const msg =
+                err instanceof HttpErrorResponse
+                  ? serverAuthoredMessage(err, 'Could not load application tasks. Please retry.')
+                  : 'Could not load application tasks. Please retry.';
+              this.applicantError.set(msg);
+              return of(null);
+            })
+          )
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initTasksData(): Signal<MentorshipMenteeTasksResponse | null> {
+    return toSignal(
+      toObservable(this.phase).pipe(
+        filter((p): p is 'accepted' => p === 'accepted'),
+        switchMap(() => toObservable(this.reloadTrigger)),
+        switchMap(() =>
+          this.mentorshipService.getMenteeTasks().pipe(
+            catchError((err: unknown) => {
+              const msg =
+                err instanceof HttpErrorResponse
+                  ? serverAuthoredMessage(err, 'Could not load your tasks. Please retry.')
+                  : 'Could not load your tasks. Please retry.';
+              this.acceptedError.set(msg);
+              return of({ data: [], total: 0 } as MentorshipMenteeTasksResponse);
+            })
+          )
+        )
+      ),
+      { initialValue: null }
+    );
+  }
+
+  /** FormGroup for applicant-phase tasks — rebuilt when data changes. */
+  private initApplicantForm(): Signal<FormGroup<Record<string, FormControl<string>>>> {
+    return computed(() => {
+      const data = this.applicantData();
+      const controls: Record<string, FormControl<string>> = {};
+      if (data?.applications) {
+        for (const app of data.applications) {
+          for (const task of app.tasks ?? []) {
+            controls[task.id] = new FormControl(this.normaliseForDropdown(task.status), { nonNullable: true });
+          }
+        }
+      }
+      return new FormGroup(controls);
+    });
+  }
+
+  /** FormGroup for accepted-phase tasks — rebuilt when data changes. */
+  private initAcceptedForm(): Signal<FormGroup<Record<string, FormControl<string>>>> {
+    return computed(() => {
+      const tasks = this.acceptedTasks();
+      const controls: Record<string, FormControl<string>> = {};
+      for (const task of tasks) {
+        controls[task.id] = new FormControl(this.normaliseForDropdown(task.status), { nonNullable: true });
+      }
+      return new FormGroup(controls);
+    });
+  }
+
+  /**
+   * Normalise a task status to a dropdown-compatible value.
+   * `incomplete` → `pending` (both mean "To Do"), `complete` → `submitted` (both mean "Submitted").
+   */
+  private normaliseForDropdown(status: string): string {
+    if (status === 'incomplete') return 'pending';
+    if (status === 'complete') return 'submitted';
+    return status;
   }
 }

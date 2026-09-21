@@ -673,7 +673,7 @@ export interface MentorshipMenteeTask {
   fileUrl?: string;
   /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF **must** normalise date-only values. */
   dueDate?: string;
-  /** BFF pre-formatted display string (e.g. `'Sep 12, 2026'`). Present when status is `'submitted'` or `'completed'`. */
+  /** BFF pre-formatted display string (e.g. `'Sep 12, 2026'`). Present when status is `'submitted'` or `'complete'`. */
   submittedDate?: string;
 }
 
