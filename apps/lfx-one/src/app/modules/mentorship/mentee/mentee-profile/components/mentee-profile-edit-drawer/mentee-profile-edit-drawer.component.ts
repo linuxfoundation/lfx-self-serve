@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -22,9 +22,10 @@ import {
   MENTORSHIP_MENTEE_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
-import { codePointLength, stripHtml } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, stripHtml } from '@lfx-one/shared/utils';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, map, startWith } from 'rxjs';
+import { filter } from 'rxjs';
 
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
@@ -64,20 +65,40 @@ export class MenteeProfileEditDrawerComponent {
   protected readonly additionalNotesMax = MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX;
   protected readonly resumeIntro = MENTORSHIP_MENTEE_RESUME_INTRO;
 
+  // Code-point cap (not Validators.maxLength, which counts UTF-16 units). Native maxlength
+  // is omitted on the About Me textarea for the same reason.
   protected readonly form = new FormGroup({
-    introduction: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX)] }),
+    introduction: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX)] }),
     skillsHave: new FormControl<string[]>([], { nonNullable: true }),
     skillsWant: new FormControl<string[]>([], { nonNullable: true }),
     additionalNotes: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX)] }),
     resumeFileName: new FormControl('', { nonNullable: true }),
   });
 
-  protected readonly aboutMeLength: Signal<number> = this.initAboutMeLength();
+  protected readonly aboutMeLength = signal(0);
+  private lastValidIntroduction = '';
+  private seededIntroduction = '';
 
   public constructor() {
     toObservable(this.drawer.context)
       .pipe(filter(Boolean), takeUntilDestroyed())
       .subscribe((profile) => this.seedForm(profile));
+
+    this.form.controls.introduction.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      const next = value ?? '';
+      if (codePointLength(next) > MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX) {
+        const capped = capCodePointEdit(this.lastValidIntroduction, next, MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+        this.form.controls.introduction.setValue(capped, { emitEvent: false });
+        this.lastValidIntroduction = capped;
+        this.aboutMeLength.set(codePointLength(capped));
+        if (capped === this.seededIntroduction) {
+          this.form.controls.introduction.markAsPristine();
+        }
+        return;
+      }
+      this.lastValidIntroduction = next;
+      this.aboutMeLength.set(codePointLength(next));
+    });
   }
 
   protected onSave(): void {
@@ -95,24 +116,18 @@ export class MenteeProfileEditDrawerComponent {
     }
   }
 
-  private initAboutMeLength(): Signal<number> {
-    return toSignal(
-      this.form.controls.introduction.valueChanges.pipe(
-        startWith(this.form.controls.introduction.value),
-        map((value) => codePointLength(value ?? ''))
-      ),
-      { initialValue: 0 }
-    );
-  }
-
   private seedForm(profile: MentorshipMenteeProfileDetails): void {
+    const introduction = stripHtml(profile.aboutMe ?? '');
     this.form.patchValue({
-      introduction: stripHtml(profile.aboutMe ?? ''),
+      introduction,
       skillsHave: profile.skillsHave ?? [],
       skillsWant: profile.skillsWant ?? [],
       additionalNotes: profile.additionalNotes ?? '',
       resumeFileName: profile.resumeFileName ?? '',
     });
+    this.seededIntroduction = introduction;
+    this.lastValidIntroduction = introduction;
+    this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
   }

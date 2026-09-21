@@ -14,10 +14,14 @@ export const MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX = ' are required.';
 
 export const MENTORSHIP_MENTEE_INTRODUCTION_INTRO =
   'This information is displayed on your mentee profile page. Your name, email and avatar come from your LFX account.';
-export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = `What is your current status, are you a student/transitioning into a new career?
-What are your goals and aspirations? 
-Why are you interested in this mentorship opportunity?
-Tell us something that makes you unique as an applicant.`;
+/** Canonical About Me prompts — register placeholder and profile-edit list both derive from this. */
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS = [
+  'What is your current status, are you a student/transitioning into a new career?',
+  'What are your goals and aspirations?',
+  'Why are you interested in this mentorship opportunity?',
+  'Tell us something that makes you unique as an applicant.',
+] as const;
+export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS.join('\n');
 
 /** Matches `MENTORSHIP_MENTOR_INTRODUCTION_MAX`, since both feed the same kind of rich-text field. */
 export const MENTORSHIP_MENTEE_INTRODUCTION_MAX = 3000;
@@ -448,12 +452,6 @@ export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
   'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS = [
-  'What is your current status, are you a student/transitioning into a new career?',
-  'What are your goals and aspirations?',
-  'Why are you interested in this mentorship opportunity?',
-  'Tell us something that makes you unique as an applicant.',
-] as const;
 /** Plain-text About Me cap in the profile edit drawer. */
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = 2000;
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =

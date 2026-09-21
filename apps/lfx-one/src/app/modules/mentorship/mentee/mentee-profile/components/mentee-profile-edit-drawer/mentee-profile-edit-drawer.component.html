@@ -29,13 +29,13 @@
       </div>
 
       <div class="flex flex-col gap-1">
+        <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 2000 code-point cap. -->
         <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
         <lfx-textarea
           [form]="form"
           control="introduction"
           [rows]="6"
           styleClass="w-full min-h-32"
-          [maxlength]="aboutMeMax"
           inputId="mentee-profile-edit-about-me"
           [ariaDescribedBy]="'mentee-profile-edit-about-me-counter'"
           dataTest="mentee-profile-edit-about-me" />

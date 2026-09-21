@@ -173,6 +173,19 @@ describe('MenteeProfileEditDrawerComponent', () => {
     );
   });
 
+  it('counts emoji as one character against the About Me code-point cap', () => {
+    const atCap = '😀'.repeat(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+    const introduction = comp['form'].controls.introduction;
+
+    introduction.setValue(atCap);
+    expect(introduction.valid).toBe(true);
+    expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+
+    introduction.setValue(atCap + '😀');
+    expect(introduction.value).toBe(atCap);
+    expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
   it('renders the save and cancel action buttons', () => {
     const actions = element().querySelector('[data-testid="mentee-profile-edit-drawer-actions"]');
 
