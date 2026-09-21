@@ -2024,6 +2024,22 @@ describe('OrgClaService.getManagers', () => {
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
   });
 
+  it('answers an empty roster for an unsigned agreement without asking upstream for one', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result).toEqual({ signatureId: 'signature-uuid-1', managers: [] });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
+  it('does not answer absent for an unsigned agreement', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    expect(await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).not.toBeNull();
+  });
+
   it('finds the agreement when the path spells the signature UUID without hyphens', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: '0f9b8c7d-1234-4abc-89de-0123456789ab' })))

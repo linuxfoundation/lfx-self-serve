@@ -929,6 +929,16 @@ export class OrgClaService {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
     if (!target) return null;
 
+    if (!target.signed) {
+      // The tab is locked client-side for an unsigned agreement, so this is the defensive arm: a
+      // direct caller gets the truthful empty rather than manager PII from a stale upstream list.
+      logger.warning(req, 'org_cla_list_managers', 'agreement is not signed, so it holds no manager roster', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { signatureId, managers: [] };
+    }
+
     const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
       req,
       `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
