@@ -1094,6 +1094,13 @@ export interface OrgClaManagerAddRequest {
   email: string;
 }
 
+/** Field-level errors from {@link validateOrgClaManagerAdd}; empty keys mean valid. */
+export interface OrgClaManagerAddValidation {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
 export type OrgClaManagerAddField = keyof OrgClaManagerAddRequest;
 
 export type OrgClaManagerRefusal = (typeof ORG_CLA_MANAGER_REFUSALS)[number];

@@ -3,7 +3,7 @@
 
 import { ORG_CLA_MANAGER_NAME_MAX, ORG_CLA_MANAGER_NAME_MIN } from '../constants/cla.constants';
 import { EMAIL_REGEX } from '../constants/regex.constants';
-import type { OrgClaManagerAddRequest, OrgClaManagerRefusal } from '../interfaces/cla.interface';
+import type { OrgClaManagerAddRequest, OrgClaManagerAddValidation, OrgClaManagerRefusal } from '../interfaces/cla.interface';
 
 /**
  * Order matters. `last-manager` is checked before `not-authorized` because the sole-manager
@@ -71,12 +71,6 @@ function refusalTextFrom(body: unknown): string {
   }
 
   return '';
-}
-
-export interface OrgClaManagerAddValidation {
-  firstName?: string;
-  lastName?: string;
-  email?: string;
 }
 
 // A request body is untyped on the wire, so a field can be a number, an array, or an object. The
