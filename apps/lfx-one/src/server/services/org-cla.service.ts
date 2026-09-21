@@ -265,9 +265,9 @@ function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = entry.name?.trim() ?? '';
   const email = entry.email?.trim() ?? '';
-  // Prefer the events-backed add time. Fall back to `approved_on` — that is
-  // `signature_created`, and it is what Corporate Console puts in Added.
-  const addedOn = entry.added_on?.trim() || entry.approved_on?.trim() || '';
+  // Only the events-backed add time. `approved_on` is the CCLA's signature_created and is not when
+  // this manager was added; the UI renders an em dash when this is absent.
+  const addedOn = entry.added_on?.trim() ?? '';
 
   return {
     lfUsername: entry.lf_username?.trim() ?? '',
@@ -967,9 +967,10 @@ export class OrgClaService {
     requireSignedManagerTarget(target, 'org_cla_add_manager');
     const projectSfid = requireProjectSfid(target, 'org_cla_add_manager');
 
-    let result: EasyClaCompanyClaManager | null;
     try {
-      result = await gatewayFetch<EasyClaCompanyClaManager>(
+      // The write answers with an updated Signature (`signature_acl`), not a `company-cla-manager`
+      // row, so success is re-read from the manager list rather than parsed off the POST body.
+      await gatewayFetch<unknown>(
         req,
         `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager`,
         {
@@ -986,7 +987,11 @@ export class OrgClaService {
       throw asManagerRefusal(error, 'org_cla_add_manager', 'Failed to add the CLA manager');
     }
 
-    if (!result?.lf_username?.trim()) {
+    const roster = await this.getManagers(req, orgUid, signatureId);
+    const normalizedEmail = request.email.trim().toLowerCase();
+    const added = roster?.managers.find((manager) => manager.email?.trim().toLowerCase() === normalizedEmail);
+
+    if (!added?.lfUsername?.trim()) {
       throw new MicroserviceError('Failed to add the CLA manager: upstream returned no manager record', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_add_manager',
         service: SERVICE,
@@ -994,7 +999,7 @@ export class OrgClaService {
     }
 
     logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
-    return toOrgClaManager(result);
+    return added;
   }
 
   public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {

@@ -1937,6 +1937,15 @@ function upstreamManager(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+/** POST add returns a Signature; the BFF re-reads `GET …/cla-managers` before answering. */
+function mockAddManagerUpstream(entry: ReturnType<typeof upstreamEntry> = upstreamEntry(), manager: Record<string, unknown> = upstreamManager()): void {
+  gatewayFetch
+    .mockResolvedValueOnce(upstreamList(entry))
+    .mockResolvedValueOnce({ signatureID: 'signature-uuid-1' })
+    .mockResolvedValueOnce(upstreamList(entry))
+    .mockResolvedValueOnce({ list: [manager] });
+}
+
 describe('OrgClaService.getManagers', () => {
   it('maps only the four fields the tab renders, and drops the Salesforce user id', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
@@ -1946,12 +1955,13 @@ describe('OrgClaService.getManagers', () => {
     expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
   });
 
-  it('uses approved_on when the events-backed added_on is empty, as Corporate Console does', async () => {
+  it('omits addedOn when only approved_on is present, because that is signature time not manager add time', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
       .mockResolvedValueOnce({ list: [upstreamManager({ added_on: '', approved_on: '2021-09-13T11:59:00.981612+0000' })] });
 
-    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0].addedOn).toBe('2021-09-13T11:59:00.981612+0000');
+    const manager = (await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0];
+    expect(manager).not.toHaveProperty('addedOn');
   });
 
   it('omits a missing name rather than mapping it to an empty string', async () => {
@@ -2056,7 +2066,7 @@ describe('OrgClaService.addManager', () => {
   const request = { firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' };
 
   it('sends camelCase and renames the address field, unlike its snake_case neighbours', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+    mockAddManagerUpstream();
 
     await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
 
@@ -2069,7 +2079,7 @@ describe('OrgClaService.addManager', () => {
   });
 
   it('keys the write on a covered project, not on the foundation', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+    mockAddManagerUpstream();
 
     await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
 
@@ -2085,7 +2095,7 @@ describe('OrgClaService.addManager', () => {
         { projectSFID: 'a09410000182dD3AAI', projectName: 'Cascade' },
       ],
     });
-    gatewayFetch.mockResolvedValueOnce(upstreamList(reversed)).mockResolvedValueOnce(upstreamManager());
+    mockAddManagerUpstream(reversed);
 
     await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
 
@@ -2093,7 +2103,7 @@ describe('OrgClaService.addManager', () => {
   });
 
   it('falls back to the foundation only when the agreement covers no project', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [] }))).mockResolvedValueOnce(upstreamManager());
+    mockAddManagerUpstream(upstreamEntry({ projects: [] }));
 
     await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
 
@@ -2108,9 +2118,22 @@ describe('OrgClaService.addManager', () => {
   });
 
   it('rejects a 200 carrying no manager record rather than reporting an anonymous success', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ signatureID: 'signature-uuid-1' })
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [] });
 
     await expect(new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request)).rejects.toThrow(/no manager record/);
+  });
+
+  it('re-reads the roster when POST returns a Signature without a top-level lf_username', async () => {
+    mockAddManagerUpstream();
+
+    const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(manager).toEqual({ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' });
+    expect(gatewayFetch).toHaveBeenNthCalledWith(4, expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
   });
 
   it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
@@ -2241,7 +2264,11 @@ describe.each([
   });
 
   it('asks the fetch helper to keep the body out of the log while still attaching it', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(upstreamManager());
+    if (_name === 'addManager') {
+      mockAddManagerUpstream();
+    } else {
+      gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+    }
 
     await invoke(new OrgClaService()).catch(() => undefined);
 
