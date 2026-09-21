@@ -476,6 +476,35 @@ describe('isPrivateHost', () => {
     ['the UNCOMPRESSED mixed form carrying the metadata endpoint', '64:ff9b:0:0:0:0:169.254.169.254'],
     ['the UNCOMPRESSED mixed form carrying RFC1918', '64:ff9b:0:0:0:0:10.0.0.1'],
     ['the UNCOMPRESSED /48 mixed form', '64:ff9b:1:0:0:0:169.254.169.254'],
+    // MALFORMED trailing quads. `quadToGroups` refuses to fold these, so they keep the 7-part
+    // shape and the length gates refuse them -- fail-closed, which is the answer a malformed
+    // address deserves. Pinned because review read the deleted special case as a deny->allow
+    // narrowing; it is not, and without these nothing would prove that either way.
+    ['a mixed form with an out-of-range octet', '64:ff9b::999.999.999.999'],
+    ['a mixed form with an octet above 255', '64:ff9b::256.0.0.1'],
+    ['a mixed form with too few octets', '64:ff9b::1.2.3'],
+    ['a mixed form with too many octets', '64:ff9b::10.0.0.1.5'],
+    ['a malformed 6to4 mixed form', '2002::999.999.999.999'],
+    ['a short 6to4 mixed form', '2002::1.2.3'],
+    // Zero-padded first group, private payload -- the padding must be seen through in BOTH
+    // directions, so this sits opposite the public zero-padded allow case.
+    ['a zero-padded well-known prefix carrying a private address', '0064:ff9b:0:0:0:0:a9fe:a9fe'],
+    // A five-digit group is MALFORMED (a group is at most 4 hex digits), so it is refused rather
+    // than read as zero-padded -- fail-closed, the same answer every other malformed shape gets.
+    ['a malformed five-digit group', '0064:0ff9b:0:0:0:0:a9fe:a9fe'],
+    // A TRUNCATED 6to4 literal. The move from `/^2002:/` to a group test fixed the zero-padded
+    // bypass but let this through, because a malformed literal never reaches 8 groups. Declaring
+    // the prefix without being a well-formed address now fails closed.
+    ['a truncated 6to4 literal', '2002:a9fe'],
+    ['a 6to4 prefix with nothing after it', '2002:'],
+    // An EMPTY group is not a zero group: `/^0*$/` accepted it, `/^0+$/` does not, so a spelling
+    // with a gap is refused instead of being read as the well-known prefix.
+    ['a well-known NAT64 prefix with an empty group', '64:ff9b::0::a9fe:a9fe'],
+    // 6to4 reads its embedded IPv4 from groups 2-3, so a trailing quad leaves those zero and the
+    // address decodes to 0.0.0.0 -- reserved, and denied. Review read this as a silent flip to
+    // allow; it never was.
+    ['6to4 with a trailing quad (groups 2-3 zero -> 0.0.0.0)', '2002::169.254.169.254'],
+    ['6to4 with a trailing private quad', '2002::10.0.0.1'],
     ['an unallocated prefix inside the block, mixed form', '64:ff9b:2::8.8.8.8'],
   ])('denies %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(true);
@@ -492,7 +521,9 @@ describe('isPrivateHost', () => {
     ['the /96 mixed form carrying a PUBLIC address', '64:ff9b::8.8.8.8', false],
     ['the /96 mixed form carrying another public address', '64:ff9b::93.184.216.34', false],
     ['the UNCOMPRESSED mixed form carrying a PUBLIC address', '64:ff9b:0:0:0:0:8.8.8.8', false],
-    ['a ZERO-PADDED spelling of the well-known prefix, public', '0064:0ff9b:0:0:0:0:808:808', false],
+    // `0ff9b` here was FIVE hex digits -- malformed, not zero-padded -- so this passed for the
+    // wrong reason and proved nothing about the padding logic. A group is at most 4 digits.
+    ['a ZERO-PADDED spelling of the well-known prefix, public', '0064:ff9b:0:0:0:0:808:808', false],
     ['6to4 carrying a private address', '2002:a9fe:a9fe::', true],
     ['6to4 private, fully expanded', '2002:a9fe:a9fe:0:0:0:0:0', true],
     // The raw-string `/^2002:/` let this through; the group test does not.

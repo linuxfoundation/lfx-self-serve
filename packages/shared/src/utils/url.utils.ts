@@ -602,7 +602,14 @@ export function isPrivateHost(hostname: string): boolean {
     // Group-based, like the NAT64 test above: `/^2002:/` on the raw string let the zero-padded
     // `02002:a9fe:a9fe::` through, and review was right that the paragraph above rules out
     // exactly that shape of check while the next line used one.
-    const is6to4 = parts.length === 8 && /^0*2002$/.test(parts[0]);
+    // The length gate is a FAIL-CLOSED companion, not a narrowing. Moving from `/^2002:/` on the
+    // raw string to a group test fixed the zero-padded bypass, but it also let a truncated
+    // `2002:a9fe` through, because a malformed literal never reaches 8 groups. Anything that
+    // declares the 6to4 prefix and is not a well-formed address is refused outright -- the same
+    // rule the NAT64 block already follows.
+    const declares6to4 = /^0*2002$/.test(parts[0] ?? '');
+    if (declares6to4 && parts.length !== 8) return true;
+    const is6to4 = declares6to4 && parts.length === 8;
     if (isNat64 || is6to4) {
       // The EXPANDED groups, not the non-empty ones: compression can elide a zero group inside
       // the embedded address (`[64:ff9b::a9fe]` is 0.0.169.254), and filtering empties reads the
