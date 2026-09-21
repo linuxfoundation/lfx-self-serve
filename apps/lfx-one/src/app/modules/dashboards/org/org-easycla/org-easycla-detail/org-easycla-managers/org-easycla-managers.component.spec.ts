@@ -200,6 +200,8 @@ describe('OrgEasyclaManagersComponent', () => {
     const html = fixture.nativeElement.textContent as string;
     expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-error"]')).toBeTruthy();
     expect(html).not.toContain('no CLA Managers yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+    expect(component['canAdd']()).toBe(false);
   });
 
   it('retries a failed load', async () => {
@@ -533,6 +535,17 @@ describe('OrgEasyclaManagersComponent', () => {
       const pending = new Subject<{ signatureId: string; managers: OrgClaManager[] }>();
       getManagers.mockReturnValue(pending);
       await render();
+
+      component['openAdd']();
+
+      expect(openDialog).not.toHaveBeenCalled();
+    });
+
+    it('does not open Add after the roster load fails', async () => {
+      getManagers.mockReturnValue(throwError(() => new Error('upstream down')));
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
 
       component['openAdd']();
 

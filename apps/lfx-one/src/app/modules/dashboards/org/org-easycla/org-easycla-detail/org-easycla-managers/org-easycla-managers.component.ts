@@ -73,7 +73,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private readonly addGrant = signal<boolean | null>(null);
   private readonly removeGrant = signal<boolean | null>(null);
 
-  protected readonly canAdd = computed(() => this.addGrant() === true);
+  protected readonly canAdd = computed(() => this.addGrant() === true && !this.loadFailed());
   protected readonly canRemove = computed(() => this.removeGrant() === true);
 
   public constructor() {
@@ -137,7 +137,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected openAdd(): void {
-    if (!this.canAdd() || this.writing() || this.loading()) return;
+    if (!this.canAdd() || this.writing() || this.loading() || this.loadFailed()) return;
 
     const target = this.writeTarget();
     if (!target) return;
