@@ -263,6 +263,10 @@ describe('HealthMetricsOverviewComponent', () => {
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
       expect(evtTile.textContent).not.toContain('81%');
       expect(evtTile.textContent).toContain('loading…');
+      // The summary signal has no startWith reset, so only the loading flag hides the previous
+      // foundation's figures during the switch — assert both, or that leak regresses silently.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
 
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
@@ -333,7 +337,7 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock.verify();
     });
 
-    it('keeps the tiles and revenue rail loading, and issues no request, while no foundation is selected', async () => {
+    it('keeps the tiles and both rail blocks loading, and issues no request, while no foundation is selected', async () => {
       await render(null, null);
       const httpMock = TestBed.inject(HttpTestingController);
       fixture.detectChanges();
@@ -345,6 +349,9 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('no data this period');
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).toBeNull();
+      // Same guard on the summary rail: without it the zero-filled default renders as a real
+      // "0 projects / N/A tiers" for an ED who hasn't picked a foundation yet.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
       httpMock.verify();
     });
 
@@ -371,6 +378,12 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('loading…');
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
+      // Pins the terminal state rather than the guard (foundationSeen is already true here): the rail
+      // leaves its skeleton and falls back to the default instead of keeping the cleared figures.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
+      // Positive too: the absences above would also hold if the rail stopped rendering altogether.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]').textContent).toContain('N/A');
       httpMock.verify();
     });
   });
