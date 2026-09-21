@@ -16,9 +16,15 @@ import {
   ORG_LENS_ROI_METHOD_LABELS,
   ORG_LENS_ROI_NO_VALUE,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectAnnual, OrgLensRoiProjectDetail, OrgLensRoiProjectYearRow, StatCardItem } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensRoiMethod,
+  OrgLensRoiProjectAnnual,
+  OrgLensRoiProjectDetail,
+  OrgLensRoiProjectYearRow,
+  OrgLensSectionOutcome,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
-import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';

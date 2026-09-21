@@ -63,27 +63,27 @@ export class OrgNotFoundComponent {
   protected readonly orgLensOff: Signal<boolean> = computed(() => !this.orgLensEnabled());
 
   /**
-   * Same FR-016 precedence as `OrgLensEmptyStateService.pageState`, minus rule 1 (nothing here is
-   * held — the guard already sent the address to this dead end): a roster that never loaded (rule 2),
-   * a partial roster that left the caller holding nothing (rule 3) or a failed team check (rule 4)
-   * says nothing about access, so none may render the no-access wording (FR-009 / FR-011).
+   * `OrgLensEmptyStateService.classifyLookup` decides the outage head (FR-016 rules 2–4) so this
+   * surface cannot drift from the page; here "holds anything" is having rows in the caller's own list.
+   * Only the tail is this dead end's own:
    *
-   * Then: an LF-team caller holds every organization, so an unresolvable address can only mean no such
-   * organization or a resolver miss — never "no access" (FR-012; the epic's "never say no access when
-   * the truth is a failed lookup"). They get the switcher-search invite, with their own rows beneath
-   * when they have any. Otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
+   * - an LF-team caller holds every organization (the page's rule 1), so an unresolvable address can
+   *   only mean no such organization or a resolver miss — never "no access" (FR-012). Checked ahead of
+   *   the roster rules because their own list is empty by design and their way in is switcher search;
+   * - a list that failed to load (`upstreamFailed`) says nothing about access either — the caller may
+   *   well hold organizations that never arrived — so it is the outage state, with Retry;
+   * - otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
    */
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
-    const outcome = this.orgRoleGrants.lookupOutcome();
     const held = this.orgList().length > 0;
-    if (outcome === 'failed' || (outcome === 'partial' && !held)) {
-      return 'could-not-load';
-    }
-    if (this.orgRoleGrants.staffCheck() === 'failed') {
-      return 'staff-check-failed';
-    }
+    // Rule-1 analogue: LF team holds everything (a failed team check leaves `isStaff` false, so it
+    // reaches `classifyLookup` and renders `staff-check-failed` from there, as on the page).
     if (this.orgRoleGrants.isStaff()) {
       return 'not-found-staff';
+    }
+    const blocker = this.emptyState.classifyLookup(held);
+    if (blocker || this.orgNavigation.upstreamFailed()) {
+      return blocker ?? 'could-not-load';
     }
     return held ? 'wrong-organization' : 'no-access';
   });
@@ -91,7 +91,7 @@ export class OrgNotFoundComponent {
   /** FR-011 support reference; null unless the staff check failed. */
   protected readonly correlationId: Signal<string | null> = this.orgRoleGrants.correlationId;
 
-  /** Retry action of `could-not-load` / `staff-check-failed`: re-run the lookup in place. */
+  /** Retry action of `could-not-load` / `staff-check-failed`: re-run the lookup and the list in place. */
   protected retry(): void {
     this.emptyState.retry();
   }

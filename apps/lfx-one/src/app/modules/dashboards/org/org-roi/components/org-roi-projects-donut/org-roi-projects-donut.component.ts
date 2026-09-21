@@ -15,9 +15,14 @@ import {
   ORG_LENS_ROI_PROJECT_MEASURE_LABELS,
   ORG_LENS_ROI_PROJECT_MEASURES,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, OrgLensRoiProjectSlice } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensRoiMethod,
+  OrgLensRoiProjectMeasure,
+  OrgLensRoiProjectRow,
+  OrgLensRoiProjectSlice,
+  OrgLensSectionOutcome,
+} from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
-import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';

@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { OrgLensEmptyStateService } from './org-lens-empty-state.service';
+import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
 
@@ -27,6 +28,8 @@ interface Harness {
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
   refresh: Mock<() => Observable<void>>;
+  listLoaded: WritableSignal<boolean>;
+  resetAndReload: Mock<(uid?: string | null) => void>;
 }
 
 function account(uid: string): Account {
@@ -44,6 +47,8 @@ function setup(): Harness {
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
   const refresh: Mock<() => Observable<void>> = vi.fn(() => of(undefined));
+  const listLoaded = signal(false);
+  const resetAndReload: Mock<(uid?: string | null) => void> = vi.fn();
 
   TestBed.configureTestingModule({
     providers: [
@@ -62,7 +67,8 @@ function setup(): Harness {
         },
       },
       { provide: PersonaService, useValue: { personaLoaded } },
-      { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+      { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
+      { provide: OrgNavigationService, useValue: { loaded: listLoaded, resetAndReload } },
     ],
   });
 
@@ -78,6 +84,8 @@ function setup(): Harness {
     selectedAccount,
     hasOrgSelectorAccess,
     refresh,
+    listLoaded,
+    resetAndReload,
   };
 }
 
@@ -169,9 +177,65 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
   });
 
-  it('retry re-runs the role-grants lookup', () => {
+  it('retry re-runs the role-grants lookup and leaves a never-fetched list to the switcher bootstrap', () => {
     h.service.retry();
 
     expect(h.refresh).toHaveBeenCalledTimes(1);
+    expect(h.resetAndReload).not.toHaveBeenCalled();
+  });
+
+  // The list is filtered server-side by the same lookup: refreshing grants alone would leave a list
+  // that emptied during the outage stale after the grants recover.
+  it('retry re-fetches a previously fetched list once the grants answer, pinning the selection', () => {
+    h.listLoaded.set(true);
+    h.selectedAccount.set(account(HELD));
+
+    h.service.retry();
+
+    expect(h.resetAndReload).toHaveBeenCalledWith(HELD);
+  });
+
+  it('retry falls back to the cookie uid when nothing is selected', () => {
+    h.listLoaded.set(true);
+
+    h.service.retry();
+
+    expect(h.resetAndReload).toHaveBeenCalledWith('cookie-uid');
+  });
+});
+
+// The head the dead end shares with the page — `holdsAnything` is the only input the callers differ on.
+describe('OrgLensEmptyStateService.classifyLookup', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+  });
+
+  it('answers null for a clean lookup', () => {
+    expect(h.service.classifyLookup(false)).toBeNull();
+    expect(h.service.classifyLookup(true)).toBeNull();
+  });
+
+  it('answers could-not-load for a failed lookup whatever the caller holds', () => {
+    h.lookupOutcome.set('failed');
+    h.staffCheck.set('failed');
+
+    expect(h.service.classifyLookup(false)).toBe('could-not-load');
+    expect(h.service.classifyLookup(true)).toBe('could-not-load');
+  });
+
+  it('answers could-not-load for a partial lookup only when the caller holds nothing', () => {
+    h.lookupOutcome.set('partial');
+
+    expect(h.service.classifyLookup(false)).toBe('could-not-load');
+    expect(h.service.classifyLookup(true)).toBeNull();
+  });
+
+  it('answers staff-check-failed for a failed team check on a loaded roster', () => {
+    h.staffCheck.set('failed');
+
+    expect(h.service.classifyLookup(false)).toBe('staff-check-failed');
+    expect(h.service.classifyLookup(true)).toBe('staff-check-failed');
   });
 });

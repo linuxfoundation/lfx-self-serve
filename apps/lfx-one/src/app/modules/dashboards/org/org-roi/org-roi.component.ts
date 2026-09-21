@@ -4,8 +4,7 @@
 import { afterNextRender, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_LENS_ROI_DEFAULT_METHOD } from '@lfx-one/shared/constants';
-import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary } from '@lfx-one/shared/interfaces';
-import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';

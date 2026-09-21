@@ -14,6 +14,9 @@ export type OrgLensEmptyStateName =
   | 'section-no-access'
   | 'section-could-not-verify';
 
+/** FR-016 rules 2–4 — the states an outage in the caller's own lookup renders ahead of any access-themed one. */
+export type OrgLensLookupBlocker = Extract<OrgLensEmptyStateName, 'could-not-load' | 'staff-check-failed'>;
+
 /**
  * Outcome of one section request, classified for the shared empty state (FR-014/FR-015).
  *

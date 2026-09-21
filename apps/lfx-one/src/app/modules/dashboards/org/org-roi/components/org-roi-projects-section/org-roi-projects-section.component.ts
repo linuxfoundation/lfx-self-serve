@@ -10,9 +10,8 @@ import {
   ORG_LENS_ROI_PROJECT_VIEW_LABELS,
   ORG_LENS_ROI_PROJECT_VIEWS,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectOption, OrgLensRoiProjectRow, OrgLensRoiProjectView } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiMethod, OrgLensRoiProjectOption, OrgLensRoiProjectRow, OrgLensRoiProjectView, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
-import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';

@@ -315,14 +315,9 @@ export class OrgSelectorComponent {
     this.orgNavigationService.loadNextPage();
   }
 
-  /**
-   * FR-010 Retry — re-run the role-grants lookup and re-fetch the list from its first page, without a
-   * reload. The list is filtered server-side by the same lookup, so refreshing only one of the two
-   * would leave the other stale.
-   */
+  /** FR-010 Retry — the one shared Retry: role-grants lookup, then the list from its first page. */
   protected retryList(): void {
     this.emptyState.retry();
-    this.bootstrapOrgList();
   }
 
   /**

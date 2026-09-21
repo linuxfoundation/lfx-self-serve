@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Signal } from '@angular/core';
-import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
+import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
+import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
 
@@ -27,7 +28,8 @@ import { PersonaService } from './persona.service';
  * must not read as the employee no-access copy.
  *
  * The addressed-but-unheld states (FR-007 / FR-008) are not decided here: `orgPathParamGuard` already
- * lands every unheld or unknown address on `/org/not-found`, which picks between them (research R6).
+ * lands every unheld or unknown address on `/org/not-found`, which picks between them (research R6) —
+ * after asking `classifyLookup` for rules 2–4, so the two surfaces cannot drift on the outage rules.
  */
 @Injectable({
   providedIn: 'root',
@@ -36,6 +38,7 @@ export class OrgLensEmptyStateService {
   private readonly accountContext = inject(AccountContextService);
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly persona = inject(PersonaService);
+  private readonly orgNavigation = inject(OrgNavigationService);
 
   /** Both one-shot bootstrap loads have answered; before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded());
@@ -68,20 +71,10 @@ export class OrgLensEmptyStateService {
     if (this.selectedHeld()) {
       return null;
     }
-    const outcome = this.roleGrants.lookupOutcome();
     const holdsAnything = this.accountContext.hasOrgSelectorAccess();
-    // Rule 2 is deliberately unguarded by `holdsAnything`: with the roster never loaded, `selectedHeld`
-    // cannot be true and the server read gate answers 503 `ROLE_GRANTS_UNAVAILABLE` to every section
-    // anyway — one page-level outage with Retry is the honest render, not six section-level copies of
-    // it. `holdsAnything` (persona-seeded accounts) is not evidence of a grant, so it cannot admit the page.
-    if (outcome === 'failed') {
-      return 'could-not-load';
-    }
-    if (outcome === 'partial' && !holdsAnything) {
-      return 'could-not-load';
-    }
-    if (this.roleGrants.staffCheck() === 'failed') {
-      return 'staff-check-failed';
+    const blocker = this.classifyLookup(holdsAnything);
+    if (blocker) {
+      return blocker;
     }
     if (!holdsAnything) {
       return 'no-organization';
@@ -92,8 +85,42 @@ export class OrgLensEmptyStateService {
   /** Convenience for templates that only need "is a page-level state replacing the page". */
   public readonly hasPageState: Signal<boolean> = computed(() => this.pageState() !== null);
 
-  /** Re-run the lookup (Retry action of `could-not-load` / `staff-check-failed`). */
+  /**
+   * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the
+   * caller's evidence of holding *something* loaded (the page: switcher access; the dead end: rows in
+   * its own list), which is what turns a partial roster from "the switcher's notice" into an outage.
+   * Reads signals, so it is reactive inside a `computed`.
+   *
+   * Rule 2 is deliberately unguarded by `holdsAnything`: with the roster never loaded, `selectedHeld`
+   * cannot be true and the server read gate answers 503 `ROLE_GRANTS_UNAVAILABLE` to every section
+   * anyway — one page-level outage with Retry is the honest render, not six section-level copies of
+   * it. `holdsAnything` (persona-seeded accounts) is not evidence of a grant, so it cannot admit the page.
+   */
+  public classifyLookup(holdsAnything: boolean): OrgLensLookupBlocker | null {
+    const outcome = this.roleGrants.lookupOutcome();
+    if (outcome === 'failed' || (outcome === 'partial' && !holdsAnything)) {
+      return 'could-not-load';
+    }
+    if (this.roleGrants.staffCheck() === 'failed') {
+      return 'staff-check-failed';
+    }
+    return null;
+  }
+
+  /**
+   * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-run
+   * the role-grants lookup and, once it answers, re-fetch the org list from its first page when one
+   * was fetched before — the list is filtered server-side by the same lookup, so refreshing only one
+   * of the two would leave the other stale (an outage that emptied both would otherwise clear the
+   * state and leave nothing selectable). A list never fetched is left to the switcher's own
+   * enabled-transition bootstrap.
+   */
   public retry(): void {
-    this.roleGrants.refresh().subscribe();
+    const reloadList = this.orgNavigation.loaded();
+    this.roleGrants.refresh().subscribe(() => {
+      if (reloadList) {
+        this.orgNavigation.resetAndReload(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
+      }
+    });
   }
 }

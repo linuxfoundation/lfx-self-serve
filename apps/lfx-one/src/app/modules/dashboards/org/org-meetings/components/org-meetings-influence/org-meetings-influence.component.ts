@@ -26,8 +26,13 @@ import {
   ORG_MEETINGS_TIME_RANGE_LABELS,
   PD_BAND_TAG,
 } from '@lfx-one/shared/constants';
-import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgInfluenceRow, OrgMeetingsSupportedTimeRange } from '@lfx-one/shared/interfaces';
-import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
+import type {
+  OrgInfluenceBandBar,
+  OrgInfluenceDisplayRow,
+  OrgInfluenceRow,
+  OrgLensSectionOutcome,
+  OrgMeetingsSupportedTimeRange,
+} from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
