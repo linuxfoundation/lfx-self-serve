@@ -399,6 +399,25 @@ export enum ServerFeatureFlag {
    * reaches a flag-on pod and proxies, or a flag-off pod and 404s — never a partial write.
    */
   GatewazeEmbedEnabled = 'LFX_GATEWAZE_EMBED_ENABLED',
+
+  /**
+   * Mint the EasyCLA corporate-signing `return_url` as `/org/{orgUid}/easycla/{claGroupId}?signed=1`
+   * (`orgEasyclaReturnPath`, spec 050 address scheme, lfx-self-serve#2743) instead of the leftover
+   * `/org/easycla/{claGroupId}?org={orgUid}&signed=1` (`legacyOrgEasyclaReturnPath`).
+   *
+   * OFF by default, and the overlap hazard is the whole reason it exists: a `return_url` is fixed
+   * when the DocuSign session opens and is served by *whichever* replica takes the return, minutes
+   * or days later. During a rolling deploy, or after a rollback, that can be a release that only
+   * routes the leftover shape — a new-shape return there is an in-shell not-found. So the release
+   * carrying the twin `/org/:orgSegment/easycla` route ships with this OFF, and the flag flips (a
+   * chart values change, dev first) once that release is the rollback floor. Every release reads
+   * the leftover shape, which is what makes OFF safe in any overlap.
+   *
+   * The leftover mount and its `?org=` reader are removed (#2743 item 4) one release after this
+   * has been ON for a full signing-session lifetime — not one release after the twin route deploys.
+   * Removing the knob is part of that same step.
+   */
+  OrgEasyclaReturnInPath = 'ORG_EASYCLA_RETURN_IN_PATH',
 }
 
 /**

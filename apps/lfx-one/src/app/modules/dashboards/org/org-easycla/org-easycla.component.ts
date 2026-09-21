@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_SIGNATURE_PARAM,
 } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
@@ -23,6 +23,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -46,6 +47,7 @@ export class OrgEasyclaComponent {
   private static readonly pageSize = 8;
 
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
@@ -56,6 +58,7 @@ export class OrgEasyclaComponent {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly injector = inject(Injector);
 
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
@@ -218,6 +221,9 @@ export class OrgEasyclaComponent {
   protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount() - 1));
   protected readonly pagedClaGroups: Signal<OrgClaGroup[]> = this.initPagedClaGroups();
 
+  /** Per-card detail link, keyed by signature id — hoisted from the template, which may only read signals (frontend-checklist §4). Rows without a group id have none. */
+  protected readonly cardLinks: Signal<Record<string, string[]>> = this.initCardLinks();
+
   /**
    * Each rendered row's card-link query, keyed by that row's signature id (#2364).
    *
@@ -370,7 +376,7 @@ export class OrgEasyclaComponent {
    */
   private openPreview(selection: OrgClaSignSelection): void {
     void this.router
-      .navigate([ORG_EASYCLA_PATH, selection.claGroupId], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      .navigate(this.orgLens.orgLensLink('easycla', selection.claGroupId), { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
       // Released at the navigation rather than at the dialog's close, so the control stays disabled
       // across the teardown gap and a navigation that never lands — refused by a guard, or
       // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
@@ -439,6 +445,18 @@ export class OrgEasyclaComponent {
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!named) return;
 
+    // `?org=` names an organization on the leftover mount only (`/org/easycla…`, until one release
+    // after the `ORG_EASYCLA_RETURN_IN_PATH` gate flips). Under `/org/:orgSegment/easycla` the path
+    // names it and `orgPathParamGuard` is the authority — a `?org=` there is stale or crafted, so it
+    // is not adopted, but it is still taken off the address: left on, a reload or a copied link
+    // would keep presenting a parameter the page ignores. Deferred past the first render so the
+    // strip is a follow-up navigation rather than one issued from inside the activation it would
+    // otherwise supersede (re-running this address's guards a second time).
+    if (this.orgLens.isOrgAddressed(this.route.snapshot)) {
+      afterNextRender(() => this.stripReturnOrganizationFromAddress(), { injector: this.injector });
+      return;
+    }
+
     this.claReturn
       .adopt(named)
       .pipe(takeUntilDestroyed(this.destroyRef))
@@ -454,7 +472,7 @@ export class OrgEasyclaComponent {
   private stripReturnOrganizationFromAddress(): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null },
+      queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
@@ -521,6 +539,16 @@ export class OrgEasyclaComponent {
       const start = this.currentPage() * OrgEasyclaComponent.pageSize;
       return this.filteredClaGroups().slice(start, start + OrgEasyclaComponent.pageSize);
     });
+  }
+
+  private initCardLinks(): Signal<Record<string, string[]>> {
+    return computed(() =>
+      Object.fromEntries(
+        this.pagedClaGroups().flatMap((claGroup) =>
+          claGroup.claGroupId ? [[claGroup.id, this.orgLens.orgLensLink('easycla', claGroup.claGroupId)] as const] : []
+        )
+      )
+    );
   }
 
   private initCardSignatureParams(): Signal<Record<string, Record<string, string>>> {

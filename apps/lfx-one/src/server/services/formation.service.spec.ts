@@ -1619,6 +1619,46 @@ describe('FormationService', () => {
       expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 1, total: 4 });
     });
 
+    // The "Ready to activate" tile used to be a client-side count over the served rows — which a
+    // stage pill had already narrowed — so it read 0 the moment the one ready row was filtered out
+    // while its three server-counted neighbours held still. All four tiles now come from the same
+    // unfiltered set.
+    it('counts the ready and blocked tiles over the unfiltered queue, so a stage pill cannot move them', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', sub_stage: 'Formation - Exploratory', gates_cleared: true },
+        { ...baseRow, formation_uid: 'formation:two', project_uid: 'two', blocked_item_titles: ['Charter agreed', 'Contribution agreement'] },
+        { ...baseRow, formation_uid: 'formation:one', project_uid: 'one', blocked_item_titles: ['Formation review packet'] },
+        { ...baseRow, formation_uid: 'formation:plain', project_uid: 'plain' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const all = await service.getFormationsQueue(buildReq());
+      expect(all.tiles).toMatchObject({ ready: 1, blocked: 2, blocked_items: 3, total: 4 });
+
+      // The ready row is Exploratory: an Engaged pill drops it from `rows` but must not drop it from the tile.
+      const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
+      expect(engagedOnly.rows.map((row) => row.project_uid)).toEqual(['two', 'one', 'plain']);
+      expect(engagedOnly.tiles).toMatchObject({ ready: 1, blocked: 2, blocked_items: 3, total: 4 });
+    });
+
     // A formation that has left Formation — completed it (Active), been retired from it
     // (Archived), or walked away from it (Disengaged) — is dropped from the queue's rows AND its
     // tiles. GH-2584 replaced the old Active/Archived stage deny-list with the lifecycle the
@@ -1668,7 +1708,7 @@ describe('FormationService', () => {
 
       expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown', 'confidential']);
       expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
-      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3 });
+      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3, ready: 1, blocked: 0, blocked_items: 0 });
       // Some rows dropped but not all, so DEBUG rather than the WARN that means the tag stopped
       // being honoured. The lifecycle list is what an operator reads to tell those apart, so it is
       // asserted rather than left to the payload's shape: only the dropped rows' values appear,

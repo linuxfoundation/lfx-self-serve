@@ -245,7 +245,7 @@ describe('decorateMyFormation', () => {
     expect(decorated.subtitle).toBe('2 to do · 1 done');
     expect(decorated.progressPercent).toBe(25);
     expect(decorated.announcementLabel).toEqual(expect.stringContaining('Oct 25'));
-    expect(decorated.stageLabel).toBe('Formation · Exploratory');
+    expect(decorated.stageLabel).toBe('Exploratory');
     expect(decorated.stageSeverity).toBe(FORMATION_SUB_STAGE_SEVERITY.exploratory);
   });
 

@@ -8,7 +8,7 @@
  */
 
 import { FORMATION_INVITE_DUPLICATE_MESSAGE, FORMATION_PEOPLE_FOOTER_NOTE } from '@lfx-one/shared/constants';
-import { FormationPerson } from '@lfx-one/shared/interfaces';
+import { FormationPerson, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { expect, Page, Route, test } from '@playwright/test';
 
 import { mockFormationPeopleResponse } from './fixtures/mock-data';
@@ -165,11 +165,42 @@ async function openInviteDialog(page: Page): Promise<void> {
   await expect(page.getByTestId('formation-people-invite-dialog')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 
+/** The manual path (#2772): the dialog opens on the search box, and the Name + Email fields sit behind its manual-entry link. */
 async function fillInvite(page: Page, name: string, email: string): Promise<void> {
+  await page.getByTestId('formation-people-invite-manual-link').click();
   // `lfx-input-text` renders `data-test`, not `data-testid`, on the native input.
   await page.locator('input[data-test="formation-people-invite-name"]').fill(name);
   await page.locator('input[data-test="formation-people-invite-email"]').fill(email);
 }
+
+/** One captured `GET /api/search/users` query. */
+interface CapturedSearch {
+  name: string | null;
+  tags: string | null;
+}
+
+/** Serves a fixed directory answer for the invite dialog's search box and records which query each lookup carried. */
+async function stubUserSearch(page: Page, results: UserSearchResult[]): Promise<CapturedSearch[]> {
+  const searches: CapturedSearch[] = [];
+  await page.route('**/api/search/users*', async (route) => {
+    const url = new URL(route.request().url());
+    searches.push({ name: url.searchParams.get('name'), tags: url.searchParams.get('tags') });
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results }) });
+  });
+  return searches;
+}
+
+const KIM_SEARCH_RESULT: UserSearchResult = {
+  uid: 'committee-member:kim',
+  email: 'kim.park@partner-corp.example',
+  first_name: 'Kim',
+  last_name: 'Park',
+  job_title: null,
+  organization: null,
+  committee: null,
+  type: 'committee_member',
+  username: 'kim.park',
+};
 
 test.describe('Formation people card — Invite (#2724, PR 2)', () => {
   test.beforeEach(async ({ page }) => {
@@ -227,6 +258,39 @@ test.describe('Formation people card — Invite (#2724, PR 2)', () => {
     expect(calls[0].body).toEqual({ email: 'kim.park@partner-corp.example', role: 'manage' });
   });
 
+  // #2772: the search path — one box, by name or email, over the committee-member directory.
+  test('finds a person in the directory by name, and a pick sends the address in one request', async ({ page }) => {
+    const calls = await stubPermissionAdd(page, created);
+    const searches = await stubUserSearch(page, [KIM_SEARCH_RESULT]);
+
+    await openInviteDialog(page);
+    const search = page.getByTestId('formation-people-invite-search').locator('input');
+    await search.fill('kim');
+    await page.getByRole('option', { name: /Kim Park/ }).click();
+    await expect(search).toHaveValue('Kim Park (kim.park@partner-corp.example)');
+    await page.getByTestId('formation-people-invite-submit').click();
+
+    await expect(page.locator('.p-toast')).toContainText('Added', { timeout: DATA_LOAD_TIMEOUT });
+    expect(searches.map((s) => s.name)).toEqual(['kim']);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].body).toEqual({ email: 'kim.park@partner-corp.example', role: 'view' });
+  });
+
+  test('looks a full email address up as an exact directory tag, and a pick keeps its name for the invite re-send', async ({ page }) => {
+    const calls = await stubPermissionAdd(page, (route, call) => (call === 1 ? directoryMiss(route) : created(route)));
+    const searches = await stubUserSearch(page, [KIM_SEARCH_RESULT]);
+
+    await openInviteDialog(page);
+    await page.getByTestId('formation-people-invite-search').locator('input').fill('kim.park@partner-corp.example');
+    await page.getByRole('option', { name: /Kim Park/ }).click();
+    await page.getByTestId('formation-people-invite-submit').click();
+
+    await expect(page.locator('.p-toast')).toContainText('Invite sent', { timeout: DATA_LOAD_TIMEOUT });
+    expect(searches.map((s) => s.tags)).toEqual(['email:kim.park@partner-corp.example']);
+    expect(calls).toHaveLength(2);
+    expect(calls[1].body).toEqual({ name: 'Kim Park', email: 'kim.park@partner-corp.example', role: 'view' });
+  });
+
   test('rejects an address already on the project inline, with no request', async ({ page }) => {
     const calls = await stubPermissionAdd(page, created);
 
@@ -243,12 +307,15 @@ test.describe('Formation people card — Invite (#2724, PR 2)', () => {
     const calls = await stubPermissionAdd(page, created);
 
     await openInviteDialog(page);
+    // Search path: nothing picked yet — one message asks for a pick; no typed name is required here.
+    await page.getByTestId('formation-people-invite-submit').click();
+    await expect(page.getByTestId('formation-people-invite-search-error')).toBeVisible();
+    await expect(page.getByTestId('formation-people-invite-name-error')).toHaveCount(0);
+
+    // Manual path: the name becomes required, and the address is validated.
+    await fillInvite(page, '', 'not-an-email');
     await page.getByTestId('formation-people-invite-submit').click();
     await expect(page.getByTestId('formation-people-invite-name-error')).toBeVisible();
-    await expect(page.getByTestId('formation-people-invite-email-error')).toBeVisible();
-
-    await fillInvite(page, 'Kim Park', 'not-an-email');
-    await page.getByTestId('formation-people-invite-submit').click();
     await expect(page.getByTestId('formation-people-invite-email-error')).toContainText('valid email');
     expect(calls).toHaveLength(0);
   });

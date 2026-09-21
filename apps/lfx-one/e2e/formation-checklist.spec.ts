@@ -3,7 +3,12 @@
 
 /** Formation Checklist section E2E (GH-1958). Deterministic via route mocks. */
 
-import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
+import {
+  createFormationAllAvailableActions,
+  FORMATION_ASSIGNEE_EMPTY_MESSAGE,
+  FORMATION_ASSIGNEE_PENDING_NOTE,
+  FORMATION_ASSIGNEE_PLACEHOLDER,
+} from '@lfx-one/shared/constants';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
@@ -198,6 +203,51 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(button.locator('button')).toBeEnabled();
     await expect(page.getByTestId(`formation-checklist-row-link-${linkItem.uid}`)).toHaveCount(0);
     await expect(page.getByTestId(`formation-checklist-row-action-${linkItem.uid}`)).not.toContainText('Link unavailable');
+  });
+
+  // #2594: the assignee picker searches the people on this formation (the project's grant holders —
+  // the only population upstream accepts as an assignee) by name, email or username, never the
+  // global committee-member directory, so a pick cannot fail at save with assignee_not_on_project.
+  // A pending invitee is listed with the reason it cannot be picked rather than silently missing.
+  test('the assignee picker finds a person on this formation by email and Save assigns them, with no directory search (#2594)', async ({ page }) => {
+    await stubFormationFlag(page, true);
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    let directorySearched = false;
+    await page.route('**/api/search/users*', (route) => {
+      directorySearched = true;
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ results: [] }) });
+    });
+
+    const unassigned = getMockFormationItems('formation:cascade-data-alliance').find((item) => item.owner === null);
+    if (!unassigned) throw new Error('Expected a seeded item with no owner.');
+    await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+    const rowTitle = page.getByTestId(`formation-checklist-row-title-${unassigned.uid}`);
+    await expect(rowTitle).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await rowTitle.click();
+
+    // The drawer's panel is portaled out of its <p-drawer> host, so its contents are page-level
+    // locators, never descendants of the drawer's own testid (as the history assertion above).
+    const search = page.getByTestId('formation-item-drawer-assignee-search').locator('input');
+    await expect(search).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(search).toHaveAttribute('placeholder', FORMATION_ASSIGNEE_PLACEHOLDER);
+
+    // An email-domain fragment finds the pending invitee, whose row says why it cannot be picked.
+    await search.fill('partner-corp');
+    await expect(page.getByRole('option', { name: /Jordan Lee/ })).toBeVisible();
+    await expect(page.getByTestId('formation-item-drawer-assignee-search-option-note')).toHaveText(FORMATION_ASSIGNEE_PENDING_NOTE);
+
+    // No match: the empty state names the remedy rather than a generic "No users found".
+    await search.fill('nobody-here');
+    await expect(page.getByTestId('formation-item-drawer-assignee-search-empty')).toHaveText(FORMATION_ASSIGNEE_EMPTY_MESSAGE);
+
+    await search.fill('sam.chen@cascade');
+    await page.getByRole('option', { name: /Sam Chen/ }).click();
+    await expect(search).toHaveValue('Sam Chen (sam.chen@cascade-data.example)');
+
+    const assignmentRequest = page.waitForRequest((request) => request.method() === 'POST' && request.url().includes('/assignment'));
+    await page.getByTestId('formation-item-drawer-save').locator('button').click();
+    expect((await assignmentRequest).postDataJSON()).toEqual({ assignee: 'sam.chen' });
+    expect(directorySearched).toBe(false);
   });
 
   test('a drawer write is retired by the uid it was issued for, not by whichever item the drawer currently shows', async ({ page }) => {

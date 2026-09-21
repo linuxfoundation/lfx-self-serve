@@ -49,19 +49,23 @@ export function scoreUserSearchResult(user: RankableUser, query: string): UserSe
 
 /**
  * Re-ranks user search results so name matches surface first and incidental
- * email/alias matches are demoted.
+ * alias matches are demoted.
  *
- * The upstream query service matches `name` against `name_and_aliases` (which
- * folds in email and uses ngram subfields), so a query like "il" can match
- * inside unrelated emails. This client-side pass mitigates that by sorting
+ * The upstream query service matches `name` against `name_and_aliases` with a
+ * `search_as_you_type` leading-prefix match (every typed term must prefix a
+ * token; there is no infix matching). For `committee_member` that field holds
+ * the committee name, first/last name, username and "first last" — not the
+ * email — so a hit can come from the committee name ("Governing" returns every
+ * member of a Governing Board) or from a username the client cannot tell apart
+ * from a name. This client-side pass mitigates that by sorting
  * exact > name-prefix > name-substring > username > email > incidental.
  *
  * It **demotes** rather than drops or caps: low-relevance rows sort to the
  * bottom but are never removed, so a legitimate hit on an upstream alias the
  * client can't see (a field outside name/username/email) is never hard-filtered
- * out. Email queries (containing `@`) need no special case: name fields won't
- * match, so genuine email hits naturally rank above the rest. Limiting the
- * visible count, if desired, is left to the UI layer as a deliberate decision.
+ * out. Email queries need no special case: name fields won't match, so genuine
+ * email hits naturally rank above the rest. Limiting the visible count, if
+ * desired, is left to the UI layer as a deliberate decision.
  *
  * Ordering is stable: results within the same tier keep their upstream order.
  *
@@ -78,6 +82,63 @@ export function rankUserSearchResults<T extends RankableUser>(results: T[], quer
     .map((result, index) => ({ result, index, score: scoreUserSearchResult(result, q) }))
     .sort((a, b) => (a.score === b.score ? a.index - b.index : a.score - b.score))
     .map((entry) => entry.result);
+}
+
+/**
+ * Filters a caller-supplied candidate list the way a directory search would answer it, then
+ * ranks the matches with {@link rankUserSearchResults}. Case-insensitive substring over the
+ * composed full name, the email and the username — substring rather than prefix because the list
+ * is small and local (the formation assignee picker's people on the project, #2594), so a typed
+ * email fragment such as "@partner" is a legitimate way to find someone. An empty query returns
+ * every candidate in the caller's order, so a picker can open onto the whole list before anything
+ * is typed.
+ */
+export function filterUserSearchCandidates<T extends RankableUser>(candidates: readonly T[], query: string): T[] {
+  const q = normalize(query);
+  if (!q) {
+    return [...candidates];
+  }
+
+  const matches = candidates.filter((candidate) => {
+    const fullName = `${normalize(candidate.first_name)} ${normalize(candidate.last_name)}`.trim();
+    return fullName.includes(q) || normalize(candidate.email).includes(q) || normalize(candidate.username).includes(q);
+  });
+
+  return rankUserSearchResults(matches, q);
+}
+
+/**
+ * Collapses rows that describe the same person across merged result sets — the BFF already
+ * dedupes within one response by username, then email, and this repeats that rule client-side
+ * for the case where the frontend issues more than one lookup for a single query (an exact
+ * address tried as typed and lowercased). A blank username never counts as an identity, emails
+ * compare case-insensitively, and a row with neither is kept as is. First occurrence wins, so
+ * callers order the more authoritative lookup first.
+ */
+export function dedupeUserSearchResults<T extends Pick<UserSearchResult, 'username' | 'email'>>(results: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const result of results) {
+    const username = normalize(result.username);
+    const email = normalize(result.email);
+    let key: string | null = null;
+    if (username) {
+      key = `username:${username}`;
+    } else if (email) {
+      key = `email:${email}`;
+    }
+
+    if (key !== null) {
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+    }
+    unique.push(result);
+  }
+
+  return unique;
 }
 
 /**

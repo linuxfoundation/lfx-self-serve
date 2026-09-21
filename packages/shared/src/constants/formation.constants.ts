@@ -6,6 +6,7 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type {
+  FormationAnnouncementTiming,
   FormationDrawerData,
   FormationItemStatusGlyph,
   FormationLinkRowActionConfig,
@@ -13,6 +14,7 @@ import type {
 } from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
+  FormationEntityType,
   FormationItemAudience,
   FormationItemAvailableAction,
   FormationItemExternalAudience,
@@ -23,34 +25,42 @@ import type {
 } from '../interfaces/formation.interface';
 
 /**
- * Display labels for the canonical {@link FormationSubStage} union (GH-2163) — the Formations
- * queue's stage column and stage-filter pills. This is the one label map for that union; it does
- * not cover `ProjectStage`'s separate 5-value Formation taxonomy (which includes `Disengaged` and
- * `Confidential`, neither a `FormationSubStage` member, and backs `isFormationStage`/
- * `getFormationSubStageLabel` in `project.utils.ts`) — that map is project-domain data and is named
- * distinctly to avoid colliding with this one.
+ * Display labels for the canonical {@link FormationSubStage} union (GH-2163) — the stage chip and
+ * stage-filter pills on both formation list surfaces (the Formations queue and My Formations).
+ * Short form deliberately: both pages are already titled "Formations", so the upstream
+ * `"Formation - Engaged"` prefix repeated on every row and pill was noise, not information. This
+ * is the one label map for that union; it does not cover `ProjectStage`'s separate 5-value
+ * Formation taxonomy (which includes `Disengaged` and `Confidential`, neither a `FormationSubStage`
+ * member, and backs `isFormationStage`/`getFormationSubStageLabel` in `project.utils.ts`) — that
+ * map is project-domain data and is named distinctly to avoid colliding with this one.
  */
 export const FORMATION_SUB_STAGE_LABELS = {
-  exploratory: 'Formation · Exploratory',
-  engaged: 'Formation · Engaged',
-  on_hold: 'Formation · On Hold',
+  exploratory: 'Exploratory',
+  engaged: 'Engaged',
+  on_hold: 'On hold',
 } as const satisfies Record<FormationSubStage, string>;
 
-/** `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage. */
+/**
+ * `FormationsTableComponent`'s stage chip severities, keyed by queue sub-stage — three distinct
+ * tones, rendered as dot chips: early conversations read as informational, active formation work
+ * carries the brand accent, and a parked formation reads as a prompt (it is neither ready nor
+ * moving). An unmapped upstream stage renders `secondary` via `getFormationQueueStageDisplay`.
+ */
 export const FORMATION_SUB_STAGE_SEVERITY = {
-  exploratory: 'accent',
+  exploratory: 'info',
   engaged: 'accent',
-  on_hold: 'accent',
+  on_hold: 'warn',
 } as const satisfies Record<FormationSubStage, TagSeverity>;
 
 /** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
 
 /**
- * The stage filter pills both formation list surfaces render — the foundation Formations queue
- * (`formations-table.component.ts`) and the Me-lens My Formations page (#2753): `All` first, then
+ * The Me-lens My Formations page's stage filter pills (#2753): `All` first, then
  * {@link FORMATION_QUEUE_SUB_STAGES} in order, labelled through {@link FORMATION_SUB_STAGE_LABELS}.
- * Shared so a new sub-stage lands on both surfaces at once.
+ * The foundation Formations queue builds its own pills from that same stage list and label map
+ * (`formations-table.component.ts`'s `initStatusTabOptions`) so it can append the server-side
+ * counts — the shared pair underneath is what still lands a new sub-stage on both surfaces at once.
  */
 export const FORMATION_STAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All' },
@@ -149,6 +159,9 @@ export const FORMATION_EMPTY_QUEUE_TILES = {
   foundations: 0,
   projects: 0,
   unmapped: 0,
+  ready: 0,
+  blocked: 0,
+  blocked_items: 0,
 } as const satisfies FormationQueueTiles;
 
 /**
@@ -259,6 +272,54 @@ export const FORMATION_CHECKLIST_GRID_CLASSES = {
   compact: '@2xl:grid-cols-[9rem_minmax(0,1fr)_9.5rem]',
   full: '@5xl:grid-cols-[9rem_minmax(0,1fr)_7rem_8rem_6rem_9.5rem]',
 } as const;
+
+/**
+ * `FormationsTableComponent`'s progress-bar segment order (`buildFormationProgressSegments`) as a
+ * rank per status — resolved work first, open work last, so the bar reads left to right as "how
+ * far along". A rank map rather than an ordered array so it is exhaustiveness-checked like its
+ * siblings: a status added to {@link FormationItemStatus} fails the build here instead of silently
+ * producing a bar whose widths sum below 100% and a summary whose buckets don't add up to its own
+ * item count. Only non-zero buckets render, so a fully-`not_started` row is one gray track.
+ */
+export const FORMATION_PROGRESS_SEGMENT_RANK = {
+  done: 0,
+  in_progress: 1,
+  blocked: 2,
+  skipped: 3,
+  not_started: 4,
+} as const satisfies Record<FormationItemStatus, number>;
+
+/**
+ * `FormationsTableComponent`'s countdown-line colour per {@link FormationAnnouncementTiming}. A
+ * passed or same-day date is a prompt (amber); an upcoming one is plain; `needed` is amber for the
+ * reason that timing exists — the missing date is now all that stands between the formation and
+ * Active. Assembled outside the app's Tailwind `content` globs, so it is spread into the safelist.
+ */
+export const FORMATION_ANNOUNCEMENT_TIMING_CLASS = {
+  past: 'text-amber-600',
+  today: 'text-amber-600',
+  upcoming: 'text-gray-500',
+  unset: 'text-gray-400',
+  needed: 'text-amber-600',
+} as const satisfies Record<FormationAnnouncementTiming, string>;
+
+/** The Announcement cell's second line for a `needed` timing (see {@link FormationAnnouncementTiming}). */
+export const FORMATION_ANNOUNCEMENT_NEEDED_LABEL = 'Needed to activate';
+
+/**
+ * `FormationsTableComponent`'s rows per page before the paginator appears, and the sizes it offers.
+ * Every row is already on the client (the BFF materialises the whole queue), and a foundation's
+ * queue can run past a hundred rows (GH-2699), so paging is a rendering courtesy, not a fetch size.
+ */
+export const FORMATION_QUEUE_PAGE_SIZE = 25;
+export const FORMATION_QUEUE_PAGE_SIZE_OPTIONS: number[] = [FORMATION_QUEUE_PAGE_SIZE, 50, 100];
+
+/** The queue name cell's sub-line per derived {@link FormationEntityType} (`deriveFormationEntityType`) — the same taxonomy the "N foundations · N projects" tile counts. */
+export const FORMATION_ENTITY_TYPE_LABELS = {
+  foundation: 'Foundation',
+  project: 'Project',
+  child_project: 'Child project',
+} as const satisfies Record<FormationEntityType, string>;
 
 /**
  * Every action the deployed `lfx-v2-formation-service` publishes across every status (GH-2576,
