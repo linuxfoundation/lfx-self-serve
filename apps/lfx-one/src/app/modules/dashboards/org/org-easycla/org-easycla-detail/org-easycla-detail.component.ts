@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -27,8 +27,8 @@ import {
   ORG_CLA_REVIEW_COPY_FILENAME,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
-  ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   ORG_EASYCLA_SIGNATURE_PARAM,
@@ -76,6 +76,7 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
@@ -133,6 +134,7 @@ export class OrgEasyclaDetailComponent {
   private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
@@ -517,6 +519,8 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly signedByName = computed(() => this.initSignedByName());
 
+  /** The EasyCLA list under the current organization — hoisted from the CTAs, which may only read signals (frontend-checklist §4). */
+  protected readonly easyclaListLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('easycla'));
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumbItems());
 
   protected readonly managersBadge = computed(() => this.initManagersBadge());
@@ -995,7 +999,7 @@ export class OrgEasyclaDetailComponent {
 
   private initBreadcrumbItems(): MenuItem[] {
     const name = this.claGroup()?.claGroupName;
-    const root: MenuItem = { label: 'EasyCLA', routerLink: ['/org/easycla'] };
+    const root: MenuItem = { label: 'EasyCLA', routerLink: this.easyclaListLink() };
     return name ? [root, { label: name }] : [root];
   }
 
@@ -1055,7 +1059,7 @@ export class OrgEasyclaDetailComponent {
    *
    * That gate used to be the route shape: the preview lived at its own segment and carried no
    * `signatureId`, so the presence of that parameter was a reliable this-is-an-agreement signal.
-   * Both modes now share `/org/easycla/:claGroupId`, so the signal is gone — and it was load-bearing,
+   * Both modes now share `/org/{organization}/easycla/:claGroupId`, so the signal is gone — and it was load-bearing,
    * because the previous route's `history.state` is still what `location.getState()` returns until
    * Angular has written the new entry, so the fallback below would otherwise latch a stale
    * selection under an unrelated group.
@@ -1091,7 +1095,7 @@ export class OrgEasyclaDetailComponent {
    * the organization-switch path is precisely the wrong one.
    */
   private leaveForList(): void {
-    void this.router.navigate([ORG_EASYCLA_PATH], { replaceUrl: true });
+    void this.router.navigate(this.easyclaListLink(), { replaceUrl: true });
   }
 
   private initClaData(): Signal<OrgClaGroupList | null | undefined> {
@@ -1145,13 +1149,22 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * The organization named on this address, but only while a return is actually open.
+   * The organization this return was opened for, but only while a return is actually open.
    *
    * Gated on the flag so an ordinary pasted `?org=` — which adopts and is then stripped — cannot
    * make the page withhold a render it should be showing.
+   *
+   * Where it comes from depends on the mount. On the leftover `/org/easycla/…` mount the address
+   * carries it only as `?org=`. Under `/org/:orgSegment/easycla/…` the path names it, and
+   * `orgPathParamGuard` has already adopted it into the selection before this page was activated
+   * — so the selection *is* the addressed organization, and a `?org=` there is ignored (stale or
+   * crafted; it never outranks the path). Either way the wait is keyed to one organization for
+   * its whole life, and `claDataIsForReturnOrg` keeps ignoring other organizations' lists on
+   * both mounts alike.
    */
   private readReturnOrgUid(): string | null {
     if (!this.readReturnFlag()) return null;
+    if (this.orgLens.isOrgAddressed(this.route.snapshot)) return this.accountContext.selectedAccount()?.uid ?? null;
     return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
   }
 
@@ -1174,8 +1187,21 @@ export class OrgEasyclaDetailComponent {
     // and the address rewrite at the end is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
-    if (!named && !this.awaitingSignedRow()) return;
+    // `?org=` is a leftover-mount reader (`/org/easycla/…`, until one release after the
+    // `ORG_EASYCLA_RETURN_IN_PATH` gate flips). Under `/org/:orgSegment/easycla/…` the path names
+    // the organization and `orgPathParamGuard` is its authority; a `?org=` there is stale or
+    // crafted and is not adopted — but it is taken off the address, either by the wait's settle or,
+    // with no wait open, right here, so a reload or a copied link does not keep presenting a
+    // parameter the page ignores. The wait, if flagged, runs against the addressed selection.
+    const carried = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    const addressed = this.orgLens.isOrgAddressed(this.route.snapshot);
+    const named = addressed ? null : carried;
+    if (!named && !this.awaitingSignedRow()) {
+      // Deferred past the first render: a follow-up navigation, not one issued from inside the
+      // activation it would otherwise supersede.
+      if (addressed && carried) afterNextRender(() => this.settleReturn(), { injector: this.injector });
+      return;
+    }
 
     // A flagged address with no organization on it: there is nothing to adopt and nothing to order
     // the wait behind, so it runs against the selection already in force.
@@ -1350,7 +1376,7 @@ export class OrgEasyclaDetailComponent {
 
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null },
+      queryParams: { ...ORG_EASYCLA_RETURN_PARAMS_RESET },
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });

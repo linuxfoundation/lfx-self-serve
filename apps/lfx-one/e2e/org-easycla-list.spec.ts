@@ -176,8 +176,8 @@ test.describe('Org Lens EasyCLA list — content', () => {
     const projects = page.getByTestId('org-easycla-coverage-project');
     await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-coverage-title')).toHaveText('Projects covered by Nimbus Foundation CLA');
-    expect(page.url()).toContain('/org/easycla');
-    expect(page.url()).not.toContain('/org/easycla/sig-1');
+    expect(page.url()).toMatch(/\/org\/(?:[^/]+\/)?easycla/);
+    expect(page.url()).not.toContain('/easycla/sig-1');
 
     await page.getByTestId('org-easycla-coverage-close').click();
     await expect(projects).toHaveCount(0);

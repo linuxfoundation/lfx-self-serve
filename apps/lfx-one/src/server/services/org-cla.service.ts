@@ -8,8 +8,15 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
-import { classifyOrgClaManagerRefusal, isSameClaGroup, orgClaPairProjectSfid, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
+import {
+  classifyOrgClaManagerRefusal,
+  isSameClaGroup,
+  legacyOrgEasyclaReturnPath,
+  orgClaPairProjectSfid,
+  orgEasyclaReturnPath,
+  sortOrgClaApprovalEntries,
+} from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -50,6 +57,7 @@ import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
@@ -615,21 +623,26 @@ export class OrgClaService {
       // one thing this request already knows — so the signatory returns looking at the agreement
       // they signed rather than at a list that then has to hop somewhere.
       //
-      // Two parameters ride along. The organization, because the signatory comes back through a
-      // cross-site navigation and which organization is selected survives that only in a
-      // `SameSite=Lax` cookie; without it the page falls to the first organization in their list, so
-      // signing for one company lands them looking at another. `orgUid` is the value the grant check
-      // already cleared and the same one sent as `company_sfid`, so the address describes the session
-      // that was actually opened. And the signed flag, because the row will not be on the list the
-      // instant they arrive — without it the page would read a group with no signed agreement and
-      // settle straight onto the cannot-preview state.
+      // The organization rides along because the signatory comes back through a cross-site
+      // navigation and which organization is selected survives that only in a `SameSite=Lax` cookie;
+      // without it the page falls to the first organization in their list, so signing for one company
+      // lands them looking at another. `orgUid` is the value the grant check already cleared and the
+      // same one sent as `company_sfid`, so the address describes the session that was actually
+      // opened. Where it rides is gated (`ServerFeatureFlag.OrgEasyclaReturnInPath`, OFF by default):
+      // in the path once every replica that could serve the return routes `/org/{org}/easycla`
+      // (spec 050, #2743), else in `?org=` on the leftover address, which every release reads. The
+      // signed flag rides along either way, because the row will not be on the list the instant
+      // they arrive — without it the page would read a group with no signed agreement and settle
+      // straight onto the cannot-preview state.
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
-        return_url: claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
-          [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
-          [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
-        }),
+        return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
+          ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
+          : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
+              [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
+              [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
+            }),
         authority_acked: request.authorityAcked,
         embargo_acked: request.embargoAcked,
       };

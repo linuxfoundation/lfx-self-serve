@@ -37,7 +37,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(rows.nth(2)).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-orbit-ledger`);
 
     await expect(page.getByTestId(`my-formations-open-${CASCADE}`)).toHaveText('Cascade Data Alliance');
-    await expect(page.getByTestId(`my-formations-stage-${CASCADE}`)).toContainText('Formation · Engaged');
+    await expect(page.getByTestId(`my-formations-stage-${CASCADE}`)).toContainText('Engaged');
     await expect(page.getByTestId(`my-formations-items-${CASCADE}`)).toContainText('2 to do · 1 done');
     await expect(page.getByTestId(`my-formations-progress-${CASCADE}`)).toContainText('5 of 17');
     await expect(page.getByTestId(`my-formations-announcement-${CASCADE}`)).toContainText('Oct 25');

@@ -103,6 +103,12 @@ export interface FormationInviteFormValue {
  */
 export type FormationInviteOutcome = 'added' | 'invite_sent';
 
+/**
+ * Which entry path the invite dialog shows (#2772): `search` is the directory typeahead (name or
+ * email, one box), `manual` the Name + Email fields for someone the index cannot surface.
+ */
+export type FormationInviteMode = 'search' | 'manual';
+
 /** One rendered group on the people card — only non-empty groups are emitted, so the template loops once with no per-group branching. */
 export interface FormationPeopleRowGroup {
   key: FormationPeopleGroup;

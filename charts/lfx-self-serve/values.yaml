@@ -324,6 +324,17 @@ environment:
   LOG_LEVEL:
     value: "info"
 
+  # Spec 050 phase 2 rollout gate (lfx-self-serve#2743). The corporate-signing return_url the BFF
+  # mints is fixed when the DocuSign session opens and served by whichever replica takes the return;
+  # on ("true"/"1"/"yes"/"on", like every other server flag) it mints
+  # /org/{org}/easycla/{group}?signed=1, which only releases that route the twin
+  # /org/:orgSegment/easycla can serve. Leave "false" until the release carrying that route is the
+  # rollback floor, then flip. The one-release compatibility window for the leftover /org/easycla
+  # mount and the ?org= reader starts at the flip, not at the deploy. See the chart README,
+  # "EasyCLA Signing Return Address", for the enable/rollback order.
+  ORG_EASYCLA_RETURN_IN_PATH:
+    value: "false"
+
   # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:

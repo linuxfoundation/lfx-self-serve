@@ -4,7 +4,7 @@
 import '@angular/compiler';
 
 import { Location } from '@angular/common';
-import { signal } from '@angular/core';
+import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
@@ -14,7 +14,6 @@ import {
   ORG_CLA_MANAGERS_COPY,
   ORG_CLA_NOT_STARTED_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
 } from '@lfx-one/shared/constants';
@@ -47,8 +46,17 @@ const UNHELD_GROUP_ID = '7c1a9000-0000-4000-8000-000000000003';
 
 describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
+  const OTHER_ORG = { uid: '0014100000OtherOrgAA', accountName: 'Other' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  /** Which mount the page is rendered under: the legacy `/org/easycla/…` (no `orgSegment` ancestor) or `/org/{segment}/easycla/…`. */
+  let orgSegment: string | null = null;
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [
+    { paramMap: convertToParamMap(orgSegment ? { orgSegment } : {}) },
+    { paramMap: paramMap.value },
+  ];
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -108,9 +116,9 @@ describe('OrgEasyclaDetailComponent', () => {
         provideNoopAnimations(),
         {
           provide: ActivatedRoute,
-          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
@@ -182,6 +190,7 @@ describe('OrgEasyclaDetailComponent', () => {
   }
 
   beforeEach(() => {
+    orgSegment = null;
     selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
     grantsLoaded.set(true);
@@ -500,7 +509,7 @@ describe('OrgEasyclaDetailComponent', () => {
       byTestId(fixture, 'org-easycla-detail-identify-someone-else')?.click();
       expect(openDialog).toHaveBeenCalledTimes(1);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -531,7 +540,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
       opened.data?.onRequestStarted?.();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -756,7 +765,7 @@ describe('OrgEasyclaDetailComponent', () => {
       attestationOnClose.next(attestations);
       // Between onClose and onDestroy, the viewer switches organizations. The click captured the
       // Acme uid; opening the hand-off now would sign Acme's CCLA for a different company.
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       attestationOnDestroy.next();
       fixture.detectChanges();
 
@@ -1084,11 +1093,12 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render(previewing());
       expect(navigate).not.toHaveBeenCalled();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1109,7 +1119,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const opened = openDialog.mock.calls[0][1] as { data?: { onRequestStarted?: () => void } };
       opened.data?.onRequestStarted?.();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1121,7 +1131,8 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1141,7 +1152,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
       onClose.next({ sendByEmail: true });
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1150,7 +1161,8 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       expect(openDialog).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1213,7 +1225,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-status')?.textContent).toContain('Signed');
       expect(navigate).not.toHaveBeenCalled();
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1223,7 +1235,8 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The list of the organization now selected: the address follows the selection (spec 050 US2).
+      expect(navigate).toHaveBeenCalledWith(['/org', OTHER_ORG.uid, 'easycla'], { replaceUrl: true });
       // The router is a spy, so this component is still mounted and the preview it should not be
       // showing is still on screen. Start is the assertion that means something in that window:
       // whatever the page renders before the navigation lands, it cannot open a session for the
@@ -1240,9 +1253,10 @@ describe('OrgEasyclaDetailComponent', () => {
      * made under for there to be anything to compare.
      */
     it('leaves for the list when the choice was made under another organization', async () => {
-      await render(previewing({ orgUid: '0014100000OtherOrgAA' }));
+      await render(previewing({ orgUid: OTHER_ORG.uid }));
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      // The selection is still Acme; only the stale choice named Other — so the list is Acme's.
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], { replaceUrl: true });
     });
 
     /**
@@ -1273,7 +1287,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render(previewing());
       // The component is on-screen against SELECTED_ACCOUNT. Simulate the race window by switching
       // the account after the guard has read a matching value, then calling the action directly.
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       const component = fixture.componentInstance as unknown as { startClaProcess: () => void };
       component.startClaProcess();
 
@@ -1433,7 +1447,7 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await start();
       expect(opened).toHaveLength(1);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1471,7 +1485,7 @@ describe('OrgEasyclaDetailComponent', () => {
       opened[0].onDestroy.next();
       expect(opened).toHaveLength(2);
 
-      selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+      selectedAccount.set(OTHER_ORG);
       fixture.detectChanges();
       await fixture.whenStable();
 
@@ -1698,7 +1712,7 @@ describe('OrgEasyclaDetailComponent', () => {
     // wrong reason: nothing subscribed, so nothing could have downloaded either way.
     expect(getPdfUrl).toHaveBeenCalledTimes(1);
 
-    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    selectedAccount.set(OTHER_ORG);
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -1965,8 +1979,11 @@ describe('OrgEasyclaDetailComponent', () => {
          * waits there while the page carries on. The case lands it by calling `landAdoption`.
          */
         adoptionLandsLater?: Held[];
+        /** Render under `/org/{orgSegment}/easycla/…` instead of the legacy mount. */
+        orgSegment?: string;
       } = {}
     ) {
+      orgSegment = options.orgSegment ?? null;
       const {
         org = NAMED.uid,
         flag = '1',
@@ -2020,7 +2037,7 @@ describe('OrgEasyclaDetailComponent', () => {
           provideNoopAnimations(),
           {
             provide: ActivatedRoute,
-            useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+            useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
           },
           {
             provide: AccountContextService,
@@ -2029,6 +2046,7 @@ describe('OrgEasyclaDetailComponent', () => {
             // left, and every ordering that depends on the selection catching up goes untested.
             useValue: {
               selectedAccount,
+              selectedUrlSegment,
               hasOrgSelectorAccess,
               setAccount: (account: { uid?: string; accountName: string }) => selectedAccount.set(account),
               refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
@@ -2078,6 +2096,66 @@ describe('OrgEasyclaDetailComponent', () => {
       await renderReturn();
 
       expect(selectedAccount()?.uid).toBe(NAMED.uid);
+    });
+
+    // Spec 050 phase 2: under `/org/{segment}/easycla/…` the path names the organization and the
+    // path guard is its authority (it adopted the selection before activation). A `?org=` there —
+    // carried over by a switch off a legacy return, or crafted — must not override it: the selection
+    // stays what the guard adopted, the wait runs against *that* organization's list and settles on
+    // it, and both parameters come off the address.
+    it('ignores ?org= on the organization-addressed mount and settles the wait on the addressed organization', async () => {
+      const { fixture } = await renderReturn({ orgSegment: 'acme', listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(getClaGroups).not.toHaveBeenCalledWith(NAMED.uid);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    // The address the BFF mints once the `ORG_EASYCLA_RETURN_IN_PATH` gate is on: the organization
+    // in the path, the flag alone in the query. The wait is keyed to the addressed organization
+    // and the flag is stripped once the row is in hand.
+    it('follows a gated return — organization in the path, no ?org= — to the signed agreement', async () => {
+      const { fixture } = await renderReturn({ orgSegment: 'acme', org: null, listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    // A gated return whose row has not landed yet still waits — on the addressed organization's
+    // list, not on whichever one answers — and a switch mid-wait ends the trip instead of taking
+    // the new organization's list as the answer.
+    it('ends a gated return’s wait when the viewer switches organization instead of resuming it under the new one', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({
+          orgSegment: 'acme',
+          org: null,
+          claGroupsByOrg: { [SELECTED_ACCOUNT.uid]: [], [ELSEWHERE.uid]: [claGroup()] },
+        });
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.returnWait);
+
+        selectedAccount.set(ELSEWHERE);
+        await flush(fixture);
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // A stale `?org=` on the addressed mount with no wait open is not adopted — but it is not left
+    // on the address either, where a reload or a copied link would keep presenting it.
+    it('strips a stale ?org= from the organization-addressed address even with no wait open', async () => {
+      await renderReturn({ orgSegment: 'acme', flag: null, listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
     });
 
     /**
@@ -2339,7 +2417,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
         expect(byTestId(fixture, 'org-easycla-detail-cannot-preview-state')).not.toBeNull();
         expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
-        expect(navigate).not.toHaveBeenCalledWith([ORG_EASYCLA_PATH], expect.anything());
+        expect(navigate).not.toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla'], expect.anything());
       } finally {
         vi.useRealTimers();
       }
@@ -2567,6 +2645,9 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [{ paramMap: convertToParamMap({}) }, { paramMap: paramMap.value }];
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   // Both halves of the address (#2364), as the main describe above supplies them: the CLA Group in
   // the path, the signature narrowing it in the query.
   const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
@@ -2605,9 +2686,9 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         provideNoopAnimations(),
         {
           provide: ActivatedRoute,
-          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },

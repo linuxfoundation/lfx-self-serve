@@ -3,7 +3,7 @@
 
 import '@angular/compiler';
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
@@ -26,6 +26,8 @@ describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
   const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -64,7 +66,7 @@ describe('OrgEasyclaComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -248,8 +250,8 @@ describe('OrgEasyclaComponent', () => {
         providers: [
           provideRouter([]),
           provideNoopAnimations(),
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
-          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), pathFromRoot: [] } } },
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -341,7 +343,7 @@ describe('OrgEasyclaComponent', () => {
       // The state key is spelled out rather than taken from the constant, deliberately. It is
       // written into a history entry that outlives the deployment that wrote it, so renaming it
       // silently breaks in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -447,7 +449,7 @@ describe('OrgEasyclaComponent', () => {
           providers: [
             provideRouter([]),
             provideNoopAnimations(),
-            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
             { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
@@ -644,7 +646,7 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
       // Addressed by CLA Group, with this row's signature narrowing it (#2364).
-      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+      expect(link?.getAttribute('href')).toContain(`/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
     });
 
     /**
@@ -663,7 +665,10 @@ describe('OrgEasyclaComponent', () => {
       const fixture = await render();
       const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
 
-      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+      expect(hrefs).toEqual([
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
+      ]);
     });
 
     /**
@@ -1068,7 +1073,11 @@ describe('OrgEasyclaComponent', () => {
       };
     }
 
-    async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
+    async function renderReturnedFrom(
+      namedOrg: string | null,
+      catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT],
+      opts: { holdPin?: boolean; orgSegment?: string } = {}
+    ) {
       const setAccount = vi.fn();
       const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
@@ -1086,22 +1095,31 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
+            useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          {
+            provide: ActivatedRoute,
+            useValue: {
+              snapshot: {
+                queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}),
+                // Legacy mount by default (no `orgSegment` ancestor); the org-addressed mount when given.
+                pathFromRoot: opts.orgSegment ? [{ paramMap: convertToParamMap({ orgSegment: opts.orgSegment }) }, { paramMap: convertToParamMap({}) }] : [],
+              },
+            },
+          },
           MessageService,
         ],
       })
         .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
         .compileComponents();
 
+      // Spied before the component exists: the addressed-mount strip runs from the constructor.
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(navigate);
       const fixture = TestBed.createComponent(OrgEasyclaComponent);
-      const router = TestBed.inject(Router);
-      vi.spyOn(router, 'navigate').mockImplementation(navigate);
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -1121,6 +1139,22 @@ describe('OrgEasyclaComponent', () => {
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
+    // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is not
+    // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
+    it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
+      const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], {
+        orgSegment: 'containership-inc',
+      });
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(refreshCanonicalRecord).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
@@ -1187,7 +1221,7 @@ describe('OrgEasyclaComponent', () => {
     it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
       const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
 
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
@@ -1238,7 +1272,7 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(resetAndReload).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     it('touches nothing on an ordinary visit that carries no organization', async () => {

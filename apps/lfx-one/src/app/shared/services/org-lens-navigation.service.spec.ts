@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, Signal, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { provideRouter, Router } from '@angular/router';
+import { ActivatedRouteSnapshot, provideRouter, Router } from '@angular/router';
+import { ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
@@ -65,6 +66,46 @@ describe('OrgLensNavigationService', () => {
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false, queryParamsHandling: 'preserve', preserveFragment: true }));
     });
 
+    // DR-004 exemption ended (lfx-self-serve#2743): EasyCLA pages re-address like every other page.
+    it.each([
+      ['/org/easycla', '/org/acme-inc/easycla'],
+      ['/org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
+      ['/org/other-org/easycla/abc-123', '/org/acme-inc/easycla/abc-123'],
+    ])('re-addresses EasyCLA pages too (%s)', (url, expected) => {
+      currentUrl = url;
+      service.navigateToSelectedOrg();
+      expect(navigatedTo()).toBe(expected);
+    });
+
+    // A switch off a pre-deploy return (`/org/easycla/{g}?org={A}&signed=1`) must not carry the
+    // return state onto the organization-addressed page: preserved, `?org=` would be re-adopted
+    // under B's address (undoing the switch) and `?signed=1` would resume A's wait under B. The
+    // rest of the query (`?sig=`) still describes the page and rides along.
+    it('drops the return parameters, and only those, when a switch leaves a legacy EasyCLA address', () => {
+      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+    });
+
+    // A gated return (`/org/{A}/easycla/{g}?signed=1`) is the same trip on the other mount: the
+    // page is reused across the switch, so a preserved `?signed=1` would resume A's wait under B.
+    // Return state never belongs to another organization, whichever mount it started on.
+    it('drops the return parameters when a switch leaves an organization-addressed EasyCLA page', () => {
+      currentUrl = '/org/other-org/easycla/abc-123?signed=1&org=0014100000MgbBBBBB&sig=s1';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+    });
+
+    it('preserves the query on a switch between organization-addressed non-EasyCLA pages', () => {
+      currentUrl = '/org/other-org/projects?range=90d';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/projects');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
+    });
+
     // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
     // not know the selection is unchanged (there is no segment to compare) and inserts regardless.
     it('inserts the organization on a legacy page address even when the selection did not change', () => {
@@ -105,7 +146,7 @@ describe('OrgLensNavigationService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it.each(['/org/easycla', '/org/easycla/abc-123', '/project/cncf/overview', '/'])('is a no-op on %s', (url) => {
+    it.each(['/project/cncf/overview', '/'])('is a no-op outside Org Lens (%s)', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
@@ -152,6 +193,23 @@ describe('OrgLensNavigationService', () => {
       expect(navigatedTo()).toBe('/org/acme-inc/overview');
     });
 
+    // DR-004 Option-B trace: a pre-deploy corporate-signing return on the legacy EasyCLA address
+    // names its organization in `?org=`, which the page adopts after the org list has answered — a
+    // default insert in between would address the default organization instead.
+    it('leaves a legacy EasyCLA return address alone', () => {
+      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1';
+      service.navigateToSelectedOrg('default');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // Without the return parameter there is nothing to adopt later; a plain leftover visit is a
+    // legacy page like any other and gets its organization inserted.
+    it.each(['/org/easycla', '/org/easycla/abc-123?sig=s1'])('inserts the organization on a plain legacy EasyCLA address (%s)', (url) => {
+      currentUrl = url;
+      service.navigateToSelectedOrg('default');
+      expect(navigatedTo()).toMatch(/^\/org\/acme-inc\/easycla/);
+    });
+
     // FR-022–FR-024 / SC-004: the dead end stays a dead end. Only the viewer's own pick leaves it;
     // a default picked from the org list would silently substitute another organization for the
     // one the link named.
@@ -167,6 +225,57 @@ describe('OrgLensNavigationService', () => {
       currentUrl = '/org/other-org/projects/k8s';
       service.navigateToSelectedOrg('default');
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // A gated corporate-signing return (`/org/{A}/easycla/{g}?signed=1`) is an addressed page
+    // with a wait in flight. The default must leave it — and its `?signed=` — exactly as it is:
+    // the strip belongs to the viewer's own switch off the page, never to the automatic default.
+    it('never touches an organization-addressed EasyCLA return, wait state included', () => {
+      currentUrl = '/org/other-org/easycla/abc-123?signed=1';
+      service.navigateToSelectedOrg('default');
+      expect(navigate).not.toHaveBeenCalled();
+    });
+  });
+
+  // The one predicate both EasyCLA pages use to decide whether a client-supplied `?org=` may
+  // name the organization. Driven through the real router over the real route shape (the
+  // `:orgSegment` parameter lives on an ancestor of the page's own route), not a hand-built
+  // `pathFromRoot`, so a narrowing to `route.paramMap` would fail here.
+  describe('isOrgAddressed', () => {
+    @Component({ selector: 'lfx-org-lens-nav-spec-page', template: '' })
+    class Page {}
+
+    async function leafSnapshotAt(url: string): Promise<ActivatedRouteSnapshot> {
+      TestBed.resetTestingModule();
+      TestBed.configureTestingModule({
+        providers: [
+          provideRouter([
+            {
+              path: 'org',
+              children: [
+                { path: 'easycla/:claGroupId', component: Page },
+                { path: `:${ORG_SEGMENT_PARAM}`, children: [{ path: 'easycla/:claGroupId', component: Page }] },
+              ],
+            },
+          ]),
+          { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment } },
+        ],
+      });
+      const realRouter = TestBed.inject(Router);
+      await realRouter.navigateByUrl(url);
+      let leaf = realRouter.routerState.snapshot.root;
+      while (leaf.firstChild) leaf = leaf.firstChild;
+      return leaf;
+    }
+
+    it('is true under /org/:orgSegment/easycla/…', async () => {
+      const leaf = await leafSnapshotAt('/org/acme-inc/easycla/abc-123');
+      expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(true);
+    });
+
+    it('is false on the leftover /org/easycla/… mount', async () => {
+      const leaf = await leafSnapshotAt('/org/easycla/abc-123');
+      expect(TestBed.inject(OrgLensNavigationService).isOrgAddressed(leaf)).toBe(false);
     });
   });
 });
