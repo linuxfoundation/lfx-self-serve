@@ -251,6 +251,7 @@ describe('resolved-address SSRF gate uses the shared judge', () => {
   it('does not reject a genuinely public address at the resolution gate', async () => {
     const dns = await import('node:dns');
     const { fetchSafeUrl } = await import('./url-validation');
+    const callsBefore = vi.mocked(dns.promises.resolve4).mock.calls.length;
     vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
     vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
 
@@ -267,10 +268,12 @@ describe('resolved-address SSRF gate uses the shared judge', () => {
     } catch (error) {
       rejection = error instanceof Error ? error.message : String(error);
     }
-    // Asserts the resolver was called FOR THIS URL, not merely that it has ever been called:
-    // nothing clears these mocks between tests, so a bare toHaveBeenCalled() is satisfied by the
-    // nine cases above and can never fail -- a control that proves nothing.
-    expect(vi.mocked(dns.promises.resolve4)).toHaveBeenCalledWith('events.example.com');
+    // Counted ACROSS THIS TEST, not asserted against call history. Nothing clears these mocks
+    // between tests and all nine cases above use the same hostname, so both `toHaveBeenCalled()`
+    // and `toHaveBeenCalledWith('events.example.com')` are already satisfied before this test
+    // runs -- neither can fail, which makes them controls that prove nothing. A delta is the
+    // only form that actually witnesses THIS invocation.
+    expect(vi.mocked(dns.promises.resolve4).mock.calls.length).toBeGreaterThan(callsBefore);
     expect(rejection).not.toMatch(/private IP/);
   });
 });
