@@ -362,41 +362,7 @@ describe('isPrivateHost', () => {
   ])('refuses %s rather than allowing an unrecognised shape', (_label, hostname) => {
     expect(isPrivateHost(hostname)).toBe(true);
   });
-});
 
-describe('canonicalHttpUrl', () => {
-  // ONE implementation shared by the server allow-list and the client preview. They diverged
-  // three times in review — scheme-only vs host-checked, raw vs canonical, userinfo kept vs
-  // stripped — and each divergence let the preview show something the draft would not contain.
-  it.each([
-    ['strips userinfo', 'https://user:secret@cdn.example.com/h.png', 'https://cdn.example.com/h.png'],
-    ['canonicalizes a scheme-relative form', 'http:example.com/r', 'http://example.com/r'],
-    ['keeps an ordinary public URL', 'https://cdn.example.com/ok.png', 'https://cdn.example.com/ok.png'],
-    ['trims before parsing', '  https://cdn.example.com/ok.png  ', 'https://cdn.example.com/ok.png'],
-  ])('%s', (_label, input, want) => {
-    expect(canonicalHttpUrl(input)).toBe(want);
-  });
-
-  it.each([
-    ['a private host', 'http://169.254.169.254/h.png'],
-    ['loopback with a trailing dot', 'http://localhost./h.png'],
-    ['a javascript: scheme', 'javascript:alert(1)'],
-    ['a data: scheme', 'data:text/html,<script>alert(1)</script>'],
-    ['whitespace only', '   '],
-    ['a non-string', 42],
-    ['an unparsable value', 'not-a-url'],
-  ])('refuses %s', (_label, input) => {
-    expect(canonicalHttpUrl(input)).toBe('');
-  });
-
-  // The embedded-quad check re-judges the address it extracts, and a bare dotted-quad matches
-  // that pattern AS ITSELF -- which recursed until the stack blew. Caught locally; it would have
-  // been a hang in a request handler.
-  it('does not recurse on a bare dotted-quad', () => {
-    expect(() => isPrivateHost('93.184.216.34')).not.toThrow();
-    expect(isPrivateHost('93.184.216.34')).toBe(false);
-    expect(isPrivateHost('10.0.0.1')).toBe(true);
-  });
   /**
    * sslip.io documents a `<prefix>-<address>` affix, and the IPv4 decoder strips it while the
    * IPv6 one did not -- so `app-fd00--1.sslip.io` decoded to `app:fd00::1`, failed the hex test
@@ -493,6 +459,12 @@ describe('canonicalHttpUrl', () => {
     ['a local-use NAT64 address whose tail spells a PUBLIC one', '64:ff9b:1:a9fe:a9:fe00:808:808'],
     ['a compressed local-use NAT64 address', '64:ff9b:1::808:808'],
     ['a zero-padded spelling of the same block', '0064:ff9b:0001::808:808'],
+    // NOT just the /48 -- the first fix here matched `64:ff9b:1:` alone, so these two, with the
+    // identical layout, still misdecoded. Only the TRUE well-known /96 is decodable; every other
+    // prefix in 64:ff9b::/32 is undeclared at this layer and fails closed.
+    ['an unallocated /32 prefix whose tail spells a PUBLIC address', '64:ff9b:2:a9fe:a9:fe00:808:808'],
+    ['the same layout with a zero middle group', '64:ff9b:0:a9fe:a9:fe00:808:808'],
+    ['a high middle group', '64:ff9b:ffff::a9fe:a9fe'],
   ])('denies %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(true);
   });
@@ -500,11 +472,74 @@ describe('canonicalHttpUrl', () => {
   it.each([
     ['the WELL-KNOWN /96 carrying a private address', '64:ff9b::a9fe:a9fe', true],
     ['the WELL-KNOWN /96 carrying a public address', '64:ff9b::808:808', false],
+    ['the WELL-KNOWN /96 fully expanded, public', '64:ff9b:0:0:0:0:808:808', false],
+    ['the WELL-KNOWN /96 fully expanded, private', '64:ff9b:0:0:0:0:a9fe:a9fe', true],
     ['6to4 carrying a private address', '2002:a9fe:a9fe::', true],
     ['6to4 carrying a public address', '2002:808:808::', false],
   ])('still judges %s by its EMBEDDED address', (_label, host, expected) => {
     // The /48 denial must not swallow the prefixes that ARE decodable -- denying 64:ff9b::/96
     // outright would refuse every NAT64-reachable public host.
     expect(isPrivateHost(host)).toBe(expected);
+  });
+  /**
+   * The DOTTED IPv4-mapped form, which is what a DNS resolver hands back.
+   *
+   * `url-validation.ts` dropped its hand-written `::ffff:` strip and now judges the resolver's
+   * address directly, on the strength of isPrivateHost normalising this form itself. That is a
+   * property another module depends on, so it is pinned here rather than left implicit -- the
+   * hex spellings above do not cover it, and a public dotted case alone would not catch a
+   * regression that stopped normalising.
+   */
+  it.each([
+    ['loopback', '::ffff:127.0.0.1'],
+    ['RFC1918', '::ffff:10.0.0.1'],
+    ['link-local metadata endpoint', '::ffff:169.254.169.254'],
+    ['CGNAT', '::ffff:100.64.0.1'],
+  ])('denies the dotted IPv4-mapped form of %s', (_label, host) => {
+    expect(isPrivateHost(host)).toBe(true);
+    expect(isPrivateHost(`[${host}]`)).toBe(true);
+  });
+
+  it.each([
+    ['Google DNS', '::ffff:8.8.8.8'],
+    ['example.com', '::ffff:93.184.216.34'],
+  ])('allows the dotted IPv4-mapped form of %s', (_label, host) => {
+    expect(isPrivateHost(host)).toBe(false);
+    expect(isPrivateHost(`[${host}]`)).toBe(false);
+  });
+});
+
+describe('canonicalHttpUrl', () => {
+  // ONE implementation shared by the server allow-list and the client preview. They diverged
+  // three times in review — scheme-only vs host-checked, raw vs canonical, userinfo kept vs
+  // stripped — and each divergence let the preview show something the draft would not contain.
+  it.each([
+    ['strips userinfo', 'https://user:secret@cdn.example.com/h.png', 'https://cdn.example.com/h.png'],
+    ['canonicalizes a scheme-relative form', 'http:example.com/r', 'http://example.com/r'],
+    ['keeps an ordinary public URL', 'https://cdn.example.com/ok.png', 'https://cdn.example.com/ok.png'],
+    ['trims before parsing', '  https://cdn.example.com/ok.png  ', 'https://cdn.example.com/ok.png'],
+  ])('%s', (_label, input, want) => {
+    expect(canonicalHttpUrl(input)).toBe(want);
+  });
+
+  it.each([
+    ['a private host', 'http://169.254.169.254/h.png'],
+    ['loopback with a trailing dot', 'http://localhost./h.png'],
+    ['a javascript: scheme', 'javascript:alert(1)'],
+    ['a data: scheme', 'data:text/html,<script>alert(1)</script>'],
+    ['whitespace only', '   '],
+    ['a non-string', 42],
+    ['an unparsable value', 'not-a-url'],
+  ])('refuses %s', (_label, input) => {
+    expect(canonicalHttpUrl(input)).toBe('');
+  });
+
+  // The embedded-quad check re-judges the address it extracts, and a bare dotted-quad matches
+  // that pattern AS ITSELF -- which recursed until the stack blew. Caught locally; it would have
+  // been a hang in a request handler.
+  it('does not recurse on a bare dotted-quad', () => {
+    expect(() => isPrivateHost('93.184.216.34')).not.toThrow();
+    expect(isPrivateHost('93.184.216.34')).toBe(false);
+    expect(isPrivateHost('10.0.0.1')).toBe(true);
   });
 });
