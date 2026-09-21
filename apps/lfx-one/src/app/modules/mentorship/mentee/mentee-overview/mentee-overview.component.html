@@ -64,8 +64,8 @@
             <p class="text-sm font-semibold text-gray-900">{{ applicationCount() }} {{ bannerTitleSuffix() }}</p>
             <p class="text-sm text-gray-500">{{ bannerBody() }}</p>
           </div>
-          <!-- Banner actions -->
-          <div class="flex shrink-0 items-center gap-4">
+          <!-- Banner actions — wraps on narrow screens -->
+          <div class="flex flex-wrap items-center gap-2 md:shrink-0 md:gap-4">
             <a
               [href]="findProgramUrl"
               target="_blank"
@@ -79,14 +79,14 @@
             <button
               type="button"
               data-testid="mentee-overview-dev-accepted"
-              class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline"
+              class="text-sm font-medium text-primary-600 hover:underline"
               (click)="switchPhase('accepted')">
               {{ devViewAcceptedLabel }}
             </button>
             <button
               type="button"
               data-testid="mentee-overview-dev-empty"
-              class="whitespace-nowrap text-sm font-medium text-primary-600 hover:underline"
+              class="text-sm font-medium text-primary-600 hover:underline"
               (click)="switchPhase('empty')">
               {{ devViewEmptyLabel }}
             </button>
