@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Account, OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -260,6 +260,40 @@ describe('AccountContextService — address-adopted selection', () => {
 
       expect(service.isAddressedSelection()).toBe(false);
       expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    // The "not a setAccount" half of the contract (ahmedomosanya on lfx-self-serve#2793): the guard
+    // shortcut pins on every child navigation, so a pin that rebuilt the selection from the live
+    // Snowflake row would revert a canonical-record rename each time. Seeded so the rebuild would
+    // actually differ — the other cases run with no live rows, where `setAccount` is an identity.
+    it('does not rebuild the selection from the live row, so a canonical-record rename survives the pin', async () => {
+      const staleRow = {
+        accountId: UID_B,
+        accountName: 'Bravo (stale Snowflake name)',
+        accountSlug: 'bravo-llc',
+        logoUrl: null,
+        cdevOrgId: null,
+        membershipTierDisplayName: 'Gold',
+      } as unknown as OrgLensAccountContextResponse;
+      (TestBed.inject(AnalyticsService) as unknown as { getOrgLensAccountContext: ReturnType<typeof vi.fn> }).getOrgLensAccountContext.mockReturnValue(
+        of([staleRow])
+      );
+      (TestBed.inject(FeatureFlagService) as unknown as { getBooleanFlag: ReturnType<typeof vi.fn> }).getBooleanFlag.mockReturnValue(signal(true));
+      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo' }]);
+      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
+
+      const http = TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
+      http.get.mockReturnValue(of({ uid: UID_B, accountId: UID_B, name: 'Bravo Holdings', slug: 'bravo-llc' } as OrgCanonicalRecord));
+      await service.refreshCanonicalRecord(service.selectedAccount());
+      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
+
+      service.pinSelection('address');
+      expect(service.isAdoptedFromAddress()).toBe(true);
+      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
+
+      // The rebuild the pin must not do — proves the seeding above makes the difference observable.
+      service.setAccount(service.selectedAccount());
+      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
     });
   });
 });

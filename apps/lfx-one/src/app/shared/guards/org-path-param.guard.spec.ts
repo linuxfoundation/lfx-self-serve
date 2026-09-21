@@ -153,14 +153,16 @@ describe('orgPathParamGuard', () => {
     // route (the org-items default, the cookie) is otherwise left unpinned here, and a later persona
     // refresh — empty for a staff viewer — re-seeds over it under the address it does not match.
     it.each([
-      ['slug', 'acme-inc', '/org/acme-inc/overview'],
-      ['SFID (no slug)', null, `/org/${UID_A}/overview`],
-    ])('pins the already-selected organization when the address names it by %s', async (_label, slug, url) => {
+      ['slug', 'acme-inc', '/org/acme-inc/overview', true],
+      ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
+      ['SFID (slug known — canonicalizes)', 'acme-inc', `/org/${UID_A}/overview`, '/org/acme-inc/overview'],
+    ])('pins the already-selected organization when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
       selectedAccount.set(account({ uid: UID_A, slug }));
-      await outcome(slug ?? UID_A, url);
+      expect(await outcome(url.split('/')[2], url)).toBe(expected);
       expect(pinSelection).toHaveBeenCalledTimes(1);
       expect(pinSelection).toHaveBeenCalledWith('address');
       expect(adoptFromAddress).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
     });
 
     it('does not pin through the shortcut when the resolver is the one answering', async () => {
