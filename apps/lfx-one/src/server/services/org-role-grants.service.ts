@@ -54,20 +54,24 @@ export class OrgRoleGrantsService {
   /**
    * Single source of truth for the caller's access-aware org universe. Served through the shared Valkey
    * cache, keyed per caller username; upstream failures are never cached, a failed staff check only
-   * briefly, and the cache is fail-soft. `bypassCache` (the viewer's explicit Retry) skips the read but
-   * still coalesces concurrent computations and still writes the result, so a Retry recomputes once
-   * per burst and refreshes the entry every other reader sees — a degraded roll-up caused by a
-   * structural condition (traversal cap, index lag) is not recomputed on every ordinary page load.
+   * briefly, and the cache is fail-soft.
+   *
+   * `bypassCache` is the viewer's explicit Retry. It is honoured only against an entry Retry is offered
+   * for — a degraded roll-up or a failed staff check — and never lets a clean `ok` entry be recomputed:
+   * a client-passable flag would otherwise be a fan-out lever (coalescing dedupes concurrent calls, not
+   * sequential ones). A bypassed computation still coalesces per burst and still writes the entry every
+   * other reader sees, so a structurally degraded roll-up (traversal cap, index lag) is recomputed once
+   * per Retry, not on every page load.
    */
   public async getAccessAwareOrgs(req: Request, username: string, bypassCache = false): Promise<AccessAwareOrgsResult> {
     // Username is the caller's own identity (the "what can I see" principal), so keying by it is
     // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
     const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
 
-    if (cacheKey && !bypassCache) {
+    if (cacheKey) {
       // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
       const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
-      if (cached) {
+      if (cached && !(bypassCache && (cached.degraded || cached.staffCheck === 'failed'))) {
         return OrgRoleGrantsService.deserializeAccessResult(cached);
       }
     }
@@ -86,12 +90,13 @@ export class OrgRoleGrantsService {
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
       // Never cache an upstream failure (the roster never loaded; it retries next request). A failed
-      // staff check — transient by nature — is cached only under the short TTL: long enough that a
-      // caller pressing Retry during an authorizer outage cannot re-run the uncached fan-out on every
-      // click, short enough that recovery (and the FR-011 correlation id, stored with the entry) is
-      // not pinned for the full TTL. A degraded roll-up keeps the full TTL: its causes are often
-      // structural (traversal cap, missing index doc) and would otherwise recompute the whole walk on
-      // every page load; the viewer's Retry bypasses the read instead (`bypassCache`).
+      // staff check — transient by nature — is cached only under the short TTL: it shields the gate
+      // reads (every section request and the org-items list read this result) during an authorizer
+      // outage, while recovery (and the FR-011 correlation id, stored with the entry) is not pinned
+      // for the full TTL. The viewer's Retry recomputes once per click, coalesced per burst, and
+      // rewrites the entry. A degraded roll-up keeps the full TTL: its causes are often structural
+      // (traversal cap, missing index doc) and would otherwise recompute the whole walk on every page
+      // load; Retry bypasses the read for it instead (`bypassCache`).
       if (!result.upstreamFailed) {
         const ttl = result.staffCheck === 'failed' ? OrgRoleGrantsService.failedStaffCheckCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
         await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), ttl);

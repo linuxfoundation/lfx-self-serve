@@ -349,7 +349,29 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
     expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: true, staffCheck: 'ok' }), 30);
   });
 
-  it('bypassCache skips the cache read, recomputes, and still writes the fresh result', async () => {
+  // A client-passable flag must not be a fan-out lever: only an entry Retry is offered for (degraded
+  // or failed staff check) can be bypassed; a clean entry is served from cache regardless.
+  it('bypassCache is ignored for a clean cached result', async () => {
+    setTeamAnswer(teamMembership(false));
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'cached',
+      username: USERNAME,
+      isStaff: false,
+      degraded: false,
+      staffCheck: 'ok',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME, true);
+
+    expect(result.loadedAt).toBe('cached');
+    expect(teamCalls()).toHaveLength(0);
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('bypassCache recomputes past a degraded cached result and still writes the fresh one', async () => {
     setTeamAnswer(teamMembership(false));
     seedProxy(1);
     getJson.mockResolvedValue({
@@ -365,7 +387,6 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME, true);
 
-    expect(getJson).not.toHaveBeenCalled();
     expect(result.degraded).toBe(false);
     expect(result.resolved.size).toBe(1);
     expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false }), 30);
