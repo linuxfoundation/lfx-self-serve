@@ -2379,6 +2379,27 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaUnlinkedLabel()).toBe('');
     });
 
+    it('still shows the unlinked label for a WHITESPACE-ONLY url, which the server treats as supplied', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        // `"   "` is TRUTHY, so the server's `!section.url` filter drops the label from body.
+        // Trimming on this side would call it omitted and hide it here too -- the CTA would
+        // vanish from both, through the gap this helper exists to close.
+        body: '<p>Hello</p>',
+        cta: 'Register now',
+        ctaUrl: '   ',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().emailCtaLabel()).toBe('');
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register now');
+    });
+
     it('does not double-render a CTA whose destination is accepted', () => {
       selectEmail();
       internals().emailBriefOutput.set({

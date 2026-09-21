@@ -1299,7 +1299,12 @@ export class CampaignsComponent {
     // showed the call to action twice, once in the body and once as the grey label. The test for
     // "was a url supplied" mirrors the server's own `!section.url` exactly, so the two sides
     // agree on which case each is handling rather than each guessing.
-    if ((this.emailCopy()?.ctaUrl ?? '').trim() === '') return '';
+    // MIRRORS the server's `!section.url` exactly -- no `.trim()`. A whitespace-only url is
+    // TRUTHY, so the server treats it as supplied and drops the label from `body`; trimming here
+    // would classify the same value as omitted and hide the label too, and the call to action
+    // would vanish again through the very gap this helper closes. The trim was mine, and it
+    // reintroduced the drift one commit after removing it.
+    if (!(this.emailCopy()?.ctaUrl ?? '')) return '';
     return (this.emailCopy()?.cta ?? '').trim();
   });
 
@@ -3100,6 +3105,18 @@ export class CampaignsComponent {
     this.emailStagingMessage.set('');
   }
 
+  /**
+   * Discards the variant-B draft and invalidates any generation still in flight for it.
+   *
+   * The generation bump is the load-bearing half, not bookkeeping: without it a response that
+   * arrives after the operator has cleared the draft repopulates the fields they just emptied,
+   * and nothing reports it. A monotonic counter rather than a boolean, because a flag cannot
+   * record an off-then-on cycle -- the operator clearing, re-enabling and clearing again within
+   * one in-flight request would leave a live boolean reading "not cancelled".
+   *
+   * Clearing the state and invalidating the generation that owns it are one operation, which is
+   * why they live together here rather than at each call site.
+   */
   private clearAbTestDraft(): void {
     // Bump FIRST. An in-flight onGenerateAbTestCopy captured the previous generation, and
     // without this its `isCurrent()` still passes when the response lands -- writing the draft

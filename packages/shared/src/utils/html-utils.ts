@@ -71,6 +71,17 @@ export function sanitizeDisplayText(value: string): string {
     .trim();
 }
 
+/**
+ * Decodes HTML entities in a text value, in a SINGLE pass.
+ *
+ * Single-pass is the security property, not an optimisation. Decoding repeatedly until the
+ * output stops changing turns `&amp;lt;script&amp;gt;` into live markup in two rounds -- the
+ * double-unescape CodeQL flags -- so one pass over the input is what makes the result
+ * structurally unable to resurrect an escape the author wrote literally.
+ *
+ * Numeric escapes are RANGE-checked rather than merely finite-checked, because this is reachable
+ * from scraped third-party HTML; see isDecodableCodePoint.
+ */
 export function decodeHtmlEntities(s: string): string {
   return s.replace(/&(#\d+|#x[\da-fA-F]+|[a-z]+);/gi, (match, body: string) => {
     const lower = body.toLowerCase();

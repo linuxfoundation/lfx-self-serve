@@ -499,11 +499,17 @@ export function isPrivateHost(hostname: string): boolean {
     parts.slice(0, -4).every((g) => g === '' || /^0+$/.test(g)) &&
     parts.slice(-2).every((g) => /^[0-9a-f]{1,4}$/.test(g));
 
+  // Judged on the EXPANDED groups, never on the raw string. `addr.startsWith('::')` used to be
+  // the last clause here, and it defeated the expansion the three lines above perform: the
+  // fully-expanded spelling of the metadata endpoint, `[0:0:0:0:0:0:a9fe:a9fe]`, satisfied every
+  // other condition and was then refused by a text test it cannot pass, while the compressed
+  // `::a9fe:a9fe` -- the same address -- was correctly blocked.
+  //
+  // `parts.length === 8` is what that clause was reaching for: an IPv4-compatible address is a
+  // FULL address whose leading six groups are zero, and a shorter group list is a malformed
+  // spelling rather than a compatible one.
   const isCompatHex =
-    parts.length >= 3 &&
-    parts.slice(0, -2).every((g) => g === '' || /^0+$/.test(g)) &&
-    parts.slice(-2).every((g) => /^[0-9a-f]{1,4}$/.test(g)) &&
-    addr.startsWith('::');
+    parts.length === 8 && parts.slice(0, -2).every((g) => g === '' || /^0+$/.test(g)) && parts.slice(-2).every((g) => /^[0-9a-f]{1,4}$/.test(g));
 
   if (isMappedHex) {
     const hi = parseInt(tail[1], 16);

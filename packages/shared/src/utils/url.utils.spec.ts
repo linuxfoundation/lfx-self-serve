@@ -447,4 +447,34 @@ describe('canonicalHttpUrl', () => {
   ])('allows %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(false);
   });
+  /**
+   * The SAME address in compressed and fully-expanded form must get the same verdict.
+   *
+   * `isCompatHex` ended with `addr.startsWith('::')`, a test on the RAW string, which defeated
+   * the `expandIPv6` normalisation performed three lines above it: the fully-expanded metadata
+   * endpoint `0:0:0:0:0:0:a9fe:a9fe` satisfied every other condition and was then refused by a
+   * text test it cannot pass, while `::a9fe:a9fe` -- the identical address -- was blocked.
+   *
+   * Normalise before matching is the rule this file's docstring states; the raw-string clause
+   * was the one place that broke it.
+   */
+  it.each([
+    ['IPv4-compatible metadata endpoint', '::a9fe:a9fe', '0:0:0:0:0:0:a9fe:a9fe'],
+    ['IPv4-compatible RFC1918', '::0a00:0001', '0:0:0:0:0:0:0a00:0001'],
+    ['IPv4-mapped metadata endpoint', '::ffff:a9fe:a9fe', '0:0:0:0:0:ffff:a9fe:a9fe'],
+    ['loopback', '::1', '0:0:0:0:0:0:0:1'],
+  ])('denies %s in both compressed and expanded form', (_label, compressed, expanded) => {
+    expect(isPrivateHost(compressed)).toBe(true);
+    expect(isPrivateHost(expanded)).toBe(true);
+    expect(isPrivateHost(`[${expanded}]`)).toBe(true);
+  });
+
+  it.each([
+    ['IPv4-mapped public address', '::ffff:8.8.8.8', '0:0:0:0:0:ffff:808:808'],
+    ['ordinary public IPv6', '2001:4860:4860::8888', '2001:4860:4860:0:0:0:0:8888'],
+  ])('allows %s in both compressed and expanded form', (_label, compressed, expanded) => {
+    expect(isPrivateHost(compressed)).toBe(false);
+    expect(isPrivateHost(expanded)).toBe(false);
+    expect(isPrivateHost(`[${expanded}]`)).toBe(false);
+  });
 });
