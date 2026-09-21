@@ -45,8 +45,6 @@ describe('extractHeroAndSponsors', () => {
     expect(result.sponsors).toHaveLength(1);
     // The NAME is decoded too, not just the URL -- it reaches a sent email as alt text.
     expect(result.sponsors[0].name).toBe('Acme & Co sponsor');
-    // The NAME is decoded too, not just the URL -- it reaches a sent email as alt text.
-    expect(result.sponsors[0].name).toBe('Acme & Co sponsor');
     expect(result.sponsors[0].logoUrl).toBe('https://cdn.example.com/logo.png?v=2&token=xyz');
     expect(new URL(result.sponsors[0].logoUrl).searchParams.get('token')).toBe('xyz');
   });

@@ -10,13 +10,6 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
-/**
- * Decodes a small set of named HTML entities plus all numeric ones (decimal
- * and hex) in a single regex pass. Single-pass is load-bearing: chaining
- * replacements would let a decoded `&` get re-interpreted as the start of a
- * fresh entity (e.g., `&amp;#39;` → `&#39;` → `'`), which is the
- * double-unescape pattern CodeQL flags. Pure string ops — SSR-safe.
- */
 /** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
 function isDecodableCodePoint(code: number): boolean {
   return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
