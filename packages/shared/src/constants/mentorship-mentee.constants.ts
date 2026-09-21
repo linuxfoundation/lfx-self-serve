@@ -473,28 +473,28 @@ export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL = 'Withdraw ap
  * Application History badge copy. Labels are display-only — stored values stay the
  * `applications.status` enum (`pending`, `declined`, never `in-review` / `rejected`).
  */
-export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS: Record<MentorshipMenteeApplicationHistoryStatus, string> = {
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS = {
   pending: 'In Review',
   accepted: 'Accepted',
   declined: 'Not Selected',
   withdrawn: 'Withdrawn',
   graduated: 'Graduated',
   hold: 'On Hold',
-};
+} as const satisfies Record<MentorshipMenteeApplicationHistoryStatus, string>;
 
 /**
  * Runtime Tailwind class map for the Application History status badge. The tokens live
  * outside the app's `content` glob, so this map's values are also spread into the
  * Tailwind safelist — a status/class change here cannot silently lose styling.
  */
-export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES: Record<MentorshipMenteeApplicationHistoryStatus, string> = {
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES = {
   pending: 'bg-amber-50 text-amber-700',
   accepted: 'bg-emerald-50 text-emerald-700',
   declined: 'bg-gray-100 text-gray-600',
   withdrawn: 'bg-gray-100 text-gray-600',
   graduated: 'bg-emerald-50 text-emerald-700',
   hold: 'bg-blue-50 text-blue-700',
-};
+} as const satisfies Record<MentorshipMenteeApplicationHistoryStatus, string>;
 
 export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileResponse = {
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
