@@ -7,7 +7,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
 import {
@@ -20,7 +20,14 @@ import {
   FORMATION_ASSIGNEE_PLACEHOLDER,
   FORMATION_ITEM_STATUS_TILE_CLASSES,
 } from '@lfx-one/shared/constants';
-import { FormationItem, FormationItemDetail, FormationPeopleResponse, FormationPerson, UserSearchResult } from '@lfx-one/shared/interfaces';
+import {
+  FormationItem,
+  FormationItemDetail,
+  FormationItemStatus,
+  FormationPeopleResponse,
+  FormationPerson,
+  UserSearchResult,
+} from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -1284,6 +1291,32 @@ describe('FormationItemDrawerComponent', () => {
       expect(query('[data-testid="formation-item-drawer-save"]')).not.toBeNull();
     });
 
+    it('brings the error card back when a retry fails too, and a further Try again still recovers', async () => {
+      // The flaky-connection path: the retry's 'open' tag must re-set loadFailed rather than leave a blank skeleton.
+      const item = buildItem({ title: 'Recovered item' });
+      const getFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(throwError(() => new Error('boom')))
+        .mockReturnValueOnce(throwError(() => new Error('boom again')))
+        .mockReturnValueOnce(of(buildDetail(item)));
+      await render(item, false, { getFormationItem: getFormationItemMock });
+      expect(query('[data-testid="formation-item-drawer-error"]')).not.toBeNull();
+
+      (query('[data-testid="formation-item-drawer-retry"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+      expect(query('[data-testid="formation-item-drawer-error"]')).not.toBeNull();
+      expect(query('[data-testid="formation-item-drawer-loading"]')).toBeNull();
+
+      (query('[data-testid="formation-item-drawer-retry"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(getFormationItemMock).toHaveBeenCalledTimes(3);
+      expect(query('[data-testid="formation-item-drawer-error"]')).toBeNull();
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Recovered item');
+    });
+
     it('renders the status chip and tints the header tile by status', async () => {
       const item = buildItem({ status: 'in_progress' });
       await render(item, false);
@@ -1296,6 +1329,21 @@ describe('FormationItemDrawerComponent', () => {
       }
     });
 
+    it('survives an upstream status the frontend does not know, falling back to the not-started tile and showing the raw value', async () => {
+      // `status` is a wire cast the mapper passes through unvalidated; a retired or future value must
+      // degrade like the sub-item list does instead of throwing in the header and blanking the drawer.
+      const item = buildItem({ status: 'awaiting_acceptance' as FormationItemStatus });
+      await render(item, false);
+
+      const tile = query('[data-testid="formation-item-drawer-status-tile"]');
+      expect(tile).not.toBeNull();
+      for (const token of FORMATION_ITEM_STATUS_TILE_CLASSES.not_started.split(' ')) {
+        expect(tile?.classList.contains(token)).toBe(true);
+      }
+      expect(query(`[data-testid="formation-item-drawer-status-${item.uid}"]`)?.textContent).toContain('awaiting_acceptance');
+      expect(query('[data-testid="formation-item-drawer-details"]')).not.toBeNull();
+    });
+
     it('skeletons the header tile while loading, keeps the dialog named, and marks it busy', async () => {
       await render(buildItem({}), false, { getFormationItem: vi.fn().mockReturnValue(NEVER) });
 
@@ -1306,10 +1354,22 @@ describe('FormationItemDrawerComponent', () => {
       expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBe('true');
     });
 
-    it('drops aria-busy and names the dialog by the item once loaded', async () => {
-      await render(buildItem({ title: 'Loaded item' }), false);
+    it('flips aria-busy off and names the dialog by the item once the same instance finishes loading', async () => {
+      // One instance across the transition. The value must flip to an explicit "false": PrimeNG's
+      // passthrough updates a key's value in place but never removes a key that vanishes from the
+      // pt object, so a conditional spread left the drawer announcing busy for its whole life.
+      const item = buildItem({ title: 'Loaded item' });
+      const detail$ = new Subject<FormationItemDetail>();
+      await render(item, false, { getFormationItem: vi.fn().mockReturnValue(detail$.asObservable()) });
+      expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBe('true');
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Loading item details');
 
-      expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBeNull();
+      detail$.next(buildDetail(item));
+      detail$.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(query('[role="dialog"]')?.getAttribute('aria-busy')).toBe('false');
       expect(query('#formation-item-drawer-title')?.textContent).toContain('Loaded item');
       expect(query('#formation-item-drawer-title')?.textContent).not.toContain('Loading item details');
     });
@@ -1360,6 +1420,39 @@ describe('FormationItemDrawerComponent', () => {
         expect(indicatorText()).toContain('Unsaved changes');
       });
 
+      it('shows for an assignee change when the caller can write', async () => {
+        await render(buildItem({ owner: { username: 'jdoe', name: 'Jane Doe' } }), false);
+        expect(indicatorText()).toBe('');
+
+        queryUserSearch().onUserSelected({ value: buildUserSearchResult({ username: 'carol' }) } as AutoCompleteSelectEvent);
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(indicatorText()).toContain('Unsaved changes');
+      });
+
+      it('stays blank for assignee text typed but never picked — the same parity with onSaveDetails as GH-2694', async () => {
+        await render(buildItem({ owner: null }), false);
+
+        const search = query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement;
+        search.value = 'car';
+        search.dispatchEvent(new Event('input'));
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        // Nothing reached `ownerUsername`, so nothing would be saved — and the indicator must not claim otherwise.
+        expect(ownerUsernameValue()).toBe('');
+        expect(indicatorText()).toBe('');
+      });
+
+      it('does not read a disabled due-date control as cleared when readOnly hides the footer but canWrite holds', async () => {
+        // readOnly=true + canWrite=true is the one state where the control is disabled and the canWrite()
+        // gate does not fire — the only state that distinguishes getRawValue() from form.value.
+        await render(buildItem({ due_date: '2026-03-01' }), true, undefined, true);
+
+        expect((fixture.componentInstance as unknown as { hasUnsavedChanges: () => boolean }).hasUnsavedChanges()).toBe(false);
+      });
+
       it('ignores assignee and due-date differences when canWrite is false — Save never sends those legs', async () => {
         const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' }, due_date: '2026-03-01' });
         await render(item, false, undefined, false);
@@ -1387,11 +1480,19 @@ describe('FormationItemDrawerComponent', () => {
         expect(evidence?.getAttribute('href')).toBe('https://example.com/evidence');
       });
 
-      it('routes a relative action_href through routerLink, in place', async () => {
+      it('routes a relative action_href through routerLink, in place, and closes the drawer on click', async () => {
         await render(buildItem({ action: 'link', action_href: '/project/settings' }), false);
+        const navigateByUrl = vi.spyOn(TestBed.inject(Router), 'navigateByUrl').mockResolvedValue(true);
 
         expect(actionLink()?.getAttribute('href')).toBe('/project/settings');
         expect(actionLink()?.getAttribute('target')).toBeNull();
+
+        // The drawer closes itself rather than relying on the destination route destroying its host.
+        actionLink()?.click();
+        await fixture.whenStable();
+
+        expect(navigateByUrl).toHaveBeenCalled();
+        expect(fixture.componentInstance.visible()).toBe(false);
       });
 
       it('renders no destination for a status_only item, and no Links section without any link', async () => {

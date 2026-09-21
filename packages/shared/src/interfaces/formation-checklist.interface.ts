@@ -146,7 +146,12 @@ export interface FormationActionHrefTargets {
   internal: string | null;
 }
 
-/** `FormationItemDrawerComponent`'s `editForm` raw value — `getRawValue()`, so the disabled due-date control is included (#2801). */
+/**
+ * `FormationItemDrawerComponent`'s `editForm` value, read through `getRawValue()` so a disabled
+ * due-date control is still present (#2801). The component's `canWrite()` gate is what actually
+ * keeps a disabled control from reading as cleared; the raw read is defense in depth for the
+ * `readOnly && canWrite` state, where the control is disabled but that gate does not fire.
+ */
 export interface FormationItemDrawerFormValue {
   notes: string | null;
   ownerUsername: string | null;

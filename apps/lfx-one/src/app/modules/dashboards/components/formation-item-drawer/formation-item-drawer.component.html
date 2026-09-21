@@ -292,8 +292,12 @@
                 Open
               </a>
             } @else if (actionLinks().internal; as path) {
+              <!-- Closes the drawer itself rather than relying on the destination route destroying this
+                   host — a same-route destination (or a route-reuse change) would otherwise leave the
+                   modal mask over the page. routerLink navigation still proceeds. -->
               <a
                 [routerLink]="path"
+                (click)="onClose()"
                 class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
                 data-testid="formation-item-drawer-action-link">
                 <i class="fa-light fa-arrow-right text-xs" aria-hidden="true"></i>

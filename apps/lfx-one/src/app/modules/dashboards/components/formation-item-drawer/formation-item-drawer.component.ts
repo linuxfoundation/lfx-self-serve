@@ -19,6 +19,7 @@ import type {
   FormationDrawerData,
   FormationItem,
   FormationItemDrawerFormValue,
+  FormationItemStatus,
   FormationItemWriteResult,
   FormationPeopleResponse,
   TagSeverity,
@@ -27,11 +28,11 @@ import type {
 import {
   createEmptyFormationDrawerData,
   createUnavailableFormationPeopleResponse,
+  FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS,
   FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER,
   FORMATION_ASSIGNEE_EMPTY_MESSAGE,
   FORMATION_ASSIGNEE_LOADING_PLACEHOLDER,
   FORMATION_ASSIGNEE_PLACEHOLDER,
-  FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS,
   FORMATION_GATING_ICON_TOOLTIP,
   FORMATION_ITEM_AUDIENCE_LABELS,
   FORMATION_ITEM_AUDIENCE_TOOLTIPS,
@@ -376,17 +377,34 @@ export class FormationItemDrawerComponent {
     const audience = this.item()?.audience;
     return isFormationItemExternal(audience) ? FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience] : undefined;
   });
-  /** Header status chip and tile (#2801) — the same label/severity vocabulary as the checklist row's chip. */
+  /**
+   * The header's status, narrowed fail-closed (#2801 review): `FormationItem.status` is a wire
+   * cast the mapper passes through unvalidated, so a value the frontend doesn't know yet (the
+   * retired `awaiting_acceptance` was one) would otherwise index the maps below to `undefined` and
+   * throw inside the header template, blanking the whole drawer. Falls back to `not_started` for
+   * the glyph/tile/severity — the same guard `lfx-formation-sub-item-list` uses — through
+   * `Object.hasOwn`, not a bare index, so an inherited prototype key can't resolve to a function.
+   * `null` while no item is loaded.
+   */
+  private readonly resolvedStatus: Signal<FormationItemStatus | null> = computed(() => {
+    const status = this.item()?.status;
+    if (!status) return null;
+    return Object.hasOwn(FORMATION_ITEM_STATUS_GLYPHS, status) ? status : 'not_started';
+  });
+  /**
+   * Header status chip and tile (#2801) — the same label/severity vocabulary as the checklist row's
+   * chip. An off-taxonomy status renders its raw value as the chip label (the sub-item list's
+   * off-taxonomy-renders-verbatim rule) over the not-started glyph and tint.
+   */
   protected readonly statusLabel: Signal<string> = computed(() => {
-    const status = this.item()?.status;
-    return status ? FORMATION_ITEM_STATUS_LABELS[status] : '';
+    const raw = this.item()?.status;
+    const status = this.resolvedStatus();
+    if (!raw || !status) return '';
+    return raw === status ? FORMATION_ITEM_STATUS_LABELS[status] : raw;
   });
-  protected readonly statusSeverity: Signal<TagSeverity> = computed(() => {
-    const status = this.item()?.status;
-    return status ? FORMATION_ITEM_STATUS_SEVERITY[status] : 'secondary';
-  });
-  protected readonly statusGlyph = computed(() => FORMATION_ITEM_STATUS_GLYPHS[this.item()?.status ?? 'not_started']);
-  protected readonly statusTileClass: Signal<string> = computed(() => FORMATION_ITEM_STATUS_TILE_CLASSES[this.item()?.status ?? 'not_started']);
+  protected readonly statusSeverity: Signal<TagSeverity> = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.resolvedStatus() ?? 'not_started']);
+  protected readonly statusGlyph = computed(() => FORMATION_ITEM_STATUS_GLYPHS[this.resolvedStatus() ?? 'not_started']);
+  protected readonly statusTileClass: Signal<string> = computed(() => FORMATION_ITEM_STATUS_TILE_CLASSES[this.resolvedStatus() ?? 'not_started']);
   /**
    * Whether the action bar (Mark complete / Skip… plus its one-line explanation) renders at all.
    * status_only items are updated by external tooling only — client-only affordance since GH-2576
@@ -426,8 +444,11 @@ export class FormationItemDrawerComponent {
       'aria-modal': 'true',
       'aria-labelledby': 'formation-item-drawer-title',
       // Tells assistive tech an update is coming while the open fetch is in flight — the title
-      // announces "Loading item details" until then.
-      ...(this.loading() ? { 'aria-busy': 'true' } : {}),
+      // announces "Loading item details" until then. Always present with an explicit value: the
+      // passthrough binding updates a key's value in place but never removes a key that vanishes
+      // from the object, so a conditional spread would leave `aria-busy="true"` on for the
+      // drawer's whole life (#2803 review).
+      'aria-busy': this.loading() ? 'true' : 'false',
     },
     footer: { class: this.readOnly() || !this.item() ? 'hidden' : 'border-t border-gray-200' },
   }));
@@ -469,8 +490,12 @@ export class FormationItemDrawerComponent {
    * because {@link onSaveDetails} must still run its GH-2694 typed-but-unselected assignee guard on
    * a form that looks unchanged. Mirrors that method's own diff rules: notes always count;
    * assignee/due-date differences count only when `canWrite()` (they are ignored at save time
-   * otherwise). A successful save clears it synchronously through {@link optimisticItem}, before
-   * the reload lands.
+   * otherwise) — that gate is what keeps a disabled due-date control (disabled whenever
+   * `assignmentReadOnly()`) from reading as "cleared" in every state where the footer renders.
+   * Reading the form through `getRawValue()` is defense in depth for the one state the gate does
+   * not cover, `readOnly() && canWrite()`, where the footer is hidden but this signal still
+   * computes. A successful save clears it synchronously through {@link optimisticItem}, before the
+   * reload lands.
    */
   protected readonly hasUnsavedChanges: Signal<boolean> = computed(() => {
     const item = this.item();
