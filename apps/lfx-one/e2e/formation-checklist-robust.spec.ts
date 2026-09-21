@@ -349,7 +349,7 @@ test.describe('Formation checklist section — structural contract', () => {
       await page.getByTestId(`formation-checklist-row-title-${itemWithHistory.uid}`).click();
       const history = page.getByTestId('formation-item-drawer-history');
       await expect(history).toBeVisible();
-      await expect(history.getByText('No activity yet.')).toHaveCount(0);
+      await expect(history.getByText('No activity yet')).toHaveCount(0);
     });
   });
 

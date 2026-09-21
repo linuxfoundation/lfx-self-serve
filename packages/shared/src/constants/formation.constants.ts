@@ -257,6 +257,26 @@ export const FORMATION_ITEM_STATUS_GLYPHS = {
 } as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
 
 /**
+ * `FormationItemDrawerComponent`'s header status tile (#2801) — the tinted round well beside the
+ * title, paired with {@link FORMATION_ITEM_STATUS_GLYPHS}'s icon for the same status. Spread into
+ * `tailwind.config.js`'s safelist (the shared package is outside Tailwind's `content` glob).
+ */
+export const FORMATION_ITEM_STATUS_TILE_CLASSES = {
+  done: 'bg-emerald-50 text-emerald-600',
+  in_progress: 'bg-amber-50 text-amber-600',
+  blocked: 'bg-red-50 text-red-600',
+  skipped: 'bg-gray-100 text-gray-500',
+  not_started: 'bg-gray-100 text-gray-500',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * `FormationItemDrawerComponent`'s Activity timeline (#2801) shows a relative time ("2 hr ago") for
+ * entries younger than this window and a short absolute date for anything older — "612 days ago" is
+ * arithmetic, not information. The `<time>` element's `title` always carries the exact timestamp.
+ */
+export const FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS = 7 * 86_400_000;
+
+/**
  * The checklist row's grid template per panel-width tier (#2774). Container-query variants
  * (`@2xl`/`@5xl` from Tailwind's container-queries plugin; each section panel is the `@container`)
  * rather than viewport breakpoints, because what decides whether the columns fit is the width left

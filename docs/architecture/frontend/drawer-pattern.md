@@ -227,6 +227,8 @@ export class OrgDependencyDrawerComponent {
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`
 - **Empty state**: Icon + descriptive text in a bordered container
 - **Test IDs**: `data-testid` on the drawer and key sections
+- **Sticky footer**: `ng-template #footer` for actions that must stay visible while the body scrolls, with `[pt]="{ footer: { class: 'border-t border-gray-200' } }"` for the divider. The template must stay statically declared (PrimeNG resolves it through a ContentChild query) — hide it with a `pt` class when it has nothing to show, not with an `@if` around the template (see `formation-item-drawer`).
+- **Dialog semantics**: `p-drawer` announces as an unnamed `complementary` landmark even with a mask, and never moves focus in. A modal drawer sets `[pt]="{ root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': '<title id>' } }"`, focuses its title (`tabindex="-1"`) from `(onShow)`, and restores focus to the trigger from an `effect` on `visible() === false` — not `(onHide)`, which PrimeNG only emits for its own Escape/mask close, never for a programmatic `visible.set(false)` (see `group-seat-holders-drawer` and `formation-item-drawer`).
 
 ## List Display
 

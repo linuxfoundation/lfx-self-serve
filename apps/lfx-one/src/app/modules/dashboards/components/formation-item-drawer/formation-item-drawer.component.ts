@@ -1,17 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, effect, inject, input, model, output, signal, Signal, viewChild, WritableSignal } from '@angular/core';
+import { Component, computed, effect, ElementRef, inject, input, model, output, PLATFORM_ID, signal, Signal, viewChild, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemWriteResult, FormationPeopleResponse, UserSearchOption } from '@lfx-one/shared/interfaces';
+import type {
+  FormationActionHrefTargets,
+  FormationDrawerData,
+  FormationItem,
+  FormationItemDrawerFormValue,
+  FormationItemWriteResult,
+  FormationPeopleResponse,
+  TagSeverity,
+  UserSearchOption,
+} from '@lfx-one/shared/interfaces';
 import {
   createEmptyFormationDrawerData,
   createUnavailableFormationPeopleResponse,
@@ -19,17 +31,28 @@ import {
   FORMATION_ASSIGNEE_EMPTY_MESSAGE,
   FORMATION_ASSIGNEE_LOADING_PLACEHOLDER,
   FORMATION_ASSIGNEE_PLACEHOLDER,
+  FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS,
+  FORMATION_GATING_ICON_TOOLTIP,
   FORMATION_ITEM_AUDIENCE_LABELS,
+  FORMATION_ITEM_AUDIENCE_TOOLTIPS,
+  FORMATION_ITEM_STATUS_GLYPHS,
+  FORMATION_ITEM_STATUS_LABELS,
+  FORMATION_ITEM_STATUS_SEVERITY,
+  FORMATION_ITEM_STATUS_TILE_CLASSES,
   USER_SEARCH_EMPTY_MESSAGE,
 } from '@lfx-one/shared/constants';
 import {
+  avatarInitials,
   findFormationPersonByUsername,
   formatFormationOwnerTeam,
+  formatRelativeTime,
   formatUserLabel,
   formationItemHasAction,
   getFormationActivityDisplay,
   isFormationItemExternal,
   isValidUrl,
+  resolveFormationActionHref,
+  splitDisplayName,
   toAssigneeSearchOption,
   toLocalDateOnlyString,
   tryParseLocalDateString,
@@ -37,6 +60,7 @@ import {
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
 import { FormationSubItemListComponent } from '../formation-sub-item-list/formation-sub-item-list.component';
@@ -45,8 +69,13 @@ import { FormationSubItemListComponent } from '../formation-sub-item-list/format
   selector: 'lfx-formation-item-drawer',
   imports: [
     DrawerModule,
+    SkeletonModule,
     ReactiveFormsModule,
+    RouterLink,
+    NgClass,
     ButtonComponent,
+    TagComponent,
+    PersonAvatarComponent,
     TextareaComponent,
     UserSearchComponent,
     CalendarComponent,
@@ -59,6 +88,7 @@ import { FormationSubItemListComponent } from '../formation-sub-item-list/format
 export class FormationItemDrawerComponent {
   private readonly formationService = inject(FormationService);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly visible = model<boolean>(false);
 
@@ -155,6 +185,8 @@ export class FormationItemDrawerComponent {
   });
 
   private readonly reload$ = new Subject<void>();
+  /** Try again on a failed open fetch (#2801) — tagged `'open'` in {@link initDrawerData} so the whole open transition re-runs, not just a refresh. */
+  private readonly retry$ = new Subject<void>();
 
   /**
    * The assignee search box — queried so {@link onSaveDetails} can ask it (via
@@ -163,6 +195,14 @@ export class FormationItemDrawerComponent {
    * the drawer is open — exactly the times Save is clickable.
    */
   private readonly assigneeSearch = viewChild(UserSearchComponent);
+  /**
+   * The drawer title — the `aria-labelledby` target and where focus lands on open (#2801, the cheap
+   * half of #2620). It lives in the `#header` template, which PrimeNG embeds into the portaled
+   * panel, so a template ref (not a host DOM query) is the only way to reach it.
+   */
+  private readonly titleRef = viewChild<ElementRef<HTMLHeadingElement>>('titleRef');
+  /** The element that opened the drawer, captured on show so close can hand focus back — see {@link restoreFocus}. */
+  private previouslyFocusedElement: HTMLElement | null = null;
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
@@ -277,11 +317,26 @@ export class FormationItemDrawerComponent {
   /** Distinguishes the History panel's honest empty/failed states (GH-2372) — see `FormationActivityHistoryState`'s doc comment. */
   protected readonly historyState = computed(() => this.drawerData().history_state);
   /**
-   * Precomputed per-entry summary/detail so the template never calls a function per
-   * change-detection cycle — same reason `committee-overview.component.ts` precomputes
-   * `formatRelativeTime` instead of calling it from the template.
+   * Precomputed per-entry summary/detail/initials/relative time so the template never calls a
+   * function per change-detection cycle — same reason `committee-overview.component.ts` precomputes
+   * `formatRelativeTime` instead of calling it from the template. The relative time is computed once
+   * per load, not ticking; the `<time>` element's `title` carries the exact timestamp (#2801).
    */
-  protected readonly historyEntries = computed(() => this.history().map((entry) => ({ entry, ...getFormationActivityDisplay(entry) })));
+  protected readonly historyEntries = computed(() =>
+    this.history().map((entry) => {
+      const [firstName, lastName] = splitDisplayName(entry.actor.name);
+      const createdAt = new Date(entry.created_at);
+      const isRecent = Date.now() - createdAt.getTime() < FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS;
+      return {
+        entry,
+        ...getFormationActivityDisplay(entry),
+        // `FormationUser` carries no avatar URL — initials on a per-username color are the whole avatar.
+        initials: avatarInitials(firstName, lastName, entry.actor.name || entry.actor.username),
+        // `null` past the window — the template falls back to a short absolute date.
+        relativeTime: isRecent ? formatRelativeTime(createdAt) : null,
+      };
+    })
+  );
   /** `evidence_link` is API-sourced — never trust it into `[href]` unvalidated; drops anything that isn't http(s). */
   protected readonly safeEvidenceLink: Signal<string | null> = computed(() => {
     const link = this.item()?.evidence_link;
@@ -313,12 +368,74 @@ export class FormationItemDrawerComponent {
     return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
   });
   protected readonly audienceIsExternal = computed(() => isFormationItemExternal(this.item()?.audience));
+  /** The gating chip's tooltip (#2801) — the row's asterisk explanation, spelled out here as a chip. */
+  protected readonly gatingTooltip = FORMATION_GATING_ICON_TOOLTIP;
+  /** The audience chip's globe and tooltip for the external-involving audiences (#2774); nothing for `internal`. */
+  protected readonly audienceIcon: Signal<string | undefined> = computed(() => (this.audienceIsExternal() ? 'fa-light fa-globe text-gray-400' : undefined));
+  protected readonly audienceTooltip: Signal<string | undefined> = computed(() => {
+    const audience = this.item()?.audience;
+    return isFormationItemExternal(audience) ? FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience] : undefined;
+  });
+  /** Header status chip and tile (#2801) — the same label/severity vocabulary as the checklist row's chip. */
+  protected readonly statusLabel: Signal<string> = computed(() => {
+    const status = this.item()?.status;
+    return status ? FORMATION_ITEM_STATUS_LABELS[status] : '';
+  });
+  protected readonly statusSeverity: Signal<TagSeverity> = computed(() => {
+    const status = this.item()?.status;
+    return status ? FORMATION_ITEM_STATUS_SEVERITY[status] : 'secondary';
+  });
+  protected readonly statusGlyph = computed(() => FORMATION_ITEM_STATUS_GLYPHS[this.item()?.status ?? 'not_started']);
+  protected readonly statusTileClass: Signal<string> = computed(() => FORMATION_ITEM_STATUS_TILE_CLASSES[this.item()?.status ?? 'not_started']);
+  /**
+   * Whether the action bar (Mark complete / Skip… plus its one-line explanation) renders at all.
+   * status_only items are updated by external tooling only — client-only affordance since GH-2576
+   * Phase 2 (see formation-checklist-row.component.ts's buildStatusMenuItems doc comment for why
+   * there's no server-side check to fall back on). assigneeOnly (GH-1956 decision 3): the Me-lens
+   * assignee never sets status, so the controls are hidden entirely rather than disabled — those
+   * rows have no "Mark done" at all. {@link statusControlsRendered} supplies the item-status half.
+   */
+  protected readonly actionBarRendered: Signal<boolean> = computed(() => {
+    const item = this.item();
+    return !!item && !this.assigneeOnly() && !this.readOnly() && item.action !== 'status_only' && this.statusControlsRendered();
+  });
+  /**
+   * The item's own destination for `link` items (#2801) — the same resolution as the row's "Open"
+   * button (`resolveFormationActionHref`), so the drawer can never bind an href the row would
+   * refuse. `provisionable`/`request` rows have a side-effecting action, not a destination, and stay
+   * row-only; `status_only`/`manual` have nothing to open.
+   */
+  protected readonly actionLinks: Signal<FormationActionHrefTargets> = computed(() => {
+    const item = this.item();
+    return item?.action === 'link' ? resolveFormationActionHref(item.action_href) : { external: null, internal: null };
+  });
+  protected readonly hasLinks: Signal<boolean> = computed(() => {
+    const links = this.actionLinks();
+    return this.safeEvidenceLink() !== null || links.external !== null || links.internal !== null;
+  });
+  /**
+   * PrimeNG passthrough (#2801): the root announces as a modal dialog named by the title — the cheap
+   * half of #2620; `p-drawer`'s default is an unnamed `complementary` landmark despite the mask —
+   * and the footer collapses whenever it has nothing to show (read-only, or no item to save). The
+   * `#footer` template itself stays statically declared (PrimeNG resolves it through a ContentChild
+   * query), so hiding is a class, not an `@if` around the template.
+   */
+  protected readonly drawerPt = computed(() => ({
+    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'formation-item-drawer-title' },
+    footer: { class: this.readOnly() || !this.item() ? 'hidden' : 'border-t border-gray-200' },
+  }));
   /**
    * The `ownerUsername` control mirrored into a signal. `editForm` is a plain instance field here
    * (not a signal input like meeting-details' `form()`), so this reads the control's own
    * valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
    */
   private readonly ownerUsernameValue: Signal<string> = this.initOwnerUsernameValue();
+  /**
+   * The whole form mirrored into a signal via `getRawValue()` (#2801) — a disabled control drops
+   * out of `form.value`, so the due date would otherwise read as cleared while
+   * `assignmentReadOnly()` holds.
+   */
+  private readonly formValue: Signal<FormationItemDrawerFormValue> = this.initFormValue();
   /**
    * The committed assignee label bound into lfx-user-search's `[displayValue]`. The name and email
    * come from the people list when it knows the username; otherwise (people unavailable, or an
@@ -340,6 +457,24 @@ export class FormationItemDrawerComponent {
     }
     return username;
   });
+  /**
+   * Drives the footer's "Unsaved changes" indicator only (#2801) — Save itself stays always-enabled
+   * because {@link onSaveDetails} must still run its GH-2694 typed-but-unselected assignee guard on
+   * a form that looks unchanged. Mirrors that method's own diff rules: notes always count;
+   * assignee/due-date differences count only when `canWrite()` (they are ignored at save time
+   * otherwise). A successful save clears it synchronously through {@link optimisticItem}, before
+   * the reload lands.
+   */
+  protected readonly hasUnsavedChanges: Signal<boolean> = computed(() => {
+    const item = this.item();
+    if (!item) return false;
+    const form = this.formValue();
+    if ((form.notes ?? '') !== (item.notes ?? '')) return true;
+    if (!this.canWrite()) return false;
+    if ((form.ownerUsername ?? '') !== (item.owner?.username ?? '')) return true;
+    const dueDate = form.dueDate ? toLocalDateOnlyString(form.dueDate) : '';
+    return dueDate !== (item.due_date ?? '');
+  });
 
   public constructor() {
     // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
@@ -359,10 +494,36 @@ export class FormationItemDrawerComponent {
         dueDate?.enable({ emitEvent: false });
       }
     });
+    // Hand focus back on EVERY close path (#2801). PrimeNG only emits `onHide` from its own
+    // hide(emit=true) (Escape/mask); this drawer's custom close button and the section's
+    // post-Mark-complete close both set `visible` programmatically, which runs hide(false) and
+    // never emits — so key off the model itself. Idempotent: the captured element is nulled after
+    // the first restore, and the initial `false` finds nothing to restore.
+    effect(() => {
+      if (!this.visible()) this.restoreFocus();
+    });
   }
 
   protected onClose(): void {
     this.visible.set(false);
+  }
+
+  /** Try again on the load-error card — re-runs the open transition (see {@link retry$}). */
+  protected onRetry(): void {
+    this.retry$.next();
+  }
+
+  /**
+   * `p-drawer` never moves focus into the panel on open — it only traps Tab/Shift+Tab once focus is
+   * already inside (`pFocusTrap` on its container). Captures the triggering element first so
+   * {@link restoreFocus} can hand focus back on close, then lands on the title: it is the
+   * `aria-labelledby` target, so a screen reader announces the dialog by the item's name (#2620).
+   * Same shape as group-seat-holders-drawer's onDrawerShow.
+   */
+  protected onDrawerShow(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    this.previouslyFocusedElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    this.titleRef()?.nativeElement.focus();
   }
 
   protected onMarkComplete(): void {
@@ -680,6 +841,20 @@ export class FormationItemDrawerComponent {
     );
   }
 
+  private initFormValue(): Signal<FormationItemDrawerFormValue> {
+    // `syncForm`'s `setValue` emits (default `emitEvent`), so the mirror re-syncs on every open; the
+    // constructor's `disable/enable({ emitEvent: false })` deliberately does not, which is fine —
+    // `getRawValue()` is read fresh on every emission and `hasUnsavedChanges`'s `canWrite()` gate
+    // covers the disabled case.
+    return toSignal(
+      this.editForm.valueChanges.pipe(
+        startWith(null),
+        map(() => this.editForm.getRawValue())
+      ),
+      { initialValue: this.editForm.getRawValue() }
+    );
+  }
+
   private initPeople(): Signal<FormationPeopleResponse> {
     // Read on every open (this drawer instance is reused across items and the list can change
     // between opens — an invite from the People panel, say). The service memoises the read per
@@ -718,9 +893,13 @@ export class FormationItemDrawerComponent {
       map(() => 'open' as const)
     );
     const reloadTrigger$ = this.reload$.pipe(map(() => 'reload' as const));
+    // A failed open fetch's Try again (#2801) — tagged 'open', not 'reload', so it re-runs the full
+    // open transition: loadFailed cleared, the skeleton shown, optimistic state dropped, and the
+    // form re-synced from the fresh item (a 'reload' tag would skip all four).
+    const retryTrigger$ = this.retry$.pipe(map(() => 'open' as const));
 
     return toSignal(
-      merge(openTrigger$, reloadTrigger$).pipe(
+      merge(openTrigger$, reloadTrigger$, retryTrigger$).pipe(
         switchMap((trigger) => {
           const projectUid = this.itemProjectUid();
           const itemKey = this.itemKey();
@@ -797,5 +976,14 @@ export class FormationItemDrawerComponent {
       next.delete(uid);
       return next;
     });
+  }
+
+  /** The close-side half of {@link onDrawerShow} — see the constructor's `visible()` effect for why this is not wired to `(onHide)`. */
+  private restoreFocus(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+    if (this.previouslyFocusedElement?.isConnected) {
+      this.previouslyFocusedElement.focus();
+    }
+    this.previouslyFocusedElement = null;
   }
 }

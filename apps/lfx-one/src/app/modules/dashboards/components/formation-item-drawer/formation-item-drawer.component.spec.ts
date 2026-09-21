@@ -202,14 +202,15 @@ describe('FormationItemDrawerComponent', () => {
   // #2774: the header carries the same three facts the checklist row shows, and sub-items render
   // through the shared lfx-formation-sub-item-list instead of an inline title + status-chip list.
   describe('header meta line and sub-items (#2774)', () => {
-    it('spells out "Required for Active" behind the red asterisk for a gating item', async () => {
+    it('spells out "Required for Active" as a chip behind the red asterisk for a gating item', async () => {
       const item = buildItem({ is_gating: true });
       await render(item, false);
 
+      // #2801: the chip is an outlined lfx-tag whose icon slot carries the row's red asterisk.
       const gating = query(`[data-testid="formation-item-drawer-gates-active-${item.uid}"]`);
-      expect(gating?.textContent).toContain('*');
+      expect(gating?.tagName.toLowerCase()).toBe('lfx-tag');
+      expect(gating?.querySelector('i.fa-asterisk')).not.toBeNull();
       expect(gating?.textContent).toContain('Required for Active');
-      expect(gating?.querySelector('lfx-tag')).toBeNull();
     });
 
     it('renders no gating text for a non-gating item', async () => {
@@ -1210,6 +1211,243 @@ describe('FormationItemDrawerComponent', () => {
       expect(shownItemUid()).toBe(b.uid);
       expect(ownerUsernameValue()).toBe('bob');
       expect(getFormationItemMock.mock.calls.length).toBe(getCallCountAfterSwitch);
+    });
+  });
+
+  // #2801: the presentation was rebuilt around the app's current drawer vocabulary. These pin the
+  // parts of the redesign that carry behavior — dialog semantics, focus hand-off, Try again, the
+  // unsaved-changes indicator, the Links section and the Activity timeline — not the styling itself.
+  describe('redesign (#2801)', () => {
+    const editForm = (): FormGroup => (fixture.componentInstance as unknown as { editForm: FormGroup }).editForm;
+    const indicatorText = (): string => query('[data-testid="formation-item-drawer-unsaved"]')?.textContent?.trim() ?? '';
+    const editNotes = async (value: string): Promise<void> => {
+      const notes = query('[data-testid="formation-item-drawer-notes"] textarea') as HTMLTextAreaElement;
+      notes.value = value;
+      notes.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+      fixture.detectChanges();
+    };
+
+    it('announces as a modal dialog named by the item title', async () => {
+      const item = buildItem({ title: 'Contribution agreement' });
+      await render(item, false);
+
+      const dialog = query('[role="dialog"][aria-modal="true"]');
+      expect(dialog).not.toBeNull();
+      expect(dialog?.getAttribute('aria-labelledby')).toBe('formation-item-drawer-title');
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Contribution agreement');
+    });
+
+    it('moves focus to the title on show and hands it back to the trigger on close', async () => {
+      const trigger = document.createElement('button');
+      document.body.appendChild(trigger);
+      await render(buildItem({}), false);
+
+      // `onShow` is PrimeNG's animation callback; drive the handler directly so the assertion doesn't
+      // depend on the noop-animations timing. The trigger is what holds focus when a row opens the drawer.
+      trigger.focus();
+      (fixture.componentInstance as unknown as { onDrawerShow: () => void }).onDrawerShow();
+      expect(document.activeElement?.id).toBe('formation-item-drawer-title');
+
+      // A programmatic close (the custom close button, the section's post-Mark-complete close) never
+      // emits PrimeNG's onHide — the restore keys off the `visible` model instead.
+      fixture.componentInstance.visible.set(false);
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(document.activeElement).toBe(trigger);
+    });
+
+    it('shows the skeleton, and no footer Save, while the item is still loading', async () => {
+      await render(buildItem({}), false, { getFormationItem: vi.fn().mockReturnValue(NEVER) });
+
+      expect(query('[data-testid="formation-item-drawer-loading"]')).not.toBeNull();
+      expect(query('[data-testid="formation-item-drawer-save"]')).toBeNull();
+    });
+
+    it('offers Try again on a failed load, which re-runs the open fetch and renders the item', async () => {
+      const item = buildItem({ title: 'Recovered item' });
+      const getFormationItemMock = vi
+        .fn()
+        .mockReturnValueOnce(throwError(() => new Error('boom')))
+        .mockReturnValueOnce(of(buildDetail(item)));
+      await render(item, false, { getFormationItem: getFormationItemMock });
+      expect(query('[data-testid="formation-item-drawer-error"]')).not.toBeNull();
+
+      (query('[data-testid="formation-item-drawer-retry"] button') as HTMLElement)?.click();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getFormationItemMock).toHaveBeenCalledTimes(2);
+      expect(query('[data-testid="formation-item-drawer-error"]')).toBeNull();
+      expect(query('#formation-item-drawer-title')?.textContent).toContain('Recovered item');
+      expect(query('[data-testid="formation-item-drawer-save"]')).not.toBeNull();
+    });
+
+    it('renders the status chip and tints the header tile by status', async () => {
+      const item = buildItem({ status: 'in_progress' });
+      await render(item, false);
+
+      expect(query(`[data-testid="formation-item-drawer-status-${item.uid}"]`)?.textContent).toContain('In progress');
+      expect(query('[role="dialog"] .bg-amber-50')).not.toBeNull();
+    });
+
+    it('lets the assignee search span its row (the field used to render a third of the width)', async () => {
+      await render(buildItem({}), false);
+
+      expect(query('[data-testid="formation-item-drawer-assignee"] .p-autocomplete.w-full')).not.toBeNull();
+    });
+
+    describe('Unsaved changes indicator', () => {
+      it('is blank on load and shows once a note is edited', async () => {
+        await render(buildItem({ notes: 'old note' }), false);
+        expect(indicatorText()).toBe('');
+
+        await editNotes('new note');
+        expect(indicatorText()).toContain('Unsaved changes');
+      });
+
+      it('clears as soon as Save resolves, before the reload lands', async () => {
+        const item = buildItem({ notes: 'old note' });
+        const getFormationItemMock = vi
+          .fn()
+          .mockReturnValueOnce(of(buildDetail(item)))
+          .mockReturnValue(NEVER);
+        const updateFormationItemMock = vi.fn().mockReturnValue(of({ item: { ...item, notes: 'new note', version: 2 }, etag: '2' }));
+        await render(item, false, { getFormationItem: getFormationItemMock, updateFormationItem: updateFormationItemMock });
+
+        await editNotes('new note');
+        (query('[data-testid="formation-item-drawer-save"] button') as HTMLElement)?.click();
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(indicatorText()).toBe('');
+      });
+
+      it('shows for a due-date change when the caller can write', async () => {
+        await render(buildItem({ due_date: null }), false);
+
+        editForm()
+          .get('dueDate')
+          ?.setValue(new Date(2026, 2, 31));
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(indicatorText()).toContain('Unsaved changes');
+      });
+
+      it('ignores assignee and due-date differences when canWrite is false — Save never sends those legs', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' }, due_date: '2026-03-01' });
+        await render(item, false, undefined, false);
+        // The disabled due-date control drops out of `form.value`; read through getRawValue it must not look cleared.
+        expect(indicatorText()).toBe('');
+
+        editForm().get('ownerUsername')?.setValue('mallory');
+        await fixture.whenStable();
+        fixture.detectChanges();
+
+        expect(indicatorText()).toBe('');
+      });
+    });
+
+    describe('Links', () => {
+      const actionLink = (): HTMLAnchorElement | null => query('[data-testid="formation-item-drawer-action-link"]') as HTMLAnchorElement | null;
+
+      it('renders a valid absolute action_href on a link item as an external Open link beside Evidence', async () => {
+        await render(buildItem({ action: 'link', action_href: 'https://example.com/docs', evidence_link: 'https://example.com/evidence' }), false);
+
+        expect(actionLink()?.getAttribute('href')).toBe('https://example.com/docs');
+        expect(actionLink()?.getAttribute('target')).toBe('_blank');
+        expect(actionLink()?.getAttribute('rel')).toBe('noopener noreferrer');
+        const evidence = query('[data-testid="formation-item-drawer-evidence-link"]') as HTMLAnchorElement | null;
+        expect(evidence?.getAttribute('href')).toBe('https://example.com/evidence');
+      });
+
+      it('routes a relative action_href through routerLink, in place', async () => {
+        await render(buildItem({ action: 'link', action_href: '/project/settings' }), false);
+
+        expect(actionLink()?.getAttribute('href')).toBe('/project/settings');
+        expect(actionLink()?.getAttribute('target')).toBeNull();
+      });
+
+      it('renders no destination for a status_only item, and no Links section without any link', async () => {
+        await render(buildItem({ action: 'status_only', action_href: 'https://example.com/x' }), false);
+
+        expect(actionLink()).toBeNull();
+        expect(query('[data-testid="formation-item-drawer-links"]')).toBeNull();
+      });
+
+      it('drops an unsafe action_href', async () => {
+        await render(buildItem({ action: 'link', action_href: 'javascript:alert(1)' }), false);
+
+        expect(actionLink()).toBeNull();
+      });
+    });
+
+    describe('Activity', () => {
+      it('renders each entry with the actor initials, the summary, the detail line and a relative time carrying the exact timestamp', async () => {
+        const item = buildItem({});
+        const createdAt = new Date(Date.now() - 2 * 3_600_000).toISOString();
+        const detail: FormationItemDetail = {
+          item,
+          history: [
+            {
+              uid: 'activity-1',
+              formation_item_uid: item.uid,
+              action: 'assignee_changed',
+              action_raw: 'assignee_changed',
+              set_by: 'user',
+              actor: { username: 'jdoe', name: 'Jane Doe' },
+              before: { status: null, assignee: null },
+              after: { status: null, assignee: 'jdoe' },
+              created_at: createdAt,
+            },
+          ],
+          history_state: 'complete',
+        };
+        await render(item, false, { getFormationItem: vi.fn().mockReturnValue(of(detail)) });
+
+        const history = query('[data-testid="formation-item-drawer-history"]');
+        expect(history?.querySelector('[data-testid="person-avatar-initials"]')?.textContent).toBe('JD');
+        expect(history?.textContent).toContain('Jane Doe');
+        expect(history?.textContent).toContain('changed the assignee');
+        expect(history?.textContent).toContain('Unassigned → jdoe');
+        const time = history?.querySelector('time');
+        expect(time?.textContent?.trim()).toBe('2 hr ago');
+        expect(time?.getAttribute('datetime')).toBe(createdAt);
+        expect(time?.getAttribute('title')).toBeTruthy();
+      });
+
+      it('falls back to a short absolute date for an entry older than the relative-time window', async () => {
+        const item = buildItem({});
+        const detail: FormationItemDetail = {
+          item,
+          history: [
+            {
+              uid: 'activity-old',
+              formation_item_uid: item.uid,
+              action: 'note_changed',
+              action_raw: 'note_changed',
+              set_by: 'user',
+              actor: { username: 'jdoe', name: 'Jane Doe' },
+              before: null,
+              after: null,
+              created_at: '2024-03-14T10:00:00.000Z',
+            },
+          ],
+          history_state: 'complete',
+        };
+        await render(item, false, { getFormationItem: vi.fn().mockReturnValue(of(detail)) });
+
+        const time = query('[data-testid="formation-item-drawer-history"] time');
+        expect(time?.textContent?.trim()).toBe('Mar 14, 2024');
+        expect(time?.textContent).not.toContain('ago');
+      });
+
+      it('shows the empty state when there is no activity', async () => {
+        await render(buildItem({}), false);
+
+        expect(query('[data-testid="formation-item-drawer-history-empty"]')?.textContent).toContain('No activity yet');
+      });
     });
   });
 });

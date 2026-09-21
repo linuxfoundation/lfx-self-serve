@@ -1,52 +1,87 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Redesigned in #2801 to the app's current drawer vocabulary (Akrites package drawer, group
+     seat-holders drawer): a status-led header, one action bar, a Details card, titled sections and
+     a sticky footer. Every `data-testid` and input id below is an e2e contract — keep them. -->
 <p-drawer
   [(visible)]="visible"
   position="right"
   [modal]="true"
   [showCloseIcon]="false"
+  [pt]="drawerPt()"
+  (onShow)="onDrawerShow()"
   styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
   data-testid="formation-item-drawer">
   <ng-template #header>
-    <div class="flex items-start justify-between gap-4 w-full">
-      <div class="flex flex-col gap-1 flex-1 min-w-0">
-        <!-- `title` is a hover-only affordance in Chromium/WebKit — a tabindex here wouldn't expose
-             it to keyboard focus (and would wrongly become the drawer's focus-trap entry point
-             ahead of Close). The full title is already in the DOM text regardless of the `lg:truncate`
-             visual clipping, so screen readers announce it either way; this is a mouse-only nicety. -->
-        <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
+    <div class="flex items-start gap-3 w-full">
+      <div class="flex items-center justify-center w-10 h-10 rounded-full shrink-0" [ngClass]="statusTileClass()" aria-hidden="true">
+        <i [class]="statusGlyph().icon + ' text-lg'"></i>
+      </div>
+      <div class="flex flex-col gap-1.5 flex-1 min-w-0">
+        <!-- Always rendered (a skeleton stands in while loading) so onDrawerShow can land focus on it
+             before the item arrives; `tabindex="-1"` keeps it out of the Tab order. `title` is a
+             hover-only nicety — the full text is in the DOM regardless of visual wrapping. -->
+        <h2
+          #titleRef
+          id="formation-item-drawer-title"
+          tabindex="-1"
+          class="text-lg font-semibold text-gray-900 break-words focus:outline-none"
+          [attr.title]="item()?.title">
+          @if (loading()) {
+            <p-skeleton width="16rem" height="1.5rem" />
+          } @else {
+            {{ item()?.title }}
+          }
+        </h2>
         @if (item(); as currentItem) {
-          <!-- Meta line (#2774): the same three facts the checklist row shows — gating (the row's red
-               asterisk, with the full phrase spelled out here), owner team, and the audience as plain
-               text with the row's globe for the external-involving audiences. -->
-          @if (currentItem.is_gating || ownerTeamLabel() || audienceLabel()) {
-            <div class="flex items-center gap-3 flex-wrap text-xs text-gray-600">
-              @if (currentItem.is_gating) {
-                <span class="inline-flex items-center gap-1 text-gray-700" [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
-                  <span class="text-red-500 font-semibold" aria-hidden="true">*</span>
-                  <span>Required for Active</span>
-                </span>
-              }
-              @if (ownerTeamLabel(); as team) {
-                <span [attr.data-testid]="'formation-item-drawer-owner-team-' + currentItem.uid"><span class="sr-only">Team: </span>{{ team }}</span>
-              }
-              @if (audienceLabel(); as audience) {
-                <span class="inline-flex items-center gap-1" [attr.data-testid]="'formation-item-drawer-audience-' + currentItem.uid">
-                  @if (audienceIsExternal()) {
-                    <i class="fa-light fa-globe text-gray-400" aria-hidden="true"></i>
-                  }
-                  <span class="sr-only">Audience: </span>{{ audience }}
-                </span>
-              }
-            </div>
+          <p class="flex items-center gap-1.5 text-sm text-gray-500 min-w-0">
+            <span class="truncate">{{ currentItem.section_title }}</span>
+            @if (ownerTeamLabel(); as team) {
+              <span aria-hidden="true">·</span>
+              <span class="shrink-0" [attr.data-testid]="'formation-item-drawer-owner-team-' + currentItem.uid"
+                ><span class="sr-only">Team: </span>{{ team }}</span
+              >
+            }
+          </p>
+          <!-- Chip row (#2774/#2801): the same three facts the checklist row shows — status, gating
+               (the row's red asterisk with the full phrase spelled out), and the audience with the
+               row's globe for the external-involving audiences. -->
+          <div class="flex items-center gap-2 flex-wrap">
+            <lfx-tag
+              [value]="statusLabel()"
+              [severity]="statusSeverity()"
+              [dot]="true"
+              [rounded]="true"
+              [attr.data-testid]="'formation-item-drawer-status-' + currentItem.uid" />
+            @if (currentItem.is_gating) {
+              <lfx-tag
+                value="Required for Active"
+                icon="fa-solid fa-asterisk text-red-500"
+                [outlined]="true"
+                [rounded]="true"
+                [tooltip]="gatingTooltip"
+                [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid" />
+            }
+            @if (audienceLabel(); as audience) {
+              <lfx-tag
+                [value]="audience"
+                [icon]="audienceIcon()"
+                [outlined]="true"
+                [rounded]="true"
+                [tooltip]="audienceTooltip()"
+                [attr.data-testid]="'formation-item-drawer-audience-' + currentItem.uid" />
+            }
+          </div>
+          @if (currentItem.detail) {
+            <p class="text-sm text-gray-600" data-testid="formation-item-drawer-detail">{{ currentItem.detail }}</p>
           }
         }
       </div>
       <button
         type="button"
         (click)="onClose()"
-        class="p-1 text-gray-400 hover:text-gray-600"
+        class="p-1 -mr-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors shrink-0"
         aria-label="Close panel"
         data-testid="formation-item-drawer-close">
         <i class="fa-light fa-xmark text-xl" aria-hidden="true"></i>
@@ -56,32 +91,60 @@
 
   <div class="flex flex-col gap-6 pb-2">
     @if (loading()) {
-      <div class="flex items-center justify-center py-12" data-testid="formation-item-drawer-loading">
-        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      <!-- Skeleton shapes mirror the loaded layout: action bar, Details card, Activity. -->
+      <div class="flex flex-col gap-6" aria-busy="true" data-testid="formation-item-drawer-loading">
+        <p-skeleton width="100%" height="4.5rem" borderRadius="12px" />
+        <div class="flex flex-col gap-2">
+          <p-skeleton width="4rem" height="0.75rem" />
+          <p-skeleton width="100%" height="10rem" borderRadius="12px" />
+        </div>
+        <div class="flex flex-col gap-2">
+          <p-skeleton width="4rem" height="0.75rem" />
+          <p-skeleton width="100%" height="5rem" borderRadius="12px" />
+        </div>
       </div>
     } @else if (loadFailed()) {
-      <div class="flex flex-col items-center gap-2 py-12 text-center" data-testid="formation-item-drawer-error">
-        <p class="text-sm text-red-700">Something went wrong loading this item.</p>
+      <div
+        class="flex flex-col items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 px-4 py-8 text-center"
+        data-testid="formation-item-drawer-error">
+        <i class="fa-light fa-triangle-exclamation text-2xl text-gray-400" aria-hidden="true"></i>
+        <p class="text-sm text-gray-700">Something went wrong loading this item.</p>
+        <lfx-button label="Try again" size="small" severity="secondary" [outlined]="true" (onClick)="onRetry()" data-testid="formation-item-drawer-retry" />
       </div>
     } @else if (item(); as currentItem) {
-      <div class="flex flex-col gap-2">
-        <!-- status_only items are updated by external tooling only — client-only affordance since
-             GH-2576 Phase 2 (see formation-checklist-row.component.ts's buildStatusMenuItems doc
-             comment for why there's no server-side check to fall back on). assigneeOnly (GH-1956
-             decision 3): the Me-lens assignee never sets status, so Mark complete/Skip are hidden
-             entirely here rather than disabled — those rows have no "Mark done" at all. -->
-        @if (!assigneeOnly() && !readOnly() && currentItem.status !== 'done' && currentItem.status !== 'skipped' && currentItem.action !== 'status_only') {
-          <div class="flex items-center gap-2">
-            <!-- Only in_progress is offered here — every other source's "Mark done" lives in the row's
-                 status menu instead (formation-checklist-row.component.ts). canMarkDone()
-                 (available_actions-derived, item-state) covers the ITEM half; the CALLER half is
-                 statusActionsDisabled()'s canSetStatus gate (GH-2705), the BFF's fail-closed mirror
-                 of the gateway's writer_guard + team:formation pair on POST .../status. The gateway
-                 still enforces — the flag is advisory, so a stale page's attempt gets the
-                 FORMATION_TEAM_REQUIRED toast. -->
+      @if (actionBarRendered()) {
+        <!-- One status action at a time: Mark complete only for in_progress (every other source's
+             "Mark done" lives in the row's status menu), Skip… only for a gating not_started item —
+             deliberately narrower than the row overflow menu's "Skip with reason" (GH-2576 Phase 2's
+             minimal-wiring decision). canMarkDone()/canSkip() (available_actions-derived) cover the
+             ITEM half; statusActionsDisabled()'s canSetStatus gate (GH-2705) is the CALLER half, the
+             BFF's fail-closed mirror of the gateway's writer_guard + team:formation pair on
+             POST .../status. The gateway still enforces — a stale page's attempt gets the
+             FORMATION_TEAM_REQUIRED toast. -->
+        <div
+          class="flex flex-col gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 sm:flex-row sm:items-center sm:justify-between"
+          data-testid="formation-item-drawer-action-bar">
+          <div class="flex items-start gap-3 min-w-0">
+            <i [class]="statusGlyph().icon + ' ' + statusGlyph().colorClass + ' mt-0.5 shrink-0'" aria-hidden="true"></i>
+            @if (!canSetStatus()) {
+              <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a
+                   keyboard/screen-reader user — the reason is visible text. Gated on canSetStatus,
+                   matching the buttons' own statusActionsDisabled gate (GH-2705): one message names
+                   both halves of the gateway's pair. -->
+              <p class="text-sm text-gray-600" data-testid="formation-item-drawer-no-write-access">
+                You need project write access and formation team membership to mark this item complete or skip it.
+              </p>
+            } @else if (currentItem.status === 'in_progress') {
+              <p class="text-sm text-gray-700">Mark this item complete once the work is done.</p>
+            } @else {
+              <p class="text-sm text-gray-700">Skip this required item if it doesn't apply to this project — you'll be asked for a reason.</p>
+            }
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
             @if (currentItem.status === 'in_progress') {
               <lfx-button
                 label="Mark complete"
+                icon="fa-light fa-check"
                 size="small"
                 severity="primary"
                 [disabled]="!canMarkDone() || statusActionsDisabled()"
@@ -89,13 +152,10 @@
                 (onClick)="onMarkComplete()"
                 data-testid="formation-item-drawer-mark-complete" />
             }
-            <!-- Deliberately narrower than the row overflow menu's "Skip with reason" (which offers
-                 skip from not_started/in_progress/blocked) — this button predates GH-2576 Phase 2 and
-                 keeps its original not_started-only, gating-only scope per this phase's minimal-wiring
-                 decision rather than widening it to match. -->
             @if (currentItem.is_gating && currentItem.status === 'not_started') {
               <lfx-button
                 label="Skip…"
+                icon="fa-light fa-forward"
                 size="small"
                 severity="secondary"
                 [outlined]="true"
@@ -105,149 +165,226 @@
                 data-testid="formation-item-drawer-skip" />
             }
           </div>
-          @if (!canSetStatus() && statusControlsRendered()) {
-            <!-- A disabled button isn't focusable, so a hover-only tooltip would never reach a keyboard/screen-reader user — render the reason as visible text instead. Scoped to Mark
-                 complete/Skip only — Save's note-only leg doesn't require write access (see `canWrite`'s doc comment on the component). Gated on canSetStatus, matching the buttons'
-                 own statusActionsDisabled gate (GH-2705) — gating it on canWrite alone left a writer outside the formation team with disabled buttons and no visible reason. One
-                 message names both halves of the gateway's pair. -->
-            <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access"
-              >You need project write access and formation team membership to mark this item complete or skip it.</span
-            >
+          <!-- GH-2576: no explanatory text for canMarkDone()/canSkip() disabling the buttons — that
+               state is currently unreachable on a live checklist (upstream always publishes
+               mark_done/skip for the statuses these controls render under), so rendering one would
+               itself be dead code. The [disabled] bindings stay wired regardless. -->
+        </div>
+      }
+
+      @if (currentItem.skip_reason) {
+        <div class="flex items-start gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4" data-testid="formation-item-drawer-skip-reason">
+          <i class="fa-light fa-forward text-gray-400 mt-0.5 shrink-0" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1 min-w-0">
+            <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Skip reason</span>
+            <span class="text-sm text-gray-700">{{ currentItem.skip_reason }}</span>
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-2">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Details</span>
+        <div class="flex flex-col rounded-xl border border-gray-200 divide-y divide-gray-100" data-testid="formation-item-drawer-details">
+          <div class="grid gap-2 px-4 py-3 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-3" data-testid="formation-item-drawer-assignee">
+            <label for="formation-item-drawer-assignee-input" class="text-sm text-gray-500 sm:pt-2">Assignee</label>
+            <!-- #2594: the picker lists the people on this formation — the project's grant holders, the only
+                 population upstream accepts as an assignee — filtered locally by name, email or username, so
+                 a pick can never fail at save with assignee_not_on_project. Pending invitees are listed but
+                 disabled with a note, so a search never silently finds nobody. searchType is the fallback
+                 corpus, used only while the people read is unavailable (global-grant staff who 403 on the
+                 settings read): committee_member is the one proven-working directory type, and the
+                 ASSIGNEE_NOT_ON_PROJECT handling in onSaveDetails covers a pick from it. -->
+            <lfx-user-search
+              [form]="editForm"
+              searchType="committee_member"
+              [candidates]="assigneeCandidates()"
+              [emptyMessage]="assigneeEmptyMessage()"
+              usernameControl="ownerUsername"
+              [displayValue]="assigneeDisplayValue()"
+              [showClear]="true"
+              [readonly]="assigneeReadOnly()"
+              [requireLfAccount]="true"
+              [showManualEntry]="false"
+              [placeholder]="assigneePlaceholder()"
+              styleClass="w-full"
+              inputStyleClass="w-full text-sm"
+              inputId="formation-item-drawer-assignee-input"
+              dataTestId="formation-item-drawer-assignee-search"
+              (onRejectedSelection)="onAssigneeRejected($event)" />
+          </div>
+          <div class="grid gap-2 px-4 py-3 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-3" data-testid="formation-item-drawer-due-date">
+            <label for="formation-item-drawer-due-date-input" class="text-sm text-gray-500 sm:pt-2">Due date</label>
+            <lfx-calendar
+              [form]="editForm"
+              control="dueDate"
+              size="small"
+              styleClass="w-full"
+              placeholder="Select a date"
+              inputId="formation-item-drawer-due-date-input" />
+          </div>
+          <div class="grid gap-2 px-4 py-3 sm:grid-cols-[7rem_minmax(0,1fr)] sm:items-start sm:gap-3" data-testid="formation-item-drawer-notes">
+            <label for="formation-item-drawer-notes-input" class="text-sm text-gray-500 sm:pt-2">Notes</label>
+            <lfx-textarea
+              [form]="editForm"
+              control="notes"
+              [rows]="4"
+              placeholder="Add notes…"
+              styleClass="w-full min-h-24"
+              inputId="formation-item-drawer-notes-input"
+              [readonly]="readOnly()" />
+          </div>
+          @if (!canWrite() && !readOnly()) {
+            <!-- Same treatment as the action bar's message: visible text, not a tooltip on a disabled
+                 control a keyboard/screen-reader user could never focus. Shown whenever the
+                 assignee/due-date fields are read-only for lack of write access — the action bar's
+                 message doesn't cover this case (it doesn't even render when assigneeOnly hides that
+                 block, which is exactly the Pending Actions flow an auditor-only user comes through).
+                 Notes stay editable — the note leg is auditor-gated, not writer-gated. -->
+            <p
+              class="flex items-start gap-2 px-4 py-2.5 text-xs text-gray-500 bg-gray-50 rounded-b-xl"
+              data-testid="formation-item-drawer-no-write-access-assignment">
+              <i class="fa-light fa-lock mt-0.5 shrink-0" aria-hidden="true"></i>
+              <span>You need write access to this project to change the assignee or due date. You can still save notes.</span>
+            </p>
           }
-          <!-- GH-2576: no explanatory text for `canMarkDone()`/`canSkip()` disabling the buttons above — that state is currently unreachable on a live checklist (upstream always
-               publishes `mark_done`/`skip` for the statuses these controls render under, confirmed via review against the deployed service's transition graph), so rendering one would
-               itself be dead code. The `[disabled]` bindings stay wired to `canMarkDone()`/`canSkip()` regardless — see those computed signals' doc comments for why. -->
+        </div>
+      </div>
+
+      @if (currentItem.sub_items.length > 0) {
+        <!-- The list renders its own "Sub-items · N of M done" header (#2774); this wrapper keeps the
+             testid the structural e2e contract nests on. -->
+        <div class="flex flex-col rounded-xl border border-gray-200 p-4" data-testid="formation-item-drawer-sub-items">
+          <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
+        </div>
+      }
+
+      @if (hasLinks()) {
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
+          <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <!-- The item's own destination (link items only) — an external href opens in a new tab, an
+                 in-app relative path routes via routerLink; same validation as the row's "Open" button. -->
+            @if (actionLinks().external; as href) {
+              <a
+                [href]="href"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                data-testid="formation-item-drawer-action-link">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                Open
+              </a>
+            } @else if (actionLinks().internal; as path) {
+              <a
+                [routerLink]="path"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                data-testid="formation-item-drawer-action-link">
+                <i class="fa-light fa-arrow-right text-xs" aria-hidden="true"></i>
+                Open
+              </a>
+            }
+            @if (safeEvidenceLink(); as evidenceLink) {
+              <a
+                [href]="evidenceLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                data-testid="formation-item-drawer-evidence-link">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs" aria-hidden="true"></i>
+                Evidence
+              </a>
+            }
+          </div>
+        </div>
+      }
+
+      <div class="flex flex-col gap-3" data-testid="formation-item-drawer-history">
+        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Activity</span>
+        @if (historyState() === 'unavailable') {
+          <div
+            class="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+            data-testid="formation-item-drawer-history-unavailable">
+            <i class="fa-light fa-triangle-exclamation shrink-0" aria-hidden="true"></i>
+            <span>Couldn't load activity for this item.</span>
+          </div>
+        } @else if (historyEntries().length === 0) {
+          <div
+            class="flex flex-col items-center gap-2 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-center"
+            data-testid="formation-item-drawer-history-empty">
+            <i class="fa-light fa-clock text-xl text-gray-400" aria-hidden="true"></i>
+            <p class="text-sm text-gray-500">No activity yet</p>
+          </div>
+        } @else {
+          <!-- Timeline rail: the sm avatar (h-7) sits centred on a 0.125rem line at left-3.5; pl-10 leaves 0.5rem between avatar and text. -->
+          <ol class="relative flex flex-col gap-4 pl-10 before:absolute before:left-3.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-gray-200">
+            @for (row of historyEntries(); track row.entry.uid) {
+              <li class="relative flex flex-col gap-0.5">
+                <lfx-person-avatar
+                  class="absolute -left-10 top-0"
+                  size="sm"
+                  [name]="row.entry.actor.name"
+                  [initials]="row.initials"
+                  [identity]="row.entry.actor.username" />
+                <div class="flex items-baseline justify-between gap-3">
+                  @if (row.entry.action) {
+                    <span class="text-sm text-gray-700 min-w-0"
+                      ><span class="font-medium text-gray-900">{{ row.entry.actor.name }}</span> {{ row.summary }}</span
+                    >
+                  } @else {
+                    <span class="flex items-center gap-1.5 text-sm text-gray-700 min-w-0">
+                      <span class="font-medium text-gray-900">{{ row.entry.actor.name }}</span>
+                      <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{{ row.summary }}</span>
+                    </span>
+                  }
+                  <!-- Relative inside FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS, a short date beyond it; the title always carries the exact timestamp. -->
+                  <time class="shrink-0 text-xs text-gray-400" [attr.datetime]="row.entry.created_at" [attr.title]="row.entry.created_at | date: 'medium'">
+                    @if (row.relativeTime) {
+                      {{ row.relativeTime }}
+                    } @else {
+                      {{ row.entry.created_at | date: 'mediumDate' }}
+                    }
+                  </time>
+                </div>
+                @if (row.detail) {
+                  <span class="text-xs text-gray-500">{{ row.detail }}</span>
+                }
+              </li>
+            }
+          </ol>
         }
       </div>
-
-      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-notes">
-        <label for="formation-item-drawer-notes-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Notes</label>
-        <lfx-textarea
-          [form]="editForm"
-          control="notes"
-          [rows]="4"
-          placeholder="Add notes…"
-          styleClass="w-full"
-          inputId="formation-item-drawer-notes-input"
-          [readonly]="readOnly()" />
+    } @else {
+      <div class="flex flex-col items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-8 text-center">
+        <p class="text-sm text-gray-500">No item selected.</p>
       </div>
+    }
+  </div>
 
-      @if (!canWrite() && !readOnly()) {
-        <!-- Same treatment as the Mark complete/Skip message above: visible text, not a tooltip on a
-             disabled control a keyboard/screen-reader user could never focus. Shown whenever the
-             assignee/due-date fields are read-only for lack of write access — the status-actions
-             message above doesn't cover this case (it doesn't even render when assigneeOnly hides
-             that block, which is exactly the Pending Actions flow an auditor-only user comes
-             through). Notes stay editable — the note leg is auditor-gated, not writer-gated. -->
-        <span class="text-xs text-gray-500" data-testid="formation-item-drawer-no-write-access-assignment"
-          >You need write access to this project to change the assignee or due date. You can still save notes.</span
-        >
-      }
-      <div class="flex flex-col gap-3 sm:flex-row">
-        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
-          <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <!-- #2594: the picker lists the people on this formation — the project's grant holders, the only
-               population upstream accepts as an assignee — filtered locally by name, email or username, so
-               a pick can never fail at save with assignee_not_on_project. Pending invitees are listed but
-               disabled with a note, so a search never silently finds nobody. searchType is the fallback
-               corpus, used only while the people read is unavailable (global-grant staff who 403 on the
-               settings read): committee_member is the one proven-working directory type, and the
-               ASSIGNEE_NOT_ON_PROJECT handling in onSaveDetails covers a pick from it. -->
-          <lfx-user-search
-            [form]="editForm"
-            searchType="committee_member"
-            [candidates]="assigneeCandidates()"
-            [emptyMessage]="assigneeEmptyMessage()"
-            usernameControl="ownerUsername"
-            [displayValue]="assigneeDisplayValue()"
-            [showClear]="true"
-            [readonly]="assigneeReadOnly()"
-            [requireLfAccount]="true"
-            [showManualEntry]="false"
-            [placeholder]="assigneePlaceholder()"
-            inputId="formation-item-drawer-assignee-input"
-            dataTestId="formation-item-drawer-assignee-search"
-            (onRejectedSelection)="onAssigneeRejected($event)" />
-        </div>
-        <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
-          <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
-          <lfx-calendar [form]="editForm" control="dueDate" placeholder="Select a date" inputId="formation-item-drawer-due-date-input" />
-        </div>
-      </div>
-
-      @if (!readOnly()) {
-        <div>
+  <!-- Always declared — PrimeNG resolves it through a ContentChild query — and collapsed via
+       drawerPt()'s footer class whenever the inner @if renders nothing. -->
+  <ng-template #footer>
+    @if (!readOnly() && item()) {
+      <div class="flex items-center justify-between gap-3 w-full">
+        <!-- The span always exists (so the live region is stable); only its content is conditional,
+             which keeps an "Unsaved changes" that isn't true out of the accessibility tree too. -->
+        <span class="inline-flex items-center gap-2 text-xs text-gray-500" aria-live="polite" data-testid="formation-item-drawer-unsaved">
+          @if (hasUnsavedChanges()) {
+            <span class="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true"></span>
+            Unsaved changes
+          }
+        </span>
+        <div class="flex items-center gap-2">
+          <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="onClose()" data-testid="formation-item-drawer-cancel" />
           <lfx-button
-            label="Save"
+            label="Save changes"
             size="small"
-            severity="secondary"
+            severity="primary"
             [disabled]="busy()"
             [loading]="savingDetails()"
             (onClick)="onSaveDetails()"
             data-testid="formation-item-drawer-save" />
         </div>
-      }
-
-      @if (safeEvidenceLink(); as evidenceLink) {
-        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-links">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Links</span>
-          <a
-            [href]="evidenceLink"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="text-sm text-blue-600 hover:underline"
-            data-testid="formation-item-drawer-evidence-link">
-            Evidence
-          </a>
-        </div>
-      }
-
-      @if (currentItem.sub_items.length > 0) {
-        <!-- The list renders its own "Sub-items · N of M done" header (#2774); this wrapper keeps the
-             testid the structural e2e contract nests on. -->
-        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
-          <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
-        </div>
-      }
-
-      @if (currentItem.skip_reason) {
-        <div class="flex flex-col gap-1 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="formation-item-drawer-skip-reason">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Skip reason</span>
-          <span class="text-sm text-gray-700">{{ currentItem.skip_reason }}</span>
-        </div>
-      }
-
-      <div class="flex flex-col gap-2" data-testid="formation-item-drawer-history">
-        <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">History</span>
-        @if (historyState() === 'unavailable') {
-          <span class="text-sm text-red-600" data-testid="formation-item-drawer-history-unavailable">Couldn't load activity for this item.</span>
-        } @else if (historyEntries().length === 0) {
-          <span class="text-sm text-gray-500">No activity yet.</span>
-        } @else {
-          <div class="flex flex-col gap-2">
-            @for (row of historyEntries(); track row.entry.uid) {
-              <div class="flex flex-col text-sm border-b border-gray-100 pb-2 last:border-b-0">
-                @if (row.entry.action) {
-                  <span class="text-gray-700">{{ row.entry.actor.name }} {{ row.summary }}</span>
-                } @else {
-                  <span class="text-gray-700 flex items-center gap-1.5">
-                    {{ row.entry.actor.name }}
-                    <span class="px-1.5 py-0.5 rounded bg-gray-100 text-gray-500 text-xs">{{ row.summary }}</span>
-                  </span>
-                }
-                @if (row.detail) {
-                  <span class="text-xs text-gray-500">{{ row.detail }}</span>
-                }
-                <span class="text-xs text-gray-400">{{ row.entry.created_at | date: 'medium' }}</span>
-              </div>
-            }
-          </div>
-        }
-      </div>
-    } @else {
-      <div class="text-center py-8 border border-slate-200 rounded-lg">
-        <p class="text-sm text-gray-500">No item selected.</p>
       </div>
     }
-  </div>
+  </ng-template>
 </p-drawer>
