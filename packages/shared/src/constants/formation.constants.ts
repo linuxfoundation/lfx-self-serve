@@ -199,10 +199,10 @@ export const FORMATION_ITEM_AUDIENCE_LABELS = {
 } as const satisfies Record<FormationItemAudience, string>;
 
 /**
- * `FormationChecklistRowComponent`'s audience icon tooltip AND accessible name (#2774), keyed on
- * the external-involving audiences only — `internal` and `null` render no icon at all (see
- * `isFormationItemExternal`, `formation.utils.ts`). The drawer shows
- * {@link FORMATION_ITEM_AUDIENCE_LABELS} as plain text instead of the icon.
+ * Audience globe tooltip AND accessible name for the external-involving audiences (#2774) —
+ * `internal` and `null` render no icon at all (see `isFormationItemExternal`, `formation.utils.ts`).
+ * Two consumers: `FormationChecklistRowComponent`'s bare globe, and since #2801 the item drawer's
+ * audience chip, which pairs the same globe with its {@link FORMATION_ITEM_AUDIENCE_LABELS} text.
  */
 export const FORMATION_ITEM_AUDIENCE_TOOLTIPS = {
   external: "External — involves people outside the Linux Foundation, such as the project's partners.",
