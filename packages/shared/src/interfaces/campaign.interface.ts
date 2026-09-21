@@ -750,14 +750,20 @@ export interface BuildAudienceResult {
 }
 
 /**
- * AI-generated email copy for a brief, as campaign-service returns it.
+ * AI-generated email copy for a brief, in the BFF-ADAPTED shape the UI consumes.
  *
- * Mirrors the upstream `email-copy` type exactly (subject / preheader / body / cta) rather than
- * reshaping it here: the BFF is a thin proxy, and a divergent local shape would have to be kept
- * in step with a contract this layer does not own.
+ * NOT the upstream type. campaign-service returns an ordered `sections` array (rich_text /
+ * button / divider), and `CampaignServiceClient.generateEmailCopy` flattens it into the
+ * `body` / `cta` / `ctaUrl` fields here. An earlier version of this comment described the BFF
+ * as a thin proxy mirroring upstream exactly, which the adapter made false.
  *
- * `body` is a single HTML string, not a section list — upstream generates it that way. The UI
- * renders it as one block.
+ * The adaptation is deliberate rather than incidental: the UI renders `body` through a single
+ * `[innerHTML]` binding and the CTA as its own control, so the flat shape is what the template
+ * needs. It is also lossy in one known way — only the FIRST button survives, while the
+ * `urgency-fomo` prompt may return up to three — tracked as a follow-up, because unflattening
+ * it is a contract change on both sides of the pair.
+ *
+ * `body` is therefore assembled HERE, not generated upstream as one string.
  */
 export interface EmailBriefCopy {
   subject: string;

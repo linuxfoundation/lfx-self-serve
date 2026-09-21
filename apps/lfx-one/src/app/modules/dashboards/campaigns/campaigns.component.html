@@ -635,7 +635,16 @@
                       the operator sees what the draft will actually contain.
                     -->
                     @if (emailHeroImageUrl(); as heroUrl) {
-                      <img referrerpolicy="no-referrer" [src]="heroUrl" alt="Event banner" class="block w-full" data-testid="campaigns-email-preview-hero" />
+                      <!-- NOT an <img [src]>: binding the scraped URL makes the OPERATOR'S browser fetch it,
+                           before campaign-service's dial-time guard runs. The banner is named, not loaded. -->
+                      <div
+                        class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600"
+                        data-testid="campaigns-email-preview-hero">
+                        <i class="fa-light fa-image text-gray-400"></i>
+                        <span
+                          >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
+                        >
+                      </div>
                     }
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -669,7 +678,8 @@
                           class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4"
                           data-testid="campaigns-email-preview-sponsors">
                           @for (sponsor of sponsors; track sponsor.logoUrl) {
-                            <img referrerpolicy="no-referrer" [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                            <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                            <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
                           }
                         </div>
                       }
@@ -796,7 +806,14 @@
                              subject/body differ between them -- because HubSpot's native A/B test
                              swaps subject/body on the clone and leaves its other widgets untouched. -->
                         @if (emailHeroImageUrl(); as heroUrl) {
-                          <img referrerpolicy="no-referrer" [src]="heroUrl" alt="Event banner" class="block w-full" />
+                          <!-- NOT an <img [src]>: binding the scraped URL makes the OPERATOR'S browser fetch it,
+                               before campaign-service's dial-time guard runs. The banner is named, not loaded. -->
+                          <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                            <i class="fa-light fa-image text-gray-400"></i>
+                            <span
+                              >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
+                            >
+                          </div>
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -811,7 +828,8 @@
                           @if (sponsors.length > 0) {
                             <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
                               @for (sponsor of sponsors; track sponsor.logoUrl) {
-                                <img referrerpolicy="no-referrer" [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                                <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                                <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
                               }
                             </div>
                           }
@@ -829,7 +847,14 @@
                           </p>
                         </div>
                         @if (emailHeroImageUrl(); as heroUrl) {
-                          <img referrerpolicy="no-referrer" [src]="heroUrl" alt="Event banner" class="block w-full" />
+                          <!-- NOT an <img [src]>: binding the scraped URL makes the OPERATOR'S browser fetch it,
+                               before campaign-service's dial-time guard runs. The banner is named, not loaded. -->
+                          <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+                            <i class="fa-light fa-image text-gray-400"></i>
+                            <span
+                              >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
+                            >
+                          </div>
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -844,7 +869,8 @@
                           @if (sponsors.length > 0) {
                             <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
                               @for (sponsor of sponsors; track sponsor.logoUrl) {
-                                <img referrerpolicy="no-referrer" [src]="sponsor.logoUrl" [alt]="sponsor.name" class="h-10 object-contain" />
+                                <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                                <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
                               }
                             </div>
                           }

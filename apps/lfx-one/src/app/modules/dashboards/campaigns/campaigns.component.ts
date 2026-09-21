@@ -1292,6 +1292,30 @@ export class CampaignsComponent {
    * not carry. This is preview-only text, so the operator can see the generator's wording and
    * that it has no usable destination.
    */
+  /**
+   * The hero image's HOST, for a preview that describes the image without fetching it.
+   *
+   * The preview used to bind the scraped URL straight into `<img [src]>`, which makes the
+   * OPERATOR'S BROWSER issue the request -- before campaign-service's dial-time guard is
+   * involved, because that guard only runs when the draft is staged. `canonicalHttpUrl` cannot
+   * prevent it: a scraped hostname can resolve to an RFC1918 or loopback address, and
+   * `referrerpolicy` suppresses the referrer without stopping the fetch.
+   *
+   * There is no re-hosted asset to show instead -- campaign-service re-hosts the bytes when the
+   * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
+   * names the image rather than loading it: the operator still sees that a banner will be
+   * attached and where it came from, and no request leaves the browser.
+   */
+  protected readonly emailHeroImageHost = computed<string>(() => {
+    const url = this.emailHeroImageUrl();
+    if (url === '') return '';
+    try {
+      return new URL(url).host;
+    } catch {
+      return '';
+    }
+  });
+
   protected readonly emailCtaUnlinkedLabel = computed<string>(() => {
     if (this.emailCtaIsStageable() || !this.emailBodyIsStageable()) return '';
     // ONLY when a url was supplied and then REFUSED -- never when it was omitted.

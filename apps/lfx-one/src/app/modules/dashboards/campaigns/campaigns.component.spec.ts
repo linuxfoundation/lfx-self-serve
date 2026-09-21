@@ -1866,6 +1866,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     emailCopy: WritableSignal<EmailBriefCopy | null>;
     emailCtaDestination: Signal<string>;
     emailCtaUnlinkedLabel: Signal<string>;
+    emailHeroImageHost: Signal<string>;
     emailAudience: WritableSignal<CampaignAudience | null>;
     emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
     emailAudienceMessage: WritableSignal<string>;
