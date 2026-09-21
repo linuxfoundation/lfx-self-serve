@@ -42,11 +42,22 @@ describe('campaigns email preview template', () => {
     expect(bound).toEqual([]);
   });
 
-  it('has no img element in the email preview at all', () => {
-    // Narrower and blunter: the preview names images instead of rendering them, so an `<img>`
-    // appearing here at all is the change worth catching, bound or not.
-    const previewStart = template.indexOf('campaigns-email-preview-hero');
-    expect(previewStart).toBeGreaterThan(-1);
+  it('has no img element in the email preview block at all', () => {
+    // The name promised an `<img>` check and the body only asserted a testid existed -- it could
+    // not fail for the reason it claimed. It now scopes to the preview region and looks for the
+    // element, so a STATIC `<img src="...">` (which the bound-src test above would miss) is
+    // caught too: the preview names images rather than rendering them, so any `<img>` here is
+    // the change worth knowing about.
+    const start = template.indexOf('campaigns-email-preview-hero');
+    expect(start).toBeGreaterThan(-1);
+    const end = template.indexOf('campaigns-email-preview-cta', start);
+    expect(end).toBeGreaterThan(start);
+
+    // HTML comments stripped first: the preview carries a comment explaining why an
+    // `<img [src]>` is NOT used, and matching that text would fail on the documentation of the
+    // very property being asserted.
+    const region = template.slice(start, end).replace(/<!--[\s\S]*?-->/g, '');
+    expect(region).not.toMatch(/<img\b/);
   });
 
   it('names the hero host instead, so the operator still knows a banner is coming', () => {
