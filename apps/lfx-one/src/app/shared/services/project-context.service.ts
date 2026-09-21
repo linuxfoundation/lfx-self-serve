@@ -150,6 +150,19 @@ export class ProjectContextService {
   /** `undefined` while a stage fetch is in flight for the current context; otherwise the resolved stage, or `null`. */
   private readonly activeProjectStageFetch: Signal<string | null | undefined> = this.initActiveProjectStageFetch();
 
+  private readonly formationOverviewAllowed = signal<string | null>(null);
+  /**
+   * The Formation-stage project whose `/project/overview` `formationOverviewRedirectGuard` let stand
+   * instead of redirecting to the checklist — the flag was off, pinned off, or LaunchDarkly was not
+   * ready within `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` (#2754). `SidebarNavService` keeps that
+   * project's full nav while this names it, so a provider that only becomes ready after the guard
+   * gave up (or a flag flipped on live) cannot collapse the nav to Formation-only under a dashboard
+   * the guard already admitted. Written on every overview landing decision (`null` when the guard
+   * redirects), so the next overview navigation re-decides; compared against the selected project,
+   * so another project's decision never applies.
+   */
+  public readonly formationOverviewAllowedSlug: Signal<string | null> = this.formationOverviewAllowed.asReadonly();
+
   /**
    * Meeting-authoring permission for the current active context, paired with the context uid it was
    * resolved against: writer *or* meeting coordinator.
@@ -224,6 +237,11 @@ export class ProjectContextService {
   /** Records the kind the current route declares, so context resolution can prefer it over the lens. */
   public setRouteLensKind(kind: 'foundation' | 'project' | null): void {
     this.routeLensKind.set(kind);
+  }
+
+  /** Records `formationOverviewRedirectGuard`'s latest `/project/overview` landing decision — see {@link formationOverviewAllowedSlug}. */
+  public setFormationOverviewAllowedSlug(slug: string | null): void {
+    this.formationOverviewAllowed.set(slug);
   }
 
   public clearFoundation(): void {

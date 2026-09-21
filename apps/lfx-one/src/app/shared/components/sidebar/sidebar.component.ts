@@ -235,7 +235,10 @@ export class SidebarComponent {
    * lens-type change, off an entity page, or off the Project lens landing/checklist pages.
    */
   private contextSwitchTarget(): NavLens | null {
-    const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
+    // Primary-outlet segments, not a split of the raw URL: `Router.url` serializes `path?query#fragment`,
+    // so a fragment with no query string would otherwise stay glued to the last segment (same
+    // approach as `MentorPageComponent.resolveActiveTab`).
+    const segments = this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((segment) => segment.path) ?? [];
     const currentPrefix = segments[0];
     if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
       return null;

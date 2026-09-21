@@ -3,7 +3,7 @@
 
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Router } from '@angular/router';
+import { DefaultUrlSerializer, Router } from '@angular/router';
 import { OPEN_PROFILE_BANNER_LINK_CLICKED } from '@lfx-one/shared/constants';
 import { LensItem, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -44,7 +44,7 @@ describe('SidebarComponent — Open Profile banner click tracking (LFXV2-3336)',
     TestBed.configureTestingModule({
       imports: [SidebarComponent],
       providers: [
-        { provide: Router, useValue: { url: '/', navigate: vi.fn() } },
+        { provide: Router, useValue: { url: '/', navigate: vi.fn(), parseUrl: (url: string) => new DefaultUrlSerializer().parse(url) } },
         { provide: DataDogRumService, useValue: { addAction } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
@@ -102,7 +102,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
     TestBed.configureTestingModule({
       imports: [SidebarComponent],
       providers: [
-        { provide: Router, useValue: { url, navigate } },
+        { provide: Router, useValue: { url, navigate, parseUrl: (value: string) => new DefaultUrlSerializer().parse(value) } },
         { provide: DataDogRumService, useValue: { addAction: vi.fn() } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
@@ -137,7 +137,7 @@ describe('SidebarComponent — same-lens project switch re-enters the lens landi
     setProject.mockClear();
   });
 
-  it.each(['/project/overview?project=alpha', '/project/formation?project=alpha'])(
+  it.each(['/project/overview?project=alpha', '/project/formation?project=alpha', '/project/overview#activity'])(
     'navigates to the overview with the new slug when switching projects on %s',
     async (url) => {
       const sidebar = await createSidebar(url);

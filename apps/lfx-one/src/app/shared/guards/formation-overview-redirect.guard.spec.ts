@@ -22,6 +22,7 @@ describe('formationOverviewRedirectGuard', () => {
   let getProject: ReturnType<typeof vi.fn>;
   let createUrlTree: ReturnType<typeof vi.fn>;
   let selectedProject: ReturnType<typeof signal<ProjectContext | null>>;
+  let setFormationOverviewAllowedSlug: ReturnType<typeof vi.fn>;
 
   const contextProject: ProjectContext = { uid: 'uid-ctx', name: 'Context Project', slug: 'ctx-project', parent_uid: '', logoUrl: '' };
 
@@ -41,6 +42,7 @@ describe('formationOverviewRedirectGuard', () => {
     getProject = vi.fn().mockReturnValue(of({ stage: 'Formation - Engaged' }));
     createUrlTree = vi.fn().mockImplementation((commands: string[], opts: unknown) => ({ redirect: commands[0], opts }) as unknown as UrlTree);
     selectedProject = signal<ProjectContext | null>(null);
+    setFormationOverviewAllowedSlug = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -49,7 +51,7 @@ describe('formationOverviewRedirectGuard', () => {
           useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), waitForReady, getBooleanFlag },
         },
         { provide: ProjectService, useValue: { getProject } },
-        { provide: ProjectContextService, useValue: { selectedProject } },
+        { provide: ProjectContextService, useValue: { selectedProject, setFormationOverviewAllowedSlug } },
         { provide: Router, useValue: { createUrlTree } },
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
@@ -78,6 +80,7 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(getProject).toHaveBeenCalledWith('my-project', false);
     expect(result).toEqual({ redirect: '/project/formation', opts: { queryParams: { project: 'my-project' } } });
+    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith(null);
   });
 
   it('carries the other query params through the redirect so a denial notice still surfaces', async () => {
@@ -104,6 +107,7 @@ describe('formationOverviewRedirectGuard', () => {
     expect(getFlagOverride).not.toHaveBeenCalled();
     expect(waitForReady).not.toHaveBeenCalled();
     expect(getBooleanFlag).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).not.toHaveBeenCalled();
   });
 
   it('allows a disengaged formation project', async () => {
@@ -130,9 +134,10 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(result).toBe(true);
     expect(waitForReady).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
   });
 
-  it('fails open to the dashboard when the provider never becomes ready', async () => {
+  it('fails open to the dashboard when the provider never becomes ready, and records the dashboard it let stand for the sidebar', async () => {
     providerReady.set(false);
     waitForReady.mockResolvedValue(false);
 
@@ -143,14 +148,16 @@ describe('formationOverviewRedirectGuard', () => {
       FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS
     );
     expect(result).toBe(true);
+    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
   });
 
-  it('allows when the flag is off', async () => {
+  it('allows when the flag is off, recording the dashboard it let stand so a live flip cannot collapse the nav under it', async () => {
     getBooleanFlag.mockReturnValue(signal(false));
 
     const result = await runGuard({ project: 'my-project' });
 
     expect(result).toBe(true);
     expect(createUrlTree).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
   });
 });

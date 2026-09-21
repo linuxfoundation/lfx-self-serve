@@ -25,8 +25,9 @@ import { ProjectService } from '../services/project.service';
  * `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`). Otherwise waits for provider readiness via
  * `waitForReady` (reported to RUM on timeout) and resolves `false` when it never arrives — what the
  * caller does with `false` (fail open or closed) is the guard's call, not this helper's, and so is
- * the budget: the default is the shared one every flag-gated guard uses, and a guard that only
- * redirects an already-rendered page passes a shorter `timeoutMs`.
+ * the budget: the default is `FEATURE_FLAG_READY_TIMEOUT_MS`, shared with every guard that goes
+ * through `waitForReady`, and a guard that only redirects an already-rendered page passes a shorter
+ * `timeoutMs`.
  */
 export async function resolveFormationFlag(featureFlagService: FeatureFlagService, guard: string, timeoutMs?: number): Promise<boolean> {
   const override = featureFlagService.getFlagOverride(FORMATION_ENABLED_FLAG);

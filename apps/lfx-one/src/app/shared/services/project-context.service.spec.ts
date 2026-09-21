@@ -221,6 +221,16 @@ describe('ProjectContextService — Formation signals (GH-1955)', () => {
     expect(service.activeProjectStage()).toBeNull();
   });
 
+  it("exposes the redirect guard's latest overview landing decision for the sidebar (#2754)", () => {
+    expect(service.formationOverviewAllowedSlug()).toBeNull();
+
+    service.setFormationOverviewAllowedSlug('forming');
+    expect(service.formationOverviewAllowedSlug()).toBe('forming');
+
+    service.setFormationOverviewAllowedSlug(null);
+    expect(service.formationOverviewAllowedSlug()).toBeNull();
+  });
+
   it('counts an unauthenticated session as resolved with no stage', () => {
     userService.authenticated.set(false);
     TestBed.inject(ApplicationRef).tick();

@@ -32,7 +32,12 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
  * client's initial navigation re-runs this guard after hydration). The browser run fails OPEN on a
  * readiness timeout — the dashboard is the pre-formation UI an unflagged evaluation renders anyway,
  * and the checklist route itself fails closed on the same timeout, so there is nothing to redirect
- * to. That wait is the short `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` budget, not the ten-second
+ * to. Every fail-open for a Formation-stage project is recorded on
+ * `ProjectContextService.formationOverviewAllowedSlug`, which `SidebarNavService` reads to keep the
+ * full nav in step with the dashboard it stands on — without that, a provider becoming ready after
+ * the budget (or a flag flipped on live) would collapse the nav to Formation-only under a page this
+ * guard had already admitted; the next overview decision overwrites it. That wait is the short
+ * `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` budget, not the ten-second
  * one dark-launched routes use: the dashboard is already settled and interactive underneath, and a
  * redirect landing that late would interrupt whatever the user started (a shorter budget cannot
  * bounce — readiness is monotonic, so an overview that gave up never redirects, and a checklist that
@@ -62,8 +67,13 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
   }
 
   if (!(await resolveFormationFlag(featureFlagService, 'formationOverviewRedirectGuard', FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS))) {
+    // Fail open — and say so: the sidebar keeps this project's full nav while this overview stands,
+    // so a flag that only arrives after the budget cannot collapse the nav to Formation-only under
+    // the dashboard this guard already admitted. The next overview navigation re-decides.
+    projectContextService.setFormationOverviewAllowedSlug(slug);
     return true;
   }
 
+  projectContextService.setFormationOverviewAllowedSlug(null);
   return router.createUrlTree([FORMATION_CHECKLIST_PATH], { queryParams: { ...route.queryParams, project: slug } });
 };

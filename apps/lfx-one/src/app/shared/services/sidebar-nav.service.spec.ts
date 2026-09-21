@@ -38,6 +38,7 @@ describe('SidebarNavService', () => {
   const formationEnabled = signal(false);
   const activeProjectStage = signal<string | null>(null);
   const activeProjectStageResolved = signal(true);
+  const formationOverviewAllowedSlug = signal<string | null>(null);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
@@ -66,6 +67,7 @@ describe('SidebarNavService', () => {
     formationEnabled.set(false);
     activeProjectStage.set(null);
     activeProjectStageResolved.set(true);
+    formationOverviewAllowedSlug.set(null);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
     isAuditor.set(false);
@@ -115,6 +117,7 @@ describe('SidebarNavService', () => {
             canWrite,
             activeProjectStage,
             activeProjectStageResolved,
+            formationOverviewAllowedSlug,
           },
         },
         { provide: UserService, useValue: { authenticated: signal(false) } },
@@ -263,6 +266,29 @@ describe('SidebarNavService', () => {
     activeProjectStage.set(null);
 
     expect(TestBed.inject(SidebarNavService).sidebarItems()).toEqual([]);
+  });
+
+  it('keeps the full project-lens nav for a Formation-stage project whose dashboard the redirect guard let stand, so a late flag cannot collapse it under that page', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    selectedProject.set({ slug: 'forming' });
+    activeProjectStage.set('Formation - Exploratory');
+    formationOverviewAllowedSlug.set('forming');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/formation')).toBeUndefined();
+    expect(labels(items)).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
+  });
+
+  it("still collapses to Formation only when the redirect guard's fail-open was for a different project", () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    selectedProject.set({ slug: 'forming' });
+    activeProjectStage.set('Formation - Exploratory');
+    formationOverviewAllowedSlug.set('other-project');
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toEqual(['Formation']);
   });
 
   it('keeps the full project-lens nav while the stage is still resolving when the flag is off', () => {

@@ -128,8 +128,14 @@ class ProjectContextService {
   activeProjectAnnouncementDateLoading: Signal<boolean>;
   activeProjectAnnouncementDateHasError: Signal<boolean>;
 
-  setFoundation(ctx: ProjectContext): void;
-  setProject(ctx: ProjectContext): void;
+  // Stage signals (#2754) — the project-lens sidebar and its landing page key off these
+  activeProjectStage: Signal<string | null>; // e.g. "Formation - Exploratory"; fetched per context, null while resolving or absent
+  activeProjectStageResolved: Signal<boolean>; // false from a context change until that context's stage fetch answers
+  formationOverviewAllowedSlug: Signal<string | null>; // the Formation-stage project whose /project/overview formationOverviewRedirectGuard let stand
+
+  setFoundation(ctx: ProjectContext, syncUrl = true): void; // syncUrl: false when a navigation owns the destination URL
+  setProject(ctx: ProjectContext, syncUrl = true): void;
+  setFormationOverviewAllowedSlug(slug: string | null): void; // written by formationOverviewRedirectGuard on every overview landing decision
   clearFoundation(): void;
   clearProject(): void;
 }

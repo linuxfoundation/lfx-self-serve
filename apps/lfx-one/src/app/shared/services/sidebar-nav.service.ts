@@ -95,6 +95,17 @@ export class SidebarNavService {
 
   private readonly activeLens = this.lensService.activeLens;
 
+  /**
+   * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
+   * stand — flag off, or LaunchDarkly not ready within its budget (#2754). The nav then keeps its full
+   * shape in step with the dashboard the guard admitted, rather than collapsing to Formation-only
+   * under it once the provider catches up; the guard's next overview decision resets this.
+   */
+  private readonly formationOverviewAllowed = computed((): boolean => {
+    const slug = this.projectContextService.formationOverviewAllowedSlug();
+    return slug !== null && slug === this.projectContextService.selectedProject()?.slug;
+  });
+
   // Newsletter nav visibility: ED persona always sees it; non-ED users see it
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
@@ -116,8 +127,10 @@ export class SidebarNavService {
         // nav and the landing route never disagree. With the flag on, the nav's shape depends on the
         // stage, so while that fetch is still in flight nothing is rendered rather than the full nav
         // that the resolved stage may then collapse (a click in that window would reach a route the
-        // formation experience hides). Flag off never waits: the full nav is the answer regardless.
-        if (this.isFormationEnabled()) {
+        // formation experience hides). Flag off never waits: the full nav is the answer regardless —
+        // as it is for a dashboard the redirect guard let stand (`formationOverviewAllowed`): the nav
+        // stays in step with that page rather than collapsing under it once the flag arrives late.
+        if (this.isFormationEnabled() && !this.formationOverviewAllowed()) {
           if (!this.projectContextService.activeProjectStageResolved()) {
             return [];
           }
