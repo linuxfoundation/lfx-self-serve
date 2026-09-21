@@ -1,6 +1,6 @@
 # End-to-End Testing Architecture
 
-E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite has grown to ~116 spec files across most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
+E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite covers most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
 
 ## Current State
 

@@ -101,7 +101,9 @@ export class SidebarNavService {
    * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
    * stand — flag off, or LaunchDarkly not ready within its budget (#2754). The nav then keeps its full
    * shape in step with the dashboard the guard admitted, rather than collapsing to Formation-only
-   * under it once the provider catches up; the guard's next overview decision resets this.
+   * under it once the provider catches up. Cleared when navigation leaves the overview
+   * (`formationOverviewReleaseGuard`) and before every run of the redirect guard, so it never
+   * applies on a page where the formation experience hides the nav.
    */
   private readonly formationOverviewAllowed = computed((): boolean => {
     const slug = this.projectContextService.formationOverviewAllowedSlug();

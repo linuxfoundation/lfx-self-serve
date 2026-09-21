@@ -66,13 +66,15 @@ describe('formationOverviewRedirectGuard', () => {
     expect(result).toBe(true);
     expect(getProject).not.toHaveBeenCalled();
     expect(getFlagOverride).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).not.toHaveBeenCalled();
   });
 
-  it('allows when no project slug is on the route or in the project context', async () => {
+  it('allows when no project slug is on the route or in the project context, clearing any earlier record', async () => {
     const result = await runGuard();
 
     expect(result).toBe(true);
     expect(getProject).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith(null);
   });
 
   it('redirects a formation project to the checklist with the slug carried on the URL', async () => {
@@ -80,7 +82,7 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(getProject).toHaveBeenCalledWith('my-project', false);
     expect(result).toEqual({ redirect: '/project/formation', opts: { queryParams: { project: 'my-project' } } });
-    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith(null);
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith(null);
   });
 
   it('carries the other query params through the redirect so a denial notice still surfaces', async () => {
@@ -98,7 +100,7 @@ describe('formationOverviewRedirectGuard', () => {
     expect(result).toEqual({ redirect: '/project/formation', opts: { queryParams: { project: 'ctx-project' } } });
   });
 
-  it('allows a non-formation project without consulting the flag provider', async () => {
+  it("allows a non-formation project without consulting the flag provider, and clears an earlier project's record rather than inheriting it", async () => {
     getProject.mockReturnValue(of({ stage: 'Active' }));
 
     const result = await runGuard({ project: 'my-project' });
@@ -107,7 +109,7 @@ describe('formationOverviewRedirectGuard', () => {
     expect(getFlagOverride).not.toHaveBeenCalled();
     expect(waitForReady).not.toHaveBeenCalled();
     expect(getBooleanFlag).not.toHaveBeenCalled();
-    expect(setFormationOverviewAllowedSlug).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith(null);
   });
 
   it('allows a disengaged formation project', async () => {
@@ -125,6 +127,7 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(result).toBe(true);
     expect(getFlagOverride).not.toHaveBeenCalled();
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith(null);
   });
 
   it('allows when the local override pins the flag off', async () => {
@@ -134,7 +137,7 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(result).toBe(true);
     expect(waitForReady).not.toHaveBeenCalled();
-    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith('my-project');
   });
 
   it('fails open to the dashboard when the provider never becomes ready, and records the dashboard it let stand for the sidebar', async () => {
@@ -148,7 +151,8 @@ describe('formationOverviewRedirectGuard', () => {
       FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS
     );
     expect(result).toBe(true);
-    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
+    // Cleared on entry, then recorded by the fail-open — the only branch that may leave a record.
+    expect(setFormationOverviewAllowedSlug.mock.calls).toEqual([[null], ['my-project']]);
   });
 
   it('allows when the flag is off, recording the dashboard it let stand so a live flip cannot collapse the nav under it', async () => {
@@ -158,6 +162,6 @@ describe('formationOverviewRedirectGuard', () => {
 
     expect(result).toBe(true);
     expect(createUrlTree).not.toHaveBeenCalled();
-    expect(setFormationOverviewAllowedSlug).toHaveBeenCalledWith('my-project');
+    expect(setFormationOverviewAllowedSlug).toHaveBeenLastCalledWith('my-project');
   });
 });

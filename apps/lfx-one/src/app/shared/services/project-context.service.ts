@@ -155,11 +155,13 @@ export class ProjectContextService {
    * The Formation-stage project whose `/project/overview` `formationOverviewRedirectGuard` let stand
    * instead of redirecting to the checklist — the flag was off, pinned off, or LaunchDarkly was not
    * ready within `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` (#2754). `SidebarNavService` keeps that
-   * project's full nav while this names it, so a provider that only becomes ready after the guard
-   * gave up (or a flag flipped on live) cannot collapse the nav to Formation-only under a dashboard
-   * the guard already admitted. Written on every overview landing decision (`null` when the guard
-   * redirects), so the next overview navigation re-decides; compared against the selected project,
-   * so another project's decision never applies.
+   * project's full nav while this names the selected project, so a provider that only becomes ready
+   * after the guard gave up (or a flag flipped on live) cannot collapse the nav to Formation-only
+   * under a dashboard the guard already admitted. The record describes that one dashboard and never
+   * outlives it: every browser run of the redirect guard clears it before deciding (only its
+   * fail-open branch writes a slug), and `formationOverviewReleaseGuard` clears it when navigation
+   * leaves the overview. Compared against the selected project, so another project's decision
+   * never applies.
    */
   public readonly formationOverviewAllowedSlug: Signal<string | null> = this.formationOverviewAllowed.asReadonly();
 

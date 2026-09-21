@@ -36,12 +36,18 @@ import { isFormationChecklistProject, resolveFormationFlag } from '../utils/form
  * `ProjectContextService.formationOverviewAllowedSlug`, which `SidebarNavService` reads to keep the
  * full nav in step with the dashboard it stands on — without that, a provider becoming ready after
  * the budget (or a flag flipped on live) would collapse the nav to Formation-only under a page this
- * guard had already admitted; the next overview decision overwrites it. That wait is the short
- * `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` budget, not the ten-second
- * one dark-launched routes use: the dashboard is already settled and interactive underneath, and a
- * redirect landing that late would interrupt whatever the user started (a shorter budget cannot
- * bounce — readiness is monotonic, so an overview that gave up never redirects, and a checklist that
- * denied sends the user to an overview that stays). An unresolvable project also allows, so `projectQueryParamGuard`'s
+ * guard had already admitted. The record describes that one dashboard and never outlives it: every
+ * browser run of this guard clears it before deciding, so only the fail-open branch can leave one
+ * (a project this guard never admitted cannot inherit an earlier project's record), and
+ * `formationOverviewReleaseGuard` (CanDeactivate on the same route) clears it when navigation leaves
+ * the overview. That wait is the short `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` budget, not the
+ * ten-second one dark-launched routes use: the dashboard is already settled and interactive
+ * underneath, and a redirect landing that late would interrupt whatever the user started. A shorter
+ * budget cannot loop: readiness is monotonic, so an overview that gave up never redirects, and a
+ * checklist that denied sends the user to an overview that either stays or — if readiness arrived
+ * during this guard's wait — forwards once to the checklist both guards now agree on; the dashboard
+ * never renders in between (the redirect happens at guard time) and the chain ends there. An
+ * unresolvable project also allows, so `projectQueryParamGuard`'s
  * not-found handling wins. The other query params (e.g. `_notice` from a `writerGuard` denial)
  * are carried through so the access-denied toast still fires on the checklist page.
  */
@@ -57,6 +63,11 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
   const projectContextService = inject(ProjectContextService);
   const router = inject(Router);
 
+  // Every browser decision starts from a cleared record: only the fail-open below may leave one, so
+  // a record from an earlier dashboard cannot survive into a different outcome, and a project this
+  // guard never admitted cannot inherit it.
+  projectContextService.setFormationOverviewAllowedSlug(null);
+
   const slug = route.queryParamMap.get('project') ?? projectContextService.selectedProject()?.slug;
   if (!slug) {
     return true;
@@ -67,13 +78,13 @@ export const formationOverviewRedirectGuard: CanActivateFn = async (route) => {
   }
 
   if (!(await resolveFormationFlag(featureFlagService, 'formationOverviewRedirectGuard', FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS))) {
-    // Fail open — and say so: the sidebar keeps this project's full nav while this overview stands,
-    // so a flag that only arrives after the budget cannot collapse the nav to Formation-only under
-    // the dashboard this guard already admitted. The next overview navigation re-decides.
+    // Fail open — and record it: the sidebar keeps this project's full nav while this overview
+    // stands, so a flag that only arrives after the budget cannot collapse the nav to Formation-only
+    // under the dashboard this guard already admitted. The next run of this guard, or leaving the
+    // overview (`formationOverviewReleaseGuard`), clears it.
     projectContextService.setFormationOverviewAllowedSlug(slug);
     return true;
   }
 
-  projectContextService.setFormationOverviewAllowedSlug(null);
   return router.createUrlTree([FORMATION_CHECKLIST_PATH], { queryParams: { ...route.queryParams, project: slug } });
 };
