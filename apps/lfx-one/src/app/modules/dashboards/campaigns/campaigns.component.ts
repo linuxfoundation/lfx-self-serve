@@ -1304,13 +1304,31 @@ export class CampaignsComponent {
     // brief never contained. Checking only that the URL is public-looking is not enough: a
     // hallucinated `https://evil.example.com/phish` passes that check.
     //
-    // Compared with the trailing slash normalised away. `canonicalHttpUrl` does NOT equalise
-    // it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct, and I wrongly said
-    // otherwise when adding this check. A model copying the URL and adding or dropping a slash
-    // addresses the SAME page, so refusing it would silently drop the button for a generation
-    // that followed its instructions -- the over-denial this PR keeps having to guard against.
+    // Compared with the trailing slash normalised away on the PATHNAME ONLY. `canonicalHttpUrl`
+    // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
+    // and I wrongly said otherwise when adding this check. A model copying the URL and adding or
+    // dropping a slash addresses the SAME page, so refusing it would silently drop the button
+    // for a generation that followed its instructions -- the over-denial this PR keeps having
+    // to guard against.
+    //
+    // Stripping it from the whole serialized URL was the over-correction in the other
+    // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
+    // EQUAL to the brief's `?token=abc` and a different destination passed. Only the path may
+    // be normalised; `search` and `hash` must match exactly, because a trailing slash there is
+    // part of the value rather than a path separator.
     const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
-    const sameTarget = (url: string): string => url.replace(/\/+$/, '');
+    const sameTarget = (url: string): string => {
+      try {
+        const parsed = new URL(url);
+        parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+        return parsed.toString();
+      } catch {
+        // Not parseable: compare verbatim rather than guessing. Both sides come from
+        // canonicalHttpUrl, so this is unreachable in practice -- and falling back to the old
+        // whole-string strip here would reintroduce the very gap this closes.
+        return url;
+      }
+    };
     return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
   });
 

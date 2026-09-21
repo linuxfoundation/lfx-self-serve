@@ -1864,6 +1864,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailTemplateId: WritableSignal<string>;
     selectedEmailTypeId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
+    emailCtaDestination: Signal<string>;
     emailAudience: WritableSignal<CampaignAudience | null>;
     emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
     emailAudienceMessage: WritableSignal<string>;
@@ -2275,6 +2276,48 @@ describe('CampaignsComponent — email delivery channel', () => {
     beforeEach(() => {
       persist = vi.fn().mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
       vi.spyOn(TestBed.inject(CampaignService), 'persistBrief').mockImplementation(persist);
+    });
+
+    /**
+     * The CTA destination check compares the generated URL against the brief's, with the
+     * trailing slash normalised away -- because a model that copies the URL and adds or drops
+     * one still addresses the same page, and refusing that would silently drop the button.
+     *
+     * The normalisation must apply to the PATHNAME ONLY. Stripping it from the whole serialized
+     * URL also mutates the query and fragment, where a trailing slash is part of the VALUE
+     * rather than a path separator -- so a generated `?token=abc/` compared equal to the brief's
+     * `?token=abc` and a different destination was accepted.
+     *
+     * Both directions are covered on purpose: this guard has been wrong by over-denying (the
+     * legitimate slash variants) as well as by under-denying, and a test for only one direction
+     * passes against the other bug.
+     */
+    it('accepts only slash variants of the same path, never a different query or fragment', () => {
+      selectEmail();
+
+      const withRegistrationUrl = (url: string) =>
+        ({ eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: url } }) as unknown as CampaignBriefOutput;
+
+      const cases: { brief: string; generated: string; accepted: boolean; why: string }[] = [
+        { brief: 'https://x.example/reg', generated: 'https://x.example/reg/', accepted: true, why: 'a trailing slash on the path is the same page' },
+        { brief: 'https://x.example/reg/', generated: 'https://x.example/reg', accepted: true, why: 'and the same in reverse' },
+        {
+          brief: 'https://x.example/reg?token=abc',
+          generated: 'https://x.example/reg?token=abc/',
+          accepted: false,
+          why: 'a slash inside a query VALUE is a different destination',
+        },
+        { brief: 'https://x.example/reg#frag', generated: 'https://x.example/reg#frag/', accepted: false, why: 'and the same inside a fragment' },
+        { brief: 'https://x.example/reg', generated: 'https://evil.example/phish', accepted: false, why: 'an invented URL must never pass' },
+      ];
+
+      for (const { brief, generated, accepted, why } of cases) {
+        internals().emailBriefOutput.set(withRegistrationUrl(brief));
+        internals().emailCopy.set({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'Register', ctaUrl: generated } as unknown as EmailBriefCopy);
+        fixture.detectChanges();
+
+        expect(internals().emailCtaDestination() !== '', `${generated} vs ${brief}: ${why}`).toBe(accepted);
+      }
     });
 
     it('cannot generate without a brief', () => {
