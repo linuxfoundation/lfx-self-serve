@@ -6,6 +6,7 @@ import { Router } from '@angular/router';
 import { TooltipModule } from 'primeng/tooltip';
 
 import type { OrgLensFoundationRow } from '@lfx-one/shared/interfaces';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 
 import { foundationInitials, foundationLogoSquareClasses } from '../helpers/foundation-logo.helper';
 import { tierRibbonClasses } from '../helpers/tier-ribbon.helper';
@@ -19,6 +20,7 @@ import { tierRibbonClasses } from '../helpers/tier-ribbon.helper';
 })
 export class FoundationRowComponent {
   private readonly router = inject(Router);
+  private readonly orgLens = inject(OrgLensNavigationService);
 
   public readonly row = input.required<OrgLensFoundationRow>();
   public readonly expanded = input<boolean>(false);
@@ -63,7 +65,7 @@ export class FoundationRowComponent {
       return;
     }
     this.rowClick.emit({ foundationName: r.foundationName, isMember: r.rowKind === 'member' });
-    void this.router.navigate(['/org/memberships']);
+    void this.router.navigate(this.orgLens.orgLensLink('memberships'));
   }
 
   public onRowKeydown(event: KeyboardEvent): void {
@@ -75,7 +77,7 @@ export class FoundationRowComponent {
     if (r.rowKind === 'outside_lf') return;
     event.preventDefault();
     this.rowClick.emit({ foundationName: r.foundationName, isMember: r.rowKind === 'member' });
-    void this.router.navigate(['/org/memberships']);
+    void this.router.navigate(this.orgLens.orgLensLink('memberships'));
   }
 
   public onChevronClick(event: Event): void {

@@ -15,8 +15,10 @@ export interface Account {
    * Lowercase URL-identity slug derived by member-service from the org name (spec 050, DR-007:
    * `slugify(Account.Name)`, no stored slug). Tri-state: a string when published; `null` when the
    * name yields none (the address then uses `uid`); `undefined` when not known yet — persona seeds
-   * and the cookie-restored stub carry no slug until the org item, canonical record, or resolver
-   * supplies it. Readers must not collapse `undefined` into `null`. Never sourced from Snowflake.
+   * and the cookie-restored stub carry no slug until an indexed row — the org item or the resolver
+   * answer — supplies it, and those are the only writers (spec 050: URL identity is the index's;
+   * the canonical record never sets, unsets or overwrites it, since addresses resolve against the
+   * index). Readers must not collapse `undefined` into `null`. Never sourced from Snowflake.
    */
   slug?: string | null;
   /** Logo URL for the organization — Org-Lens enrichment */

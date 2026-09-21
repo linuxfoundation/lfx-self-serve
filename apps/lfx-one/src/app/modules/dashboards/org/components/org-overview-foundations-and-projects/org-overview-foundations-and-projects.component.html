@@ -8,7 +8,7 @@
       <span>{{ companyName() }}'s Foundations and Projects</span>
     </h2>
     <a
-      routerLink="/org/memberships"
+      [routerLink]="membershipsLink()"
       class="text-sm text-blue-600 hover:text-blue-700 hover:underline focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:outline-none rounded"
       data-testid="org-overview-foundations-and-projects-view-all-link"
       >View all on Memberships page ›</a
