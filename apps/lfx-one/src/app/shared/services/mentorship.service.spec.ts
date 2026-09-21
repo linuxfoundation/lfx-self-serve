@@ -85,6 +85,19 @@ describe('MentorshipService — lookup error mapping', () => {
     expect(failed).toBe(true);
   });
 
+  it('lets mentee-profile loading failures propagate so the page can render a retry state', () => {
+    let failed = false;
+    service.getMenteeProfile().subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+
+    http.expectOne('/api/mentorship/mentee/profile').flush('down', { status: 503, statusText: 'Service Unavailable' });
+    expect(failed).toBe(true);
+  });
+
   it('encodes the mentor program id in the detail URL', () => {
     let loaded: unknown = 'unset';
     service.getMentorProgram('mp_apicurio/fall26').subscribe((detail) => {
