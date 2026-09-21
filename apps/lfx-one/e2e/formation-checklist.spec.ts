@@ -38,10 +38,11 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(section.getByText('Community and launch')).toBeVisible();
     await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
 
-    // #2689 row metadata: humanized owner-team label (seeded as snake_case `brand_counsel`) and the
-    // audience chip's longest label render as visible text.
+    // #2689 row metadata: the humanized owner-team label (seeded as snake_case `brand_counsel`)
+    // renders as visible text. #2774: the audience is a globe icon on the row (its full label lives
+    // in the drawer), so assert the icon host of the seeded `both` item rather than label text.
     await expect(section.getByText('Brand Counsel')).toBeVisible();
-    await expect(section.getByText('Internal + External')).toBeVisible();
+    await expect(page.getByTestId('formation-checklist-row-audience-chip-formation-item:cascade-data-alliance:contribution_agreement_executed')).toBeVisible();
   });
 
   test('renders the sidebar formation card with stage, announcement date and slug — and no date in the strip (GH-2702)', async ({ page }) => {

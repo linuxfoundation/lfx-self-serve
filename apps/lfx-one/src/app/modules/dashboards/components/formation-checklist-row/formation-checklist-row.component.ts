@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, isPlatformBrowser, NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -9,22 +9,44 @@ import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.c
 import { TagComponent } from '@components/tag/tag.component';
 import type { FormationItem, FormationItemStatus, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import {
+  FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_GATED_ROW_ACTIONS,
   FORMATION_GATING_ICON_TOOLTIP,
-  FORMATION_ITEM_AUDIENCE_LABELS,
+  FORMATION_ITEM_AUDIENCE_TOOLTIPS,
+  FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
   FORMATION_STATUS_MENU_ITEM_DISPLAY,
 } from '@lfx-one/shared/constants';
-import { formatFormationOwnerTeam, formationItemHasAction, isRelativeInAppPath, isValidUrl, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import {
+  deriveFormationReadinessSummary,
+  formatFormationOwnerTeam,
+  formationItemHasAction,
+  isFormationItemExternal,
+  isRelativeInAppPath,
+  isValidUrl,
+  tryParseLocalDateString,
+} from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
+import { FormationSubItemListComponent } from '../formation-sub-item-list/formation-sub-item-list.component';
+
 @Component({
   selector: 'lfx-formation-checklist-row',
-  imports: [TagComponent, ButtonComponent, MenuComponent, NgTemplateOutlet, PersonAvatarComponent, DatePipe, TooltipModule],
+  imports: [
+    TagComponent,
+    ButtonComponent,
+    MenuComponent,
+    NgClass,
+    NgTemplateOutlet,
+    PersonAvatarComponent,
+    DatePipe,
+    TooltipModule,
+    FormationSubItemListComponent,
+  ],
   templateUrl: './formation-checklist-row.component.html',
   styleUrl: './formation-checklist-row.component.scss',
 })
@@ -93,20 +115,29 @@ export class FormationChecklistRowComponent {
   protected readonly statusMenuOpen = signal<boolean>(false);
   /** Drives `aria-expanded` on the overflow trigger — set purely via `<lfx-menu>`'s `onShow`/`onHide`, never in the click handler. */
   protected readonly overflowMenuOpen = signal<boolean>(false);
+  /** Whether the sub-item panel under the row is open (#2774). Collapsed by default so SSR and the browser render the same DOM. */
+  protected readonly subItemsExpanded = signal<boolean>(false);
 
   /** `#gatedAction`/`#linkOrDetailsAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
+  /** Row grid templates per panel-width tier (shared with the section header's captions, #2774) and the mini bar's per-status colors — exposed directly so the template does plain lookups. */
+  protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
+  protected readonly segmentColorClass = FORMATION_ITEM_SEGMENT_COLORS;
 
-  /** The gating icon's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
+  /** The gating asterisk's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
   protected readonly gatingIconTooltip = FORMATION_GATING_ICON_TOOLTIP;
 
   protected readonly statusLabel = computed(() => FORMATION_ITEM_STATUS_LABELS[this.item().status]);
   protected readonly statusSeverity = computed(() => FORMATION_ITEM_STATUS_SEVERITY[this.item().status]);
-  /** `null` hides the chip — upstream sent an unrecognized/missing `checklist_type` (see `FormationItem.audience`). */
-  protected readonly audienceLabel = computed(() => {
+  /**
+   * The globe icon's tooltip AND accessible name (#2774) — `null` hides the icon: `internal` shows
+   * nothing on the row by design, and so does an unrecognized/missing `checklist_type` (see
+   * `FormationItem.audience`). The drawer spells the audience out in full instead.
+   */
+  protected readonly audienceTooltip = computed(() => {
     const audience = this.item().audience;
-    return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
+    return isFormationItemExternal(audience) ? FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience] : null;
   });
   /** Humanized owner-team chip label (#2689) — curated map with `formatTag` fallback for off-enum upstream values. */
   protected readonly ownerTeamLabel = computed(() => {
@@ -177,12 +208,23 @@ export class FormationChecklistRowComponent {
     const viewerUsername = this.userService.viewerUsername();
     return !!owner && !!viewerUsername && owner.username === viewerUsername;
   });
+  /** Per-status tally of the item's sub-items (#2774), `null` when it has none — drives the disclosure trigger, its mini bar, and whether either renders. */
   protected readonly subItemsSummary = computed(() => {
     const subItems = this.item().sub_items;
-    if (subItems.length === 0) return null;
-    const done = subItems.filter((subItem) => subItem.status === 'done').length;
-    return `${done} of ${subItems.length} sub-items done`;
+    return subItems.length > 0 ? deriveFormationReadinessSummary(subItems) : null;
   });
+  protected readonly subItemsLabel = computed(() => {
+    const summary = this.subItemsSummary();
+    return summary ? `${summary.counts.done} of ${summary.totalItems} sub-items` : '';
+  });
+  protected readonly subItemsBarLabel = computed(() => {
+    const summary = this.subItemsSummary();
+    return summary ? `${summary.counts.done} of ${summary.totalItems} sub-items done` : '';
+  });
+  /** Same indexed-track shape as the readiness strip — statuses repeat, so a stable per-position id is the track key. */
+  protected readonly subItemSegments = computed(() => (this.subItemsSummary()?.segments ?? []).map((status, index) => ({ id: index, status })));
+  /** `aria-controls` target for the disclosure trigger; only rendered (and only referenced) while expanded. */
+  protected readonly subItemsPanelId = computed(() => `formation-checklist-row-sub-items-panel-${this.item().uid}`);
   /**
    * `action_href` is API-sourced (fixture today, a real upstream response once #1957 lands) — never
    * trust it into `[href]`/`[routerLink]` unvalidated. Split into external/internal so the template
@@ -218,6 +260,10 @@ export class FormationChecklistRowComponent {
 
   protected onAction(): void {
     this.actionTriggered.emit(this.item());
+  }
+
+  protected toggleSubItems(): void {
+    this.subItemsExpanded.update((open) => !open);
   }
 
   protected toggleStatusMenu(event: Event, menu: MenuComponent): void {

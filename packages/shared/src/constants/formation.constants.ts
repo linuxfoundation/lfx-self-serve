@@ -214,9 +214,10 @@ export const FORMATION_OWNER_TEAM_LABELS = {
 
 /**
  * The row-level gating indicator's tooltip/accessible-name copy (`FormationChecklistRowComponent`)
- * — shared with its spec so the aria-label can't drift from the rendered tooltip. The row shows an
- * icon-only indicator; the full-text "Required for Active" tag remains in the drawer and the
- * readiness strip owns the gating summary copy.
+ * — shared with its spec so the aria-label can't drift from the rendered tooltip. The row shows a
+ * red asterisk only (#2774, the form-field "required" convention); the full "Required for Active"
+ * phrase is visible text in the drawer's meta line and the readiness strip's caption, which carries
+ * the same asterisk as the legend.
  */
 export const FORMATION_GATING_ICON_TOOLTIP = 'Required for Active — must be done before the project can go Active';
 
@@ -243,17 +244,20 @@ export const FORMATION_ITEM_STATUS_GLYPHS = {
 } as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
 
 /**
- * The `md:`-and-up column widths `FormationChecklistRowComponent`'s meta cells and
- * `FormationChecklistSectionComponent`'s header captions both bind (#2774) — one source so the
- * captions can't drift off the columns they label. The actions column is fixed too: a
- * variable-width action button would otherwise shift every column to its left by row. Spread into
- * `tailwind.config.js`'s safelist (the shared package is outside Tailwind's `content` glob).
+ * The checklist row's grid template per panel-width tier (#2774). Container-query variants
+ * (`@2xl`/`@5xl` from Tailwind's container-queries plugin; each section panel is the `@container`)
+ * rather than viewport breakpoints, because what decides whether the columns fit is the width left
+ * beside the nav rail and the page sidebar, not the viewport — a 1440px viewport leaves the panel
+ * ~720px. `compact` (panel ≥ 42rem): status | title | actions on one line, with the team/assignee/
+ * due meta on a second line under the title. `full` (panel ≥ 64rem): one column per cell, and
+ * `FormationChecklistSectionComponent`'s header captions bind the same template so they sit over
+ * the columns they label by construction. Fixed tracks: status 9rem, team 7rem, assignee 8rem, due
+ * 6rem, actions 9.5rem ("View details" plus the overflow button). Spread into `tailwind.config.js`'s
+ * safelist (the shared package is outside Tailwind's `content` glob).
  */
-export const FORMATION_CHECKLIST_COLUMN_CLASSES = {
-  owner_team: 'md:w-32',
-  assignee: 'md:w-36',
-  due_date: 'md:w-24',
-  actions: 'md:w-44',
+export const FORMATION_CHECKLIST_GRID_CLASSES = {
+  compact: '@2xl:grid-cols-[9rem_minmax(0,1fr)_9.5rem]',
+  full: '@5xl:grid-cols-[9rem_minmax(0,1fr)_7rem_8rem_6rem_9.5rem]',
 } as const;
 
 /**

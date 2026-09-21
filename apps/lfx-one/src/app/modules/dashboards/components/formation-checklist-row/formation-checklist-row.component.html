@@ -1,178 +1,237 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Stacks below md (not sm): the meta columns added for #2689 leave too little room for the title
-     between 640–768px with a side-by-side layout, the same crush GH-2440 fixed at <640px. -->
-<div
-  class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 py-3 px-4 border-b border-gray-200 last:border-b-0"
-  [attr.data-testid]="'formation-checklist-row-' + item().uid">
-  <div class="w-auto md:w-40 shrink-0" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
-    @if (isStatusEditable()) {
-      <lfx-menu
-        #statusMenu
-        [model]="statusMenuItems"
-        [popup]="true"
-        appendTo="body"
-        (onShow)="statusMenuOpen.set(true)"
-        (onHide)="statusMenuOpen.set(false)"></lfx-menu>
-      <button
-        type="button"
-        class="inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
-        [attr.aria-label]="'Change status for ' + item().title"
-        aria-haspopup="menu"
-        [attr.aria-expanded]="statusMenuOpen()"
-        (click)="toggleStatusMenu($event, statusMenu)"
-        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
-        <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [dot]="true" [rounded]="true" />
-        <i
-          class="fa-light fa-chevron-down text-xs text-gray-500"
-          aria-hidden="true"
-          [attr.data-testid]="'formation-checklist-row-status-caret-' + item().uid"></i>
-      </button>
-    } @else {
-      <lfx-tag
-        [value]="statusLabel()"
-        [severity]="statusSeverity()"
-        [dot]="true"
-        [rounded]="true"
-        [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid" />
-    }
-  </div>
-
-  <div class="flex-1 min-w-0 flex flex-col gap-1">
-    <div class="flex items-center gap-2 flex-wrap">
-      <button
-        type="button"
-        class="text-sm font-medium text-gray-900 bg-transparent border-none p-0 text-left hover:underline"
-        (click)="onOpenDrawer()"
-        [attr.aria-label]="'Open details for ' + item().title"
-        [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
-        {{ item().title }}
-      </button>
-      @if (item().is_gating) {
-        <!-- Icon-only on the row (#2689); the full-text "Required for Active" tag stays in the drawer.
-             Testid deliberately keeps its historical name. Plain span, no .p-component descendant, so
-             pTooltip's focus listener lands on the same node as tabindex (contrast LFXV2-1705). -->
-        <span
-          class="inline-flex text-amber-600"
-          tabindex="0"
-          role="img"
-          [attr.aria-label]="gatingIconTooltip"
-          [pTooltip]="gatingIconTooltip"
-          tooltipPosition="top"
-          tooltipEvent="both"
-          [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
-          <i class="fa-light fa-asterisk" aria-hidden="true"></i>
-        </span>
-      }
-      @if (ownerTeamLabel(); as ownerTeam) {
-        <span [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
-          <lfx-tag [value]="ownerTeam" severity="secondary" />
-        </span>
-      }
-      @if (audienceLabel(); as audience) {
-        <span [attr.data-testid]="'formation-checklist-row-audience-chip-' + item().uid">
-          <lfx-tag [value]="audience" severity="secondary" />
-        </span>
-      }
-      @if (isAssignedToViewer()) {
-        <span [attr.data-testid]="'formation-checklist-row-assigned-to-you-chip-' + item().uid">
-          <lfx-tag value="Assigned to you" severity="info" />
-        </span>
-      }
-    </div>
-    <div class="flex items-center gap-2 flex-wrap">
-      @if (item().detail) {
-        <span class="text-xs text-gray-500">{{ item().detail }}</span>
-      }
-      @if (subItemsSummary(); as summary) {
-        <span class="text-xs text-gray-500" [attr.data-testid]="'formation-checklist-row-sub-items-' + item().uid">{{ summary }}</span>
-      }
-    </div>
-  </div>
-
-  <!-- Fixed-width assignee/due-date columns so values align vertically down the list (#2689). The
-       due-date text is the absolute local date; its color comes from dueDateColorClass (today →
-       red, tomorrow → amber, past-due neutral — see that computed for why the poll pipes don't fit
-       a date-only field). -->
-  <div class="flex items-center gap-4 md:shrink-0">
-    <div class="flex items-center gap-2 min-w-0 md:w-36" [attr.data-testid]="'formation-checklist-row-assignee-' + item().uid">
-      @if (item().owner; as owner) {
-        <lfx-person-avatar size="sm" [name]="owner.name" [identity]="owner.username" />
-        <!-- pTooltip + tabindex rather than a native title: the fixed column clips an
-             upstream-controlled name, and hover-only title text is unreachable for keyboard and
-             touch users (PR #2692 review). Plain span with no .p-component descendant, so the
-             tooltip's focus listener lands on the same node as tabindex (LFXV2-1705). The sr-only
-             prefix mirrors the empty branch's "No assignee" so the cell keeps its column meaning
-             for screen readers. -->
-        <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
-          <span class="sr-only">Assignee: </span>{{ owner.name }}
-        </span>
+<!-- Outer wrapper (#2774): the main row plus, when expanded, the sub-item panel beneath it. The hover
+     tint sits here so the panel reads as part of the row it belongs to. -->
+<div class="flex flex-col border-b border-gray-200 last:border-b-0 hover:bg-gray-50" [attr.data-testid]="'formation-checklist-row-' + item().uid">
+  <!-- Three tiers keyed on the section panel's width (the panel is the @container), not the
+       viewport — see FORMATION_CHECKLIST_GRID_CLASSES. Below @2xl every cell stacks (the GH-2440
+       phone layout); from @2xl the row is a grid of status | title | actions with the meta line
+       under the title; from @5xl the meta cells become their own columns, aligned with the section
+       header's captions through the shared template. -->
+  <div
+    class="flex flex-col gap-3 py-3 px-4 @2xl:grid @2xl:items-center @2xl:gap-x-4 @2xl:gap-y-1"
+    [ngClass]="[gridClasses.compact, gridClasses.full]"
+    [attr.data-testid]="'formation-checklist-row-main-' + item().uid">
+    <div class="@2xl:col-start-1 @2xl:row-start-1" [attr.data-testid]="'formation-checklist-row-status-chip-' + item().uid">
+      @if (isStatusEditable()) {
+        <lfx-menu
+          #statusMenu
+          [model]="statusMenuItems"
+          [popup]="true"
+          appendTo="body"
+          (onShow)="statusMenuOpen.set(true)"
+          (onHide)="statusMenuOpen.set(false)"></lfx-menu>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 bg-transparent border-none p-0 cursor-pointer"
+          [attr.aria-label]="'Change status for ' + item().title"
+          aria-haspopup="menu"
+          [attr.aria-expanded]="statusMenuOpen()"
+          (click)="toggleStatusMenu($event, statusMenu)"
+          [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid">
+          <lfx-tag [value]="statusLabel()" [severity]="statusSeverity()" [dot]="true" [rounded]="true" />
+          <i
+            class="fa-light fa-chevron-down text-xs text-gray-500"
+            aria-hidden="true"
+            [attr.data-testid]="'formation-checklist-row-status-caret-' + item().uid"></i>
+        </button>
       } @else {
-        <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
-        <span class="sr-only">No assignee</span>
+        <lfx-tag
+          [value]="statusLabel()"
+          [severity]="statusSeverity()"
+          [dot]="true"
+          [rounded]="true"
+          [attr.data-testid]="'formation-checklist-row-status-trigger-' + item().uid" />
       }
     </div>
-    <div class="md:w-24" [attr.data-testid]="'formation-checklist-row-due-date-' + item().uid">
-      @if (item().due_date; as dueDate) {
-        <span class="text-xs whitespace-nowrap {{ dueDateColorClass() }}"><span class="sr-only">Due date: </span>{{ dueDate | date: 'MMM d, y' }}</span>
-      } @else {
-        <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
-        <span class="sr-only">No due date</span>
-      }
-    </div>
-  </div>
 
-  <div class="shrink-0 flex items-center gap-1 justify-end md:justify-start">
-    <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
-      @switch (item().action) {
-        @case ('link') {
-          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.link" />
+    <div class="min-w-0 flex flex-col gap-1 @2xl:col-start-2 @2xl:row-start-1">
+      <div class="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          class="text-sm font-medium text-gray-900 bg-transparent border-none p-0 text-left hover:underline"
+          (click)="onOpenDrawer()"
+          [attr.aria-label]="'Open details for ' + item().title"
+          [attr.data-testid]="'formation-checklist-row-title-' + item().uid">
+          {{ item().title }}
+        </button>
+        @if (item().is_gating) {
+          <!-- Solid red asterisk, the app's form-field "required" convention (#2774). The full
+               "Required for Active" phrase is the tooltip/accessible name here and visible text in the
+               drawer and the readiness strip's legend. Testid deliberately keeps its historical name.
+               Plain span, no .p-component descendant, so pTooltip's focus listener lands on the same
+               node as tabindex (contrast LFXV2-1705). -->
+          <span
+            class="inline-flex text-red-500 font-semibold leading-none cursor-help"
+            tabindex="0"
+            role="img"
+            [attr.aria-label]="gatingIconTooltip"
+            [pTooltip]="gatingIconTooltip"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            [attr.data-testid]="'formation-checklist-row-gates-active-chip-' + item().uid">
+            <span aria-hidden="true">*</span>
+          </span>
         }
-        @case ('status_only') {
-          <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.status_only" />
+        @if (audienceTooltip(); as tooltip) {
+          <!-- One muted globe for the external-involving audiences (#2774); internal and unrecognized
+               audiences show nothing here (the drawer spells the audience out). Same plain-span
+               tooltip host as the asterisk above. -->
+          <span
+            class="inline-flex text-gray-400 hover:text-gray-600 cursor-help"
+            tabindex="0"
+            role="img"
+            [attr.aria-label]="tooltip"
+            [pTooltip]="tooltip"
+            tooltipPosition="top"
+            tooltipEvent="both"
+            [attr.data-testid]="'formation-checklist-row-audience-chip-' + item().uid">
+            <i class="fa-light fa-globe" aria-hidden="true"></i>
+          </span>
         }
-        @case ('provisionable') {
-          @if (isActionable()) {
-            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
-          } @else {
+        @if (isAssignedToViewer()) {
+          <span [attr.data-testid]="'formation-checklist-row-assigned-to-you-chip-' + item().uid">
+            <lfx-tag value="Assigned to you" severity="info" />
+          </span>
+        }
+      </div>
+      @if (item().detail || subItemsSummary()) {
+        <div class="flex items-center gap-2 flex-wrap">
+          @if (item().detail) {
+            <span class="text-xs text-gray-500">{{ item().detail }}</span>
+          }
+          @if (subItemsSummary()) {
+            <!-- Disclosure (#2774): the trigger carries the count, the sibling mini bar the per-status
+                 tally (a sibling, not a child, so its label isn't folded into the button's name); the
+                 panel it controls renders below the main row, inside this row's wrapper. -->
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 bg-transparent border-none p-0 text-xs text-gray-500 hover:text-gray-700 cursor-pointer whitespace-nowrap"
+              [attr.aria-expanded]="subItemsExpanded()"
+              [attr.aria-controls]="subItemsExpanded() ? subItemsPanelId() : null"
+              (click)="toggleSubItems()"
+              [attr.data-testid]="'formation-checklist-row-sub-items-' + item().uid">
+              <i class="fa-light fa-chevron-right text-[10px] transition-transform" [class.rotate-90]="subItemsExpanded()" aria-hidden="true"></i>
+              <span>{{ subItemsLabel() }}</span>
+            </button>
+            <span
+              class="flex gap-0.5 h-1 w-12 shrink-0"
+              role="img"
+              [attr.aria-label]="subItemsBarLabel()"
+              [attr.data-testid]="'formation-checklist-row-sub-items-bar-' + item().uid">
+              @for (seg of subItemSegments(); track seg.id) {
+                <span class="flex-1 rounded-sm" [ngClass]="segmentColorClass[seg.status]"></span>
+              }
+            </span>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Team / assignee / due-date meta (#2689, #2774). Stacked and compact tiers: a wrapping inline
+         line (under the title from @2xl). Full tier: a subgrid spanning the three meta tracks of
+         FORMATION_CHECKLIST_GRID_CLASSES.full, so each cell lands exactly under its header caption.
+         Every cell renders even when empty (an em dash plus sr-only text) so the columns hold. The
+         due-date text is the absolute local date; its color comes from dueDateColorClass (today →
+         red, tomorrow → amber, past-due neutral — see that computed for why the poll pipes don't fit
+         a date-only field). -->
+    <div
+      class="flex items-center gap-4 flex-wrap @2xl:col-start-2 @2xl:row-start-2 @5xl:row-start-1 @5xl:col-start-3 @5xl:col-span-3 @5xl:grid @5xl:grid-cols-subgrid">
+      <div class="min-w-0 truncate text-xs text-gray-600" [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
+        @if (ownerTeamLabel(); as ownerTeam) {
+          <span class="sr-only">Team: </span>{{ ownerTeam }}
+        } @else {
+          <span class="text-gray-400" aria-hidden="true">&mdash;</span>
+          <span class="sr-only">No team</span>
+        }
+      </div>
+      <div class="flex items-center gap-2 min-w-0" [attr.data-testid]="'formation-checklist-row-assignee-' + item().uid">
+        @if (item().owner; as owner) {
+          <lfx-person-avatar size="sm" [name]="owner.name" [identity]="owner.username" />
+          <!-- pTooltip + tabindex rather than a native title: the fixed column clips an
+               upstream-controlled name, and hover-only title text is unreachable for keyboard and
+               touch users (PR #2692 review). Plain span with no .p-component descendant, so the
+               tooltip's focus listener lands on the same node as tabindex (LFXV2-1705). The sr-only
+               prefix mirrors the empty branch's "No assignee" so the cell keeps its column meaning
+               for screen readers. -->
+          <span class="text-xs text-gray-700 truncate" tabindex="0" [pTooltip]="owner.name" tooltipPosition="top" tooltipEvent="both">
+            <span class="sr-only">Assignee: </span>{{ owner.name }}
+          </span>
+        } @else {
+          <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
+          <span class="sr-only">No assignee</span>
+        }
+      </div>
+      <div class="whitespace-nowrap" [attr.data-testid]="'formation-checklist-row-due-date-' + item().uid">
+        @if (item().due_date; as dueDate) {
+          <span class="text-xs {{ dueDateColorClass() }}"><span class="sr-only">Due date: </span>{{ dueDate | date: 'MMM d, y' }}</span>
+        } @else {
+          <span class="text-xs text-gray-400" aria-hidden="true">&mdash;</span>
+          <span class="sr-only">No due date</span>
+        }
+      </div>
+    </div>
+
+    <!-- Actions sit in a fixed track (#2774) so a variable-width action button can't shift the columns to its left. -->
+    <div class="flex items-center gap-1 justify-end @2xl:justify-start @2xl:col-start-3 @2xl:row-start-1 @5xl:col-start-6">
+      <div [attr.data-testid]="'formation-checklist-row-action-' + item().uid">
+        @switch (item().action) {
+          @case ('link') {
+            <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.link" />
+          }
+          @case ('status_only') {
+            <ng-container *ngTemplateOutlet="linkOrDetailsAction; context: linkActions.status_only" />
+          }
+          @case ('provisionable') {
+            @if (isActionable()) {
+              <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.provisionable" />
+            } @else {
+              <ng-container *ngTemplateOutlet="viewDetailsAction" />
+            }
+          }
+          @case ('request') {
+            @if (isActionable()) {
+              <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
+            } @else {
+              <ng-container *ngTemplateOutlet="viewDetailsAction" />
+            }
+          }
+          @case ('manual') {
             <ng-container *ngTemplateOutlet="viewDetailsAction" />
           }
         }
-        @case ('request') {
-          @if (isActionable()) {
-            <ng-container *ngTemplateOutlet="gatedAction; context: gatedActions.request" />
-          } @else {
-            <ng-container *ngTemplateOutlet="viewDetailsAction" />
-          }
-        }
-        @case ('manual') {
-          <ng-container *ngTemplateOutlet="viewDetailsAction" />
-        }
+      </div>
+
+      @if (!readOnly() && canWrite()) {
+        <lfx-menu
+          #overflowMenu
+          [model]="overflowMenuItems"
+          [popup]="true"
+          appendTo="body"
+          (onShow)="overflowMenuOpen.set(true)"
+          (onHide)="overflowMenuOpen.set(false)"></lfx-menu>
+        <lfx-button
+          icon="fa-light fa-ellipsis-vertical"
+          [text]="true"
+          [rounded]="true"
+          size="small"
+          severity="secondary"
+          ariaLabel="More actions"
+          [ariaHaspopup]="'menu'"
+          [ariaExpanded]="overflowMenuOpen()"
+          (onClick)="toggleOverflowMenu($event, overflowMenu)"
+          [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
       }
     </div>
-
-    @if (!readOnly() && canWrite()) {
-      <lfx-menu
-        #overflowMenu
-        [model]="overflowMenuItems"
-        [popup]="true"
-        appendTo="body"
-        (onShow)="overflowMenuOpen.set(true)"
-        (onHide)="overflowMenuOpen.set(false)"></lfx-menu>
-      <lfx-button
-        icon="fa-light fa-ellipsis-vertical"
-        [text]="true"
-        [rounded]="true"
-        size="small"
-        severity="secondary"
-        ariaLabel="More actions"
-        [ariaHaspopup]="'menu'"
-        [ariaExpanded]="overflowMenuOpen()"
-        (onClick)="toggleOverflowMenu($event, overflowMenu)"
-        [attr.data-testid]="'formation-checklist-row-overflow-' + item().uid" />
-    }
   </div>
+
+  @if (subItemsExpanded()) {
+    <!-- @2xl:pl-44 = px-4 (1rem) + the 9rem status track + the 1rem column gap: lines the list up under the title. -->
+    <div [id]="subItemsPanelId()" class="px-4 pb-3 @2xl:pl-44" [attr.data-testid]="'formation-checklist-row-sub-items-panel-' + item().uid">
+      <lfx-formation-sub-item-list [subItems]="item().sub_items" [showSummary]="false" />
+    </div>
+  }
 </div>
 
 <!-- `link`/`status_only`: an external href opens in a new tab, an in-app relative path routes via `routerLink`, and no safe destination falls back to the shared "View details" affordance. Context is `linkActions.link`/`.status_only` (see `FORMATION_LINK_ROW_ACTIONS`) — typed at the definition site, not inline here. -->

@@ -22,7 +22,10 @@
         >All gating items done — the formation team can set Active in the admin tool on the announcement date.</span
       >
     } @else {
-      <span class="text-[11px] text-gray-500">Required for Active</span>
+      <!-- The same red asterisk the rows mark gating items with (#2774) — this caption doubles as its legend. -->
+      <span class="text-[11px] text-gray-500"
+        ><span class="text-red-500 font-semibold" aria-hidden="true" data-testid="formation-readiness-strip-required-legend">*</span> Required for Active</span
+      >
       <span class="text-sm font-medium text-amber-700" data-testid="formation-readiness-strip-gating-text"
         >{{ openGatingItems() }} of {{ totalGatingItems() }} open</span
       >
