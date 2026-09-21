@@ -4,57 +4,111 @@
 <form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-5" data-testid="formation-people-invite-dialog">
   <p class="m-0 text-sm text-gray-500">{{ intro }}</p>
 
-  <div class="flex flex-col gap-1.5">
-    <label for="formation-invite-name" class="text-xs font-medium uppercase tracking-wide text-gray-500">Name</label>
-    <lfx-input-text
-      [form]="form"
-      control="name"
-      inputId="formation-invite-name"
-      placeholder="Full name"
-      autocomplete="off"
-      [maxlength]="nameMaxLength"
-      [readonly]="submitting()"
-      [required]="true"
-      [describedBy]="nameErrorId() ?? 'formation-invite-name-hint'"
-      [invalid]="nameErrorId() !== undefined"
-      dataTest="formation-people-invite-name" />
-    @if (nameErrorId() === 'formation-invite-name-required') {
-      <p id="formation-invite-name-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-name-error">
-        Enter the person’s name.
+  <!-- Either path writes the same `email` control, which drives the BFF's directory lookup (#2772): the
+       search box is discovery — the committee-member index, by name or email — and the Name + Email fields
+       are the escape hatch for a partner the index cannot surface, whose invite email needs a typed name. -->
+  @if (mode() === 'search') {
+    <div class="flex flex-col gap-1.5">
+      <label for="formation-invite-search" class="text-xs font-medium uppercase tracking-wide text-gray-500">Person</label>
+      <lfx-user-search
+        [form]="form"
+        searchType="committee_member"
+        emailControl="email"
+        [displayValue]="selectedLabel()"
+        [showClear]="true"
+        [readonly]="submitting()"
+        inputId="formation-invite-search"
+        [placeholder]="searchPlaceholder"
+        styleClass="w-full"
+        inputStyleClass="w-full text-sm"
+        panelStyleClass="w-full"
+        dataTestId="formation-people-invite-search"
+        (onUserSelect)="onPersonPicked($event)"
+        (onClear)="onPersonCleared()"
+        (onManualEntry)="switchToManual()" />
+      @if (emailErrorId() === 'formation-invite-email-duplicate') {
+        <p id="formation-invite-email-duplicate" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+          {{ duplicateMessage }}
+        </p>
+      } @else if (emailErrorId() === 'formation-invite-email-required') {
+        <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-search-error">
+          {{ searchRequiredMessage }}
+        </p>
+      }
+      <p class="m-0 text-xs text-gray-500">
+        {{ searchHint }}
+        <button
+          type="button"
+          class="text-primary hover:underline"
+          [disabled]="submitting()"
+          (click)="switchToManual()"
+          data-testid="formation-people-invite-manual-link">
+          {{ manualEntryLabel }}
+        </button>
       </p>
-    } @else {
-      <p id="formation-invite-name-hint" class="m-0 text-xs text-gray-500">Used for the invite email when they don’t have an LF account yet.</p>
-    }
-  </div>
+    </div>
+  } @else {
+    <button
+      type="button"
+      class="self-start text-sm text-primary hover:underline"
+      [disabled]="submitting()"
+      (click)="backToSearch()"
+      data-testid="formation-people-invite-back-to-search">
+      {{ backToSearchLabel }}
+    </button>
 
-  <div class="flex flex-col gap-1.5">
-    <label for="formation-invite-email" class="text-xs font-medium uppercase tracking-wide text-gray-500">Email</label>
-    <lfx-input-text
-      [form]="form"
-      control="email"
-      inputId="formation-invite-email"
-      type="email"
-      placeholder="person@example.com"
-      autocomplete="off"
-      [readonly]="submitting()"
-      [required]="true"
-      [describedBy]="emailErrorId()"
-      [invalid]="emailErrorId() !== undefined"
-      dataTest="formation-people-invite-email" />
-    @if (emailErrorId() === 'formation-invite-email-required') {
-      <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-        Enter an email address.
-      </p>
-    } @else if (emailErrorId() === 'formation-invite-email-invalid') {
-      <p id="formation-invite-email-invalid" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-        Enter a valid email address.
-      </p>
-    } @else if (emailErrorId() === 'formation-invite-email-duplicate') {
-      <p id="formation-invite-email-duplicate" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
-        {{ duplicateMessage }}
-      </p>
-    }
-  </div>
+    <div class="flex flex-col gap-1.5">
+      <label for="formation-invite-name" class="text-xs font-medium uppercase tracking-wide text-gray-500">Name</label>
+      <lfx-input-text
+        [form]="form"
+        control="name"
+        inputId="formation-invite-name"
+        placeholder="Full name"
+        autocomplete="off"
+        [maxlength]="nameMaxLength"
+        [readonly]="submitting()"
+        [required]="true"
+        [describedBy]="nameErrorId() ?? 'formation-invite-name-hint'"
+        [invalid]="nameErrorId() !== undefined"
+        dataTest="formation-people-invite-name" />
+      @if (nameErrorId() === 'formation-invite-name-required') {
+        <p id="formation-invite-name-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-name-error">
+          Enter the person’s name.
+        </p>
+      } @else {
+        <p id="formation-invite-name-hint" class="m-0 text-xs text-gray-500">Used for the invite email when they don’t have an LF account yet.</p>
+      }
+    </div>
+
+    <div class="flex flex-col gap-1.5">
+      <label for="formation-invite-email" class="text-xs font-medium uppercase tracking-wide text-gray-500">Email</label>
+      <lfx-input-text
+        [form]="form"
+        control="email"
+        inputId="formation-invite-email"
+        type="email"
+        placeholder="person@example.com"
+        autocomplete="off"
+        [readonly]="submitting()"
+        [required]="true"
+        [describedBy]="emailErrorId()"
+        [invalid]="emailErrorId() !== undefined"
+        dataTest="formation-people-invite-email" />
+      @if (emailErrorId() === 'formation-invite-email-required') {
+        <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+          Enter an email address.
+        </p>
+      } @else if (emailErrorId() === 'formation-invite-email-invalid') {
+        <p id="formation-invite-email-invalid" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+          Enter a valid email address.
+        </p>
+      } @else if (emailErrorId() === 'formation-invite-email-duplicate') {
+        <p id="formation-invite-email-duplicate" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+          {{ duplicateMessage }}
+        </p>
+      }
+    </div>
+  }
 
   <fieldset class="m-0 flex flex-col gap-3 border-0 p-0" data-testid="formation-people-invite-role">
     <legend class="mb-1 text-xs font-medium uppercase tracking-wide text-gray-500">Access</legend>
