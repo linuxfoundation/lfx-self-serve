@@ -88,6 +88,7 @@
 <lfx-formation-item-drawer
   [itemProjectUid]="drawerItemAddress()?.projectUid ?? null"
   [itemKey]="drawerItemAddress()?.itemKey ?? null"
+  [projectSlug]="drawerProjectSlug()"
   [mutationInFlight]="drawerItemMutationInFlight()"
   [skipInFlight]="drawerItemSkipInFlight()"
   [canWrite]="canWrite()"

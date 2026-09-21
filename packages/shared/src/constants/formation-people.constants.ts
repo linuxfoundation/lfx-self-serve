@@ -59,6 +59,18 @@ export const FORMATION_INVITE_ROLE_OPTIONS = [
 ] as const;
 
 /**
+ * Assignee picker copy (#2594): the drawer searches the people on this formation, so the
+ * placeholder says so, the empty state points at the one remedy (invite them first), and a
+ * pending invitee's row explains why it cannot be picked yet.
+ */
+export const FORMATION_ASSIGNEE_PLACEHOLDER = 'Search people on this formation by name or email';
+export const FORMATION_ASSIGNEE_LOADING_PLACEHOLDER = 'Loading people…';
+/** The pre-#2594 wording, kept for the directory fallback so the box never claims a scope it does not have. */
+export const FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER = 'Search for a person…';
+export const FORMATION_ASSIGNEE_EMPTY_MESSAGE = 'No one on this formation matches. Invite them from the People panel, then assign.';
+export const FORMATION_ASSIGNEE_PENDING_NOTE = 'Invite pending — assignable once they accept';
+
+/**
  * Batch size for the BFF's per-person user-metadata fan-out. Settings lists are small (tens, not
  * hundreds), so this bounds concurrent NATS requests without serialising the whole list.
  */

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
+import { filterUserSearchCandidates, hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
@@ -121,5 +121,37 @@ describe('hasLfAccount', () => {
 
   it('treats a whitespace-only username as no account (invite-by-email path)', () => {
     expect(hasLfAccount(user({ username: '   ' }))).toBe(false);
+  });
+});
+
+describe('filterUserSearchCandidates', () => {
+  const candidates = [bob, ilona, usernameOnly];
+
+  it('returns every candidate, in the given order, for an empty query', () => {
+    expect(filterUserSearchCandidates(candidates, '  ')).toEqual(candidates);
+  });
+
+  it('matches a case-insensitive substring of the full name', () => {
+    expect(filterUserSearchCandidates(candidates, 'ONA MAI').map((c) => c.uid)).toEqual(['1']);
+  });
+
+  it('matches an email fragment, including one that starts at the @', () => {
+    expect(filterUserSearchCandidates(candidates, 'bob.brown@').map((c) => c.uid)).toEqual(['2']);
+    expect(filterUserSearchCandidates(candidates, '@example.com').map((c) => c.uid)).toEqual(['2', '1', '5']);
+  });
+
+  it('matches the username', () => {
+    expect(filterUserSearchCandidates(candidates, 'silke').map((c) => c.uid)).toEqual(['5']);
+  });
+
+  it('ranks a name match ahead of an email-only match', () => {
+    const emailHit = user({ uid: 'e', first_name: 'Pat', last_name: 'Lee', email: 'ilona-fan@example.com' });
+    expect(filterUserSearchCandidates([emailHit, ilona], 'ilona').map((c) => c.uid)).toEqual(['1', 'e']);
+  });
+
+  it('does not mutate the input list', () => {
+    const input = [ilona, bob];
+    filterUserSearchCandidates(input, 'b');
+    expect(input.map((c) => c.uid)).toEqual(['1', '2']);
   });
 });

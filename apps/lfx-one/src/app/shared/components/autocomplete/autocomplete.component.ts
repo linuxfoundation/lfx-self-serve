@@ -43,6 +43,10 @@ export class AutocompleteComponent {
   public forceSelection = input<boolean>(false);
   public showEmptyMessage = input<boolean>(true);
   public size = input<'small' | 'large'>('small');
+  // Forwarded to p-autocomplete's [optionDisabled]: the name of a boolean field on each suggestion
+  // (or a resolver), so a caller can list a row that is visible but not selectable — e.g. a pending
+  // invitee in a scoped people picker (#2594).
+  public optionDisabled = input<string | ((item: unknown) => string) | undefined>(undefined);
 
   public readonly completeMethod = output<AutoCompleteCompleteEvent>();
   public readonly onSelect = output<AutoCompleteSelectEvent>();

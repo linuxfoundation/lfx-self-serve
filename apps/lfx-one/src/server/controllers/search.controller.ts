@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeOrganizationReference, UserSearchParams } from '@lfx-one/shared/interfaces';
+import { CommitteeOrganizationReference, UserSearchParams, UserSearchType } from '@lfx-one/shared/interfaces';
 import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -69,7 +69,7 @@ export class SearchController {
       const searchParams: UserSearchParams = {
         ...(name ? { name: name as string } : {}),
         ...(tags ? { tags: tags as string } : {}),
-        type: type as 'committee_member' | 'meeting_registrant',
+        type: type as UserSearchType,
       };
 
       // Perform the search

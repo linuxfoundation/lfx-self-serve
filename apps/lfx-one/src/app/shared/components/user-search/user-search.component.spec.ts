@@ -8,7 +8,8 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { SearchService } from '@services/search.service';
-import { UserSearchResult } from '@lfx-one/shared/interfaces';
+import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
+import { UserSearchOption, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +33,7 @@ function buildUserSearchResult(overrides: Partial<UserSearchResult>): UserSearch
 
 describe('UserSearchComponent', () => {
   let fixture: ComponentFixture<UserSearchComponent>;
+  let searchUsersMock: ReturnType<typeof vi.fn>;
 
   afterEach(() => {
     fixture?.destroy();
@@ -45,16 +47,19 @@ describe('UserSearchComponent', () => {
       showManualEntry?: boolean;
       showClear?: boolean;
       form?: FormGroup;
+      candidates?: readonly UserSearchOption[] | null;
+      searchUsers?: ReturnType<typeof vi.fn>;
     } = {}
   ): Promise<void> => {
     TestBed.resetTestingModule();
+    searchUsersMock = overrides.searchUsers ?? vi.fn().mockReturnValue(of([]));
     await TestBed.configureTestingModule({
       imports: [UserSearchComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
-        { provide: SearchService, useValue: { searchUsers: vi.fn().mockReturnValue(of([])) } },
+        { provide: SearchService, useValue: { searchUsers: searchUsersMock } },
       ],
     }).compileComponents();
 
@@ -67,6 +72,7 @@ describe('UserSearchComponent', () => {
     fixture.componentRef.setInput('requireLfAccount', overrides.requireLfAccount ?? false);
     fixture.componentRef.setInput('showManualEntry', overrides.showManualEntry ?? true);
     fixture.componentRef.setInput('showClear', overrides.showClear ?? false);
+    fixture.componentRef.setInput('candidates', overrides.candidates ?? null);
     fixture.componentRef.setInput('dataTestId', 'user-search-test');
     await fixture.whenStable();
   };
@@ -74,6 +80,95 @@ describe('UserSearchComponent', () => {
   const query = (): HTMLInputElement | null => fixture.nativeElement.querySelector('[data-testid="user-search-test"] input');
   const queryAutocomplete = (): AutocompleteComponent =>
     fixture.debugElement.query(By.directive(AutocompleteComponent)).componentInstance as AutocompleteComponent;
+  const suggestions = (): (UserSearchOption & { displayName: string; fullName: string })[] =>
+    (fixture.componentInstance as unknown as { suggestions: () => (UserSearchOption & { displayName: string; fullName: string })[] }).suggestions();
+  // Drives the search the way p-autocomplete does once its own delay elapses: through completeMethod.
+  const typeAndSettle = async (text: string): Promise<void> => {
+    fixture.componentInstance.onSearchComplete({ query: text } as AutoCompleteCompleteEvent);
+    await fixture.whenStable();
+  };
+
+  // #2594: local mode — a caller-supplied list (the formation assignee picker's people on the
+  // project) searched client-side, with rows that can be listed but not picked.
+  describe('candidates (local mode)', () => {
+    const sam: UserSearchOption = {
+      ...buildUserSearchResult({
+        uid: 'sam',
+        first_name: 'Sam Chen',
+        last_name: '',
+        email: 'sam.chen@cascade-data.example',
+        username: 'sam.chen',
+        type: 'project_member',
+      }),
+    };
+    const pat: UserSearchOption = {
+      ...buildUserSearchResult({ uid: 'pat', first_name: 'Pat Lee', last_name: '', email: 'pat@partner.example', username: null, type: 'project_member' }),
+      disabled: true,
+      note: 'Invite pending',
+    };
+
+    it('filters the list by an email fragment without calling the directory', async () => {
+      await render({ candidates: [sam, pat] });
+
+      await typeAndSettle('@partner');
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+      expect(suggestions().map((s) => s.uid)).toEqual(['pat']);
+      expect(suggestions()[0].fullName).toBe('Pat Lee');
+      expect(suggestions()[0].note).toBe('Invite pending');
+    });
+
+    it('filters from a single character — no two-character floor for a local list', async () => {
+      await render({ candidates: [sam, pat] });
+
+      await typeAndSettle('s');
+
+      expect(suggestions().map((s) => s.uid)).toEqual(['sam']);
+    });
+
+    it('composes a whole-name candidate without a trailing space in the committed label', async () => {
+      await render({ candidates: [sam] });
+
+      await typeAndSettle('sam');
+
+      expect(suggestions()[0].displayName).toBe('Sam Chen (sam.chen@cascade-data.example)');
+    });
+
+    it('never commits a disabled row, and does not announce it as a rejection either', async () => {
+      const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
+      await render({ candidates: [sam, pat], form, requireLfAccount: true });
+      const onUserSelect = vi.fn();
+      const onRejectedSelection = vi.fn();
+      fixture.componentInstance.onUserSelect.subscribe(onUserSelect);
+      fixture.componentInstance.onRejectedSelection.subscribe(onRejectedSelection);
+
+      fixture.componentInstance.onUserSelected({ value: pat } as AutoCompleteSelectEvent);
+
+      expect(form.get('ownerUsername')?.value).toBe('');
+      expect(onUserSelect).not.toHaveBeenCalled();
+      expect(onRejectedSelection).not.toHaveBeenCalled();
+    });
+
+    it('forwards the disabled flag to the autocomplete so the row is unselectable in the dropdown', async () => {
+      await render({ candidates: [sam, pat] });
+
+      expect(queryAutocomplete().optionDisabled()).toBe('disabled');
+    });
+
+    it('defaults the empty copy to the shared message', async () => {
+      await render();
+
+      expect(fixture.componentInstance.emptyMessage()).toBe(USER_SEARCH_EMPTY_MESSAGE);
+    });
+
+    it('keeps the directory search when no candidates are supplied', async () => {
+      await render();
+
+      await typeAndSettle('sa');
+
+      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
+    });
+  });
 
   // #2583: `disabled` was previously declared but never wired to the underlying control — these
   // two tests exist solely to cover that fix, not to re-test the component's existing

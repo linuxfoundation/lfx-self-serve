@@ -11,14 +11,26 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
-import { createEmptyFormationDrawerData, FORMATION_ITEM_AUDIENCE_LABELS } from '@lfx-one/shared/constants';
+import type { FormationDrawerData, FormationItem, FormationItemWriteResult, FormationPeopleResponse, UserSearchOption } from '@lfx-one/shared/interfaces';
 import {
+  createEmptyFormationDrawerData,
+  createUnavailableFormationPeopleResponse,
+  FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER,
+  FORMATION_ASSIGNEE_EMPTY_MESSAGE,
+  FORMATION_ASSIGNEE_LOADING_PLACEHOLDER,
+  FORMATION_ASSIGNEE_PLACEHOLDER,
+  FORMATION_ITEM_AUDIENCE_LABELS,
+  USER_SEARCH_EMPTY_MESSAGE,
+} from '@lfx-one/shared/constants';
+import {
+  findFormationPersonByUsername,
   formatFormationOwnerTeam,
+  formatUserLabel,
   formationItemHasAction,
   getFormationActivityDisplay,
   isFormationItemExternal,
   isValidUrl,
+  toAssigneeSearchOption,
   toLocalDateOnlyString,
   tryParseLocalDateString,
 } from '@lfx-one/shared/utils';
@@ -53,6 +65,12 @@ export class FormationItemDrawerComponent {
   /** Together address the item being shown — the drawer reads via these on open, but every mutation below routes off the loaded `item()`'s own `project_uid`/`template_item_key` (GH-2267 Phase 2). */
   public readonly itemProjectUid = input<string | null>(null);
   public readonly itemKey = input<string | null>(null);
+  /**
+   * The parent project's slug, which addresses the people read (`GET /api/projects/:slug/formation/people`)
+   * behind the assignee picker (#2594). Optional so a host that omits it simply keeps the directory
+   * search: the picker only scopes to the formation's people once a slug is supplied.
+   */
+  public readonly projectSlug = input<string | null>(null);
   /**
    * True while the section has *any* mutation in flight for this item — a row action
    * (provisionable/request), a submitted skip, or this drawer's own Mark complete/Save (echoed back
@@ -148,6 +166,8 @@ export class FormationItemDrawerComponent {
 
   protected readonly loading: WritableSignal<boolean> = signal(false);
   protected readonly loadFailed: WritableSignal<boolean> = signal(false);
+  /** True while the people read behind the assignee picker is in flight — see {@link people}. */
+  protected readonly peopleLoading: WritableSignal<boolean> = signal(false);
   /**
    * Item uids Mark complete/Save is currently writing — a set, not a single slot, since this drawer
    * component instance is reused across every item it ever opens and two of its own writes (e.g.
@@ -221,6 +241,36 @@ export class FormationItemDrawerComponent {
    * which marks every field read-only for its own reason (GH-2328).
    */
   protected readonly assignmentReadOnly: Signal<boolean> = computed(() => this.readOnly() || !this.canWrite());
+  /**
+   * The people on this formation — the project's settings-role holders, read on each open when the
+   * host supplied a `projectSlug` (#2594). Upstream only accepts a grant holder as an assignee
+   * (`assignee_not_on_project`), so this is the assignee picker's candidate list; the same read
+   * names the committed assignee (see {@link assigneeDisplayValue}) instead of a bare username.
+   * It never errors: a refused settings read (global-grant staff, 403) degrades to `unavailable`,
+   * and the picker then falls back to the directory search it used before this scoping.
+   */
+  protected readonly people: Signal<FormationPeopleResponse> = this.initPeople();
+  /** `null` while the people list is not loaded — lfx-user-search then searches its `searchType` corpus instead. */
+  protected readonly assigneeCandidates: Signal<readonly UserSearchOption[] | null> = computed(() => {
+    const response = this.people();
+    return response.state === 'loaded' ? response.people.map(toAssigneeSearchOption) : null;
+  });
+  /** Says which population the box searches — the formation's people once loaded, the directory while the list is unavailable. */
+  protected readonly assigneePlaceholder: Signal<string> = computed(() => {
+    if (this.peopleLoading()) {
+      return FORMATION_ASSIGNEE_LOADING_PLACEHOLDER;
+    }
+    if (this.assigneeCandidates() !== null) {
+      return FORMATION_ASSIGNEE_PLACEHOLDER;
+    }
+    return FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER;
+  });
+  /** In local mode the empty state names the remedy (invite first); the directory fallback keeps the component's default copy. */
+  protected readonly assigneeEmptyMessage: Signal<string> = computed(() =>
+    this.assigneeCandidates() !== null ? FORMATION_ASSIGNEE_EMPTY_MESSAGE : USER_SEARCH_EMPTY_MESSAGE
+  );
+  /** The picker also waits for the people read, so a fast typist cannot search the wrong corpus before the list lands. */
+  protected readonly assigneeReadOnly: Signal<boolean> = computed(() => this.assignmentReadOnly() || this.peopleLoading());
   protected readonly drawerData: Signal<FormationDrawerData> = this.initDrawerData();
   protected readonly item = computed(() => this.optimisticItem() ?? this.drawerData().item);
   protected readonly history = computed(() => this.drawerData().history);
@@ -264,14 +314,28 @@ export class FormationItemDrawerComponent {
   });
   protected readonly audienceIsExternal = computed(() => isFormationItemExternal(this.item()?.audience));
   /**
-   * The committed assignee label bound into lfx-user-search's `[displayValue]` — `FormationUser`
-   * has no separate name/email to compose (name === username today — see the mapper at
-   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
-   * raw.assignee } : null`), so the label is just the current control value. `editForm` is a plain
-   * instance field here (not a signal input like meeting-details' `form()`), so this reads the
-   * control's own valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
+   * The `ownerUsername` control mirrored into a signal. `editForm` is a plain instance field here
+   * (not a signal input like meeting-details' `form()`), so this reads the control's own
+   * valueChanges directly rather than needing a `toObservable(this.form)` wrapper.
    */
-  protected readonly assigneeDisplayValue: Signal<string> = this.initAssigneeDisplayValue();
+  private readonly ownerUsernameValue: Signal<string> = this.initOwnerUsernameValue();
+  /**
+   * The committed assignee label bound into lfx-user-search's `[displayValue]`. `FormationUser`
+   * carries no name of its own (name === username — see the mapper at
+   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
+   * raw.assignee } : null`), so the name and email come from the people list when it knows the
+   * username, and the bare username is the fallback (people unavailable, or an owner who no longer
+   * holds a grant).
+   */
+  protected readonly assigneeDisplayValue: Signal<string> = computed(() => {
+    const username = this.ownerUsernameValue();
+    const person = findFormationPersonByUsername(this.people().people, username);
+    if (!person) {
+      return username;
+    }
+    // A settings entry without a name falls back to its email as the name — never render that twice.
+    return formatUserLabel(person.name === person.email ? null : person.name, person.email);
+  });
 
   public constructor() {
     // `[formControlName]` re-asserts the FormControl's own `disabled` state via `setDisabledState`
@@ -597,7 +661,7 @@ export class FormationItemDrawerComponent {
     return extractErrorMessage(error, 'Could not save item details.');
   }
 
-  private initAssigneeDisplayValue(): Signal<string> {
+  private initOwnerUsernameValue(): Signal<string> {
     const ownerUsernameControl = this.editForm.controls.ownerUsername;
     return toSignal(
       ownerUsernameControl.valueChanges.pipe(
@@ -607,6 +671,31 @@ export class FormationItemDrawerComponent {
       {
         initialValue: ownerUsernameControl.value ?? '',
       }
+    );
+  }
+
+  private initPeople(): Signal<FormationPeopleResponse> {
+    // Read on every open (this drawer instance is reused across items and the list can change
+    // between opens — an invite from the People panel, say). Read for readers too, not only
+    // writers: it costs one settings GET the sidebar card already makes, and it is what lets a
+    // committed assignee render as a name rather than a username. `getFormationPeople` never
+    // errors — it degrades to the unavailable shape itself — so clearing `peopleLoading` on next
+    // is complete.
+    return toSignal(
+      toObservable(this.visible).pipe(
+        skip(1),
+        switchMap(() => {
+          const slug = this.projectSlug();
+          if (!this.visible() || !slug) {
+            this.peopleLoading.set(false);
+            return of(createUnavailableFormationPeopleResponse());
+          }
+
+          this.peopleLoading.set(true);
+          return this.formationService.getFormationPeople(slug).pipe(tap(() => this.peopleLoading.set(false)));
+        })
+      ),
+      { initialValue: createUnavailableFormationPeopleResponse() }
     );
   }
 
