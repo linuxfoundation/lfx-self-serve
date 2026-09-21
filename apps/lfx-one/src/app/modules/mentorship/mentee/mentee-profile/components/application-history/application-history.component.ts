@@ -7,6 +7,7 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS,
+  MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
@@ -67,7 +68,7 @@ export class ApplicationHistoryComponent {
       this.entries().map((entry) => ({
         ...entry,
         statusLabel: labels[entry.status] ?? entry.status,
-        statusBadgeClass: badgeClasses[entry.status] ?? MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES.declined,
+        statusBadgeClass: badgeClasses[entry.status] ?? MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
         // Applicant self-withdraw is `pending → withdrawn` only. Declined cannot re-apply;
         // accepted/graduated/hold/withdrawn are not self-withdrawable.
         canWithdraw: entry.status === 'pending',

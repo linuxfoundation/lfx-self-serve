@@ -452,7 +452,11 @@ export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
   'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
-/** Same code-point cap as register About Me (`introduction`). */
+/**
+ * Same 3000 code-point cap as register About Me (`introduction`). Issue #2764's
+ * mockup showed a 2000 counter; clipping the drawer to 2000 would truncate a
+ * register-length intro on seed, so edit and register share this constant.
+ */
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = MENTORSHIP_MENTEE_INTRODUCTION_MAX;
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
   'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
@@ -493,6 +497,13 @@ export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES = {
   graduated: 'bg-emerald-50 text-emerald-700',
   hold: 'bg-blue-50 text-blue-700',
 } as const satisfies Record<MentorshipMenteeApplicationHistoryStatus, string>;
+
+/**
+ * Neutral fallback when `applications.status` is not in the enum map. Must not
+ * reuse declined/withdrawn classes, or an unknown future status would look like
+ * "Not Selected".
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS = 'bg-slate-100 text-slate-700';
 
 export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileResponse = {
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },

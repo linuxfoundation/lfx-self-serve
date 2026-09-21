@@ -25,7 +25,7 @@ import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength, htmlClipboardToText, normalizeToUrl } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, startWith } from 'rxjs';
+import { filter, merge, startWith } from 'rxjs';
 
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
@@ -85,7 +85,17 @@ export class MenteeProfileEditDrawerComponent {
   private lastValidIntroduction = '';
   private seededIntroduction = '';
   private readonly saveAttempted = signal(false);
-  private readonly formStatus = toSignal(this.form.statusChanges.pipe(startWith(this.form.status)), { initialValue: this.form.status });
+  // Per-control ticks: parent `form.statusChanges` does not emit when overall
+  // status stays INVALID, so filling one required picker would leave its error up.
+  private readonly skillPickerTick = toSignal(
+    merge(
+      this.form.controls.skillsHave.statusChanges,
+      this.form.controls.skillsHave.valueChanges,
+      this.form.controls.skillsWant.statusChanges,
+      this.form.controls.skillsWant.valueChanges
+    ).pipe(startWith(null)),
+    { initialValue: null }
+  );
 
   protected readonly skillsHaveError = computed(() => this.skillPickerError('skillsHave', 'Add at least one skill you currently have.'));
   protected readonly skillsWantError = computed(() => this.skillPickerError('skillsWant', 'Add at least one skill you would like to improve.'));
@@ -156,7 +166,7 @@ export class MenteeProfileEditDrawerComponent {
   }
 
   private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {
-    this.formStatus();
+    this.skillPickerTick();
     this.saveAttempted();
     const field = this.form.controls[control];
     if (!field.touched || field.valid) return undefined;

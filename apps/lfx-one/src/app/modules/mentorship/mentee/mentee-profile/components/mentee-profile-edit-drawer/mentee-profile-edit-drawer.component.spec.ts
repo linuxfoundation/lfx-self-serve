@@ -197,6 +197,20 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['skillsWantError']()).toBe('Add at least one skill you would like to improve.');
   });
 
+  it('clears the filled picker error while the other required picker stays invalid', () => {
+    drawer.open({ ...PROFILE, skillsHave: [], skillsWant: [] });
+    fixture.detectChanges();
+    comp['onSave']();
+
+    comp['form'].controls.skillsHave.setValue(['Go']);
+    fixture.detectChanges();
+
+    expect(comp['skillsHaveError']()).toBeUndefined();
+    expect(comp['skillsWantError']()).toBe('Add at least one skill you would like to improve.');
+    expect(drawer.isOpen()).toBe(true);
+    expect(messageAdd).not.toHaveBeenCalled();
+  });
+
   it('fires the coming-soon toast and closes the drawer on save', () => {
     comp['onSave']();
 

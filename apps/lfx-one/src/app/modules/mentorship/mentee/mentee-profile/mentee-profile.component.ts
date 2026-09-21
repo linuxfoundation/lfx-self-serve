@@ -78,6 +78,9 @@ export class MenteeProfileComponent {
           this.mentorshipService.getMenteeProfile().pipe(
             map((response) => {
               this.hasLoaded.set(true);
+              if (!Array.isArray(response.history)) {
+                console.warn('[MenteeProfile] GET /api/mentorship/mentee/profile omitted history; rendering an empty application list');
+              }
               return response;
             }),
             catchError((error: HttpErrorResponse) => {

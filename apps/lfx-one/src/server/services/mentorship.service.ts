@@ -285,8 +285,8 @@ export class MentorshipService {
 
   /**
    * Mock BFF until the Mentorship `user_profiles` read is wired. Authenticated, but not
-   * scoped to `req`'s user — do not invent authorization here; identity filtering lands
-   * with the real read.
+   * scoped to `req`'s user — identity filtering is tracked with that real read
+   * (linuxfoundation/lfx-self-serve#2764). Do not invent authorization here.
    */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');

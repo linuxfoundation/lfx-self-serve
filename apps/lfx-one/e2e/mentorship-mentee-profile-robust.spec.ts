@@ -13,16 +13,13 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
+import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const MENTEE_OVERVIEW_URL = '/mentorship/mentee/overview';
-const MENTEE_PROFILE_URL = '/mentorship/mentee/profile';
-const DATA_LOAD_TIMEOUT = 30_000;
 const ELEMENT_TIMEOUT = 10_000;
 const PENDING_APPLICATION_ID = 'hist_pending';
 const ACCEPTED_APPLICATION_ID = 'hist_accepted';
@@ -61,13 +58,6 @@ const EMPTY_PROFILE = {
   history: [],
 };
 
-async function enableMentorshipFlag(page: Page): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [MENTORSHIP_ENABLED_FLAG]: true }),
-  ] as const);
-}
-
 async function fulfillMenteeProfile(page: Page, body: unknown, delayMs = 0): Promise<void> {
   await page.route('**/api/mentorship/mentee/profile', async (route) => {
     if (delayMs > 0) {
@@ -81,22 +71,13 @@ async function fulfillMenteeProfile(page: Page, body: unknown, delayMs = 0): Pro
   });
 }
 
-/** Overview SSR does not fetch this profile API; the tab click is a browser GET `page.route` can mock. */
-async function openMenteeProfile(page: Page): Promise<void> {
-  await page.goto(MENTEE_OVERVIEW_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('mentee-page-tab-profile')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-  await page.getByTestId('mentee-page-tab-profile').click();
-  await expect(page).toHaveURL((url) => url.pathname === MENTEE_PROFILE_URL);
-}
-
 test.describe('Mentee Profile — Robust Tests', () => {
   test.describe('Data-testid presence', () => {
     test.beforeEach(async ({ page }) => {
       await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, POPULATED_PROFILE);
       await openMenteeProfile(page);
-      await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     });
 
     test('exposes the page root, details card, and application history', async ({ page }) => {
@@ -151,7 +132,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await expect(loading).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       await expect(details).toHaveCount(0);
 
-      await expect(details).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(details).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
       await expect(loading).toHaveCount(0);
     });
   });
@@ -161,7 +142,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, EMPTY_PROFILE);
       await openMenteeProfile(page);
-      await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     });
 
     test('attaches the empty-state testids and omits populated list nodes', async ({ page }) => {
@@ -187,7 +168,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
       await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
       await openMenteeProfile(page);
 
-      await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeAttached({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-application-history')).toHaveCount(0);
       await expect(page.getByTestId('mentorship-mentee-profile-loading')).toHaveCount(0);

@@ -6,6 +6,7 @@ import {
   MENTORSHIP_COMING_SOON_DETAIL,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS,
+  MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplicationHistoryEntry } from '@lfx-one/shared/interfaces';
@@ -125,7 +126,7 @@ describe('ApplicationHistoryComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history-empty"]')).not.toBeNull();
   });
 
-  it('falls back to the raw status and the declined badge when applications.status is unmapped', () => {
+  it('falls back to the raw status and a neutral badge when applications.status is unmapped', () => {
     setup([
       {
         id: 'app_unknown',
@@ -138,8 +139,11 @@ describe('ApplicationHistoryComponent', () => {
 
     const badge = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_unknown"]');
     expect(badge?.textContent?.trim()).toBe('unpublished');
-    for (const cls of MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES.declined.split(' ')) {
+    for (const cls of MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS.split(' ')) {
       expect(badge?.classList.contains(cls)).toBe(true);
+    }
+    for (const cls of MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES.declined.split(' ')) {
+      expect(badge?.classList.contains(cls)).toBe(false);
     }
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_unknown"]')).toBeNull();
   });

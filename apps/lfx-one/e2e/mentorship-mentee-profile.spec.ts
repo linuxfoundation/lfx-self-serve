@@ -16,39 +16,15 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import {
-  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-  MENTORSHIP_COMING_SOON_DETAIL,
-  MENTORSHIP_ENABLED_FLAG,
-  MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
-} from '@lfx-one/shared/constants';
-import { expect, Page, test } from '@playwright/test';
+import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL } from '@lfx-one/shared/constants';
+import { expect, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
+import { enableMentorshipFlag, MENTEE_PROFILE_LOAD_TIMEOUT, openMenteeProfile } from './helpers/mentee-profile.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
-const MENTEE_OVERVIEW_URL = '/mentorship/mentee/overview';
-const MENTEE_PROFILE_URL = '/mentorship/mentee/profile';
-const DATA_LOAD_TIMEOUT = 30_000;
-
 test.setTimeout(60_000);
-
-async function enableMentorshipFlag(page: Page): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [MENTORSHIP_ENABLED_FLAG]: true }),
-  ] as const);
-}
-
-/** Overview SSR does not fetch this profile API; the tab click is a browser GET `page.route` can mock. */
-async function openMenteeProfile(page: Page): Promise<void> {
-  await page.goto(MENTEE_OVERVIEW_URL, { waitUntil: 'domcontentloaded' });
-  await expect(page).not.toHaveURL(/auth0\.com/);
-  await expect(page.getByTestId('mentee-page-tab-profile')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-  await page.getByTestId('mentee-page-tab-profile').click();
-  await expect(page).toHaveURL((url) => url.pathname === MENTEE_PROFILE_URL);
-}
 
 test.describe('Mentee Profile — empty states', () => {
   test.beforeEach(async ({ page }) => {
@@ -67,29 +43,29 @@ test.describe('Mentee Profile — empty states', () => {
   });
 
   test('shows the about-me empty label when the mentee has no introduction', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-about-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details-about-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
   test('shows the skills empty label when the mentee has none', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-skills-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details-skills-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
   test('shows the areas-to-improve empty label when the mentee has none', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-areas-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details-areas-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
   test('shows the additional-notes empty label when skill_set.comments is absent', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-notes-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details-notes-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
   test('shows the resume empty label when the mentee has not uploaded one', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-mentee-profile-details-resume-name')).toHaveCount(0);
   });
 
   test('shows the application-history empty state when the mentee has no applications', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-application-history-empty')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-application-history-empty')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-application-history-list')).toHaveCount(0);
   });
 });
@@ -102,7 +78,7 @@ test.describe('Mentee Profile — error state', () => {
   });
 
   test('renders the error state when the BFF fails to serve the profile', async ({ page }) => {
-    await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentee-profile-details')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-application-history')).toHaveCount(0);
   });
@@ -131,7 +107,7 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
       })
     );
     await openMenteeProfile(page);
-    await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeVisible({ timeout: MENTEE_PROFILE_LOAD_TIMEOUT });
   });
 
   test('shows the populated profile and seeds the edit drawer, then cancel leaves it closed', async ({ page }) => {

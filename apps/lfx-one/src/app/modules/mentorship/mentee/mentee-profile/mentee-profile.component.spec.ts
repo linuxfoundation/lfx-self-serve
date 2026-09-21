@@ -145,11 +145,14 @@ describe('MenteeProfileComponent', () => {
   });
 
   it('keeps Application History rendering when the BFF omits history', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     getMenteeProfile.mockReturnValue(of({ profile: mockProfile.profile } as MentorshipMenteeProfileResponse));
 
     await bootstrap();
 
     expect(fixture.componentInstance['history']()).toEqual([]);
     expect(element().querySelector('[data-testid="mentorship-application-history"]')).not.toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('omitted history'));
+    warn.mockRestore();
   });
 });
