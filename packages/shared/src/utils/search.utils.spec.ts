@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 
 import { UserSearchRelevance } from '../enums';
 import { UserSearchResult } from '../interfaces';
-import { filterUserSearchCandidates, hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
+import { dedupeUserSearchResults, filterUserSearchCandidates, hasLfAccount, rankUserSearchResults, scoreUserSearchResult } from './search.utils';
 
 /** Builds a UserSearchResult fixture, defaulting every field so tests set only what they assert on. */
 function user(partial: Partial<UserSearchResult>): UserSearchResult {
@@ -153,5 +153,25 @@ describe('filterUserSearchCandidates', () => {
     const input = [ilona, bob];
     filterUserSearchCandidates(input, 'b');
     expect(input.map((c) => c.uid)).toEqual(['1', '2']);
+  });
+});
+
+describe('dedupeUserSearchResults', () => {
+  it('keeps the first row per username, then per case-insensitive email for username-less rows', () => {
+    const rows = [
+      user({ uid: 'a', username: 'jdoe', email: 'jdoe@example.com' }),
+      user({ uid: 'b', username: 'JDoe ', email: 'other@example.com' }),
+      user({ uid: 'c', username: null, email: 'Pat@Example.com' }),
+      user({ uid: 'd', username: '', email: 'pat@example.com' }),
+      user({ uid: 'e', username: null, email: 'someone-else@example.com' }),
+    ];
+
+    expect(dedupeUserSearchResults(rows).map((row) => row.uid)).toEqual(['a', 'c', 'e']);
+  });
+
+  it('keeps rows that carry neither a username nor an email', () => {
+    const rows = [user({ uid: 'x', username: null, email: '' }), user({ uid: 'y', username: null, email: '' })];
+
+    expect(dedupeUserSearchResults(rows).map((row) => row.uid)).toEqual(['x', 'y']);
   });
 });

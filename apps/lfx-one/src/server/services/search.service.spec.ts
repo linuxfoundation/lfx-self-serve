@@ -1,6 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+// The service imports the shared `utils` barrel, which statically pulls in `@angular/forms`; under
+// vitest's plain Node runtime that needs the JIT compiler loaded first (as `formation.service.spec.ts` does).
+import '@angular/compiler';
+
 import type { CommitteeMember, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

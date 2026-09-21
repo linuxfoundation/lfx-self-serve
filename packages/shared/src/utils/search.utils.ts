@@ -108,6 +108,40 @@ export function filterUserSearchCandidates<T extends RankableUser>(candidates: r
 }
 
 /**
+ * Collapses rows that describe the same person across merged result sets — the BFF already
+ * dedupes within one response by username, then email, and this repeats that rule client-side
+ * for the case where the frontend issues more than one lookup for a single query (an exact
+ * address tried as typed and lowercased). A blank username never counts as an identity, emails
+ * compare case-insensitively, and a row with neither is kept as is. First occurrence wins, so
+ * callers order the more authoritative lookup first.
+ */
+export function dedupeUserSearchResults<T extends Pick<UserSearchResult, 'username' | 'email'>>(results: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const unique: T[] = [];
+
+  for (const result of results) {
+    const username = normalize(result.username);
+    const email = normalize(result.email);
+    let key: string | null = null;
+    if (username) {
+      key = `username:${username}`;
+    } else if (email) {
+      key = `email:${email}`;
+    }
+
+    if (key !== null) {
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+    }
+    unique.push(result);
+  }
+
+  return unique;
+}
+
+/**
  * Decides whether a search result corresponds to an existing LF account (LFID).
  *
  * "Has an LF account" is inferred solely from the presence of a non-empty, non-blank
