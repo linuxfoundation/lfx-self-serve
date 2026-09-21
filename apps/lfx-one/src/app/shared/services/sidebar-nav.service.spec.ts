@@ -229,6 +229,32 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Meetings')).toBe(itemLabels.indexOf('Formation') + 1);
   });
 
+  it('hides My Formations from the Me lens while formation-enabled is off', () => {
+    activeLens.set('me');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toBeUndefined();
+    expect(findByLink(items, '/formations')).toBeUndefined();
+  });
+
+  it('appends My Formations as the last My Engagement item on the Me lens when formation-enabled is on', () => {
+    activeLens.set('me');
+    formationEnabled.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagementLinks = sectionItems(items, 'My Engagement').map((item) => item.routerLink);
+
+    expect(findByLink(sectionItems(items, 'My Engagement'), '/formations')).toEqual(
+      expect.objectContaining({ label: 'My Formations', routerLink: '/formations', testId: 'sidebar-my-formations' })
+    );
+    expect(engagementLinks[engagementLinks.length - 1]).toBe('/formations');
+    expect(engagementLinks.indexOf('/formations')).toBe(engagementLinks.indexOf('/documents') + 1);
+    // The section gates keep filtering independently of the new item gate.
+    expect(labels(items)).not.toContain('Security');
+    expect(labels(items)).not.toContain('Mentorship');
+  });
+
   it('hides the Mentorship section from the Me lens while its flag is off', () => {
     activeLens.set('me');
 

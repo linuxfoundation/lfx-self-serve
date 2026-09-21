@@ -144,7 +144,8 @@ export function isFormationLifecycleLive(lifecycle: FormationLifecycle | null): 
  * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
  * so it falls back to an em dash.
  *
- * `MyFormationsCardComponent` also calls this (GH-1956) — `getMyFormationWork`'s formation-aggregate
+ * `decorateMyFormation` (`formation-me.utils.ts`, the My Formations page's row builder — GH-1956,
+ * #2753) also calls this — `getMyFormationWork`'s formation-aggregate
  * query reads the same `formation` projection `FormationsTableComponent` does, normalized through
  * {@link normalizeFormationSubStage} in `formation.service.ts` before either consumer sees a row, so
  * the same unmapped-stage handling applies to both surfaces rather than each guessing independently.

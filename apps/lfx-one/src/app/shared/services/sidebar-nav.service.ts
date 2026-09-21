@@ -53,6 +53,8 @@ export class SidebarNavService {
 
   /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
   private readonly orgEngagementSectionLabel = 'Organization Engagement';
+  /** The Me lens section My Formations (#2753) is appended to; matched by label for the same reason. */
+  private readonly meEngagementSectionLabel = 'My Engagement';
 
   /** Dark-launch gate; falls back to Me Lens nav when off. */
   private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
@@ -70,7 +72,7 @@ export class SidebarNavService {
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
-  /** Dark-launch gate for the formation checklist route (GH-1958); hides the nav item when off. */
+  /** Dark-launch gate for the formation routes (GH-1958, #2753); hides the project checklist, foundation queue and Me-lens My Formations nav items when off. */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
@@ -138,7 +140,9 @@ export class SidebarNavService {
     return [...items.slice(0, afterProjects), this.orgRoiNavItem, ...items.slice(afterProjects)];
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched).
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
+  // then My Formations (#2753) appended to My Engagement while `formation-enabled` is on — the first
+  // item-level gate on this lens; the section gates subtract whole sections by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
     if (!this.isAkritesEnabled()) {
@@ -148,7 +152,8 @@ export class SidebarNavService {
       hiddenSections.add('Mentorship');
     }
 
-    return hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
+    const items = hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
+    return this.isFormationEnabled() ? this.withMyFormationsNavItem(items) : items;
   });
 
   // --- Me Lens Items ---
@@ -161,7 +166,7 @@ export class SidebarNavService {
       routerLink: '/',
     },
     {
-      label: 'My Engagement',
+      label: this.meEngagementSectionLabel,
       isSection: true,
       expanded: true,
       items: [
@@ -631,6 +636,14 @@ export class SidebarNavService {
     testId: 'sidebar-project-formation',
   };
 
+  // --- Me — My Formations page (#2753; dark-launched, appended to My Engagement) ---
+  private readonly myFormationsNavItem: SidebarMenuItem = {
+    label: 'My Formations',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/formations',
+    testId: 'sidebar-my-formations',
+  };
+
   // --- Foundation — Formations queue (GH-1958; dark-launched, auditor-only) ---
   private readonly formationsQueueNavItem: SidebarMenuItem = {
     label: 'Formations',
@@ -759,6 +772,18 @@ export class SidebarNavService {
       const afterContributions = item.items.findIndex((child) => child.routerLink === '/org/contributions') + 1;
       const at = afterContributions === 0 ? item.items.length : afterContributions;
       return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
+    });
+  }
+
+  /**
+   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section —
+   * mirrors `withEasyclaNavItem`. Only called while `formation-enabled` is on, so the static
+   * `meLensItems` tree stays flag-free.
+   */
+  private withMyFormationsNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    return items.map((item) => {
+      if (!item.isSection || item.label !== this.meEngagementSectionLabel || !item.items) return item;
+      return { ...item, items: [...item.items, this.myFormationsNavItem] };
     });
   }
 

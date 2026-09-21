@@ -117,7 +117,7 @@ export function formatFormationRelativeDayCount(date: Date): string {
 }
 
 /**
- * The "Sun, Mar 23 · 170 days ago" announcement label the My Formations card and the multi-persona
+ * The "Sun, Mar 23 · 170 days ago" announcement label the My Formations page and the multi-persona
  * dashboard's formation countdown render for a date-only announcement date, or `null` when there
  * is none / it doesn't parse.
  *
