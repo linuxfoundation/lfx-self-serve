@@ -17,6 +17,7 @@ import type {
   FormationEntityType,
   FormationItem,
   FormationItemAudience,
+  FormationItemExternalAudience,
   FormationItemStatus,
   FormationKnownAvailableAction,
   FormationLifecycle,
@@ -110,6 +111,15 @@ export function normalizeFormationItemAudience(rawAudience: string | null | unde
     return null;
   }
   return rawAudience as FormationItemAudience;
+}
+
+/**
+ * Whether an audience involves people outside the LF (#2774) — `external` or `both`. A type guard
+ * so `FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience]` indexes without a cast; `internal`, `null` and
+ * `undefined` all read false, which is what hides the row's globe icon for them.
+ */
+export function isFormationItemExternal(audience: FormationItemAudience | null | undefined): audience is FormationItemExternalAudience {
+  return audience === 'external' || audience === 'both';
 }
 
 /**

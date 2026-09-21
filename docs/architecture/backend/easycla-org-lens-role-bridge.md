@@ -33,7 +33,7 @@ The agreement's roster `canEdit` flag does **not** drive those buttons. It may s
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
 
-A CLA Group that covers several projects and has no foundation Salesforce id has no pair grain this page can name. Approval-list Add/Edit/Remove stay hidden (fail closed). The PUT still keys off the first covered project, so a CLA manager who can write that project cannot use this UI until the group has a foundation id or a single project. That is the intended call for ambiguous coverage.
+The ACS pair is the first covered project SFID, falling back to the foundation SFID when no listed project has a usable SFID (the same id `resolveApprovalContext` keys the PUT on). Hide Add/Edit/Remove only when the group carries neither a usable project SFID nor a foundation id.
 
 ## Impersonation
 

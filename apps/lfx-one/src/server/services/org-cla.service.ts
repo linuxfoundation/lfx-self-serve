@@ -9,7 +9,7 @@
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
-import { classifyOrgClaManagerRefusal, isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import { classifyOrgClaManagerRefusal, isSameClaGroup, orgClaPairProjectSfid, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -173,46 +173,18 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * status. `status` remains the single slot the template reads, because sanctions outrank
  * signing there and a consumer forming its own opinion from the two booleans would present a
  * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
- * document exists to fetch, since a `sanctioned` row may be signed or unsigned, and that is the
- * one question `signed` is here for.
-
-/**
- * Maps one upstream entry onto the list row, once its signature id is known to be present.
- *
- * The id is required here rather than defaulted, so the check for it stays at the point where a
- * malformed response can still be rejected as one. A default inside the mapper would silently
- * produce a row that renders.
- *
- * Two upstream fields are dropped here rather than left unrendered, because a field the
- * template ignores still reaches the browser inside the transferred state:
- *
- * - `claManagers` — the managers by id and LF username. This surface shows only how many
- *   there are, so the identities have no reason to leave the server. Rendering them is a
- *   separate feature and needs its own authorization argument.
- * - `approvedContributorsCount` — a real number, but not the one the card's first stat
- *   names. That slot is `approvalCriteriaCount` (the rules deciding who may be covered);
- *   this is the count of employee acknowledgements (the people covered). They are easy to
- *   confuse because the console this replaces labels its rules section as though it listed
- *   contributors. Mapping it here is how it ends up under the wrong label.
- *
- * `autoCreateECLA` is likewise not carried: it belongs to a later feature.
- *
- * `signed` is carried, but only as the answer to "is there a document" — never as a display
- * status. `status` remains the single slot the template reads, because sanctions outrank
- * signing there and a consumer forming its own opinion from the two booleans would present a
- * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
  * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
  * that is the one question `signed` is here for.
  */
 function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
-  const projects: OrgClaGroupProject[] = (entry.projects ?? [])
-    .map((project) => ({
-      projectName: project.projectName?.trim() ?? '',
-      ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
-    }))
-    // A project that arrives without a name cannot be rendered as a chip or matched by
-    // search, and counting it would overstate coverage on the "Covers N projects" line.
-    .filter((project) => !!project.projectName);
+  const projects: OrgClaGroupProject[] = (entry.projects ?? []).map((project) => ({
+    projectName: project.projectName?.trim() ?? '',
+    ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
+  }));
+  // ACS pair is scanned on the unfiltered list so a covered project with an id and no name
+  // still beats a parent foundation. `projects` then drops nameless rows for chips/search.
+  const pairProjectSfid = orgClaPairProjectSfid({ projects });
+  const visibleProjects = projects.filter((project) => !!project.projectName);
 
   const signingEntityName = entry.signingEntityName?.trim() ?? '';
   const claGroupName = entry.claGroupName?.trim() ?? '';
@@ -230,7 +202,10 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     ...(signingEntityName && signingEntityName !== companyName.trim() ? { signingEntityName } : {}),
     ...(entry.foundationName ? { foundationName: entry.foundationName } : {}),
     ...(entry.foundationSFID ? { foundationSfid: entry.foundationSFID } : {}),
-    projects,
+    // Nameless projects cannot be rendered as a chip or matched by search, and counting them
+    // would overstate coverage on the "Covers N projects" line. The ACS pair is already pinned.
+    projects: visibleProjects,
+    ...(pairProjectSfid ? { pairProjectSfid } : {}),
     // Only for an agreement that was actually signed. Upstream backfills this field with the
     // signature's creation time when there is no signing timestamp, so on an unsigned row it
     // holds when the signing was begun, not when it completed. Carrying it under a field the
@@ -295,14 +270,20 @@ function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
 }
 
 /**
- * Sorted before taking the first so the same agreement keys the same way on every call. Upstream
- * orders by project name, which is display order and can change when a project is renamed; keying
- * a write on something that reorders under you turns one viewer's refusal into an intermittent one.
+ * The write endpoints key on the same ACS pair the list mapper pins: first covered project,
+ * else the foundation. Sorting here would send Add/Remove at a different grain than the
+ * permission check that hid the buttons.
  */
 function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
-  const projectSfids = (entry.projects ?? []).map((project) => project.projectSFID?.trim() ?? '').filter((sfid) => !!sfid);
-
-  return projectSfids.sort()[0] ?? entry.foundationSFID?.trim() ?? '';
+  return (
+    orgClaPairProjectSfid({
+      foundationSfid: entry.foundationSFID,
+      projects: (entry.projects ?? []).map((project) => ({
+        projectName: project.projectName?.trim() ?? '',
+        ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
+      })),
+    }) ?? ''
+  );
 }
 
 /**
@@ -324,7 +305,13 @@ function requireProjectSfid(target: ManagerTarget, operation: string): string {
 function asManagerRefusal(error: unknown, operation: string, errorMessage: string): unknown {
   if (!(error instanceof MicroserviceError)) return error;
 
-  if (error.statusCode >= 500 || error.transportFailure) return error;
+  if (error.statusCode >= 500 || error.transportFailure) {
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation,
+      service: SERVICE,
+      transportFailure: error.transportFailure,
+    });
+  }
 
   const refusal = classifyOrgClaManagerRefusal(error.statusCode, error.errorBody);
 
@@ -1051,20 +1038,14 @@ export class OrgClaService {
   }
 
   /**
-   * Resolves the three upstream ids an approval-list call is addressed by, plus whether the caller
-   * may write.
-   *
-   * `null` means the signature is not on this organization's list — answered without ever calling
-   * the approval endpoints.
-   */
-
-  /**
    * Returns null when the signature is not on this organization's list, which is both the
    * not-found answer and the authorization gate.
    */
   private async resolveManagerTarget(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ManagerTarget | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
-    const entry = entries.find((candidate) => candidate.signatureID === signatureId);
+    const entry = entries.find(
+      (candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId
+    );
     if (!entry) {
       logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
       return null;

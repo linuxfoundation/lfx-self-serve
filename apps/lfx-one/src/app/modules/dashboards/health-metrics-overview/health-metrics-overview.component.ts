@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, Signal, signal, viewChild } from '@angular/core';
+import {
+  afterNextRender,
+  Component,
+  computed,
+  DestroyRef,
+  ElementRef,
+  inject,
+  input,
+  PLATFORM_ID,
+  Signal,
+  signal,
+  viewChild,
+  WritableSignal,
+} from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   buildHealthMetricsOverviewPeriods,
@@ -21,9 +34,8 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 import { environment } from '@environments/environment';
-import { of, switchMap, tap } from 'rxjs';
+import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
@@ -37,7 +49,9 @@ import type {
   HealthMetricsOverviewFindingGroup,
   HealthMetricsOverviewFindingViewModel,
   HealthMetricsOverviewFoundationSummary,
+  HealthMetricsOverviewKpisByRange,
   HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewRevenueByRange,
   HealthMetricsOverviewTileViewModel,
   HealthMetricsRange,
   HealthMetricsYearOption,
@@ -63,8 +77,13 @@ export class HealthMetricsOverviewComponent {
   protected readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
   protected readonly selectedRange = signal<HealthMetricsRange>('YTD');
 
+  // Fetched once per foundation for every period at once (HEALTH_OVERVIEW_REVENUE keys on
+  // foundation_slug with the period as a column suffix), then projected by the selected period.
   protected readonly revenueLoading = signal(true);
-  protected readonly revenue = signal<HealthMetricsOverviewRevenue>(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY);
+  protected readonly revenueByRange: Signal<HealthMetricsOverviewRevenueByRange> = this.initRevenueByRange();
+  protected readonly revenue = computed<HealthMetricsOverviewRevenue>(
+    () => this.revenueByRange()[this.selectedRange()] ?? HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY
+  );
 
   protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
   // Measured client-side from the sticky header (see observeHeaderHeight); this fallback only shows
@@ -75,16 +94,16 @@ export class HealthMetricsOverviewComponent {
   protected readonly foundationSummaryLoading = signal(true);
 
   // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members/Code only); merged with
-  // the Engagement fixture row in initTiles since that table doesn't cover that area.
+  // the Engagement fixture row in initTiles since that table doesn't cover that area. Same
+  // all-periods-in-one-read shape as revenue above, so changing the period costs no request.
   protected readonly kpiAreaStatesLoading = signal(true);
-  protected readonly kpiAreaStates = signal<HealthMetricsAreaState[]>([]);
+  protected readonly kpiByRange: Signal<HealthMetricsOverviewKpisByRange> = this.initKpiByRange();
+  protected readonly kpiAreaStates = computed<HealthMetricsAreaState[]>(() => this.kpiByRange()[this.selectedRange()] ?? []);
 
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation only — re-fetches
-  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture). kpiAreaStates
-  // above is also live-fetched, but via initializeRangeDataFetching, so it additionally re-fetches
-  // on range changes, which this foundation-only signal doesn't need to.
+  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture).
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -94,54 +113,97 @@ export class HealthMetricsOverviewComponent {
   public constructor() {
     // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
     afterNextRender(() => this.observeHeaderHeight());
-    if (isPlatformBrowser(this.platformId)) {
-      initializeRangeDataFetching({
-        projectContextService: this.projectContextService,
-        range: this.selectedRange,
-        loading: this.revenueLoading,
-        data: this.revenue,
-        defaultValue: HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
-        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewRevenue(slug, range),
-        destroyRef: this.destroyRef,
-      });
-      initializeRangeDataFetching({
-        projectContextService: this.projectContextService,
-        range: this.selectedRange,
-        loading: this.kpiAreaStatesLoading,
-        data: this.kpiAreaStates,
-        defaultValue: [],
-        fetchFn: (slug, range) => this.analyticsService.getHealthOverviewKpis(slug, range),
-        destroyRef: this.destroyRef,
-      });
-    }
   }
 
+  // Pure client-side projection: both all-periods payloads are already in hand, so this issues no
+  // request and never blanks the tiles back to their loading placeholder.
   protected setPeriod(period: HealthMetricsYearOption): void {
     this.selectedRange.set(period.range);
+  }
+
+  private initRevenueByRange(): Signal<HealthMetricsOverviewRevenueByRange> {
+    return this.initByRangeFetch(this.revenueLoading, {}, (slug) => this.analyticsService.getHealthOverviewRevenue(slug));
+  }
+
+  private initKpiByRange(): Signal<HealthMetricsOverviewKpisByRange> {
+    return this.initByRangeFetch(this.kpiAreaStatesLoading, {}, (slug) => this.analyticsService.getHealthOverviewKpis(slug));
+  }
+
+  /**
+   * Foundation-only fetch for the two all-periods endpoints — one read per foundation change, never
+   * per period change. Mirrors initFoundationSummary's SSR guard and in-switchMap empty-slug handling.
+   */
+  private initByRangeFetch<T>(loading: WritableSignal<boolean>, emptyValue: T, fetchFn: (slug: string) => Observable<T>): Signal<T> {
+    if (!isPlatformBrowser(this.platformId)) {
+      // Leave `loading` at its static `true` default so the serialized skeleton matches the client's
+      // pre-hydration state — resolving to a loaded empty map here would be a hydration mismatch.
+      return computed(() => emptyValue);
+    }
+
+    // Latches on the first non-empty slug emission, so "none selected yet" keeps the skeleton up while
+    // a foundation cleared after one was selected still reaches a terminal empty state instead of wedging.
+    let foundationSeen = false;
+
+    return toSignal(
+      toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
+        tap(() => loading.set(true)),
+        // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
+        // request for the previous slug. Errors are absorbed by AnalyticsService's catchError.
+        switchMap((slug) => {
+          foundationSeen = foundationSeen || slug !== '';
+
+          return (slug ? fetchFn(slug) : of(emptyValue)).pipe(
+            // Before the first foundation resolves the tiles and rail stay on their skeleton rather than
+            // flashing a terminal "unavailable" message for data that was never fetched.
+            tap(() => {
+              if (foundationSeen) loading.set(false);
+            }),
+            // Drops the previous foundation's map the moment the slug changes. Without it the tile
+            // strip keeps rendering the old foundation's live rows until the new request resolves,
+            // because mergeAreaStates prefers any live row over the loading placeholder.
+            startWith(emptyValue)
+          );
+        })
+      ),
+      { initialValue: emptyValue }
+    );
   }
 
   private initFoundationSummary(): Signal<HealthMetricsOverviewFoundationSummary> {
     if (!isPlatformBrowser(this.platformId)) {
       // Never subscribe the fetch pipeline during SSR (see ssr-safety.md), and leave
       // foundationSummaryLoading at its static `true` default so the serialized skeleton matches
-      // the client's pre-hydration state — mirrors the revenue fetch's constructor-level guard.
-      // Resolving straight to the loaded default here previously caused a hydration mismatch: the
-      // server always finished "loaded" while the client always starts "loading".
+      // the client's pre-hydration state — same guard initByRangeFetch applies to the two
+      // all-periods fetches. Resolving straight to the loaded default here previously caused a
+      // hydration mismatch: the server always finished "loaded" while the client always starts "loading".
       return computed(() => HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
     }
+
+    // Same latch as initByRangeFetch, with the same two guarantees: before any foundation is selected the
+    // rail keeps its skeleton rather than rendering the zero-filled default as a real "0 projects", and a
+    // foundation cleared after one was selected still leaves the loading state instead of wedging.
+    let foundationSeen = false;
 
     return toSignal(
       toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
         tap(() => this.foundationSummaryLoading.set(true)),
         switchMap((slug) => {
+          foundationSeen = foundationSeen || slug !== '';
+
           // Handle the empty-slug case inside switchMap so clearing the foundation also
           // cancels any in-flight request for the previous slug (see foundation-projects.component.ts).
-          if (!slug) return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
-          // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
-          // the zero-filled default on failure — no component-level catchError needed.
-          return this.analyticsService.getFoundationProfileSummary(slug);
-        }),
-        tap(() => this.foundationSummaryLoading.set(false))
+          const source = slug
+            ? // Error handling lives in AnalyticsService.getFoundationProfileSummary, which returns
+              // the zero-filled default on failure — no component-level catchError needed.
+              this.analyticsService.getFoundationProfileSummary(slug)
+            : of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+
+          return source.pipe(
+            tap(() => {
+              if (foundationSeen) this.foundationSummaryLoading.set(false);
+            })
+          );
+        })
       ),
       { initialValue: HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT }
     );

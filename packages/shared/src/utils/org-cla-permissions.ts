@@ -19,18 +19,24 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
 }
 
 /**
- * The project/foundation half of an ACS `project|organization` pair, matching how Sign already
- * chooses `projectSfid`: foundation when the CLA Group is foundation-level, otherwise the sole
- * covered project. Ambiguous coverage (several projects, no foundation id) yields nothing so the
- * caller can fail closed rather than guess.
+ * The project/foundation half of an ACS `project|organization` pair, matching
+ * `resolveApprovalContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
+ * project SFID, else foundation. `pairProjectSfid` is that scan taken before the mapper drops
+ * nameless projects from `projects` for display — prefer it so a covered project with an id and
+ * no name still beats a parent foundation. Deliberately not Sign's `signingChoiceFrom`, which
+ * stays foundation-first. A parent foundation id is ancestry, not grain — signing grants
+ * `cla-manager` on mapped projects, not the parent. Yields nothing only when there is no project
+ * id and no foundation id, so the caller can hide Add.
  */
-export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects'>): string | undefined {
-  const foundation = group.foundationSfid?.trim();
-  if (foundation) return foundation;
+export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>): string | undefined {
+  const pinned = group.pairProjectSfid?.trim();
+  if (pinned) return pinned;
 
-  if (group.projects.length !== 1) return undefined;
-  const only = group.projects[0]?.projectSfid?.trim();
-  return only || undefined;
+  const covered = group.projects.find((project) => !!project.projectSfid?.trim())?.projectSfid?.trim();
+  if (covered) return covered;
+
+  const foundation = group.foundationSfid?.trim();
+  return foundation || undefined;
 }
 
 function acsParts(action: OrgClaPermissionAction): { resource: string; verb: string } {

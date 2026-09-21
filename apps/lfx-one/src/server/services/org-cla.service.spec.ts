@@ -13,6 +13,7 @@ import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/uti
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import { customErrorSerializer } from '../helpers/error-serializer';
 import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
+import { orgClaPairProjectSfid } from '../../../../../packages/shared/src/utils/org-cla-permissions';
 
 const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
@@ -35,11 +36,15 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const managers = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-manager.utils')>(
     '../../../../../packages/shared/src/utils/org-cla-manager.utils'
   );
+  const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
+    '../../../../../packages/shared/src/utils/org-cla-permissions'
+  );
   return {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
+    orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
   };
 });
 
@@ -506,6 +511,7 @@ describe('OrgClaService.listClaGroups — coverage', () => {
 
     expect(row.projects.map((project) => project.projectName)).toEqual(['Cascade', 'Driftwood']);
     expect(row.projects[0].projectSfid).toBe('a09410000182dD3AAI');
+    expect(row.pairProjectSfid).toBe('a09410000182dD3AAI');
   });
 
   it('drops a project with no name rather than counting it', async () => {
@@ -517,6 +523,23 @@ describe('OrgClaService.listClaGroups — coverage', () => {
 
     expect(row.projects).toHaveLength(1);
     expect(row.projects[0].projectName).toBe('Cascade');
+  });
+
+  it('pins a nameless covered project SFID for the approval-list ACS pair', async () => {
+    const projectSfid = 'a09410000182dD3AAI';
+    gatewayFetch.mockResolvedValue(
+      upstreamList(
+        upstreamEntry({
+          foundationSFID: 'a09410000182dFOUND',
+          projects: [{ projectSFID: projectSfid }],
+        })
+      )
+    );
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.projects).toEqual([]);
+    expect(orgClaPairProjectSfid(row)).toBe(projectSfid);
   });
 
   it('yields an empty coverage list when upstream sends none', async () => {
@@ -1954,6 +1977,17 @@ describe('OrgClaService.getManagers', () => {
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
     expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
   });
+
+  it('finds the agreement when the path spells the signature UUID without hyphens', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: '0f9b8c7d-1234-4abc-89de-0123456789ab' })))
+      .mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, '0F9B8C7D12344ABC89DE0123456789AB');
+
+    expect(result?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
 });
 
 describe('OrgClaService.addManager', () => {
@@ -1982,7 +2016,7 @@ describe('OrgClaService.addManager', () => {
     expect(url).not.toContain('a09410000182dD2AAI');
   });
 
-  it('picks the same project every time regardless of the order upstream sent them', async () => {
+  it('keys the write on the first covered project, matching the ACS pair', async () => {
     const reversed = upstreamEntry({
       projects: [
         { projectSFID: 'a09410000182dD4AAI', projectName: 'Driftwood' },
@@ -1993,7 +2027,7 @@ describe('OrgClaService.addManager', () => {
 
     await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
 
-    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD3AAI/');
+    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD4AAI/');
   });
 
   it('falls back to the foundation only when the agreement covers no project', async () => {
@@ -2133,6 +2167,22 @@ describe.each([
     )) as MicroserviceErrorType;
 
     expect(error.statusCode).toBe(504);
-    expect(error.errorBody).toBe('');
+    expect(error.errorBody).toBeUndefined();
+  });
+
+  it('scrubs an unclassified 5xx body so the submitted name cannot reach the log', async () => {
+    const leak = JSON.stringify({ Message: 'create failed for Ada Porter ada.porter@example.org' });
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(502, leak));
+
+    const error = (await invoke(new OrgClaService()).then(
+      () => undefined,
+      (caught: unknown) => caught
+    )) as MicroserviceErrorType;
+    const logged = everythingLogged(error);
+
+    expect(error.statusCode).toBe(502);
+    expect(error.errorBody).toBeUndefined();
+    expect(logged).not.toContain('Ada Porter');
+    expect(logged).not.toContain('ada.porter@example.org');
   });
 });
