@@ -1993,6 +1993,26 @@ describe('OrgClaService.getManagers', () => {
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
   });
 
+  it('drops a row whose lf_username is not a string', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: 42 as unknown as string }), upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('omits optional manager fields that are not strings instead of throwing while trimming', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ name: 42 as unknown as string, email: 99 as unknown as string, added_on: false as unknown as string })] });
+
+    const manager = (await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0];
+    expect(manager?.lfUsername).toBe('aporter');
+    expect(manager).not.toHaveProperty('name');
+    expect(manager).not.toHaveProperty('email');
+    expect(manager).not.toHaveProperty('addedOn');
+  });
+
   it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
 

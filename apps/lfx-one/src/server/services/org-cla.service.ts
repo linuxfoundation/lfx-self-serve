@@ -262,15 +262,20 @@ function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   return entry.signed === true ? 'signed' : 'not-started';
 }
 
+function upstreamTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
-  const name = entry.name?.trim() ?? '';
-  const email = entry.email?.trim() ?? '';
+  const name = upstreamTrimmedString(entry.name);
+  const email = upstreamTrimmedString(entry.email);
   // Only the events-backed add time. `approved_on` is the CCLA's signature_created and is not when
   // this manager was added; the UI renders an em dash when this is absent.
-  const addedOn = entry.added_on?.trim() ?? '';
+  const addedOn = upstreamTrimmedString(entry.added_on);
+  const lfUsername = upstreamTrimmedString(entry.lf_username);
 
   return {
-    lfUsername: entry.lf_username?.trim() ?? '',
+    lfUsername,
     ...(name ? { name } : {}),
     ...(email ? { email } : {}),
     ...(addedOn ? { addedOn } : {}),
@@ -961,7 +966,9 @@ export class OrgClaService {
 
     return {
       signatureId,
-      managers: upstream.list.filter((entry): entry is EasyClaCompanyClaManager => !!entry?.lf_username?.trim()).map((entry) => toOrgClaManager(entry)),
+      managers: upstream.list
+        .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
+        .map((entry) => toOrgClaManager(entry)),
     };
   }
 
