@@ -166,9 +166,7 @@ describe('OrgEasyclaManagersComponent', () => {
   });
 
   it('renders a suspicious manager email as plain text with no mailto link', async () => {
-    getManagers.mockReturnValue(
-      of({ signatureId: SIGNATURE_ID, managers: [manager({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })] })
-    );
+    getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })] }));
     await render();
 
     component.loadIfNeeded();
