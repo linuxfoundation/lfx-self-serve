@@ -312,6 +312,15 @@ export class OrgNavigationService {
     }
 
     const matchingAccountItem = current.accountId ? page.items.find((item) => item.accountId === current.accountId) : undefined;
+    if (!matchingAccountItem && current.uid && this.orgLensNavigation.isOnAddressedPage()) {
+      // The selection is not on this authoritative page, but the address names it. A default from
+      // the list would leave that address in place — `writeDefaultAddress` never rewrites an
+      // addressed page — with another organization rendering under it: the silent substitution
+      // spec 050 exists to prevent. The selection stays what the address names; the data behind it
+      // is FGA-gated. Sending a revoked address to `/org/not-found`, as a resolver miss does, is the
+      // follow-up (lfx-self-serve#2793).
+      return;
+    }
     this.selectDefaultOrg(matchingAccountItem ?? page.items[0]);
   }
 

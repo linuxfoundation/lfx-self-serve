@@ -37,6 +37,7 @@ describe('OrgNavigationService default selection', () => {
   let pinSelection: ReturnType<typeof vi.fn>;
   let clearAccount: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
+  let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
@@ -49,6 +50,7 @@ describe('OrgNavigationService default selection', () => {
     pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     navigateToSelectedOrg = vi.fn();
+    isOnAddressedPage = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
       providers: [
@@ -58,7 +60,7 @@ describe('OrgNavigationService default selection', () => {
         MessageService,
         { provide: LensService, useValue: {} },
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
         {
           provide: AccountContextService,
           useValue: { selectedAccount, isAdoptedFromAddress, setAccount, setIndexedSlug, pinSelection, clearAccount, refreshCanonicalRecord },
@@ -179,6 +181,19 @@ describe('OrgNavigationService default selection', () => {
       expect(setAccount).not.toHaveBeenCalled();
       expect(clearAccount).not.toHaveBeenCalled();
       expect(pinSelection).toHaveBeenCalledWith('default');
+    });
+
+    // On an addressed page the address names the selection. A default from the list would leave
+    // that address in place with another organization rendering under it — spec 050's silent
+    // substitution — so the selection stays, whatever the list says (Copilot on lfx-self-serve#2793).
+    it('never re-defaults under an address that names the unlisted organization', () => {
+      isOnAddressedPage.mockReturnValue(true);
+
+      bootstrapWith([item(UID_A, 'Acme')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+      expect(selectedAccount().uid).toBe(UID_B);
     });
   });
 
