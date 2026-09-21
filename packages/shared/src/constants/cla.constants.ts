@@ -233,33 +233,6 @@ export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agree
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
- * The return address the BFF mints while the `ORG_EASYCLA_RETURN_IN_PATH` gate is off:
- * `/org/easycla/{claGroupId}`, with the organization carried in `?org=` (`ORG_EASYCLA_RETURN_ORG_PARAM`)
- * rather than in the path. Every release routes and reads this shape, which is what makes it the
- * safe default across a rolling deploy or a rollback. Sibling of `orgEasyclaReturnPath`.
- */
-export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
-  return `${ORG_EASYCLA_PATH}/${encodeURIComponent(claGroupId)}`;
-}
-
-/**
- * Where EasyCLA returns a signatory after signing a corporate CLA (#1983, #2352): the CLA Group's
- * own address under the organization the signing was opened for — `/org/{orgUid}/easycla/{claGroupId}`
- * (spec 050 address scheme, lfx-self-serve#2743). Mirrors the `easycla` child of the
- * `/org/:orgSegment` route in the org dashboard routes.
- *
- * `orgUid` is the 18-char SFID the grant check cleared; the path guard resolves it against the
- * viewer's own organizations and canonicalizes the segment to the slug on arrival, so the address
- * names an organization without granting one.
- *
- * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
- * address from the request Host, and the two hand-offs must not disagree on where they land.
- */
-export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
-  return `/org/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
-}
-
-/**
  * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
  * when the group id alone does not say (#2364).
  *

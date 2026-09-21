@@ -35,11 +35,17 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
     '../../../../../packages/shared/src/utils/org-cla-permissions'
   );
+  const orgLensUrl = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-lens-url.utils')>(
+    '../../../../../packages/shared/src/utils/org-lens-url.utils'
+  );
   return {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
+    // The return-address builders ship as written: the spec asserts the minted shapes.
+    orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
+    legacyOrgEasyclaReturnPath: orgLensUrl.legacyOrgEasyclaReturnPath,
   };
 });
 

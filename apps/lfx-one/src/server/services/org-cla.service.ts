@@ -8,14 +8,8 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import {
-  legacyOrgEasyclaReturnPath,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
-  ORG_EASYCLA_RETURN_SIGNED_PARAM,
-  ORG_EASYCLA_RETURN_SIGNED_VALUE,
-  orgEasyclaReturnPath,
-} from '@lfx-one/shared/constants';
-import { isSameClaGroup, orgClaPairProjectSfid, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
+import { isSameClaGroup, legacyOrgEasyclaReturnPath, orgClaPairProjectSfid, orgEasyclaReturnPath, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
