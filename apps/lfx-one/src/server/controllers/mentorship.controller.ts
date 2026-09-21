@@ -274,7 +274,7 @@ export class MentorshipController {
       }
 
       const profile = await this.mentorshipService.getMenteeProfile(req);
-      logger.success(req, 'get_mentorship_mentee_profile', startTime);
+      logger.success(req, 'get_mentorship_mentee_profile', startTime, { history_count: profile.history.length });
       res.json(profile);
     } catch (error) {
       next(error);

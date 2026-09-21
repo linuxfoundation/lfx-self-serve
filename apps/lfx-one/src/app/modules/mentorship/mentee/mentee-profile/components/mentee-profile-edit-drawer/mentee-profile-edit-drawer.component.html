@@ -1,0 +1,87 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [visible]="drawer.isOpen()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="mentee-profile-edit-drawer">
+  <ng-template #header>
+    <div class="flex flex-col gap-1 pr-8">
+      <h2 class="text-lg font-semibold text-gray-900" data-testid="mentee-profile-edit-drawer-header">{{ title }}</h2>
+      <p class="text-sm text-gray-500" data-testid="mentee-profile-edit-drawer-subtitle">{{ subtitle }}</p>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 h-full" data-testid="mentee-profile-edit-drawer-body">
+    <div class="flex flex-col gap-3" data-testid="mentee-profile-edit-about">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900">About Me</h2>
+        <p class="text-sm text-gray-500">{{ aboutIntro }}</p>
+        <ol class="list-decimal pl-5 text-sm text-gray-500 flex flex-col gap-0.5" data-testid="mentee-profile-edit-about-prompts">
+          @for (prompt of aboutPrompts; track prompt) {
+            <li>{{ prompt }}</li>
+          }
+        </ol>
+      </div>
+
+      <div class="flex flex-col gap-1">
+        <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
+        <lfx-textarea
+          [form]="form"
+          control="introduction"
+          [rows]="6"
+          styleClass="w-full min-h-32"
+          [maxlength]="aboutMeMax"
+          inputId="mentee-profile-edit-about-me"
+          [ariaDescribedBy]="'mentee-profile-edit-about-me-counter'"
+          dataTest="mentee-profile-edit-about-me" />
+        <div class="flex justify-end">
+          <span
+            id="mentee-profile-edit-about-me-counter"
+            class="text-xs text-gray-400"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            [attr.aria-label]="aboutMeLength() + ' of ' + aboutMeMax + ' characters used'"
+            data-testid="mentee-profile-edit-about-me-counter">
+            {{ aboutMeLength() }} / {{ aboutMeMax }}
+          </span>
+        </div>
+      </div>
+    </div>
+
+    <div class="flex flex-col gap-4" data-testid="mentee-profile-edit-skills">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-base font-semibold text-gray-900">Skills</h2>
+        <p class="text-sm text-gray-500">{{ skillsIntro }}</p>
+      </div>
+
+      <lfx-mentorship-skills-picker [form]="form" [label]="skillsHaveLabel" control="skillsHave" idPrefix="mentee-profile-edit-have" />
+
+      <lfx-mentorship-skills-picker [form]="form" [label]="skillsWantLabel" control="skillsWant" idPrefix="mentee-profile-edit-want" />
+
+      <div class="flex flex-col gap-1" data-testid="mentee-profile-edit-additional-notes">
+        <label for="mentee-profile-edit-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>
+        <lfx-textarea
+          [form]="form"
+          control="additionalNotes"
+          [rows]="4"
+          styleClass="w-full min-h-24"
+          [maxlength]="additionalNotesMax"
+          inputId="mentee-profile-edit-additional-notes"
+          dataTest="mentee-profile-edit-additional-notes" />
+      </div>
+    </div>
+
+    <lfx-mentorship-resume-section [form]="form" [intro]="resumeIntro" [bordered]="false" idPrefix="mentee-profile-edit-resume" />
+
+    <div class="flex justify-end gap-3 border-t border-gray-200 pt-4 mt-auto" data-testid="mentee-profile-edit-drawer-actions">
+      <lfx-button type="button" variant="outlined" [label]="cancelLabel" (onClick)="onCancel()" size="small" data-testid="mentee-profile-edit-drawer-cancel" />
+
+      <lfx-button type="button" severity="info" [label]="saveLabel" (onClick)="onSave()" size="small" data-testid="mentee-profile-edit-drawer-save" />
+    </div>
+  </div>
+</p-drawer>

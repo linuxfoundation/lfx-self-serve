@@ -291,8 +291,9 @@ export class MentorshipService {
         skillsHave: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsHave],
         skillsWant: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsWant],
       },
+      history: MOCK_MENTORSHIP_MENTEE_PROFILE.history.map((entry) => ({ ...entry })),
     };
-    logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded');
+    logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { history_count: response.history.length });
     return response;
   }
 
