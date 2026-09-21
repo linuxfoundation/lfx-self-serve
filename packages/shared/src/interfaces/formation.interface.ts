@@ -865,12 +865,17 @@ export interface MyFormationSummary {
 /**
  * Distinguishes why `getMyFormationWork`'s response looks the way it does (GH-1956) — mirrors
  * {@link FormationActivityHistoryState}'s pattern: a genuinely-empty result must never look like a
- * failed one. `'complete'`: both the item-assignment query and the formation-aggregate query
- * succeeded — `formations`/`items` may still be empty, meaning the caller has nothing assigned.
- * `'partial'`: the item query succeeded (so `items` is trustworthy) but the formation-aggregate
- * query failed, or was missing a row for at least one formation the caller has an assigned item on
- * — such a formation is dropped from `formations` rather than fabricated. `'unavailable'`: the item
- * query itself failed — nothing in this response can be trusted, and both arrays are forced empty.
+ * failed one. Three upstream reads feed the response: the item-assignment query, the direct-grant
+ * project read that defines the invited set (#2795), and the formation-aggregate read(s).
+ * `'complete'`: all three succeeded — `formations`/`items` may still be empty, meaning the caller
+ * has nothing assigned and no formation invite. `'partial'`: the item query succeeded (so `items`
+ * is trustworthy) but at least one of the other two did not — the direct-grant read failed (so
+ * invited-but-unassigned formations may be missing entirely, including when `formations` is
+ * empty), or an aggregate batch failed, or an aggregate row was missing for a formation the caller
+ * has an assigned item on (such a formation is dropped from `formations` rather than fabricated).
+ * A consumer must therefore treat an empty `'partial'` as "retry", never as "nothing here".
+ * `'unavailable'`: the item query itself failed — nothing in this response can be trusted, and both
+ * arrays are forced empty.
  */
 export type MyFormationWorkState = 'complete' | 'partial' | 'unavailable';
 

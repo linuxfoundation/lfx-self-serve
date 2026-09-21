@@ -274,7 +274,9 @@ describe('ProjectService — create picker methods', () => {
 
       expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
       expect(proxyRequest).toHaveBeenCalledTimes(1);
-      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct' });
+      // page_size 100, not the query service's default 50: this read is on the My Formations
+      // render path now, and pagination is sequential (PR #2799 review).
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
       expect(addAccessToResources).not.toHaveBeenCalled();
       expect(checkAccess).not.toHaveBeenCalled();
     });

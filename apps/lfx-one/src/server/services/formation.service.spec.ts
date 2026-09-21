@@ -2116,6 +2116,36 @@ describe('FormationService', () => {
       expect(result.formations.map((f) => f.formation_uid).sort()).toEqual(['formation:formation-project-0', 'formation:formation-project-149']);
     });
 
+    it('keeps the aggregate rows from batches that succeeded and reports partial when one batch fails (PR #2799 review)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string; tags?: string[] };
+        if (params.type === 'formation_item') {
+          const item = itemIndexRow({ object_id: 'item-1' });
+          return Promise.resolve({ resources: [{ type: 'formation_item', id: item.object_id, data: item }] });
+        }
+        // The second batch (tags 101..150) fails; the first, which also carries the assignee tag, succeeds.
+        if (params.tags?.includes('project_uid:formation-project-149')) {
+          return Promise.reject(new Error('batch failed'));
+        }
+        const row = formationIndexRow();
+        return Promise.resolve({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] });
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('formations will be incomplete'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
     it('folds an assigned formation the caller is also invited to into one row, with its buckets (#2795)', async () => {
       getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
       mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'done' })], [formationIndexRow({ progress: { done: 1, not_started: 2 } })]);

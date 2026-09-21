@@ -40,6 +40,7 @@ import {
   FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
@@ -562,11 +563,14 @@ export class FormationService {
    *
    * Backed by access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
    * `type=formation_item` for the caller's assigned items (this method's `items` half, and the
-   * per-formation bucket math for `formations`), and one `type=formation` read for the
+   * per-formation bucket math for `formations`), and a chunked `type=formation` read for the
    * whole-formation aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) of the
-   * assigned OR invited set — `tags` (OR) over the `assignee:` tag and one `project_uid:` tag per
-   * direct-grant formation project, `tags_all` (AND) on `lifecycle:live`. The item index has no
-   * per-formation rollup of its own. Every read carries the caller's own bearer token (via `req`);
+   * assigned OR invited set — one request per `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of
+   * `project_uid:` tags (one tag per direct-grant formation project, the `assignee:` tag riding on
+   * the first batch), each `tags` (OR) plus `tags_all` (AND) on `lifecycle:live`; a caller with at
+   * most that many direct-grant formation projects, i.e. nearly everyone, issues exactly one. The
+   * item index has no per-formation rollup of its own. Every read carries the caller's own bearer
+   * token (via `req`);
    * an unauthenticated/unauthorized caller simply gets empty results back, not an error — see
    * {@link MyFormationWorkState}'s doc comment for how failure is distinguished from "the caller
    * has nothing here".
@@ -656,57 +660,66 @@ export class FormationService {
     let formationRows: FormationQueueRow[] = [];
     let formationsDegraded = false;
     if (includeFormations) {
-      try {
-        // The assigned-OR-invited set in as few reads as the tag list allows (#2795). The query
-        // service OR's `tags` and AND's `tags_all` inside one bool query — `tags` renders as a
-        // `should` clause with `minimum_should_match: 1`, `tags_all` as `must` terms
-        // (`lfx-v2-query-service` `internal/infrastructure/opensearch/template.go`, `criteriaShould`
-        // / `criteriaMust`; `docs/query-service-contract.md`: "`tags` — OR filter, any tag matches",
-        // "`tags_all` — AND filter, all tags must match") — and the `formation` document carries
-        // both an `assignee:<username>` tag per assignee and a `project_uid:<uid>` tag
-        // (`lfx-v2-formation-service` `indexer_publisher.go`'s `projectionTags`).
-        //
-        // Chunked because every tag becomes its own `&tags=` query-string pair: the same URL-length
-        // guard `ProjectService.getProjectsByIds` applies to its `filters_or` UIDs, so a caller
-        // directly granted on many formations costs a few reads rather than a request-line
-        // overflow that would degrade the whole list to `'partial'`. The assignee tag rides on the
-        // first batch only; the join below dedupes by `formation_uid` across batches regardless.
-        const TAG_BATCH_SIZE = 100;
-        const projectUidTags = [...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`);
-        const tagBatches: string[][] = [];
-        for (let i = 0; i < Math.max(projectUidTags.length, 1); i += TAG_BATCH_SIZE) {
-          tagBatches.push([...(i === 0 ? [assigneeTag] : []), ...projectUidTags.slice(i, i + TAG_BATCH_SIZE)]);
-        }
-        const batchRows = await Promise.all(
-          tagBatches.map((tags) =>
-            fetchAllQueryResources<UpstreamFormationQueueRow>(
-              req,
-              (pageToken) =>
-                this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-                  type: 'formation',
-                  tags,
-                  tags_all: ['lifecycle:live'],
-                  page_size: 100,
-                  ...(pageToken && { page_token: pageToken }),
-                }),
-              { failOnPartial: true }
-            )
-          )
-        );
-        const rawFormationRows = batchRows.flat();
-        // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
-        // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
-        // exclude could still join a live item row below and render as an active "My formation".
-        // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
-        // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
-        // `parent_uid` field would be pure waste on this path (PR #2444 review).
-        formationRows = rawFormationRows
-          .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
-          .map((row) => this.normalizeQueueRow(row, null));
-      } catch (error) {
-        logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: error });
-        formationsDegraded = true;
+      // The assigned-OR-invited set in as few reads as the tag list allows (#2795). The query
+      // service OR's `tags` and AND's `tags_all` inside one bool query — `tags` renders as a
+      // `should` clause with `minimum_should_match: 1`, `tags_all` as `must` terms
+      // (`lfx-v2-query-service` `internal/infrastructure/opensearch/template.go`, `criteriaShould`
+      // / `criteriaMust`; `docs/query-service-contract.md`: "`tags` — OR filter, any tag matches",
+      // "`tags_all` — AND filter, all tags must match") — and the `formation` document carries
+      // both an `assignee:<username>` tag per assignee and a `project_uid:<uid>` tag
+      // (`lfx-v2-formation-service` `indexer_publisher.go`'s `projectionTags`).
+      //
+      // Chunked at the repo's one query-service URL-length guard, `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE`,
+      // because every tag becomes its own `&tags=` query-string pair (the same reason
+      // `ProjectService.getProjectsByIds` and `org-role-grants.service.ts` chunk theirs), so a caller
+      // directly granted on many formations costs a few reads rather than a request-line overflow.
+      // The assignee tag rides on the first batch only; the join below dedupes by `formation_uid`
+      // across batches regardless.
+      const projectUidTags = [...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`);
+      const tagBatches: string[][] = [];
+      for (let i = 0; i < Math.max(projectUidTags.length, 1); i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+        tagBatches.push([...(i === 0 ? [assigneeTag] : []), ...projectUidTags.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE)]);
       }
+      // allSettled, not all: a batch that fails must not discard the rows the other batches already
+      // returned — for the heaviest callers (the ones the chunking exists for) that would turn "most
+      // of your formations, plus Retry" into "nothing, plus Retry", and batch 0 also carries the
+      // assignee tag, so the caller's assigned formations would vanish with it. Every fulfilled
+      // batch renders; any rejection still flips `state` to `'partial'` (PR #2799 review). Each
+      // batch is itself `failOnPartial`, so a batch either arrives whole or counts as failed.
+      const settled = await Promise.allSettled(
+        tagBatches.map((tags) =>
+          fetchAllQueryResources<UpstreamFormationQueueRow>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'formation',
+                tags,
+                tags_all: ['lifecycle:live'],
+                page_size: 100,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          )
+        )
+      );
+      const rawFormationRows: UpstreamFormationQueueRow[] = [];
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') {
+          rawFormationRows.push(...outcome.value);
+        } else if (!formationsDegraded) {
+          formationsDegraded = true;
+          logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: outcome.reason });
+        }
+      }
+      // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
+      // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
+      // exclude could still join a live item row below and render as an active "My formation".
+      // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
+      // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
+      // `parent_uid` field would be pure waste on this path (PR #2444 review).
+      formationRows = rawFormationRows
+        .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
+        .map((row) => this.normalizeQueueRow(row, null));
     }
 
     // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live, caller-assigned) items.
@@ -1163,12 +1176,35 @@ export class FormationService {
    *
    * Not narrowed by relation — `filter_grants=direct` discards it upstream, so a project the caller
    * holds only `meeting_coordinator` (or any other non-invite relation) on lands in this set too.
-   * That is not what the page renders, though: the `formation` document's access object is
-   * `project:<uid>#auditor`, and the platform model's project `auditor` composes direct auditors,
-   * writers, the executive director and inherited auditors, never `meeting_coordinator`, so the
-   * aggregate read that follows returns nothing for such a project and no row appears. A
-   * relation-scoped read would need upstream to expose the matched relation; until then this set
-   * is "projects with a direct tuple" and the aggregate read's own access filter is the invite gate.
+   * That is not what the page renders, though. The upstream contract this rests on, pinned here
+   * because it is the invite gate (PR #2799 review):
+   *   - `lfx-v2-formation-service` publishes every `formation` document with
+   *     `access_check_object: project:<project_uid>` and `access_check_relation: auditor` — the
+   *     constant `formationAccessRelation = "auditor"` in `internal/service/projection.go`, applied
+   *     by `accessBlock` in `internal/infrastructure/nats/indexer_publisher.go` and stated in its
+   *     `docs/indexer-contract.md` ("No new OpenFGA type, relation, or grant exists for this
+   *     document"). It is never derived from any other project relation.
+   *   - The platform model (`lfx-v2-helm` `charts/lfx-platform/files/model.fga`, `type project`)
+   *     defines `auditor: [user, team#member] or executive_director or writer or auditor from
+   *     parent` — direct auditors, writers, the ED and inherited auditors; `meeting_coordinator` is
+   *     a separate `[user]` relation that does not feed it.
+   * So the query service's access filter on the aggregate read admits exactly the callers a
+   * formation invite grants (`view` → `auditor`, `manage` → `writer`) and returns nothing for a
+   * coordinator-only project — no row appears, and the confidential-stage existence/announcement
+   * data never leaves the index for them. There is deliberately no second, BFF-side relation check
+   * on top: the same `/query/resources` access filter is the read gate for every other formation
+   * surface in this repo (the queue, the checklist's people card), and a per-project access-check
+   * fan-out here would only re-ask it. Revisit if upstream ever exposes the matched relation.
+   *
+   * The `project.stage` pre-filter is a second projection of the stage the aggregate row's own
+   * `sub_stage_raw` gate also checks, read here from the `project` index document rather than the
+   * `formation` one. Kept on purpose: it bounds the tag list to the caller's formation projects
+   * instead of every direct grant they hold (staff-like accounts hold many), so the aggregate read
+   * stays at one batch for nearly everyone. The cost is that while the `project` index lags a stage
+   * change into Formation, the new formation is missing from this set for that window with no
+   * `state` signal — it appears on the next load once the projection catches up. That is a
+   * transient miss on a freshly-staged project, not a standing gap; the aggregate gate remains the
+   * one that decides what renders.
    */
   private async readFormationGrantProjectUids(req: Request): Promise<{ uids: Set<string>; degraded: boolean }> {
     try {

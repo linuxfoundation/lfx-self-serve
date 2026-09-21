@@ -481,6 +481,10 @@ export class ProjectService {
         this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'project',
           filter_grants: 'direct',
+          // Not the query service's default 50: pagination is sequential, and this read now sits
+          // on the My Formations render path, so a heavily-granted caller pays ceil(n/100) round
+          // trips rather than ceil(n/50) — the same page size the sibling formation reads use.
+          page_size: 100,
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: options.failOnPartial ?? false }
