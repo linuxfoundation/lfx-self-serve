@@ -46,13 +46,16 @@ export class VoteService {
 
   /**
    * Attempt-1 enable PUT budget (GH-2729 review M-1), exempt from the
-   * `enableEndToEndMaxDurationMs` retry deadline: 15 s matches the v2 voting-api's hardcoded
-   * `WriteTimeout: 15s` (cmd/voting-api/main.go) — a slower enable can never return
-   * successfully end-to-end, so the first attempt gets the full slow-success window instead of
-   * the 11.7 s retry deadline (a legitimate 11.7–15 s enable would otherwise abort as a 408 one
-   * timeout short of the server's own ceiling).
+   * `enableEndToEndMaxDurationMs` retry deadline: 16 s is the v2 voting-api's hardcoded
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) plus a 1 s transport margin — this timer starts
+   * before gateway/network transit while the server's write deadline starts after the request
+   * arrives, so an exact 15 s could still abort a response completing just under the upstream
+   * limit (PR #2797 review). A slower enable can never return successfully end-to-end, so the
+   * first attempt gets the full slow-success window instead of the 11.7 s retry deadline (a
+   * legitimate 11.7–15 s enable would otherwise abort as a 408 one timeout short of the server's
+   * own ceiling).
    */
-  private static readonly enableFirstAttemptMaxDurationMs = 15000;
+  private static readonly enableFirstAttemptMaxDurationMs = 16000;
 
   /**
    * End-to-end wall-clock cap for one `enableVote` call's retry grid (GH-1637) — attempt 1 is
@@ -95,14 +98,17 @@ export class VoteService {
   private static readonly voteIndexPollMaxDurationMs = 8000;
 
   /**
-   * Create-POST request timeout (GH-2729 review m-7): 15 s matches the v2 voting-api's hardcoded
-   * `WriteTimeout: 15s` (cmd/voting-api/main.go) — a slower create can never return
-   * successfully end-to-end, so the API client's 30 s default would only outwait the server's own
-   * ceiling. Worst-case fused create+open hold = 15 s create + 8 s probe + 15 s enable attempt-1
-   * ≈ 38 s, under the 60 s ingress-nginx default; the three budgets stay independent by design —
+   * Create-POST request timeout (GH-2729 review m-7): 16 s is the v2 voting-api's hardcoded
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) plus a 1 s transport margin — this timer starts
+   * before gateway/network transit while the server's write deadline starts after the request
+   * arrives, so an exact 15 s could still abort a response completing just under the upstream
+   * limit (PR #2797 review); beyond that margin a slower create can never return successfully
+   * end-to-end, so the API client's 30 s default would only outwait the server's own ceiling.
+   * Worst-case fused create+open hold = 16 s create + 8 s probe + 16 s enable attempt-1 ≈ 40 s,
+   * under the 60 s ingress-nginx default; the three budgets stay independent by design —
    * documenting the sum is the fix.
    */
-  private static readonly createVoteRequestTimeoutMs = 15000;
+  private static readonly createVoteRequestTimeoutMs = 16000;
 
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
@@ -219,7 +225,7 @@ export class VoteService {
    * call: after the FGA-readiness probe resolves, the enable PUT runs inline and the returned
    * vote carries `status: 'active'`; if the enable fails, the created vote is returned in its
    * real (disabled) status — the draft exists and can be opened later from the list. Worst-case
-   * fused create+open hold is ~38 s (15 s create + 8 s probe + 15 s enable attempt-1 — the three
+   * fused create+open hold is ~40 s (16 s create + 8 s probe + 16 s enable attempt-1 — the three
    * budgets are independent by design), under the 60 s ingress-nginx default.
    */
   public async createVote(req: Request, voteData: CreateVoteRequest, options: { open?: boolean } = {}): Promise<Vote> {
@@ -243,6 +249,13 @@ export class VoteService {
     // response.
     const voteUid = newVote.uid;
     let fetchedVote: Vote | undefined;
+    // Captured inside the probe so an anomalous mid-poll failure (5xx, transport) is rethrown
+    // after pollEndpoint returns: the helper's contract deliberately converts any pollFn throw
+    // into `false`, which would otherwise mask a backend outage as ordinary "not yet fetchable"
+    // exhaustion. Request timeouts (408) are NOT captured — each probe attempt's timeout is the
+    // remaining budget itself, so a 408 can only coincide with budget exhaustion, an ordinary
+    // outcome that keeps the graceful fallback below.
+    let probeError: unknown;
 
     // The probe shares the voteIndexPoll* fine grid — see those constants for the budget rationale.
     const resolved = await pollEndpoint({
@@ -263,6 +276,9 @@ export class VoteService {
           if (error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404)) {
             return false;
           }
+          if (!(error instanceof MicroserviceError && error.statusCode === 408)) {
+            probeError = error;
+          }
           throw error;
         }
       },
@@ -272,6 +288,13 @@ export class VoteService {
       metadata: { vote_uid: voteUid },
     });
 
+    // An anomalous probe failure (5xx etc.) surfaces as itself — never as the benign
+    // "not yet fetchable" fallback, and never into an enable attempt on a vote whose readiness
+    // was never confirmed (pollEndpoint swallowed the throw by contract; rethrow it here).
+    if (probeError !== undefined) {
+      throw probeError;
+    }
+
     let createdVote = newVote;
     if (resolved && fetchedVote) {
       createdVote = fetchedVote;
@@ -280,6 +303,14 @@ export class VoteService {
     }
 
     if (!open) {
+      return createdVote;
+    }
+
+    // open=true requires the probe resolved at FGA-tuple readiness (the enable PUT's
+    // precondition): an unconfirmed vote must not be treated as openable (GH-2729) — return the
+    // created draft for the frontend's recoverable warning path rather than PUT an enable that
+    // can only 403-retry against the same unconfirmed precondition.
+    if (!resolved) {
       return createdVote;
     }
 
@@ -617,7 +648,7 @@ export class VoteService {
     // did not just create. A genuine permission denial gets the same bounded retry and then
     // surfaces unchanged — the BFF cannot distinguish it from the gap.
     // One wall-clock deadline covers the retry grid, so the documented 11.7 s cap holds even
-    // when a 403 is slow to return — attempt 1 is exempt (fixed 15 s slow-success budget, see
+    // when a 403 is slow to return — attempt 1 is exempt (fixed 16 s slow-success budget, see
     // `enableFirstAttemptMaxDurationMs`); every retry PUT gets only the remaining budget as its
     // request timeout and each backoff sleep is truncated to the deadline.
     const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
@@ -653,8 +684,12 @@ export class VoteService {
         // already-ended vote; the list renders the server's status, which the carrier only overlays
         // while the index row is still disabled). Enable is semantically idempotent, so the signature
         // is success: a double-open or a 408-after-PutPoll (response lost after the write landed) must
-        // not report an opened vote as failed.
-        const alreadyEnabled = error instanceof MicroserviceError && error.statusCode === 400 && error.message.includes('already enabled');
+        // not report an opened vote as failed. The match is anchored to ITX's exact verified
+        // message (lfx-itx-service polling.go returns {"code":"400","message":"poll is already
+        // enabled"} — the code field is just the HTTP status, no stable error code exists to match
+        // instead) rather than a bare substring, so an unrelated 400 can never be swallowed as
+        // success; a wording change misses loudly, reverting to the pre-fix failure — fail-safe.
+        const alreadyEnabled = error instanceof MicroserviceError && error.statusCode === 400 && error.message.includes('poll is already enabled');
         if (alreadyEnabled) {
           logger.debug(req, 'enable_vote', 'Enable PUT answered "already enabled" — treating as success (enable is idempotent)', {
             vote_uid: voteUid,
