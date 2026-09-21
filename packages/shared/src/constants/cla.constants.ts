@@ -615,10 +615,12 @@ export const ORG_CLA_APPROVAL_RECEIPT = {
   removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
 } as const;
 
-export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
+export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
 
 export const ORG_CLA_MANAGER_REFUSAL_COPY: Record<OrgClaManagerRefusal, string> = {
   'no-lf-login': 'This person needs an LF Login account before they can be added as a CLA Manager. Ask them to create one, then try again.',
+  'lf-username-required':
+    'This person has an LF Login account but has not chosen an LF username yet. Ask them to finish setting up their LF Login username, then try again.',
   'not-authorized': 'You do not have permission to change the CLA Managers for this CLA.',
   'last-manager': 'A CLA must always have at least one CLA Manager, so this person cannot be removed. Add another CLA Manager first.',
   'already-manager': 'This person is already a CLA Manager for this CLA.',

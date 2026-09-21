@@ -12,6 +12,8 @@ describe('classifyOrgClaManagerRefusal', () => {
     ['last-manager', "Can't delete the only remaining CLA Manager for this CLA Group"],
     ['last-manager', 'a CLA Group must have at least one CLA Manager'],
     ['already-manager', 'user jdelacroix is already a CLA Manager for this project'],
+    ['already-manager', 'manager already in signature ACL'],
+    ['lf-username-required', 'User contributor@example.org needs to update account with username'],
     ['not-authorized', 'user aporter is not authorized for project a09410000182dD3AAI'],
     ['not-authorized', 'EasyCLA - 403 Forbidden - user does not have permission'],
     ['not-authorized', 'user aporter does not have access to DeleteCLAManager'],
@@ -103,6 +105,11 @@ describe('validateOrgClaManagerAdd', () => {
 
   it('accepts a two-character name part, which is the producer boundary', () => {
     expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, firstName: 'Bo', lastName: 'Ng' }))).toBe(false);
+  });
+
+  it('counts Unicode code points for name limits, not UTF-16 code units', () => {
+    expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, firstName: '😀' }))).toBe(true);
+    expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, firstName: '😀😀' }))).toBe(false);
   });
 
   it('accepts a plus-addressed and a subdomain address, which are legal and deliverable', () => {

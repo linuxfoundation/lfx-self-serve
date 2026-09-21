@@ -4,15 +4,17 @@
 import { ORG_CLA_MANAGER_NAME_MAX, ORG_CLA_MANAGER_NAME_MIN } from '../constants/cla.constants';
 import { EMAIL_REGEX } from '../constants/regex.constants';
 import type { OrgClaManagerAddRequest, OrgClaManagerAddValidation, OrgClaManagerRefusal } from '../interfaces/cla.interface';
+import { codePointLength } from './string.utils';
 
 /**
  * Order matters. `last-manager` is checked before `not-authorized` because the sole-manager
  * refusal also mentions the manager role, and the more specific reading is the right one.
  */
 const REFUSAL_PATTERNS: readonly (readonly [OrgClaManagerRefusal, readonly string[]])[] = [
+  ['lf-username-required', ['needs to update account with username', 'update account with username', 'finish setting up their lf login username']],
   ['no-lf-login', ['does not have an lf login', 'no lf login', 'account does not exist', 'user not found in lf', 'lfid not found']],
   ['last-manager', ['only remaining cla manager', 'at least one cla manager', 'last cla manager', 'only cla manager']],
-  ['already-manager', ['already a cla manager', 'already assigned', 'duplicate cla manager']],
+  ['already-manager', ['already a cla manager', 'already assigned', 'duplicate cla manager', 'manager already in signature acl']],
   ['not-authorized', ['not authorized', 'unauthorized', 'forbidden', 'does not have permission', 'is not a cla manager', 'does not have access']],
 ];
 
@@ -89,8 +91,9 @@ export function validateOrgClaManagerAdd(request: Partial<OrgClaManagerAddReques
 
   const namePart = (value: string, label: string): string | undefined => {
     if (!value) return `${label} is required.`;
-    if (value.length < ORG_CLA_MANAGER_NAME_MIN) return `${label} must be at least ${ORG_CLA_MANAGER_NAME_MIN} characters.`;
-    if (value.length > ORG_CLA_MANAGER_NAME_MAX) return `${label} must be ${ORG_CLA_MANAGER_NAME_MAX} characters or fewer.`;
+    const length = codePointLength(value);
+    if (length < ORG_CLA_MANAGER_NAME_MIN) return `${label} must be at least ${ORG_CLA_MANAGER_NAME_MIN} characters.`;
+    if (length > ORG_CLA_MANAGER_NAME_MAX) return `${label} must be ${ORG_CLA_MANAGER_NAME_MAX} characters or fewer.`;
     return undefined;
   };
 

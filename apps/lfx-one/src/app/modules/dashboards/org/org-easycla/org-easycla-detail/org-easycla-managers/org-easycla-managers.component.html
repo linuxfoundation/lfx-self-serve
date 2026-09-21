@@ -65,15 +65,18 @@
               <td class="py-3 text-right">
                 @if (canRemove()) {
                   @if (lastManager()) {
-                    <lfx-button
-                      [label]="copy.removeAction"
-                      severity="danger"
-                      [text]="true"
-                      [disabled]="true"
-                      [tooltip]="copy.lastManagerHint"
-                      tooltipPosition="left"
-                      [ariaLabel]="copy.removeBlockedLabel"
-                      data-testid="org-easycla-managers-remove-blocked" />
+                    <div class="flex flex-col items-end gap-1">
+                      <lfx-button
+                        [label]="copy.removeAction"
+                        severity="danger"
+                        [text]="true"
+                        [disabled]="true"
+                        [ariaLabel]="copy.removeBlockedLabel"
+                        data-testid="org-easycla-managers-remove-blocked" />
+                      <span class="text-xs text-gray-500 max-w-xs text-right" data-testid="org-easycla-managers-last-manager-hint">{{
+                        copy.lastManagerHint
+                      }}</span>
+                    </div>
                   } @else {
                     <lfx-button
                       [label]="copy.removeAction"

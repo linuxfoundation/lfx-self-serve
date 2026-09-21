@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn } from '@angular/forms';
-import { ORG_CLA_MANAGER_NAME_MAX, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
+import { ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaManagerAddField, OrgClaManagerAddRequest } from '@lfx-one/shared/interfaces';
 import { validateOrgClaManagerAdd } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -35,7 +35,6 @@ export class OrgEasyclaAddManagerDialogComponent {
   protected readonly dialogConfig = inject(DynamicDialogConfig);
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
-  protected readonly nameMaxLength = ORG_CLA_MANAGER_NAME_MAX;
 
   protected readonly form = new FormGroup({
     firstName: new FormControl('', { nonNullable: true, validators: [OrgEasyclaAddManagerDialogComponent.fieldValidator('firstName')] }),

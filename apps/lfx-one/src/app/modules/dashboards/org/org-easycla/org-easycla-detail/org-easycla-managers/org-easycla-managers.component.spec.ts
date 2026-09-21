@@ -6,7 +6,7 @@ import '@angular/compiler';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY } from '@lfx-one/shared/constants';
+import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { UserService } from '@services/user.service';
@@ -327,6 +327,9 @@ describe('OrgEasyclaManagersComponent', () => {
       const blocked = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove-blocked"]');
       expect(blocked).toBeTruthy();
       expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-last-manager-hint"]')?.textContent).toContain(
+        ORG_CLA_MANAGERS_COPY.lastManagerHint
+      );
     });
 
     it('re-reads the roster after a removal rather than splicing the row out', async () => {
@@ -374,7 +377,7 @@ describe('OrgEasyclaManagersComponent', () => {
   });
 
   describe('refusals', () => {
-    it.each([['no-lf-login'], ['not-authorized'], ['last-manager'], ['already-manager']] as const)(
+    it.each([['no-lf-login'], ['lf-username-required'], ['not-authorized'], ['last-manager'], ['already-manager']] as const)(
       "renders this application's own copy for %s",
       async (refusal) => {
         addManager.mockReturnValue(throwError(() => ({ error: { upstreamCode: refusal } })));
