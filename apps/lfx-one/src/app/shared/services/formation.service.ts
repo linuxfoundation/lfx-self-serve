@@ -129,14 +129,15 @@ export class FormationService {
   }
 
   /**
-   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller.
-   * `my-formations-card` and the multi-persona "In formation" tile both call this independently on
-   * the same dashboard; `shareReplay({ refCount: true })` collapses that into one HTTP request per
-   * navigation instead of two, and tears the subscription down (re-fetching on the next subscribe)
-   * once the last consumer unsubscribes. The source is `refreshMyFormationWork$`, not the bare
-   * `HttpClient` call, so `invalidateMyFormationWork()` (wired into every write method above, plus
-   * the item drawer's completion/skip paths) re-runs the fetch and pushes the new response straight
-   * to whichever card/tile is already on screen — no re-navigation needed.
+   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller. Consumed
+   * by the My Formations page (`my-formations.component.ts`, #2753) and by the multi-persona
+   * dashboard's "In formation" tile; `shareReplay({ refCount: true })` collapses concurrent
+   * subscribers into one HTTP request per navigation, and tears the subscription down (re-fetching
+   * on the next subscribe) once the last consumer unsubscribes. The source is
+   * `refreshMyFormationWork$`, not the bare `HttpClient` call, so `invalidateMyFormationWork()`
+   * (wired into every write method above, the item drawer's completion/skip paths, and the page's
+   * Retry) re-runs the fetch and pushes the new response straight to whichever page/tile is already
+   * on screen — no re-navigation needed.
    */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
     return this.myFormationWork$;

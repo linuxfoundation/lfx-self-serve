@@ -542,7 +542,7 @@ export class FormationService {
    */
   public async getMyFormationWork(req: Request, username: string, options: { includeFormations?: boolean } = {}): Promise<MyFormationWorkResponse> {
     // `getUserPendingActions` (Me-lens Pending Actions) only ever reads `.items` off this method's
-    // result and discards `.formations`, while `my-formations-card` issues its own separate
+    // result and discards `.formations`, while the My Formations page (#2753) issues its own separate
     // `/api/user/formation-work` request that needs `.formations`. Without this flag, every Me-lens
     // page load ran the formation-aggregate query and its lifecycle backstop twice for work one of
     // the two callers throws away — `includeFormations: false` skips that query (and the join loop

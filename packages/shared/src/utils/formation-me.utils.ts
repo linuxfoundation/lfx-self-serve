@@ -9,8 +9,10 @@ import {
 } from '../constants/formation.constants';
 import { PENDING_ACTION_BUTTON_ICON, PENDING_ACTION_SEVERITY } from '../constants/pending-action.constants';
 import type { FormationPendingActionView, PendingActionItem } from '../interfaces/components.interface';
-import type { FormationItemStatus, MyFormationItemRow, MyFormationSummary } from '../interfaces/formation.interface';
+import type { DecoratedMyFormation, FormationItemStatus, MyFormationItemRow, MyFormationSummary } from '../interfaces/formation.interface';
 import { formatIsoDateShortLabel } from './date-time.utils';
+import { formatFormationAnnouncementLabel } from './formation-checklist.utils';
+import { getFormationQueueStageDisplay } from './formation.utils';
 
 /** The "My formations" subtitle buckets, keyed by project — see {@link MyFormationSummary}. */
 export type MyFormationBucketCounts = Pick<MyFormationSummary, 'assigned_to_do' | 'assigned_done' | 'assigned_skipped'>;
@@ -128,5 +130,56 @@ export function buildFormationPendingActionView(item: PendingActionItem): Format
     formationStatusLabel: status ? FORMATION_ITEM_STATUS_LABELS[status] : null,
     formationStatusSeverity: status ? FORMATION_ITEM_STATUS_SEVERITY[status] : null,
     formationDueLabel: formatIsoDateShortLabel(item.date),
+  };
+}
+
+/**
+ * Ordering rule for the My Formations page (#2753) — originally the capped "My formations" card's
+ * GH-2331 rule, where row order was the card's answer to "what needs me most". Compares
+ * `MyFormationSummary` fields directly so it can run ahead of {@link decorateMyFormation}. Do not
+ * reorder these steps without updating this comment:
+ *   1. Most `assigned_to_do` first — the caller's own open work is the primary signal.
+ *   2. A present `blocking_item_title` sorts ahead of one that's absent — it names the formation's
+ *      first not-done gating item (a rollup over the whole formation, not the caller's own
+ *      assignments), so a formation with an open gate needs attention over one merely waiting.
+ *   3. Nearer `announcement_date` first, nulls last (ISO `YYYY-MM-DD` strings compare lexically).
+ *   4. `project_name`, then `formation_uid`, as deterministic tiebreaks, so the list never
+ *      reshuffles between renders of the same data even when two formations share a project name.
+ *      Both pin the `'en'` collation (as `committee.utils.ts` and `org-cla-approval.utils.ts` do):
+ *      the page server-renders, and an unpinned `localeCompare` follows each runtime's default
+ *      locale, so Node and the browser could order accented names differently and hydrate a
+ *      mismatched table.
+ */
+export function compareMyFormationsByNeed(a: MyFormationSummary, b: MyFormationSummary): number {
+  if (a.assigned_to_do !== b.assigned_to_do) return b.assigned_to_do - a.assigned_to_do;
+
+  const aBlocked = a.blocking_item_title ? 0 : 1;
+  const bBlocked = b.blocking_item_title ? 0 : 1;
+  if (aBlocked !== bBlocked) return aBlocked - bBlocked;
+
+  const aDate = a.announcement_date ?? '￿';
+  const bDate = b.announcement_date ?? '￿';
+  if (aDate !== bDate) return aDate < bDate ? -1 : 1;
+
+  if (a.project_name !== b.project_name) return a.project_name.localeCompare(b.project_name, 'en');
+
+  return a.formation_uid.localeCompare(b.formation_uid, 'en');
+}
+
+/**
+ * Pre-derives every display field a My Formations row renders (#2753) — see
+ * {@link DecoratedMyFormation} for why this happens once per row up front rather than in the
+ * template. Stage goes through {@link getFormationQueueStageDisplay} so an unmapped upstream
+ * `sub_stage` renders its raw value verbatim, exactly as the Formations queue does (#2370/#2373).
+ */
+export function decorateMyFormation(formation: MyFormationSummary): DecoratedMyFormation {
+  const stageDisplay = getFormationQueueStageDisplay(formation.sub_stage, formation.sub_stage_raw);
+  return {
+    ...formation,
+    subtitle: formatMyFormationSubtitle(formation),
+    progressPercent: formation.items_total > 0 ? Math.round((formation.items_done / formation.items_total) * 100) : 0,
+    announcementLabel: formatFormationAnnouncementLabel(formation.announcement_date),
+    stageLabel: stageDisplay.label,
+    stageSeverity: stageDisplay.severity,
   };
 }

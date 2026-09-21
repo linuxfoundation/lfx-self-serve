@@ -1351,7 +1351,7 @@ export class UserService {
       // (GH-1956) — same rationale as pending invitations above. `username` may be null when the
       // auth context can't resolve one; formation work has nothing to key off of in that case.
       // `includeFormations: false` (PR #2444 review): this call only ever reads `.items` below —
-      // `my-formations-card` issues its own separate request for `.formations` — so skip the
+      // the My Formations page (#2753) issues its own separate request for `.formations` — so skip the
       // formation-aggregate query and its join loop entirely rather than doing that work twice on
       // every Me-lens page load.
       isMeLens && username

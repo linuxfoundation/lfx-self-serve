@@ -49,7 +49,9 @@ Every top-level route under `MainLayoutComponent` that is lens-aware declares it
 { path: 'org',                                     data: { lens: 'org' },        loadComponent: ... },
 ```
 
-Feature routes (`/meetings`, `/votes`, `/surveys`, etc.) typically don't declare `data.lens` — instead, feature pages **read** `activeLens` from `LensService` to decide whether to show a "My …" view (me lens) or a scoped view.
+Feature routes (`/meetings`, `/votes`, `/surveys`, etc.) typically don't declare `data.lens` — instead, feature pages **read** `activeLens` from `LensService` to decide whether to show a "My …" view (me lens) or a scoped view. Those flat mounts run `lensRedirectGuard`, which rewrites the URL to `/foundation/...` or `/project/...` while one of those lenses is active.
+
+Me-only pages are the exception: `/crowdfunding`, `/mentorship` and `/formations` (the My Formations page, #2753) declare `data: { lens: 'me' }` so a deep link or hard refresh switches to the Me lens (`MainLayoutComponent.syncLensFromRoute`), and they deliberately skip `lensRedirectGuard` — they have no foundation/project twin to redirect to. `/formations` is the instructive case: its foundation-prefixed sibling, `/foundation/formations`, is the auditor-only Formations queue, a different page for a different audience, so a lens-driven rewrite would have sent a Me-lens visitor somewhere they may not be allowed.
 
 ## Persona
 

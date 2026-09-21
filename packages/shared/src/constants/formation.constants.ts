@@ -4,6 +4,7 @@
 import { FormationOwnerTeam } from '../enums/formation.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
+import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
 import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
@@ -38,6 +39,17 @@ export const FORMATION_SUB_STAGE_SEVERITY = {
 
 /** Queue filter-pill order (`All` is derived, not listed) — formations already in flight only. */
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
+
+/**
+ * The stage filter pills both formation list surfaces render — the foundation Formations queue
+ * (`formations-table.component.ts`) and the Me-lens My Formations page (#2753): `All` first, then
+ * {@link FORMATION_QUEUE_SUB_STAGES} in order, labelled through {@link FORMATION_SUB_STAGE_LABELS}.
+ * Shared so a new sub-stage lands on both surfaces at once.
+ */
+export const FORMATION_STAGE_TAB_OPTIONS: FilterPillOption[] = [
+  { id: 'all', label: 'All' },
+  ...FORMATION_QUEUE_SUB_STAGES.map((stage) => ({ id: stage, label: FORMATION_SUB_STAGE_LABELS[stage] })),
+];
 
 /**
  * Upstream projection `sub_stage` → the canonical {@link FormationSubStage} union (GH-2366). The

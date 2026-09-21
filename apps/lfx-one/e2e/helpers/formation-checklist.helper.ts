@@ -4,7 +4,16 @@
 /** Shared fixtures/mocks for the Formation Checklist section and Formations queue specs (GH-1958, LFXV2-3386). */
 
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, FORMATION_ENABLED_FLAG, LENS_COOKIE_KEY, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
-import type { FormationPeopleResponse, LensItem, PendingActionItem, PersistedPersonaState, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import type {
+  FormationPeopleResponse,
+  LensItem,
+  MyFormationSummary,
+  MyFormationWorkResponse,
+  PendingActionItem,
+  PersistedPersonaState,
+  PersonaType,
+  Project,
+} from '@lfx-one/shared/interfaces';
 import { Page, test } from '@playwright/test';
 
 import { getMockFormationItems, MOCK_FORMATION_ANNOUNCEMENT_DATE } from '../fixtures/mock-data';
@@ -335,6 +344,117 @@ export async function gotoMeDashboardWithFormationRow(page: Page, flagEnabled = 
   await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG), pendingActions: [buildFormationPendingActionRow()] });
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  skipWhenAuthMissing(page);
+}
+
+/**
+ * One My Formations row (#2753) as `GET /api/user/formation-work` serves it — synthetic, keyed off
+ * the checklist fixture project so a click-through lands on a checklist the mocks can serve.
+ */
+export function buildMyFormationSummary(overrides: Partial<MyFormationSummary> = {}): MyFormationSummary {
+  return {
+    formation_uid: `formation-${FORMATION_PROJECT_SLUG}`,
+    project_uid: `e2e-${FORMATION_PROJECT_SLUG}-uid`,
+    project_slug: FORMATION_PROJECT_SLUG,
+    project_name: 'Cascade Data Alliance',
+    sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
+    announcement_date: MOCK_FORMATION_ANNOUNCEMENT_DATE,
+    assigned_to_do: 2,
+    assigned_done: 1,
+    assigned_skipped: 0,
+    items_done: 5,
+    items_total: 17,
+    gating_done: 0,
+    gating_total: 0,
+    blocking_item_title: 'Contribution agreement executed',
+    ...overrides,
+  };
+}
+
+/**
+ * Three rows in deliberately wrong order for the page's need-based sort (#2753): the fixture
+ * project (2 to do, blocked), an exploratory one with 1 to do and no announcement date, and one
+ * whose upstream `sub_stage` has no queue-taxonomy equivalent (rendered verbatim, only under "All").
+ */
+export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
+  buildMyFormationSummary({
+    formation_uid: 'formation-orbit-ledger',
+    project_uid: 'e2e-orbit-ledger-uid',
+    project_slug: 'orbit-ledger',
+    project_name: 'Orbit Ledger',
+    sub_stage: null,
+    sub_stage_raw: 'Formation - Disengaged',
+    announcement_date: null,
+    assigned_to_do: 0,
+    assigned_done: 2,
+    items_done: 17,
+    items_total: 17,
+    blocking_item_title: null,
+  }),
+  buildMyFormationSummary({
+    formation_uid: 'formation-harbor-mesh',
+    project_uid: 'e2e-harbor-mesh-uid',
+    project_slug: 'harbor-mesh',
+    project_name: 'Harbor Mesh',
+    sub_stage: 'exploratory',
+    sub_stage_raw: 'Formation - Exploratory',
+    announcement_date: null,
+    assigned_to_do: 1,
+    assigned_done: 0,
+    items_done: 0,
+    items_total: 17,
+    blocking_item_title: null,
+  }),
+  buildMyFormationSummary(),
+];
+
+/** One stubbed `GET /api/user/formation-work` response; a non-200 `status` needs no `body`. */
+export interface MyFormationsStubResponse {
+  status: number;
+  body?: MyFormationWorkResponse;
+}
+
+export interface MyFormationsGotoOptions {
+  flagEnabled?: boolean;
+  /**
+   * Responses for successive `GET /api/user/formation-work` calls; the last one repeats, so the
+   * list must hold at least one. A non-200 status exercises the page's error state (the service
+   * maps it to `state: 'unavailable'`).
+   */
+  responses?: [MyFormationsStubResponse, ...MyFormationsStubResponse[]];
+}
+
+/**
+ * Lands on the Me-lens My Formations page (#2753) with `GET /api/user/formation-work` stubbed and
+ * the other Me-lens reads the layout makes stubbed empty, the same way `gotoMeDashboardWithFormationRow`
+ * does. The checklist APIs are mocked too so a row's click-through lands on a real checklist.
+ * Shared by the content spec and its structural `-robust` twin.
+ */
+export async function gotoMyFormations(page: Page, options: MyFormationsGotoOptions = {}): Promise<void> {
+  const flagEnabled = options.flagEnabled ?? true;
+  const responses = options.responses ?? [{ status: 200, body: { formations: MY_FORMATIONS_ROWS, items: [], state: 'complete' } }];
+  let call = 0;
+
+  await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'me', domain: e2eCookieHost(), path: '/' }]);
+  await stubFormationFlag(page, flagEnabled);
+  await page.route('**/api/user/personas*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ personas: ['contributor'], personaProjects: {}, projects: [], organizations: [], isRootWriter: false }),
+    })
+  );
+  await page.route('**/api/user/meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/past-meetings*', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }));
+  await page.route('**/api/user/formation-work*', (route) => {
+    const response = responses[Math.min(call, responses.length - 1)];
+    call += 1;
+    return route.fulfill({ status: response.status, contentType: 'application/json', body: JSON.stringify(response.body ?? { error: 'unavailable' }) });
+  });
+  await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+
+  await page.goto('/formations', { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 }
 
