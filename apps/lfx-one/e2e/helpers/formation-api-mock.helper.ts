@@ -5,8 +5,7 @@ import { FormationItem, FormationPeopleResponse, FormationsQueueResponse } from 
 // Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
 // statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
 // @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
-import { deriveFormationEntityType } from '@lfx-one/shared/utils/formation.utils';
-import { isPostFormationStage } from '@lfx-one/shared/utils/project-stage.utils';
+import { deriveFormationEntityType, isFormationLifecycleLive } from '@lfx-one/shared/utils/formation.utils';
 import { Page } from '@playwright/test';
 
 import {
@@ -119,10 +118,11 @@ export class FormationApiMockHelper {
       const subStage = url.searchParams.get('sub_stage');
       const search = url.searchParams.get('search')?.trim().toLowerCase();
 
-      // Mirrors formation.service.ts's post-Formation drop (LFXV2-3386): Active/Archived rows are
-      // in neither the rows nor any tile; none of the fixture rows are post-Formation today, so
-      // this mirrors the real BFF's shape without changing any mocked count.
-      const inFormationRows = rows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+      // Mirrors formation.service.ts's lifecycle drop (GH-2584): only formations the service
+      // reports as still in progress reach the rows or any tile. It must stay a mirror — if this
+      // filtered by stage while the BFF filtered by lifecycle, a Disengaged fixture would be
+      // dropped here for the wrong reason and the queue tests would pass without the fix.
+      const inFormationRows = rows.filter((row) => isFormationLifecycleLive(row.lifecycle));
 
       let filtered = inFormationRows;
       if (subStage) filtered = filtered.filter((row) => row.sub_stage === subStage);
@@ -137,9 +137,16 @@ export class FormationApiMockHelper {
         // Mirrors formation.service.ts's buildQueueTiles — a bare 'project' entity rolls into the
         // projects count so it isn't dropped from the breakdown while still counting toward total.
         projects: inFormationRows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
-        // GH-2366 — rows whose sub_stage has no queue-taxonomy equivalent; none of the fixture rows
-        // are unmapped today, so this mirrors the real BFF's shape without changing any mocked count.
+        // GH-2366 — rows whose sub_stage has no queue-taxonomy equivalent. Non-zero for the
+        // GH-2584 lifecycle fixture (its unmapped and Confidential rows are both still forming and
+        // both unlabelled), zero for the default queue fixture.
         unmapped: inFormationRows.filter((row) => row.sub_stage === null).length,
+        // Mirrors buildQueueTilesFromRows's ready/blocked counts — over the unfiltered set, like
+        // every other tile, so the "Ready to activate" and "Blocked" tiles hold still while a pill
+        // narrows the rows.
+        ready: inFormationRows.filter((row) => row.gates_cleared).length,
+        blocked: inFormationRows.filter((row) => row.blocked_item_titles.length > 0).length,
+        blocked_items: inFormationRows.reduce((sum, row) => sum + row.blocked_item_titles.length, 0),
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });

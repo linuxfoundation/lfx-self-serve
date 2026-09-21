@@ -271,9 +271,9 @@
                          in general, so a slug mismatch is a second, unverified way to dead-end.
                          Narrower than before this fix (the common case now works), not fully
                          closed. -->
-                    @if (group.project_slug) {
+                    @if (group.membershipLink) {
                       <a
-                        [routerLink]="['/org/memberships', group.project_slug]"
+                        [routerLink]="group.membershipLink"
                         class="pointer-events-auto relative z-10 block w-fit truncate text-xs text-gray-500 transition-colors hover:text-blue-700 hover:underline"
                         [attr.data-testid]="'org-groups-item-project-' + group.uid"
                         [attr.aria-label]="group.projectAriaLabel">

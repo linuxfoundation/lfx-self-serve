@@ -5,7 +5,9 @@
 
 Internal support note. Not Help Center copy.
 
-## Who can open `/org/easycla`
+## Who can open `/org/{organization}/easycla`
+
+The organization-addressed form is the page's address for every in-app link (spec 050 phase 2, lfx-self-serve#2743). The corporate-signing `return_url` the BFF mints follows only once the `ORG_EASYCLA_RETURN_IN_PATH` rollout gate is on (`ServerFeatureFlag.OrgEasyclaReturnInPath`, shipped `false` — see the chart README, "EasyCLA Signing Return Address"); until then every new return is still minted on the leftover `/org/easycla/{group}?org={org}&signed=1` shape, which every release reads. The leftover mount and its `?org=` reader stay for one release after the gate flips, then go under #2743 item 4.
 
 Anyone with an Organization Lens **Writer**, **Viewer** (auditor), or **Staff** grant on that organization. This is the page see-gate. It did not change.
 
@@ -33,7 +35,7 @@ The agreement's roster `canEdit` flag does **not** drive those buttons. It may s
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
 
-A CLA Group that covers several projects and has no foundation Salesforce id has no pair grain this page can name. Approval-list Add/Edit/Remove stay hidden (fail closed). The PUT still keys off the first covered project, so a CLA manager who can write that project cannot use this UI until the group has a foundation id or a single project. That is the intended call for ambiguous coverage.
+The ACS pair is the first covered project SFID, falling back to the foundation SFID when no listed project has a usable SFID (the same id `resolveApprovalContext` keys the PUT on). Hide Add/Edit/Remove only when the group carries neither a usable project SFID nor a foundation id.
 
 ## Impersonation
 

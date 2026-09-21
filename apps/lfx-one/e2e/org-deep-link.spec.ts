@@ -15,7 +15,17 @@
  *   E8/E9 — an address the resolver cannot answer for this viewer (unheld or unknown — one 404 by
  *         design, DR-002) lands on the Org Lens not-found page inside the shell, names no
  *         organization, and leaves the previous selection untouched (FR-022…FR-024).
+ *   E9c — a fresh session (no selection cookie) on such an address stays on the not-found page after
+ *         the org list picks its default: a default is a selection, never a navigation (SC-004).
  *   E10 — with the Org Lens flag off, a deep link lands on the same not-found page, not on `/`.
+ *   E11 (US2) — switching organization on a detail page re-addresses it (detail segment, query and
+ *         fragment kept), every rendered Org Lens link follows, and Back returns to the pre-switch
+ *         organization and page.
+ *   E11b (US2, T036) — switching on a memberships detail page keeps the foundation segment.
+ *   E11c (US2) — switching on a legacy bare `/org/{page}` inserts the organization.
+ *   E12 (US2) — picking the already-selected organization navigates nowhere.
+ *   E12b (US2) — … except on the not-found dead end, where that pick is the viewer's way out to the
+ *         organization's overview (also unit-tested in `org-selector.component.spec.ts`).
  *
  * Everything the BFF would answer is stubbed at the network edge (`/api/orgs/resolve/*`,
  * `/api/nav/org-items`, `/api/orgs/me/role-grants`, `/api/orgs/uid/*`), the same hermetic posture
@@ -25,8 +35,8 @@
  * selection other than the stubbed first row use org B, so the guard cannot take the
  * already-selected shortcut and the resolver request is observable.
  *
- * The selector is asserted by text, never visibility: the sidebar is CSS-hidden on the mobile
- * project and the drawer copy is not in the DOM until opened.
+ * The viewport is pinned to desktop (see `test.use` below), so the sidebar selector is the one
+ * instance on the page; assertions on it are by text.
  *
  * Scope: `page.route` stubs reach the browser only. A direct `page.goto` is server-rendered first,
  * and the guard's server run resolves against the real BFF (which answers 404 for these fixture
@@ -53,6 +63,10 @@ const UNKNOWN_SLUG = 'no-such-organization';
 // An organization that exists for someone else: the stub answers the same 404 it gives an unknown slug.
 const UNHELD_SLUG = 'deeplink-charlie-corp';
 const UNHELD_NAME = 'DeepLink Charlie Corp';
+// Detail segments a switch must carry (US2 scenario 2, T036). Not stubbed: the pages' own
+// not-found states are acceptable — the address is what these cases assert.
+const DETAIL_PROJECT_SLUG = 'deeplink-project';
+const DETAIL_FOUNDATION_SLUG = 'deeplink-foundation';
 
 const ROLE_GRANTS_BODY = {
   writers: [ORG_A_UID, ORG_B_UID],
@@ -170,6 +184,12 @@ async function readSelectionCookie(page: Page): Promise<{ uid: string } | undefi
 }
 
 test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
+  // Desktop layout on every project, as the other Org Lens specs pin it: the shell renders a second
+  // selector copy inside the mobile drawer (a modal `p-drawer` whose content stays in the DOM once
+  // opened), and a switch scenario that opened it would leave every later `org-selector` assertion
+  // with two matches under strict mode.
+  test.use({ viewport: { width: 1440, height: 900 } });
+
   test.beforeEach(async ({ page, context }) => {
     await context.clearCookies({ name: 'lfx-selected-account' });
     // Pin the Org Lens flag on so the scenarios do not depend on the environment's LaunchDarkly state
@@ -259,6 +279,33 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     });
   }
 
+  // The bootstrap default is the one path that can leave the dead end without the viewer asking: with
+  // no selection to restore, the org list's first row is selected — and that selection must stay a
+  // selection, never a navigation (FR-022–FR-024, SC-004). E8/E9 plant a cookie, so they never reach it.
+  test('E9c: a fresh session (no selection cookie) stays on the not-found page after the org list defaults', async ({ page }) => {
+    await stubOrgIdentity(page);
+    await page.context().clearCookies({ name: 'lfx-selected-account' });
+
+    await page.goto(`/org/${UNKNOWN_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+
+    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
+    // Captured once the dead end has settled and before the org list can have answered: a default
+    // that navigated (pushed or replaced) would move the URL, and a push would also grow this.
+    const historyAtNotFound = await page.evaluate(() => window.history.length);
+    // The default has been picked (the selector names A) …
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+    // … and the address is still the dead end, with nothing pushed under it. A settle window first,
+    // then the assertion: a navigation one task later (a `replaceUrl` one leaves `history.length`
+    // alone) must be given the chance to happen — polling for the status quo would pass on its
+    // first tick and prove nothing.
+    await page.waitForTimeout(1_000);
+    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyAtNotFound);
+    await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
+  });
+
   test('E10: with the Org Lens flag off, a deep link lands on the not-found page, not on the dashboard', async ({ page, baseURL }) => {
     await stubOrgIdentity(page);
     await stubOrgLensFlag(page, false);
@@ -273,5 +320,107 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     // the selection is untouched.
     await expect(page.locator('body')).not.toContainText(ORG_B_NAME);
     expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
+  });
+
+  /** Opens the (desktop) selector and picks an organization row. */
+  async function switchOrg(page: Page, uid: string): Promise<void> {
+    await page.getByTestId('org-selector').click();
+    await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 10_000 });
+    await page.getByTestId(`org-item-${uid}`).click();
+  }
+
+  test('E11: switching organization on a detail page re-addresses it, keeping child segments, query and fragment; Back returns to the pre-switch org', async ({
+    page,
+  }) => {
+    await stubOrgIdentity(page);
+
+    // A detail address: the `:projectSlug` child segment is the part of the page a switch must carry.
+    // The project need not exist for either organization — the page's own not-found state is fine;
+    // what is asserted is the address.
+    await page.goto(`/org/${ORG_A_SLUG}/projects/${DETAIL_PROJECT_SLUG}?tab=active#top`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    // The address follows the selection: same page and detail segment, query and fragment, B's segment.
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/projects/${DETAIL_PROJECT_SLUG}\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
+    // Every rendered Org Lens link now addresses B — a leftover literal such as `/org/projects` fails
+    // this, not just a stale A link. EasyCLA included since lfx-self-serve#2743.
+    const orgHrefs = await page.locator(`a[href^="/org/"]`).evaluateAll((links) => links.map((a) => a.getAttribute('href') ?? ''));
+    expect(orgHrefs).toContain(`/org/${ORG_B_SLUG}/overview`);
+    expect(orgHrefs.filter((href) => !href.startsWith(`/org/${ORG_B_SLUG}/`))).toEqual([]);
+
+    // The switch is a user intent: Back returns to the pre-switch organization and page (not an intermediate address).
+    await page.goBack({ waitUntil: 'domcontentloaded' });
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/projects/${DETAIL_PROJECT_SLUG}\\?tab=active#top$`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  // T036: a memberships detail page switched in place — the foundation segment stays and the page
+  // refetches for B (FR-016) rather than bouncing to the list.
+  test('E11b: switching on a memberships detail page keeps the foundation segment', async ({ page }) => {
+    await stubOrgIdentity(page);
+
+    await page.goto(`/org/${ORG_A_SLUG}/memberships/${DETAIL_FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/memberships/${DETAIL_FOUNDATION_SLUG}(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  test('E11c: switching on a legacy bare page inserts the organization into the address', async ({ page, baseURL }) => {
+    await stubOrgIdentity(page);
+    await plantSelectionCookie(page, baseURL, ORG_A_UID);
+
+    await page.goto('/org/people', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/people(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  test('E12: picking the already-selected organization navigates nowhere', async ({ page }) => {
+    await stubOrgIdentity(page);
+
+    await page.goto(`/org/${ORG_B_SLUG}/memberships`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
+    const before = page.url();
+    const historyBefore = await page.evaluate(() => window.history.length);
+
+    await switchOrg(page, ORG_B_UID);
+    // The pick closes the panel; from then on nothing may move. A settle window, then the
+    // assertion — a status-quo poll would pass on its first tick and let a navigation one task
+    // later (or a `replaceUrl` one, which keeps `history.length`) through.
+    await expect(page.getByTestId('org-selector-list')).toBeHidden({ timeout: 10_000 });
+    await page.waitForTimeout(1_000);
+    expect(page.url()).toBe(before);
+    expect(await page.evaluate(() => window.history.length)).toBe(historyBefore);
+  });
+
+  // The dead end's selection is the bootstrap default (E9c), which never made it into the address — so
+  // the row shown as selected is, for a single-organization viewer, the only way out.
+  test('E12b: picking the already-selected organization on the not-found page leaves for its overview', async ({ page }) => {
+    await stubOrgIdentity(page);
+    await page.context().clearCookies({ name: 'lfx-selected-account' });
+
+    await page.goto(`/org/${UNKNOWN_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_A_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/overview(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
   });
 });

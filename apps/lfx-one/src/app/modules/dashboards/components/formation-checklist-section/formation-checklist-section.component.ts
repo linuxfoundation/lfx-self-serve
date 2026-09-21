@@ -1,15 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, Location, NgClass } from '@angular/common';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ProjectContextService } from '@services/project-context.service';
 import { FormationService } from '@services/formation.service';
-import { FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
+import { FORMATION_CHECKLIST_GRID_CLASSES, FORMATION_ITEM_QUERY_PARAM } from '@lfx-one/shared/constants';
 import type {
   FormationChecklistPageState,
   FormationChecklistResponse,
@@ -38,6 +38,7 @@ import { FormationReadinessStripComponent } from '../formation-readiness-strip/f
   // ReasonPromptDialogComponent is deliberately not here — it's opened dynamically via
   // DialogService.open(), never referenced in this component's own template.
   imports: [
+    NgClass,
     SkeletonModule,
     EmptyStateComponent,
     MessageComponent,
@@ -57,6 +58,8 @@ export class FormationChecklistSectionComponent {
   private readonly destroyRef = inject(DestroyRef);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
@@ -67,6 +70,9 @@ export class FormationChecklistSectionComponent {
    * as on `/project/formation`.
    */
   public readonly projectSlug = input<string | null>(null);
+
+  /** The full-tier grid template (#2774) — the same one `lfx-formation-checklist-row` binds, so the header captions sit over the columns they label. */
+  protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
 
   /**
    * The checklist response this component just fetched, so a host can render alongside it without
@@ -145,6 +151,13 @@ export class FormationChecklistSectionComponent {
    * team was offered a status dropdown whose every write the gateway deterministically 403'd.
    */
   protected readonly canSetStatus = computed(() => this.response()?.can_set_status === true);
+  /**
+   * #2594: the parent project's slug, handed to the drawer so its assignee picker can read the
+   * people on this formation (`GET /api/projects/:slug/formation/people`) and offer only them —
+   * the population upstream accepts as an assignee. `null` until the checklist has loaded, which
+   * leaves the drawer on its directory-search fallback.
+   */
+  protected readonly drawerProjectSlug = computed(() => this.formation()?.parent_project_slug ?? null);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();
@@ -360,7 +373,12 @@ export class FormationChecklistSectionComponent {
     // Wait for the first non-error terminal pageState, then clear ?item= from the URL.
     // 'error' is deliberately excluded so the subscription stays alive: an in-page retry
     // (onRetry) can still open the drawer once the fetch succeeds.
-    // queryParamsHandling: 'merge' preserves any other active params (e.g. ?project=).
+    // location.replaceState (same pattern as ProjectContextService.syncProjectQueryParam) is used
+    // instead of router.navigate so that stripping ?item= does NOT trigger a new Angular
+    // navigation cycle — which would re-run formationProjectEnabledGuard (CanMatch, makes an async
+    // getProject HTTP call) and projectQueryParamGuard (CanActivate, same), either of which can
+    // redirect to /project/overview on a transient failure, destroying this component and the
+    // drawer it just opened.
     toObservable(this.pageState)
       .pipe(
         filter((state) => state === 'ready' || state === 'no-template' || state === 'no-items'),
@@ -371,10 +389,28 @@ export class FormationChecklistSectionComponent {
         if (state === 'ready') {
           const item = this.items().find((i) => i.template_item_key === itemKey);
           if (item) {
-            this.onOpenDrawer(item);
+            // In Angular 20 zoneless, effects (including toObservable(this.visible) in the
+            // drawer's initDrawerData) can fire before the parent template has propagated new
+            // signal values to child @Input() signals. Setting drawerItemAddress synchronously
+            // here schedules a CD cycle that propagates [itemProjectUid]/[itemKey] to the
+            // drawer's inputs. afterNextRender defers drawerVisible.set(true) until after that
+            // render — so when openTrigger$ fires and reads itemProjectUid()/itemKey(), they are
+            // already non-null and the item fetch succeeds rather than short-circuiting with
+            // createEmptyFormationDrawerData() and "No item selected". This mirrors the
+            // my-events-dashboard.component.ts deep-link pattern (#2247).
+            this.drawerItemUid.set(item.uid);
+            this.drawerItemAddress.set({ projectUid: item.project_uid, itemKey: item.template_item_key });
+            afterNextRender(
+              () => {
+                this.drawerVisible.set(true);
+              },
+              { injector: this.injector }
+            );
           }
         }
-        void this.router.navigate([], { queryParams: { [FORMATION_ITEM_QUERY_PARAM]: null }, queryParamsHandling: 'merge', replaceUrl: true });
+        const urlTree = this.router.parseUrl(this.router.url);
+        delete urlTree.queryParams[FORMATION_ITEM_QUERY_PARAM];
+        this.location.replaceState(this.router.serializeUrl(urlTree));
       });
   }
 

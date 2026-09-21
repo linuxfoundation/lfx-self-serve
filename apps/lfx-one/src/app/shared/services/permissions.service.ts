@@ -4,6 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateProjectStaffRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
+import { FormationService } from '@services/formation.service';
 import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
 @Injectable({
@@ -11,6 +12,7 @@ import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 })
 export class PermissionsService {
   private readonly http = inject(HttpClient);
+  private readonly formationService = inject(FormationService);
   // Per-UID cache so repeat mounts of the staff card don't re-hit the endpoint. Mirrors the
   // getProject / getProjects pattern in ProjectService. On error the cache entry is evicted so
   // the next subscription retries with a fresh request instead of replaying the stuck error.
@@ -40,8 +42,13 @@ export class PermissionsService {
 
   // Evict the cached settings for a project so the next getProjectSettings call re-fetches.
   // Call this after any mutation (add, update, remove) to ensure the table reflects the latest state.
+  // The formation people list (#2772) is a projection of the same settings document, memoised per
+  // slug in FormationService; it is dropped here too, so a permission, staff or invite write made
+  // anywhere in the app never leaves the assignee picker offering a removed person or missing an
+  // added one.
   public invalidateProjectSettings(uid: string): void {
     this.projectSettingsCache.delete(uid);
+    this.formationService.invalidateFormationPeople();
   }
 
   // Fetch the raw project settings document. Errors are NOT swallowed — callers track their own

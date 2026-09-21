@@ -207,22 +207,45 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(page.getByTestId(`formation-checklist-row-owner-chip-${ownedItem.uid}`)).toBeAttached();
     });
 
-    // #2689: audience chip renders only for a normalized audience; assignee/due-date cells render on
-    // every row (an unset value still renders its placeholder cell).
-    test('audience chip renders for an audience-carrying item and not for a null one', async ({ page }) => {
-      const audienceItem = ITEMS.find((item) => !!item.audience);
+    // #2774: the audience icon renders only for the external-involving audiences (`external`/`both`);
+    // `internal` and a null (unrecognized) audience both render nothing. Inline predicate rather than
+    // the shared `isFormationItemExternal` — e2e must not import the `utils` barrel (GH-2381).
+    test('audience icon renders for an external-involving item and not for an internal or null one', async ({ page }) => {
+      const externalItem = ITEMS.find((item) => item.audience === 'external' || item.audience === 'both');
+      const internalItem = ITEMS.find((item) => item.audience === 'internal');
       const noAudienceItem = ITEMS.find((item) => item.audience === null);
-      if (!audienceItem || !noAudienceItem) throw new Error('Expected seeded items both with and without an audience.');
+      if (!externalItem || !internalItem || !noAudienceItem) throw new Error('Expected seeded items with external/both, internal and null audiences.');
 
-      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${audienceItem.uid}`)).toBeAttached();
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${externalItem.uid}`)).toBeAttached();
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${internalItem.uid}`)).toHaveCount(0);
       await expect(page.getByTestId(`formation-checklist-row-audience-chip-${noAudienceItem.uid}`)).toHaveCount(0);
     });
 
-    test('every row nests an assignee cell and a due-date cell', async ({ page }) => {
+    // #2689/#2774: team, assignee and due-date cells render on every row (an unset value still
+    // renders its placeholder cell), so the section header's captions always have columns under them.
+    test('every row nests a team cell, an assignee cell and a due-date cell', async ({ page }) => {
       for (const item of ITEMS) {
+        await expect(page.getByTestId(`formation-checklist-row-owner-chip-${item.uid}`)).toBeAttached();
         await expect(page.getByTestId(`formation-checklist-row-assignee-${item.uid}`)).toBeAttached();
         await expect(page.getByTestId(`formation-checklist-row-due-date-${item.uid}`)).toBeAttached();
       }
+    });
+
+    // #2774: sub-items surface as a disclosure whose panel opens inside the row's own wrapper.
+    test('a row with sub-items nests a collapsed disclosure whose panel opens inside the row', async ({ page }) => {
+      const subItemsItem = ITEMS.find((item) => (item.sub_items ?? []).length > 0);
+      if (!subItemsItem) throw new Error('Expected a seeded item with sub-items.');
+
+      const trigger = page.getByTestId(`formation-checklist-row-sub-items-${subItemsItem.uid}`);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId(`formation-checklist-row-sub-items-panel-${subItemsItem.uid}`)).toHaveCount(0);
+
+      await trigger.click();
+
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByTestId(`formation-checklist-row-${subItemsItem.uid}`).getByTestId(`formation-checklist-row-sub-items-panel-${subItemsItem.uid}`);
+      await expect(panel).toBeAttached();
+      await expect(panel.locator('[data-testid^="formation-sub-item-row-"]')).toHaveCount(subItemsItem.sub_items.length);
     });
   });
 
@@ -255,6 +278,23 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(drawer.getByTestId('formation-item-drawer-assignee')).toBeAttached();
       await expect(drawer.getByTestId('formation-item-drawer-history')).toBeAttached();
       await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    });
+
+    // #2594: the assignee picker lists the people on this formation — typing nests option rows from
+    // that list, and a pending invitee's option nests the note explaining it cannot be picked.
+    test('the assignee picker nests scoped-people options, with a note on a pending invitee', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
+
+      // The drawer's panel is portaled out of its <p-drawer> host, so its contents are page-level
+      // locators, never descendants of the drawer's own testid.
+      const search = page.getByTestId('formation-item-drawer-assignee-search').locator('input');
+      await expect(search).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await search.fill('jordan');
+
+      const option = page.getByRole('option', { name: /Jordan Lee/ });
+      await expect(option).toBeAttached();
+      await expect(option.getByTestId('formation-item-drawer-assignee-search-option-note')).toBeAttached();
     });
 
     test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {

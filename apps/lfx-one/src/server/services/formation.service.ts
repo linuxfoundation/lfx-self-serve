@@ -8,12 +8,14 @@ import type {
   FormationItemMapContext,
   FormationItemStatus,
   FormationItemWriteState,
+  FormationLifecycle,
   FormationPeopleResponse,
   FormationPerson,
   FormationPersonMetadata,
   FormationQueueRow,
   FormationsQueueResponse,
   FormationSubStage,
+  FormationUser,
   MyFormationItemRow,
   MyFormationSummary,
   MyFormationWorkResponse,
@@ -25,6 +27,7 @@ import type {
   UpstreamFormationItem,
   UpstreamFormationItemRow,
   UpstreamFormationQueueRow,
+  UserMetadata,
   UserMetadataUpdateResponse,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -34,8 +37,10 @@ import {
   FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES,
   FORMATION_PEOPLE_METADATA_CACHE_TTL_MS,
   FORMATION_QUEUE_SUB_STAGES,
+  FORMATION_SYSTEM_ACTOR_USERNAME,
   FORMATION_TEAM_NAME,
   NATS_CONFIG,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { QueryServiceResponse } from '@lfx-one/shared/interfaces';
@@ -45,7 +50,6 @@ import {
   isAssignedItemOpen,
   isFormationLifecycleLive,
   isFormationStageGate,
-  isPostFormationStage,
   maskIdentifierForLogs,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
@@ -128,7 +132,7 @@ export class FormationService {
    * reached (Map preserves insertion order), so a pod that serves many projects never accumulates
    * every distinct user for its lifetime. Unlike the per-request WeakMaps above this must survive
    * across requests — that is the point of it. Values are the projected
-   * {@link FormationPersonMetadata} (title, organization, picture), never the raw profile: the
+   * {@link FormationPersonMetadata} (name, title, organization, picture), never the raw profile: the
    * auth-service reply also carries address, phone and other PII this card never renders, and
    * nothing that isn't rendered is retained.
    */
@@ -159,7 +163,14 @@ export class FormationService {
     // independent of the others, so they run concurrently rather than as three sequential round
     // trips: the project read, the ROOT-collapse lookup, and the settings read for announcement_date
     // (which degrades to null on its own failure — see its .catch() below — independently of the
-    // other two).
+    // other two). Owner-name enrichment is also kicked off here — it only needs the distinct
+    // assignees from the already-fetched checklist, so its NATS calls are in-flight while the other
+    // reads run rather than serializing after them.
+    const rawAssignees = [...new Set(checklist.items.map((r) => r.assignee).filter((a): a is string => !!a))];
+    const ownerEnrichmentPromise = this.enrichFormationUserRefs(
+      req,
+      rawAssignees.map((u) => ({ username: u, name: u }))
+    ).catch(() => new Map<string, string>());
     const [project, isFormationTeamMember, rootUid, announcementDate] = await Promise.all([
       // Access-checked (`access: true`), unlike getProjectByIdCached's access-less read used on the
       // item-mapping paths: `can_write` below needs the caller's real `project.writer` — the same
@@ -208,6 +219,19 @@ export class FormationService {
     const items = checklist.items.map((raw) =>
       mapUpstreamFormationItem(raw, { formationUid: `formation:${uid}`, projectUid: uid, projectSlug: project.slug, sectionTitles })
     );
+
+    // Enrich item owner display names — the mapper sets name = username as a placeholder; replace
+    // with the actual profile name where available. Best-effort; items without a name hit stay as-is.
+    // ownerEnrichmentPromise was started before the Promise.all above; this await is near-free on a
+    // warm cache and caps at FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS on a cold one.
+    const ownerNames = await ownerEnrichmentPromise;
+    if (ownerNames.size > 0) {
+      for (const item of items) {
+        if (item.owner && ownerNames.has(item.owner.username)) {
+          item.owner = { ...item.owner, name: ownerNames.get(item.owner.username)! };
+        }
+      }
+    }
 
     const { formation, template } = mapUpstreamFormationChecklist(checklist, { project, parentUid, announcementDate, items });
 
@@ -526,23 +550,34 @@ export class FormationService {
   }
 
   /**
-   * GH-1956 Me lens: "My formations" = every formation with at least one checklist item assigned to
-   * the caller (decision 2 in the ticket's third comment — a direct-grant-only definition can't be
-   * satisfied by the permission model, since it can't distinguish a direct grant from one inherited
-   * via a parent project or `lf-staff`/`lf-contractor`). Backed by two independent
-   * access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
+   * GH-1956 Me lens: "My formations" = every live formation the caller holds a **direct project
+   * grant** on, plus every one with at least one checklist item assigned to them (#2795). The
+   * direct-grant half is the ticket body's original definition. Its third comment dropped it as
+   * unsatisfiable, but the query service's `filter_grants=direct` reads exactly the caller's own
+   * `user:` OpenFGA tuples — no `team:…#member` usersets, no parent inheritance — so a formation
+   * invite (a settings `writers[]`/`auditors[]` entry, published upstream as a direct tuple) is
+   * precisely what it matches, while staff whose access is team-wide still see nothing here. That
+   * read is on `type=project` (`ProjectService.getDirectGrantProjectRows`), not `type=formation`:
+   * the formation documents have no FGA objects of their own — their access object is the
+   * project's — so the filter would match nothing on them.
+   *
+   * Backed by access-filtered `/query/resources` reads (#2334, `lfx-v2-formation-service` v0.1.2):
    * `type=formation_item` for the caller's assigned items (this method's `items` half, and the
-   * per-formation bucket math for `formations`), and `type=formation` for the whole-formation
-   * aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) — the item index has no
-   * per-formation rollup of its own, and the checklist document already carries the same
-   * `assignee:` tag. Both queries are access-filtered upstream (the caller's own bearer token,
-   * carried by `req`); an unauthenticated/unauthorized caller simply gets empty results back, not
-   * an error — see {@link MyFormationWorkState}'s doc comment for how failure is distinguished from
-   * "the caller has nothing assigned".
+   * per-formation bucket math for `formations`), and a chunked `type=formation` read for the
+   * whole-formation aggregates (`items_total`, `blocking_item_title`, `sub_stage`, ...) of the
+   * assigned OR invited set — one request per `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE` batch of
+   * `project_uid:` tags (one tag per direct-grant formation project, the `assignee:` tag riding on
+   * the first batch), each `tags` (OR) plus `tags_all` (AND) on `lifecycle:live`; a caller with at
+   * most that many direct-grant formation projects, i.e. nearly everyone, issues exactly one. The
+   * item index has no per-formation rollup of its own. Every read carries the caller's own bearer
+   * token (via `req`);
+   * an unauthenticated/unauthorized caller simply gets empty results back, not an error — see
+   * {@link MyFormationWorkState}'s doc comment for how failure is distinguished from "the caller
+   * has nothing here".
    */
   public async getMyFormationWork(req: Request, username: string, options: { includeFormations?: boolean } = {}): Promise<MyFormationWorkResponse> {
     // `getUserPendingActions` (Me-lens Pending Actions) only ever reads `.items` off this method's
-    // result and discards `.formations`, while `my-formations-card` issues its own separate
+    // result and discards `.formations`, while the My Formations page (#2753) issues its own separate
     // `/api/user/formation-work` request that needs `.formations`. Without this flag, every Me-lens
     // page load ran the formation-aggregate query and its lifecycle backstop twice for work one of
     // the two callers throws away — `includeFormations: false` skips that query (and the join loop
@@ -558,6 +593,12 @@ export class FormationService {
     const normalizedUsername = stripAuthPrefix(username);
     const assigneeTag = `assignee:${normalizedUsername}`;
     logger.debug(req, 'get_my_formation_work', 'Fetching formation work assigned to caller');
+
+    // The invited half (#2795) — kicked off before the item query is awaited so the two upstream
+    // reads overlap, and only issued when the caller wants `formations` at all (Pending Actions
+    // never does). Never rejects: `readFormationGrantProjectUids` degrades internally, so an early
+    // `'unavailable'` return below can leave it un-awaited without an unhandled rejection.
+    const grantProjectsPromise = includeFormations ? this.readFormationGrantProjectUids(req) : Promise.resolve({ uids: new Set<string>(), degraded: false });
 
     let rawItems: UpstreamFormationItemRow[];
     try {
@@ -599,13 +640,17 @@ export class FormationService {
     if (mineItems.length !== liveItems.length) {
       logger.warning(req, 'get_my_formation_work', 'Dropped index rows not assigned to the caller', { dropped: liveItems.length - mineItems.length });
     }
-    if (mineItems.length === 0) {
+    const { uids: grantProjectUids, degraded: grantsDegraded } = await grantProjectsPromise;
+    if (mineItems.length === 0 && grantProjectUids.size === 0) {
       // Skip the formation-aggregate query and the can_write fan-out entirely — both are pure
       // dead weight when there's nothing for either to enrich, and this is the overwhelming common
-      // case (every caller with zero currently-assigned live items, not just zero ever). Also avoids
-      // a dishonest `'partial'`: if that unused query happened to fail, nothing was actually missing.
-      logger.debug(req, 'get_my_formation_work', 'No assigned live items; skipping the formation-aggregate query');
-      return { formations: [], items: [], state: 'complete' };
+      // case (every caller with zero currently-assigned live items and no formation invite, not
+      // just zero ever). Also avoids a dishonest `'partial'` from the unused aggregate query.
+      // `grantsDegraded` is the one honest exception: the direct-grant read failed, so this caller
+      // may well be invited somewhere — `'partial'` with no rows makes the page offer Retry rather
+      // than assert "No formations yet".
+      logger.debug(req, 'get_my_formation_work', 'No assigned live items and no direct-grant formation project; skipping the formation-aggregate query');
+      return { formations: [], items: [], state: grantsDegraded ? 'partial' : 'complete' };
     }
 
     // The formation-aggregate query is independent of the items query above (a different indexed
@@ -615,31 +660,66 @@ export class FormationService {
     let formationRows: FormationQueueRow[] = [];
     let formationsDegraded = false;
     if (includeFormations) {
-      try {
-        const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'formation',
-              tags_all: [assigneeTag, 'lifecycle:live'],
-              page_size: 100,
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
-        );
-        // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
-        // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
-        // exclude could still join a live item row below and render as an active "My formation".
-        // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
-        // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
-        // `parent_uid` field would be pure waste on this path (PR #2444 review).
-        formationRows = rawFormationRows
-          .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
-          .map((row) => this.normalizeQueueRow(row, null));
-      } catch (error) {
-        logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: error });
-        formationsDegraded = true;
+      // The assigned-OR-invited set in as few reads as the tag list allows (#2795). The query
+      // service OR's `tags` and AND's `tags_all` inside one bool query — `tags` renders as a
+      // `should` clause with `minimum_should_match: 1`, `tags_all` as `must` terms
+      // (`lfx-v2-query-service` `internal/infrastructure/opensearch/template.go`, `criteriaShould`
+      // / `criteriaMust`; `docs/query-service-contract.md`: "`tags` — OR filter, any tag matches",
+      // "`tags_all` — AND filter, all tags must match") — and the `formation` document carries
+      // both an `assignee:<username>` tag per assignee and a `project_uid:<uid>` tag
+      // (`lfx-v2-formation-service` `indexer_publisher.go`'s `projectionTags`).
+      //
+      // Chunked at the repo's one query-service URL-length guard, `QUERY_SERVICE_FILTERS_OR_BATCH_SIZE`,
+      // because every tag becomes its own `&tags=` query-string pair (the same reason
+      // `ProjectService.getProjectsByIds` and `org-role-grants.service.ts` chunk theirs), so a caller
+      // directly granted on many formations costs a few reads rather than a request-line overflow.
+      // The assignee tag rides on the first batch only; the join below dedupes by `formation_uid`
+      // across batches regardless.
+      const projectUidTags = [...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`);
+      const tagBatches: string[][] = [];
+      for (let i = 0; i < Math.max(projectUidTags.length, 1); i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+        tagBatches.push([...(i === 0 ? [assigneeTag] : []), ...projectUidTags.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE)]);
       }
+      // allSettled, not all: a batch that fails must not discard the rows the other batches already
+      // returned — for the heaviest callers (the ones the chunking exists for) that would turn "most
+      // of your formations, plus Retry" into "nothing, plus Retry", and batch 0 also carries the
+      // assignee tag, so the caller's assigned formations would vanish with it. Every fulfilled
+      // batch renders; any rejection still flips `state` to `'partial'` (PR #2799 review). Each
+      // batch is itself `failOnPartial`, so a batch either arrives whole or counts as failed.
+      const settled = await Promise.allSettled(
+        tagBatches.map((tags) =>
+          fetchAllQueryResources<UpstreamFormationQueueRow>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'formation',
+                tags,
+                tags_all: ['lifecycle:live'],
+                page_size: 100,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          )
+        )
+      );
+      const rawFormationRows: UpstreamFormationQueueRow[] = [];
+      for (const outcome of settled) {
+        if (outcome.status === 'fulfilled') {
+          rawFormationRows.push(...outcome.value);
+        } else if (!formationsDegraded) {
+          formationsDegraded = true;
+          logger.warning(req, 'get_my_formation_work', 'Formation-aggregate query failed; formations will be incomplete', { err: outcome.reason });
+        }
+      }
+      // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
+      // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
+      // exclude could still join a live item row below and render as an active "My formation".
+      // `rootUid` is `null`, not resolved: `MyFormationSummary` never exposes `parent_uid`, so
+      // the ROOT-ancestry NATS lookup `normalizeQueueRow` otherwise does for the queue's own
+      // `parent_uid` field would be pure waste on this path (PR #2444 review).
+      formationRows = rawFormationRows
+        .filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)))
+        .map((row) => this.normalizeQueueRow(row, null));
     }
 
     // items[] (Pending Actions rows) — the open subset of the (already lifecycle-live, caller-assigned) items.
@@ -691,11 +771,18 @@ export class FormationService {
     const isFormationTeamMember = await teamMembershipPromise;
     // Stage gate on items[] (#2734 review, Cursor Bugbot): the row's View item links into
     // `/project/formation`, whose `formationProjectEnabledGuard` admits only Formation-stage
-    // projects, and production checklists stay `lifecycle: live` after a project goes Active
-    // (GH-2328) — so lifecycle alone would hand out a link that bounces to the overview. Same
-    // `isFormationStageGate` the formations[] join applies below. An unknown stage (the lookup
-    // failed) keeps the row: hiding the caller's real work on a transient error is worse than a
-    // link that may redirect.
+    // projects — so the stage, not the lifecycle, is what decides whether that link lands, and
+    // lifecycle alone would hand out a link that bounces to the overview.
+    //
+    // GH-2328 recorded that production checklists stay `lifecycle: live` after a project goes
+    // Active. That no longer holds for the `formation` aggregate document — PR #2767 measured
+    // every prod formation's lifecycle against its stage and found them consistent — but the
+    // `formation_item` documents this query reads were not re-measured, so nothing here may
+    // assume it either way. The gate is the route guard's own condition regardless.
+    //
+    // Same `isFormationStageGate` the formations[] join applies below. An unknown stage (the
+    // lookup failed) keeps the row: hiding the caller's real work on a transient error is worse
+    // than a link that may redirect.
     const stagedItems = openItems.filter((row) => {
       const stage = stageByProject.get(row.project_uid);
       return stage === undefined || isFormationStageGate(stage);
@@ -707,14 +794,17 @@ export class FormationService {
     }
     const items = stagedItems.map((row) => this.mapMyFormationItemRow(row, writerByProject.get(row.project_uid) === true, isFormationTeamMember));
 
-    // formations[] — one row per formation_uid seen in the (lifecycle-live) items query, every
-    // status rather than just the open subset above (summarizeMyFormationItems needs the
-    // done/skipped counts too), joined against the formation-aggregate row for the whole-formation
-    // totals. A formation missing its aggregate row (independent-query lag, or that query having
-    // failed above) is dropped rather than fabricated, and flips `state` to `'partial'`. Skipped
-    // entirely when `!includeFormations` — every formation_uid would otherwise look "missing its
-    // aggregate row" (nothing populates `formationRows` in that branch) and dishonestly report
-    // `'partial'` for a caller that never asked for `formations` in the first place.
+    // formations[] — one row per (lifecycle-live) aggregate row the caller is invited to (a direct
+    // grant on its project, #2795) or has an assigned item on. The assigned items are bucketed by
+    // formation_uid over every status rather than just the open subset above
+    // (summarizeMyFormationItems needs the done/skipped counts too); an invited-only formation gets
+    // all-zero buckets. An aggregate row matching neither — an `assignee:` tag the projection still
+    // carries for an item the caller no longer holds live — is skipped. An assigned formation
+    // missing its aggregate row (independent-query lag, or that query having failed above) is
+    // dropped rather than fabricated, and flips `state` to `'partial'`. Skipped entirely when
+    // `!includeFormations` — every formation_uid would otherwise look "missing its aggregate row"
+    // (nothing populates `formationRows` in that branch) and dishonestly report `'partial'` for a
+    // caller that never asked for `formations` in the first place.
     const formations: MyFormationSummary[] = [];
     let anyFormationDropped = false;
     if (includeFormations) {
@@ -724,24 +814,42 @@ export class FormationService {
         bucket.push(row);
         itemsByFormation.set(row.formation_uid, bucket);
       }
-      const formationRowByUid = new Map(formationRows.map((row) => [row.formation_uid, row]));
 
-      for (const [formationUid, assignedItems] of itemsByFormation) {
-        const aggregateRow = formationRowByUid.get(formationUid);
-        if (!aggregateRow) {
-          anyFormationDropped = true;
-          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+      const seenFormationUids = new Set<string>();
+      for (const aggregateRow of formationRows) {
+        if (seenFormationUids.has(aggregateRow.formation_uid)) continue;
+        seenFormationUids.add(aggregateRow.formation_uid);
+        const assignedItems = itemsByFormation.get(aggregateRow.formation_uid) ?? [];
+        if (assignedItems.length === 0 && !grantProjectUids.has(aggregateRow.project_uid)) {
+          logger.debug(req, 'get_my_formation_work', 'Aggregate row neither invited nor assigned to the caller; skipping', {
+            formationUid: aggregateRow.formation_uid,
+          });
           continue;
         }
-        // `lifecycle:live` alone doesn't gate this the way the card's own doc comment promises
-        // ("an Active project drops out of the response entirely") — GH-2328 found every production
-        // formation's checklist `lifecycle` is `'live'` regardless of the project's stage, since
-        // nothing yet flips it on an Active/Disengaged transition. `isFormationStageGate` is the
-        // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
-        // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
-        // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
-        // `items[]` applies the same gate above, off the project read (#2734 review), so a row is
-        // never handed a checklist link its route guard would bounce.
+        // Usually not the Active gate, despite where it sits. `formationRows` is already
+        // lifecycle-live twice over — the `tags_all` tag on its query and the backstop filter
+        // above it — and PR #2767 measured every prod formation's lifecycle against its stage and
+        // found them consistent, so an Active or Archived project's aggregate row is normally gone
+        // before this line runs, and a missing-Active-formation report is worth checking there
+        // first.
+        //
+        // Not guaranteed, though: both of those filters read `lifecycle` alone, so a terminal
+        // stage still carrying a stale `live` passes them and arrives here — the queue pins that
+        // combination deliberately in `formation.service.spec.ts`. For such a row this gate is
+        // what drops it, so it is not dead code for Active/Archived.
+        //
+        // What this still catches is `Prospect`: `LifecycleForStage` returns no lifecycle for it
+        // at all, so a project moved there keeps whatever its checklist last held and stays
+        // `live`. Unknown and transient stages likewise. GH-2328's "always live regardless of
+        // stage" finding no longer holds for the aggregate document, and was never re-measured
+        // for the `formation_item` documents, so nothing here assumes it either way.
+        //
+        // `isFormationStageGate` is the stage-based gate the pre-live fixture path used for this
+        // same exclusion: it matches any `Formation - *` stage except the terminal `Disengaged`
+        // one, so Confidential still shows to an assignee who holds access to it, and only
+        // Active/Archived/Prospect/Disengaged drop out. `items[]` applies the same gate above,
+        // off the project read (#2734 review), so a row is never handed a checklist link its
+        // route guard would bounce.
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
@@ -768,9 +876,16 @@ export class FormationService {
           blocking_item_title: aggregateRow.blocked_item_titles[0] ?? null,
         });
       }
+
+      for (const formationUid of itemsByFormation.keys()) {
+        if (!seenFormationUids.has(formationUid)) {
+          anyFormationDropped = true;
+          logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
+        }
+      }
     }
 
-    const state: MyFormationWorkState = formationsDegraded || anyFormationDropped ? 'partial' : 'complete';
+    const state: MyFormationWorkState = formationsDegraded || anyFormationDropped || grantsDegraded ? 'partial' : 'complete';
     logger.debug(req, 'get_my_formation_work', 'Returning live formation work', { formation_count: formations.length, item_count: items.length, state });
     return { formations, items, state };
   }
@@ -901,6 +1016,7 @@ export class FormationService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'formation',
+          tags_all: ['lifecycle:live'],
           ...(effectiveFoundationUid && { parent: `project:${effectiveFoundationUid}` }),
           ...(pageToken && { page_token: pageToken }),
         }),
@@ -929,23 +1045,63 @@ export class FormationService {
       });
     }
 
-    // The queue is "formations between Prospect and Active" — a project that completed (or was
-    // retired from) Formation is noise for the formation team, so post-Formation rows are dropped
-    // from BOTH the rows and every tile below (LFXV2-3386). A named deny-list (Active/Archived),
-    // not `!isFormationStageGate`: GH-2366's fail-open rule keeps unrecognized/malformed stages
-    // visible, and `Formation - Disengaged` deliberately stays in the queue. `gates_cleared`/
-    // `is_activating` rows keep their `Formation - *` stage until the formation team flips the
-    // project Active, so "Ready to activate" rows survive this filter by construction.
-    const inFormationRows = scopedRows.filter((row) => !isPostFormationStage(row.sub_stage_raw));
+    // The queue is "formations between Prospect and Active", and the formation service already
+    // decides which those are: `lifecycle` is `live` while forming, `completed` on Active, and
+    // `frozen` on Archived or Disengaged (model.LifecycleForStage). Reading that instead of
+    // re-deriving from the stage is GH-2584's "apply it in one place" — the earlier stage
+    // deny-list named Active/Archived and so kept `Formation - Disengaged`, which is the bug.
+    //
+    // Repeating the query's `lifecycle:live` filter here is deliberate, not redundant. It is the
+    // only thing that still holds if `tags_all` is ever not honoured upstream: that failure
+    // returns a valid superset and raises no error, and the e2e suite mocks the query service, so
+    // nothing else in this repo would catch it. Same shape as getMyFormationWork above.
+    //
+    // Unrecognized stages stay visible either way — an unmapped `Formation - *` sub-stage is still
+    // `live`, so GH-2366's fail-open rule survives without naming any stage here. `gates_cleared`/
+    // `is_activating` rows likewise keep their `Formation - *` stage until the formation team
+    // flips the project Active, so "Ready to activate" rows survive by construction.
+    //
+    // One pass so the keep/drop decision lives in one place. The log below needs the rejected
+    // rows' lifecycle values, and collecting them with a separate inverse-predicate filter would
+    // be a second copy of this rule, free to drift from it (PR #2767 review).
+    const inFormationRows: FormationQueueRow[] = [];
+    const droppedLifecycles = new Set<FormationLifecycle | null>();
+    for (const row of scopedRows) {
+      if (isFormationLifecycleLive(row.lifecycle)) inFormationRows.push(row);
+      else droppedLifecycles.add(row.lifecycle);
+    }
 
-    // DEBUG, not WARN — `Formation - Disengaged` (and any unrecognized stage) is a modeled,
-    // expected shape with no queue-taxonomy equivalent (see normalizeFormationSubStage), not an
-    // anomaly: it recurs on every request against current production data, so a WARN here would
-    // repeat every time for a case the system already knows about and models on purpose, not a
-    // genuine data-quality problem worth an operator's attention. Still logged (not silent) since
-    // it's worth finding while debugging why a row is missing from every stage tile and every
-    // stage filter (GH-2366). `Active`/`Archived` rows no longer reach this log — they are dropped
-    // from the queue entirely above (LFXV2-3386).
+    // Normally zero, because `tags_all` already dropped these upstream — so a non-zero count is
+    // the backstop above earning its place, not routine filtering. WARN when it is every row:
+    // that is the tag being ignored outright, or `lifecycle` renamed/unpopulated, and it renders
+    // an empty queue that otherwise looks exactly like "nothing is forming right now" (PR #2767
+    // review). Counts only — a row that fails this check is the one we know least about.
+    const droppedNonLive = scopedRows.length - inFormationRows.length;
+    if (droppedNonLive > 0) {
+      const dropDetail = {
+        dropped: droppedNonLive,
+        of: scopedRows.length,
+        // Normalized, so this is `completed`/`frozen`/`null` — and `null` is the one that says
+        // the field itself went unreadable rather than the row having genuinely left formation.
+        lifecycles: [...droppedLifecycles],
+      };
+      if (droppedNonLive === scopedRows.length) {
+        logger.warning(req, 'get_formations_queue', 'Every row failed the lifecycle backstop — lifecycle:live may no longer be honoured upstream', dropDetail);
+      } else {
+        logger.debug(req, 'get_formations_queue', 'Dropped rows whose lifecycle is not live', dropDetail);
+      }
+    }
+
+    // What reaches this log has narrowed to one case: a formation still in progress whose
+    // `Formation - *` sub-stage has no queue-taxonomy equivalent (see normalizeFormationSubStage).
+    // `Active`/`Archived` (LFXV2-3386) and now `Formation - Disengaged` (GH-2584) are dropped
+    // above, so a non-zero count here means a new sub-stage has appeared upstream that the queue's
+    // tiles and stage filter cannot represent — which is why the count is kept after GH-2584
+    // removed the tile line that used to surface it.
+    //
+    // DEBUG, not WARN: the row is shown, not lost, and the queue is not wrong — it just can't
+    // label it. That is a taxonomy gap to notice while debugging "why is this row in no tile?"
+    // (GH-2366), not a data-quality fault worth waking anyone for.
     const unmappedRows = inFormationRows.filter((row) => row.sub_stage === null);
     if (unmappedRows.length > 0) {
       logger.debug(req, 'get_formations_queue', 'Upstream sub_stage has no queue-taxonomy equivalent', {
@@ -987,6 +1143,7 @@ export class FormationService {
       ...row,
       parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
       sub_stage: normalizeFormationSubStage(row.sub_stage),
+      lifecycle: normalizeFormationLifecycle(row.lifecycle),
       // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
       // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
       // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.
@@ -1007,6 +1164,62 @@ export class FormationService {
    */
   private async checkFormationTeamMembership(req: Request): Promise<boolean> {
     return this.accessCheckService.checkSingleAccess(req, { resource: 'team', id: FORMATION_TEAM_NAME, access: 'member' });
+  }
+
+  /**
+   * The projects the caller holds a direct grant on that are currently in a Formation stage — the
+   * "invited" half of {@link getMyFormationWork} (#2795). `isFormationStageGate` is the same gate
+   * the aggregate rows pass there, applied here first so the aggregate query carries one
+   * `project_uid:` tag per formation project rather than one per direct grant of any stage. Never
+   * throws: a failed read is a WARN plus `degraded: true`, so the caller's assigned formations still
+   * render and only `state` records that invited ones may be missing.
+   *
+   * Not narrowed by relation — `filter_grants=direct` discards it upstream, so a project the caller
+   * holds only `meeting_coordinator` (or any other non-invite relation) on lands in this set too.
+   * That is not what the page renders, though. The upstream contract this rests on, pinned here
+   * because it is the invite gate (PR #2799 review):
+   *   - `lfx-v2-formation-service` publishes every `formation` document with
+   *     `access_check_object: project:<project_uid>` and `access_check_relation: auditor` — the
+   *     constant `formationAccessRelation = "auditor"` in `internal/service/projection.go`, applied
+   *     by `accessBlock` in `internal/infrastructure/nats/indexer_publisher.go` and stated in its
+   *     `docs/indexer-contract.md` ("No new OpenFGA type, relation, or grant exists for this
+   *     document"). It is never derived from any other project relation.
+   *   - The platform model (`lfx-v2-helm` `charts/lfx-platform/files/model.fga`, `type project`)
+   *     defines `auditor: [user, team#member] or executive_director or writer or auditor from
+   *     parent` — direct auditors, writers, the ED and inherited auditors; `meeting_coordinator` is
+   *     a separate `[user]` relation that does not feed it.
+   * So the query service's access filter on the aggregate read admits exactly the callers a
+   * formation invite grants (`view` → `auditor`, `manage` → `writer`) and returns nothing for a
+   * coordinator-only project — no row appears, and the confidential-stage existence/announcement
+   * data never leaves the index for them. There is deliberately no second, BFF-side relation check
+   * on top: the same `/query/resources` access filter is the read gate for every other formation
+   * surface in this repo (the queue, the checklist's people card), and a per-project access-check
+   * fan-out here would only re-ask it. Revisit if upstream ever exposes the matched relation.
+   *
+   * The `project.stage` pre-filter is a second projection of the stage the aggregate row's own
+   * `sub_stage_raw` gate also checks, read here from the `project` index document rather than the
+   * `formation` one. Kept on purpose: it bounds the tag list to the caller's formation projects
+   * instead of every direct grant they hold (staff-like accounts hold many), so the aggregate read
+   * stays at one batch for nearly everyone. The cost is that while the `project` index lags a stage
+   * change into Formation, the new formation is missing from this set for that window with no
+   * `state` signal — it appears on the next load once the projection catches up. That is a
+   * transient miss on a freshly-staged project, not a standing gap; the aggregate gate remains the
+   * one that decides what renders.
+   */
+  private async readFormationGrantProjectUids(req: Request): Promise<{ uids: Set<string>; degraded: boolean }> {
+    try {
+      // failOnPartial: this set is the invite membership itself, so a silently-partial page set
+      // would drop invited formations under a `'complete'` state — the same reasoning the two
+      // aggregate reads in `getMyFormationWork` apply. Failing here lands in the catch below, which
+      // is what turns the response `'partial'` and puts Retry on the page (PR #2799 review).
+      const rows = await this.projectService.getDirectGrantProjectRows(req, { failOnPartial: true });
+      const uids = new Set(rows.filter((project) => typeof project.stage === 'string' && isFormationStageGate(project.stage)).map((project) => project.uid));
+      logger.debug(req, 'get_my_formation_work', 'Resolved direct-grant formation projects', { direct_grant_count: rows.length, formation_count: uids.size });
+      return { uids, degraded: false };
+    } catch (error) {
+      logger.warning(req, 'get_my_formation_work', 'Direct-grant project read failed; invited formations will be missing', { err: error });
+      return { uids: new Set<string>(), degraded: true };
+    }
   }
 
   /**
@@ -1076,6 +1289,67 @@ export class FormationService {
         avatar: person.avatar ?? metadata.picture,
       };
     });
+  }
+
+  /**
+   * Derives the best available display name from a raw `UserMetadata` profile.
+   * - When BOTH `given_name` and `family_name` are non-blank, joins them ("Ada Lovelace").
+   * - Otherwise falls back to the top-level `name` field.
+   * - As a last resort, returns whichever lone part is non-blank.
+   * - Returns `null` when nothing usable is available.
+   */
+  private static resolveDisplayName(profile: UserMetadata): string | null {
+    const given = typeof profile.given_name === 'string' ? profile.given_name.trim() : '';
+    const family = typeof profile.family_name === 'string' ? profile.family_name.trim() : '';
+    if (given && family) {
+      return `${given} ${family}`;
+    }
+    const topName = FormationService.metadataText(profile.name);
+    if (topName) return topName;
+    return given || family || null;
+  }
+
+  /**
+   * Batch-enriches an array of {@link FormationUser} refs — the item `owner` and activity `actor`
+   * shapes — by replacing the username-as-name placeholder with the actual display name from the
+   * auth-service user-metadata read. Reuses {@link readUserMetadata}'s process-wide cache, so names
+   * fetched during a concurrent {@link enrichFormationPeople} call are cache hits here. System actors
+   * (username `"system"`) are skipped; their name is already set to `"System"` by the mapper. Best-
+   * effort: a failed or budget-exceeded lookup leaves the ref with its username-as-name placeholder.
+   */
+  private async enrichFormationUserRefs(req: Request, refs: FormationUser[]): Promise<Map<string, string>> {
+    const targets = [...new Set(refs.filter((r) => r.username && r.username !== FORMATION_SYSTEM_ACTOR_USERNAME).map((r) => r.username))];
+    if (targets.length === 0) return new Map();
+
+    const results = await settleInBatches(targets, FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE, (username) => this.readUserMetadata(req, username), {
+      deadlineAt: Date.now() + FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+    });
+
+    const nameByUsername = new Map<string, string>();
+    let skippedByBudget = 0;
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled' && result.value?.name) {
+        nameByUsername.set(targets[index], result.value.name);
+        return;
+      }
+      if (result.status === 'rejected') {
+        if (result.reason instanceof BatchDeadlineExceededError) {
+          skippedByBudget += 1;
+          return;
+        }
+        logger.warning(req, 'enrich_formation_user_refs', 'Display-name lookup failed; name stays as username', {
+          username: maskIdentifierForLogs(targets[index]),
+          err: result.reason,
+        });
+      }
+    });
+    if (skippedByBudget > 0) {
+      logger.warning(req, 'enrich_formation_user_refs', 'Enrichment budget exhausted; remaining refs keep username as name', {
+        budget_ms: FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS,
+        skipped: skippedByBudget,
+      });
+    }
+    return nameByUsername;
   }
 
   /** A trimmed, non-blank string from an untrusted metadata field, else `null`. */
@@ -1155,6 +1429,7 @@ export class FormationService {
     }
 
     return {
+      name: FormationService.resolveDisplayName(profile),
       job_title: FormationService.metadataText(profile.job_title),
       organization: FormationService.metadataText(profile.organization),
       picture: FormationService.metadataText(profile.picture),
@@ -1384,11 +1659,25 @@ export class FormationService {
    * with no {@link FormationSubStage} equivalent. Those rows are never dropped from `total`, so
    * `total` can legitimately exceed `exploratory + engaged + on_hold`; `unmapped` is that gap made
    * explicit rather than a silently-created extra key (the bug this replaces).
+   *
+   * `ready`/`blocked`/`blocked_items` are counted here, over this same unfiltered set, for the
+   * "Ready to activate" and "Blocked" tiles. The ready count used to be a client-side filter over
+   * the served rows — which are already narrowed by `sub_stage`/`search` — so that one tile
+   * disagreed with its three server-counted neighbours the moment a pill was active.
    */
   private buildQueueTilesFromRows(rows: FormationQueueRow[]): FormationsQueueResponse['tiles'] {
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     let unmapped = 0;
+    let ready = 0;
+    let blocked = 0;
+    let blockedItems = 0;
     for (const row of rows) {
+      if (row.gates_cleared) ready += 1;
+      const blockedCount = row.blocked_item_titles.length;
+      if (blockedCount > 0) {
+        blocked += 1;
+        blockedItems += blockedCount;
+      }
       if (row.sub_stage === null) {
         unmapped += 1;
         continue;
@@ -1402,6 +1691,9 @@ export class FormationService {
       foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
       projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
       unmapped,
+      ready,
+      blocked,
+      blocked_items: blockedItems,
     };
   }
 
@@ -1459,6 +1751,40 @@ export class FormationService {
           ),
         itemUid
       );
+
+      // Enrich actor display names — mapActor sets name = username as a placeholder for real users.
+      // Also enrich assignee usernames in before/after snapshots (GH-2573 follow-up): the History
+      // panel renders entry.before.assignee / entry.after.assignee directly, so without enrichment
+      // the panel shows raw usernames (e.g. "andrest50dev") instead of display names
+      // ("Andres Tobon"). Both lookups share one enrichFormationUserRefs call so the process-wide
+      // cache is populated in a single fan-out rather than two sequential ones.
+      const assigneeSnapshotRefs: FormationUser[] = entries.flatMap((e) => {
+        if (e.action !== 'assignee_changed') return [];
+        const refs: FormationUser[] = [];
+        if (e.before?.assignee) refs.push({ username: e.before.assignee, name: e.before.assignee });
+        if (e.after?.assignee) refs.push({ username: e.after.assignee, name: e.after.assignee });
+        return refs;
+      });
+      const displayNames = await this.enrichFormationUserRefs(req, [...entries.map((e) => e.actor), ...assigneeSnapshotRefs]);
+      if (displayNames.size > 0) {
+        for (let i = 0; i < entries.length; i++) {
+          let entry = entries[i];
+          const actorName = displayNames.get(entry.actor.username);
+          if (actorName) {
+            entry = { ...entry, actor: { ...entry.actor, name: actorName } };
+          }
+          if (entry.before?.assignee) {
+            const name = displayNames.get(entry.before.assignee);
+            if (name) entry = { ...entry, before: { ...entry.before, assignee: name } };
+          }
+          if (entry.after?.assignee) {
+            const name = displayNames.get(entry.after.assignee);
+            if (name) entry = { ...entry, after: { ...entry.after, assignee: name } };
+          }
+          entries[i] = entry;
+        }
+      }
+
       return { history: entries, history_state: 'complete' };
     } catch (error) {
       if (isMicroserviceError(error) && error.statusCode === 404) {

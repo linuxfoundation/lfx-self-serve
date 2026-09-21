@@ -126,6 +126,9 @@ export class FormationPeopleCardComponent {
     // dialog still open — without it, a later close would refresh a torn-down card.
     ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((outcome: FormationInviteOutcome | undefined) => {
       if (outcome) {
+        // The service memoises the people read per slug (the item drawer's assignee picker replays
+        // it on every open); the dialog's own `invalidateProjectSettings` on success has already
+        // dropped that memo along with the settings cache, so this re-read lands fresh.
         this.refresh$.next();
       }
     });

@@ -175,6 +175,13 @@ export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'd
 export type FormationItemAudience = 'internal' | 'external' | 'both';
 
 /**
+ * The {@link FormationItemAudience} members that involve people outside the LF (#2774) — the row's
+ * globe icon renders for exactly these, and `FORMATION_ITEM_AUDIENCE_TOOLTIPS` is keyed on them.
+ * Narrowed by `isFormationItemExternal` (`formation.utils.ts`).
+ */
+export type FormationItemExternalAudience = Extract<FormationItemAudience, 'external' | 'both'>;
+
+/**
  * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
  * request and flips the item to `blocked`, with no SLA/target-team object — that richer `request`
  * type is #1957/Epic 2. `status_only` items never expose how the underlying tooling was set up
@@ -509,22 +516,41 @@ export interface FormationChecklistResponse {
 }
 
 /**
- * Per-`sub_stage` counts for the queue's filter pills. `foundations` and `projects` name the
- * {@link FormationEntityType} derived taxonomy — `projects` counts both `child_project` and
- * `project` rows (i.e. every non-foundation), so a plain top-level project isn't dropped from the
- * breakdown while still counting toward `total`. Named `projects`, not `child_projects`, because
- * the taxonomy now deliberately distinguishes a plain top-level `project` from a `child_project`
- * and this aggregate deliberately includes both.
+ * The queue's server-side counts — the four stat tiles and the per-`sub_stage` filter-pill
+ * counts. Every count here is taken over the same pre-filter set (`total`'s), never over the rows a
+ * stage pill or search has narrowed, so the strip can't disagree with itself once a filter is
+ * active. `foundations` and `projects` name the {@link FormationEntityType} derived taxonomy —
+ * `projects` counts both `child_project` and `project` rows (i.e. every non-foundation), so a plain
+ * top-level project isn't dropped from the breakdown while still counting toward `total`. Named
+ * `projects`, not `child_projects`, because the taxonomy now deliberately distinguishes a plain
+ * top-level `project` from a `child_project` and this aggregate deliberately includes both.
  */
 export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
   projects: number;
   /**
+   * Rows whose every gating item is done (`gates_cleared`) — the "Ready to activate" tile. Counted
+   * here rather than client-side over the served rows, which are already filtered: that was how the
+   * tile used to read "0" the moment an Engaged pill hid the one ready Exploratory row.
+   */
+  ready: number;
+  /** Rows with at least one item in `blocked` status (`blocked_item_titles.length > 0`) — the "Blocked" tile. */
+  blocked: number;
+  /** Sum of `blocked_item_titles.length` across every row — the "Blocked" tile's "N blocked items" sub-line. */
+  blocked_items: number;
+  /**
    * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
-   * `"Active"`, `"Formation - Disengaged"`, or any other unrecognized value. Included in `total`
-   * but in none of the three sub-stage counts, so `total` can legitimately exceed
-   * `exploratory + engaged + on_hold`; that gap is this count. See {@link FormationQueueRow.sub_stage}.
+   * `"Formation - Confidential"` or any other unrecognized value. `"Active"` and
+   * `"Formation - Disengaged"` no longer reach this count: since GH-2584 the queue lists only
+   * formations still in progress, and both have left. Included in `total` but in none of the three
+   * sub-stage counts, so `total` can legitimately exceed `exploratory + engaged + on_hold`; that
+   * gap is this count. See {@link FormationQueueRow.sub_stage}.
+   *
+   * Nothing renders this — GH-2584 removed the tile line that did, because "outside formation
+   * stages" described no row once the queue had excluded everything outside. It is kept because a
+   * non-zero value means a new `Formation - *` sub-stage has appeared upstream that the tiles and
+   * the stage filter cannot represent, which the BFF logs at DEBUG (`formation.service.ts`).
    */
   unmapped: number;
 };
@@ -552,15 +578,35 @@ export interface FormationQueueRow {
   /**
    * Normalized via `normalizeFormationSubStage` (GH-2366) from the upstream projection's full
    * `ProjectStage` string — see {@link sub_stage_raw} for that original value. `null` when the
-   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Active"`,
-   * `"Formation - Disengaged"`); such a row still appears in the queue (never dropped) but in none
-   * of the three stage tiles/filters — see {@link FormationQueueTiles.unmapped}. Whether an
-   * unmapped row belongs in "In formation" at all is #2328's question, not this field's.
+   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Formation - Confidential"`).
+   *
+   * An unmapped row still appears in the queue, rendered verbatim, but in none of the three stage
+   * tiles/filters — see {@link FormationQueueTiles.unmapped}. Being unmapped is never itself a
+   * reason to drop a row: since GH-2584 presence is decided by the formation service's published
+   * lifecycle, which is why `"Active"` and `"Formation - Disengaged"` are no longer examples here
+   * despite also normalizing to `null` — they are gone before this field is consulted.
    */
   sub_stage: FormationSubStage | null;
   /** The upstream projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-2366). */
   sub_stage_raw: string;
-  lifecycle: string;
+  /**
+   * Normalized via {@link normalizeFormationLifecycle} from the projection's own `lifecycle`
+   * tag — `live` while forming, `completed` on Active, `frozen` on Archived or Disengaged
+   * (`model.LifecycleForStage`). Since GH-2584 this decides queue membership, so it is always
+   * `'live'` on a served row: `getFormationsQueueLive` filters on it after normalizing, and
+   * fails closed, dropping anything that did not match a known {@link FormationLifecycle}.
+   *
+   * Typed as the union rather than the raw string deliberately: it was a bare `string` until
+   * PR #2767, and an off-taxonomy value is a silently dropped row now that presence turns on
+   * this field, not the cosmetic slip it was before.
+   *
+   * That alone would not have caught the `'formation'` value the queue fixtures carried, which
+   * is what prompted the change — `apps/lfx-one/tsconfig.json` includes the `src` tree only, so
+   * nothing under `e2e` is typechecked and a fixture can still hold any string. The union
+   * constrains the served contract and every consumer under `src`; the fixtures need that
+   * tsconfig gap closed, which is left to its own change.
+   */
+  lifecycle: FormationLifecycle | null;
   /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
   gates_cleared: boolean;
   is_activating: boolean;
@@ -588,8 +634,10 @@ export interface FormationQueueRow {
  * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
  * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
  */
-export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw'> & {
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle'> & {
   sub_stage: string;
+  /** The projection's `lifecycle` verbatim — untrusted, so a bare string here and a {@link FormationLifecycle} only after `normalizeQueueRow`. */
+  lifecycle: string;
 };
 
 /** Response body for `GET /api/formations`. */
@@ -761,12 +809,14 @@ export interface MyFormationItemRow {
 }
 
 /**
- * One formation the caller has at least one assigned item on (GH-1956's "My formations" = projects
- * with at least one item assigned to me — the direct-grant definition in the issue body is not
- * satisfiable, see the ticket's third comment). Built server-side from the same `type=formation_item`
- * index read that produces {@link MyFormationItemRow} — one row per `formation_uid` the caller has
- * an assigned item on, joined against the matching assignee-tagged {@link FormationQueueRow} for the
- * whole-formation aggregates (`getMyFormationWork`, `formation.service.ts`).
+ * One live formation the caller holds a direct project grant on (a formation invite — GH-1956's
+ * original "My formations" definition, satisfied via the query service's `filter_grants=direct`,
+ * #2795) or has at least one assigned item on. Built server-side by `getMyFormationWork`
+ * (`formation.service.ts`): the caller's direct-grant Formation-stage projects plus the
+ * `type=formation_item` index read that produces {@link MyFormationItemRow}, joined against the
+ * {@link FormationQueueRow} aggregates of that assigned-or-invited set. An invited-only row carries
+ * all-zero `assigned_*` buckets — there is deliberately no "invited" flag or label, since the grant
+ * alone can't say more than that truthfully (see the ticket's third comment).
  */
 export interface MyFormationSummary {
   formation_uid: string;
@@ -815,12 +865,17 @@ export interface MyFormationSummary {
 /**
  * Distinguishes why `getMyFormationWork`'s response looks the way it does (GH-1956) — mirrors
  * {@link FormationActivityHistoryState}'s pattern: a genuinely-empty result must never look like a
- * failed one. `'complete'`: both the item-assignment query and the formation-aggregate query
- * succeeded — `formations`/`items` may still be empty, meaning the caller has nothing assigned.
- * `'partial'`: the item query succeeded (so `items` is trustworthy) but the formation-aggregate
- * query failed, or was missing a row for at least one formation the caller has an assigned item on
- * — such a formation is dropped from `formations` rather than fabricated. `'unavailable'`: the item
- * query itself failed — nothing in this response can be trusted, and both arrays are forced empty.
+ * failed one. Three upstream reads feed the response: the item-assignment query, the direct-grant
+ * project read that defines the invited set (#2795), and the formation-aggregate read(s).
+ * `'complete'`: all three succeeded — `formations`/`items` may still be empty, meaning the caller
+ * has nothing assigned and no formation invite. `'partial'`: the item query succeeded (so `items`
+ * is trustworthy) but at least one of the other two did not — the direct-grant read failed (so
+ * invited-but-unassigned formations may be missing entirely, including when `formations` is
+ * empty), or an aggregate batch failed, or an aggregate row was missing for a formation the caller
+ * has an assigned item on (such a formation is dropped from `formations` rather than fabricated).
+ * A consumer must therefore treat an empty `'partial'` as "retry", never as "nothing here".
+ * `'unavailable'`: the item query itself failed — nothing in this response can be trusted, and both
+ * arrays are forced empty.
  */
 export type MyFormationWorkState = 'complete' | 'partial' | 'unavailable';
 
@@ -832,10 +887,11 @@ export interface MyFormationWorkResponse {
 }
 
 /**
- * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
- * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
- * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
- * once per row up front rather than via template-called functions.
+ * `MyFormationSummary` decorated with pre-derived display fields for the My Formations page
+ * (`my-formations.component.ts`, built by `decorateMyFormation` in `formation-me.utils.ts`) —
+ * mirrors `DecoratedPendingAction` in `components.interface.ts`. Templates may only read
+ * signals/computed values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel`
+ * must be computed once per row up front rather than via template-called functions.
  */
 export interface DecoratedMyFormation extends MyFormationSummary {
   subtitle: string;

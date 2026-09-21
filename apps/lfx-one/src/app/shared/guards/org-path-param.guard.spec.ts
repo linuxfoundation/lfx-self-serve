@@ -24,6 +24,7 @@ describe('orgPathParamGuard', () => {
   let platformId: string;
   let selectedAccount: WritableSignal<Account>;
   let adoptFromAddress: Mock;
+  let pinSelection: Mock;
   let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
@@ -62,6 +63,7 @@ describe('orgPathParamGuard', () => {
     platformId = 'browser';
     selectedAccount = signal<Account>(placeholder);
     adoptFromAddress = vi.fn((next: Account) => selectedAccount.set(next));
+    pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
@@ -70,7 +72,7 @@ describe('orgPathParamGuard', () => {
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, clearAccount, refreshCanonicalRecord } },
+        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
         { provide: OrgSlugResolverService, useValue: { resolve } },
       ],
     });
@@ -119,6 +121,20 @@ describe('orgPathParamGuard', () => {
   });
 
   describe('already-selected organization (no round trip)', () => {
+    // The shortcut trusts the held slug only when it is slug-shaped: an SFID-shaped "slug" equal to
+    // the addressed segment would pass another organization's SFID address off as the selected one.
+    // Such a segment goes to the resolver, which classifies SFID syntax first.
+    it('does not take the shortcut on an SFID-shaped held slug, even when it equals the address', async () => {
+      // All-lowercase on both sides, so the only thing standing between this address and the
+      // shortcut is the slug-shape check — with it removed, the segment would equal the held slug.
+      const sfidShaped = UID_B.toLowerCase();
+      selectedAccount.set(account({ uid: UID_A, slug: sfidShaped }));
+      resolve.mockReturnValue(of(hit(UID_B, 'bravo-llc')));
+
+      expect(await outcome(sfidShaped, `/org/${sfidShaped}/projects`)).toBe('/org/bravo-llc/projects');
+      expect(resolve).toHaveBeenCalledWith(sfidShaped, UID_A);
+    });
+
     it('is a no-op when the address already uses the selected slug', async () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome('acme-inc', '/org/acme-inc/projects?tab=active#top')).toBe(true);
@@ -130,6 +146,30 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome(UID_A, `/org/${UID_A}/projects/abc?tab=active#top`)).toBe('/org/acme-inc/projects/abc?tab=active#top');
       expect(resolve).not.toHaveBeenCalled();
+    });
+
+    // lfx-self-serve#2570 (prod): the address names the selection, so the selection is addressed and
+    // is pinned exactly as a resolver hit would be. A selection that reached the address by any other
+    // route (the org-items default, the cookie) is otherwise left unpinned here, and a later persona
+    // refresh — empty for a staff viewer — re-seeds over it under the address it does not match.
+    it.each([
+      ['slug', 'acme-inc', '/org/acme-inc/overview', true],
+      ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
+      ['SFID (slug known — canonicalizes)', 'acme-inc', `/org/${UID_A}/overview`, '/org/acme-inc/overview'],
+    ])('pins the already-selected organization when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
+      selectedAccount.set(account({ uid: UID_A, slug }));
+      expect(await outcome(url.split('/')[2], url)).toBe(expected);
+      expect(pinSelection).toHaveBeenCalledTimes(1);
+      expect(pinSelection).toHaveBeenCalledWith('address');
+      expect(adoptFromAddress).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    it('does not pin through the shortcut when the resolver is the one answering', async () => {
+      resolve.mockReturnValue(of(hit(UID_B, 'beta')));
+      await outcome('beta', '/org/beta/overview');
+      expect(adoptFromAddress).toHaveBeenCalledTimes(1);
+      expect(pinSelection).not.toHaveBeenCalled();
     });
 
     it('keeps the SFID form when the organization is known to have no slug', async () => {
@@ -144,8 +184,11 @@ describe('orgPathParamGuard', () => {
       expect(resolve).not.toHaveBeenCalled();
     });
 
-    it('still resolves a cookie-restored stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
-      selectedAccount.set(account({ uid: UID_A })); // slug undefined: canonical fetch has not filled it
+    // Spec 050: the canonical record never fills the slug (addresses resolve against the index), so a
+    // stub — cookie-restored, or the FR-020 one adopted when the resolver was unavailable — keeps
+    // asking the resolver on each guard run until it answers; that is how the indexed slug is learned.
+    it('still resolves a stub whose slug is not known yet, so the SFID address can canonicalize', async () => {
+      selectedAccount.set(account({ uid: UID_A })); // slug undefined: no indexed row has answered for it
       resolve.mockReturnValue(of(hit(UID_A, 'acme-inc')));
 
       expect(await outcome(UID_A, `/org/${UID_A}/projects`)).toBe('/org/acme-inc/projects');

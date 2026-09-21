@@ -7,6 +7,7 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -17,6 +18,9 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
+import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
+import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { gwEmbedTenantGuard } from './shared/guards/gw-embed-tenant.guard';
@@ -39,13 +43,48 @@ import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirec
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
 /**
- * Org Lens page routes (every page except the EasyCLA subtree, which keeps its legacy addresses in
- * this release — DR-004). Built by a function so the same definitions can be mounted twice without
- * sharing route objects: once under `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and
- * once under `/org/:orgSegment/{page}` (spec 050 address scheme).
+ * Org Lens page routes, EasyCLA included (its DR-004 exemption ended with lfx-self-serve#2743: the
+ * legacy `/org/easycla*` mount stays one release for in-flight signing returns). Built by a
+ * function so the same definitions can be mounted twice without sharing route objects: once under
+ * `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and once under
+ * `/org/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
   return [
+    {
+      // Componentless parent, so the dark-launch guard is declared once and later M3
+      // children (list, sign, managers, …) inherit it. A looser copy would be a way
+      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
+      path: 'easycla',
+      canMatch: [orgLensClaM3EnabledGuard],
+      data: {
+        lens: 'org',
+        title: 'EasyCLA',
+        description: 'Corporate CLAs your organization has signed.',
+        icon: 'fa-light fa-file-signature',
+      },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
+        },
+        {
+          // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
+          // identifier that exists before a signature does, which is what lets this address
+          // be shared, and returned to after signing. Where an organization holds two
+          // agreements at one group id — two signing entities — the clicked one is named by a
+          // query parameter, so no second path shape is needed.
+          //
+          // One child for three states. The pre-sign preview shares this address rather than
+          // a reserved word segment, because it is the same screen: a reserved segment would
+          // have to be declared ahead of this one and is a second address for one page.
+          path: ':claGroupId',
+          data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
+          loadComponent: () =>
+            import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+        },
+      ],
+    },
     {
       path: 'overview',
       data: {
@@ -241,12 +280,21 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
       },
-      // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
+      // Project Lens dashboard (placeholder — reuses DashboardComponent for now). A project in a
+      // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
+      // so its redirect wins over `projectQueryParamGuard` (#2754). The guards must also re-run when
+      // only `?project=` changes — the project selector re-enters the lens that way while already on
+      // this route (`SidebarComponent.contextSwitchTarget`), and the default `paramsChange`
+      // policy would let that navigation complete without re-deciding the landing page.
+      // `formationOverviewReleaseGuard` (CanDeactivate) clears the fail-open record the redirect
+      // guard leaves for the sidebar whenever navigation leaves this route.
       {
         path: 'project/overview',
         title: 'Project Dashboard',
         data: { lens: 'project' },
-        canActivate: [projectQueryParamGuard],
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [formationOverviewRedirectGuard, projectQueryParamGuard],
+        canDeactivate: [formationOverviewReleaseGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
       // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched
@@ -282,40 +330,6 @@ export const routes: Routes = [
             pathMatch: 'full',
             redirectTo: 'overview',
           },
-          {
-            // Componentless parent, so the dark-launch guard is declared once and later M3
-            // children (list, sign, managers, …) inherit it. A looser copy would be a way
-            // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
-            path: 'easycla',
-            canMatch: [orgLensClaM3EnabledGuard],
-            data: {
-              lens: 'org',
-              title: 'EasyCLA',
-              description: 'Corporate CLAs your organization has signed.',
-              icon: 'fa-light fa-file-signature',
-            },
-            children: [
-              {
-                path: '',
-                loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
-              },
-              {
-                // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
-                // identifier that exists before a signature does, which is what lets this address
-                // be shared, and returned to after signing. Where an organization holds two
-                // agreements at one group id — two signing entities — the clicked one is named by a
-                // query parameter, so no second path shape is needed.
-                //
-                // One child for three states. The pre-sign preview shares this address rather than
-                // a reserved word segment, because it is the same screen: a reserved segment would
-                // have to be declared ahead of this one and is a second address for one page.
-                path: ':claGroupId',
-                data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
-                loadComponent: () =>
-                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
-              },
-            ],
-          },
           // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
@@ -323,7 +337,7 @@ export const routes: Routes = [
             // 18-char SFID when it has none). Declared after every static page so a page name can never
             // be taken for an organization; the matcher rejects those values as belt-and-braces and the
             // guard resolves the segment through the access-filtered BFF before any child renders.
-            path: ':orgSegment',
+            path: `:${ORG_SEGMENT_PARAM}`,
             canMatch: [orgSegmentMatchGuard],
             canActivate: [orgPathParamGuard],
             data: { lens: 'org' },
@@ -655,6 +669,20 @@ export const routes: Routes = [
         data: { lens: 'me' },
         canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
+      },
+      {
+        // My Formations (#2753) — the Me-lens list of formations with checklist items assigned to
+        // the caller, off the dashboard. A Me-only page like crowdfunding/mentorship: `data.lens: 'me'`
+        // makes a deep link switch to the Me lens (MainLayoutComponent.syncLensFromRoute) instead of
+        // lensRedirectGuard rewriting it to /foundation/formations (the auditor-only queue) or the
+        // non-existent /project/formations. No projectQueryParamGuard either: the page carries no
+        // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
+        // to My Dashboard).
+        path: 'formations',
+        title: 'My Formations',
+        data: { lens: 'me' },
+        canMatch: [formationMeEnabledGuard],
+        loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),
       },
       {
         path: 'me/events',

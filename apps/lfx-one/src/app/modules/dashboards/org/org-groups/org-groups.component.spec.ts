@@ -72,7 +72,8 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
     providers: [
       {
         provide: AccountContextService,
-        useValue: { selectedAccount, hasOrgSelectorAccess: signal(true) },
+        // Spec 050 US2: in-app links carry the selected organization's URL segment.
+        useValue: { selectedAccount, selectedUrlSegment: signal('acme'), hasOrgSelectorAccess: signal(true) },
       },
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
@@ -692,7 +693,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(rowAriaLabel()).toBe('WG Identity & Trust, Working Groups, 1 seat');
   });
 
-  it('renders the foundation name as a link to /org/memberships/<slug> when project_slug is present', async () => {
+  it('renders the foundation name as a link to /org/{org}/memberships/<slug> when project_slug is present', async () => {
     await renderRow({
       groups: [group({ project_name: 'Ultra Ethernet Consortium Fund', project_slug: 'uepf' })],
       total_groups: 1,
@@ -703,8 +704,9 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     expect(link?.tagName).toBe('A');
     // Not /org/projects/:slug — that route is Snowflake/CDP-scoped to sub-project activity rows
     // and 404s for a foundation-level slug (verified live against uepf and cncf).
-    // /org/memberships/:slug is the same convention org-memberships.component.html itself uses.
-    expect(link?.getAttribute('href')).toBe('/org/memberships/uepf');
+    // /org/{org}/memberships/:slug is the same convention org-memberships.component.html itself uses;
+    // the organization segment comes from the selection (spec 050 US2).
+    expect(link?.getAttribute('href')).toBe('/org/acme/memberships/uepf');
     expect(link?.getAttribute('aria-label')).toBe('View Ultra Ethernet Consortium Fund membership details');
   });
 
@@ -736,7 +738,7 @@ describe('OrgGroupsComponent — project label and row/foundation routing', () =
     await fixture.whenStable();
 
     expect(navigateSpy).toHaveBeenCalledTimes(1);
-    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/memberships/uepf');
+    expect(navigateSpy.mock.calls[0][0].toString()).toBe('/org/acme/memberships/uepf');
   });
 
   // jsdom does no layout or hit-testing, so this asserts the row anchor's own target — not that
@@ -928,7 +930,11 @@ describe('OrgGroupsComponent stat strip', () => {
         provideRouter([]),
         {
           provide: AccountContextService,
-          useValue: { selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account), hasOrgSelectorAccess: signal(true) },
+          useValue: {
+            selectedAccount: signal({ accountId: 'org-1', accountName: 'Org One', uid: 'org-1' } as Account),
+            hasOrgSelectorAccess: signal(true),
+            selectedUrlSegment: signal(null),
+          },
         },
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },

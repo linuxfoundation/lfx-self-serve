@@ -8,8 +8,14 @@
  * cannot drift on what a segment is.
  */
 
+/** Route parameter carrying the organization segment on the addressed mount (`/org/:orgSegment/…`). The router declares it as `':' + ORG_SEGMENT_PARAM`; guards and pages read it by this name. */
+export const ORG_SEGMENT_PARAM = 'orgSegment';
+
 /** In-shell not-found page for unresolvable / inaccessible / unavailable Org Lens addresses (FR-022). Declared as a sibling of the `org` route node so a `canMatch` fail-closed redirect cannot loop back into itself. */
 export const ORG_NOT_FOUND_PATH = '/org/not-found';
+
+/** `ORG_NOT_FOUND_PATH` as primary URL segments, for callers that compare an address segment by segment. */
+export const ORG_NOT_FOUND_SEGMENTS: readonly string[] = ORG_NOT_FOUND_PATH.split('/').filter(Boolean);
 
 /**
  * Org Lens page segments. A URL segment equal to any of these is a page, never an organization:

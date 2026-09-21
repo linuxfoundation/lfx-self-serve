@@ -17,10 +17,29 @@
              visual clipping, so screen readers announce it either way; this is a mouse-only nicety. -->
         <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
         @if (item(); as currentItem) {
-          @if (currentItem.is_gating) {
-            <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
-              <lfx-tag value="Required for Active" severity="warn" />
-            </span>
+          <!-- Meta line (#2774): the same three facts the checklist row shows — gating (the row's red
+               asterisk, with the full phrase spelled out here), owner team, and the audience as plain
+               text with the row's globe for the external-involving audiences. -->
+          @if (currentItem.is_gating || ownerTeamLabel() || audienceLabel()) {
+            <div class="flex items-center gap-3 flex-wrap text-xs text-gray-600">
+              @if (currentItem.is_gating) {
+                <span class="inline-flex items-center gap-1 text-gray-700" [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
+                  <span class="text-red-500 font-semibold" aria-hidden="true">*</span>
+                  <span>Required for Active</span>
+                </span>
+              }
+              @if (ownerTeamLabel(); as team) {
+                <span [attr.data-testid]="'formation-item-drawer-owner-team-' + currentItem.uid"><span class="sr-only">Team: </span>{{ team }}</span>
+              }
+              @if (audienceLabel(); as audience) {
+                <span class="inline-flex items-center gap-1" [attr.data-testid]="'formation-item-drawer-audience-' + currentItem.uid">
+                  @if (audienceIsExternal()) {
+                    <i class="fa-light fa-globe text-gray-400" aria-hidden="true"></i>
+                  }
+                  <span class="sr-only">Audience: </span>{{ audience }}
+                </span>
+              }
+            </div>
           }
         }
       </div>
@@ -127,25 +146,28 @@
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <!-- searchType is 'committee_member', not 'meeting_registrant': every existing lfx-user-search
-               caller already uses committee_member, and it's the only proven-working type today —
-               meeting_registrant has zero UI callers anywhere in the app. Neither corpus indexes a plain
-               "project member"/"project partner" directory (FGA/lens-derived access, not a searchable
-               index), so a project partner with no committee seat and no meeting registration won't
-               surface here. Known gap, recorded on #2583; not solved here by inventing a new type. -->
+          <!-- #2594: the picker lists the people on this formation — the project's grant holders, the only
+               population upstream accepts as an assignee — filtered locally by name, email or username, so
+               a pick can never fail at save with assignee_not_on_project. Pending invitees are listed but
+               disabled with a note, so a search never silently finds nobody. searchType is the fallback
+               corpus, used only while the people read is unavailable (global-grant staff who 403 on the
+               settings read): committee_member is the one proven-working directory type, and the
+               ASSIGNEE_NOT_ON_PROJECT handling in onSaveDetails covers a pick from it. -->
           <lfx-user-search
             [form]="editForm"
             searchType="committee_member"
+            [candidates]="assigneeCandidates()"
+            [emptyMessage]="assigneeEmptyMessage()"
             usernameControl="ownerUsername"
             [displayValue]="assigneeDisplayValue()"
             [showClear]="true"
-            [readonly]="assignmentReadOnly()"
+            [readonly]="assigneeReadOnly()"
             [requireLfAccount]="true"
             [showManualEntry]="false"
-            placeholder="Search for a person…"
+            [placeholder]="assigneePlaceholder()"
             inputId="formation-item-drawer-assignee-input"
             dataTestId="formation-item-drawer-assignee-search"
-            (onRejectedSelection)="onAssigneeRejected()" />
+            (onRejectedSelection)="onAssigneeRejected($event)" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>
@@ -181,16 +203,10 @@
       }
 
       @if (currentItem.sub_items.length > 0) {
+        <!-- The list renders its own "Sub-items · N of M done" header (#2774); this wrapper keeps the
+             testid the structural e2e contract nests on. -->
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
-          <div class="flex flex-col gap-1">
-            @for (subItem of subItemRows(); track subItem.uid) {
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-700">{{ subItem.title }}</span>
-                <lfx-tag [value]="subItem.statusLabel" [severity]="subItem.statusSeverity" />
-              </div>
-            }
-          </div>
+          <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
         </div>
       }
 

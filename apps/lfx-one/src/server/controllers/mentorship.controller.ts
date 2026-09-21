@@ -201,6 +201,89 @@ export class MentorshipController {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Mentee endpoints
+  // ---------------------------------------------------------------------------
+
+  // GET /api/mentorship/mentee/has-profile
+  public async hasMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'has_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'has_mentorship_mentee_profile' });
+      }
+
+      const result = await this.mentorshipService.hasMenteeProfile(req);
+      logger.success(req, 'has_mentorship_mentee_profile', startTime, { hasProfile: result.hasProfile });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/overview
+  public async getMenteeOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_overview');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_overview' });
+      }
+
+      const rawPhase = parseTrimmedString(req.query['phase']);
+      const validPhases = ['empty', 'applicant', 'accepted'] as const;
+      if (rawPhase !== undefined && !validPhases.includes(rawPhase as (typeof validPhases)[number])) {
+        throw ServiceValidationError.forField('phase', `phase must be one of: ${validPhases.join(', ')}`, {
+          operation: 'get_mentorship_mentee_overview',
+        });
+      }
+      const phase = rawPhase as (typeof validPhases)[number] | undefined;
+      const overview = await this.mentorshipService.getMenteeOverview(req, phase);
+      logger.success(req, 'get_mentorship_mentee_overview', startTime, { phase: overview.phase });
+      res.json(overview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/tasks
+  public async getMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_tasks');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_tasks' });
+      }
+
+      const tasks = await this.mentorshipService.getMenteeTasks(req);
+      logger.success(req, 'get_mentorship_mentee_tasks', startTime, { count: tasks.data.length });
+      res.json(tasks);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/profile
+  // Auth: logged-in user required (401 otherwise). Identity-scoped payload is tracked
+  // with the real Mentorship `user_profiles` read (linuxfoundation/lfx-self-serve#2764)
+  // — do not invent authorization against this shared mock.
+  public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_profile' });
+      }
+
+      const profile = await this.mentorshipService.getMenteeProfile(req);
+      logger.success(req, 'get_mentorship_mentee_profile', startTime, { history_count: profile.history.length });
+      res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/cii/:projectId
   public async getCiiBadge(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_cii_badge');

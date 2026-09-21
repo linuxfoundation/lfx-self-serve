@@ -3,7 +3,7 @@
 
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,9 @@ import type { HealthMetricsAreaState, HealthMetricsFinding, ProjectContext } fro
 describe('HealthMetricsOverviewComponent', () => {
   let fixture: ComponentFixture<HealthMetricsOverviewComponent>;
 
-  async function render(foundation: ProjectContext | null, foundationSfid: string | null): Promise<void> {
+  /** Returns the foundation signal so a test can switch foundations without re-wiring the TestBed. */
+  async function render(foundation: ProjectContext | null, foundationSfid: string | null): Promise<WritableSignal<ProjectContext | null>> {
+    const foundationSignal = signal<ProjectContext | null>(foundation);
     await TestBed.configureTestingModule({
       imports: [HealthMetricsOverviewComponent],
       providers: [
@@ -23,13 +25,15 @@ describe('HealthMetricsOverviewComponent', () => {
         provideHttpClientTesting(),
         {
           provide: ProjectContextService,
-          useValue: { selectedFoundation: signal(foundation), selectedFoundationSfid: signal(foundationSfid) },
+          useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal(foundationSfid) },
         },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
     fixture.detectChanges();
+
+    return foundationSignal;
   }
 
   afterEach(() => {
@@ -174,10 +178,10 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
-        .flush([areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })]);
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
       await fixture.whenStable();
 
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
@@ -192,10 +196,10 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
-        .flush([areaState({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false })]);
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false })] });
       await fixture.whenStable();
 
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
@@ -210,7 +214,7 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       const kpiRequest = httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis');
       fixture.detectChanges();
 
@@ -223,7 +227,7 @@ describe('HealthMetricsOverviewComponent', () => {
       kpiRequest.error(new ProgressEvent('error'));
       await fixture.whenStable();
 
-      // AnalyticsService.getHealthOverviewKpis degrades to [] on failure. All 6 tiles still render —
+      // AnalyticsService.getHealthOverviewKpis degrades to an empty per-range map on failure. All 6 tiles still render —
       // eng from the fixture (this table never covers that area), but evt/trn/mem/non/code get a
       // neutral "no data" row rather than the fixture's fabricated numbers, since those would look
       // like real data.
@@ -235,6 +239,151 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('as of');
       const codeTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-code"]');
       expect(codeTile.textContent).toContain('no data this period');
+      httpMock.verify();
+    });
+
+    it('clears the previous foundation tiles while the new foundation KPI fetch is in flight', async () => {
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
+
+      foundationSignal.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
+      fixture.detectChanges();
+
+      // mergeAreaStates prefers any live row over the loading placeholder, so without clearing the map
+      // on a slug change the strip keeps showing the previous foundation's figures as if they were this one's.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).not.toContain('81%');
+      expect(evtTile.textContent).toContain('loading…');
+      // The summary signal has no startWith reset, so only the loading flag hides the previous
+      // foundation's figures during the switch — assert both, or that leak regresses silently.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
+
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 50, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '42%', statLabel: 'of registration goal', classification: 'watch' })] });
+      await fixture.whenStable();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('42%');
+      httpMock.verify();
+    });
+
+    it('projects the clicked period out of the already-fetched KPI map without issuing any new request', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      // The `range` assertion is the endpoint contract this PR establishes: the fetch is per
+      // foundation, so a period pill must never reintroduce a range param.
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && !r.params.has('range'))
+        .flush({
+          YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })],
+          COMPLETED_YEAR: [areaState({ area: 'evt', statValue: '54%', statLabel: 'of registration goal', classification: 'watch' })],
+        });
+      await fixture.whenStable();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]').textContent).toContain('81%');
+
+      // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      fixture.detectChanges();
+
+      // A wrong range key would render '—'/"no data this period", which reads as a legitimate empty
+      // state rather than a bug — so assert the prior-year value specifically.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('54%');
+      expect(evtTile.textContent).toContain('Needs attention');
+      expect(evtTile.textContent).not.toContain('81%');
+      httpMock.verify();
+    });
+
+    it('falls back to the neutral no-data tile for a period the fetched KPI map has no entry for', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      fixture.detectChanges();
+
+      // Covers the `?? []` in kpiAreaStates: a period the map doesn't carry must degrade to the neutral
+      // row, never keep rendering the previously selected period's figures under the new label.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no data this period');
+      expect(evtTile.textContent).not.toContain('81%');
+      httpMock.verify();
+    });
+
+    it('keeps the tiles and both rail blocks loading, and issues no request, while no foundation is selected', async () => {
+      await render(null, null);
+      const httpMock = TestBed.inject(HttpTestingController);
+      fixture.detectChanges();
+
+      // The empty-slug guard: an unresolved foundation must read as "still loading", not as the
+      // terminal "no data this period" / "revenue unavailable" states for data never fetched.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('loading…');
+      expect(evtTile.textContent).not.toContain('no data this period');
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).toBeNull();
+      // Same guard on the summary rail: without it the zero-filled default renders as a real
+      // "0 projects / N/A tiers" for an ED who hasn't picked a foundation yet.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
+      httpMock.verify();
+    });
+
+    it('leaves the loading state when the foundation is cleared after one was selected', async () => {
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({ YTD: [areaState({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok' })] });
+      await fixture.whenStable();
+
+      foundationSignal.set(null);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The other half of the foundationSeen latch: clearing a previously selected foundation must reach
+      // the terminal empty state, not wedge every tile and the rail on a skeleton that never resolves.
+      const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
+      expect(evtTile.textContent).toContain('no data this period');
+      expect(evtTile.textContent).not.toContain('loading…');
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
+      // Pins the terminal state rather than the guard (foundationSeen is already true here): the rail
+      // leaves its skeleton and falls back to the default instead of keeping the cleared figures.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
+      // Positive too: the absences above would also hold if the rail stopped rendering altogether.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]').textContent).toContain('N/A');
       httpMock.verify();
     });
   });
@@ -249,8 +398,8 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
@@ -259,27 +408,13 @@ describe('HealthMetricsOverviewComponent', () => {
     });
 
     it('re-fetches the foundation summary when the selected foundation changes', async () => {
-      const foundationSignal = signal<ProjectContext | null>({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' });
-      await TestBed.configureTestingModule({
-        imports: [HealthMetricsOverviewComponent],
-        providers: [
-          provideHttpClient(),
-          provideHttpClientTesting(),
-          {
-            provide: ProjectContextService,
-            useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal('a0912345678901234A') },
-          },
-        ],
-      }).compileComponents();
-      fixture = TestBed.createComponent(HealthMetricsOverviewComponent);
-      fixture.detectChanges();
-
+      const foundationSignal = await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
 
       foundationSignal.set({ uid: 'other-uid', name: 'Other Foundation', slug: 'other-foundation' });
       fixture.detectChanges();
@@ -287,8 +422,8 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'other-foundation')
         .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 50, streams: [] });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 50, streams: [] } });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       fixture.detectChanges();
 
       expect(fixture.nativeElement.textContent).toContain('2 tiers');
@@ -303,7 +438,7 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
         .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush([]);
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       return httpMock;
     }
 
@@ -312,7 +447,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
 
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
@@ -322,16 +457,21 @@ describe('HealthMetricsOverviewComponent', () => {
     it('shows the unavailable message when the fetch resolves with dataAvailable false', async () => {
       const httpMock = await renderWithFoundation();
 
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: false, total: 0, streams: [] });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: false, total: 0, streams: [] } });
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
       httpMock.verify();
     });
 
-    it('re-fetches with the clicked period’s range and reflects it as pressed', async () => {
+    it('projects the clicked period out of the already-fetched map without issuing any new request', async () => {
       const httpMock = await renderWithFoundation();
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ dataAvailable: true, total: 100, streams: [] });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-revenue' && !r.params.has('range'))
+        .flush({
+          YTD: { dataAvailable: true, total: 100, streams: [{ key: 'memberships', value: 100 }] },
+          COMPLETED_YEAR: { dataAvailable: true, total: 200, streams: [{ key: 'memberships', value: 200 }] },
+        });
       fixture.detectChanges();
 
       // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
@@ -341,14 +481,23 @@ describe('HealthMetricsOverviewComponent', () => {
       fixture.detectChanges();
 
       expect(button.getAttribute('aria-pressed')).toBe('true');
-      httpMock
-        .expectOne((r) => r.url === '/api/analytics/health-overview-revenue' && r.params.get('range') === 'COMPLETED_YEAR')
-        .flush({
-          dataAvailable: true,
-          total: 200,
-          streams: [],
-        });
-      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis' && r.params.get('range') === 'COMPLETED_YEAR').flush([]);
+      // The whole point of the all-periods read: switching period costs zero requests and never
+      // blanks the rail back to its skeleton. httpMock.verify() below fails if anything was issued.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).toContain('$200');
+      httpMock.verify();
+    });
+
+    it('falls back to the unavailable message for a period the fetched map has no entry for', async () => {
+      const httpMock = await renderWithFoundation();
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      fixture.detectChanges();
+
+      const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
+      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
       httpMock.verify();
     });
   });

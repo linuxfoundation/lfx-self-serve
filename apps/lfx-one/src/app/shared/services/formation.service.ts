@@ -47,24 +47,64 @@ export class FormationService {
     shareReplay({ bufferSize: 1, refCount: true })
   );
 
+  /** Per-slug memo behind {@link getFormationPeople}. */
+  private readonly formationPeople = new Map<string, Observable<FormationPeopleResponse>>();
+
   public getProjectFormation(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
   }
 
   /**
-   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724).
-   * Degrades to the `unavailable` shape on any HTTP failure (repo GET convention), which the card
-   * renders as its unavailable state — the same shape the BFF itself returns when the caller
-   * cleared the checklist read but upstream refused the settings read. Deliberately uncached: the
-   * card re-fetches after an invite, and both checklist hosts mount it once per checklist load.
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724) and,
+   * since #2772, the item drawer's assignee picker on every open. Memoised per slug: the BFF read
+   * behind it re-runs the checklist gate, the settings read and a per-person metadata fan-out, so
+   * both hosts share one answer. The memo lives as long as this root-provided service — the whole
+   * SPA session, across navigations and projects; nothing clears it on route change. It is dropped
+   * only by {@link invalidateFormationPeople}, which `PermissionsService.invalidateProjectSettings`
+   * calls for every permission, staff and invite write (the list is a projection of the project
+   * settings that cache holds), and by an `unavailable` answer, which is never kept so a transient
+   * failure is retried by the next reader. Degrades to that `unavailable` shape on any HTTP failure
+   * (repo GET convention), which the card renders as its unavailable state — the same shape the BFF
+   * itself returns when the caller cleared the checklist read but upstream refused the settings read.
    */
   public getFormationPeople(projectSlug: string): Observable<FormationPeopleResponse> {
-    return this.http.get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`).pipe(
-      catchError((error: unknown) => {
-        console.error('[FormationService] Failed to load formation people', error);
-        return of(createUnavailableFormationPeopleResponse());
-      })
-    );
+    const memoised = this.formationPeople.get(projectSlug);
+    if (memoised) {
+      return memoised;
+    }
+
+    const read$: Observable<FormationPeopleResponse> = this.http
+      .get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`)
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('[FormationService] Failed to load formation people', error);
+          return of(createUnavailableFormationPeopleResponse());
+        }),
+        tap((response) => {
+          // Only this read's own entry — an invalidate-then-re-read may already have replaced it.
+          if (response.state === 'unavailable' && this.formationPeople.get(projectSlug) === read$) {
+            this.formationPeople.delete(projectSlug);
+          }
+        }),
+        // Completed HTTP source: the buffer outlives the subscribers (the drawer closes between reads).
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    this.formationPeople.set(projectSlug, read$);
+    return read$;
+  }
+
+  /**
+   * Drops the people memo so the next {@link getFormationPeople} reads afresh — one slug, or every
+   * slug when none is given. The settings cache that feeds this list is keyed by project uid while
+   * the memo is keyed by slug, so its invalidation clears everything rather than mapping between
+   * the two; the memo is cheap to rebuild and a stale list is the failure this exists to prevent.
+   */
+  public invalidateFormationPeople(projectSlug?: string): void {
+    if (projectSlug === undefined) {
+      this.formationPeople.clear();
+      return;
+    }
+    this.formationPeople.delete(projectSlug);
   }
 
   /**
@@ -129,14 +169,15 @@ export class FormationService {
   }
 
   /**
-   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller.
-   * `my-formations-card` and the multi-persona "In formation" tile both call this independently on
-   * the same dashboard; `shareReplay({ refCount: true })` collapses that into one HTTP request per
-   * navigation instead of two, and tears the subscription down (re-fetching on the next subscribe)
-   * once the last consumer unsubscribes. The source is `refreshMyFormationWork$`, not the bare
-   * `HttpClient` call, so `invalidateMyFormationWork()` (wired into every write method above, plus
-   * the item drawer's completion/skip paths) re-runs the fetch and pushes the new response straight
-   * to whichever card/tile is already on screen — no re-navigation needed.
+   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller. Consumed
+   * by the My Formations page (`my-formations.component.ts`, #2753) and by the multi-persona
+   * dashboard's "In formation" tile; `shareReplay({ refCount: true })` collapses concurrent
+   * subscribers into one HTTP request per navigation, and tears the subscription down (re-fetching
+   * on the next subscribe) once the last consumer unsubscribes. The source is
+   * `refreshMyFormationWork$`, not the bare `HttpClient` call, so `invalidateMyFormationWork()`
+   * (wired into every write method above, the item drawer's completion/skip paths, and the page's
+   * Retry) re-runs the fetch and pushes the new response straight to whichever page/tile is already
+   * on screen — no re-navigation needed.
    */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
     return this.myFormationWork$;

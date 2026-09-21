@@ -98,6 +98,11 @@ vi.mock('@lfx-one/shared/constants', async () => {
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+    // Real function, not a stub: both getHealthOverview* queries generate their period-suffixed
+    // column list from this, so a stub would emit SQL that diverges from production.
+    buildHealthMetricsOverviewPeriods: healthMetricsOverviewConstants.buildHealthMetricsOverviewPeriods,
+    HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
+    HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS: healthMetricsOverviewConstants.HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
   };
 });
 vi.mock('@lfx-one/shared/enums', async () => {
@@ -224,7 +229,12 @@ vi.mock('./logger.service', () => ({
 
 import type { Request } from 'express';
 
-import { PROJECT_SETTINGS_NOT_FOUND_CODE } from '@lfx-one/shared/constants';
+import {
+  buildHealthMetricsOverviewPeriods,
+  HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
+  HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
+  PROJECT_SETTINGS_NOT_FOUND_CODE,
+} from '@lfx-one/shared/constants';
 
 import { ResourceNotFoundError } from '../errors';
 import { ProjectService } from './project.service';
@@ -249,6 +259,62 @@ describe('ProjectService — create picker methods', () => {
     addAccessToResources.mockReset();
     checkAccess.mockReset();
     service = new ProjectService();
+  });
+
+  describe('getDirectGrantProjectRows', () => {
+    it('returns every direct-grant project row without an access check, so a view-only (auditor) grant survives', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf([
+          { uid: 'a', slug: 'a', stage: 'Formation - Engaged' },
+          { uid: 'b', slug: 'b', stage: 'Active' },
+        ])
+      );
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(1);
+      // page_size 100, not the query service's default 50: this read is on the My Formations
+      // render path now, and pagination is sequential (PR #2799 review).
+      expect(proxyRequest.mock.calls[0][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_size: 100 });
+      expect(addAccessToResources).not.toHaveBeenCalled();
+      expect(checkAccess).not.toHaveBeenCalled();
+    });
+
+    it('excludes the ROOT pseudo-project and follows page tokens to the end', async () => {
+      proxyRequest.mockResolvedValueOnce(
+        pageOf(
+          [
+            { uid: 'root', slug: 'root' },
+            { uid: 'a', slug: 'a' },
+          ],
+          'next'
+        )
+      );
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'b', slug: 'b' }]));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a', 'b']);
+      expect(proxyRequest).toHaveBeenCalledTimes(2);
+      expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_token: 'next' });
+    });
+
+    it('throws when a later page fails and the caller asked for failOnPartial (a silent prefix would misstate the grant set)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getDirectGrantProjectRows(req, { failOnPartial: true })).rejects.toThrow('page-fail');
+    });
+
+    it('returns the pages it got by default when a later page fails (the create picker tolerates a prefix)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a']);
+    });
   });
 
   describe('getDirectGrantProjects', () => {
@@ -1937,6 +2003,19 @@ describe('ProjectService — getHealthMetricsDaily', () => {
   });
 });
 
+// Both HEALTH_OVERVIEW_* queries now read every period at once and alias each period-suffixed column
+// `<COLUMN>__<RANGE>`. These builders expand a single period's fixture slice onto one range's keys and
+// pass the period-invariant columns through untouched, leaving the other ranges NULL.
+// Real list, not a copy: the query and the projection both key off it, so a stale copy here would
+// keep asserting on aliases production no longer emits.
+const PERIOD_SUFFIXED_KPI_COLUMNS = new Set<string>(HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS);
+
+const buildKpiWideRow = (slice: Record<string, number | string | null>, range = 'YTD'): Record<string, number | string | null> =>
+  Object.fromEntries(Object.entries(slice).map(([column, value]) => [PERIOD_SUFFIXED_KPI_COLUMNS.has(column) ? `${column}__${range}` : column, value]));
+
+const buildRevenueWideRow = (slice: Record<string, number | string | null>, range = 'YTD'): Record<string, number | string | null> =>
+  Object.fromEntries(Object.entries(slice).map(([column, value]) => [column === 'REVENUE_DOMAIN' ? column : `${column}__${range}`, value]));
+
 describe('ProjectService — getHealthOverviewRevenue', () => {
   let service: ProjectService;
 
@@ -1948,14 +2027,14 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
   it('marks the response as available and orders streams by domain when rows are returned', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        { REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 },
-        { REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 },
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: 400_000, FOUNDATION_TOTAL_REVENUE_USD: 1_000_000 }),
       ],
     });
 
-    const result = await service.getHealthOverviewRevenue('cncf', 'YTD');
+    const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result).toEqual({
+    expect(result['YTD']).toEqual({
       dataAvailable: true,
       total: 1_000_000,
       streams: [
@@ -1966,26 +2045,69 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect(execute.mock.calls[0][0]).toContain('ORDER BY revenue_domain');
   });
 
-  it('reports dataAvailable false with a zeroed summary when no rows are returned, instead of a fake $0', async () => {
+  it('reports dataAvailable false for every range with a zeroed summary when no rows are returned, instead of a fake $0', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
-    const result = await service.getHealthOverviewRevenue('cncf', 'YTD');
+    const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
+    expect(Object.values(result)).toEqual(
+      Array.from({ length: buildHealthMetricsOverviewPeriods().length }, () => ({
+        dataAvailable: false,
+        total: 0,
+        streams: [],
+      }))
+    );
   });
 
-  it('reports dataAvailable false when the foundation has a row but the selected period is null, instead of a fake $0', async () => {
+  it('reports dataAvailable false for the ranges whose total is null while keeping the populated range available', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        { REVENUE_DOMAIN: 'memberships', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
-        { REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: null },
+        {
+          REVENUE_DOMAIN: 'memberships',
+          REVENUE_USD__YTD: 600_000,
+          FOUNDATION_TOTAL_REVENUE_USD__YTD: 600_000,
+          REVENUE_USD__COMPLETED_YEAR: null,
+          FOUNDATION_TOTAL_REVENUE_USD__COMPLETED_YEAR: null,
+        },
       ],
     });
 
-    const result = await service.getHealthOverviewRevenue('cncf', 'COMPLETED_YEAR');
+    const result = await service.getHealthOverviewRevenue('cncf');
 
-    expect(result).toEqual({ dataAvailable: false, total: 0, streams: [] });
-    expect(execute.mock.calls[0][0]).toContain('revenue_usd_last_completed_year');
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 600_000, streams: [{ key: 'memberships', value: 600_000 }] });
+    expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
+  });
+
+  it('keeps a period available when the driver returns its high-precision totals as strings', async () => {
+    // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
+    // would report a funded foundation as having no revenue data for the period.
+    execute.mockResolvedValueOnce({
+      rows: [{ REVENUE_DOMAIN: 'memberships', REVENUE_USD__YTD: '600000.00', FOUNDATION_TOTAL_REVENUE_USD__YTD: '1000000.00' }],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf');
+
+    expect(result['YTD']).toEqual({ dataAvailable: true, total: 1_000_000, streams: [{ key: 'memberships', value: 600_000 }] });
+  });
+
+  it('reads every selectable period in a single one-bind query and never emits the 4th-year-back suffix this table lacks', async () => {
+    execute.mockResolvedValueOnce({ rows: [] });
+
+    await service.getHealthOverviewRevenue('cncf');
+
+    const [query, binds] = execute.mock.calls[0];
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(binds).toEqual(['cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength(1);
+    // Pinned independently of the constant: the loop below derives its expectations from the same
+    // list the service generates from, so only this assertion catches a column silently dropped there.
+    expect(HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS).toEqual(['REVENUE_USD', 'FOUNDATION_TOTAL_REVENUE_USD']);
+    for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
+      for (const column of HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS) {
+        expect(query).toContain(`${column.toLowerCase()}${suffix}`);
+      }
+    }
+    expect(query).not.toContain('_4th_last_completed_year');
   });
 });
 
@@ -2000,7 +2122,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('maps a fetched row to the five covered area states, pinning to a single row', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
           EVENTS_STATUS: 'healthy',
           // >1,000 so formatNumber's compact notation is actually exercised, not just its identity
@@ -2014,11 +2136,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
           NON_MEMBERS_STATUS: 'healthy',
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual([
       expect.objectContaining({ area: 'evt', statValue: '81%', statLabel: 'of registration goal', classification: 'ok', showStatus: true }),
@@ -2033,7 +2155,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('renders a blank stat with an alternate label for each NULL column instead of a fabricated 0, and hides the status chip when there is no registration goal', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: null,
           EVENTS_STATUS: null,
           CERTIFICATIONS_EARNED_COUNT: null,
@@ -2043,11 +2165,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: null,
           NON_MEMBERS_PIPELINE_VALUE_USD: null,
           NON_MEMBERS_STATUS: null,
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual([
       expect.objectContaining({ area: 'evt', statValue: '—', statLabel: 'no registration goal set', classification: 'none', showStatus: false }),
@@ -2061,7 +2183,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('renders a genuine zero contributor count as "0", not the neutral placeholder', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
           EVENTS_STATUS: 'healthy',
           CERTIFICATIONS_EARNED_COUNT: 42,
@@ -2071,11 +2193,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
           NON_MEMBERS_STATUS: 'healthy',
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '0', statLabel: 'active contributors' })]));
   });
@@ -2083,7 +2205,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('renders a NULL stat value alongside a real status for a mixed row, instead of only ever testing the all-NULL/all-populated extremes', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
           EVENTS_STATUS: 'healthy',
           CERTIFICATIONS_EARNED_COUNT: 42,
@@ -2093,11 +2215,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: null,
           NON_MEMBERS_STATUS: 'healthy',
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual(
       expect.arrayContaining([expect.objectContaining({ area: 'non', statValue: '—', statLabel: 'pipeline value', classification: 'ok' })])
@@ -2107,7 +2229,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('shows the events status chip with a real classification when the goal is unset but EVENTS_STATUS is populated', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: null,
           EVENTS_STATUS: 'healthy',
           CERTIFICATIONS_EARNED_COUNT: 42,
@@ -2117,11 +2239,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
           NON_MEMBERS_STATUS: 'healthy',
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual(
       expect.arrayContaining([
@@ -2133,7 +2255,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
   it('shows an "Awaiting data" events status chip when the goal is set but EVENTS_STATUS is unpopulated, matching how trn/mem/non treat a null status', async () => {
     execute.mockResolvedValueOnce({
       rows: [
-        {
+        buildKpiWideRow({
           EVENTS_PCT_OF_REGISTRATION_GOAL: 81,
           EVENTS_STATUS: null,
           CERTIFICATIONS_EARNED_COUNT: 42,
@@ -2143,11 +2265,11 @@ describe('ProjectService — getHealthOverviewKpis', () => {
           MEMBERS_STATUS: 'needs_action',
           NON_MEMBERS_PIPELINE_VALUE_USD: 75_000,
           NON_MEMBERS_STATUS: 'healthy',
-        },
+        }),
       ],
     });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
 
     expect(result).toEqual(
       expect.arrayContaining([
@@ -2156,22 +2278,51 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     );
   });
 
-  it('returns an empty array when no row is returned for the foundation', async () => {
+  it('returns an empty array for every range when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
-    const result = await service.getHealthOverviewKpis('cncf', 'YTD');
+    const result = await service.getHealthOverviewKpis('cncf');
 
-    expect(result).toEqual([]);
+    expect(Object.keys(result)).toEqual(buildHealthMetricsOverviewPeriods().map((period) => period.range));
+    expect(Object.values(result)).toEqual(buildHealthMetricsOverviewPeriods().map(() => []));
   });
 
-  it('substitutes the period suffix into the query for a non-YTD range', async () => {
+  it('projects each range independently from the one wide row, so a populated YTD does not leak into an empty prior year', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        {
+          ...buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540, MEMBERS_RENEWING_90D_VALUE_USD: 250_000 }),
+          ...buildKpiWideRow({ CONTRIBUTORS_COUNT: null }, 'COMPLETED_YEAR'),
+        },
+      ],
+    });
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
+    expect(result['COMPLETED_YEAR']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '—' })]));
+    // Period-invariant columns are selected once, so they repeat across every range's projected row.
+    expect(result['COMPLETED_YEAR']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'mem', statValue: '$250K' })]));
+  });
+
+  it('reads every selectable period in a single one-bind query, selects the invariant columns once, and never emits the 4th-year-back suffix', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
-    await service.getHealthOverviewKpis('cncf', 'COMPLETED_YEAR');
+    await service.getHealthOverviewKpis('cncf');
 
-    expect(execute.mock.calls[0][0]).toContain('events_pct_of_registration_goal_last_completed_year');
-    expect(execute.mock.calls[0][0]).toContain('contributors_count_last_completed_year');
-    expect(execute.mock.calls[0][0]).not.toContain('members_renewing_90d_value_usd_last_completed_year');
+    const [query, binds] = execute.mock.calls[0];
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(binds).toEqual(['cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength(1);
+    for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {
+      expect(query).toContain(`events_pct_of_registration_goal${suffix}`);
+      expect(query).toContain(`contributors_count${suffix}`);
+      // The members/non-members columns carry no suffix — they must never be generated per range.
+      expect(query).not.toContain(`members_renewing_90d_value_usd${suffix}`);
+    }
+    expect((query as string).match(/members_renewing_90d_value_usd/g)).toHaveLength(1);
+    expect((query as string).match(/non_members_pipeline_value_usd/g)).toHaveLength(1);
+    expect(query).not.toContain('_4th_last_completed_year');
   });
 });
 

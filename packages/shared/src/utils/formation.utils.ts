@@ -17,6 +17,7 @@ import type {
   FormationEntityType,
   FormationItem,
   FormationItemAudience,
+  FormationItemExternalAudience,
   FormationItemStatus,
   FormationKnownAvailableAction,
   FormationLifecycle,
@@ -113,6 +114,15 @@ export function normalizeFormationItemAudience(rawAudience: string | null | unde
 }
 
 /**
+ * Whether an audience involves people outside the LF (#2774) — `external` or `both`. A type guard
+ * so `FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience]` indexes without a cast; `internal`, `null` and
+ * `undefined` all read false, which is what hides the row's globe icon for them.
+ */
+export function isFormationItemExternal(audience: FormationItemAudience | null | undefined): audience is FormationItemExternalAudience {
+  return audience === 'external' || audience === 'both';
+}
+
+/**
  * `FormationChecklistRowComponent`'s owner-team chip label resolver (#2689): the curated
  * {@link FORMATION_OWNER_TEAM_LABELS} first (generic title-casing gets acronyms wrong — `it` must
  * read "IT", not "It"), then `formatTag` for the off-enum values upstream can send (see
@@ -144,7 +154,8 @@ export function isFormationLifecycleLive(lifecycle: FormationLifecycle | null): 
  * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
  * so it falls back to an em dash.
  *
- * `MyFormationsCardComponent` also calls this (GH-1956) — `getMyFormationWork`'s formation-aggregate
+ * `decorateMyFormation` (`formation-me.utils.ts`, the My Formations page's row builder — GH-1956,
+ * #2753) also calls this — `getMyFormationWork`'s formation-aggregate
  * query reads the same `formation` projection `FormationsTableComponent` does, normalized through
  * {@link normalizeFormationSubStage} in `formation.service.ts` before either consumer sees a row, so
  * the same unmapped-stage handling applies to both surfaces rather than each guessing independently.

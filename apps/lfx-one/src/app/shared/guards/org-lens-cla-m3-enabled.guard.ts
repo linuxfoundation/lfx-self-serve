@@ -3,10 +3,12 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { CanMatchFn, Router } from '@angular/router';
+import { CanMatchFn, Router, UrlTree } from '@angular/router';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { orgLensPagePath } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
+import { OrgLensNavigationService } from '../services/org-lens-navigation.service';
 
 export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -18,13 +20,26 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
 
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
+  // Injected up front: the fallback also runs after the `await` below, outside the injection context.
+  const orgLensNavigation = inject(OrgLensNavigationService);
+  // Spec 050: the fallback keeps the organization the address names. This CanMatch runs during
+  // recognition, before `orgPathParamGuard` has adopted `/org/{segment}/easycla`'s organization, so
+  // the selection may still be the cookie's — the URL being recognized is the authority
+  // (`orgLensPagePath`, as `orgLensRoiEnabledGuard` does). Only the legacy `/org/easycla` names no
+  // organization; there the selected one is the best available (`/org/overview` while none is).
+  const fallback = (): UrlTree => {
+    const target = router.getCurrentNavigation()?.extractedUrl;
+    const segments = target?.root.children['primary']?.segments.map((segment) => segment.path) ?? [];
+    const addressed = orgLensPagePath(segments, 'overview');
+    return addressed === '/org/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
+  };
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be
   // overridden. Non-production builds only; see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY`.
   const override = featureFlagService.getFlagOverride(ORG_LENS_CLA_M3_ENABLED_FLAG);
   if (override !== undefined) {
-    return override ? true : router.parseUrl('/org/overview');
+    return override ? true : fallback();
   }
 
   if (!featureFlagService.providerReady()) {
@@ -36,9 +51,9 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
     // LaunchDarkly is slow — turning an outage into a release. waitForReady() reports the timeout
     // to RUM.
     if (!ready) {
-      return router.parseUrl('/org/overview');
+      return fallback();
     }
   }
 
-  return featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false)() ? true : router.parseUrl('/org/overview');
+  return featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false)() ? true : fallback();
 };

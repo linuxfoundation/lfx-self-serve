@@ -634,3 +634,207 @@ export interface MentorshipMentorProfileResponse {
   profile: MentorshipMentorProfileDetails;
   history: MentorshipMentoringHistoryEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Mentee page types
+// ---------------------------------------------------------------------------
+
+/** Underline tabs on the mentee shell at `/mentorship/mentee/*`. */
+export type MentorshipMenteePageTab = 'overview' | 'tasks' | 'profile';
+
+/** Mentee task lifecycle on the My Application Tasks tab. */
+export type MentorshipMenteeTaskStatus = 'pending' | 'in-progress' | 'submitted' | 'completed';
+
+/** One task row on the mentee My Application Tasks tab. */
+export interface MentorshipMenteeTask {
+  id: string;
+  title: string;
+  description: string;
+  status: MentorshipMenteeTaskStatus;
+  dueDate?: string;
+  submittedDate?: string;
+}
+
+/** Response body from `GET /api/mentorship/mentee/tasks`. */
+export interface MentorshipMenteeTasksResponse {
+  data: MentorshipMenteeTask[];
+  total: number;
+}
+
+/**
+ * Mentee's own profile fields on `/mentorship/mentee/profile`.
+ *
+ * BFF mapping from `user_profiles` (`profile_type = mentee`) — do not invent columns:
+ * - `aboutMe` ← `introduction`
+ * - `skillsHave` ← `skill_set.skills`
+ * - `skillsWant` ← `skill_set.improvementSkills`
+ * - `additionalNotes` ← `skill_set.comments`
+ * - `resumeUrl` ← `profile_links.resumeLink` (Mentorship stores a URL; it has no upload API)
+ * - `resumeFileName` is display-only (derived from the URL). Not a stored column.
+ */
+export interface MentorshipMenteeProfileDetails {
+  aboutMe: string;
+  skillsHave: string[];
+  skillsWant: string[];
+  additionalNotes?: string;
+  resumeFileName?: string;
+  resumeUrl?: string;
+}
+
+/**
+ * Stored `applications.status` values. Never send `rejected` (program-only) or `active`
+ * (directory filter only — persisted value is `accepted`).
+ */
+export type MentorshipMenteeApplicationHistoryStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'graduated' | 'hold';
+
+/**
+ * One Application History row: an `applications` row with `role = mentee`, joined to
+ * `program_terms` + `programs`. Mentees are not `program_members`.
+ *
+ * - `id` ← `applications.id`
+ * - `programName` ← `programs.name` (`project_uid` is not a column — do not send a project)
+ * - `termName` ← `program_terms.name`
+ * - `submittedOn` ← BFF-formatted `applications.created_on`
+ * - `status` ← `applications.status`
+ */
+export interface MentorshipMenteeApplicationHistoryEntry {
+  id: string;
+  programName: string;
+  termName: string;
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  submittedOn: string;
+  status: MentorshipMenteeApplicationHistoryStatus;
+}
+
+/** Response body from `GET /api/mentorship/mentee/profile`. */
+export interface MentorshipMenteeProfileResponse {
+  profile: MentorshipMenteeProfileDetails;
+  history: MentorshipMenteeApplicationHistoryEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Mentee overview — three-phase model
+// ---------------------------------------------------------------------------
+
+/** The mentee overview progresses through three phases. */
+export type MentorshipMenteePhase = 'empty' | 'applicant' | 'accepted';
+
+/**
+ * Display status on applicant-phase cards.
+ *
+ * When the real BFF lands, these will be derived (not stored):
+ * - `'in-progress'` — application pending, tasks not yet submitted
+ * - `'awaiting-review'` — application pending, all tasks submitted
+ */
+export type MentorshipMenteeApplicationStatus = 'in-progress' | 'awaiting-review';
+
+/** Lightweight term reference for application cards. */
+export interface MentorshipMenteeTermRef {
+  id: string;
+  /** Display name for the term (e.g. "Fall 2026"). */
+  name: string;
+}
+
+/** One application card on the applicant overview (screen 2). */
+export interface MentorshipMenteeApplication {
+  id: string;
+  programId: string;
+  /** Two-letter abbreviation derived from project data. */
+  orgAbbreviation: string;
+  projectName: string;
+  term: MentorshipMenteeTermRef;
+  programName: string;
+  status: MentorshipMenteeApplicationStatus;
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  lastTaskUpdatedOn: string;
+  /** BFF pre-formatted display string (e.g. `'Aug 15, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  decisionExpectedDate: string;
+  prerequisiteTasksCompleted: number;
+  prerequisiteTasksTotal: number;
+  programLogoUrl?: string;
+}
+
+/**
+ * Outcome for a past application row.
+ * - `'not-selected'` is a display-friendly alias for `applications.status = 'declined'`.
+ */
+export type MentorshipMenteePastOutcome = 'not-selected' | 'withdrawn' | 'accepted' | 'graduated';
+
+/** One row in the Past Applications table (screen 2). */
+export interface MentorshipMenteePastApplication {
+  id: string;
+  programName: string;
+  projectName: string;
+  termName: string;
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  lastTaskUpdatedOn: string;
+  /** BFF pre-formatted display string (e.g. `'Jul 10, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  decidedOn: string;
+  outcome: MentorshipMenteePastOutcome;
+}
+
+/** Mentor info shown on the accepted-phase card (screen 3). */
+export interface MentorshipMenteeActiveMentor {
+  /** Stable user/member identifier for tracking. */
+  id: string;
+  name: string;
+  avatarUrl?: string;
+}
+
+/**
+ * Task status on the accepted "Up Next" list.
+ * BFF may return `'pending'` or `'incomplete'` — both display as "To Do".
+ * `'in-progress'` maps to `tasks.status = 'in_progress'`.
+ */
+export type MentorshipMenteeUpNextTaskStatus = 'in-progress' | 'pending' | 'incomplete';
+
+/** One upcoming task row on the accepted-phase card (screen 3). */
+export interface MentorshipMenteeUpNextTask {
+  id: string;
+  name: string;
+  status: MentorshipMenteeUpNextTaskStatus;
+  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF **must** normalise the backend's date-only value to an explicit UTC instant before returning it — `DatePipe` with `'UTC'` relies on this to render the correct calendar day in every timezone. Mock data already follows this contract. */
+  dueDate: string;
+  /** `tasks.category` */
+  category?: 'prerequisite' | 'non_prerequisite';
+}
+
+/** The single accepted program on the accepted-phase overview (screen 3). */
+export interface MentorshipMenteeActiveProgram {
+  id: string;
+  programId: string;
+  projectName: string;
+  programName: string;
+  tasksCompleted: number;
+  tasksTotal: number;
+  /** All active mentors for this program. */
+  mentors: MentorshipMenteeActiveMentor[];
+  upNextTasks: MentorshipMenteeUpNextTask[];
+}
+
+// -- Discriminated union response -------------------------------------------
+
+export interface MentorshipMenteeOverviewEmpty {
+  phase: 'empty';
+}
+
+export interface MentorshipMenteeOverviewApplicant {
+  phase: 'applicant';
+  applications: MentorshipMenteeApplication[];
+  pastApplications: MentorshipMenteePastApplication[];
+  openTaskCount: number;
+}
+
+export interface MentorshipMenteeOverviewAccepted {
+  phase: 'accepted';
+  program: MentorshipMenteeActiveProgram;
+  openTaskCount: number;
+}
+
+/** Response body from `GET /api/mentorship/mentee/overview`. */
+export type MentorshipMenteeOverviewResponse = MentorshipMenteeOverviewEmpty | MentorshipMenteeOverviewApplicant | MentorshipMenteeOverviewAccepted;
+
+/** Response body from `GET /api/mentorship/mentee/has-profile`. */
+export interface MentorshipMenteeHasProfileResponse {
+  hasProfile: boolean;
+}

@@ -55,7 +55,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
       imports: [OrgProjectDetailComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount } },
+        { provide: AccountContextService, useValue: { selectedAccount, selectedUrlSegment: signal('acme') } },
         // The page itself reads no flag; child components in its template do.
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
@@ -176,7 +176,10 @@ describe('OrgProjectDetailComponent — healthMeta', () => {
       imports: [OrgProjectDetailComponent],
       providers: [
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account) } },
+        {
+          provide: AccountContextService,
+          useValue: { selectedAccount: signal({ accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account), selectedUrlSegment: signal('acme') },
+        },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
         {
           provide: OrgLensProjectDetailService,

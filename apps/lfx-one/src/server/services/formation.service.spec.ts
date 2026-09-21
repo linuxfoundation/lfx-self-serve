@@ -29,6 +29,7 @@ import { MicroserviceError } from '../errors/microservice.error';
 const getProjectById = vi.fn();
 const getProjectIdBySlug = vi.fn();
 const getProjectSettings = vi.fn();
+const getDirectGrantProjectRows = vi.fn();
 const natsRequest = vi.fn();
 const proxyRequest = vi.fn();
 const proxyRequestWithResponse = vi.fn();
@@ -39,6 +40,7 @@ vi.mock('./project.service', () => ({
     public getProjectById = getProjectById;
     public getProjectIdBySlug = getProjectIdBySlug;
     public getProjectSettings = getProjectSettings;
+    public getDirectGrantProjectRows = getDirectGrantProjectRows;
   },
 }));
 // Backs `checkFormationTeamMembership` (GH-2705) — the `team:formation#member` half of
@@ -193,6 +195,7 @@ describe('FormationService', () => {
     getProjectSettings.mockReset();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warning).mockClear();
+    vi.mocked(logger.debug).mockClear();
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
@@ -206,6 +209,9 @@ describe('FormationService', () => {
     getProjectById.mockResolvedValue({ slug: 'live-project', name: 'Live Project', parent_uid: null, writer: true });
     getProjectIdBySlug.mockResolvedValue({ uid: 'live-project-1', exists: true });
     getProjectSettings.mockResolvedValue({ announcement_date: null });
+    // Default: the caller holds no direct project grant (#2795) — the invited-formation tests opt in.
+    getDirectGrantProjectRows.mockReset();
+    getDirectGrantProjectRows.mockResolvedValue([]);
   });
 
   describe('getFormationPeople (#2724)', () => {
@@ -378,6 +384,7 @@ describe('FormationService', () => {
 
       expect(result.people[0]).toEqual(expect.objectContaining({ job_title: 'Partner contact', organization: null, avatar: 'https://cdn.example/s.png' }));
       await expect(FormationService.userMetadataCacheValueForTests('sam.chen')).resolves.toEqual({
+        name: null,
         job_title: 'Partner contact',
         organization: null,
         picture: 'https://cdn.example/s.png',
@@ -790,6 +797,58 @@ describe('FormationService', () => {
       expect(result.items).toHaveLength(2);
       expect(result.items.map((item) => item.template_item_key)).toEqual(['item-key-1', 'item-key-2']);
     });
+
+    it('enriches item owner.name with the display name from user metadata, replacing the username placeholder', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' })]));
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].owner).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+    });
+
+    it('leaves owner.name as the username when metadata has no name fields', async () => {
+      proxyRequest.mockResolvedValue(checklist([rawItem({ assignee: 'sam.chen' })]));
+      natsRequest.mockResolvedValue({ data: JSON.stringify({ success: true, data: { job_title: 'Engineer' } }) });
+
+      const result = await service.getProjectFormation(buildReq(), 'live-project');
+
+      expect(result.items[0].owner).toEqual({ username: 'sam.chen', name: 'sam.chen' });
+    });
+
+    it('resolveDisplayName: given+family beats top-level name; lone part is a last resort; empty profile resolves null', async () => {
+      // Verifies the three-tier precedence via the process-wide metadata cache, which stores the
+      // resolved name from fetchUserMetadata → resolveDisplayName.
+      proxyRequest.mockResolvedValue(checklist([]));
+      getProjectSettings.mockResolvedValue({
+        announcement_date: null,
+        writers: [{ username: 'u1' }, { username: 'u3' }],
+        auditors: [{ username: 'u2' }, { username: 'u4' }],
+      });
+
+      // u1: both parts present — given+family wins over top-level name
+      // u2: only given_name, top-level name present — falls through to top-level name
+      // u3: only given_name, no top-level name — lone part is last resort
+      // u4: empty profile — resolves to null
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'u1')
+          return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', family_name: 'Lovelace', name: 'Ada Lovelace Full' } }) };
+        if (username === 'u2') return { data: JSON.stringify({ success: true, data: { given_name: 'Ada', name: 'Full Name' } }) };
+        if (username === 'u3') return { data: JSON.stringify({ success: true, data: { given_name: 'Ada' } }) };
+        if (username === 'u4') return { data: JSON.stringify({ success: true, data: {} }) };
+        return { data: '' };
+      });
+
+      await service.getFormationPeople(buildReq(), 'live-project');
+
+      await expect(FormationService.userMetadataCacheValueForTests('u1')).resolves.toMatchObject({ name: 'Ada Lovelace' });
+      await expect(FormationService.userMetadataCacheValueForTests('u2')).resolves.toMatchObject({ name: 'Full Name' });
+      await expect(FormationService.userMetadataCacheValueForTests('u3')).resolves.toMatchObject({ name: 'Ada' });
+      await expect(FormationService.userMetadataCacheValueForTests('u4')).resolves.toMatchObject({ name: null });
+    });
   });
 
   describe('getFormationItemDetail', () => {
@@ -956,6 +1015,80 @@ describe('FormationService', () => {
       expect(result.item.template_item_key).toBe('item-key-1');
       expect(result.history).toEqual([]);
       expect(result.history_state).toBe('complete');
+    });
+
+    it('enriches activity actor.name with the display name from user metadata, replacing the username placeholder', async () => {
+      mockRoutes([activityPage([activityEntry({ actor: 'sam.chen', set_by: 'user' })])]);
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+    });
+
+    it('leaves actor.name as "System" and skips metadata lookup when actor is the system sentinel', async () => {
+      mockRoutes([activityPage([activityEntry({ actor: 'system', set_by: 'system' })])]);
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      expect(result.history[0].actor).toEqual({ username: 'system', name: 'System' });
+      // No NATS call should be issued for the system actor.
+      expect(natsRequest).not.toHaveBeenCalled();
+    });
+
+    it('enriches before.assignee and after.assignee with display names on assignee_changed entries', async () => {
+      mockRoutes([
+        activityPage([
+          activityEntry({
+            actor: 'sam.chen',
+            action: 'assignee_changed',
+            before: { status: null, assignee: null },
+            after: { status: null, assignee: 'andrest50dev' },
+          }),
+        ]),
+      ]);
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        if (username === 'andrest50dev') return { data: JSON.stringify({ success: true, data: { given_name: 'Andres', family_name: 'Tobon' } }) };
+        return { data: '' };
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      // Actor enriched the same as before.
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+      // Assignee snapshot in after.assignee replaced with display name, not raw username.
+      expect(result.history[0].after?.assignee).toBe('Andres Tobon');
+      // before.assignee was null (Unassigned) — must stay null, not be turned into a name.
+      expect(result.history[0].before?.assignee).toBeNull();
+    });
+
+    it('leaves before/after assignee as username when metadata lookup fails for the assignee', async () => {
+      mockRoutes([
+        activityPage([
+          activityEntry({
+            actor: 'sam.chen',
+            action: 'assignee_changed',
+            before: { status: null, assignee: null },
+            after: { status: null, assignee: 'unknown.user' },
+          }),
+        ]),
+      ]);
+      // Only the actor resolves; the assignee lookup fails.
+      natsRequest.mockImplementation(async (_subject: string, username: string) => {
+        if (username === 'sam.chen') return { data: JSON.stringify({ success: true, data: { given_name: 'Sam', family_name: 'Chen' } }) };
+        return Promise.reject(new Error('user not found'));
+      });
+
+      const result = await service.getFormationItemDetail(buildReq(), 'live-project-1', 'item-key-1');
+
+      // Actor enriched successfully.
+      expect(result.history[0].actor).toEqual({ username: 'sam.chen', name: 'Sam Chen' });
+      // Assignee falls back gracefully to the raw username.
+      expect(result.history[0].after?.assignee).toBe('unknown.user');
     });
   });
 
@@ -1494,14 +1627,30 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      // `Active` is dropped from the queue entirely (LFXV2-3386) — see the dedicated exclusion
-      // test below; the two unmapped survivors here are Disengaged + the unrecognized stage.
-      const rawSubStages = ['Formation - Exploratory', 'Formation - Engaged', 'Formation - On Hold', 'Formation - Disengaged', 'Active', 'not-a-real-stage'];
-      const rows = rawSubStages.map((rawSubStage, i) => ({
+      // `Active` and `Formation - Disengaged` are dropped by their `completed`/`frozen` lifecycle,
+      // not by their stage — see the dedicated exclusion test below — so the only unmapped
+      // survivor here is the unrecognized stage, which is still a live formation and stays
+      // visible (GH-2366 fail-open).
+      //
+      // Each row carries the lifecycle the formation service would really publish for its stage
+      // (model.LifecycleForStage). Pairing a finished stage with `live` is not what upstream is
+      // expected to produce, so fixtures here pair stage with its real lifecycle; a fixture that
+      // mixes them casually can no longer tell a working filter from a broken one. The deliberate
+      // contradiction is pinned on its own below.
+      const rawSubStages: [string, string][] = [
+        ['Formation - Exploratory', 'live'],
+        ['Formation - Engaged', 'live'],
+        ['Formation - On Hold', 'live'],
+        ['Formation - Disengaged', 'frozen'],
+        ['Active', 'completed'],
+        ['not-a-real-stage', 'live'],
+      ];
+      const rows = rawSubStages.map(([rawSubStage, lifecycle], i) => ({
         ...baseRow,
         formation_uid: `formation:p${i}`,
         project_uid: `p${i}`,
         sub_stage: rawSubStage,
+        lifecycle,
       }));
       proxyRequest.mockResolvedValue({
         resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
@@ -1509,9 +1658,14 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null, null]);
-      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual(rawSubStages.filter((stage) => stage !== 'Active'));
-      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+      expect(result.rows.map((row) => row.sub_stage)).toEqual(['exploratory', 'engaged', 'on_hold', null]);
+      expect(result.rows.map((row) => row.sub_stage_raw)).toEqual([
+        'Formation - Exploratory',
+        'Formation - Engaged',
+        'Formation - On Hold',
+        'not-a-real-stage',
+      ]);
+      expect(result.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 1, total: 4 });
 
       // An unmapped row is never counted in a stage filter — same as `null !== 'engaged'`.
       const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
@@ -1519,13 +1673,14 @@ describe('FormationService', () => {
       expect(engagedOnly.rows[0].project_uid).toBe('p1');
       // Tiles stay scoped to the full queue even when `rows` is narrowed by the subStage filter —
       // `buildQueueTilesFromRows` runs on `inFormationRows`, before filtering (formation.service.ts).
-      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 2, total: 5 });
+      expect(engagedOnly.tiles).toMatchObject({ exploratory: 1, engaged: 1, on_hold: 1, unmapped: 1, total: 4 });
     });
 
-    // LFXV2-3386: a project that completed (or was retired from) Formation is dropped from the
-    // queue's rows AND tiles — but only via the named Active/Archived deny-list: Disengaged,
-    // unknown stages (GH-2366 fail-open), and gates-cleared rows still in `Formation - *` all stay.
-    it('excludes post-Formation (Active/Archived) rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
+    // The "Ready to activate" tile used to be a client-side count over the served rows — which a
+    // stage pill had already narrowed — so it read 0 the moment the one ready row was filtered out
+    // while its three server-counted neighbours held still. All four tiles now come from the same
+    // unfiltered set.
+    it('counts the ready and blocked tiles over the unfiltered queue, so a stage pill cannot move them', async () => {
       const baseRow: UpstreamFormationQueueRow = {
         formation_uid: 'formation:p',
         project_uid: 'p',
@@ -1543,10 +1698,64 @@ describe('FormationService', () => {
         assignees: [],
       };
       const rows: UpstreamFormationQueueRow[] = [
-        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active' },
-        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived' },
+        { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', sub_stage: 'Formation - Exploratory', gates_cleared: true },
+        { ...baseRow, formation_uid: 'formation:two', project_uid: 'two', blocked_item_titles: ['Charter agreed', 'Contribution agreement'] },
+        { ...baseRow, formation_uid: 'formation:one', project_uid: 'one', blocked_item_titles: ['Formation review packet'] },
+        { ...baseRow, formation_uid: 'formation:plain', project_uid: 'plain' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const all = await service.getFormationsQueue(buildReq());
+      expect(all.tiles).toMatchObject({ ready: 1, blocked: 2, blocked_items: 3, total: 4 });
+
+      // The ready row is Exploratory: an Engaged pill drops it from `rows` but must not drop it from the tile.
+      const engagedOnly = await service.getFormationsQueue(buildReq(), 'engaged');
+      expect(engagedOnly.rows.map((row) => row.project_uid)).toEqual(['two', 'one', 'plain']);
+      expect(engagedOnly.tiles).toMatchObject({ ready: 1, blocked: 2, blocked_items: 3, total: 4 });
+    });
+
+    // A formation that has left Formation — completed it (Active), been retired from it
+    // (Archived), or walked away from it (Disengaged) — is dropped from the queue's rows AND its
+    // tiles. GH-2584 replaced the old Active/Archived stage deny-list with the lifecycle the
+    // formation service publishes, which is what finally covers Disengaged: it is `frozen`, the
+    // same value Archived gets, because leaving formation is one outcome upstream and not two.
+    //
+    // Unknown stages (GH-2366 fail-open) and gates-cleared rows still in `Formation - *` stay —
+    // both are still `live`, so the new rule keeps them without naming any stage.
+    //
+    // This is the only test that exercises the real filter. The Playwright suite mocks the BFF, so
+    // it can prove the page renders what the BFF returns but never what the BFF decides.
+    it('excludes Active, Archived and Disengaged rows from rows and tiles, keeping gates-cleared and unknown-stage rows', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:active', project_uid: 'active', sub_stage: 'Active', lifecycle: 'completed' },
+        { ...baseRow, formation_uid: 'formation:archived', project_uid: 'archived', sub_stage: 'Archived', lifecycle: 'frozen' },
+        { ...baseRow, formation_uid: 'formation:disengaged', project_uid: 'disengaged', sub_stage: 'Formation - Disengaged', lifecycle: 'frozen' },
         { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', gates_cleared: true, is_activating: true },
         { ...baseRow, formation_uid: 'formation:unknown', project_uid: 'unknown', sub_stage: 'not-a-real-stage' },
+        // Confidential is pre-announcement and hidden elsewhere (navigation.service.ts), which is
+        // exactly why it is pinned here: it is still forming, so it must survive a filter that no
+        // longer looks at the stage at all. It has no queue-taxonomy equivalent, so it lands in
+        // `unmapped` rather than a sub-stage tile. Access, not sub-stage, is what hides it from a
+        // caller who shouldn't see it — and that happens upstream of this filter (PR #2767 review).
+        { ...baseRow, formation_uid: 'formation:confidential', project_uid: 'confidential', sub_stage: 'Formation - Confidential' },
       ];
       proxyRequest.mockResolvedValue({
         resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
@@ -1554,9 +1763,116 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown']);
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown', 'confidential']);
       expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
-      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 1, total: 2, foundations: 0, projects: 2 });
+      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3, ready: 1, blocked: 0, blocked_items: 0 });
+      // Some rows dropped but not all, so DEBUG rather than the WARN that means the tag stopped
+      // being honoured. The lifecycle list is what an operator reads to tell those apart, so it is
+      // asserted rather than left to the payload's shape: only the dropped rows' values appear,
+      // deduplicated, and no `live` among them (PR #2767 review).
+      expect(vi.mocked(logger.debug)).toHaveBeenCalledWith(expect.anything(), 'get_formations_queue', 'Dropped rows whose lifecycle is not live', {
+        dropped: 3,
+        of: 6,
+        lifecycles: ['completed', 'frozen'],
+      });
+    });
+
+    // The contradictory state, pinned deliberately: a terminal stage still carrying `live`.
+    //
+    // These rows are KEPT, and that is the whole design rather than an oversight. GH-2584 moved
+    // the queue off re-deriving membership from the stage precisely because two sources of truth
+    // disagreeing is what produced the original bug, so the stage cannot be allowed to overrule
+    // the lifecycle here — asserting exclusion would reinstate the deny-list this PR removed and
+    // give the queue back its second opinion.
+    //
+    // The combination does not occur today: every one of the 134 prod formation documents agrees
+    // with its stage (PR #2767). If it ever does occur, the defect is upstream in the formation
+    // service's reconcile, and this test is where a reader learns the queue will faithfully show
+    // the row rather than quietly paper over it. Flipping these expectations is therefore a
+    // deliberate reversal of GH-2584, not a fix — which is exactly why it is written down.
+    it('keeps a terminal-stage row whose lifecycle still says live — lifecycle is the single source of truth, by design', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:stale-disengaged', project_uid: 'stale-disengaged', sub_stage: 'Formation - Disengaged' },
+        { ...baseRow, formation_uid: 'formation:stale-active', project_uid: 'stale-active', sub_stage: 'Active' },
+        { ...baseRow, formation_uid: 'formation:stale-archived', project_uid: 'stale-archived', sub_stage: 'Archived' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['stale-disengaged', 'stale-active', 'stale-archived']);
+      expect(result.tiles).toMatchObject({ unmapped: 3, total: 3 });
+    });
+
+    // The filter fails CLOSED on a lifecycle it doesn't recognise: `normalizeFormationLifecycle`
+    // maps anything outside live/completed/frozen to null, and `isFormationLifecycleLive(null)` is
+    // false, so the row is dropped. That is the opposite of GH-2366's fail-open treatment of an
+    // unrecognised sub_stage, and the asymmetry is deliberate — an unreadable stage label is
+    // cosmetic, an unreadable lifecycle means we cannot tell whether formation is over.
+    //
+    // Pinned because it is a decision, not a consequence, and because it is the one way this
+    // change can hide work that is genuinely in progress. A row whose stage still says
+    // `Formation - *` while its lifecycle is missing or stale is exactly that case.
+    // The third case omits the key rather than emptying it: `lifecycle` is a required `string` on
+    // the type, so only a malformed upstream document can reach `undefined` — which is precisely
+    // the document this filter has to survive, and which an empty string does not stand in for.
+    it.each<[string, Partial<UpstreamFormationQueueRow>]>([
+      ['an empty string', { lifecycle: '' }],
+      ['unrecognised', { lifecycle: 'retired' }],
+      ['absent from the document', {}],
+    ])('drops a row whose lifecycle is %s, even though its stage says it is still forming', async (_label, lifecyclePatch) => {
+      const row: Partial<UpstreamFormationQueueRow> = {
+        formation_uid: 'formation:no-lifecycle',
+        project_uid: 'no-lifecycle',
+        project_name: 'No Lifecycle',
+        project_slug: 'no-lifecycle',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+        ...lifecyclePatch,
+      };
+      proxyRequest.mockResolvedValue({
+        resources: [{ type: 'formation', id: 'formation:no-lifecycle', data: row }],
+      } satisfies QueryServiceResponse<Partial<UpstreamFormationQueueRow>>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows).toEqual([]);
+      expect(result.tiles).toMatchObject({ total: 0, unmapped: 0 });
+      // Every row dropped, so this takes the WARN branch — the one signal that separates an empty
+      // queue caused by `lifecycle:live` no longer being honoured from the identical-looking
+      // "nothing is forming right now". `lifecycles: [null]` is the operator's cue that the field
+      // was unreadable rather than the formation having genuinely finished (PR #2767 review).
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_formations_queue',
+        'Every row failed the lifecycle backstop — lifecycle:live may no longer be honoured upstream',
+        { dropped: 1, of: 1, lifecycles: [null] }
+      );
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
@@ -1601,7 +1917,10 @@ describe('FormationService', () => {
         expect(call).toBeDefined();
         const params = call?.[4] as Record<string, unknown>;
         expect(params).not.toHaveProperty('parent');
-        expect(params).toMatchObject({ type: 'formation' });
+        // `tags_all` asserted here and below because nothing else can: the client-side filter
+        // would still produce a correct queue if this parameter were dropped, so its absence is
+        // invisible to every other test in this file (GH-2584).
+        expect(params).toMatchObject({ type: 'formation', tags_all: ['lifecycle:live'] });
       });
 
       it('sends `parent: project:<uid>` exactly when a foundation is selected', async () => {
@@ -1609,7 +1928,7 @@ describe('FormationService', () => {
 
         const call = proxyRequest.mock.calls.find((c) => c[2] === '/query/resources');
         const params = call?.[4] as Record<string, unknown>;
-        expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1' });
+        expect(params).toMatchObject({ type: 'formation', parent: 'project:aaif-uid-1', tags_all: ['lifecycle:live'] });
       });
 
       it('counts tiles over the foundation-scoped rows, not a global set', async () => {
@@ -1786,10 +2105,185 @@ describe('FormationService', () => {
       const itemCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation_item');
       const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');
       expect(itemCall?.[4]).toMatchObject({ type: 'formation_item', tags_all: ['assignee:alice', 'lifecycle:live'] });
-      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags_all: ['assignee:alice', 'lifecycle:live'] });
+      // No direct-grant formation project (the beforeEach default), so the OR'd `tags` is the
+      // assignee tag alone (#2795).
+      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags: ['assignee:alice'], tags_all: ['lifecycle:live'] });
     });
 
-    it('returns a complete empty result and skips the formation-aggregate query entirely when the caller has no assigned live items', async () => {
+    it('lists a formation the caller holds a direct project grant on even with nothing assigned — a view-only invite is enough (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([], [formationIndexRow({ assignees: [], progress: { not_started: 17 } })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.items).toEqual([]);
+      expect(result.formations).toHaveLength(1);
+      expect(result.formations[0]).toMatchObject({
+        formation_uid: 'formation:live-project-1',
+        project_uid: 'live-project-1',
+        assigned_to_do: 0,
+        assigned_done: 0,
+        assigned_skipped: 0,
+        items_done: 0,
+        items_total: 17,
+      });
+      // The grant set is the invite membership itself, so a silently-partial page set would drop
+      // invited formations under a `'complete'` state — the read must fail into the degrade path.
+      expect(getDirectGrantProjectRows).toHaveBeenCalledWith(expect.anything(), { failOnPartial: true });
+      // One aggregate read for "assigned OR invited": the assignee tag and one project_uid tag per
+      // direct-grant formation project OR'd via `tags`, lifecycle AND'd via `tags_all`.
+      const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');
+      expect(formationCall?.[4]).toMatchObject({ type: 'formation', tags: ['assignee:alice', 'project_uid:live-project-1'], tags_all: ['lifecycle:live'] });
+      // No open items, so no can_write fan-out.
+      expect(getProjectById).not.toHaveBeenCalled();
+    });
+
+    it('chunks the project_uid tags across aggregate reads so a caller granted on many formations never overflows the request line (#2795)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      // Every aggregate read returns both rows, so the join must also dedupe across batches.
+      mockQueryResources(
+        [],
+        [
+          formationIndexRow({ formation_uid: 'formation:formation-project-0', project_uid: 'formation-project-0' }),
+          formationIndexRow({ formation_uid: 'formation:formation-project-149', project_uid: 'formation-project-149' }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      const formationCalls = proxyRequest.mock.calls
+        .filter((c) => (c[4] as { type: string }).type === 'formation')
+        .map((c) => c[4] as { tags: string[]; tags_all: string[] });
+      expect(formationCalls).toHaveLength(2);
+      expect(formationCalls[0].tags).toHaveLength(101);
+      expect(formationCalls[0].tags[0]).toBe('assignee:alice');
+      expect(formationCalls[0].tags[1]).toBe('project_uid:formation-project-0');
+      expect(formationCalls[1].tags).toHaveLength(50);
+      expect(formationCalls[1].tags).not.toContain('assignee:alice');
+      expect(formationCalls[1].tags[49]).toBe('project_uid:formation-project-149');
+      expect(formationCalls.every((call) => call.tags_all.join() === 'lifecycle:live')).toBe(true);
+      expect(result.state).toBe('complete');
+      expect(result.formations.map((f) => f.formation_uid).sort()).toEqual(['formation:formation-project-0', 'formation:formation-project-149']);
+    });
+
+    it('keeps the aggregate rows from batches that succeeded and reports partial when one batch fails (PR #2799 review)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      proxyRequest.mockImplementation((...args: unknown[]) => {
+        const params = args[4] as { type: string; tags?: string[] };
+        if (params.type === 'formation_item') {
+          const item = itemIndexRow({ object_id: 'item-1' });
+          return Promise.resolve({ resources: [{ type: 'formation_item', id: item.object_id, data: item }] });
+        }
+        // The second batch (tags 101..150) fails; the first, which also carries the assignee tag, succeeds.
+        if (params.tags?.includes('project_uid:formation-project-149')) {
+          return Promise.reject(new Error('batch failed'));
+        }
+        const row = formationIndexRow();
+        return Promise.resolve({ resources: [{ type: 'formation', id: row.formation_uid, data: row }] });
+      });
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('formations will be incomplete'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('folds an assigned formation the caller is also invited to into one row, with its buckets (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'done' })], [formationIndexRow({ progress: { done: 1, not_started: 2 } })]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.formations).toHaveLength(1);
+      expect(result.formations[0]).toMatchObject({
+        formation_uid: 'formation:live-project-1',
+        assigned_done: 1,
+        assigned_to_do: 0,
+        items_done: 1,
+        items_total: 3,
+      });
+    });
+
+    it('ignores a direct grant on a project that is not in a Formation stage (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([
+        { uid: 'active-project', slug: 'active-project', stage: 'Active' },
+        { uid: 'prospect-project', slug: 'prospect-project', stage: 'Prospect' },
+      ]);
+      mockQueryResources([], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'complete' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('skips an aggregate row that still carries the caller as an assignee but has no live item of theirs and no grant (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources(
+        [],
+        [
+          formationIndexRow(),
+          formationIndexRow({ formation_uid: 'formation:stale-project', project_uid: 'stale-project-1', project_slug: 'stale-project', assignees: ['alice'] }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('complete');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+    });
+
+    it('reports partial, with the assigned formations intact, when the direct-grant read fails (#2795)', async () => {
+      getDirectGrantProjectRows.mockRejectedValue(new Error('read_tuples timed out'));
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result.state).toBe('partial');
+      expect(result.formations.map((f) => f.formation_uid)).toEqual(['formation:live-project-1']);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_my_formation_work',
+        expect.stringContaining('Direct-grant project read failed'),
+        expect.objectContaining({ err: expect.any(Error) })
+      );
+    });
+
+    it('reports partial rather than a false "nothing here" when the direct-grant read fails and nothing is assigned (#2795)', async () => {
+      getDirectGrantProjectRows.mockRejectedValue(new Error('read_tuples timed out'));
+      mockQueryResources([], []);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      expect(result).toEqual({ formations: [], items: [], state: 'partial' });
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('never issues the direct-grant read or the aggregate query on the items-only path (#2795)', async () => {
+      getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
+      mockQueryResources([itemIndexRow({ object_id: 'item-1' })], [formationIndexRow()]);
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice', { includeFormations: false });
+
+      expect(result.formations).toEqual([]);
+      expect(result.items.map((item) => item.item_uid)).toEqual(['item-1']);
+      expect(getDirectGrantProjectRows).not.toHaveBeenCalled();
+      expect(proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation')).toBeUndefined();
+    });
+
+    it('returns a complete empty result and skips the formation-aggregate query entirely when the caller has no assigned live items and no direct-grant formation project', async () => {
       mockQueryResources([], []);
 
       const result = await service.getMyFormationWork(buildReq(), 'alice');

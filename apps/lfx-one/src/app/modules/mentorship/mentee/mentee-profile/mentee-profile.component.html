@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="mentorship-mentee-profile">
+  <lfx-mentorship-profile-card />
+
+  @if (!hasLoaded()) {
+    <lfx-route-loading data-testid="mentorship-mentee-profile-loading" />
+  } @else if (loadError(); as error) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Could not load your mentee profile"
+      [subtitle]="error"
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-rotate-right"
+      [withCard]="false"
+      (ctaClick)="retry()"
+      data-testid="mentorship-mentee-profile-error-state" />
+  } @else {
+    <lfx-mentorship-mentee-profile-details [profile]="profile()" (editClick)="onEditProfile()" />
+    <lfx-mentorship-application-history [entries]="history()" />
+  }
+</div>
+
+<lfx-mentorship-mentee-profile-edit-drawer />

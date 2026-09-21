@@ -59,13 +59,40 @@ export const FORMATION_INVITE_ROLE_OPTIONS = [
 ] as const;
 
 /**
+ * Assignee picker copy (#2594): the drawer searches the people on this formation, so the
+ * placeholder says so, the empty state points at the one remedy (invite them first), and a
+ * pending invitee's row explains why it cannot be picked yet.
+ */
+export const FORMATION_ASSIGNEE_PLACEHOLDER = 'Search people on this formation by name or email';
+export const FORMATION_ASSIGNEE_LOADING_PLACEHOLDER = 'Loading people…';
+/** The pre-#2594 wording, kept for the directory fallback so the box never claims a scope it does not have. */
+export const FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER = 'Search for a person…';
+export const FORMATION_ASSIGNEE_EMPTY_MESSAGE = 'No one on this formation matches. Invite them from the People panel, then assign.';
+export const FORMATION_ASSIGNEE_PENDING_NOTE = 'Invite pending — assignable once they accept';
+
+/**
+ * Invite dialog search mode (#2772): one box replaces Name + Email and searches the
+ * committee-member directory by name or email; the manual path stays for a partner the index
+ * cannot surface, since the invite email needs a name upstream.
+ */
+export const FORMATION_INVITE_SEARCH_PLACEHOLDER = 'Search people by name or email';
+export const FORMATION_INVITE_SEARCH_HINT = 'Not finding them?';
+/** Same wording as lfx-user-search's own panel footer, which triggers the same switch. */
+export const FORMATION_INVITE_MANUAL_ENTRY_LABEL = 'Enter details manually';
+export const FORMATION_INVITE_BACK_TO_SEARCH_LABEL = '← Back to search';
+export const FORMATION_INVITE_SEARCH_REQUIRED_MESSAGE = 'Pick a person from the search results, or enter their details manually.';
+/** Toast when a searched address has no LF account and the pick carried no name to put on the invite email. */
+export const FORMATION_INVITE_NAME_NEEDED_SUMMARY = 'Name needed';
+export const FORMATION_INVITE_NAME_NEEDED_DETAIL = 'No LF account was found for this address. Enter their name so the invite email can be sent.';
+
+/**
  * Batch size for the BFF's per-person user-metadata fan-out. Settings lists are small (tens, not
  * hundreds), so this bounds concurrent NATS requests without serialising the whole list.
  */
 export const FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE = 8;
 
 /**
- * How long the BFF memoises one person's user-metadata read (title / organization / picture)
+ * How long the BFF memoises one person's user-metadata read (name, title, organization, picture)
  * across requests. The people card mounts on every checklist load on both hosts, and these
  * fields change rarely, so a revisit inside this window replays no per-person NATS fan-out.
  */
@@ -81,6 +108,13 @@ export const FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS = 4000;
 
 /** Hard cap on memoised user-metadata entries per process; the oldest entry is evicted once reached. */
 export const FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES = 2000;
+
+/**
+ * The reserved username the formation service uses for system-generated activity entries. Activity
+ * mapper and enrichment helper both need to recognise it; sharing a constant prevents silent drift
+ * if the sentinel ever changes.
+ */
+export const FORMATION_SYSTEM_ACTOR_USERNAME = 'system';
 
 /**
  * Factory, not a shared object — it backs both a `toSignal` initial value and a `catchError`

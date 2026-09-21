@@ -156,11 +156,22 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
 
 /**
+ * The shorter readiness budget for a guard whose route renders correctly without the flag and only
+ * *redirects* when it is on (`formationOverviewRedirectGuard`, #2754). The page under it is already
+ * settled and interactive while the guard waits, so a slow provider must not be allowed to yank it
+ * from under the user ten seconds in: past this budget the guard fails open and the page stays.
+ * `waitForReady` still answers immediately when the provider is already ready or in ERROR, so this
+ * only bounds the tail.
+ */
+export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
+
+/**
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
- * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was
- * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
- * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
+ * checklist section, and the Formations queue (epic #1965). It also gates the project lens's
+ * Formation-only sidebar and the `/project/overview` → `/project/formation` landing redirect for a
+ * project in a Formation stage (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`,
+ * both on `isFormationStageGate`). Staged targeting (named users, then LF Staff, then
  * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
  * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
  * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.

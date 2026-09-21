@@ -69,7 +69,7 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
   });
 });
 
-describe('FormationsQueueComponent — unmapped sub_stage tile (GH-2366)', () => {
+describe('FormationsQueueComponent — "In formation" tile subLine (GH-2366, GH-2584)', () => {
   let fixture: ComponentFixture<FormationsQueueComponent>;
 
   const render = async (response: FormationsQueueResponse): Promise<void> => {
@@ -90,20 +90,81 @@ describe('FormationsQueueComponent — unmapped sub_stage tile (GH-2366)', () =>
     fixture.detectChanges();
   };
 
-  it('appends the unmapped count to the "In formation" subLine when tiles.unmapped > 0', async () => {
+  // GH-2584 removed the clause this pair used to assert. The queue now lists only formations still
+  // in progress, so "outside formation stages" described none of its rows — an unmapped row is
+  // inside formation at a sub-stage the tiles have no name for. The count is still computed and
+  // still logged server-side as the detector for a new upstream sub-stage; it just has no honest
+  // one-line phrasing, so the tile stays silent about it.
+  it('never claims rows are outside formation stages, even when tiles.unmapped is non-zero', async () => {
     await render({
       rows: [],
-      tiles: { total: 8, foundations: 1, projects: 7, exploratory: 5, engaged: 1, on_hold: 0, unmapped: 2 },
+      tiles: { total: 8, foundations: 1, projects: 7, exploratory: 5, engaged: 1, on_hold: 0, unmapped: 2, ready: 0, blocked: 0, blocked_items: 0 },
     });
 
     const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
-    expect(subLine).toContain('2 outside formation stages');
+    expect(subLine).not.toContain('outside formation stages');
+    // Asserted positively too: `not.toContain` alone would also pass on an empty or missing
+    // subLine, which is a different bug that would otherwise ship unnoticed.
+    expect(subLine).toContain('1 foundation · 7 projects');
   });
 
-  it('omits the unmapped clause from the "In formation" subLine when tiles.unmapped is 0', async () => {
+  it('renders the foundations and projects breakdown when there is nothing in the queue', async () => {
     await render(createEmptyFormationsQueueResponse());
 
     const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
-    expect(subLine).not.toContain('outside formation stages');
+    expect(subLine).toContain('0 foundations · 0 projects');
+  });
+});
+
+describe('FormationsQueueComponent — health tiles (#2782)', () => {
+  let fixture: ComponentFixture<FormationsQueueComponent>;
+
+  const render = async (response: FormationsQueueResponse): Promise<void> => {
+    TestBed.resetTestingModule();
+
+    await TestBed.configureTestingModule({
+      imports: [FormationsQueueComponent],
+      providers: [
+        provideRouter([]),
+        { provide: FormationService, useValue: { getFormationsQueue: vi.fn(() => of(response)) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation: signal<ProjectContext | null>(null) } },
+      ],
+    }).compileComponents();
+
+    fixture = TestBed.createComponent(FormationsQueueComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  };
+
+  const tile = (label: string): HTMLElement | null => fixture.nativeElement.querySelector(`[data-testid="stat-card-${label}"]`);
+
+  // "Ready to activate" used to be `rows().filter(gates_cleared).length` — a count over the
+  // served, already-filtered rows — while its neighbours came from the server's unfiltered
+  // tiles. With rows empty here, that old formula would read 0 against a server count of 2.
+  it('reads every tile from the server counts, never from the served rows', async () => {
+    await render({
+      rows: [],
+      tiles: { total: 5, foundations: 2, projects: 3, exploratory: 1, engaged: 3, on_hold: 1, unmapped: 0, ready: 2, blocked: 1, blocked_items: 3 },
+    });
+
+    expect(tile('In formation')?.querySelector('p')?.textContent?.trim()).toBe('5');
+    expect(tile('Ready to activate')?.querySelector('p')?.textContent?.trim()).toBe('2');
+    expect(tile('Blocked')?.querySelector('p')?.textContent?.trim()).toBe('1');
+    expect(tile('Blocked')?.textContent).toContain('3 blocked items');
+    expect(tile('On hold')?.querySelector('p')?.textContent?.trim()).toBe('1');
+    // The per-stage counts moved onto the filter pills, where the stage filter already is.
+    expect(tile('Exploratory')).toBeNull();
+    expect(tile('Engaged')).toBeNull();
+  });
+
+  it('singularises the breakdown copy', async () => {
+    await render({
+      rows: [],
+      tiles: { total: 2, foundations: 1, projects: 1, exploratory: 0, engaged: 2, on_hold: 0, unmapped: 0, ready: 0, blocked: 1, blocked_items: 1 },
+    });
+
+    expect(tile('In formation')?.textContent).toContain('1 foundation · 1 project');
+    expect(tile('Blocked')?.textContent).toContain('1 blocked item');
   });
 });

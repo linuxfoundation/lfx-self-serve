@@ -46,22 +46,46 @@ export class AccountContextService {
   public readonly selectedAccount: WritableSignal<Account>;
 
   /**
-   * Spec 050: uid of the organization adopted from the `/org/{segment}/…` address by `orgPathParamGuard`
-   * — access-verified for this viewer at resolve time. While it is the selection, bootstrap paths
-   * (the persona refresh re-seeding organizations, the org-items default selection) must not replace
-   * it: that is exactly the silent substitution deep links exist to remove. Released when the user
-   * switches (`setAccount` with another uid) or the selection is cleared.
+   * Spec 050: uid of the organization the address names — adopted from `/org/{segment}/…` by
+   * `orgPathParamGuard` (access-verified for this viewer at resolve time), or the default / restored
+   * selection that address is about to be written from (`pinSelection`, lfx-self-serve#2570). While it
+   * is the selection, bootstrap paths (the persona refresh re-seeding organizations, the org-items
+   * default selection) must not replace it: that is exactly the silent substitution deep links exist
+   * to remove — and, for a viewer whose organizations come from grants rather than personas (staff),
+   * the persona refresh answers with *no* seeds, which without the pin resets an addressed page to the
+   * placeholder mid-render. Released when the user switches (`setAccount` with another uid) or the
+   * selection is cleared.
+   *
+   * The pin outlives the write. A default or restored selection made outside Org Lens (Me or Project
+   * lens, where the `'default'` write is a no-op) stays pinned even though no address names it, so
+   * the unpinned persona re-seed paths (`[]` → placeholder, cookie-restored selection deferring to
+   * seeds) run only before any default / restored / adopted selection exists. Intended: the
+   * mid-session reset is the defect wherever it happens — on the Me lens it blanks the selector the
+   * same way.
+   *
+   * Two kinds of pin, one uid (`pinSource`). An **address** pin (resolver hit, FR-020 stub, or a URL
+   * that already names the selection) was access-verified for this viewer and is honoured by every
+   * bootstrap path, including a later org-items reload — inherited or catalogue-only access need not
+   * appear on the first page. A **default** pin (the org-items default or cookie-restored match) came
+   * *from* the org-items list, so it holds only against the persona re-seed: a later authoritative
+   * org-items reload runs the normal selection path again — re-match, re-default to the first row, or
+   * the empty-response handling — and a revoked organization is released there rather than kept for
+   * the rest of the session. The data behind the bar is FGA-gated either way.
    */
   private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
+  private readonly pinSource: WritableSignal<'address' | 'default' | null> = signal<'address' | 'default' | null>(null);
 
-  /** Spec 050: the `/org/{segment}/…` segment of the current selection — slug when member-service published one, else the SFID; null for the placeholder. */
+  /** Spec 050: the `/org/{segment}/…` segment of the current selection — the indexed slug (org-items row or resolver answer) when one is known, else the SFID; null for the placeholder. Never member-service's slug: addresses resolve against the index. */
   public readonly selectedUrlSegment: Signal<string | null> = computed(() => orgUrlSegment(this.selectedAccount()));
 
-  /** True while the selection is the organization the address named (see `adoptFromAddress`). */
+  /** True while the selection is pinned — by an address or as a default (see `addressedUid`). Gates the persona re-seed. */
   public readonly isAddressedSelection: Signal<boolean> = computed(() => {
     const uid = this.addressedUid();
     return !!uid && uid === this.selectedAccount().uid;
   });
+
+  /** True while the selection is pinned by an **address** (resolver hit, FR-020 stub, or a URL naming it) — the only pin an org-items reload honours. */
+  public readonly isAdoptedFromAddress: Signal<boolean> = computed(() => this.isAddressedSelection() && this.pinSource() === 'address');
 
   /** Org-selector rows — persona seeds enriched with live Snowflake attributes; never empty between bootstrap and first response. */
   public readonly availableAccounts: Signal<Account[]> = computed(() => {
@@ -149,6 +173,19 @@ export class AccountContextService {
     }
   }
 
+  /**
+   * Spec 050: patches only the URL-identity slug of the current selection, from an indexed row (the
+   * org list). A slug-only change must not go through `setAccount`, which rebuilds the selection from
+   * the live Snowflake row and would revert display fields the canonical record has since patched
+   * (a rename propagated to member-service but not yet to Snowflake would flip back in the sidebar).
+   */
+  public setIndexedSlug(slug: string | null): void {
+    const current = this.selectedAccount();
+    const next: Account = { ...current, slug };
+    this.selectedAccount.set(next);
+    this.persistToStorage(next);
+  }
+
   public setAccount(account: Account): void {
     const live = this.liveAccounts().get(account.accountId);
     const next = live
@@ -165,6 +202,7 @@ export class AccountContextService {
     // A switch to another organization ends the address's claim on the selection.
     if (this.addressedUid() !== null && this.addressedUid() !== (next.uid ?? null)) {
       this.addressedUid.set(null);
+      this.pinSource.set(null);
     }
     this.selectedAccount.set(next);
     this.persistToStorage(next);
@@ -174,6 +212,36 @@ export class AccountContextService {
   public adoptFromAddress(account: Account): void {
     this.setAccount(account);
     this.addressedUid.set(account.uid ?? null);
+    this.pinSource.set(account.uid ? 'address' : null);
+  }
+
+  /**
+   * Pin the *current* selection without rebuilding it (lfx-self-serve#2570). For the two selections
+   * that become the address without going through the resolver: the org-items default (or
+   * cookie-restored match) that `navigateToSelectedOrg('default')` is about to write into
+   * `/org/{segment}/{page}` — a `'default'` pin — and a `/org/{segment}/…` visit whose segment already
+   * names the selection (the path guard's no-round-trip shortcut) — an `'address'` pin, exactly as a
+   * resolver hit. See `addressedUid` for what each kind holds against. Not a `setAccount`: that would
+   * re-merge the live Snowflake row and revert display fields the canonical record has since patched.
+   *
+   * An `'address'` pin **upgrades** a `'default'` pin on the same organization, and a `'default'` pin
+   * never downgrades an `'address'` one. The upgrade is deliberate (lfx-self-serve#2793): once the
+   * default write has produced `/org/A/…`, the address names A and must keep naming what is rendered.
+   * Were the default pin kept, an org-items reload whose page lacks A would fall through to
+   * `selectDefaultOrg(B)`, whose `'default'` write leaves an addressed page alone — B rendered under
+   * `/org/A`, the silent substitution spec 050 forbids. So on an addressed page a revoked selection is
+   * kept, not drifted; routing it to `/org/not-found` (what a resolver miss does) is the follow-up.
+   * The `'default'` kind therefore only ever governs pages no address names (Me / Project lens, the
+   * legacy `/org/{page}` form before its write). No-op on the placeholder.
+   */
+  public pinSelection(source: 'address' | 'default'): void {
+    const uid = this.selectedAccount().uid ?? null;
+    if (!uid) {
+      return;
+    }
+    const keepAddress = source === 'default' && this.addressedUid() === uid && this.pinSource() === 'address';
+    this.addressedUid.set(uid);
+    this.pinSource.set(keepAddress ? 'address' : source);
   }
 
   public getAccountId(): string {
@@ -186,6 +254,7 @@ export class AccountContextService {
 
   public clearAccount(): void {
     this.addressedUid.set(null);
+    this.pinSource.set(null);
     this.selectedAccount.set(PLACEHOLDER_ACCOUNT);
     this.clearStorage();
   }
@@ -226,7 +295,14 @@ export class AccountContextService {
     return promise;
   }
 
-  /** Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009); patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next natural fetch. */
+  /**
+   * Spec 021 — Public propagation hook for the Org Profile edit flow after a successful PUT (FR-009);
+   * patches `selectedAccount` so sidebar + selector reflect the edit without waiting for the next
+   * natural fetch. The URL slug is the one field not propagated (spec 050): addresses resolve against
+   * the index, so a renamed slug reaches links and address only once the index carries it and an
+   * indexed row (resolver on a navigation, org list on bootstrap) has answered with it. Forgetting the
+   * old slug here would not help — the next resolve hands the still-indexed old slug straight back.
+   */
   public updateCanonicalRecord(canonical: OrgCanonicalRecord): void {
     this.applyCanonicalRecord(canonical);
   }
@@ -248,9 +324,14 @@ export class AccountContextService {
       logoUrl: canonical.logoUrl ?? current.logoUrl ?? null,
       uid: canonical.uid ?? current.uid ?? null,
       parentUid: canonical.parentUid ?? current.parentUid ?? null,
-      // The canonical record is authoritative for the slug, including an explicit `null` after a
-      // rename removed it; only an absent field keeps what was known.
-      slug: canonical.slug !== undefined ? canonical.slug : current.slug,
+      // Spec 050: the URL slug is the *index's*, never member-service's. Addresses resolve against
+      // the index (`/api/orgs/resolve/:segment` reads query-service), and the canonical record runs
+      // ahead of it during lag — a slug taken from here could be one the resolver cannot answer yet.
+      // So the canonical record never touches the slug, not even to unset it on a disagreement: the
+      // next org-segment navigation asks the resolver, which is the index and hands the indexed slug
+      // straight back — an unset would only flip-flop. A rename reaches addresses when the index has
+      // caught up, and a reused name resolves to whoever the index says (access-checked either way).
+      slug: current.slug,
     };
     this.selectedAccount.set(next);
     // Persist again so a page reload picks up the refreshed accountId (mostly identical to current,

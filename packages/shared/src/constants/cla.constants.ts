@@ -222,16 +222,18 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
- * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
- * child route under /org in the org dashboard routes.
- *
- * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
- * address from the request Host, and the two hand-offs must not disagree on where they land.
+ * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
+ * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
+ * replica still running the previous release, and — while the `ORG_EASYCLA_RETURN_IN_PATH` rollout
+ * gate is off (the shipped default) — every return this release mints (`legacyOrgEasyclaReturnPath`).
+ * Not used for new in-app links (those go through `OrgLensNavigationService`). Removal (#2743
+ * item 4) is one release after the gate has been on for a full signing-session lifetime, not one
+ * release after this deploy.
  */
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
- * Query parameter naming which corporate agreement a `ORG_EASYCLA_PATH` group address is about,
+ * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
  * when the group id alone does not say (#2364).
  *
  * The path segment is the CLA Group, which identifies an agreement *template* rather than one
@@ -251,7 +253,7 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 
 /**
  * Key the picker's chosen CLA Group travels under, in the router state of the navigation to that
- * group's `ORG_EASYCLA_PATH` address (#1983, #2364).
+ * group's `/org/{org}/easycla/{claGroupId}` address (#1983, #2364).
  *
  * State rather than the address, because the address holds nothing that could be resolved into the
  * agreement this page has to name: the CLA service exposes no fetch-a-CLA-group-by-id endpoint —
@@ -265,18 +267,18 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * Query parameter naming the organization a corporate signing session was opened for, carried on
- * the CLA Group address EasyCLA returns the signatory to (#1983, #2352).
+ * Legacy query parameter naming the organization a corporate signing session was opened for, on
+ * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). Spec 050 moves the
+ * organization into the path (`orgEasyclaReturnPath`, lfx-self-serve#2743) behind the
+ * `ORG_EASYCLA_RETURN_IN_PATH` rollout gate (`ServerFeatureFlag.OrgEasyclaReturnInPath`); until that
+ * gate is on, the BFF still writes this parameter. The Org Lens page reads it on the leftover
+ * `/org/easycla/…` mount only — never under `/org/:orgSegment/easycla`, where the path is the
+ * authority — and keeps reading it for one release after the gate flips, so a signing trip opened
+ * against the old shape lands on the right organization when it comes back.
  *
- * The return is a cross-site navigation, and which organization is selected survives only in a
- * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
- * organization in the viewer's list, so a signatory who signed for one company returns looking at
- * another — reading as though the signature landed on the wrong organization.
- *
- * Shared because the BFF writes it and the Org Lens page reads it. **It names an organization; it
- * does not grant one.** The page resolves it against the viewer's own authorized organizations and
- * ignores anything absent from that list, so a crafted link cannot select an organization the
- * viewer does not hold.
+ * **It names an organization; it does not grant one.** The page resolves it against the viewer's
+ * own authorized organizations and ignores anything absent from that list, so a crafted link cannot
+ * select an organization the viewer does not hold.
  */
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
 
@@ -296,6 +298,16 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  * address would.
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
+
+/**
+ * The corporate-signing return parameters (`?org=`, `?signed=`) nulled for a `queryParamsHandling:
+ * 'merge'` navigation — the one shape every strip uses (the switch off an EasyCLA address, the
+ * wait's settle, the addressed-mount strip), so the set cannot drift between them.
+ */
+export const ORG_EASYCLA_RETURN_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
+  [ORG_EASYCLA_RETURN_ORG_PARAM]: null,
+  [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null,
+});
 
 /** The only value {@link ORG_EASYCLA_RETURN_SIGNED_PARAM} is written with; any other is ignored. */
 export const ORG_EASYCLA_RETURN_SIGNED_VALUE = '1';
