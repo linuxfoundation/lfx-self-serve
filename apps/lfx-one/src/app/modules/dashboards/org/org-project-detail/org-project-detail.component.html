@@ -12,7 +12,7 @@
       subtitle="We couldn't find that project for your organization."
       ctaLabel="Back to Projects"
       ctaIcon="fa-light fa-arrow-left"
-      [ctaRoute]="['/org/projects']"
+      [ctaRoute]="projectsLink()"
       data-testid="project-detail-not-found">
     </lfx-empty-state>
   } @else if (heroState().status === 'error') {
@@ -27,11 +27,7 @@
     </lfx-empty-state>
   } @else {
     <!-- Breadcrumb: Projects / <Project> -->
-    <lfx-breadcrumb
-      [model]="breadcrumbItems()"
-      [home]="{ icon: 'fa-light fa-house', routerLink: ['/org/projects'], styleClass: 'sr-only' }"
-      data-testid="project-detail-breadcrumb">
-    </lfx-breadcrumb>
+    <lfx-breadcrumb [model]="breadcrumbItems()" [home]="breadcrumbHome()" data-testid="project-detail-breadcrumb"> </lfx-breadcrumb>
 
     <!-- B1 Hero -->
     @if (heroState().status === 'loading') {

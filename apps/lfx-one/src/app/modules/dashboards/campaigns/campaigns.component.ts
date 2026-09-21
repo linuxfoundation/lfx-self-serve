@@ -534,10 +534,11 @@ export class CampaignsComponent {
    * The foundation the current `briefPersistence` was filed under.
    *
    * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
-   * change or off an entity page (`sidebar.component.ts` `redirectOnContextSwitch`), and
-   * `/foundation/campaigns` is neither — it is a two-segment route in the foundation lens, so
-   * picking another foundation runs `setFoundation`, which moves the `?project=` param with
-   * `Location.replaceState` and nothing else. The page stays mounted and `activeContext()`
+   * change, off an entity page, or off the Project lens landing/checklist pages
+   * (`sidebar.component.ts` `contextSwitchTarget`), and `/foundation/campaigns` is none of those —
+   * it is a two-segment route in the foundation lens, so picking another foundation runs
+   * `setFoundation`, which moves the `?project=` param with `Location.replaceState` and nothing
+   * else. The page stays mounted and `activeContext()`
    * changes underneath it.
    *
    * That makes the slug part of what identifies the brief being described, exactly like the

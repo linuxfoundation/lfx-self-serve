@@ -19,6 +19,7 @@ import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -34,9 +35,12 @@ describe('SidebarNavService', () => {
   const orgLensEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
+  const orgSegment = signal<string | null>(null);
   const mentorshipEnabled = signal(false);
   const formationEnabled = signal(false);
   const activeProjectStage = signal<string | null>(null);
+  const activeProjectStageResolved = signal(true);
+  const formationOverviewAllowedSlug = signal<string | null>(null);
   const hasFullFoundationAccess = signal(true);
   const currentPersona = signal('executive-director');
   const isAuditor = signal(false);
@@ -61,9 +65,12 @@ describe('SidebarNavService', () => {
     orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
+    orgSegment.set(null);
     mentorshipEnabled.set(false);
     formationEnabled.set(false);
     activeProjectStage.set(null);
+    activeProjectStageResolved.set(true);
+    formationOverviewAllowedSlug.set(null);
     hasFullFoundationAccess.set(true);
     currentPersona.set('executive-director');
     isAuditor.set(false);
@@ -112,6 +119,8 @@ describe('SidebarNavService', () => {
             selectedProject,
             canWrite,
             activeProjectStage,
+            activeProjectStageResolved,
+            formationOverviewAllowedSlug,
           },
         },
         { provide: UserService, useValue: { authenticated: signal(false) } },
@@ -120,6 +129,10 @@ describe('SidebarNavService', () => {
           provide: AnalyticsService,
           useValue: { getFoundationProjectsDetailGrouped: vi.fn(() => of({ totalCount: 0 })) },
         },
+        // Spec 050 US2: Org Lens items address the selected organization. Most cases assert the tree
+        // shape, so the builder is stubbed to the legacy form; `orgSegment` names an organization for
+        // the cases that assert the org-scoped form.
+        { provide: OrgLensNavigationService, useValue: { orgLensPath: (page: string) => (orgSegment() ? `/org/${orgSegment()}/${page}` : `/org/${page}`) } },
       ],
     });
   });
@@ -190,7 +203,7 @@ describe('SidebarNavService', () => {
     expect(itemLabels.indexOf('Governance')).toBe(itemLabels.indexOf(MKTG_OS_AGENTS_LABEL.nav) + 1);
   });
 
-  it('hides Formation on project lens when the flag is off, even for a Formation-stage project', () => {
+  it('keeps the full project-lens nav without Formation when the flag is off, even for a Formation-stage project', () => {
     activeLens.set('project');
     formationEnabled.set(false);
     activeProjectStage.set('Formation - Exploratory');
@@ -198,9 +211,10 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(findByLink(items, '/project/formation')).toBeUndefined();
+    expect(labels(items)).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
   });
 
-  it('hides Formation on project lens when the flag is on but the project is not in a Formation stage', () => {
+  it('keeps the full project-lens nav without Formation when the flag is on but the project is not in a Formation stage', () => {
     activeLens.set('project');
     formationEnabled.set(true);
     activeProjectStage.set('Active');
@@ -208,25 +222,89 @@ describe('SidebarNavService', () => {
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
     expect(findByLink(items, '/project/formation')).toBeUndefined();
+    expect(labels(items)).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
   });
 
-  it('inserts Formation directly under Dashboard on project lens when the flag is on and the project is in a Formation stage', () => {
+  it('keeps the full project-lens nav without Formation for a disengaged formation project', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    activeProjectStage.set('Formation - Disengaged');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/formation')).toBeUndefined();
+    expect(labels(items)).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
+  });
+
+  it('collapses the project-lens nav to Formation only when the flag is on and the project is in a Formation stage', () => {
     activeLens.set('project');
     formationEnabled.set(true);
     activeProjectStage.set('Formation - Exploratory');
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
-    const itemLabels = labels(items);
 
-    expect(findByLink(items, '/project/formation')).toEqual(
+    expect(items).toEqual([
       expect.objectContaining({
         label: 'Formation',
         routerLink: '/project/formation',
         testId: 'sidebar-project-formation',
-      })
-    );
-    expect(itemLabels.indexOf('Formation')).toBe(itemLabels.indexOf('Dashboard') + 1);
-    expect(itemLabels.indexOf('Meetings')).toBe(itemLabels.indexOf('Formation') + 1);
+      }),
+    ]);
+  });
+
+  it('stays Formation-only for a Formation-stage project even when every other project-lens gate is open', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    activeProjectStage.set('Formation - Engaged');
+    mktgOsEnabled.set(true);
+    canWrite.set(true);
+    currentPersona.set('executive-director');
+    hasFullFoundationAccess.set(true);
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(labels(items)).toEqual(['Formation']);
+  });
+
+  it('renders no project-lens items while the stage is still resolving with the flag on, rather than a nav that then collapses', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    activeProjectStageResolved.set(false);
+    activeProjectStage.set(null);
+
+    expect(TestBed.inject(SidebarNavService).sidebarItems()).toEqual([]);
+  });
+
+  it('keeps the full project-lens nav for a Formation-stage project whose dashboard the redirect guard let stand, so a late flag cannot collapse it under that page', () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    selectedProject.set({ slug: 'forming' });
+    activeProjectStage.set('Formation - Exploratory');
+    formationOverviewAllowedSlug.set('forming');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+
+    expect(findByLink(items, '/project/formation')).toBeUndefined();
+    expect(labels(items)).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
+  });
+
+  it("still collapses to Formation only when the redirect guard's fail-open was for a different project", () => {
+    activeLens.set('project');
+    formationEnabled.set(true);
+    selectedProject.set({ slug: 'forming' });
+    activeProjectStage.set('Formation - Exploratory');
+    formationOverviewAllowedSlug.set('other-project');
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toEqual(['Formation']);
+  });
+
+  it('keeps the full project-lens nav while the stage is still resolving when the flag is off', () => {
+    activeLens.set('project');
+    formationEnabled.set(false);
+    activeProjectStageResolved.set(false);
+    activeProjectStage.set(null);
+
+    expect(labels(TestBed.inject(SidebarNavService).sidebarItems())).toEqual(expect.arrayContaining(['Dashboard', 'Meetings', 'Governance']));
   });
 
   it('hides My Formations from the Me lens while formation-enabled is off', () => {
@@ -316,6 +394,31 @@ describe('SidebarNavService', () => {
     const engagementLabels = labels(sectionItems(items, 'Organization Engagement'));
 
     // The two flags are independent: EasyCLA must not displace ROI's slot, or vice versa.
+    expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
+    expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
+  });
+
+  // The flag-gated items are placed by looking their neighbours up by address; both sides must
+  // agree on the org-scoped form or ROI/EasyCLA silently fall to the end of their section.
+  it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
+    activeLens.set('org');
+    orgLensEnabled.set(true);
+    orgEasyclaEnabled.set(true);
+    orgRoiEnabled.set(true);
+    orgSegment.set('acme-inc');
+
+    const items = TestBed.inject(SidebarNavService).sidebarItems();
+    const engagement = sectionItems(items, 'Organization Engagement');
+    const itemLabels = labels(items);
+    const engagementLabels = labels(engagement);
+
+    expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
+    expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
+    expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
+    // DR-004: EasyCLA is the one Org Lens item that keeps the legacy address in this release.
+    expect(findByLink(engagement, '/org/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA' }));
+    const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
+    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual(['/org/easycla']);
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
   });

@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-profile-details">
+  <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <h2 class="text-lg font-semibold text-gray-900" data-testid="mentorship-mentee-profile-details-title">{{ title }}</h2>
+    <lfx-button
+      [label]="editLabel"
+      severity="secondary"
+      size="small"
+      [outlined]="true"
+      styleClass="shrink-0"
+      (onClick)="onEdit()"
+      data-testid="mentorship-mentee-profile-details-edit" />
+  </header>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-about">
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
+    @if (!aboutMeIsEmpty()) {
+      <!--
+        Register form authors this via `lfx-rich-editor` → the payload is HTML (`<p>…</p>`).
+        The computed sanitises with `DomSanitizer.sanitize(SecurityContext.HTML)` before
+        `[innerHTML]`; the `prose` container is the same typography wrapper
+        campaigns/committees/announcements use for editor-authored HTML elsewhere.
+      -->
+      <div
+        class="prose prose-sm max-w-none text-sm text-gray-700 leading-6"
+        [innerHTML]="aboutMeHtml()"
+        data-testid="mentorship-mentee-profile-details-about-text"></div>
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-about-empty">{{ aboutEmpty }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-skills">
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ skillsHaveLabel }}</span>
+    @if (skillsHave().length > 0) {
+      <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-skills-list">
+        @for (skill of skillsHave(); track skill) {
+          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 px-3 py-1 text-xs">
+            {{ skill }}
+          </span>
+        }
+      </div>
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-skills-empty">{{ skillsEmpty }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-areas">
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ skillsWantLabel }}</span>
+    @if (skillsWant().length > 0) {
+      <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-areas-list">
+        @for (skill of skillsWant(); track skill) {
+          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 px-3 py-1 text-xs">
+            {{ skill }}
+          </span>
+        }
+      </div>
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-areas-empty">{{ skillsWantEmpty }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-notes">
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ notesLabel }}</span>
+    @if (additionalNotes()) {
+      <p class="text-sm text-gray-700 leading-6 whitespace-pre-wrap" data-testid="mentorship-mentee-profile-details-notes-text">{{ additionalNotes() }}</p>
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-notes-empty">{{ notesEmpty }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-resume">
+    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ resumeLabel }}</span>
+    @if (hasResume()) {
+      @if (resumeUrl()) {
+        <!--
+          `min-w-0` + `break-all` on the filename span mirrors the email-row pattern in
+          `profile-card.component.html`: a user-picked file name is unbounded upstream, so
+          the flex child has to be allowed to shrink and break, otherwise a long name
+          overflows the card on narrow viewports. The icon stays fixed via `shrink-0`.
+        -->
+        <a
+          [href]="resumeUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="inline-flex items-start gap-2 max-w-full text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+          data-testid="mentorship-mentee-profile-details-resume-link">
+          <i class="fa-light fa-file-lines text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+          <span class="min-w-0 break-all">{{ resumeLinkLabel() }}</span>
+        </a>
+      } @else {
+        <span class="inline-flex items-start gap-2 max-w-full text-sm text-gray-700" data-testid="mentorship-mentee-profile-details-resume-name">
+          <i class="fa-light fa-file-lines text-gray-400 shrink-0 mt-0.5" aria-hidden="true"></i>
+          <span class="min-w-0 break-all">{{ resumeFileName() }}</span>
+        </span>
+      }
+    } @else {
+      <p class="text-sm text-gray-500 italic" data-testid="mentorship-mentee-profile-details-resume-empty">{{ resumeEmpty }}</p>
+    }
+  </div>
+</section>

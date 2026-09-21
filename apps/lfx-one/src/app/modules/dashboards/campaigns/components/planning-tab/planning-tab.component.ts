@@ -563,9 +563,9 @@ export class PlanningTabComponent implements OnInit {
    * The active foundation as an OBSERVABLE, for the lookup pipeline.
    *
    * A foundation switch does NOT re-create this component: `/foundation/campaigns` is a
-   * two-segment route in the foundation lens, and `sidebar.component.ts`
-   * `redirectOnContextSwitch` navigates only on a lens change or off an entity page, so a
-   * same-lens pick just moves `?project=` with `Location.replaceState`. The page stays mounted
+   * two-segment route in the foundation lens, and `sidebar.component.ts` `contextSwitchTarget`
+   * navigates only on a lens change, off an entity page, or off the Project lens
+   * landing/checklist pages, so a same-lens pick here just moves `?project=` with `Location.replaceState`. The page stays mounted
    * and `activeContext()` changes underneath it — which makes the foundation part of the lookup
    * key, not a value that can be read once.
    *

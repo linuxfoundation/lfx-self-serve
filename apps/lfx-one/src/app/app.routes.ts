@@ -18,6 +18,8 @@ import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
 import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
+import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
+import { formationOverviewReleaseGuard } from './shared/guards/formation-overview-release.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
 import { gwEmbedTenantGuard } from './shared/guards/gw-embed-tenant.guard';
@@ -242,12 +244,21 @@ export const routes: Routes = [
         canActivate: [projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
       },
-      // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
+      // Project Lens dashboard (placeholder — reuses DashboardComponent for now). A project in a
+      // Formation stage lands on its checklist instead: `formationOverviewRedirectGuard` runs first
+      // so its redirect wins over `projectQueryParamGuard` (#2754). The guards must also re-run when
+      // only `?project=` changes — the project selector re-enters the lens that way while already on
+      // this route (`SidebarComponent.contextSwitchTarget`), and the default `paramsChange`
+      // policy would let that navigation complete without re-deciding the landing page.
+      // `formationOverviewReleaseGuard` (CanDeactivate) clears the fail-open record the redirect
+      // guard leaves for the sidebar whenever navigation leaves this route.
       {
         path: 'project/overview',
         title: 'Project Dashboard',
         data: { lens: 'project' },
-        canActivate: [projectQueryParamGuard],
+        runGuardsAndResolvers: 'paramsOrQueryParamsChange',
+        canActivate: [formationOverviewRedirectGuard, projectQueryParamGuard],
+        canDeactivate: [formationOverviewReleaseGuard],
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
       // Formation checklist (GH-1958) — its own project-scoped route, not a dashboard section: dark-launched

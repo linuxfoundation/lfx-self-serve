@@ -27,7 +27,11 @@ import {
 import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgInfluenceRow, OrgMeetingsSupportedTimeRange } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
+
+/** Display row plus its project-page router commands, so the template binds a value instead of calling a method. */
+type OrgInfluenceLinkedRow = OrgInfluenceDisplayRow & { projectLink: string[] };
 
 @Component({
   selector: 'lfx-org-meetings-influence',
@@ -37,6 +41,7 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 export class OrgMeetingsInfluenceComponent {
   // Private injections
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly meetingsService = inject(OrgLensMeetingsService);
 
   // Public fields from inputs
@@ -69,7 +74,7 @@ export class OrgMeetingsInfluenceComponent {
   // ecosystem-influence measures sorted descending, with meeting attendance highlighted so the
   // section's subject stays visually dominant even when it isn't the largest measure.
   private readonly fetchedRows: Signal<OrgInfluenceRow[]> = this.initFetchedRows();
-  protected readonly rows: Signal<OrgInfluenceDisplayRow[]> = this.initRows();
+  protected readonly rows: Signal<OrgInfluenceLinkedRow[]> = this.initRows();
 
   protected toggleExpansion(projectSlug: string): void {
     this.expansionState.update((state) => {
@@ -83,10 +88,12 @@ export class OrgMeetingsInfluenceComponent {
     });
   }
 
-  private initRows(): Signal<OrgInfluenceDisplayRow[]> {
+  private initRows(): Signal<OrgInfluenceLinkedRow[]> {
     return computed(() =>
       this.fetchedRows().map((row) => ({
         ...row,
+        // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+        projectLink: this.orgLens.orgLensLink('projects', row.projectSlug),
         bandChipClass: BAND_CHIP_CLASS[row.band],
         bandLabel: PD_BAND_TAG[row.band].label,
         bandBars: this.buildSignalBars(BAND_SIGNAL_RANK[row.band], BAND_SIGNAL_FILL[row.band], BAND_SIGNAL_FILL_LIGHT[row.band]),

@@ -1,6 +1,6 @@
 # End-to-End Testing Architecture
 
-E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite has grown to ~104 spec files across most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
+E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite covers most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
 
 ## Current State
 
@@ -15,6 +15,8 @@ apps/lfx-one/
 │   ├── formation-checklist-robust.spec.ts           # structural
 │   ├── pending-actions-formation-item.spec.ts       # content-based — Me-lens row → checklist ?item= deep link (#2732)
 │   ├── pending-actions-formation-item-robust.spec.ts # structural
+│   ├── formation-sidebar.spec.ts                    # content-based — Formation-only project sidebar + overview redirect (#2754)
+│   ├── formation-sidebar-robust.spec.ts             # structural
 │   ├── my-formations.spec.ts                        # content-based — Me-lens My Formations page (#2753)
 │   ├── my-formations-robust.spec.ts                 # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
