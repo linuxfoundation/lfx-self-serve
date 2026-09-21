@@ -7,7 +7,10 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
+  OrgClaContributorAcknowledgmentList,
   OrgClaGroupList,
+  OrgClaInvalidateAcknowledgmentInput,
+  OrgClaInvalidateAcknowledgmentResult,
   OrgClaPermissionAction,
   OrgClaPermissionCheckRequest,
   OrgClaPermissionCheckResponse,
@@ -102,7 +105,50 @@ export class OrgLensClaService {
     return this.http.put<OrgClaApprovalList>(this.approvalListUrl(orgUid, signatureId), update);
   }
 
+  /**
+   * Paginated contributor acknowledgments (ECLA signatures) for one CCLA (#1986).
+   *
+   * Fetches one page at a time. Client-side search filters visible rows on the fetched page;
+   * `nextKey`-driven Load-more fetches the next page from the producer. `pageSize` is clamped
+   * server-side, so passing an out-of-range value is a hint the server rewrites rather than an
+   * error the client has to handle.
+   */
+  public getContributorAcknowledgments(
+    orgUid: string,
+    signatureId: string,
+    options: { search?: string; pageSize?: number; nextKey?: string | null } = {}
+  ): Observable<OrgClaContributorAcknowledgmentList> {
+    let params = new HttpParams();
+    if (options.search) params = params.set('search', options.search);
+    if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
+    if (options.nextKey) params = params.set('nextKey', options.nextKey);
+    return this.http.get<OrgClaContributorAcknowledgmentList>(this.acknowledgmentsUrl(orgUid, signatureId), { params });
+  }
+
+  /**
+   * Invalidates one specific acknowledgment on this CCLA (#1986).
+   *
+   * Blocked server-side during impersonation, before the org-lens grant check runs. On success
+   * the response echoes the producer's identity triple; the caller refetches the page rather
+   * than deriving state from it.
+   */
+  public invalidateAcknowledgment(
+    orgUid: string,
+    signatureId: string,
+    acknowledgmentSignatureId: string,
+    input: OrgClaInvalidateAcknowledgmentInput
+  ): Observable<OrgClaInvalidateAcknowledgmentResult> {
+    return this.http.post<OrgClaInvalidateAcknowledgmentResult>(
+      `${this.acknowledgmentsUrl(orgUid, signatureId)}/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+      input
+    );
+  }
+
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
+  }
+
+  private acknowledgmentsUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/acknowledgments`;
   }
 }

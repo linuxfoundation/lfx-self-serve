@@ -90,6 +90,7 @@ import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
+import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -100,6 +101,7 @@ import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.com
     MessageComponent,
     OpenIntercomDirective,
     OrgEasyclaApprovalListComponent,
+    OrgEasyclaContributorAcknowledgmentsComponent,
     SkeletonModule,
     TagComponent,
   ],

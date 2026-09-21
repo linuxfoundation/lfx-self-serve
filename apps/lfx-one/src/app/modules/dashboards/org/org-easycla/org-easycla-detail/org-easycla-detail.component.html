@@ -305,6 +305,14 @@
         data-testid="org-easycla-detail-approval">
         <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
       </section>
+    } @else if (activeTab() === 'acknowledgments' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-acknowledgments"
+        aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
+        data-testid="org-easycla-detail-acknowledgments">
+        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
+      </section>
     } @else {
       <section
         role="tabpanel"
