@@ -97,7 +97,9 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
   test('renders the page and the nav item once the flag is on', async ({ page }) => {
     await deepLinkToEasycla(page, true);
 
-    await expect(page).toHaveURL(/\/org\/easycla/, { timeout: PAGE_LOAD_TIMEOUT });
+    // A bare legacy deep link gets its organization inserted by the default selection shortly
+    // after hydration (spec 050), so either shape may be what the poll sees.
+    await expect(page).toHaveURL(/\/org\/(?:[^/]+\/)?easycla/, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME);
     await expect(page.getByTestId('org-easycla-empty-state')).toBeVisible();

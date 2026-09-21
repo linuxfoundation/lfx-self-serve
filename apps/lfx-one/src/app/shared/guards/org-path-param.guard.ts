@@ -5,7 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanActivateFn, Router, UrlTree } from '@angular/router';
-import { ORG_NOT_FOUND_PATH } from '@lfx-one/shared/constants';
+import { ORG_NOT_FOUND_PATH, ORG_SEGMENT_PARAM } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { isOrgAccountIdSegment, isOrgSlugSegment, normalizeOrgSegment, orgUrlSegment } from '@lfx-one/shared/utils';
 import { catchError, map, of } from 'rxjs';
@@ -66,7 +66,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
 
   // `addressed` is the segment exactly as the URL carries it (decoded, untrimmed) — what a rewrite
   // compares against, so encoded whitespace and letter case are canonicalized away, not kept.
-  const addressed = route.paramMap.get('orgSegment') ?? '';
+  const addressed = route.paramMap.get(ORG_SEGMENT_PARAM) ?? '';
   const segment = normalizeOrgSegment(addressed);
   if (!segment) {
     return failClosed();

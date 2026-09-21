@@ -222,12 +222,25 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
- * The leftover EasyCLA address, `/org/easycla` (#1983): still routed for one release after
- * lfx-self-serve#2743 so corporate-signing returns minted before that deploy — and by any replica
- * still running the previous release — land somewhere that can read them. Not used for new in-app
- * links (those go through `OrgLensNavigationService`) and scheduled for removal with #2743 item 4.
+ * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
+ * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
+ * replica still running the previous release, and — while the `ORG_EASYCLA_RETURN_IN_PATH` rollout
+ * gate is off (the shipped default) — every return this release mints (`legacyOrgEasyclaReturnPath`).
+ * Not used for new in-app links (those go through `OrgLensNavigationService`). Removal (#2743
+ * item 4) is one release after the gate has been on for a full signing-session lifetime, not one
+ * release after this deploy.
  */
 export const ORG_EASYCLA_PATH = '/org/easycla';
+
+/**
+ * The return address the BFF mints while the `ORG_EASYCLA_RETURN_IN_PATH` gate is off:
+ * `/org/easycla/{claGroupId}`, with the organization carried in `?org=` (`ORG_EASYCLA_RETURN_ORG_PARAM`)
+ * rather than in the path. Every release routes and reads this shape, which is what makes it the
+ * safe default across a rolling deploy or a rollback. Sibling of `orgEasyclaReturnPath`.
+ */
+export function legacyOrgEasyclaReturnPath(claGroupId: string): string {
+  return `${ORG_EASYCLA_PATH}/${encodeURIComponent(claGroupId)}`;
+}
 
 /**
  * Where EasyCLA returns a signatory after signing a corporate CLA (#1983, #2352): the CLA Group's
@@ -245,16 +258,6 @@ export const ORG_EASYCLA_PATH = '/org/easycla';
 export function orgEasyclaReturnPath(orgUid: string, claGroupId: string): string {
   return `/org/${encodeURIComponent(orgUid)}/easycla/${encodeURIComponent(claGroupId)}`;
 }
-
-/**
- * Rollout gate for the return address the BFF mints (lfx-self-serve#2743, GPT/F1 on #2770). A
- * `return_url` is fixed when the DocuSign session opens and is served by *whichever* replica takes
- * the return — during a rolling deploy, or after a rollback, that can be a release that only routes
- * the leftover `/org/easycla/{claGroupId}?org={uid}` shape. So the twin route ships first with the
- * mint unchanged; the mint flips to `orgEasyclaReturnPath` once the release carrying the twin route
- * is the rollback floor. Env `ORG_EASYCLA_RETURN_IN_PATH=true` enables it.
- */
-export const ORG_EASYCLA_RETURN_IN_PATH_ENV = 'ORG_EASYCLA_RETURN_IN_PATH';
 
 /**
  * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
@@ -292,10 +295,13 @@ export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
  * Legacy query parameter naming the organization a corporate signing session was opened for, on
- * return addresses minted before spec 050 moved the organization into the path
- * (`orgEasyclaReturnPath`, lfx-self-serve#2743). The BFF no longer writes it; the Org Lens page
- * still reads it for one release so a signing trip opened against the old address lands on the
- * right organization when it comes back.
+ * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). Spec 050 moves the
+ * organization into the path (`orgEasyclaReturnPath`, lfx-self-serve#2743) behind the
+ * `ORG_EASYCLA_RETURN_IN_PATH` rollout gate (`ServerFeatureFlag.OrgEasyclaReturnInPath`); until that
+ * gate is on, the BFF still writes this parameter. The Org Lens page reads it on the leftover
+ * `/org/easycla/…` mount only — never under `/org/:orgSegment/easycla`, where the path is the
+ * authority — and keeps reading it for one release after the gate flips, so a signing trip opened
+ * against the old shape lands on the right organization when it comes back.
  *
  * **It names an organization; it does not grant one.** The page resolves it against the viewer's
  * own authorized organizations and ignores anything absent from that list, so a crafted link cannot

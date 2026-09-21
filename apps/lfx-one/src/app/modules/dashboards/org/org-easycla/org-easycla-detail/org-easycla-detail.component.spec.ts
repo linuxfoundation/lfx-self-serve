@@ -2052,12 +2052,63 @@ describe('OrgEasyclaDetailComponent', () => {
     });
 
     // Spec 050 phase 2: under `/org/{segment}/easycla/…` the path names the organization and the
-    // path guard is its authority. A `?org=` there — carried over by a switch off a legacy return,
-    // or crafted — must not override it: the selection stays what the guard adopted.
-    it('ignores ?org= on the organization-addressed mount', async () => {
-      await renderReturn({ orgSegment: 'containership-inc' });
+    // path guard is its authority (it adopted the selection before activation). A `?org=` there —
+    // carried over by a switch off a legacy return, or crafted — must not override it: the selection
+    // stays what the guard adopted, the wait runs against *that* organization's list and settles on
+    // it, and both parameters come off the address.
+    it('ignores ?org= on the organization-addressed mount and settles the wait on the addressed organization', async () => {
+      const { fixture } = await renderReturn({ orgSegment: 'acme', listOrgUid: SELECTED_ACCOUNT.uid });
 
       expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(getClaGroups).not.toHaveBeenCalledWith(NAMED.uid);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    // The address the BFF mints once the `ORG_EASYCLA_RETURN_IN_PATH` gate is on: the organization
+    // in the path, the flag alone in the query. The wait is keyed to the addressed organization
+    // and the flag is stripped once the row is in hand.
+    it('follows a gated return — organization in the path, no ?org= — to the signed agreement', async () => {
+      const { fixture } = await renderReturn({ orgSegment: 'acme', org: null, listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Nimbus Foundation CLA');
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+    });
+
+    // A gated return whose row has not landed yet still waits — on the addressed organization's
+    // list, not on whichever one answers — and a switch mid-wait ends the trip instead of taking
+    // the new organization's list as the answer.
+    it('ends a gated return’s wait when the viewer switches organization instead of resuming it under the new one', async () => {
+      vi.useFakeTimers();
+      try {
+        const { fixture } = await renderReturn({
+          orgSegment: 'acme',
+          org: null,
+          claGroupsByOrg: { [SELECTED_ACCOUNT.uid]: [], [ELSEWHERE.uid]: [claGroup()] },
+        });
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')?.textContent?.trim()).toBe(CCLA_SIGN_COPY.returnWait);
+
+        selectedAccount.set(ELSEWHERE);
+        await flush(fixture);
+        await vi.advanceTimersByTimeAsync(2000);
+        await flush(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-confirming-signature')).toBeNull();
+        expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // A stale `?org=` on the addressed mount with no wait open is not adopted — but it is not left
+    // on the address either, where a reload or a copied link would keep presenting it.
+    it('strips a stale ?org= from the organization-addressed address even with no wait open', async () => {
+      await renderReturn({ orgSegment: 'acme', flag: null, listOrgUid: SELECTED_ACCOUNT.uid });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
+      expect(navigate).toHaveBeenCalledWith([], STRIPPED_ADDRESS);
     });
 
     /**

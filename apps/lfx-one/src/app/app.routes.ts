@@ -7,6 +7,7 @@ import {
   MAILING_LIST_LABEL,
   MKTG_OS_AGENTS_LABEL,
   MKTG_OS_AGENTS_ROUTE_SEGMENT,
+  ORG_SEGMENT_PARAM,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
@@ -336,7 +337,7 @@ export const routes: Routes = [
             // 18-char SFID when it has none). Declared after every static page so a page name can never
             // be taken for an organization; the matcher rejects those values as belt-and-braces and the
             // guard resolves the segment through the access-filtered BFF before any child renders.
-            path: ':orgSegment',
+            path: `:${ORG_SEGMENT_PARAM}`,
             canMatch: [orgSegmentMatchGuard],
             canActivate: [orgPathParamGuard],
             data: { lens: 'org' },

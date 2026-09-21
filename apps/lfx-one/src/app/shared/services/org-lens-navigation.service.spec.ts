@@ -78,17 +78,29 @@ describe('OrgLensNavigationService', () => {
 
     // A switch off a pre-deploy return (`/org/easycla/{g}?org={A}&signed=1`) must not carry the
     // return state onto the organization-addressed page: preserved, `?org=` would be re-adopted
-    // under B's address (undoing the switch) and `?signed=1` would resume A's wait under B.
-    it('drops the legacy return parameters when a switch leaves a legacy EasyCLA address', () => {
+    // under B's address (undoing the switch) and `?signed=1` would resume A's wait under B. The
+    // rest of the query (`?sig=`) still describes the page and rides along.
+    it('drops the return parameters, and only those, when a switch leaves a legacy EasyCLA address', () => {
       currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
       service.navigateToSelectedOrg('switch');
       expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
     });
 
-    it('preserves the query on a switch between organization-addressed EasyCLA pages', () => {
-      currentUrl = '/org/other-org/easycla/abc-123?sig=s1';
+    // A gated return (`/org/{A}/easycla/{g}?signed=1`) is the same trip on the other mount: the
+    // page is reused across the switch, so a preserved `?signed=1` would resume A's wait under B.
+    // Return state never belongs to another organization, whichever mount it started on.
+    it('drops the return parameters when a switch leaves an organization-addressed EasyCLA page', () => {
+      currentUrl = '/org/other-org/easycla/abc-123?signed=1&org=0014100000MgbBBBBB&sig=s1';
       service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+    });
+
+    it('preserves the query on a switch between organization-addressed non-EasyCLA pages', () => {
+      currentUrl = '/org/other-org/projects?range=90d';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/projects');
       expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'preserve' }));
       expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
     });

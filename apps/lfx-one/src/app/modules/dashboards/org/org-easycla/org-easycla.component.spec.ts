@@ -1117,9 +1117,9 @@ describe('OrgEasyclaComponent', () => {
         .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
         .compileComponents();
 
+      // Spied before the component exists: the addressed-mount strip runs from the constructor.
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(navigate);
       const fixture = TestBed.createComponent(OrgEasyclaComponent);
-      const router = TestBed.inject(Router);
-      vi.spyOn(router, 'navigate').mockImplementation(navigate);
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -1142,12 +1142,16 @@ describe('OrgEasyclaComponent', () => {
     });
 
     // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
-    // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is ignored.
-    it('ignores ?org= on the organization-addressed mount', async () => {
-      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], { orgSegment: 'containership-inc' });
+    // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is not
+    // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
+    it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
+      const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], {
+        orgSegment: 'containership-inc',
+      });
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, queryParamsHandling: 'merge', replaceUrl: true }));
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {

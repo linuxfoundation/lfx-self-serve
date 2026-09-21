@@ -2,11 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { inject, Injectable } from '@angular/core';
-import { Router } from '@angular/router';
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_SEGMENTS } from '@lfx-one/shared/constants';
+import { ActivatedRouteSnapshot, Router, UrlTree } from '@angular/router';
+import {
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+  ORG_LENS_PAGE_SEGMENTS,
+  ORG_NOT_FOUND_SEGMENTS,
+  ORG_SEGMENT_PARAM,
+} from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
+
+/** Corporate-signing return parameters, nulled on a `merge` so the rest of the query survives a switch. */
+const EASYCLA_RETURN_PARAMS_RESET: Record<string, null> = { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null };
 
 /**
  * Builds Org Lens addresses that carry the selected organization and keeps the address in step
@@ -65,6 +74,11 @@ export class OrgLensNavigationService {
    * the address already names the selected organization (FR-014). EasyCLA pages follow the same
    * rule since lfx-self-serve#2743 ended their DR-004 exemption.
    *
+   * The query is preserved across the rewrite — a filter, a `?sig=` picker choice, a `utm_*` all
+   * still describe the page — with one exception: leaving an EasyCLA address, on either mount,
+   * drops the corporate-signing return parameters `?org=` and `?signed=`. Those describe a trip
+   * opened for one organization and never belong to another (see `EASYCLA_RETURN_PARAMS_RESET`).
+   *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
    * substitution the dead end exists to prevent (FR-022–FR-024) — and never overrides an address
@@ -73,26 +87,28 @@ export class OrgLensNavigationService {
    */
   public navigateToSelectedOrg(intent: OrgLensAddressIntent = 'switch'): void {
     const tree = this.router.parseUrl(this.router.url);
-    const segments = tree.root.children['primary']?.segments.map((s) => s.path) ?? [];
+    const segments = this.primarySegments(tree);
     if (!this.isRewritableOrgAddress(segments)) {
       return;
     }
-    // Legacy `/org/easycla/…` for one release after lfx-self-serve#2743: a corporate-signing return
-    // minted on the leftover shape arrives as `?org={uid}&signed=1`, and the org list can answer
-    // before `OrgClaReturnService.adopt` has run — a default insert then would write the *default*
-    // organization into the address while the page adopts the named one from `?org=` (the DR-004
-    // Option-B trace). Only such a return is left alone, and only for the automatic default: a plain
-    // leftover `/org/easycla` visit is inserted like any other legacy page, and the viewer's own
-    // switch may re-address either. New returns carry the organization in the path and are
-    // address-adopted, so they never reach a default in the first place.
-    const legacyEasycla = segments[1] === 'easycla';
-    if (intent === 'default' && legacyEasycla && tree.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
+    // Legacy `/org/easycla/…` for one release after the `ORG_EASYCLA_RETURN_IN_PATH` gate flips
+    // (lfx-self-serve#2743): a corporate-signing return minted on the leftover shape arrives as
+    // `?org={uid}&signed=1`, and the org list can answer before `OrgClaReturnService.adopt` has run
+    // — a default insert then would write the *default* organization into the address while the
+    // page adopts the named one from `?org=` (the DR-004 Option-B trace). Only such a return is left
+    // alone, and only for the automatic default: a plain leftover `/org/easycla` visit is inserted
+    // like any other legacy page, and the viewer's own switch may re-address either. New returns
+    // carry the organization in the path and are address-adopted, so they never reach a default.
+    if (intent === 'default' && segments[1] === 'easycla' && tree.queryParamMap.has(ORG_EASYCLA_RETURN_ORG_PARAM)) {
       return;
     }
-    // A viewer's switch off that legacy address must not carry the return state with it: preserved,
-    // `?org={A}` would be re-adopted by the re-mounted page under B's address (undoing the switch),
-    // and `?signed=1` would resume a wait for A's row under B. The organization is in the path now.
-    const leavingLegacyReturn = legacyEasycla;
+    // A switch off *any* EasyCLA address must not carry a signing return with it. On the legacy
+    // mount a preserved `?org={A}` would be re-adopted by the re-mounted page under B's address
+    // (undoing the switch); on either mount a preserved `?signed=1` would resume, under B, a wait
+    // for A's row — the page is reused across the switch and only the guards re-run. Stripped here,
+    // in the switch navigation itself, rather than left to the page's own settle-time clean-up, so
+    // the two navigations cannot supersede each other with the stale state winning.
+    const leavingEasycla = segments[1] === 'easycla' || segments[2] === 'easycla';
     const segment = this.accountContext.selectedUrlSegment();
     if (!segment) {
       return;
@@ -135,10 +151,20 @@ export class OrgLensNavigationService {
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
       preserveFragment: true,
-      ...(leavingLegacyReturn
-        ? { queryParamsHandling: 'merge', queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null } }
-        : { queryParamsHandling: 'preserve' }),
+      ...(leavingEasycla ? { queryParamsHandling: 'merge', queryParams: EASYCLA_RETURN_PARAMS_RESET } : { queryParamsHandling: 'preserve' }),
     });
+  }
+
+  /**
+   * Whether `route` is mounted under `/org/:orgSegment` — the organization-addressed form — as
+   * opposed to the leftover `/org/easycla/…` mount. The one predicate both EasyCLA pages use to
+   * decide whether a client-supplied `?org=` may name the organization: under `/org/:orgSegment`
+   * the path is the authority (`orgPathParamGuard` adopted it before activation) and `?org=` is
+   * stale or crafted; on the leftover mount it is the only organization the address carries.
+   * Shared so the two pages cannot drift and re-open the parameter on one of them.
+   */
+  public isOrgAddressed(route: ActivatedRouteSnapshot): boolean {
+    return route.pathFromRoot.some((r) => r.paramMap.has(ORG_SEGMENT_PARAM));
   }
 
   /** True on the not-found dead end (`ORG_NOT_FOUND_SEGMENTS`) or anything beneath it — a deeper path there is still the dead end, never a legacy page. */
@@ -153,6 +179,10 @@ export class OrgLensNavigationService {
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */
   private currentPrimarySegments(): string[] {
-    return this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((s) => s.path) ?? [];
+    return this.primarySegments(this.router.parseUrl(this.router.url));
+  }
+
+  private primarySegments(tree: UrlTree): string[] {
+    return tree.root.children['primary']?.segments.map((s) => s.path) ?? [];
   }
 }

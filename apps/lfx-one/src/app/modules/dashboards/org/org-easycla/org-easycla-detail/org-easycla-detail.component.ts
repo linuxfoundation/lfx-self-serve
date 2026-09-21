@@ -1132,19 +1132,23 @@ export class OrgEasyclaDetailComponent {
   }
 
   /**
-   * The organization named on this address, but only while a return is actually open.
+   * The organization this return was opened for, but only while a return is actually open.
    *
    * Gated on the flag so an ordinary pasted `?org=` — which adopts and is then stripped — cannot
    * make the page withhold a render it should be showing.
+   *
+   * Where it comes from depends on the mount. On the leftover `/org/easycla/…` mount the address
+   * carries it only as `?org=`. Under `/org/:orgSegment/easycla/…` the path names it, and
+   * `orgPathParamGuard` has already adopted it into the selection before this page was activated
+   * — so the selection *is* the addressed organization, and a `?org=` there is ignored (stale or
+   * crafted; it never outranks the path). Either way the wait is keyed to one organization for
+   * its whole life, and `claDataIsForReturnOrg` keeps ignoring other organizations' lists on
+   * both mounts alike.
    */
   private readReturnOrgUid(): string | null {
-    if (!this.readReturnFlag() || !this.isOnLegacyMount()) return null;
+    if (!this.readReturnFlag()) return null;
+    if (this.orgLens.isOrgAddressed(this.route.snapshot)) return this.accountContext.selectedAccount()?.uid ?? null;
     return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
-  }
-
-  /** True on the legacy `/org/easycla/…` mount — the only place the pre-deploy `?org=` return parameter is honoured. */
-  private isOnLegacyMount(): boolean {
-    return !this.route.snapshot.pathFromRoot.some((r) => r.paramMap.has('orgSegment'));
   }
 
   /**
@@ -1166,12 +1170,19 @@ export class OrgEasyclaDetailComponent {
     // and the address rewrite at the end is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    // `?org=` is a legacy-mount reader (`/org/easycla/…`, one release for pre-deploy returns). Under
-    // `/org/:orgSegment/easycla/…` the path names the organization and `orgPathParamGuard` is its
-    // authority; a `?org=` there is stale or crafted and is ignored — the wait, if flagged, runs
-    // against the addressed selection.
-    const named = this.isOnLegacyMount() ? this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM) : null;
-    if (!named && !this.awaitingSignedRow()) return;
+    // `?org=` is a leftover-mount reader (`/org/easycla/…`, until one release after the
+    // `ORG_EASYCLA_RETURN_IN_PATH` gate flips). Under `/org/:orgSegment/easycla/…` the path names
+    // the organization and `orgPathParamGuard` is its authority; a `?org=` there is stale or
+    // crafted and is not adopted — but it is taken off the address, either by the wait's settle or,
+    // with no wait open, right here, so a reload or a copied link does not keep presenting a
+    // parameter the page ignores. The wait, if flagged, runs against the addressed selection.
+    const carried = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    const addressed = this.orgLens.isOrgAddressed(this.route.snapshot);
+    const named = addressed ? null : carried;
+    if (!named && !this.awaitingSignedRow()) {
+      if (addressed && carried) this.settleReturn();
+      return;
+    }
 
     // A flagged address with no organization on it: there is nothing to adopt and nothing to order
     // the wait behind, so it runs against the selection already in force.

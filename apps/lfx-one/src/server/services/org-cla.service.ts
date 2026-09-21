@@ -9,8 +9,7 @@
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
 import {
-  ORG_EASYCLA_PATH,
-  ORG_EASYCLA_RETURN_IN_PATH_ENV,
+  legacyOrgEasyclaReturnPath,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
@@ -51,6 +50,7 @@ import { MicroserviceError } from '../errors';
 import { claServiceBaseUrl } from '../helpers/cla-service-url.helper';
 import { gatewayFetchBinary } from '../helpers/gateway-fetch-binary.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { isServerFeatureEnabled, ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 import { isHttpsUrl, urlSchemeForLog } from '../helpers/validation.helper';
 import { claReturnUrl, toClaGroupOption, withoutUpstreamBody, withProducerRefusalMessage } from './cla.service';
 import { logger } from './logger.service';
@@ -569,18 +569,18 @@ export class OrgClaService {
       // without it the page falls to the first organization in their list, so signing for one company
       // lands them looking at another. `orgUid` is the value the grant check already cleared and the
       // same one sent as `company_sfid`, so the address describes the session that was actually
-      // opened. Where it rides is gated (`ORG_EASYCLA_RETURN_IN_PATH_ENV`): in the path once every
-      // replica that could serve the return routes `/org/{org}/easycla` (spec 050, #2743), else in
-      // `?org=` on the leftover address, which every release reads. The signed flag rides along either
-      // way, because the row will not be on the list the instant they arrive — without it the page
-      // would read a group with no signed agreement and settle straight onto the cannot-preview state.
-      const returnInPath = process.env[ORG_EASYCLA_RETURN_IN_PATH_ENV] === 'true';
+      // opened. Where it rides is gated (`ServerFeatureFlag.OrgEasyclaReturnInPath`, OFF by default):
+      // in the path once every replica that could serve the return routes `/org/{org}/easycla`
+      // (spec 050, #2743), else in `?org=` on the leftover address, which every release reads. The
+      // signed flag rides along either way, because the row will not be on the list the instant
+      // they arrive — without it the page would read a group with no signed agreement and settle
+      // straight onto the cannot-preview state.
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
-        return_url: returnInPath
+        return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
           ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
-          : claReturnUrl(req, `${ORG_EASYCLA_PATH}/${encodeURIComponent(request.claGroupId)}`, {
+          : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
               [ORG_EASYCLA_RETURN_ORG_PARAM]: orgUid,
               [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE,
             }),

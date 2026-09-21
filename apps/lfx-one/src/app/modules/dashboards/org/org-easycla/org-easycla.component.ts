@@ -214,6 +214,9 @@ export class OrgEasyclaComponent {
   protected readonly currentPage = computed(() => Math.min(this.page(), this.pageCount() - 1));
   protected readonly pagedClaGroups: Signal<OrgClaGroup[]> = this.initPagedClaGroups();
 
+  /** Per-card detail link, keyed by signature id — hoisted from the template, which may only read signals (frontend-checklist §4). Rows without a group id have none. */
+  protected readonly cardLinks: Signal<Record<string, string[]>> = this.initCardLinks();
+
   /**
    * Each rendered row's card-link query, keyed by that row's signature id (#2364).
    *
@@ -221,8 +224,6 @@ export class OrgEasyclaComponent {
    * object on every change-detection pass, and the key is a shared constant that templates have no
    * computed-key syntax for. One lookup per row keeps both the identity and the constant stable.
    */
-  /** Per-card detail link, keyed by signature id — hoisted from the template, which may only read signals (frontend-checklist §4). Rows without a group id have none. */
-  protected readonly cardLinks: Signal<Record<string, string[]>> = this.initCardLinks();
   protected readonly cardSignatureParams: Signal<Record<string, Record<string, string>>> = this.initCardSignatureParams();
   protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
@@ -434,12 +435,18 @@ export class OrgEasyclaComponent {
     // The address is only followed in a browser, and the strip below is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    // Legacy mount only (`/org/easycla…`, one release for pre-deploy returns): under
-    // `/org/:orgSegment/easycla` the path names the organization and `orgPathParamGuard` is its
-    // authority — a `?org=` there is a stale or crafted parameter and must not override it.
-    if (this.route.snapshot.pathFromRoot.some((r) => r.paramMap.has('orgSegment'))) return;
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!named) return;
+
+    // `?org=` names an organization on the leftover mount only (`/org/easycla…`, until one release
+    // after the `ORG_EASYCLA_RETURN_IN_PATH` gate flips). Under `/org/:orgSegment/easycla` the path
+    // names it and `orgPathParamGuard` is the authority — a `?org=` there is stale or crafted, so it
+    // is not adopted, but it is still taken off the address: left on, a reload or a copied link
+    // would keep presenting a parameter the page ignores.
+    if (this.orgLens.isOrgAddressed(this.route.snapshot)) {
+      this.stripReturnOrganizationFromAddress();
+      return;
+    }
 
     this.claReturn
       .adopt(named)

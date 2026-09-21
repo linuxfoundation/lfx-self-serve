@@ -872,6 +872,19 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(returned.searchParams.get('signed')).toBe('1');
   });
 
+  // The gate reads through `isServerFeatureEnabled`, so it accepts the same spellings as every
+  // other server flag — an operator writing `=1` or `=on` per convention must not silently get
+  // the leftover shape.
+  it.each(['1', 'on', ' TRUE '])('accepts %j as the rollout gate being on', async (spelling) => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', spelling);
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+  });
+
   it('sends none of the designee or send-by-email fields', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
