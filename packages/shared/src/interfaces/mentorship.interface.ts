@@ -759,7 +759,7 @@ export interface MentorshipMenteeUpNextTask {
   id: string;
   name: string;
   status: MentorshipMenteeUpNextTaskStatus;
-  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF normalises the backend's date-only value to an explicit UTC instant so `DatePipe` with `'UTC'` renders the correct calendar day in every timezone. */
+  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF **must** normalise the backend's date-only value to an explicit UTC instant before returning it — `DatePipe` with `'UTC'` relies on this to render the correct calendar day in every timezone. Mock data already follows this contract. */
   dueDate: string;
   /** `tasks.category` */
   category?: 'prerequisite' | 'non_prerequisite';

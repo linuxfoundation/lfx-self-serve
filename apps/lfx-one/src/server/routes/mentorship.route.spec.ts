@@ -80,10 +80,9 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(401);
   });
 
-  it('rejects invalid phase query with 400', async () => {
+  it('requires auth before phase validation runs', async () => {
     const res = await fetch(`${baseUrl}/api/mentorship/mentee/overview?phase=invalid`);
-    // Without auth it returns 401 first; the phase validation happens after auth.
-    // This verifies the route is reachable (not 404).
+    // Auth check fires before phase validation — unauthenticated requests get 401.
     expect(res.status).toBe(401);
   });
 });

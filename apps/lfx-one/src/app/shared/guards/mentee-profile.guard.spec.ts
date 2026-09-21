@@ -1,17 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { Router, UrlTree } from '@angular/router';
 import { MentorshipService } from '@services/mentorship.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { menteeRegisterGuard } from './mentee-profile.guard';
 
 describe('menteeRegisterGuard', () => {
-  const setup = (hasProfile: boolean) => {
-    const hasMenteeProfile = vi.fn().mockReturnValue(of({ hasProfile }));
+  const setup = (hasMenteeProfile: ReturnType<typeof vi.fn>) => {
     const createUrlTree = vi.fn().mockReturnValue({ toString: () => '/mentorship/mentee/overview' } as unknown as UrlTree);
 
     TestBed.resetTestingModule();
@@ -26,7 +26,7 @@ describe('menteeRegisterGuard', () => {
   };
 
   it('redirects to overview when user has a mentee profile', async () => {
-    const { createUrlTree } = setup(true);
+    const { createUrlTree } = setup(vi.fn().mockReturnValue(of({ hasProfile: true })));
 
     const result = await TestBed.runInInjectionContext(() => menteeRegisterGuard({} as never, {} as never));
 
@@ -35,19 +35,16 @@ describe('menteeRegisterGuard', () => {
   });
 
   it('allows the register page when user has no mentee profile', async () => {
-    setup(false);
+    setup(vi.fn().mockReturnValue(of({ hasProfile: false })));
 
     const result = await TestBed.runInInjectionContext(() => menteeRegisterGuard({} as never, {} as never));
 
     expect(result).toBe(true);
   });
 
-  it('allows the register page when the service returns an error fallback', async () => {
-    // The service catches errors and returns { hasProfile: false }
-    setup(false);
+  it('rejects when the service throws (guard has no catchError)', async () => {
+    setup(vi.fn().mockReturnValue(throwError(() => new HttpErrorResponse({ status: 500 }))));
 
-    const result = await TestBed.runInInjectionContext(() => menteeRegisterGuard({} as never, {} as never));
-
-    expect(result).toBe(true);
+    await expect(TestBed.runInInjectionContext(() => menteeRegisterGuard({} as never, {} as never))).rejects.toThrow();
   });
 });

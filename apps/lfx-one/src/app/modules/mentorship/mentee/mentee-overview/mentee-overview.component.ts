@@ -155,8 +155,9 @@ export class MenteeOverviewComponent {
   }
 
   protected taskProgress(completed: number, total: number): number {
-    if (total === 0) return 0;
-    return Math.round((completed / total) * 100);
+    if (!total || total <= 0) return 0;
+    const pct = Math.round((completed / total) * 100);
+    return Number.isFinite(pct) ? Math.min(100, Math.max(0, pct)) : 0;
   }
 
   // -- Actions ----------------------------------------------------------------

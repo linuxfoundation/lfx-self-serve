@@ -103,6 +103,23 @@ describe('MenteeOverviewComponent', () => {
     expect(text).toContain('Awaiting Review');
   });
 
+  it('uses singular "application under review" when there is exactly one application', async () => {
+    const singleApp = {
+      ...MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
+      applications: [MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0]],
+    };
+    await bootstrap(singleApp);
+    const text = element().textContent ?? '';
+    expect(text).toContain('1 application under review');
+    expect(text).not.toContain('1 applications');
+  });
+
+  it('uses plural "applications under review" when there are multiple applications', async () => {
+    await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
+    const text = element().textContent ?? '';
+    expect(text).toContain('3 applications under review');
+  });
+
   it('renders the past applications table with split projectName and termName', async () => {
     await bootstrap(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
     const text = element().textContent ?? '';
@@ -217,7 +234,7 @@ describe('MenteeOverviewComponent', () => {
     expect(component['hasLoaded']()).toBe(true);
   });
 
-  it('renders lfx-empty-state with Retry ctaLabel on error', async () => {
+  it('renders a clickable Retry button that re-fetches data on click', async () => {
     getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
     comingSoonNotify = vi.fn();
 
@@ -237,33 +254,12 @@ describe('MenteeOverviewComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
 
-    const emptyState = element().querySelector('lfx-empty-state');
-    expect(emptyState).toBeTruthy();
-    expect(emptyState?.getAttribute('ctalabel')).toBe('Retry');
-  });
-
-  it('calls retry and re-fetches data when Retry CTA is triggered', async () => {
-    getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
-    comingSoonNotify = vi.fn();
-
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [MenteeOverviewComponent],
-      providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
-        { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
-      ],
-    });
-
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(MenteeOverviewComponent);
-    component = fixture.componentInstance;
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
+    // Find the rendered Retry button inside lfx-empty-state (rendered via ctaLabel)
+    const retryBtn = Array.from(element().querySelectorAll('button')).find((b) => b.textContent?.trim() === 'Retry');
+    expect(retryBtn).toBeTruthy();
 
     const initialCallCount = getMenteeOverview.mock.calls.length;
-    component['retry']();
+    retryBtn!.click();
     fixture.detectChanges();
     await fixture.whenStable();
 
