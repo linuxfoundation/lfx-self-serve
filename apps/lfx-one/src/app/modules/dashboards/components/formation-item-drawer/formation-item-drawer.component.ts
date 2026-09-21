@@ -320,21 +320,25 @@ export class FormationItemDrawerComponent {
    */
   private readonly ownerUsernameValue: Signal<string> = this.initOwnerUsernameValue();
   /**
-   * The committed assignee label bound into lfx-user-search's `[displayValue]`. `FormationUser`
-   * carries no name of its own (name === username — see the mapper at
-   * `formation-mapper.helper.ts`'s `owner: raw.assignee ? { username: raw.assignee, name:
-   * raw.assignee } : null`), so the name and email come from the people list when it knows the
-   * username, and the bare username is the fallback (people unavailable, or an owner who no longer
-   * holds a grant).
+   * The committed assignee label bound into lfx-user-search's `[displayValue]`. The name and email
+   * come from the people list when it knows the username; otherwise (people unavailable, or an
+   * owner who no longer holds a grant) the item's own `owner.name` — the BFF enriches it from the
+   * user profile (#2742), leaving the username only as a placeholder when no profile answered — and
+   * the bare username last.
    */
   protected readonly assigneeDisplayValue: Signal<string> = computed(() => {
     const username = this.ownerUsernameValue();
     const person = findFormationPersonByUsername(this.people().people, username);
-    if (!person) {
-      return username;
+    if (person) {
+      // A settings entry without a name falls back to its email as the name — never render that twice.
+      return formatUserLabel(person.name === person.email ? null : person.name, person.email);
     }
-    // A settings entry without a name falls back to its email as the name — never render that twice.
-    return formatUserLabel(person.name === person.email ? null : person.name, person.email);
+
+    const owner = this.item()?.owner;
+    if (owner && owner.username === username && owner.name && owner.name !== username) {
+      return owner.name;
+    }
+    return username;
   });
 
   public constructor() {

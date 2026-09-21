@@ -565,14 +565,21 @@ describe('FormationItemDrawerComponent', () => {
         expect(assigneeInput()?.value).toBe('Jane Doe (jdoe@example.com)');
       });
 
-      it('falls back to the directory search, with the bare username, when the people read is unavailable', async () => {
-        const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+      it('falls back to the directory search when the people read is unavailable, labelling the owner by the enriched name the item carries (#2742)', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'Jane Doe' } });
         await render(item, false, { getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())), projectSlug: 'demo-project' });
 
         const picker = queryUserSearch();
         expect(picker.candidates()).toBeNull();
         expect(picker.searchType()).toBe('committee_member');
         expect(picker.placeholder()).toBe(FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER);
+        expect(assigneeInput()?.value).toBe('Jane Doe');
+      });
+
+      it('shows the bare username when neither the people list nor the item carries a name for it', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+        await render(item, false, { getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())), projectSlug: 'demo-project' });
+
         expect(assigneeInput()?.value).toBe('jdoe');
       });
 
