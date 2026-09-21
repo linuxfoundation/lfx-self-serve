@@ -584,6 +584,22 @@ describe('FormationItemDrawerComponent', () => {
         expect(queryUserSearch().candidates()).toBeNull();
       });
 
+      it('refuses a pending invitee picked by keyboard with the row’s own note, leaving the assignee untouched', async () => {
+        const messageServiceAddMock = vi.fn();
+        const pending = buildPerson({ key: 'pat@partner.example', username: null, name: 'Pat Lee', email: 'pat@partner.example', is_pending: true });
+        await render(buildItem({ owner: null }), false, {
+          getFormationPeople: vi.fn().mockReturnValue(of(buildPeople([pending]))),
+          messageServiceAdd: messageServiceAddMock,
+          projectSlug: 'demo-project',
+        });
+
+        const [candidate] = queryUserSearch().candidates() ?? [];
+        queryUserSearch().onUserSelected({ value: candidate } as AutoCompleteSelectEvent);
+
+        expect(ownerUsernameValue()).toBe('');
+        expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: FORMATION_ASSIGNEE_PENDING_NOTE }));
+      });
+
       it('keeps the picker read-only while the people read is in flight, so a fast typist cannot search the wrong corpus', async () => {
         await render(buildItem({ owner: null }), false, { getFormationPeople: vi.fn().mockReturnValue(NEVER), projectSlug: 'demo-project' });
 

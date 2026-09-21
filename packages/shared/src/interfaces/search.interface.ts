@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { USER_SEARCH_TYPES } from '../constants/search.constants';
+
 /**
  * Project search result with summary information
  * @description Lightweight project data optimized for search results and listings
@@ -43,9 +45,10 @@ export interface ProjectSearchParams {
 
 /**
  * The query-index corpora `GET /api/search/users` can be pointed at — the `type` the BFF forwards
- * to the query service's `/query/resources`.
+ * to the query service's `/query/resources`. Derived from the runtime allowlist the BFF validates
+ * against, so the two cannot drift.
  */
-export type UserSearchType = 'committee_member' | 'meeting_registrant';
+export type UserSearchType = (typeof USER_SEARCH_TYPES)[number];
 
 /**
  * Where a {@link UserSearchResult} row came from: one of the searchable corpora, or

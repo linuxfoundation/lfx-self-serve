@@ -6,7 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
 import { UserSearchOption, UserSearchResult, UserSearchType } from '@lfx-one/shared/interfaces';
-import { composeFullName, filterUserSearchCandidates, hasLfAccount, rankUserSearchResults } from '@lfx-one/shared/utils';
+import { composeFullName, filterUserSearchCandidates, formatUserLabel, hasLfAccount, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { SearchService } from '@services/search.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, combineLatest, map, Observable, of, startWith, Subject, switchMap } from 'rxjs';
@@ -82,11 +82,12 @@ export class UserSearchComponent {
   public emptyMessage = input<string>(USER_SEARCH_EMPTY_MESSAGE);
 
   // Outputs
-  public readonly onUserSelect = output<UserSearchResult>();
-  // Fired instead of `onUserSelect` when `requireLfAccount` rejects a pick — none of this
-  // component's bound controls were touched, so consumers don't need to restore anything, only
-  // react (e.g. a toast) to the rejection itself.
-  public readonly onRejectedSelection = output<UserSearchResult>();
+  public readonly onUserSelect = output<UserSearchOption>();
+  // Fired instead of `onUserSelect` when a pick is refused — by `requireLfAccount`, or because a
+  // local candidate is `disabled` (its `note` then says why) — none of this component's bound
+  // controls were touched, so consumers don't need to restore anything, only react (e.g. a toast)
+  // to the rejection itself.
+  public readonly onRejectedSelection = output<UserSearchOption>();
   public readonly onManualEntry = output<void>();
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
@@ -229,11 +230,17 @@ export class UserSearchComponent {
     this.discardedSearchText = null;
     const selectedUser = event.value as UserSearchOption;
 
-    // A disabled local candidate is unselectable in the dropdown (`optionDisabled`), so this is a
-    // belt-and-braces guard: never commit one, and never announce it as a rejection either — the
-    // row's own note already says why it cannot be picked.
+    // A disabled local candidate is the one thing this handler must never commit — and this guard
+    // is what prevents it, not `optionDisabled`: PrimeNG (20.4) styles a disabled option and marks
+    // it aria-disabled, but its own option handler still commits the value and emits the pick, on
+    // click and on hover-plus-Enter (`focusOnHover` is on by default). A mouse click on a disabled
+    // row is swallowed earlier, in {@link onOptionClick}, so the panel stays open with the row's
+    // note in view; a keyboard pick reaches here after PrimeNG has already closed the panel and
+    // written the option into the box, so snap the box back and let the consumer say why — the
+    // row's `note` rides on the rejected option.
     if (selectedUser.disabled) {
       this.userSearchForm.get('userSearch')?.setValue(this.displayValue() ?? '', { emitEvent: false });
+      this.onRejectedSelection.emit(selectedUser);
       return;
     }
 
@@ -376,10 +383,25 @@ export class UserSearchComponent {
     this.onManualEntry.emit();
   }
 
+  /**
+   * Click on a suggestion row. A disabled row stops the click here, before PrimeNG's own option
+   * handler on the enclosing `<li>` runs — that handler ignores `optionDisabled` and would commit
+   * the row and close the panel — so the list stays open and the row's note stays readable. A
+   * keyboard pick cannot be intercepted this way and is refused in {@link onUserSelected} instead.
+   */
+  public onOptionClick(event: Event, option: UserSearchOption): void {
+    if (option.disabled) {
+      event.stopPropagation();
+    }
+  }
+
+  /**
+   * The text the box shows for a picked option (`optionLabel`) — the same "Name (email)" that
+   * consumers' committed labels compose with `formatUserLabel`, so a pick never flashes an
+   * organization suffix for the tick before the committed label replaces it. The organization
+   * still shows on the dropdown row itself, beside the name.
+   */
   private formatUserDisplay(user: UserSearchResult): string {
-    const name = composeFullName(user.first_name, user.last_name);
-    const org = user.organization?.name ? ` - ${user.organization.name}` : '';
-    const email = ` (${user.email})`;
-    return `${name}${org}${email}`;
+    return formatUserLabel(composeFullName(user.first_name, user.last_name), user.email);
   }
 }

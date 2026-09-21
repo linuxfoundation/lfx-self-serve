@@ -10,7 +10,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { SearchService } from '@services/search.service';
 import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
 import { UserSearchOption, UserSearchResult } from '@lfx-one/shared/interfaces';
-import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { AutoComplete, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -134,7 +134,7 @@ describe('UserSearchComponent', () => {
       expect(suggestions()[0].displayName).toBe('Sam Chen (sam.chen@cascade-data.example)');
     });
 
-    it('never commits a disabled row, and does not announce it as a rejection either', async () => {
+    it('never commits a disabled row, and hands it to onRejectedSelection so the consumer can say why', async () => {
       const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
       await render({ candidates: [sam, pat], form, requireLfAccount: true });
       const onUserSelect = vi.fn();
@@ -146,10 +146,43 @@ describe('UserSearchComponent', () => {
 
       expect(form.get('ownerUsername')?.value).toBe('');
       expect(onUserSelect).not.toHaveBeenCalled();
-      expect(onRejectedSelection).not.toHaveBeenCalled();
+      expect(onRejectedSelection).toHaveBeenCalledWith(pat);
     });
 
-    it('forwards the disabled flag to the autocomplete so the row is unselectable in the dropdown', async () => {
+    // PrimeNG's option handler ignores optionDisabled: it commits the option and emits the pick on
+    // click and on hover-plus-Enter. Drive that handler directly so a PrimeNG upgrade that changes
+    // either half of this contract is caught here rather than by a saved pending invitee.
+    it("refuses a disabled row even through PrimeNG's own option handler", async () => {
+      const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
+      await render({ candidates: [sam, pat], form });
+      const onUserSelect = vi.fn();
+      const onRejectedSelection = vi.fn();
+      fixture.componentInstance.onUserSelect.subscribe(onUserSelect);
+      fixture.componentInstance.onRejectedSelection.subscribe(onRejectedSelection);
+
+      const autocomplete = fixture.debugElement.query(By.directive(AutoComplete)).componentInstance as AutoComplete;
+      autocomplete.onOptionSelect(new MouseEvent('click'), pat);
+
+      expect(form.get('ownerUsername')?.value).toBe('');
+      expect(onUserSelect).not.toHaveBeenCalled();
+      expect(onRejectedSelection).toHaveBeenCalledWith(pat);
+    });
+
+    it('stops a click on a disabled row before it reaches the option handler, and lets an enabled row through', async () => {
+      await render({ candidates: [sam, pat] });
+
+      const stopped = new MouseEvent('click');
+      const stoppedSpy = vi.spyOn(stopped, 'stopPropagation');
+      fixture.componentInstance.onOptionClick(stopped, pat);
+      expect(stoppedSpy).toHaveBeenCalled();
+
+      const passed = new MouseEvent('click');
+      const passedSpy = vi.spyOn(passed, 'stopPropagation');
+      fixture.componentInstance.onOptionClick(passed, sam);
+      expect(passedSpy).not.toHaveBeenCalled();
+    });
+
+    it('forwards the disabled flag to the autocomplete so the row renders as disabled', async () => {
       await render({ candidates: [sam, pat] });
 
       expect(queryAutocomplete().optionDisabled()).toBe('disabled');

@@ -167,7 +167,7 @@
             [placeholder]="assigneePlaceholder()"
             inputId="formation-item-drawer-assignee-input"
             dataTestId="formation-item-drawer-assignee-search"
-            (onRejectedSelection)="onAssigneeRejected()" />
+            (onRejectedSelection)="onAssigneeRejected($event)" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>

@@ -3,7 +3,12 @@
 
 /** Formation Checklist section E2E (GH-1958). Deterministic via route mocks. */
 
-import { createFormationAllAvailableActions, FORMATION_ASSIGNEE_PENDING_NOTE, FORMATION_ASSIGNEE_PLACEHOLDER } from '@lfx-one/shared/constants';
+import {
+  createFormationAllAvailableActions,
+  FORMATION_ASSIGNEE_EMPTY_MESSAGE,
+  FORMATION_ASSIGNEE_PENDING_NOTE,
+  FORMATION_ASSIGNEE_PLACEHOLDER,
+} from '@lfx-one/shared/constants';
 
 import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import { FormationApiMockHelper } from './helpers/formation-api-mock.helper';
@@ -230,6 +235,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await search.fill('partner-corp');
     await expect(page.getByRole('option', { name: /Jordan Lee/ })).toBeVisible();
     await expect(page.getByTestId('formation-item-drawer-assignee-search-option-note')).toHaveText(FORMATION_ASSIGNEE_PENDING_NOTE);
+
+    // No match: the empty state names the remedy rather than a generic "No users found".
+    await search.fill('nobody-here');
+    await expect(page.getByTestId('formation-item-drawer-assignee-search-empty')).toHaveText(FORMATION_ASSIGNEE_EMPTY_MESSAGE);
 
     await search.fill('sam.chen@cascade');
     await page.getByRole('option', { name: /Sam Chen/ }).click();

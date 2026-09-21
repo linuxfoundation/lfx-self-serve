@@ -410,19 +410,21 @@ export class FormationItemDrawerComponent {
   }
 
   /**
-   * lfx-user-search's `requireLfAccount` guard rejects a no-account pick before touching
-   * `ownerUsername` at all — so unlike an earlier version of this handler, there is nothing to
-   * restore here (a prior in-progress pick, or the item's original owner, is simply left as-is).
-   * This is purely user feedback, telling them why the pick didn't take.
+   * lfx-user-search refuses a pick before touching `ownerUsername` at all — so unlike an earlier
+   * version of this handler, there is nothing to restore here (a prior in-progress pick, or the
+   * item's original owner, is simply left as-is). This is purely user feedback, telling them why
+   * the pick didn't take: a local candidate refused as `disabled` carries its own reason (a pending
+   * invitee's note, #2594); a directory result refused by `requireLfAccount` gets the
+   * record-focused wording.
    */
-  protected onAssigneeRejected(): void {
+  protected onAssigneeRejected(user: UserSearchOption): void {
     // `hasLfAccount`'s own doc comment (search.utils.ts) is explicit: a blank username means "no
     // LFID reconciled in this index yet", not a definitive "this person has no account anywhere"
     // claim — so the message describes the record, not the person's identity.
     this.messageService.add({
       severity: 'warn',
       summary: 'Cannot assign',
-      detail: 'That search result has no resolvable LF username, so it cannot be assigned. Please choose someone else.',
+      detail: user.note ?? 'That search result has no resolvable LF username, so it cannot be assigned. Please choose someone else.',
     });
   }
 
