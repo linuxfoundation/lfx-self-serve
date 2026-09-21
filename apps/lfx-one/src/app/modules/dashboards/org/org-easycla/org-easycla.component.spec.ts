@@ -1151,7 +1151,10 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(refreshCanonicalRecord).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
