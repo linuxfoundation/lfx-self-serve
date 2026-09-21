@@ -842,6 +842,8 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
 
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
     expect(service.form().get('restricted')?.value).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
   it('applies the same default in the quick dialog', () => {
@@ -862,6 +864,7 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     // Otherwise one mis-click on Board leaves a technical meeting silently invite-only.
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
     expect(service.form().get('restricted')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.enabled).toBe(true);
   });
 
   it('leaves the saved access settings alone in edit mode', () => {
@@ -874,6 +877,16 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
 
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
     expect(service.form().get('restricted')?.value).toBe(false);
+  });
+
+  it('locks attendee visibility when the meeting is restricted', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().get('show_meeting_attendees')?.setValue(true);
+
+    service.form().get('restricted')?.setValue(true);
+
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 });
 /**
@@ -1804,6 +1817,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
     recording_enabled: true,
     transcript_enabled: true,
     youtube_upload_enabled: true,
+    show_meeting_attendees: true,
     auto_email_reminder_enabled: true,
     auto_email_reminder_time: 150,
   } as Meeting;
@@ -1866,6 +1880,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
         recording_enabled: true,
         transcript_enabled: true,
         youtube_upload_enabled: true,
+        show_meeting_attendees: true,
         auto_email_reminder_enabled: true,
         auto_email_reminder_time: 150,
       }),

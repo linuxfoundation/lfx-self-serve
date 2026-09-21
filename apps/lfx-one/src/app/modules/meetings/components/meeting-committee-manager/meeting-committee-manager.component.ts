@@ -198,8 +198,9 @@ export class MeetingCommitteeManagerComponent {
 
         // If any selected committee has show_meeting_attendees enabled, toggle it on for the meeting
         const hasShowMeetingAttendees = committees.some((c) => ids.includes(c.uid) && c.show_meeting_attendees === true);
-        if (hasShowMeetingAttendees) {
-          this.form().get('show_meeting_attendees')?.setValue(true);
+        const attendeesControl = this.form().get('show_meeting_attendees');
+        if (hasShowMeetingAttendees && attendeesControl?.enabled) {
+          attendeesControl.setValue(true);
         }
       });
 

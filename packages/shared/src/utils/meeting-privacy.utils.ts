@@ -1,9 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingVisibility } from '../enums';
+import { MeetingType, MeetingVisibility } from '../enums';
 import type { Meeting, MeetingOccurrence } from '../interfaces';
 import { canJoinMeeting } from './meeting.utils';
+
+/**
+ * Whether organizers can turn on attendee visibility.
+ * @description Board and restricted (closed) meetings keep the roster private: the toggle is
+ * locked off so guests do not appear on the meeting page or in calendar invites.
+ */
+export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | null | undefined): boolean {
+  return meetingType === MeetingType.BOARD || restricted === true;
+}
 
 /**
  * Returns a human-readable label for the combined meeting privacy state.

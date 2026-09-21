@@ -8,9 +8,31 @@ import '@angular/compiler';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingVisibility } from '../enums';
+import { MeetingType, MeetingVisibility } from '../enums';
 import type { Meeting } from '../interfaces';
-import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible, isHostKeyVisibleForJoinWindow } from './meeting-privacy.utils';
+import {
+  getMeetingPrivacyIcon,
+  getMeetingPrivacyLabel,
+  isHostKeyVisible,
+  isHostKeyVisibleForJoinWindow,
+  isShowMeetingAttendeesLocked,
+} from './meeting-privacy.utils';
+
+describe('isShowMeetingAttendeesLocked', () => {
+  it('locks board meetings even when unrestricted', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.BOARD, false)).toBe(true);
+  });
+
+  it('locks restricted meetings of any type', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(true);
+  });
+
+  it('is unlocked for unrestricted non-board meetings', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, false)).toBe(false);
+    expect(isShowMeetingAttendeesLocked('', false)).toBe(false);
+    expect(isShowMeetingAttendeesLocked(null, null)).toBe(false);
+  });
+});
 
 describe('getMeetingPrivacyLabel', () => {
   it('returns "Public" for public + unrestricted', () => {

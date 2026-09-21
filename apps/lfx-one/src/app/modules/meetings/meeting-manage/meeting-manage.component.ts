@@ -52,6 +52,7 @@ import {
   getEntityCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
+  isShowMeetingAttendeesLocked,
   mapRecurrenceToFormValue,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
@@ -77,6 +78,7 @@ import {
   forkJoin,
   from,
   map,
+  merge,
   mergeMap,
   Observable,
   of,
@@ -287,6 +289,10 @@ export class MeetingManageComponent {
           this.form().patchValue({ visibility: MeetingVisibility.PUBLIC, restricted: false });
         }
       });
+
+    merge(this.form().get('meeting_type')!.valueChanges, this.form().get('restricted')!.valueChanges)
+      .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.syncShowMeetingAttendeesLock());
 
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
@@ -618,7 +624,7 @@ export class MeetingManageComponent {
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
-      show_meeting_attendees: false, // Coming Soon — disabled in form
+      show_meeting_attendees: formValue.show_meeting_attendees || false,
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
@@ -1147,6 +1153,35 @@ export class MeetingManageComponent {
 
     // Update the form validator to use edit mode validator with original start time
     this.updateFormValidator();
+    this.syncShowMeetingAttendeesLock();
+  }
+
+  /**
+   * Locks attendee visibility off for board and restricted meetings.
+   * @description The ICS and meeting-page roster both honor this flag; board/closed
+   * meetings keep guests private, so the control is forced off rather than left
+   * as a no-op toggle.
+   */
+  private syncShowMeetingAttendeesLock(): void {
+    const form = this.form();
+    const control = form.get('show_meeting_attendees');
+    if (!control) {
+      return;
+    }
+
+    if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
+      if (control.value !== false) {
+        control.setValue(false, { emitEvent: false });
+      }
+      if (control.enabled) {
+        control.disable({ emitEvent: false });
+      }
+      return;
+    }
+
+    if (control.disabled) {
+      control.enable({ emitEvent: false });
+    }
   }
 
   private populateExistingLinks(): void {
@@ -1280,7 +1315,7 @@ export class MeetingManageComponent {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
-        show_meeting_attendees: new FormControl({ value: false, disabled: true }),
+        show_meeting_attendees: new FormControl(false),
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),

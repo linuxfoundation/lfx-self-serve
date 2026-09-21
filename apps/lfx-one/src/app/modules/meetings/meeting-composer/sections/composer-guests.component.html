@@ -49,7 +49,7 @@
     (committeeMembersResolvedChange)="formService.setResolvedCommitteeUids($event)"
     (retryContext)="formService.retryLoadCommitteeContext()" />
 
-  <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()" [comingSoon]="true" />
+  <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()" [toggleNote]="showAttendeesToggleNote()" />
 
   <!-- Invited list -->
   @if (formService.guestsLoading()) {

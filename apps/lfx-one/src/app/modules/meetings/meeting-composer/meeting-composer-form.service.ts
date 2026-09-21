@@ -57,6 +57,7 @@ import {
   generateTempId,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
+  isShowMeetingAttendeesLocked,
   mapRecurrenceToFormValue,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
@@ -1082,7 +1083,7 @@ export class MeetingComposerFormService {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
-        show_meeting_attendees: new FormControl({ value: false, disabled: true }),
+        show_meeting_attendees: new FormControl(false),
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
@@ -1188,6 +1189,42 @@ export class MeetingComposerFormService {
           previousType = currentType;
         })
       );
+    }
+
+    const restrictedControl = form.get('restricted');
+    const attendeesTypeControl = form.get('meeting_type');
+    if (restrictedControl && attendeesTypeControl) {
+      this.syncShowMeetingAttendeesLock(form);
+      this.formSubscriptions.add(
+        merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => this.syncShowMeetingAttendeesLock(form))
+      );
+    }
+  }
+
+  /**
+   * Locks attendee visibility off for board and restricted meetings.
+   * @description The ICS and meeting-page roster both honor this flag; board/closed
+   * meetings keep guests private, so the control is forced off rather than left
+   * as a no-op toggle.
+   */
+  private syncShowMeetingAttendeesLock(form: FormGroup): void {
+    const control = form.get('show_meeting_attendees');
+    if (!control) {
+      return;
+    }
+
+    if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
+      if (control.value !== false) {
+        control.setValue(false, { emitEvent: false });
+      }
+      if (control.enabled) {
+        control.disable({ emitEvent: false });
+      }
+      return;
+    }
+
+    if (control.disabled) {
+      control.enable({ emitEvent: false });
     }
   }
 
@@ -1452,7 +1489,7 @@ export class MeetingComposerFormService {
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
-      show_meeting_attendees: false, // Coming Soon — disabled in form
+      show_meeting_attendees: formValue.show_meeting_attendees || false,
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
@@ -1654,6 +1691,7 @@ export class MeetingComposerFormService {
 
     this.populateExistingLinks();
     this.updateFormValidator();
+    this.syncShowMeetingAttendeesLock(form);
   }
 
   private populateRecurrenceGroup(meeting: Meeting, isCustomRecurrence: boolean): void {
