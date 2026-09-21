@@ -297,6 +297,22 @@ describe('ProjectService — create picker methods', () => {
       expect(proxyRequest).toHaveBeenCalledTimes(2);
       expect(proxyRequest.mock.calls[1][4]).toMatchObject({ type: 'project', filter_grants: 'direct', page_token: 'next' });
     });
+
+    it('throws when a later page fails and the caller asked for failOnPartial (a silent prefix would misstate the grant set)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      await expect(service.getDirectGrantProjectRows(req, { failOnPartial: true })).rejects.toThrow('page-fail');
+    });
+
+    it('returns the pages it got by default when a later page fails (the create picker tolerates a prefix)', async () => {
+      proxyRequest.mockResolvedValueOnce(pageOf([{ uid: 'a', slug: 'a' }], 'next'));
+      proxyRequest.mockRejectedValueOnce(new Error('page-fail'));
+
+      const result = await service.getDirectGrantProjectRows(req);
+
+      expect(result.map((p) => p.uid)).toEqual(['a']);
+    });
   });
 
   describe('getDirectGrantProjects', () => {

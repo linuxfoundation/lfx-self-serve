@@ -1172,7 +1172,11 @@ export class FormationService {
    */
   private async readFormationGrantProjectUids(req: Request): Promise<{ uids: Set<string>; degraded: boolean }> {
     try {
-      const rows = await this.projectService.getDirectGrantProjectRows(req);
+      // failOnPartial: this set is the invite membership itself, so a silently-partial page set
+      // would drop invited formations under a `'complete'` state — the same reasoning the two
+      // aggregate reads in `getMyFormationWork` apply. Failing here lands in the catch below, which
+      // is what turns the response `'partial'` and puts Retry on the page (PR #2799 review).
+      const rows = await this.projectService.getDirectGrantProjectRows(req, { failOnPartial: true });
       const uids = new Set(rows.filter((project) => typeof project.stage === 'string' && isFormationStageGate(project.stage)).map((project) => project.uid));
       logger.debug(req, 'get_my_formation_work', 'Resolved direct-grant formation projects', { direct_grant_count: rows.length, formation_count: uids.size });
       return { uids, degraded: false };

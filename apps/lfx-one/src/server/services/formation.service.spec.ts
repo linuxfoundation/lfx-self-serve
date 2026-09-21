@@ -2076,6 +2076,9 @@ describe('FormationService', () => {
         items_done: 0,
         items_total: 17,
       });
+      // The grant set is the invite membership itself, so a silently-partial page set would drop
+      // invited formations under a `'complete'` state — the read must fail into the degrade path.
+      expect(getDirectGrantProjectRows).toHaveBeenCalledWith(expect.anything(), { failOnPartial: true });
       // One aggregate read for "assigned OR invited": the assignee tag and one project_uid tag per
       // direct-grant formation project OR'd via `tags`, lifecycle AND'd via `tags_all`.
       const formationCall = proxyRequest.mock.calls.find((c) => (c[4] as { type: string }).type === 'formation');

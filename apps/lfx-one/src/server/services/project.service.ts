@@ -467,14 +467,23 @@ export class ProjectService {
    * Callers that need a particular relation must check it themselves — `getDirectGrantProjects`
    * below narrows to writers/coordinators for the create picker; `FormationService.getMyFormationWork`
    * (#2795) deliberately does not, because a view-only formation invite is an `auditor` grant.
+   *
+   * `failOnPartial` is passed straight through to `fetchAllQueryResources`, which otherwise returns
+   * the pages it managed to read when a later one fails. The create picker tolerates that prefix
+   * (a shorter default tree, with search still reaching everything); a caller for whom this set IS
+   * the answer — the formation path, where a missing page silently drops invited formations under a
+   * `'complete'` state — must pass `true` so the failure reaches its own degrade handling.
    */
-  public async getDirectGrantProjectRows(req: Request): Promise<Project[]> {
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        filter_grants: 'direct',
-        ...(pageToken && { page_token: pageToken }),
-      })
+  public async getDirectGrantProjectRows(req: Request, options: { failOnPartial?: boolean } = {}): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project',
+          filter_grants: 'direct',
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: options.failOnPartial ?? false }
     );
     return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
   }
