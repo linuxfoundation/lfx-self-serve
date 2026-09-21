@@ -46,11 +46,15 @@ export class AccountContextService {
   public readonly selectedAccount: WritableSignal<Account>;
 
   /**
-   * Spec 050: uid of the organization adopted from the `/org/{segment}/…` address by `orgPathParamGuard`
-   * — access-verified for this viewer at resolve time. While it is the selection, bootstrap paths
-   * (the persona refresh re-seeding organizations, the org-items default selection) must not replace
-   * it: that is exactly the silent substitution deep links exist to remove. Released when the user
-   * switches (`setAccount` with another uid) or the selection is cleared.
+   * Spec 050: uid of the organization the address names — adopted from `/org/{segment}/…` by
+   * `orgPathParamGuard` (access-verified for this viewer at resolve time), or the default / restored
+   * selection that address is about to be written from (`pinSelection`, lfx-self-serve#2570). While it
+   * is the selection, bootstrap paths (the persona refresh re-seeding organizations, the org-items
+   * default selection) must not replace it: that is exactly the silent substitution deep links exist
+   * to remove — and, for a viewer whose organizations come from grants rather than personas (staff),
+   * the persona refresh answers with *no* seeds, which without the pin resets an addressed page to the
+   * placeholder mid-render. Released when the user switches (`setAccount` with another uid) or the
+   * selection is cleared.
    */
   private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
 
@@ -187,6 +191,22 @@ export class AccountContextService {
   public adoptFromAddress(account: Account): void {
     this.setAccount(account);
     this.addressedUid.set(account.uid ?? null);
+  }
+
+  /**
+   * Pin the *current* selection as the addressed one without rebuilding it (lfx-self-serve#2570).
+   * For the two selections that become the address without going through the resolver: the org-items
+   * default (or cookie-restored match) that `navigateToSelectedOrg('default')` is about to write into
+   * `/org/{segment}/{page}`, and a `/org/{segment}/…` visit whose segment already names the selection
+   * (the path guard's no-round-trip shortcut). Not a `setAccount`: that would re-merge the live
+   * Snowflake row and revert display fields the canonical record has since patched. No-op on the
+   * placeholder — there is nothing to pin.
+   */
+  public pinSelection(): void {
+    const uid = this.selectedAccount().uid ?? null;
+    if (uid) {
+      this.addressedUid.set(uid);
+    }
   }
 
   public getAccountId(): string {

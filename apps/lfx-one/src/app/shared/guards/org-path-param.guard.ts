@@ -84,6 +84,11 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const heldSlug = typeof selected.slug === 'string' ? selected.slug.trim().toLowerCase() : null;
   const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || slugMatches)) {
+    // The address names the selection, so the selection is addressed — pinned exactly as a resolver
+    // hit would be (lfx-self-serve#2570). Without this a selection that reached the address by any
+    // other route (the org-items default, the cookie) stays unpinned here and a later persona refresh
+    // may re-seed over it under the address it does not match.
+    accountContext.pinSelection();
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }
 

@@ -296,6 +296,11 @@ export class OrgNavigationService {
         if (heldSlug !== indexedSlug) {
           this.accountContextService.setIndexedSlug(indexedSlug);
         }
+        // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
+        // between here and the page's render, and for a grant-only (staff) viewer it carries no
+        // seeds — unpinned, that resets the selection to the placeholder under the address just
+        // written, and the page renders empty for the organization the bar names.
+        this.accountContextService.pinSelection();
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never touches an addressed page or the
         // not-found dead end, so this is a no-op everywhere but the bare legacy form.
@@ -311,6 +316,12 @@ export class OrgNavigationService {
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
+    // The default is what the address is written from next, so it is pinned like an adopted one
+    // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a
+    // grant-only viewer — must not replace it. Pinned at selection time, not at the write, because
+    // that refresh can also land in the gap before the write; unpinned it would clear the selection,
+    // the write would find no segment, and the legacy address would stay put, empty.
+    this.accountContextService.pinSelection();
     // Fire-and-forget: it settles either way (failures are logged inside and leave the indexed snapshot).
     void this.accountContextService.refreshCanonicalRecord(account);
     // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address

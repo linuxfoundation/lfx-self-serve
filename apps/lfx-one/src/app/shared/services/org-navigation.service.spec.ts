@@ -34,6 +34,7 @@ describe('OrgNavigationService default selection', () => {
   let isAddressedSelection: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
   let setIndexedSlug: ReturnType<typeof vi.fn>;
+  let pinSelection: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
@@ -44,6 +45,7 @@ describe('OrgNavigationService default selection', () => {
     isAddressedSelection = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
+    pinSelection = vi.fn();
     navigateToSelectedOrg = vi.fn();
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
@@ -57,7 +59,7 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, refreshCanonicalRecord },
+          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, pinSelection, refreshCanonicalRecord },
         },
       ],
     });
@@ -132,6 +134,19 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
+  // lfx-self-serve#2570 (prod): the persona refresh can land after the default is selected — with no
+  // seeds at all for a grant-only (staff) viewer — and would reset an unpinned selection to the
+  // placeholder under the address just written. The default is pinned like an adopted selection,
+  // and pinned *before* the write: landing in the gap would otherwise clear the selection, the write
+  // would find no segment, and the legacy address would stay put, empty.
+  it('pins the default selection before writing it into the address', () => {
+    bootstrapWith([item(UID_A, 'Acme')]);
+
+    expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeGreaterThan(setAccount.mock.invocationCallOrder[0]);
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
   // The organization the address named was access-verified by the resolver a moment ago; whether or
   // not it appears on the first page, it stays selected and the address is not touched.
   it('leaves an addressed selection alone', () => {
@@ -155,6 +170,9 @@ describe('OrgNavigationService default selection', () => {
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    // Same exposure as the default: the restored selection is about to become the address.
+    expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   // A cookie-restored selection carries no slug, or a stale one from an earlier session; the indexed

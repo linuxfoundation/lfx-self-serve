@@ -184,4 +184,43 @@ describe('AccountContextService — address-adopted selection', () => {
     service.initializeUserOrganizations([]);
     expect(service.selectedAccount().uid).toBeUndefined();
   });
+
+  // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
+  // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
+  // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
+  describe('pinSelection', () => {
+    it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
+      service.setAccount(addressedB);
+      service.pinSelection();
+
+      expect(service.isAddressedSelection()).toBe(true);
+      service.initializeUserOrganizations([]);
+      expect(service.selectedAccount()).toEqual(addressedB);
+    });
+
+    it('keeps the current selection through a re-seed that does not list it', () => {
+      service.setAccount(addressedB);
+      service.pinSelection();
+
+      service.initializeUserOrganizations([seedA]);
+      expect(service.selectedAccount()).toEqual(addressedB);
+      expect(service.availableAccounts()).toEqual([seedA]);
+    });
+
+    it('does nothing on the placeholder, so seeding still selects normally', () => {
+      service.pinSelection();
+      expect(service.isAddressedSelection()).toBe(false);
+
+      service.initializeUserOrganizations([seedA]);
+      expect(service.selectedAccount()).toEqual(seedA);
+    });
+
+    it('is released when the user switches, like an adopted selection', () => {
+      service.setAccount(addressedB);
+      service.pinSelection();
+      service.setAccount(seedA);
+
+      expect(service.isAddressedSelection()).toBe(false);
+    });
+  });
 });
