@@ -8,8 +8,9 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { SearchService } from '@services/search.service';
-import { UserSearchResult } from '@lfx-one/shared/interfaces';
-import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
+import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
+import { UserSearchOption, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { AutoComplete, AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { of } from 'rxjs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -32,6 +33,7 @@ function buildUserSearchResult(overrides: Partial<UserSearchResult>): UserSearch
 
 describe('UserSearchComponent', () => {
   let fixture: ComponentFixture<UserSearchComponent>;
+  let searchUsersMock: ReturnType<typeof vi.fn>;
 
   afterEach(() => {
     fixture?.destroy();
@@ -45,28 +47,36 @@ describe('UserSearchComponent', () => {
       showManualEntry?: boolean;
       showClear?: boolean;
       form?: FormGroup;
+      candidates?: readonly UserSearchOption[] | null;
+      searchUsers?: ReturnType<typeof vi.fn>;
+      /** `null` leaves the corpus unbound, to exercise the misconfiguration path. */
+      searchType?: 'committee_member' | null;
     } = {}
   ): Promise<void> => {
     TestBed.resetTestingModule();
+    searchUsersMock = overrides.searchUsers ?? vi.fn().mockReturnValue(of([]));
     await TestBed.configureTestingModule({
       imports: [UserSearchComponent],
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
         provideNoopAnimations(),
-        { provide: SearchService, useValue: { searchUsers: vi.fn().mockReturnValue(of([])) } },
+        { provide: SearchService, useValue: { searchUsers: searchUsersMock } },
       ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(UserSearchComponent);
     fixture.componentRef.setInput('form', overrides.form ?? new FormGroup({ ownerUsername: new FormControl<string | null>('') }));
     fixture.componentRef.setInput('usernameControl', 'ownerUsername');
-    fixture.componentRef.setInput('searchType', 'committee_member');
+    if (overrides.searchType !== null) {
+      fixture.componentRef.setInput('searchType', overrides.searchType ?? 'committee_member');
+    }
     fixture.componentRef.setInput('disabled', overrides.disabled ?? false);
     fixture.componentRef.setInput('readonly', overrides.readonly ?? false);
     fixture.componentRef.setInput('requireLfAccount', overrides.requireLfAccount ?? false);
     fixture.componentRef.setInput('showManualEntry', overrides.showManualEntry ?? true);
     fixture.componentRef.setInput('showClear', overrides.showClear ?? false);
+    fixture.componentRef.setInput('candidates', overrides.candidates ?? null);
     fixture.componentRef.setInput('dataTestId', 'user-search-test');
     await fixture.whenStable();
   };
@@ -74,6 +84,147 @@ describe('UserSearchComponent', () => {
   const query = (): HTMLInputElement | null => fixture.nativeElement.querySelector('[data-testid="user-search-test"] input');
   const queryAutocomplete = (): AutocompleteComponent =>
     fixture.debugElement.query(By.directive(AutocompleteComponent)).componentInstance as AutocompleteComponent;
+  const suggestions = (): (UserSearchOption & { displayName: string; fullName: string })[] =>
+    (fixture.componentInstance as unknown as { suggestions: () => (UserSearchOption & { displayName: string; fullName: string })[] }).suggestions();
+  // Drives the search the way p-autocomplete does once its own delay elapses: through completeMethod.
+  const typeAndSettle = async (text: string): Promise<void> => {
+    fixture.componentInstance.onSearchComplete({ query: text } as AutoCompleteCompleteEvent);
+    await fixture.whenStable();
+  };
+
+  // #2594: local mode — a caller-supplied list (the formation assignee picker's people on the
+  // project) searched client-side, with rows that can be listed but not picked.
+  describe('candidates (local mode)', () => {
+    const sam: UserSearchOption = {
+      ...buildUserSearchResult({
+        uid: 'sam',
+        first_name: 'Sam Chen',
+        last_name: '',
+        email: 'sam.chen@cascade-data.example',
+        username: 'sam.chen',
+        type: 'project_member',
+      }),
+    };
+    const pat: UserSearchOption = {
+      ...buildUserSearchResult({ uid: 'pat', first_name: 'Pat Lee', last_name: '', email: 'pat@partner.example', username: null, type: 'project_member' }),
+      disabled: true,
+      note: 'Invite pending',
+    };
+
+    it('filters the list by an email fragment without calling the directory', async () => {
+      await render({ candidates: [sam, pat] });
+
+      await typeAndSettle('@partner');
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+      expect(suggestions().map((s) => s.uid)).toEqual(['pat']);
+      expect(suggestions()[0].fullName).toBe('Pat Lee');
+      expect(suggestions()[0].note).toBe('Invite pending');
+    });
+
+    it('filters from a single character — no two-character floor for a local list', async () => {
+      await render({ candidates: [sam, pat] });
+
+      await typeAndSettle('s');
+
+      expect(suggestions().map((s) => s.uid)).toEqual(['sam']);
+    });
+
+    it('composes a whole-name candidate without a trailing space in the committed label', async () => {
+      await render({ candidates: [sam] });
+
+      await typeAndSettle('sam');
+
+      expect(suggestions()[0].displayName).toBe('Sam Chen (sam.chen@cascade-data.example)');
+    });
+
+    it('never commits a disabled row, and hands it to onRejectedSelection so the consumer can say why', async () => {
+      const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
+      await render({ candidates: [sam, pat], form, requireLfAccount: true });
+      const onUserSelect = vi.fn();
+      const onRejectedSelection = vi.fn();
+      fixture.componentInstance.onUserSelect.subscribe(onUserSelect);
+      fixture.componentInstance.onRejectedSelection.subscribe(onRejectedSelection);
+
+      fixture.componentInstance.onUserSelected({ value: pat } as AutoCompleteSelectEvent);
+
+      expect(form.get('ownerUsername')?.value).toBe('');
+      expect(onUserSelect).not.toHaveBeenCalled();
+      expect(onRejectedSelection).toHaveBeenCalledWith(pat);
+    });
+
+    // PrimeNG's option handler ignores optionDisabled: it commits the option and emits the pick on
+    // click and on hover-plus-Enter. Drive that handler directly so a PrimeNG upgrade that changes
+    // either half of this contract is caught here rather than by a saved pending invitee.
+    it("refuses a disabled row even through PrimeNG's own option handler", async () => {
+      const form = new FormGroup({ ownerUsername: new FormControl<string | null>('') });
+      await render({ candidates: [sam, pat], form });
+      const onUserSelect = vi.fn();
+      const onRejectedSelection = vi.fn();
+      fixture.componentInstance.onUserSelect.subscribe(onUserSelect);
+      fixture.componentInstance.onRejectedSelection.subscribe(onRejectedSelection);
+
+      const autocomplete = fixture.debugElement.query(By.directive(AutoComplete)).componentInstance as AutoComplete;
+      autocomplete.onOptionSelect(new MouseEvent('click'), pat);
+
+      expect(form.get('ownerUsername')?.value).toBe('');
+      expect(onUserSelect).not.toHaveBeenCalled();
+      expect(onRejectedSelection).toHaveBeenCalledWith(pat);
+    });
+
+    it('forwards the disabled flag to the autocomplete so the row renders as disabled', async () => {
+      await render({ candidates: [sam, pat] });
+
+      expect(queryAutocomplete().optionDisabled()).toBe('disabled');
+    });
+
+    it('defaults the empty copy to the shared message', async () => {
+      await render();
+
+      expect(fixture.componentInstance.emptyMessage()).toBe(USER_SEARCH_EMPTY_MESSAGE);
+    });
+
+    it('keeps the directory search when no candidates are supplied', async () => {
+      await render();
+
+      await typeAndSettle('sa');
+
+      expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
+    });
+
+    // The search is driven by completeMethod alone, not by the search control's valueChanges — the
+    // fix for a spinner PrimeNG left stuck when a synchronous local answer landed before its
+    // `search()` had opened the panel and the de-duplicated completeMethod then had nothing new to
+    // emit. These two pin that design against a "why not valueChanges?" cleanup.
+    it('does not search when the internal control is written directly — only completeMethod drives a search', async () => {
+      await render();
+
+      (fixture.componentInstance as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue('jane');
+      await fixture.whenStable();
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+    });
+
+    it('re-runs the search for a repeated identical completeMethod query, so PrimeNG always gets a fresh suggestions emission', async () => {
+      await render();
+
+      await typeAndSettle('jane');
+      await typeAndSettle('jane');
+
+      expect(searchUsersMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('reports a consumer that binds neither searchType nor candidates instead of failing silently', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await render({ searchType: null });
+
+      await typeAndSettle('sa');
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith('[UserSearchComponent] requires either searchType or candidates');
+      consoleError.mockRestore();
+    });
+  });
 
   // #2583: `disabled` was previously declared but never wired to the underlying control — these
   // two tests exist solely to cover that fix, not to re-test the component's existing

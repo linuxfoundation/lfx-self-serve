@@ -150,6 +150,13 @@ export class FormationChecklistSectionComponent {
    * team was offered a status dropdown whose every write the gateway deterministically 403'd.
    */
   protected readonly canSetStatus = computed(() => this.response()?.can_set_status === true);
+  /**
+   * #2594: the parent project's slug, handed to the drawer so its assignee picker can read the
+   * people on this formation (`GET /api/projects/:slug/formation/people`) and offer only them —
+   * the population upstream accepts as an assignee. `null` until the checklist has loaded, which
+   * leaves the drawer on its directory-search fallback.
+   */
+  protected readonly drawerProjectSlug = computed(() => this.formation()?.parent_project_slug ?? null);
   /** Names the reason for the `readOnly` banner — the two known terminal lifecycles get their own copy; anything else (including a future 4th upstream value) names the raw string rather than staying silent about it. */
   protected readonly readOnlyMessage = computed(() => {
     const formation = this.formation();

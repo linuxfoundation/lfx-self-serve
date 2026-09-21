@@ -10,6 +10,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, provideRouter } from '@angular/router';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { createUnavailableFormationPeopleResponse } from '@lfx-one/shared/constants';
 import { Formation, FormationChecklistResponse, FormationLifecycle } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { Observable, of, Subject, throwError } from 'rxjs';
@@ -150,6 +151,9 @@ describe('FormationChecklistSectionComponent', () => {
             getProjectFormation,
             getQueueFormationChecklist,
             getFormationItem: stubGetFormationItem(response),
+            // The drawer also reads the people behind its assignee picker on open (#2594); the
+            // unavailable shape keeps it on the directory path these specs already cover.
+            getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())),
           },
         },
       ],
@@ -403,6 +407,7 @@ describe('FormationChecklistSectionComponent', () => {
               getProjectFormation: formationMock,
               getQueueFormationChecklist: formationMock,
               getFormationItem: vi.fn().mockReturnValue(new Subject()),
+              getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())),
             },
           },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: { get: (k: string) => (k === 'item' ? itemKey : null) } } } },

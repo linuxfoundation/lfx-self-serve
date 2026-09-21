@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { CommitteeOrganizationReference, UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { CommitteeOrganizationReference, UserSearchResponse, UserSearchResult, UserSearchType } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -15,7 +15,7 @@ export class SearchService {
   /**
    * Search for users (meeting registrants or committee members)
    */
-  public searchUsers(name: string, type: 'committee_member' | 'meeting_registrant'): Observable<UserSearchResult[]> {
+  public searchUsers(name: string, type: UserSearchType): Observable<UserSearchResult[]> {
     if (!name || !type) {
       return of([]);
     }

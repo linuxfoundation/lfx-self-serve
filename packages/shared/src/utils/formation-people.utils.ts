@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FORMATION_PEOPLE_GROUP_LABELS, LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
+import { FORMATION_ASSIGNEE_PENDING_NOTE, FORMATION_PEOPLE_GROUP_LABELS, LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
 import type {
   FormationPeopleGroup,
   FormationPeopleGroups,
@@ -11,6 +11,7 @@ import type {
   FormationPersonStatus,
 } from '../interfaces/formation-people.interface';
 import type { ProjectSettings, UserInfo } from '../interfaces/project.interface';
+import type { UserSearchOption } from '../interfaces/search.interface';
 
 /**
  * Whether an address belongs to LF staff for the people card's grouping (#2724) — an exact,
@@ -188,4 +189,44 @@ export function toFormationPersonRow(person: FormationPerson, assignees: Readonl
     subtitle: formatFormationPersonSubtitle(person, assignedItemCount),
     status: resolveFormationPersonStatus(person),
   };
+}
+
+/**
+ * Maps one person on the formation to a row the shared `lfx-user-search` picker can list as a
+ * caller-supplied candidate (#2594: the assignee picker searches the project's grant holders, not
+ * a global directory). The settings entry carries a single `name`, so it rides `first_name` whole
+ * and `last_name` stays empty — `composeFullName` renders that without a stray space. An entry
+ * with no name of its own (`buildFormationPeople` falls back to the email) gets an empty name
+ * instead, so the picker shows the address once rather than as "email (email)". A pending
+ * (email-only) entry is listed but disabled with a note, since upstream only accepts a grant
+ * holder with a username as an assignee: showing the row explains why the person cannot be picked
+ * yet, instead of a search that silently finds nobody.
+ */
+export function toAssigneeSearchOption(person: FormationPerson): UserSearchOption {
+  return {
+    uid: person.key,
+    email: person.email,
+    first_name: person.name === person.email ? '' : person.name,
+    last_name: '',
+    job_title: person.job_title,
+    organization: person.organization ? { name: person.organization } : null,
+    committee: null,
+    type: 'project_member',
+    username: person.username,
+    disabled: person.is_pending,
+    note: person.is_pending ? FORMATION_ASSIGNEE_PENDING_NOTE : null,
+  };
+}
+
+/**
+ * The listed person holding `username`, for rendering a committed assignee as a name rather than
+ * a bare LFID; `null` when the list does not know them or the username is blank.
+ */
+export function findFormationPersonByUsername(people: readonly FormationPerson[], username: string | null | undefined): FormationPerson | null {
+  const wanted = username?.trim();
+  if (!wanted) {
+    return null;
+  }
+
+  return people.find((person) => person.username === wanted) ?? null;
 }

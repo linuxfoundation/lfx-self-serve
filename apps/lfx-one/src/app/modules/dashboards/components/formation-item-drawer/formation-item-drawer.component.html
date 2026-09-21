@@ -146,25 +146,28 @@
       <div class="flex flex-col gap-3 sm:flex-row">
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-assignee">
           <label for="formation-item-drawer-assignee-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Assignee</label>
-          <!-- searchType is 'committee_member', not 'meeting_registrant': every existing lfx-user-search
-               caller already uses committee_member, and it's the only proven-working type today —
-               meeting_registrant has zero UI callers anywhere in the app. Neither corpus indexes a plain
-               "project member"/"project partner" directory (FGA/lens-derived access, not a searchable
-               index), so a project partner with no committee seat and no meeting registration won't
-               surface here. Known gap, recorded on #2583; not solved here by inventing a new type. -->
+          <!-- #2594: the picker lists the people on this formation — the project's grant holders, the only
+               population upstream accepts as an assignee — filtered locally by name, email or username, so
+               a pick can never fail at save with assignee_not_on_project. Pending invitees are listed but
+               disabled with a note, so a search never silently finds nobody. searchType is the fallback
+               corpus, used only while the people read is unavailable (global-grant staff who 403 on the
+               settings read): committee_member is the one proven-working directory type, and the
+               ASSIGNEE_NOT_ON_PROJECT handling in onSaveDetails covers a pick from it. -->
           <lfx-user-search
             [form]="editForm"
             searchType="committee_member"
+            [candidates]="assigneeCandidates()"
+            [emptyMessage]="assigneeEmptyMessage()"
             usernameControl="ownerUsername"
             [displayValue]="assigneeDisplayValue()"
             [showClear]="true"
-            [readonly]="assignmentReadOnly()"
+            [readonly]="assigneeReadOnly()"
             [requireLfAccount]="true"
             [showManualEntry]="false"
-            placeholder="Search for a person…"
+            [placeholder]="assigneePlaceholder()"
             inputId="formation-item-drawer-assignee-input"
             dataTestId="formation-item-drawer-assignee-search"
-            (onRejectedSelection)="onAssigneeRejected()" />
+            (onRejectedSelection)="onAssigneeRejected($event)" />
         </div>
         <div class="flex flex-col gap-2 flex-1" data-testid="formation-item-drawer-due-date">
           <label for="formation-item-drawer-due-date-input" class="text-xs font-medium text-gray-500 uppercase tracking-wide">Due date</label>

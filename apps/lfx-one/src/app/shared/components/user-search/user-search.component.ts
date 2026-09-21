@@ -4,11 +4,12 @@
 import { Component, DestroyRef, inject, input, output, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { UserSearchResult } from '@lfx-one/shared/interfaces';
-import { hasLfAccount, rankUserSearchResults } from '@lfx-one/shared/utils';
+import { USER_SEARCH_EMPTY_MESSAGE } from '@lfx-one/shared/constants';
+import { UserSearchOption, UserSearchResult, UserSearchType } from '@lfx-one/shared/interfaces';
+import { composeFullName, filterUserSearchCandidates, formatUserLabel, hasLfAccount, rankUserSearchResults } from '@lfx-one/shared/utils';
 import { SearchService } from '@services/search.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, Observable, of, startWith, Subject, switchMap } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 
@@ -21,9 +22,13 @@ export class UserSearchComponent {
   private readonly searchService = inject(SearchService);
   private readonly destroyRef = inject(DestroyRef);
 
-  // Required inputs
+  // Required input
   public form = input.required<FormGroup>();
-  public searchType = input.required<'committee_member' | 'meeting_registrant'>();
+
+  // Search source — exactly one of the two must be bound: `searchType` names the query-index
+  // corpus for a directory search, or `candidates` (below, under local mode) supplies the list to
+  // search, in which case the directory is never called and `searchType` is ignored.
+  public searchType = input<UserSearchType>();
 
   // Optional inputs for form control names
   public emailControl = input<string>();
@@ -66,13 +71,25 @@ export class UserSearchComponent {
   // set this `false` — manual entry can never satisfy the LF-account requirement, so offering it is
   // a guaranteed-failure affordance.
   public showManualEntry = input<boolean>(true);
+  /**
+   * Local mode: a caller-supplied list to search instead of the directory (#2594 — the formation
+   * assignee picker offers the people on the project, the only population upstream will accept as
+   * an assignee, rather than a global corpus that fails at save). Filtered client-side by name,
+   * email or username substring from the first character; a row with `disabled` set is listed but
+   * cannot be picked, and its `note` renders under the name. `null` (the default) keeps the
+   * directory search, which then needs `searchType`.
+   */
+  public candidates = input<readonly UserSearchOption[] | null>(null);
+  // The dropdown's no-results copy — local-mode consumers name the remedy (e.g. invite first).
+  public emptyMessage = input<string>(USER_SEARCH_EMPTY_MESSAGE);
 
   // Outputs
-  public readonly onUserSelect = output<UserSearchResult>();
-  // Fired instead of `onUserSelect` when `requireLfAccount` rejects a pick — none of this
-  // component's bound controls were touched, so consumers don't need to restore anything, only
-  // react (e.g. a toast) to the rejection itself.
-  public readonly onRejectedSelection = output<UserSearchResult>();
+  public readonly onUserSelect = output<UserSearchOption>();
+  // Fired instead of `onUserSelect` when a pick is refused — by `requireLfAccount`, or because a
+  // local candidate is `disabled` (its `note` then says why) — none of this component's bound
+  // controls were touched, so consumers don't need to restore anything, only react (e.g. a toast)
+  // to the rejection itself.
+  public readonly onRejectedSelection = output<UserSearchOption>();
   public readonly onManualEntry = output<void>();
   // Emitted after a clear so consumers can reset controls this component doesn't bind (e.g. a
   // display-name control composed by the parent) in the same tick as the bound-control resets.
@@ -98,32 +115,63 @@ export class UserSearchComponent {
     userSearch: new FormControl<string>(''),
   });
 
-  // Initialize suggestions as a signal based on search query changes
-  protected suggestions: Signal<(UserSearchResult & { displayName: string })[]>;
+  /**
+   * The search trigger — fed only by p-autocomplete's `completeMethod` (and a clear), never by the
+   * search control's own valueChanges. PrimeNG writes the typed text into that control through
+   * its value accessor the moment a key lands, *before* its `delay` elapses and `search()` flips
+   * its loading state; it then only opens the panel for a suggestions change that arrives while
+   * loading. A valueChanges-driven pipeline could therefore answer before the dropdown was
+   * listening, and the `completeMethod` that followed for the same text — de-duplicated away —
+   * left the spinner stuck. Network latency hid that on the directory path (a round-trip always
+   * lands after `search()`); a synchronous local candidate list (#2594) surfaced it every time.
+   * PrimeNG's own `delay` already coalesces keystrokes, so no debounce is layered on top.
+   */
+  private readonly searchQuery$ = new Subject<string>();
+
+  // Initialize suggestions as a signal based on search query changes. `fullName` is precomposed
+  // here (never in the template) so a local candidate carrying the whole name in `first_name`
+  // renders without a stray trailing space.
+  protected suggestions: Signal<(UserSearchOption & { displayName: string; fullName: string })[]>;
 
   public constructor() {
     // Initialize suggestions signal that reacts to search query changes
-    const searchResults$ = this.userSearchForm.get('userSearch')!.valueChanges.pipe(
+    const searchResults$ = this.searchQuery$.pipe(
       startWith(''),
-      distinctUntilChanged(),
-      debounceTime(300),
-      switchMap((searchTerm: string | object | null) => {
-        const trimmedTerm = typeof searchTerm === 'string' ? searchTerm.trim() : '';
+      switchMap((searchTerm: string): Observable<UserSearchOption[]> => {
+        const trimmedTerm = searchTerm.trim();
+
+        // Local mode: no request and no length floor — the list is small, so a single character
+        // narrows it usefully, and an empty query lists everyone.
+        const candidates = this.candidates();
+        if (candidates !== null) {
+          return of(filterUserSearchCandidates(candidates, trimmedTerm));
+        }
 
         // Only fetch suggestions when user types at least 2 characters
         if (trimmedTerm.length < 2) {
           return of([]);
         }
 
+        // A consumer that binds neither `searchType` nor `candidates` would otherwise render a box
+        // that looks functional and answers nothing forever — indistinguishable from an empty corpus.
+        // Checked only for a real query: the pipeline's initial empty emission runs before the
+        // inputs are bound, and must not cry wolf on every instantiation.
+        const searchType = this.searchType();
+        if (!searchType) {
+          console.error('[UserSearchComponent] requires either searchType or candidates');
+          return of([]);
+        }
+
         // Use the search type from input, then re-rank so name matches surface
-        // first and incidental email/alias matches (upstream over-match) are demoted.
-        return this.searchService.searchUsers(trimmedTerm, this.searchType()).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
+        // first and incidental alias matches (upstream over-match) are demoted.
+        return this.searchService.searchUsers(trimmedTerm, searchType).pipe(map((users) => rankUserSearchResults(users, trimmedTerm)));
       }),
-      map((users: UserSearchResult[]) => {
-        // Add displayName field for the autocomplete to show
+      map((users: UserSearchOption[]) => {
+        // Add the display fields the autocomplete and the item template show
         return users.map((user) => ({
           ...user,
           displayName: this.formatUserDisplay(user),
+          fullName: composeFullName(user.first_name, user.last_name),
         }));
       }),
       catchError((error) => {
@@ -181,8 +229,8 @@ export class UserSearchComponent {
   public onSearchComplete(event: AutoCompleteCompleteEvent): void {
     // Fresh typing supersedes any earlier discarded text as the user's latest intent (GH-2694).
     this.discardedSearchText = null;
-    // Update the search form value which will trigger the observable
-    this.userSearchForm.get('userSearch')?.setValue(event.query);
+    // The value accessor has already written the text into the search control; this only runs the search.
+    this.searchQuery$.next(event.query);
   }
 
   public onUserSelected(event: AutoCompleteSelectEvent): void {
@@ -191,7 +239,19 @@ export class UserSearchComponent {
     // standing would warn "not selected" about a selection that just happened (or double-toast a
     // requireLfAccount rejection on top of its own "Cannot assign").
     this.discardedSearchText = null;
-    const selectedUser = event.value as UserSearchResult;
+    const selectedUser = event.value as UserSearchOption;
+
+    // A disabled local candidate is the one thing this handler must never commit — and this guard
+    // is what prevents it, not `optionDisabled`: PrimeNG (20.4) styles a disabled option and marks
+    // it aria-disabled, but its own option handler still commits the value and emits the pick, on
+    // click and on hover-plus-Enter (`focusOnHover` is on by default). By the time the pick lands
+    // here PrimeNG has already closed the panel and written the option into the box, so snap the
+    // box back and let the consumer say why — the row's `note` rides on the rejected option.
+    if (selectedUser.disabled) {
+      this.userSearchForm.get('userSearch')?.setValue(this.displayValue() ?? '', { emitEvent: false });
+      this.onRejectedSelection.emit(selectedUser);
+      return;
+    }
 
     // Reject before touching any bound control — the box's own text already shows the rejected
     // pick's optionLabel at this point (PrimeNG writes it before firing onSelect), so snap it back
@@ -304,6 +364,7 @@ export class UserSearchComponent {
     // warn about later (GH-2694).
     this.discardedSearchText = null;
     this.userSearchForm.get('userSearch')?.setValue('');
+    this.searchQuery$.next('');
 
     // Clear all form controls if they are specified
     const parentForm = this.form();
@@ -331,10 +392,13 @@ export class UserSearchComponent {
     this.onManualEntry.emit();
   }
 
+  /**
+   * The text the box shows for a picked option (`optionLabel`) — the same "Name (email)" that
+   * consumers' committed labels compose with `formatUserLabel`, so a pick never flashes an
+   * organization suffix for the tick before the committed label replaces it. The organization
+   * still shows on the dropdown row itself, beside the name.
+   */
   private formatUserDisplay(user: UserSearchResult): string {
-    const name = `${user.first_name} ${user.last_name}`;
-    const org = user.organization?.name ? ` - ${user.organization.name}` : '';
-    const email = ` (${user.email})`;
-    return `${name}${org}${email}`;
+    return formatUserLabel(composeFullName(user.first_name, user.last_name), user.email);
   }
 }
