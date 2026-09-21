@@ -506,7 +506,6 @@ export interface EasyClaSignatureApprovalLists {
   gitlabOrgApprovalList?: string[] | null;
 }
 
-
 /**
  * One entry of `GET /v4/company/{companyID}/cla-group/{claGroupID}/cla-managers`
  * (`#/definitions/company-cla-manager`), snake_case as the CLA service sends it.

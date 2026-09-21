@@ -279,7 +279,6 @@ function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   return entry.signed === true ? 'signed' : 'not-started';
 }
 
-
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = entry.name?.trim() ?? '';
   const email = entry.email?.trim() ?? '';

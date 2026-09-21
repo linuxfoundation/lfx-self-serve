@@ -11,6 +11,7 @@ import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } 
 import {
   CCLA_SIGN_COPY,
   ORG_CLA_LOCKED_TAB_COPY,
+  ORG_CLA_MANAGERS_COPY,
   ORG_CLA_NOT_STARTED_COPY,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_EASYCLA_PATH,
@@ -1484,14 +1485,25 @@ describe('OrgEasyclaDetailComponent', () => {
   describe('the tabs signing is what fills', () => {
     const notStarted = { status: 'not-started' as const, signed: false, signedOn: undefined };
 
-    it.each([['managers'], ['approval']] as const)('explains that the %s tab is waiting on the signature', async (tab) => {
+    it('explains that the managers tab is waiting on the signature', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       const fixture = await render();
-      byTestId(fixture, `org-easycla-detail-tab-${tab}`)?.click();
+      byTestId(fixture, 'org-easycla-detail-tab-managers')?.click();
       fixture.detectChanges();
 
-      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY[tab]?.title);
+      expect(byTestId(fixture, 'org-easycla-managers-unsigned')?.textContent).toContain(ORG_CLA_MANAGERS_COPY.unsignedTitle);
+      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')).toBeNull();
+    });
+
+    it('explains that the approval tab is waiting on the signature', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
+
+      const fixture = await render();
+      byTestId(fixture, 'org-easycla-detail-tab-approval')?.click();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.approval?.title);
     });
 
     // Unbuilt for every agreement, signed or not — so "once this CLA is signed" would promise
@@ -1566,7 +1578,7 @@ describe('OrgEasyclaDetailComponent', () => {
   it('still leaves the tabs this feature does not build empty', async () => {
     const fixture = await render();
 
-    byTestId(fixture, 'org-easycla-detail-tab-approval')?.click();
+    byTestId(fixture, 'org-easycla-detail-tab-acknowledgments')?.click();
     fixture.detectChanges();
 
     expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();

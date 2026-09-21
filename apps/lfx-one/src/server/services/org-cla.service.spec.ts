@@ -1882,9 +1882,7 @@ describe('OrgClaService.getManagers', () => {
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
       .mockResolvedValueOnce({ list: [upstreamManager({ added_on: '', approved_on: '2021-09-13T11:59:00.981612+0000' })] });
 
-    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0].addedOn).toBe(
-      '2021-09-13T11:59:00.981612+0000'
-    );
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0].addedOn).toBe('2021-09-13T11:59:00.981612+0000');
   });
 
   it('omits a missing name rather than mapping it to an empty string', async () => {
