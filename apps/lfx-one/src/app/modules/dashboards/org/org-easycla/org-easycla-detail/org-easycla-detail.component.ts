@@ -27,7 +27,6 @@ import {
   ORG_CLA_REVIEW_COPY_FILENAME,
   ORG_CLA_SIGN_SELECTION_STATE,
   ORG_CLA_STATUS_DISPLAY,
-  ORG_EASYCLA_PATH,
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
@@ -81,6 +80,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
@@ -134,6 +134,7 @@ export class OrgEasyclaDetailComponent {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
   private readonly messageService = inject(MessageService);
@@ -514,6 +515,9 @@ export class OrgEasyclaDetailComponent {
   protected readonly signedByName = computed(() => this.initSignedByName());
 
   protected readonly breadcrumbItems = computed<MenuItem[]>(() => this.initBreadcrumbItems());
+
+  /** List address under the selected organization — breadcrumb, empty-state CTAs, leaveForList (#2743). */
+  protected readonly easyclaListLink = computed(() => this.orgLensNavigation.orgLensLink('easycla'));
 
   protected readonly managersBadge = computed(() => String(this.claGroup()?.claManagersCount ?? 0));
 
@@ -985,7 +989,7 @@ export class OrgEasyclaDetailComponent {
 
   private initBreadcrumbItems(): MenuItem[] {
     const name = this.claGroup()?.claGroupName;
-    const root: MenuItem = { label: 'EasyCLA', routerLink: ['/org/easycla'] };
+    const root: MenuItem = { label: 'EasyCLA', routerLink: this.easyclaListLink() };
     return name ? [root, { label: name }] : [root];
   }
 
@@ -1075,7 +1079,7 @@ export class OrgEasyclaDetailComponent {
    * the organization-switch path is precisely the wrong one.
    */
   private leaveForList(): void {
-    void this.router.navigate([ORG_EASYCLA_PATH], { replaceUrl: true });
+    void this.router.navigate(this.orgLensNavigation.orgLensLink('easycla'), { replaceUrl: true });
   }
 
   private initClaData(): Signal<OrgClaGroupList | null | undefined> {

@@ -26,6 +26,7 @@ import {
   claGroup,
   claGroupList,
   CLA_GROUPS_ROUTE,
+  easyclaAddress,
   fulfillJson,
   gotoEasyclaList,
   groupSearchInput,
@@ -61,7 +62,7 @@ async function chooseClaGroup(page: Page): Promise<void> {
   await page.getByTestId(`org-easycla-group-select-${CASCADE.claGroupId}`).click();
   await page.getByTestId('org-easycla-group-continue').locator('button').click();
 
-  await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId), { timeout: PAGE_LOAD_TIMEOUT });
 }
 
 async function fillAndSend(page: Page): Promise<void> {
@@ -90,7 +91,7 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
 
     await expect(page.getByTestId('org-easycla-send-by-email-sent')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-send-by-email-sent-body')).toHaveText(CCLA_SIGN_COPY.sendByEmail.successBody(SIGNATORY_EMAIL));
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId));
   });
 
   test('opens the same dialog from I am not authorized', async ({ page }) => {
@@ -125,6 +126,6 @@ test.describe('Org Lens EasyCLA send-by-email — content', () => {
     await expect(page.getByTestId('org-easycla-send-by-email-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-send-by-email-failure-message')).toHaveText(refusal);
     await expect(page.getByTestId('org-easycla-send-by-email-failure-message')).not.toContainText(CCLA_SIGN_COPY.failure.body);
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId));
   });
 });

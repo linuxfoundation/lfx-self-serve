@@ -32,6 +32,7 @@ import {
   claGroup,
   claGroupList,
   CLA_GROUPS_ROUTE,
+  easyclaAddress,
   EASYCLA_URL,
   fulfillJson,
   gotoEasyclaList,
@@ -87,7 +88,7 @@ async function chooseClaGroup(page: Page): Promise<void> {
 
   // The chosen group's own address since #2364, with no reserved word segment: the preview is the
   // same page a card opens, which is what makes it returnable after signing.
-  await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`), { timeout: PAGE_LOAD_TIMEOUT });
+  await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId), { timeout: PAGE_LOAD_TIMEOUT });
 }
 
 /**
@@ -172,7 +173,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText(CASCADE.claGroupName, { timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId));
   });
 
   /**
@@ -194,7 +195,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.goto(`${EASYCLA_URL}/${CASCADE.claGroupId}`, { waitUntil: 'domcontentloaded' });
 
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${CASCADE.claGroupId}$`));
+    await expect(page).toHaveURL(easyclaAddress(CASCADE.claGroupId));
     await expect(page.getByTestId('org-easycla-detail-start-cla')).toHaveCount(0);
   });
 
@@ -243,7 +244,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
 
     // Both parameters off once the trip is spent. Left on the address the flag would reopen the
     // wait on every reload of a copied link, and the organization would pin a stale selection.
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}$`), { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(easyclaAddress(STUB_CLA_GROUP_ID), { timeout: PAGE_LOAD_TIMEOUT });
   });
 
   /**
@@ -268,7 +269,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     // The budget is three attempts two seconds apart, so the settlement is a few seconds out. Not
     // the list: a redirect there would contradict the address the agreement is about to occupy.
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${STUB_CLA_GROUP_ID}$`));
+    await expect(page).toHaveURL(easyclaAddress(STUB_CLA_GROUP_ID));
   });
 
   /**
@@ -364,7 +365,7 @@ test.describe('Org Lens EasyCLA corporate self-sign — content', () => {
     await page.getByTestId('org-easycla-attestation-continue').locator('button').click();
 
     await expect(page.getByTestId('org-easycla-sign-failed')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(/\/org\/easycla/);
+    await expect(page).toHaveURL(easyclaAddress());
   });
 
   // A CLA Group with no resolvable project cannot be signed corporately. It stays on screen with

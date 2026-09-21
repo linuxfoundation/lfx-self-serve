@@ -222,11 +222,10 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
- * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
- * child route under /org in the org dashboard routes.
- *
- * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
- * address from the request Host, and the two hand-offs must not disagree on where they land.
+ * Leftover EasyCLA address without an organization in the path (#1983). New mints and in-app
+ * links use `/org/{segment}/easycla` (#2743); this form stays declared one release so in-flight
+ * DocuSign envelopes that stored it still return. Sibling of `MY_CLAS_PATH` because both
+ * hand-offs derive the host from the request.
  */
 export const ORG_EASYCLA_PATH = '/org/easycla';
 

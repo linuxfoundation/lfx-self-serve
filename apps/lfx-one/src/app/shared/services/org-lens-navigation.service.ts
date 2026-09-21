@@ -61,9 +61,10 @@ export class OrgLensNavigationService {
 
   /**
    * Re-address the current page to the selected organization. No-op outside Org Lens (a switch
-   * from the Me or Project lens changes the selection only), on EasyCLA pages (DR-004: they stay
-   * on the legacy address in phase 1), when no segment is known yet, or when the address already
-   * names the selected organization (FR-014).
+   * from the Me or Project lens changes the selection only), when no segment is known yet, or
+   * when the address already names the selected organization (FR-014). EasyCLA is included
+   * (#2743): a leftover `/org/easycla/…` is treated as a legacy page and the organization is
+   * inserted; `/org/{seg}/easycla/…` swaps the organization like any other Org Lens page.
    *
    * A `default` intent is narrower still: it only fills an organization into an address that names
    * none. It never leaves `/org/not-found` — a default landing there would be the silent
@@ -127,9 +128,9 @@ export class OrgLensNavigationService {
     return segments.length >= ORG_NOT_FOUND_SEGMENTS.length && ORG_NOT_FOUND_SEGMENTS.every((segment, i) => segment === segments[i]);
   }
 
-  /** An Org Lens address this service may rewrite: under `/org`, and not EasyCLA (DR-004 — legacy address in phase 1). */
+  /** An Org Lens address this service may rewrite: anything under `/org`, including EasyCLA (#2743). */
   private isRewritableOrgAddress(segments: readonly string[]): boolean {
-    return segments[0] === 'org' && segments[1] !== 'easycla';
+    return segments[0] === 'org';
   }
 
   /** Path segments of the current primary outlet (`/org/acme-inc/projects` → `['org', 'acme-inc', 'projects']`). */

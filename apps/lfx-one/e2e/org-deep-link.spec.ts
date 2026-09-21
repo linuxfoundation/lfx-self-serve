@@ -44,7 +44,7 @@
  * run after hydration. The SSR contract (no cookie organization in the pre-hydration HTML) is E16.
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(120_000);
@@ -348,10 +348,10 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
     // Every rendered Org Lens link now addresses B — a leftover literal such as `/org/projects` fails
-    // this, not just a stale A link. EasyCLA excepted: legacy address in phase 1 (DR-004).
+    // this, not just a stale A link. EasyCLA is included (#2743).
     const orgHrefs = await page.locator(`a[href^="/org/"]`).evaluateAll((links) => links.map((a) => a.getAttribute('href') ?? ''));
     expect(orgHrefs).toContain(`/org/${ORG_B_SLUG}/overview`);
-    expect(orgHrefs.filter((href) => href !== '/org/easycla' && !href.startsWith('/org/easycla/') && !href.startsWith(`/org/${ORG_B_SLUG}/`))).toEqual([]);
+    expect(orgHrefs.filter((href) => !href.startsWith(`/org/${ORG_B_SLUG}/`))).toEqual([]);
 
     // The switch is a user intent: Back returns to the pre-switch organization and page (not an intermediate address).
     await page.goBack({ waitUntil: 'domcontentloaded' });
@@ -422,5 +422,23 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
 
     await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/overview(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
     await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+  });
+
+  // #2743: leftover `/org/easycla` is a legacy page — a switch inserts the organization.
+  test('E14: switching organization on leftover /org/easycla inserts the organization', async ({ page }) => {
+    await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
+      FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+      JSON.stringify({ [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true }),
+    ] as const);
+    await stubOrgIdentity(page);
+
+    await page.goto('/org/easycla', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_A_NAME, { timeout: SIDEBAR_TIMEOUT });
+
+    await switchOrg(page, ORG_B_UID);
+
+    await expect(page).toHaveURL(new RegExp(`/org/${ORG_B_SLUG}/easycla(\\?|#|$)`), { timeout: SIDEBAR_TIMEOUT });
+    await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
   });
 });

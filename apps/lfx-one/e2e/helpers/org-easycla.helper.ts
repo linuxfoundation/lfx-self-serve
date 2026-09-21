@@ -20,6 +20,12 @@ import { stubFeatureFlags } from './org-roi.helper';
 export const EASYCLA_URL = '/org/easycla';
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
+/** Leftover `/org/easycla` or `/org/{segment}/easycla` (#2743), with optional group id. */
+export function easyclaAddress(claGroupId?: string): RegExp {
+  const group = claGroupId ? `/${claGroupId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}` : '';
+  return new RegExp(`/org(?:/[^/]+)?/easycla${group}(?:\\?|#|$)`);
+}
+
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 export const MOCK_ACCOUNT_NAME = 'Acme Motors';
 export const MOCK_ACCOUNT_SLUG = 'acme-motors';

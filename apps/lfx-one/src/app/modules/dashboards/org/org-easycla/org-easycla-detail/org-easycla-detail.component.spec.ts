@@ -22,6 +22,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -47,6 +48,14 @@ describe('OrgEasyclaDetailComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  const orgLensNavigation = {
+    orgLensLink: (page: string, ...rest: (string | number)[]): string[] => {
+      const uid = selectedAccount()?.uid;
+      const tail = rest.map(String);
+      return uid ? ['/org', uid, page, ...tail] : ['/org', page, ...tail];
+    },
+  };
+  const easyclaListLink = (): string[] => orgLensNavigation.orgLensLink('easycla');
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -109,6 +118,7 @@ describe('OrgEasyclaDetailComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+        { provide: OrgLensNavigationService, useValue: orgLensNavigation },
         { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getCclaPreview, getApprovalList, updateApprovalList, checkPermission } },
         { provide: MessageService, useValue: { add: addMessage } },
         ConfirmationService,
@@ -1067,7 +1077,7 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(easyclaListLink(), { replaceUrl: true });
     });
 
     /**
@@ -1100,7 +1110,7 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(easyclaListLink(), { replaceUrl: true });
     });
 
     /**
@@ -1129,7 +1139,7 @@ describe('OrgEasyclaDetailComponent', () => {
       await fixture.whenStable();
 
       expect(openDialog).toHaveBeenCalledTimes(1);
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(easyclaListLink(), { replaceUrl: true });
     });
 
     /**
@@ -1202,7 +1212,7 @@ describe('OrgEasyclaDetailComponent', () => {
       fixture.detectChanges();
       await fixture.whenStable();
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(easyclaListLink(), { replaceUrl: true });
       // The router is a spy, so this component is still mounted and the preview it should not be
       // showing is still on screen. Start is the assertion that means something in that window:
       // whatever the page renders before the navigation lands, it cannot open a session for the
@@ -1221,7 +1231,7 @@ describe('OrgEasyclaDetailComponent', () => {
     it('leaves for the list when the choice was made under another organization', async () => {
       await render(previewing({ orgUid: '0014100000OtherOrgAA' }));
 
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla'], { replaceUrl: true });
+      expect(navigate).toHaveBeenCalledWith(easyclaListLink(), { replaceUrl: true });
     });
 
     /**
@@ -1990,6 +2000,7 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensNavigationService, useValue: orgLensNavigation },
           { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
@@ -2520,6 +2531,13 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const orgLensNavigation = {
+    orgLensLink: (page: string, ...rest: (string | number)[]): string[] => {
+      const uid = selectedAccount()?.uid;
+      const tail = rest.map(String);
+      return uid ? ['/org', uid, page, ...tail] : ['/org', page, ...tail];
+    },
+  };
   // Both halves of the address (#2364), as the main describe above supplies them: the CLA Group in
   // the path, the signature narrowing it in the query.
   const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
@@ -2564,6 +2582,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensNavigationService, useValue: orgLensNavigation },
         {
           provide: OrgLensClaService,
           useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },

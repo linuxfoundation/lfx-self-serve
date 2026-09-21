@@ -40,10 +40,54 @@ import { settingsLensRedirectGuard } from './shared/guards/settings-lens-redirec
 const loadOrgProfilePage = () => import('./modules/dashboards/org/org-profile/org-profile.component').then((m) => m.OrgProfileComponent);
 
 /**
- * Org Lens page routes (every page except the EasyCLA subtree, which keeps its legacy addresses in
- * this release — DR-004). Built by a function so the same definitions can be mounted twice without
- * sharing route objects: once under `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and
- * once under `/org/:orgSegment/{page}` (spec 050 address scheme).
+ * EasyCLA list + detail. Mounted twice: leftover `/org/easycla*` (in-flight signing returns) and
+ * `/org/:orgSegment/easycla*` (spec 050 phase 2 / #2743). Same components, same dark-launch guard.
+ * A new object per call so the two mounts do not share route instances.
+ */
+function orgEasyclaRoutes(): Routes {
+  return [
+    {
+      // Componentless parent, so the dark-launch guard is declared once and later M3
+      // children (list, sign, managers, …) inherit it. A looser copy would be a way
+      // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
+      path: 'easycla',
+      canMatch: [orgLensClaM3EnabledGuard],
+      data: {
+        lens: 'org',
+        title: 'EasyCLA',
+        description: 'Corporate CLAs your organization has signed.',
+        icon: 'fa-light fa-file-signature',
+      },
+      children: [
+        {
+          path: '',
+          loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
+        },
+        {
+          // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
+          // identifier that exists before a signature does, which is what lets this address
+          // be shared, and returned to after signing. Where an organization holds two
+          // agreements at one group id — two signing entities — the clicked one is named by a
+          // query parameter, so no second path shape is needed.
+          //
+          // One child for three states. The pre-sign preview shares this address rather than
+          // a reserved word segment, because it is the same screen: a reserved segment would
+          // have to be declared ahead of this one and is a second address for one page.
+          path: ':claGroupId',
+          data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
+          loadComponent: () =>
+            import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
+        },
+      ],
+    },
+  ];
+}
+
+/**
+ * Org Lens page routes (every page except EasyCLA, which is mounted by `orgEasyclaRoutes`).
+ * Built by a function so the same definitions can be mounted twice without sharing route
+ * objects: once under `/org/{page}` (legacy form; Phase 5 adds the redirect guard) and once
+ * under `/org/:orgSegment/{page}` (spec 050 address scheme).
  */
 function orgLensPageRoutes(): Routes {
   return [
@@ -283,40 +327,10 @@ export const routes: Routes = [
             pathMatch: 'full',
             redirectTo: 'overview',
           },
-          {
-            // Componentless parent, so the dark-launch guard is declared once and later M3
-            // children (list, sign, managers, …) inherit it. A looser copy would be a way
-            // into the unfinished feature while `org-lens-cla-m3-enabled` is off.
-            path: 'easycla',
-            canMatch: [orgLensClaM3EnabledGuard],
-            data: {
-              lens: 'org',
-              title: 'EasyCLA',
-              description: 'Corporate CLAs your organization has signed.',
-              icon: 'fa-light fa-file-signature',
-            },
-            children: [
-              {
-                path: '',
-                loadComponent: () => import('./modules/dashboards/org/org-easycla/org-easycla.component').then((m) => m.OrgEasyclaComponent),
-              },
-              {
-                // Keyed on the CLA Group, not the CCLA signature (#2364): the group id is the only
-                // identifier that exists before a signature does, which is what lets this address
-                // be shared, and returned to after signing. Where an organization holds two
-                // agreements at one group id — two signing entities — the clicked one is named by a
-                // query parameter, so no second path shape is needed.
-                //
-                // One child for three states. The pre-sign preview shares this address rather than
-                // a reserved word segment, because it is the same screen: a reserved segment would
-                // have to be declared ahead of this one and is a second address for one page.
-                path: ':claGroupId',
-                data: { title: 'CLA Group', description: "Corporate CLA for one of your organization's CLA Groups." },
-                loadComponent: () =>
-                  import('./modules/dashboards/org/org-easycla/org-easycla-detail/org-easycla-detail.component').then((m) => m.OrgEasyclaDetailComponent),
-              },
-            ],
-          },
+          // Leftover `/org/easycla*` — in-flight DocuSign returns still land here. Declared before
+          // `:orgSegment` so `easycla` can never be taken for an organization. #2743 mounts the
+          // same subtree under `:orgSegment` as well; this leftover stays one release.
+          ...orgEasyclaRoutes(),
           // Legacy `/org/{page}` addresses (spec 050 Phase 5 adds the default-organization redirect guard).
           ...orgLensPageRoutes(),
           {
@@ -334,6 +348,7 @@ export const routes: Routes = [
                 pathMatch: 'full',
                 redirectTo: 'overview',
               },
+              ...orgEasyclaRoutes(),
               ...orgLensPageRoutes(),
             ],
           },

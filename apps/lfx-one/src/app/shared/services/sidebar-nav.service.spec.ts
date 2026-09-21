@@ -344,10 +344,9 @@ describe('SidebarNavService', () => {
     expect(findByLink(items, '/org/acme-inc/overview')).toEqual(expect.objectContaining({ label: 'Dashboard' }));
     expect(findByLink(items, '/org/acme-inc/roi')).toEqual(expect.objectContaining({ label: 'ROI Metrics', testId: 'sidebar-org-roi' }));
     expect(findByLink(engagement, '/org/acme-inc/people')).toEqual(expect.objectContaining({ label: 'People' }));
-    // DR-004: EasyCLA is the one Org Lens item that keeps the legacy address in this release.
-    expect(findByLink(engagement, '/org/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA' }));
+    expect(findByLink(engagement, '/org/acme-inc/easycla')).toEqual(expect.objectContaining({ label: 'EasyCLA', testId: 'sidebar-org-easycla' }));
     const orgLinks = [...items, ...engagement].map((item) => item.routerLink).filter((link): link is string => !!link);
-    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual(['/org/easycla']);
+    expect(orgLinks.filter((link) => !link.startsWith('/org/acme-inc/'))).toEqual([]);
     expect(itemLabels.indexOf('ROI Metrics')).toBe(itemLabels.indexOf('Projects') + 1);
     expect(engagementLabels.indexOf('EasyCLA')).toBe(engagementLabels.indexOf('Code Contributions') + 1);
   });

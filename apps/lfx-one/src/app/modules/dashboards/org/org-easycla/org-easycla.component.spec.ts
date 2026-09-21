@@ -12,6 +12,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 // The no-access branch renders a `lfxOpenIntercom` support button, which injects MessageService.
 import { MessageService } from 'primeng/api';
@@ -26,6 +27,13 @@ describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
   const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
+  const orgLensNavigation = {
+    orgLensLink: (page: string, ...rest: (string | number)[]): string[] => {
+      const uid = selectedAccount()?.uid;
+      const tail = rest.map(String);
+      return uid ? ['/org', uid, page, ...tail] : ['/org', page, ...tail];
+    },
+  };
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
@@ -68,6 +76,7 @@ describe('OrgEasyclaComponent', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+        { provide: OrgLensNavigationService, useValue: orgLensNavigation },
         { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
         MessageService,
       ],
@@ -253,6 +262,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensNavigationService, useValue: orgLensNavigation },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           MessageService,
         ],
@@ -341,7 +351,7 @@ describe('OrgEasyclaComponent', () => {
       // The state key is spelled out rather than taken from the constant, deliberately. It is
       // written into a history entry that outlives the deployment that wrote it, so renaming it
       // silently breaks in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -451,6 +461,7 @@ describe('OrgEasyclaComponent', () => {
             { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+            { provide: OrgLensNavigationService, useValue: orgLensNavigation },
             { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
             MessageService,
           ],
@@ -644,7 +655,7 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
       // Addressed by CLA Group, with this row's signature narrowing it (#2364).
-      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+      expect(link?.getAttribute('href')).toContain(`/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
     });
 
     /**
@@ -663,7 +674,10 @@ describe('OrgEasyclaComponent', () => {
       const fixture = await render();
       const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
 
-      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+      expect(hrefs).toEqual([
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
+      ]);
     });
 
     /**
@@ -1091,6 +1105,7 @@ describe('OrgEasyclaComponent', () => {
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensNavigationService, useValue: orgLensNavigation },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
           MessageService,

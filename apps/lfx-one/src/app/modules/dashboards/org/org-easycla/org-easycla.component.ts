@@ -6,13 +6,7 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, PLATF
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import {
-  CCLA_SIGN_COPY,
-  ORG_CLA_SIGN_SELECTION_STATE,
-  ORG_EASYCLA_PATH,
-  ORG_EASYCLA_RETURN_ORG_PARAM,
-  ORG_EASYCLA_SIGNATURE_PARAM,
-} from '@lfx-one/shared/constants';
+import { CCLA_SIGN_COPY, ORG_CLA_SIGN_SELECTION_STATE, ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -28,6 +22,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
 import { OrgEasyclaCardComponent } from './org-easycla-card/org-easycla-card.component';
@@ -51,6 +46,7 @@ export class OrgEasyclaComponent {
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
@@ -226,6 +222,7 @@ export class OrgEasyclaComponent {
    * computed-key syntax for. One lookup per row keeps both the identity and the constant stable.
    */
   protected readonly cardSignatureParams: Signal<Record<string, Record<string, string>>> = this.initCardSignatureParams();
+  protected readonly cardLinks: Signal<Record<string, string[]>> = this.initCardLinks();
   protected readonly showPager = computed(() => this.filteredClaGroups().length > OrgEasyclaComponent.pageSize);
   protected readonly pageLabel: Signal<string> = this.initPageLabel();
   protected readonly onFirstPage = computed(() => this.currentPage() === 0);
@@ -370,7 +367,7 @@ export class OrgEasyclaComponent {
    */
   private openPreview(selection: OrgClaSignSelection): void {
     void this.router
-      .navigate([ORG_EASYCLA_PATH, selection.claGroupId], { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
+      .navigate(this.orgLensNavigation.orgLensLink('easycla', selection.claGroupId), { state: { [ORG_CLA_SIGN_SELECTION_STATE]: selection } })
       // Released at the navigation rather than at the dialog's close, so the control stays disabled
       // across the teardown gap and a navigation that never lands — refused by a guard, or
       // superseded by another — cannot leave Sign CLA disabled until a reload. On the ordinary path
@@ -525,6 +522,16 @@ export class OrgEasyclaComponent {
 
   private initCardSignatureParams(): Signal<Record<string, Record<string, string>>> {
     return computed(() => Object.fromEntries(this.pagedClaGroups().map((claGroup) => [claGroup.id, { [ORG_EASYCLA_SIGNATURE_PARAM]: claGroup.id }])));
+  }
+
+  private initCardLinks(): Signal<Record<string, string[]>> {
+    return computed(() =>
+      Object.fromEntries(
+        this.pagedClaGroups()
+          .filter((claGroup): claGroup is OrgClaGroup & { claGroupId: string } => !!claGroup.claGroupId)
+          .map((claGroup) => [claGroup.claGroupId, this.orgLensNavigation.orgLensLink('easycla', claGroup.claGroupId)])
+      )
+    );
   }
 
   private initPageLabel(): Signal<string> {

@@ -105,10 +105,25 @@ describe('OrgLensNavigationService', () => {
       expect(navigate).not.toHaveBeenCalled();
     });
 
-    it.each(['/org/easycla', '/org/easycla/abc-123', '/project/cncf/overview', '/'])('is a no-op on %s', (url) => {
+    it.each(['/project/cncf/overview', '/'])('is a no-op on %s', (url) => {
       currentUrl = url;
       service.navigateToSelectedOrg();
       expect(navigate).not.toHaveBeenCalled();
+    });
+
+    // #2743: leftover `/org/easycla` is a legacy page — insert the organization (replace).
+    it('inserts the organization on leftover /org/easycla, replacing the entry', () => {
+      currentUrl = '/org/easycla/abc-123';
+      service.navigateToSelectedOrg();
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: true }));
+    });
+
+    it('swaps the organization on an addressed EasyCLA page, keeping the group', () => {
+      currentUrl = '/org/other-org/easycla/abc-123';
+      service.navigateToSelectedOrg();
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ replaceUrl: false }));
     });
 
     it('is a no-op while no segment is known', () => {
