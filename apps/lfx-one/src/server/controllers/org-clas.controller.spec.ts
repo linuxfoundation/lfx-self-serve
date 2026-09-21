@@ -961,7 +961,7 @@ describe('OrgClasController — CLA manager path parameters', () => {
     expect(getManagers).not.toHaveBeenCalled();
   });
 
-  it('rejects an LF username outside the person-key shape before calling the service', async () => {
+  it('rejects an LF username that can walk out of the path segment before calling the service', async () => {
     const { ServiceValidationError } = await import('../errors');
     const next = vi.fn();
 
@@ -994,5 +994,14 @@ describe('OrgClasController — CLA manager path parameters', () => {
 
     expect(res.status).toHaveBeenCalledWith(204);
     expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each(['john.doe', 'ab'])('forwards an EasyCLA LF username %s to the service', async (lfUsername) => {
+    removeManager.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername } } as any, res, vi.fn());
+
+    expect(removeManager).toHaveBeenCalledWith(expect.anything(), ORG_UID, SIGNATURE_ID, lfUsername);
   });
 });

@@ -22,6 +22,7 @@ describe('OrgEasyclaManagersComponent', () => {
   const ORG_UID = '0014100000Te2ovAAB';
   const SIGNATURE_ID = 'signature-uuid-1';
   const PROJECT = 'a09410000182dD2AAI';
+  const PAIR_PROJECT = 'a09410000182dD3AAI';
 
   const getManagers = vi.fn();
   const addManager = vi.fn();
@@ -45,7 +46,8 @@ describe('OrgEasyclaManagersComponent', () => {
       id: SIGNATURE_ID,
       claGroupName: 'Nimbus Foundation CLA',
       foundationSfid: PROJECT,
-      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
+      pairProjectSfid: PAIR_PROJECT,
+      projects: [{ projectName: 'Cascade', projectSfid: PAIR_PROJECT }],
       signed: true,
       status: 'signed',
       needsClaManager: false,
@@ -277,6 +279,36 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(removeManager).toHaveBeenCalledWith(ORG_UID, SIGNATURE_ID, 'kmensah');
       expect(getManagers).toHaveBeenCalledTimes(2);
     });
+
+    it('clears cached write grants after the viewer removes themselves', async () => {
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      expect(component['canAdd']()).toBe(true);
+      expect(component['canRemove']()).toBe(true);
+
+      component['confirmRemove'](manager({ lfUsername: 'aporter', name: 'Ada Porter' }));
+      acceptConfirmation();
+      await fixture.whenStable();
+
+      expect(component['canAdd']()).toBe(false);
+      expect(component['canRemove']()).toBe(false);
+    });
+
+    it('drops an open confirm when the agreement changes', async () => {
+      const close = vi.spyOn(confirmationService, 'close');
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+
+      component['confirmRemove'](manager());
+      fixture.componentRef.setInput('signatureId', 'signature-uuid-2');
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(close).toHaveBeenCalled();
+    });
   });
 
   describe('refusals', () => {
@@ -288,7 +320,7 @@ describe('OrgEasyclaManagersComponent', () => {
         component.loadIfNeeded();
         await fixture.whenStable();
 
-        component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' });
+        component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, { orgUid: ORG_UID, signatureId: SIGNATURE_ID });
         await fixture.whenStable();
 
         expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: ORG_CLA_MANAGER_REFUSAL_COPY[refusal] }));
@@ -299,7 +331,7 @@ describe('OrgEasyclaManagersComponent', () => {
       addManager.mockReturnValue(throwError(() => ({ error: { upstreamCode: 'something-new' } })));
       await render();
 
-      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' });
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, { orgUid: ORG_UID, signatureId: SIGNATURE_ID });
       await fixture.whenStable();
 
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: ORG_CLA_MANAGER_REFUSAL_COPY.unknown }));
@@ -326,8 +358,8 @@ describe('OrgEasyclaManagersComponent', () => {
     it('asks ACS for Add and Remove as two strings, not one', async () => {
       await render();
 
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PROJECT);
-      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PAIR_PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PAIR_PROJECT);
     });
 
     it('does not ask ACS for an unsigned agreement', async () => {
@@ -374,11 +406,9 @@ describe('OrgEasyclaManagersComponent', () => {
       await render(
         true,
         group({
+          pairProjectSfid: undefined,
           foundationSfid: undefined,
-          projects: [
-            { projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' },
-            { projectName: 'Driftwood', projectSfid: 'a09410000182dD4AAI' },
-          ],
+          projects: [{ projectName: 'Cascade' }, { projectName: 'Driftwood' }],
         })
       );
       component.loadIfNeeded();

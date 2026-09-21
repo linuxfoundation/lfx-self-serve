@@ -13,19 +13,21 @@ const REFUSAL_PATTERNS: readonly (readonly [OrgClaManagerRefusal, readonly strin
   ['no-lf-login', ['does not have an lf login', 'no lf login', 'account does not exist', 'user not found in lf', 'lfid not found']],
   ['last-manager', ['only remaining cla manager', 'at least one cla manager', 'last cla manager', 'only cla manager']],
   ['already-manager', ['already a cla manager', 'already assigned', 'duplicate cla manager']],
-  ['not-authorized', ['not authorized', 'unauthorized', 'forbidden', 'does not have permission', 'is not a cla manager']],
+  ['not-authorized', ['not authorized', 'unauthorized', 'forbidden', 'does not have permission', 'is not a cla manager', 'does not have access']],
 ];
 
 export function classifyOrgClaManagerRefusal(status: number, body: unknown): OrgClaManagerRefusal {
   if (status === 409) return 'already-manager';
-  if (status === 403) return 'not-authorized';
 
   const text = refusalTextFrom(body);
-  if (!text) return 'unknown';
-
-  for (const [outcome, fragments] of REFUSAL_PATTERNS) {
-    if (fragments.some((fragment) => text.includes(fragment))) return outcome;
+  if (text) {
+    for (const [outcome, fragments] of REFUSAL_PATTERNS) {
+      if (fragments.some((fragment) => text.includes(fragment))) return outcome;
+    }
+    if (text.includes('company_sanctioned') || text.includes('sanctioned')) return 'unknown';
   }
+
+  if (status === 403) return 'not-authorized';
 
   return 'unknown';
 }
@@ -92,4 +94,12 @@ export function validateOrgClaManagerAdd(request: Partial<OrgClaManagerAddReques
 
 export function hasOrgClaManagerAddErrors(validation: OrgClaManagerAddValidation): boolean {
   return Object.keys(validation).length > 0;
+}
+
+/**
+ * EasyCLA's delete path is `userLFID`: non-empty, no slash (so a path cannot walk out of the
+ * segment). Dots and short handles are valid — that is not the Org People `PERSON_KEY_PATTERN`.
+ */
+export function isOrgClaManagerLfUsername(value: string): boolean {
+  return value.length > 0 && !value.includes('/') && !/\s/.test(value);
 }

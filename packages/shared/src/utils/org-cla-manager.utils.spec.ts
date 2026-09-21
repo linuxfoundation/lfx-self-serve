@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyOrgClaManagerRefusal, hasOrgClaManagerAddErrors, validateOrgClaManagerAdd } from './org-cla-manager.utils';
+import { classifyOrgClaManagerRefusal, hasOrgClaManagerAddErrors, isOrgClaManagerLfUsername, validateOrgClaManagerAdd } from './org-cla-manager.utils';
 
 describe('classifyOrgClaManagerRefusal', () => {
   describe.each([
@@ -14,6 +14,7 @@ describe('classifyOrgClaManagerRefusal', () => {
     ['already-manager', 'user jdelacroix is already a CLA Manager for this project'],
     ['not-authorized', 'user aporter is not authorized for project a09410000182dD3AAI'],
     ['not-authorized', 'EasyCLA - 403 Forbidden - user does not have permission'],
+    ['not-authorized', 'user aporter does not have access to DeleteCLAManager'],
   ] as const)('%s', (expected, sentence) => {
     it('classifies the JSON envelope', () => {
       expect(classifyOrgClaManagerRefusal(400, JSON.stringify({ Message: sentence }))).toBe(expected);
@@ -36,8 +37,12 @@ describe('classifyOrgClaManagerRefusal', () => {
     expect(classifyOrgClaManagerRefusal(409, undefined)).toBe('already-manager');
   });
 
-  it('takes 403 as an authority refusal without consulting the body', () => {
+  it('takes 403 as an authority refusal when the body has no more specific reading', () => {
     expect(classifyOrgClaManagerRefusal(403, '')).toBe('not-authorized');
+  });
+
+  it('does not treat a sanctions 403 as a missing-permission refusal', () => {
+    expect(classifyOrgClaManagerRefusal(403, JSON.stringify({ error: 'company_sanctioned' }))).toBe('unknown');
   });
 
   describe('degrades to `unknown` rather than guessing', () => {
@@ -98,5 +103,15 @@ describe('validateOrgClaManagerAdd', () => {
 
   it('accepts a plus-addressed and a subdomain address, which are legal and deliverable', () => {
     expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, email: 'ada+cla@eng.example.org' }))).toBe(false);
+  });
+});
+
+describe('isOrgClaManagerLfUsername', () => {
+  it.each(['john.doe', 'ab', 'aporter'])('accepts %s', (username) => {
+    expect(isOrgClaManagerLfUsername(username)).toBe(true);
+  });
+
+  it.each(['', 'a porter/../..', 'ada porter'])('rejects %s', (username) => {
+    expect(isOrgClaManagerLfUsername(username)).toBe(false);
   });
 });

@@ -8,7 +8,7 @@ import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManager
 import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, distinctUntilChanged, finalize, forkJoin, of, skip, switchMap, take, takeUntil, tap } from 'rxjs';
@@ -52,6 +52,8 @@ export class OrgEasyclaManagersComponent implements OnInit {
   protected readonly loading = signal(false);
   protected readonly loadFailed = signal(false);
   protected readonly writing = signal(false);
+  private destroyed = false;
+  private addDialog: DynamicDialogRef | null = null;
 
   private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId)]).pipe(skip(1));
 
@@ -105,6 +107,10 @@ export class OrgEasyclaManagersComponent implements OnInit {
         this.addGrant.set(add);
         this.removeGrant.set(remove);
       });
+
+    this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
+    });
   }
 
   // The parent renders this panel only while its tab is selected, so being constructed is the
@@ -132,16 +138,25 @@ export class OrgEasyclaManagersComponent implements OnInit {
   protected openAdd(): void {
     if (!this.canAdd() || this.writing()) return;
 
+    const target = this.writeTarget();
+    if (!target) return;
+
+    this.addDialog?.close();
     const ref = this.dialogService.open(OrgEasyclaAddManagerDialogComponent, orgClaAddManagerDialogConfig());
     if (!ref) return;
 
+    this.addDialog = ref;
     ref.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((request?: OrgClaManagerAddRequest) => {
-      if (request) this.addManager(request);
+      this.addDialog = null;
+      if (request) this.addManager(request, target);
     });
   }
 
   protected confirmRemove(manager: OrgClaManager): void {
     if (!this.canRemove() || this.writing() || this.lastManager()) return;
+
+    const target = this.writeTarget();
+    if (!target) return;
 
     const label = this.displayName(manager);
     this.confirmationService.confirm({
@@ -151,7 +166,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
-      accept: () => this.removeManager(manager),
+      accept: () => this.removeManager(manager, target),
     });
   }
 
@@ -215,21 +230,18 @@ export class OrgEasyclaManagersComponent implements OnInit {
       });
   }
 
-  private addManager(request: OrgClaManagerAddRequest): void {
-    const orgUid = this.orgUid();
-    const signatureId = this.signatureId();
-    if (!orgUid || !signatureId || this.writing()) return;
+  private addManager(request: OrgClaManagerAddRequest, target: { orgUid: string; signatureId: string }): void {
+    if (this.writing() || !this.stillOn(target)) return;
 
     this.writing.set(true);
     this.claService
-      .addManager(orgUid, signatureId, request)
-      .pipe(
-        finalize(() => this.writing.set(false)),
-        takeUntil(this.contextChanged$),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .addManager(target.orgUid, target.signatureId, request)
+      .pipe(finalize(() => {
+        if (!this.destroyed) this.writing.set(false);
+      }))
       .subscribe({
         next: (manager) => {
+          if (this.destroyed || !this.stillOn(target)) return;
           this.messageService.add({
             severity: 'success',
             summary: this.copy.addedTitle,
@@ -237,25 +249,29 @@ export class OrgEasyclaManagersComponent implements OnInit {
           });
           this.fetchManagers();
         },
-        error: (error: unknown) => this.reportRefusal(error),
+        error: (error: unknown) => {
+          if (this.destroyed || !this.stillOn(target)) return;
+          this.reportRefusal(error);
+        },
       });
   }
 
-  private removeManager(manager: OrgClaManager): void {
-    const orgUid = this.orgUid();
-    const signatureId = this.signatureId();
-    if (!orgUid || !signatureId || this.writing()) return;
+  private removeManager(manager: OrgClaManager, target: { orgUid: string; signatureId: string }): void {
+    if (this.writing() || !this.stillOn(target)) return;
 
     this.writing.set(true);
     this.claService
-      .removeManager(orgUid, signatureId, manager.lfUsername)
-      .pipe(
-        finalize(() => this.writing.set(false)),
-        takeUntil(this.contextChanged$),
-        takeUntilDestroyed(this.destroyRef)
-      )
+      .removeManager(target.orgUid, target.signatureId, manager.lfUsername)
+      .pipe(finalize(() => {
+        if (!this.destroyed) this.writing.set(false);
+      }))
       .subscribe({
         next: () => {
+          if (this.destroyed || !this.stillOn(target)) return;
+          if (this.isSelf(manager)) {
+            this.addGrant.set(false);
+            this.removeGrant.set(false);
+          }
           this.messageService.add({
             severity: 'success',
             summary: 'CLA Manager removed',
@@ -263,7 +279,10 @@ export class OrgEasyclaManagersComponent implements OnInit {
           });
           this.fetchManagers();
         },
-        error: (error: unknown) => this.reportRefusal(error),
+        error: (error: unknown) => {
+          if (this.destroyed || !this.stillOn(target)) return;
+          this.reportRefusal(error);
+        },
       });
   }
 
@@ -282,7 +301,25 @@ export class OrgEasyclaManagersComponent implements OnInit {
     return ORG_CLA_MANAGER_REFUSALS.includes(code as OrgClaManagerRefusal) ? (code as OrgClaManagerRefusal) : 'unknown';
   }
 
+  private writeTarget(): { orgUid: string; signatureId: string } | null {
+    const orgUid = this.orgUid();
+    const signatureId = this.signatureId();
+    return orgUid && signatureId ? { orgUid, signatureId } : null;
+  }
+
+  private stillOn(target: { orgUid: string; signatureId: string }): boolean {
+    const live = this.writeTarget();
+    return !!live && live.orgUid === target.orgUid && live.signatureId === target.signatureId;
+  }
+
+  private dismissPendingWrites(): void {
+    this.addDialog?.close();
+    this.addDialog = null;
+    this.confirmationService.close();
+  }
+
   private onContextChanged(): void {
+    this.dismissPendingWrites();
     this.managers.set(null);
     this.loadFailed.set(false);
 

@@ -4,7 +4,6 @@
 import {
   CLA_GROUP_ID_PATTERN,
   CLA_GROUP_SEARCH_MIN_CHARS,
-  PERSON_KEY_PATTERN,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
@@ -23,6 +22,7 @@ import type {
 import {
   hasOrgClaManagerAddErrors,
   isEmailShape,
+  isOrgClaManagerLfUsername,
   isOrgClaPermissionAction,
   isSendableAuthorityName,
   validateOrgClaApprovalValue,
@@ -588,7 +588,7 @@ export class OrgClasController {
       const { orgUid, signatureId } = await this.requireAgreementContext(req, 'remove_org_cla_manager');
 
       const lfUsername = (req.params['lfUsername'] ?? '').trim();
-      if (!PERSON_KEY_PATTERN.test(lfUsername)) {
+      if (!isOrgClaManagerLfUsername(lfUsername)) {
         throw ServiceValidationError.forField('lfUsername', 'A valid lfUsername path parameter is required', { operation: 'remove_org_cla_manager' });
       }
 
