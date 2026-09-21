@@ -14,10 +14,14 @@ export const MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX = ' are required.';
 
 export const MENTORSHIP_MENTEE_INTRODUCTION_INTRO =
   'This information is displayed on your mentee profile page. Your name, email and avatar come from your LFX account.';
-export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = `What is your current status, are you a student/transitioning into a new career?
-What are your goals and aspirations? 
-Why are you interested in this mentorship opportunity?
-Tell us something that makes you unique as an applicant.`;
+/** Canonical About Me prompts — register placeholder and profile-edit list both derive from this. */
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS = [
+  'What is your current status, are you a student/transitioning into a new career?',
+  'What are your goals and aspirations?',
+  'Why are you interested in this mentorship opportunity?',
+  'Tell us something that makes you unique as an applicant.',
+] as const;
+export const MENTORSHIP_MENTEE_INTRODUCTION_PLACEHOLDER = MENTORSHIP_MENTEE_PROFILE_ABOUT_PROMPTS.join('\n');
 
 /** Matches `MENTORSHIP_MENTOR_INTRODUCTION_MAX`, since both feed the same kind of rich-text field. */
 export const MENTORSHIP_MENTEE_INTRODUCTION_MAX = 3000;
@@ -144,11 +148,12 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
 // ---------------------------------------------------------------------------
 
 import type {
+  MentorshipMenteeApplicationHistoryEntry,
+  MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeOverviewAccepted,
   MentorshipMenteeOverviewApplicant,
   MentorshipMenteeOverviewEmpty,
-  MentorshipMenteeOverviewResponse,
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTask,
@@ -423,26 +428,128 @@ export const MOCK_MENTORSHIP_MENTEE_TASKS: MentorshipMenteeTasksResponse = {
 export const MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE = 'Mentee Profile';
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL = 'Edit Mentee Profile';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_LABEL = 'About Me';
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills I Have';
-export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Skills I Want to Learn';
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_LABEL = 'Skills';
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL = 'Areas to Improve';
+export const MENTORSHIP_MENTEE_PROFILE_NOTES_LABEL = 'Additional Notes';
 export const MENTORSHIP_MENTEE_PROFILE_RESUME_LABEL = 'Resume';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY = 'No introduction added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_EMPTY = 'No skills added yet.';
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EMPTY = 'No areas to improve added yet.';
+export const MENTORSHIP_MENTEE_PROFILE_NOTES_EMPTY = 'No additional notes added yet.';
 export const MENTORSHIP_MENTEE_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
+/**
+ * Fallback anchor label when the profile carries a `resumeUrl` but no `resumeFileName` —
+ * the two fields are independently optional in `MentorshipMenteeProfileDetails`.
+ */
+export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
+
+/**
+ * Copy for the mentee profile edit drawer — the slide-in panel opened from the
+ * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
+ * endpoint is wired. Drawer-only labels: the Become a Mentee register form keeps its
+ * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
+ */
+export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
+  'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
+/**
+ * Same 3000 code-point cap as register About Me (`introduction`). Issue #2764's
+ * mockup showed a 2000 counter; clipping the drawer to 2000 would truncate a
+ * register-length intro on seed, so edit and register share this constant.
+ */
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = MENTORSHIP_MENTEE_INTRODUCTION_MAX;
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
+  'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are you currently proficient in?';
+export const MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL = 'What areas do you want to improve in?';
+export const MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL = 'Save Changes';
+export const MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL = 'Cancel';
+
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_TITLE = 'Application History';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE = 'No application history yet';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE = 'Programs you apply to will appear here once you submit your first application.';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL = 'View application';
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL = 'Withdraw application';
+
+/**
+ * Application History badge copy. Labels are display-only — stored values stay the
+ * `applications.status` enum (`pending`, `declined`, never `in-review` / `rejected`).
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS = {
+  pending: 'In Review',
+  accepted: 'Accepted',
+  declined: 'Not Selected',
+  withdrawn: 'Withdrawn',
+  graduated: 'Graduated',
+  hold: 'On Hold',
+} as const satisfies Record<MentorshipMenteeApplicationHistoryStatus, string>;
+
+/**
+ * Runtime Tailwind class map for the Application History status badge. The tokens live
+ * outside the app's `content` glob, so this map's values are also spread into the
+ * Tailwind safelist — a status/class change here cannot silently lose styling.
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES = {
+  pending: 'bg-amber-50 text-amber-700',
+  accepted: 'bg-emerald-50 text-emerald-700',
+  declined: 'bg-gray-100 text-gray-600',
+  withdrawn: 'bg-gray-100 text-gray-600',
+  graduated: 'bg-emerald-50 text-emerald-700',
+  hold: 'bg-blue-50 text-blue-700',
+} as const satisfies Record<MentorshipMenteeApplicationHistoryStatus, string>;
+
+/**
+ * Neutral fallback when `applications.status` is not in the enum map. Must not
+ * reuse declined/withdrawn classes, or an unknown future status would look like
+ * "Not Selected".
+ */
+export const MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS = 'bg-slate-100 text-slate-700';
 
 export const EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE: MentorshipMenteeProfileResponse = {
   profile: { aboutMe: '', skillsHave: [], skillsWant: [] },
+  history: [],
 };
+
+/**
+ * Deterministic mock backing the standalone mentee profile page while the mentorship
+ * profiles endpoint is unavailable. Removed once the real read is wired up.
+ */
+export const MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY: MentorshipMenteeApplicationHistoryEntry[] = [
+  {
+    id: 'hist_gridflow_fall26',
+    programName: 'GridFlow: Time-Series Ingestion Pipeline',
+    termName: 'Fall 2026',
+    submittedOn: 'Jun 28, 2026',
+    status: 'accepted',
+  },
+  {
+    id: 'hist_apicurio_fall26',
+    programName: 'Apicurio Registry: Prompt Template Playground',
+    termName: 'Fall 2026',
+    submittedOn: 'Jul 2, 2026',
+    status: 'pending',
+  },
+  {
+    id: 'hist_backstage_summer26',
+    programName: 'Backstage: Plugin Accessibility Audit',
+    termName: 'Summer 2026',
+    submittedOn: 'Apr 9, 2026',
+    status: 'declined',
+  },
+];
 
 export const MOCK_MENTORSHIP_MENTEE_PROFILE: MentorshipMenteeProfileResponse = {
   profile: {
     aboutMe:
       'I am in my final year of a computer engineering degree, building telemetry tooling for a campus microgrid project. I want to learn how production ingestion pipelines are designed and reviewed.',
-    skillsHave: ['Python', 'Postgres', 'Linux', 'Git'],
-    skillsWant: ['Kubernetes', 'Go', 'Grafana', 'Prometheus'],
-    resumeFileName: 'test-mentee-resume.pdf',
-    resumeUrl: '#',
+    skillsHave: ['Python', 'Postgres', 'Kubernetes', 'Go', 'Grafana', 'Linux'],
+    skillsWant: ['Distributed Systems', 'Code Review', 'Observability'],
+    additionalNotes:
+      'I co-run a student Linux user group and have been maintaining our campus microgrid dashboards for two terms. I am comfortable working asynchronously across time zones.',
+    resumeFileName: 'test-user-1-resume.pdf',
+    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
+  history: MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY,
 };
 
 // ---------------------------------------------------------------------------
