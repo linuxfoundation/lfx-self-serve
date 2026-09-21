@@ -30,9 +30,17 @@ let server: http.Server;
 let port: number;
 
 vi.mock('node:dns', () => ({
-  // 203.0.113.0/24 is TEST-NET-3 (RFC 5737) — routable-looking, so it clears the private-IP
-  // patterns, and reserved for documentation, so it can never be a real host.
-  promises: { resolve4: vi.fn(async () => ['203.0.113.10']), resolve6: vi.fn(async () => []) },
+  // A genuinely PUBLIC address, and deliberately not a documentation range.
+  //
+  // This fixture used 203.0.113.10 (TEST-NET-3) on the reasoning that it is "routable-looking,
+  // so it clears the private-IP patterns". That was true of the module-local denylist this file
+  // used to gate on, and is false of the shared `isPrivateHost` that replaced it -- RFC 5737
+  // documentation space is one of the ranges it rejects. The fixture'd have been quietly
+  // asserting against a blocked address rather than exercising the success path.
+  //
+  // 93.184.216.34 is example.com's address: public, stable, and never routed to by these tests
+  // because fetch itself is mocked.
+  promises: { resolve4: vi.fn(async () => ['93.184.216.34']), resolve6: vi.fn(async () => []) },
 }));
 
 // `fetchSafeUrl` connects to the DNS-resolved IP; redirect the transport to the local server
@@ -205,5 +213,57 @@ describe('encodePathSegment', () => {
     ['a slug', 'cncf-kubernetes'],
   ])('is a no-op on %s, the shape every legitimate identifier has', (_label, identifier) => {
     expect(encodePathSegment(identifier)).toBe(identifier);
+  });
+});
+
+describe('resolved-address SSRF gate uses the shared judge', () => {
+  /**
+   * This path used to gate on a module-local `PRIVATE_IP_PATTERNS` regex list while the rest of
+   * the codebase hardened `isPrivateHost`. The two diverged badly, and the weaker one guarded
+   * the REAL fetch: nine of ten sampled addresses that isPrivateHost rejects passed here,
+   * including CGNAT, 6to4, multicast, site-local and the reserved ranges.
+   *
+   * Each case is a range the OLD list missed, so every one of them fails if the shared judge is
+   * swapped back out for a local list.
+   */
+  it.each([
+    ['CGNAT (100.64/10)', '100.64.0.1'],
+    ['CGNAT upper bound', '100.127.255.254'],
+    ['6to4 (2002::/16)', '2002:a00:1::'],
+    ['IPv4 multicast', '224.0.0.1'],
+    ['IPv6 site-local', 'fec0::1'],
+    ['RFC 2544 benchmark space', '198.18.0.1'],
+    ['RFC 5737 documentation space', '192.0.2.1'],
+    ['limited broadcast', '255.255.255.255'],
+    ['reserved 240/4', '240.0.0.1'],
+  ])('blocks a host resolving to %s', async (_label, address) => {
+    // Imported inside the test, matching this file's existing convention.
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(address.includes(':') ? [] : [address]);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce(address.includes(':') ? [address] : []);
+
+    // Rejected at RESOLUTION time, before any socket is opened -- which is why these cases need
+    // no server, unlike the redirect tests above.
+    await expect(fetchSafeUrl('https://events.example.com/e', new AbortController().signal)).rejects.toThrow(/private IP/);
+  });
+
+  it('does not reject a genuinely public address at the resolution gate', async () => {
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
+
+    // The CONTROL for the cases above: without it, a gate that refused EVERYTHING would pass
+    // all nine of them. Only the resolution verdict is under test here -- whatever the transport
+    // does afterwards belongs to the redirect tests -- so the assertion is simply that the
+    // failure, if any, is not the private-IP rejection.
+    let rejection = '';
+    try {
+      await fetchSafeUrl('https://events.example.com/e', new AbortController().signal);
+    } catch (error) {
+      rejection = error instanceof Error ? error.message : String(error);
+    }
+    expect(rejection).not.toMatch(/private IP/);
   });
 });

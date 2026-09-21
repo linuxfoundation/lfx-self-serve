@@ -26,6 +26,7 @@
  * @version 2.0.0
  */
 
+import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
 import { ServiceValidationError } from '../errors';
 
 /**
@@ -251,20 +252,6 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
 // Fetches connect directly to DNS-resolved IPs to prevent DNS rebinding.
 // ---------------------------------------------------------------------------
 
-const PRIVATE_IP_PATTERNS = [
-  /^localhost$/i,
-  /^127\.\d+\.\d+\.\d+$/,
-  /^0\.\d+\.\d+\.\d+$/,
-  /^10\.\d+\.\d+\.\d+$/,
-  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
-  /^192\.168\.\d+\.\d+$/,
-  /^169\.254\.\d+\.\d+$/,
-  /^::1$/,
-  /^::ffff:\d+\.\d+\.\d+\.\d+$/i,
-  /^f[cd][0-9a-f]{2}:/i,
-  /^fe80:/i,
-];
-
 interface SsrfSafeTarget {
   host: string;
   hostname: string;
@@ -291,7 +278,14 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
   }
 
   const hostname = parsed.hostname.toLowerCase();
-  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
+  // The SHARED judge, not a second denylist. A module-local `PRIVATE_IP_PATTERNS` lived here
+  // and had drifted badly from `isPrivateHost`: it missed CGNAT (100.64/10), NAT64
+  // (64:ff9b::/96), 6to4 (2002::/16), multicast, site-local, RFC5737 and RFC2544 -- nine of ten
+  // sampled addresses that isPrivateHost rejects sailed through this, the REAL fetch path.
+  //
+  // Two encodings of one rule always drift, and the one nobody is hardening is the one that
+  // matters. Deleted rather than extended, so there is one place to fix next time.
+  if (isPrivateHost(hostname)) {
     throw new Error('URLs targeting private/internal hosts are not allowed');
   }
 
@@ -318,7 +312,9 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
   }
   for (const addr of allAddresses) {
     const checkAddr = addr.replace(/^::ffff:/i, '');
-    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
+    // The raw address AND its IPv4-mapped unwrapping; isPrivateHost normalises the mapped form
+    // itself, so judging both is belt-and-braces that costs nothing.
+    if (isPrivateHost(addr) || isPrivateHost(checkAddr)) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }
