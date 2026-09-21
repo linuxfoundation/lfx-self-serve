@@ -6,12 +6,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
 import type { FormationItem, FormationItemStatus, FormationSubItem, FormationTemplateSection } from '../interfaces/formation.interface';
 import {
+  buildFormationProgressSegments,
   collectFormationOrphanItems,
   deriveFormationReadinessSummary,
+  formatFormationAnnouncementCountdown,
   formatFormationAnnouncementLabel,
+  formatFormationProgressSummary,
   formatFormationRelativeDayCount,
   formatFormationSubItemsDoneLabel,
+  getFormationAnnouncementTiming,
+  getFormationCalendarDayOffset,
   groupFormationItemsBySection,
+  sumFormationProgress,
 } from './formation-checklist.utils';
 
 let uidCounter = 0;
@@ -297,5 +303,108 @@ describe('formatFormationAnnouncementLabel', () => {
 
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((o) => o?.timeZone === 'UTC')).toBe(true);
+  });
+});
+
+describe('getFormationCalendarDayOffset', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is the signed calendar-day gap, independent of the time of day', () => {
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 8, 21)))).toBe(0);
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 2, 23)))).toBe(-182);
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 10, 2)))).toBe(42);
+  });
+});
+
+describe('getFormationAnnouncementTiming', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('classifies a past, same-day and upcoming date', () => {
+    expect(getFormationAnnouncementTiming('2026-03-23')).toBe('past');
+    expect(getFormationAnnouncementTiming('2026-09-21')).toBe('today');
+    expect(getFormationAnnouncementTiming('2026-11-02')).toBe('upcoming');
+  });
+
+  it('is unset for a missing or unparseable date', () => {
+    expect(getFormationAnnouncementTiming(null)).toBe('unset');
+    expect(getFormationAnnouncementTiming(undefined)).toBe('unset');
+    expect(getFormationAnnouncementTiming('not-a-date')).toBe('unset');
+  });
+
+  // Upstream's is_activating requires a date once every gating item is done, so a cleared
+  // formation without one is the single "unset" that deserves a prompt instead of a muted dash.
+  it('is needed — not unset — when the gates are cleared and there is no date', () => {
+    expect(getFormationAnnouncementTiming(null, true)).toBe('needed');
+    expect(getFormationAnnouncementTiming('2026-03-23', true)).toBe('past');
+  });
+});
+
+describe('formatFormationAnnouncementCountdown', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reads direction-explicit and sentence-cased, since it stands on its own line', () => {
+    expect(formatFormationAnnouncementCountdown('2026-03-23')).toBe('182 days ago');
+    expect(formatFormationAnnouncementCountdown('2026-09-20')).toBe('1 day ago');
+    expect(formatFormationAnnouncementCountdown('2026-09-21')).toBe('Today');
+    expect(formatFormationAnnouncementCountdown('2026-09-22')).toBe('In 1 day');
+    expect(formatFormationAnnouncementCountdown('2026-11-02')).toBe('In 42 days');
+  });
+
+  it('is null for a missing or unparseable date', () => {
+    expect(formatFormationAnnouncementCountdown(null)).toBeNull();
+    expect(formatFormationAnnouncementCountdown('2026-13-01')).toBeNull();
+  });
+});
+
+describe('buildFormationProgressSegments', () => {
+  it('emits one width-weighted segment per non-zero bucket, resolved work first', () => {
+    const segments = buildFormationProgressSegments({ not_started: 10, in_progress: 1, blocked: 2, done: 3, skipped: 1 });
+
+    expect(segments.map((segment) => segment.status)).toEqual(['done', 'in_progress', 'blocked', 'skipped', 'not_started']);
+    expect(segments.map((segment) => segment.count)).toEqual([3, 1, 2, 1, 10]);
+    expect(segments.reduce((sum, segment) => sum + segment.widthPercent, 0)).toBeCloseTo(100);
+    expect(segments[0].colorClass).toBe('bg-emerald-600');
+    expect(segments[2].colorClass).toBe('bg-red-500');
+  });
+
+  it('skips empty buckets and is empty for an empty checklist', () => {
+    expect(buildFormationProgressSegments({ not_started: 4, done: 0 }).map((segment) => segment.status)).toEqual(['not_started']);
+    expect(buildFormationProgressSegments({})).toEqual([]);
+    expect(buildFormationProgressSegments({ done: 0, not_started: 0 })).toEqual([]);
+  });
+});
+
+describe('formatFormationProgressSummary', () => {
+  it('lists every non-zero bucket literally, skipped kept apart from done', () => {
+    expect(formatFormationProgressSummary({ not_started: 10, in_progress: 1, blocked: 2, done: 3, skipped: 1 })).toBe(
+      '17 items · 3 done · 1 in progress · 2 blocked · 1 skipped · 10 not started'
+    );
+    expect(formatFormationProgressSummary({ done: 1 })).toBe('1 item · 1 done');
+  });
+
+  it('names an empty checklist rather than reading "0 items"', () => {
+    expect(formatFormationProgressSummary({})).toBe('No checklist items');
+    expect(sumFormationProgress({})).toBe(0);
   });
 });

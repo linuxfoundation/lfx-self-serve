@@ -1,9 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
-import type { FormationReadinessSummary, FormationRenderedSection } from '../interfaces/formation-checklist.interface';
-import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
+import type { FormationItem, FormationItemStatus, FormationQueueRow, FormationTemplateSection } from '../interfaces/formation.interface';
+import type {
+  FormationAnnouncementTiming,
+  FormationProgressSegment,
+  FormationReadinessSummary,
+  FormationRenderedSection,
+} from '../interfaces/formation-checklist.interface';
+import {
+  FORMATION_ITEM_SEGMENT_COLORS,
+  FORMATION_ITEM_STATUS_LABELS,
+  FORMATION_ORPHAN_SECTION,
+  FORMATION_PROGRESS_SEGMENT_ORDER,
+} from '../constants/formation.constants';
 import { parseIsoDateAsUtcMidnight } from './date-time.utils';
 
 const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
@@ -118,14 +128,92 @@ export function groupFormationItemsBySection(items: FormationItem[], sections: F
  * boundary, never within a day.
  */
 export function formatFormationRelativeDayCount(date: Date): string {
-  const dateUtcMidnight = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
-  const now = new Date();
-  const todayUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
-  const diffDays = Math.round((dateUtcMidnight - todayUtcMidnight) / 86_400_000);
+  const diffDays = getFormationCalendarDayOffset(date);
   if (diffDays === 0) return 'today';
   if (diffDays > 0) return `${diffDays} day${diffDays === 1 ? '' : 's'}`;
   const past = Math.abs(diffDays);
   return `${past} day${past === 1 ? '' : 's'} ago`;
+}
+
+/**
+ * UTC calendar days from today to `date` — negative in the past, `0` today, positive ahead. The
+ * shared core of `formatFormationRelativeDayCount` and the queue's `formatFormationAnnouncementCountdown`
+ * (see the former's doc comment for why this anchors both sides to UTC midnight), so the two labels
+ * can never disagree about which day it is.
+ */
+export function getFormationCalendarDayOffset(date: Date): number {
+  const dateUtcMidnight = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+  const now = new Date();
+  const todayUtcMidnight = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.round((dateUtcMidnight - todayUtcMidnight) / 86_400_000);
+}
+
+/**
+ * Where a date-only announcement date sits relative to today, for the Formations queue's
+ * Announcement cell (see {@link FormationAnnouncementTiming}). A missing or unparseable date is
+ * `unset` — or `needed` when `gatesCleared` is true, since upstream's `is_activating` requires a
+ * date once every gating item is done and the cell should say so instead of showing a muted dash.
+ */
+export function getFormationAnnouncementTiming(iso: string | null | undefined, gatesCleared = false): FormationAnnouncementTiming {
+  const parsed = iso ? parseIsoDateAsUtcMidnight(iso) : null;
+  if (!parsed) return gatesCleared ? 'needed' : 'unset';
+  const offset = getFormationCalendarDayOffset(parsed);
+  if (offset === 0) return 'today';
+  return offset < 0 ? 'past' : 'upcoming';
+}
+
+/**
+ * The queue's countdown line under the announcement date — "182 days ago" / "Today" / "In 42 days"
+ * — or `null` when there is no date or it doesn't parse. Sentence-cased and direction-explicit
+ * (unlike `formatFormationRelativeDayCount`'s bare "42 days", which reads after a "·" in a label
+ * that already names the date) because here it stands alone on its own line.
+ */
+export function formatFormationAnnouncementCountdown(iso: string | null | undefined): string | null {
+  const parsed = iso ? parseIsoDateAsUtcMidnight(iso) : null;
+  if (!parsed) return null;
+  const offset = getFormationCalendarDayOffset(parsed);
+  if (offset === 0) return 'Today';
+  const days = Math.abs(offset);
+  const unit = days === 1 ? 'day' : 'days';
+  return offset > 0 ? `In ${days} ${unit}` : `${days} ${unit} ago`;
+}
+
+/** Every `progress` bucket summed — the "M" of the queue's "N of M", and the denominator of `buildFormationProgressSegments`. */
+export function sumFormationProgress(progress: FormationQueueRow['progress']): number {
+  return Object.values(progress).reduce((sum: number, count) => sum + (count ?? 0), 0);
+}
+
+/**
+ * The queue row's per-status progress bar — one width-weighted segment per non-zero bucket, in
+ * `FORMATION_PROGRESS_SEGMENT_ORDER`, coloured by `FORMATION_ITEM_SEGMENT_COLORS` (the same fills
+ * the readiness strip uses, so a blocked item reads red on both surfaces). Empty for a `0 of 0`
+ * row so the template can render a bare track instead of dividing by zero.
+ */
+export function buildFormationProgressSegments(progress: FormationQueueRow['progress']): FormationProgressSegment[] {
+  const total = sumFormationProgress(progress);
+  if (total === 0) return [];
+  return FORMATION_PROGRESS_SEGMENT_ORDER.flatMap((status): FormationProgressSegment[] => {
+    const count = progress[status] ?? 0;
+    if (count === 0) return [];
+    return [{ status, count, widthPercent: (count / total) * 100, colorClass: FORMATION_ITEM_SEGMENT_COLORS[status] }];
+  });
+}
+
+/**
+ * The progress bar's accessible name and tooltip — "17 items · 3 done · 1 skipped · 1 in progress
+ * · 2 blocked · 10 not started", every bucket literal and zero buckets omitted, so a screen-reader
+ * user gets the same breakdown the coloured segments encode. Deliberately does not fold `skipped`
+ * into `done` the way the visible "N of M" does: the visible count answers "is anything left to
+ * do?", this one lists what each item's status actually is.
+ */
+export function formatFormationProgressSummary(progress: FormationQueueRow['progress']): string {
+  const total = sumFormationProgress(progress);
+  if (total === 0) return 'No checklist items';
+  const parts = FORMATION_PROGRESS_SEGMENT_ORDER.flatMap((status) => {
+    const count = progress[status] ?? 0;
+    return count > 0 ? [`${count} ${FORMATION_ITEM_STATUS_LABELS[status].toLowerCase()}`] : [];
+  });
+  return [`${total} ${total === 1 ? 'item' : 'items'}`, ...parts].join(' · ');
 }
 
 /**

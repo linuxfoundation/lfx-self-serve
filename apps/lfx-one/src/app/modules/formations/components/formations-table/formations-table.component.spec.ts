@@ -2,11 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
-import { FormationQueueRow } from '@lfx-one/shared/interfaces';
-import { describe, expect, it } from 'vitest';
+import { provideRouter, Router } from '@angular/router';
+import type { FormationQueueRow, FormationQueueTiles, FormationsQueueFilterState } from '@lfx-one/shared/interfaces';
+import { describe, expect, it, vi } from 'vitest';
 
 import { FormationsTableComponent } from './formations-table.component';
+
+/** A date-only string `days` calendar days from today (UTC, matching `getFormationCalendarDayOffset`), so countdown assertions hold on any day. */
+function isoDaysFromToday(days: number): string {
+  return new Date(Date.now() + days * 86_400_000).toISOString().slice(0, 10);
+}
 
 function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
   return {
@@ -32,7 +37,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
 describe('FormationsTableComponent', () => {
   let fixture: ComponentFixture<FormationsTableComponent>;
 
-  const render = async (rows: FormationQueueRow[]): Promise<void> => {
+  const render = async (rows: FormationQueueRow[], tiles?: FormationQueueTiles): Promise<void> => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [FormationsTableComponent],
@@ -41,6 +46,7 @@ describe('FormationsTableComponent', () => {
 
     fixture = TestBed.createComponent(FormationsTableComponent);
     fixture.componentRef.setInput('rows', rows);
+    if (tiles) fixture.componentRef.setInput('tiles', tiles);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -50,6 +56,8 @@ describe('FormationsTableComponent', () => {
   const announcementHeaderButton = (): HTMLButtonElement | null => fixture.nativeElement.querySelector('[data-testid="formations-sort-announcement"] button');
   const rowUidsInOrder = (): (string | null)[] =>
     Array.from(fixture.nativeElement.querySelectorAll('[data-row-index]')).map((el) => (el as HTMLElement).getAttribute('data-testid'));
+  const cell = (testId: string): HTMLElement => fixture.nativeElement.querySelector(`[data-testid="${testId}"]`);
+  const text = (testId: string): string | undefined => cell(testId)?.textContent?.trim();
 
   it('sorts by readiness (fewest open items first) ascending, then toggles to descending on repeat click', async () => {
     await render([
@@ -128,14 +136,15 @@ describe('FormationsTableComponent', () => {
     await render([buildRow({ formation_uid: 'formation:mapped', sub_stage: 'engaged', sub_stage_raw: 'Formation - Engaged' })]);
 
     const stageCell = fixture.nativeElement.querySelector('[data-testid="formations-table-stage-formation:mapped"]');
-    expect(stageCell.textContent.trim()).toBe('Formation · Engaged');
+    expect(stageCell.textContent.trim()).toBe('Engaged');
   });
 
+  // The date is the cell's first line; the countdown beneath it is covered by the #2782 block below.
   it('renders the announcement date with the year (GH-2371)', async () => {
     await render([buildRow({ formation_uid: 'formation:dated', announcement_date: '2026-06-30' })]);
 
-    const announcementCell = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:dated"]');
-    expect(announcementCell.textContent.trim()).toBe('Jun 30, 2026');
+    const dateLine = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:dated"] span');
+    expect(dateLine.textContent.trim()).toBe('Jun 30, 2026');
   });
 
   it('renders "Not set" when there is no announcement date', async () => {
@@ -154,12 +163,151 @@ describe('FormationsTableComponent', () => {
     process.env['TZ'] = 'Pacific/Honolulu'; // UTC-10, no DST — the timezone most likely to expose an off-by-one
     try {
       await render([buildRow({ formation_uid: 'formation:tz', announcement_date: '2026-01-01' })]);
-      const announcementCell = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:tz"]');
-      expect(announcementCell.textContent.trim()).toBe('Jan 1, 2026');
+      const dateLine = fixture.nativeElement.querySelector('[data-testid="formations-table-announcement-formation:tz"] span');
+      expect(dateLine.textContent.trim()).toBe('Jan 1, 2026');
     } finally {
       if (originalTz === undefined) delete process.env['TZ'];
       else process.env['TZ'] = originalTz;
     }
+  });
+
+  describe('redesigned cells (#2782)', () => {
+    it('renders the entity type under the name, derived from is_foundation and parent_uid', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:fnd', is_foundation: true }),
+        buildRow({ formation_uid: 'formation:child', parent_uid: 'project:parent' }),
+        buildRow({ formation_uid: 'formation:top' }),
+      ]);
+
+      expect(text('formations-table-type-formation:fnd')).toBe('Foundation');
+      expect(text('formations-table-type-formation:child')).toBe('Child project');
+      expect(text('formations-table-type-formation:top')).toBe('Project');
+    });
+
+    it('renders one progress segment per non-zero status bucket, resolved work first, with the breakdown as the accessible name', async () => {
+      await render([buildRow({ formation_uid: 'formation:bar', progress: { not_started: 10, in_progress: 1, blocked: 2, done: 3, skipped: 1 } })]);
+
+      const bar = cell('formations-table-progress-formation:bar').querySelector('[role="img"]') as HTMLElement;
+      expect(bar.getAttribute('aria-label')).toBe('17 items · 3 done · 1 in progress · 2 blocked · 1 skipped · 10 not started');
+      expect(bar.getAttribute('tabindex')).toBe('0');
+      const fills = Array.from(bar.children).map((segment) => Array.from(segment.classList).find((c) => c.startsWith('bg-')));
+      expect(fills).toEqual(['bg-emerald-600', 'bg-amber-500', 'bg-red-500', 'bg-gray-400', 'bg-gray-200']);
+      // Visible count still folds skipped into done (see the readiness sort test above).
+      expect(text('formations-table-progress-formation:bar')).toContain('4 of 17');
+    });
+
+    it('renders an empty track and names the empty checklist for a 0 of 0 row', async () => {
+      await render([buildRow({ formation_uid: 'formation:empty', progress: {} })]);
+
+      const bar = cell('formations-table-progress-formation:empty').querySelector('[role="img"]') as HTMLElement;
+      expect(bar.getAttribute('aria-label')).toBe('No checklist items');
+      expect(bar.children).toHaveLength(1);
+      expect(text('formations-table-progress-formation:empty')).toContain('0 of 0');
+    });
+
+    it('adds an amber countdown under a passed announcement date and a plain one under an upcoming date', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:past', announcement_date: isoDaysFromToday(-10) }),
+        buildRow({ formation_uid: 'formation:soon', announcement_date: isoDaysFromToday(42) }),
+      ]);
+
+      const past = cell('formations-table-announcement-formation:past');
+      expect(past.getAttribute('data-timing')).toBe('past');
+      expect(past.querySelectorAll('span')[1].textContent?.trim()).toBe('10 days ago');
+      expect(past.querySelectorAll('span')[1].classList.contains('text-amber-600')).toBe(true);
+
+      const soon = cell('formations-table-announcement-formation:soon');
+      expect(soon.getAttribute('data-timing')).toBe('upcoming');
+      expect(soon.querySelectorAll('span')[1].textContent?.trim()).toBe('In 42 days');
+      expect(soon.querySelectorAll('span')[1].classList.contains('text-gray-500')).toBe(true);
+    });
+
+    // Upstream's is_activating needs a date once every gating item is done, so that one "Not set"
+    // gets a prompt; a plain "Not set" stays a single muted line.
+    it('prompts for a date once the gates are cleared, and leaves a plain "Not set" alone', async () => {
+      await render([
+        buildRow({ formation_uid: 'formation:needed', announcement_date: null, gates_cleared: true }),
+        buildRow({ formation_uid: 'formation:unset', announcement_date: null }),
+      ]);
+
+      const needed = cell('formations-table-announcement-formation:needed');
+      expect(needed.getAttribute('data-timing')).toBe('needed');
+      expect(needed.textContent).toContain('Not set');
+      expect(needed.textContent).toContain('Needed to activate');
+
+      const unset = cell('formations-table-announcement-formation:unset');
+      expect(unset.getAttribute('data-timing')).toBe('unset');
+      expect(unset.querySelectorAll('span')).toHaveLength(1);
+    });
+
+    it('summarises blockers as a count chip with every title in its tooltip and the first title beneath', async () => {
+      await render([buildRow({ formation_uid: 'formation:blocked', blocked_item_titles: ['Charter agreed', 'Contribution agreement'] })]);
+
+      const blocking = cell('formations-table-blocking-formation:blocked');
+      expect(blocking.textContent).toContain('2 blocked');
+      expect(blocking.textContent).toContain('Charter agreed');
+      expect(blocking.textContent).not.toContain('Contribution agreement');
+      expect(blocking.querySelector('[aria-label]')?.getAttribute('aria-label')).toContain('Contribution agreement');
+    });
+
+    it('moves the "Gates cleared" badge into the Blocking cell when nothing blocks, and shows a dash otherwise', async () => {
+      await render([buildRow({ formation_uid: 'formation:cleared', gates_cleared: true }), buildRow({ formation_uid: 'formation:plain' })]);
+
+      expect(text('formations-table-blocking-formation:cleared')).toBe('Gates cleared');
+      expect(text('formations-table-progress-formation:cleared')).not.toContain('Gates cleared');
+      expect(text('formations-table-blocking-formation:plain')).toBe('—');
+    });
+
+    // LFXV2-3386 again: the row click must preserve `?project=` exactly like the name link does.
+    it('navigates to the drill-down, preserving query params, when the row itself is clicked', async () => {
+      await render([buildRow({ formation_uid: 'formation:click', project_slug: 'click-me' })]);
+      const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+      cell('formations-table-blocking-formation:click').dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+      expect(navigate).toHaveBeenCalledWith(['/foundation/formations', 'click-me'], { queryParamsHandling: 'preserve' });
+    });
+
+    it('labels the stage pills with the server-side counts, not the filtered row count', async () => {
+      await render([buildRow({ formation_uid: 'formation:only' })], {
+        exploratory: 4,
+        engaged: 2,
+        on_hold: 1,
+        total: 7,
+        foundations: 1,
+        projects: 6,
+        unmapped: 0,
+        ready: 0,
+        blocked: 0,
+        blocked_items: 0,
+      });
+
+      expect(text('filter-pill-all')).toBe('All (7)');
+      expect(text('filter-pill-engaged')).toBe('Engaged (2)');
+      expect(text('filter-pill-on_hold')).toBe('On hold (1)');
+    });
+
+    it('offers "Reset filters" on a filtered-empty result and re-emits the default filters when clicked', async () => {
+      await render([]);
+      const emitted: FormationsQueueFilterState[] = [];
+      fixture.componentInstance.filtersChange.subscribe((filters) => emitted.push(filters));
+
+      (fixture.nativeElement.querySelector('[data-testid="filter-pill-on_hold"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      expect(text('formations-table-empty')).toContain('No results found');
+
+      const reset = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="formations-table-empty"] button') as NodeListOf<HTMLButtonElement>).find(
+        (button) => button.textContent?.includes('Reset filters')
+      );
+      reset?.click();
+      fixture.detectChanges();
+
+      expect(emitted).toEqual([
+        { subStage: 'on_hold', search: '' },
+        { subStage: undefined, search: '' },
+      ]);
+      expect(text('formations-table-empty')).toContain('No formations yet');
+    });
   });
 
   // GH-2571: 0 of 6 <th> carried `scope="col"`, and `[ariaLabel]="'Formations queue'"` on

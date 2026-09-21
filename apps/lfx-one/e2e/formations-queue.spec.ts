@@ -48,6 +48,13 @@ test.describe('Formations queue (GH-1958)', () => {
     for (const row of mockFormationsQueue) {
       await expect(page.getByTestId(`formations-table-row-${row.formation_uid}`)).toBeVisible();
     }
+
+    // The health tiles read the BFF's unfiltered counts — the fixture has one gates-cleared row
+    // and two rows carrying one blocked item each — and the pills carry the per-stage counts.
+    await expect(page.getByTestId('stat-card-Ready to activate').locator('p').first()).toHaveText('1');
+    await expect(page.getByTestId('stat-card-Blocked')).toContainText('2 blocked items');
+    await expect(page.getByTestId('stat-card-On hold')).toBeVisible();
+    await expect(page.getByTestId('filter-pill-all')).toHaveText(`All (${mockFormationsQueue.length})`);
   });
 
   test('a non-auditor contributor is redirected to /foundation/overview', async ({ page }) => {
@@ -99,6 +106,24 @@ test.describe('Formations queue (GH-1958)', () => {
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/foundation/formations\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
     await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
+  });
+
+  // #2782: the whole row is a click target, not just the name — and it must preserve `?project=`
+  // exactly like the name link does (LFXV2-3386).
+  test('clicking elsewhere on a row opens the same checklist page, keeping ?project=', async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });
+    await stubFoundationProject(page);
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await page.goto(`/foundation/formations?project=${FOUNDATION_SLUG}`, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await expect(page.getByTestId('formations-table')).toBeVisible({ timeout: SIDEBAR_LOAD_TIMEOUT });
+
+    await page.getByTestId('formations-table-announcement-formation:cascade-data-alliance').click();
+
+    await expect(page).toHaveURL(new RegExp(`/foundation/formations/cascade-data-alliance\\?project=${FOUNDATION_SLUG}`), { timeout: ELEMENT_TIMEOUT });
+    await expect(page.getByTestId('formation-detail-container')).toBeVisible({ timeout: ELEMENT_TIMEOUT });
   });
 
   // GH-2584: the queue lists a formation when the formation service still calls it in progress,
@@ -180,6 +205,11 @@ test.describe('Formations queue (GH-1958)', () => {
 
     await page.getByTestId('filter-pill-on_hold').click();
     await expect(empty).toContainText('No results found');
+
+    // "Reset filters" clears the pill and returns the genuinely-empty copy.
+    await empty.getByRole('button', { name: /Reset filters/ }).click();
+    await expect(empty).toContainText('No formations yet');
+    await expect(page.getByTestId('filter-pill-all')).toHaveAttribute('aria-pressed', 'true');
   });
 
   test('the inline error state renders (with a working Retry) on a 500 from the queue endpoint', async ({ page }) => {

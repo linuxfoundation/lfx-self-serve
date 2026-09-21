@@ -6,7 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { FormationService } from '@services/formation.service';
 import { ProjectContextService } from '@services/project-context.service';
-import type { FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
+import type { FormationQueueTiles, FormationsQueueFilterState, FormationsQueueResponse, StatCardItem } from '@lfx-one/shared/interfaces';
 import { createEmptyFormationsQueueResponse } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, finalize, map, of, switchMap } from 'rxjs';
 
@@ -31,7 +31,9 @@ export class FormationsQueueComponent {
 
   private readonly response: Signal<FormationsQueueResponse> = this.initResponse();
   protected readonly rows = computed(() => this.response().rows);
-  protected readonly tiles: Signal<StatCardItem[]> = this.initTiles();
+  /** The server's pre-filter counts, passed through to the table so its pill labels can carry them. */
+  protected readonly queueTiles: Signal<FormationQueueTiles> = computed(() => this.response().tiles);
+  protected readonly statCards: Signal<StatCardItem[]> = this.initStatCards();
   // GH-2367: reflects the foundation the queue is actually scoped to, so the copy doesn't claim
   // "every foundation" once a `parent` filter has narrowed the rows to one.
   protected readonly subtitle = computed(() => {
@@ -88,9 +90,15 @@ export class FormationsQueueComponent {
     );
   }
 
-  private initTiles(): Signal<StatCardItem[]> {
+  /**
+   * The four health tiles — how big the pipeline is, what is ready, what is stuck, what is parked.
+   * Every value is a server count over the same unfiltered set (`buildQueueTilesFromRows`), so the
+   * strip holds still while a stage pill or search narrows the rows below it. The per-stage
+   * Exploratory/Engaged counts live on the pills instead, where the stage filter already is.
+   */
+  private initStatCards(): Signal<StatCardItem[]> {
     return computed(() => {
-      const t = this.response().tiles;
+      const t = this.queueTiles();
       return [
         {
           value: t.total,
@@ -103,30 +111,31 @@ export class FormationsQueueComponent {
           // `tiles.unmapped` is still on the response but nothing reads it; the same gap is what
           // the BFF logs at DEBUG, and that log — not this tile — is the detector for a new
           // upstream sub-stage.
-          subLine: `${t.foundations} foundations · ${t.projects} projects`,
+          subLine: `${t.foundations} ${t.foundations === 1 ? 'foundation' : 'foundations'} · ${t.projects} ${t.projects === 1 ? 'project' : 'projects'}`,
           icon: 'fa-light fa-diagram-project',
           iconContainerClass: 'bg-blue-50 text-blue-600',
         },
         {
-          value: this.rows().filter((row) => row.gates_cleared).length,
+          value: t.ready,
           label: 'Ready to activate',
-          subLine: 'Gating items done',
+          subLine: 'All gating items done',
           icon: 'fa-light fa-flag-checkered',
-          iconContainerClass: 'bg-amber-50 text-amber-600',
-        },
-        {
-          value: t.exploratory,
-          label: 'Exploratory',
-          subLine: 'Early conversations',
-          icon: 'fa-light fa-compass',
-          iconContainerClass: 'bg-violet-50 text-violet-600',
-        },
-        {
-          value: t.engaged,
-          label: 'Engaged',
-          subLine: `${t.on_hold} on hold`,
-          icon: 'fa-light fa-handshake',
           iconContainerClass: 'bg-emerald-50 text-emerald-600',
+        },
+        {
+          value: t.blocked,
+          label: 'Blocked',
+          subLine: `${t.blocked_items} blocked ${t.blocked_items === 1 ? 'item' : 'items'}`,
+          icon: 'fa-light fa-hand',
+          iconContainerClass: 'bg-red-50 text-red-600',
+        },
+        {
+          value: t.on_hold,
+          label: 'On hold',
+          // Where the stage is changed — the sidebar card says the same of stage and legal entity.
+          subLine: 'Paused in the admin tool',
+          icon: 'fa-light fa-pause',
+          iconContainerClass: 'bg-amber-50 text-amber-600',
         },
       ];
     });
