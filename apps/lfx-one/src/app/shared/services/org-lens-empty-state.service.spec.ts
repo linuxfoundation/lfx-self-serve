@@ -58,6 +58,7 @@ function setup(): Harness {
         provide: OrgRoleGrantsService,
         useValue: {
           loaded,
+          loading: signal(false),
           isStaff,
           lookupOutcome,
           staffCheck,
@@ -209,7 +210,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // The most likely moment to press Retry is while the first list fetch is still visibly loading;
   // the decision is made when the grants answer, not snapshotted at the click.
-  it('retry still refreshes a list that was in flight at the click, once the grants answer', () => {
+  it('retry refreshes a list that finished loading between the click and the grants answer', () => {
     const grants = new Subject<void>();
     h.refresh.mockReturnValue(grants.asObservable());
     h.listLoading.set(true);
@@ -222,6 +223,29 @@ describe('OrgLensEmptyStateService.pageState', () => {
     grants.next();
 
     expect(h.refreshList).toHaveBeenCalledTimes(1);
+  });
+
+  // The `loading()` clause on its own: the first list fetch is still in flight when the grants answer.
+  it('retry refreshes a list that is still in flight when the grants answer', () => {
+    const grants = new Subject<void>();
+    h.refresh.mockReturnValue(grants.asObservable());
+    h.listLoading.set(true);
+    h.listLoaded.set(false);
+
+    h.service.retry();
+    grants.next();
+
+    expect(h.refreshList).toHaveBeenCalledTimes(1);
+  });
+
+  it('retry leaves a list that was never requested alone even after the grants answer', () => {
+    const grants = new Subject<void>();
+    h.refresh.mockReturnValue(grants.asObservable());
+
+    h.service.retry();
+    grants.next();
+
+    expect(h.refreshList).not.toHaveBeenCalled();
   });
 });
 

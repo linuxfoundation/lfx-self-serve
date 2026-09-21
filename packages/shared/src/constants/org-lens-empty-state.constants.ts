@@ -55,6 +55,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     icon: 'fa-light fa-lock',
     primary: { label: 'Your organizations', action: 'org-list' },
     secondary: { label: 'Ask for access to the organization in this link', action: 'contact-support' },
+    noList: { reason: 'This link points to an organization that is not on your list.' },
   },
   'not-found-staff': {
     headline: 'This link does not open an organization',

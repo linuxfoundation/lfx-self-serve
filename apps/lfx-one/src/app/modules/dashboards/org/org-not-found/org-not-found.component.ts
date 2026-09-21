@@ -64,20 +64,6 @@ export class OrgNotFoundComponent {
   protected readonly orgLensOff: Signal<boolean> = computed(() => !this.orgLensEnabled());
 
   /**
-   * `OrgLensEmptyStateService.classifyLookup` decides the outage head (FR-016 rules 2–4) so this
-   * surface cannot drift from the page; here "holds anything" is having rows in the caller's own list.
-   * Only the tail is this dead end's own:
-   *
-   * - an LF-team caller holds every organization (the page's rule 1), so an unresolvable address can
-   *   only mean no such organization or a resolver miss — never "no access" (FR-012). Checked ahead of
-   *   the roster rules because their own list is empty by design and their way in is switcher search;
-   * - a list that failed to load (`upstreamFailed`) says nothing about access either — the caller may
-   *   well hold organizations that never arrived — so it is the outage state, with Retry (a caller
-   *   whose grants already show holdings is still classified as holding: the rows may simply not be
-   *   here yet, and the picker renders whatever did arrive);
-   * - otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
-   */
-  /**
    * Whether the caller holds anything at all — from the grant sets (unfiltered) OR the list rows: the
    * switcher's search replaces `items()` wholesale, so an open search that matches nothing must not
    * turn a holder into "holds nothing" and flip this page's state.
@@ -91,6 +77,20 @@ export class OrgNotFoundComponent {
       this.orgRoleGrants.inheritedAuditorSet().size > 0
   );
 
+  /**
+   * `OrgLensEmptyStateService.classifyLookup` decides the outage head (FR-016 rules 2–4) so this
+   * surface cannot drift from the page; here "holds anything" is `holdsAnything` — grant sets or list rows, unfiltered.
+   * Only the tail is this dead end's own:
+   *
+   * - an LF-team caller holds every organization (the page's rule 1), so an unresolvable address can
+   *   only mean no such organization or a resolver miss — never "no access" (FR-012). Checked ahead of
+   *   the roster rules because their own list is empty by design and their way in is switcher search;
+   * - a list that failed to load (`upstreamFailed`) says nothing about access either — the caller may
+   *   well hold organizations that never arrived — so it is the outage state, with Retry (a caller
+   *   whose grants already show holdings is still classified as holding: the rows may simply not be
+   *   here yet, and the picker renders whatever did arrive);
+   * - otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
+   */
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
     const held = this.holdsAnything();
     // Rule-1 analogue: LF team holds everything (a failed team check leaves `isStaff` false, so it
@@ -107,6 +107,9 @@ export class OrgNotFoundComponent {
 
   /** FR-011 support reference; null unless the staff check failed. */
   protected readonly correlationId: Signal<string | null> = this.orgRoleGrants.correlationId;
+
+  /** The shared Retry is in flight. */
+  protected readonly retrying: Signal<boolean> = this.emptyState.retrying;
 
   /** Retry action of `could-not-load` / `staff-check-failed`: re-run the lookup and the list in place. */
   protected retry(): void {

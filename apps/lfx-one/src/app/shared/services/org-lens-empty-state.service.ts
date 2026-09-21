@@ -85,10 +85,14 @@ export class OrgLensEmptyStateService {
   /** Convenience for templates that only need "is a page-level state replacing the page". */
   public readonly hasPageState: Signal<boolean> = computed(() => this.pageState() !== null);
 
+  /** The shared Retry is in flight — bind to the state's `retrying` so the control cannot be re-fired. */
+  public readonly retrying: Signal<boolean> = this.roleGrants.loading;
+
   /**
    * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the
-   * caller's evidence of holding *something* loaded (the page: switcher access; the dead end: rows in
-   * its own list), which is what turns a partial roster from "the switcher's notice" into an outage.
+   * caller's evidence of holding *something* (the page: switcher access; the dead end: its grant sets
+   * or list rows, unfiltered), which is what turns a partial roster from "the switcher's notice" into
+   * an outage.
    * Reads signals, so it is reactive inside a `computed`.
    *
    * Rule 2 is deliberately unguarded by `holdsAnything`: with the roster never loaded, `selectedHeld`

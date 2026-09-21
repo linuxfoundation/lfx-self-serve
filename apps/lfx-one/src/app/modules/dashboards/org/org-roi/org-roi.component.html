@@ -27,7 +27,12 @@
   </header>
 
   @if (pageState(); as state) {
-    <lfx-org-lens-empty-state [state]="state" [testId]="'org-roi-no-access'" [values]="{ correlationId: correlationId() }" (retry)="emptyState.retry()" />
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-roi-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!loaded()) {
     <section class="flex flex-col gap-4" data-testid="org-roi-loading">
       <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

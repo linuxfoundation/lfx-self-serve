@@ -14,7 +14,12 @@
   </header>
 
   @if (pageState(); as state) {
-    <lfx-org-lens-empty-state [state]="state" [testId]="'org-groups-no-access'" [values]="{ correlationId: correlationId() }" (retry)="emptyState.retry()" />
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-groups-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!loaded()) {
     <section
       [class]="statGridClass"

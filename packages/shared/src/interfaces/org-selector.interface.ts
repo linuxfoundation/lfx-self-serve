@@ -129,9 +129,11 @@ export interface RoleGrantsResponse {
   staffCheck?: OrgLensStaffCheck;
   /**
    * Spec 053 (FR-011) — random per-computation UUID, present only when `staffCheck === 'failed'`; the
-   * same id is logged with that computation's lookup warnings and set as `X-Request-Id`, so a caller
-   * quoting it can be found. Never `req.id` (a per-process counter). Failed staff checks are never
-   * served from cache, so this id is always the one that was logged.
+   * same id is logged with that computation's lookup warnings and sent as the `X-Correlation-Id`
+   * response header (`ORG_ROLE_GRANTS_CORRELATION_HEADER`), so a caller quoting it can be found. Never
+   * `req.id` (a per-process counter). It is the id logged by the computation that produced the result
+   * — within the short failed-check cache window (`ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS`)
+   * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
    */
   correlationId?: string;
 }

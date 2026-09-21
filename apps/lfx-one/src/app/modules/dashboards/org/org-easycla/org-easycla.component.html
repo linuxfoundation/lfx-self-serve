@@ -29,7 +29,12 @@
   </header>
 
   @if (pageState(); as state) {
-    <lfx-org-lens-empty-state [state]="state" [testId]="'org-easycla-no-access'" [values]="{ correlationId: correlationId() }" (retry)="emptyState.retry()" />
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-easycla-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!orgContextLoaded()) {
     <!-- Pre-settled state: say nothing about the CLA list until access is known, so an authorized
          user is never briefly told they have signed no CLAs. -->

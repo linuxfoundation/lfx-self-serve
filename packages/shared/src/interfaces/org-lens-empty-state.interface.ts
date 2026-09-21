@@ -52,6 +52,8 @@ export interface OrgLensEmptyStateCopy {
   secondary?: OrgLensEmptyStateAction;
   /** `section-empty` only — wording when the section has no selectable period (FR-013 "No {noun} recorded"). */
   noPeriod?: { headline: string; reason: string };
+  /** `org-list` primaries only — the reason when there are no rows to list (the secondary is promoted in the list's place). */
+  noList?: { reason: string };
 }
 
 /** Resolved values an empty state may interpolate. `orgName` is honoured only for states rendered to a caller who holds the org (FR-019). */

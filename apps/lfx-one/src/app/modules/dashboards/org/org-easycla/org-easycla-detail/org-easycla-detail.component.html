@@ -8,7 +8,12 @@
       <p-skeleton height="2.5rem" width="20rem" />
     </section>
   } @else if (pageState(); as state) {
-    <lfx-org-lens-empty-state [state]="state" [testId]="'org-easycla-no-access'" [values]="{ correlationId: correlationId() }" (retry)="emptyState.retry()" />
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-easycla-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!hasCompany()) {
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"

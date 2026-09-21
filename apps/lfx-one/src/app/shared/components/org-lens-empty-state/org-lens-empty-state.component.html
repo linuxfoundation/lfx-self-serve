@@ -61,6 +61,8 @@
           icon="fa-light fa-rotate-right"
           severity="primary"
           size="small"
+          [loading]="retrying()"
+          [disabled]="retrying()"
           (onClick)="onAction(action)"
           [attr.data-testid]="testId() + '-retry'"></lfx-button>
       } @else if (action.action === 'reset-filters') {

@@ -332,5 +332,19 @@ describe('OrgNavigationService default selection', () => {
 
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
     });
+
+    // The documented qualification: with a bootstrap still armed, an empty refreshed page is consumed
+    // under the bootstrap's own semantics (it would have cleared on its own empty page too). Retry adds
+    // no selection semantics of its own — it neither arms nor disarms the pending intent.
+    it('lets an armed bootstrap apply its own empty-page handling to the refreshed page', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+      service.resetAndReload();
+      service.refreshList(UID_B);
+
+      const requests = http.match((req) => req.url === '/api/nav/org-items');
+      requests[1].flush(page([]));
+
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+    });
   });
 });

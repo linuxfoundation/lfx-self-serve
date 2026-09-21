@@ -69,6 +69,7 @@ function setup(): Harness {
         provide: OrgRoleGrantsService,
         useValue: {
           loaded: signal(true),
+          loading: signal(false),
           isStaff,
           lookupOutcome,
           staffCheck,

@@ -83,6 +83,19 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(controls).toHaveLength(1);
     expect(controls[0].textContent).toContain('Ask for access to the organization in this link');
     expect(controls[0].tagName).toBe('LFX-BUTTON');
+    // The reason must not introduce a list that is not there.
+    expect(byTestId(fixture, 'description')?.textContent?.trim()).toBe('This link points to an organization that is not on your list.');
+    expect(byTestId(render('wrong-organization', { orgList: ORG_LIST }), 'description')?.textContent).toContain('Here is what you do have access to:');
+  });
+
+  it('disables the Retry control while the retry is in flight', () => {
+    const fixture = TestBed.createComponent(OrgLensEmptyStateComponent);
+    fixture.componentRef.setInput('state', 'could-not-load');
+    fixture.componentRef.setInput('testId', TEST_ID);
+    fixture.componentRef.setInput('retrying', true);
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'retry')?.querySelector('button')?.disabled).toBe(true);
   });
 
   it('lists the caller\u2019s organizations beneath the staff invite without making them the primary', () => {

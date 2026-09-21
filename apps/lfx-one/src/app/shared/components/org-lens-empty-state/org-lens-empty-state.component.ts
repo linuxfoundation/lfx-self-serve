@@ -50,6 +50,8 @@ export class OrgLensEmptyStateComponent {
   public readonly withCard = input(false);
   /** `data-testid` prefix, e.g. `org-overview-no-access`. */
   public readonly testId = input.required<string>();
+  /** True while the Retry this state offers is in flight — the control shows a spinner and cannot be re-fired. */
+  public readonly retrying = input(false);
 
   public readonly retry = output<void>();
   public readonly resetFilters = output<void>();
@@ -67,8 +69,14 @@ export class OrgLensEmptyStateComponent {
 
   protected readonly reason = computed(() => {
     const copy = this.copy();
-    const template = copy.noPeriod && !this.values().period ? copy.noPeriod.reason : copy.reason;
-    return this.interpolate(template);
+    if (copy.noPeriod && !this.values().period) {
+      return this.interpolate(copy.noPeriod.reason);
+    }
+    // A reason that introduces the list ("Here is what you have access to:") must not run into nothing.
+    if (copy.noList && copy.primary?.action === 'org-list' && this.orgList().length === 0) {
+      return this.interpolate(copy.noList.reason);
+    }
+    return this.interpolate(copy.reason);
   });
 
   /**

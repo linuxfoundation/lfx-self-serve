@@ -31,6 +31,7 @@
       [testId]="'org-not-found'"
       [values]="{ orgList: orgList(), correlationId: correlationId() }"
       (orgSelected)="pick($event)"
+      [retrying]="retrying()"
       (retry)="retry()" />
   } @else {
     <section class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16" data-testid="org-not-found-loading">
