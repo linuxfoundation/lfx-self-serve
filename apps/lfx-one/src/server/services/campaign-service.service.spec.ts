@@ -2550,7 +2550,13 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     // now defended twice: the brackets are removed, and anything left is escaped.
     expect(result.copy?.body).not.toContain('<b>');
     expect(result.copy?.body).not.toContain('</b>');
-    expect(result.copy?.body).toContain('Submit');
+    // The MARKUP SHAPE is pinned too. Asserting only "no live markup survives" left the wrapper
+    // this commit introduced with no coverage at all, so a change to the element or the classes
+    // would go unnoticed -- and those classes are a cross-service contract: campaign-service's
+    // own renderer emits the same `lfx-block lfx-button` for a button section, so the two
+    // producers of this markup have to stay in step.
+    expect(result.copy?.body).toContain('<div class="lfx-block lfx-button"><strong>');
+    expect(result.copy?.body).toContain('</strong></div>');
     // Still no destination, so no native button.
     expect(result.copy?.ctaUrl).toBe('');
   });

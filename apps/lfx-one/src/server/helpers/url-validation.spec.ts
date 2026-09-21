@@ -254,16 +254,20 @@ describe('resolved-address SSRF gate uses the shared judge', () => {
     vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
     vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
 
-    // The CONTROL for the cases above: without it, a gate that refused EVERYTHING would pass
-    // all nine of them. Only the resolution verdict is under test here -- whatever the transport
-    // does afterwards belongs to the redirect tests -- so the assertion is simply that the
-    // failure, if any, is not the private-IP rejection.
+    // The CONTROL for the cases above: without it, a gate that refused EVERYTHING would pass all
+    // nine of them.
+    //
+    // "no private-IP rejection" alone is too weak -- a run that never reached the gate would
+    // also satisfy it -- so the resolver being CALLED is asserted as well. Together they say the
+    // address was judged and passed, which is the property the nine cases are being compared
+    // against. What the transport does afterwards belongs to the redirect tests.
     let rejection = '';
     try {
       await fetchSafeUrl('https://events.example.com/e', new AbortController().signal);
     } catch (error) {
       rejection = error instanceof Error ? error.message : String(error);
     }
+    expect(vi.mocked(dns.promises.resolve4)).toHaveBeenCalled();
     expect(rejection).not.toMatch(/private IP/);
   });
 });

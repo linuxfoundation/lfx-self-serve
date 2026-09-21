@@ -311,10 +311,10 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('DNS resolution returned no addresses');
   }
   for (const addr of allAddresses) {
-    const checkAddr = addr.replace(/^::ffff:/i, '');
-    // The raw address AND its IPv4-mapped unwrapping; isPrivateHost normalises the mapped form
-    // itself, so judging both is belt-and-braces that costs nothing.
-    if (isPrivateHost(addr) || isPrivateHost(checkAddr)) {
+    // isPrivateHost normalises the IPv4-mapped form itself, so there is no strip to do here --
+    // and judging a hand-stripped copy alongside it would be a second encoding of the same rule,
+    // which is what this file was just fixed for.
+    if (isPrivateHost(addr)) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }

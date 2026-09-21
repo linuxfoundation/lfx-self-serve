@@ -1292,18 +1292,18 @@ export class CampaignsComponent {
    */
   protected readonly emailCtaUnlinkedLabel = computed<string>(() => {
     if (this.emailCtaIsStageable() || !this.emailBodyIsStageable()) return '';
-    // ONLY when a url was supplied and then refused -- never when it was omitted.
+    // ONLY when a url was supplied and then REFUSED -- never when it was omitted.
     //
     // An omitted `ctaUrl` is the CFP / Feedback / See-You-There case, and the server already
-    // keeps that label INLINE in `body` (its filter is `!section.url`). Rendering it here too
-    // showed the call to action twice, once in the body and once as the grey label. The test for
-    // "was a url supplied" mirrors the server's own `!section.url` exactly, so the two sides
-    // agree on which case each is handling rather than each guessing.
-    // MIRRORS the server's `!section.url` exactly -- no `.trim()`. A whitespace-only url is
-    // TRUTHY, so the server treats it as supplied and drops the label from `body`; trimming here
-    // would classify the same value as omitted and hide the label too, and the call to action
-    // would vanish again through the very gap this helper closes. The trim was mine, and it
-    // reintroduced the drift one commit after removing it.
+    // keeps that label inline in `body` (its filter is `!section.url`), so rendering it here too
+    // showed the call to action twice: once in the body, once as the grey label.
+    //
+    // The test MIRRORS the server's `!section.url` exactly, deliberately without a `.trim()`. A
+    // whitespace-only url is TRUTHY, so the server treats it as supplied and drops the label
+    // from `body`; trimming here would call the same value omitted and hide it on this side too,
+    // and the call to action would vanish through the very gap this helper closes. Two encodings
+    // of one question drift the moment they stop being identical -- which is how the vanishing
+    // CTA arose in the first place.
     if (!(this.emailCopy()?.ctaUrl ?? '')) return '';
     return (this.emailCopy()?.cta ?? '').trim();
   });

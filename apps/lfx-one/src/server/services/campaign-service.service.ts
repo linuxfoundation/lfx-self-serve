@@ -884,12 +884,16 @@ export class CampaignServiceClient {
         )
         .map((section) => {
           if (section.type === 'divider') return '<hr />';
-          // `lfx-block lfx-button` matches what campaign-service's own renderer emits for a
-          // button section (`internal/service/email_wizard_sections.go`), so the two producers
-          // of this markup agree. The previous `lfx-cta-text` was invented here, defined by no
-          // stylesheet, and matched nothing upstream -- dead markup that also read as a
-          // convention it was not part of. Email clients strip most CSS, so this is a structural
-          // hook for whoever styles the template, not a visual effect on its own.
+          // The whole element changed, not just the class: `<p class="lfx-cta-text">` became
+          // `<div class="lfx-block lfx-button"><strong>`, which is exactly what campaign-service's
+          // own renderer emits for a button section
+          // (`internal/service/email_wizard_sections.go`). The two producers of this markup now
+          // agree, and `<strong>` carries the emphasis a CTA needs in clients that drop CSS.
+          //
+          // The previous `lfx-cta-text` was invented here, defined by no stylesheet and matching
+          // nothing upstream -- dead markup that also read as part of a convention it did not
+          // belong to. Email clients strip most CSS, so these classes are a structural hook for
+          // whoever styles the template rather than a visual effect on their own.
           // sanitizeDisplayText BEFORE escapeHtml, and both: they defend against different
           // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
           // break out of the markup; it does nothing to a BIDI override or a zero-width
