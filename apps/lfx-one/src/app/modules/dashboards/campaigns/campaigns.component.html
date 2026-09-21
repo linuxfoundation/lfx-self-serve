@@ -646,13 +646,13 @@
                         >
                       </div>
                     }
-                    <!-- `body` is MODEL-generated, not scraped, and campaign-service's
-                         sanitizeWizardHTML allow-list has no `img` entry, so a remote image
-                         cannot reach this binding the way the hero and sponsor URLs could.
-                         Recorded because the two look alike: those carried a SCRAPED url into an
-                         `<img [src]>`, a different provenance under a different guard. If that
-                         upstream allow-list ever gains `img`, this becomes the same
-                         browser-fetch vector and needs the same treatment. -->
+                    <!-- `body` is model-generated and reaches `[innerHTML]`. Angular strips
+                         scripts and event handlers but KEEPS a plain `<img src>`, and
+                         campaign-service's /email-copy path applies no sanitizer, so the BFF
+                         adapter removes resource-loading elements before this binding sees them
+                         (`stripResourceLoadingHtml`). Without that, a generated or
+                         prompt-injected image makes the operator's browser fetch an arbitrary
+                         host -- the same vector the hero and sponsor placeholders close. -->
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="copy.body"

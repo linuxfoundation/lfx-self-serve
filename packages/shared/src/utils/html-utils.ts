@@ -259,3 +259,40 @@ export function htmlClipboardToText(html: string | null | undefined): string {
 
   return result.trim();
 }
+
+/**
+ * Elements that make a browser FETCH something, and the attributes that do the same on any tag.
+ *
+ * Not a general XSS allow-list. Angular's `[innerHTML]` sanitizer already removes `<script>`,
+ * event handlers and `javascript:` urls, so those are covered. What it deliberately KEEPS is an
+ * ordinary `<img src="https://…">` -- which is safe for XSS and is exactly the browser-side
+ * fetch the campaign preview must not make, because the html comes from a model whose output can
+ * be prompt-injected and campaign-service's `/email-copy` path applies no sanitizer of its own.
+ */
+const RESOURCE_LOADING_TAGS = ['img', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'embed', 'object', 'svg', 'link', 'style', 'script'];
+
+/**
+ * Removes elements and attributes that would make the renderer fetch a remote resource.
+ *
+ * For html destined for `[innerHTML]`. A resource tag is dropped WITH its content -- an `<img>`
+ * has none, and for `<iframe>`/`<object>`/`<script>`/`<style>` the content is markup rather than
+ * copy, so keeping it would leak code into the page as text. Everything else is left intact:
+ * this is a narrow strip, not a formatting allow-list, because the surrounding copy is the
+ * point of the preview.
+ *
+ * Background-image urls in a `style` attribute fetch too, so `style` is dropped wherever it
+ * appears rather than only on resource tags.
+ */
+export function stripResourceLoadingHtml(html: string | null | undefined): string {
+  if (!html) return '';
+  let out = html;
+  for (const tag of RESOURCE_LOADING_TAGS) {
+    // Paired form, then the self-closing/void form. Both spellings occur in generated html.
+    out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), '');
+    out = out.replace(new RegExp(`<${tag}\\b[^>]*\\/?>`, 'gi'), '');
+  }
+  // `style` and `background` on a SURVIVING tag can still name a url.
+  out = out.replace(/\sstyle\s*=\s*"[^"]*"/gi, '').replace(/\sstyle\s*=\s*'[^']*'/gi, '');
+  out = out.replace(/\sbackground\s*=\s*"[^"]*"/gi, '').replace(/\sbackground\s*=\s*'[^']*'/gi, '');
+  return out;
+}

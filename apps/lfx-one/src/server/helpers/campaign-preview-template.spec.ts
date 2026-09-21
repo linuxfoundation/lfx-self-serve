@@ -53,11 +53,18 @@ describe('campaigns email preview template', () => {
     const end = template.indexOf('campaigns-email-preview-cta', start);
     expect(end).toBeGreaterThan(start);
 
-    // HTML comments stripped first: the preview carries a comment explaining why an
-    // `<img [src]>` is NOT used, and matching that text would fail on the documentation of the
-    // very property being asserted.
-    const region = template.slice(start, end).replace(/<!--[\s\S]*?-->/g, '');
-    expect(region).not.toMatch(/<img\b/);
+    // Comment BODIES are excluded by walking the region rather than by a strip-regex: the
+    // preview carries a comment explaining why an `<img [src]>` is not used, and matching that
+    // text would fail on the documentation of the very property asserted here. A
+    // `replace(/<!--...-->/)` did that job but is the incomplete-multi-character-sanitization
+    // shape CodeQL flags, and a partial strip is not worth defending in a test -- so the region
+    // is split on comment boundaries and only the code between them is searched.
+    const region = template.slice(start, end);
+    const outsideComments = region
+      .split('<!--')
+      .map((part, index) => (index === 0 ? part : part.slice(part.indexOf('-->') + 3)))
+      .join('');
+    expect(outsideComments).not.toMatch(/<img\b/);
   });
 
   it('names the hero host instead, so the operator still knows a banner is coming', () => {

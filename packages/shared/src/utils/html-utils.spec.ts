@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml } from './html-utils';
+import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml, stripResourceLoadingHtml } from './html-utils';
 
 describe('sanitizeDisplayText', () => {
   it('drops a BIDI override that would visually reverse the name', () => {
@@ -224,5 +224,46 @@ describe('sanitizeDisplayText — joiner carve-out', () => {
     ['joiners around whitespace', '\u200D \u200C'],
   ])('returns empty for %s', (_label, input) => {
     expect(sanitizeDisplayText(input)).toBe('');
+  });
+});
+
+describe('stripResourceLoadingHtml', () => {
+  // Angular's `[innerHTML]` sanitizer covers scripts, handlers and `javascript:` urls; what it
+  // KEEPS is a plain `<img src>`, which is safe for XSS and is precisely the browser-side fetch
+  // the campaign preview must not make.
+  it.each([
+    ['a remote image', '<p>hi</p><img src="https://evil.test/x.png">', '<p>hi</p>'],
+    ['a self-closing image', '<p>a</p><img src="x" />', '<p>a</p>'],
+    ['an iframe and its content', '<iframe src="x">inner</iframe>ok', 'ok'],
+    ['a picture/source set', '<picture><source srcset="x"></picture>t', 't'],
+    ['a video', '<video src="x"></video>t', 't'],
+    ['an object', '<object data="x">fallback</object>t', 't'],
+    ['a stylesheet link', '<link rel="stylesheet" href="x">t', 't'],
+    ['a style block', '<style>.a{background:url(x)}</style>t', 't'],
+    ['an svg', '<svg><image href="x"/></svg>t', 't'],
+    ['a background-image style attribute', '<p style="background:url(https://evil.test/x)">t</p>', '<p>t</p>'],
+    ['a background attribute', '<td background="https://evil.test/x">t</td>', '<td>t</td>'],
+  ])('strips %s', (_label, input, want) => {
+    expect(stripResourceLoadingHtml(input)).toBe(want);
+  });
+
+  // The copy is the point of the preview -- this is a narrow strip, not a formatting allow-list.
+  it.each([
+    ['paragraphs and emphasis', '<p><strong>keep</strong> <em>me</em></p>'],
+    ['an anchor', '<a href="https://x.test">link</a>'],
+    ['lists', '<ul><li>one</li><li>two</li></ul>'],
+    ['headings', '<h2>Title</h2>'],
+    ['a divider', '<hr />'],
+    ['plain text', 'just words'],
+  ])('leaves %s intact', (_label, input) => {
+    expect(stripResourceLoadingHtml(input)).toBe(input);
+  });
+
+  it.each([
+    ['null', null],
+    ['undefined', undefined],
+    ['empty', ''],
+  ])('returns empty for %s', (_label, input) => {
+    expect(stripResourceLoadingHtml(input)).toBe('');
   });
 });

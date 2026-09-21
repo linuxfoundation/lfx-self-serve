@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import { escapeHtml, sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -908,7 +908,16 @@ export class CampaignServiceClient {
           // that field left the identical value unsanitised one branch away.
           if (section.type === 'button')
             return `<div class="lfx-block lfx-button"><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
-          return section.html;
+          // Resource-loading elements stripped HERE, where body is assembled.
+          //
+          // Angular's `[innerHTML]` sanitizer removes scripts, event handlers and
+          // `javascript:` urls -- but deliberately KEEPS an ordinary `<img src="https://…">`,
+          // which is safe for XSS and is exactly the browser-side fetch the preview must not
+          // make. This html comes from a model, and campaign-service's `/email-copy` path
+          // applies no sanitizer of its own, so there is nothing upstream to rely on. An
+          // earlier comment in this file claimed an upstream allow-list covered it; that
+          // allow-list exists only on the wizard path, which this is not.
+          return stripResourceLoadingHtml(section.html);
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');

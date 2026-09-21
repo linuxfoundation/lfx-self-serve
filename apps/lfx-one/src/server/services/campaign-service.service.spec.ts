@@ -2500,6 +2500,25 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.cta).toContain('Register');
   });
 
+  it('strips a remote image from a rich_text section before it reaches body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [{ type: 'rich_text', html: '<p>Join us</p><img src="https://evil.test/probe.png">' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // `body` is rendered through `[innerHTML]`. Angular keeps a plain `<img src>` -- it is not
+    // an XSS risk -- so the fetch it triggers has to be stopped here, and campaign-service's
+    // /email-copy path applies no sanitizer of its own.
+    expect(result.copy?.body).not.toContain('<img');
+    expect(result.copy?.body).not.toContain('evil.test');
+    expect(result.copy?.body).toContain('Join us');
+  });
+
   it('strips a BIDI override from the URL-less button label rendered into body', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
