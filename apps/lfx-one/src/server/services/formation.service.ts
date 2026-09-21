@@ -1627,16 +1627,35 @@ export class FormationService {
       );
 
       // Enrich actor display names — mapActor sets name = username as a placeholder for real users.
-      const actorNames = await this.enrichFormationUserRefs(
-        req,
-        entries.map((e) => e.actor)
-      );
-      if (actorNames.size > 0) {
+      // Also enrich assignee usernames in before/after snapshots (GH-2573 follow-up): the History
+      // panel renders entry.before.assignee / entry.after.assignee directly, so without enrichment
+      // the panel shows raw usernames (e.g. "andrest50dev") instead of display names
+      // ("Andres Tobon"). Both lookups share one enrichFormationUserRefs call so the process-wide
+      // cache is populated in a single fan-out rather than two sequential ones.
+      const assigneeSnapshotRefs: FormationUser[] = entries.flatMap((e) => {
+        if (e.action !== 'assignee_changed') return [];
+        const refs: FormationUser[] = [];
+        if (e.before?.assignee) refs.push({ username: e.before.assignee, name: e.before.assignee });
+        if (e.after?.assignee) refs.push({ username: e.after.assignee, name: e.after.assignee });
+        return refs;
+      });
+      const displayNames = await this.enrichFormationUserRefs(req, [...entries.map((e) => e.actor), ...assigneeSnapshotRefs]);
+      if (displayNames.size > 0) {
         for (let i = 0; i < entries.length; i++) {
-          const displayName = actorNames.get(entries[i].actor.username);
-          if (displayName) {
-            entries[i] = { ...entries[i], actor: { ...entries[i].actor, name: displayName } };
+          let entry = entries[i];
+          const actorName = displayNames.get(entry.actor.username);
+          if (actorName) {
+            entry = { ...entry, actor: { ...entry.actor, name: actorName } };
           }
+          if (entry.before?.assignee) {
+            const name = displayNames.get(entry.before.assignee);
+            if (name) entry = { ...entry, before: { ...entry.before, assignee: name } };
+          }
+          if (entry.after?.assignee) {
+            const name = displayNames.get(entry.after.assignee);
+            if (name) entry = { ...entry, after: { ...entry.after, assignee: name } };
+          }
+          entries[i] = entry;
         }
       }
 
