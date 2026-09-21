@@ -49,6 +49,11 @@ export function sanitizeDisplayText(value: string): string {
       if (code < 0x20 || code === 0x7f) return false;
       // C1 controls (U+0080-U+009F): invisible, and some legacy decoders map them to punctuation.
       if (code >= 0x80 && code <= 0x9f) return false;
+      // Lone surrogates. Iterating with [...value] yields an UNPAIRED surrogate as its own
+      // element -- a well-formed pair is already a single code point above 0xFFFF and never
+      // reaches here. They are not characters, and encoders downstream either throw on them or
+      // substitute U+FFFD, so the value that renders is not the value that was checked.
+      if (code >= 0xd800 && code <= 0xdfff) return false;
       // BIDI overrides and embeddings. U+202E alone visually REVERSES the text after it, so a
       // sponsor name can render as something other than what it contains -- a spoof that
       // survives any check that only looks at ASCII. U+2066-U+2069 are the isolate forms.

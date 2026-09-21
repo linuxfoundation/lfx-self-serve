@@ -10,6 +10,22 @@ describe('sanitizeDisplayText', () => {
     // U+202E reverses everything after it, so a name can RENDER as something other than what it
     // contains -- a spoof invisible to any check that only looks at ASCII.
     expect(sanitizeDisplayText('Acme\u202Emoc.evil')).toBe('Acmemoc.evil');
+  });
+
+  it('drops a lone surrogate, which is not a character', () => {
+    // [...value] yields an UNPAIRED surrogate as its own element; a well-formed pair is already a
+    // single code point above 0xFFFF and never reaches the filter. Encoders downstream either
+    // throw on a lone surrogate or substitute U+FFFD, so the value that RENDERS stops matching
+    // the value that was checked.
+    const out = sanitizeDisplayText('Hello\uD800World');
+    expect(out).toBe('HelloWorld');
+    expect(/[\uD800-\uDFFF]/.test(out)).toBe(false);
+  });
+
+  it('keeps an astral character, whose surrogates are a valid PAIR', () => {
+    // The guard must not over-strip: this is the negative case that separates a lone surrogate
+    // from an emoji or a CJK extension character, both of which are legitimate sponsor names.
+    expect(sanitizeDisplayText('Acme \u{1F680} Corp')).toBe('Acme \u{1F680} Corp');
     expect(sanitizeDisplayText('A\u2066B\u2069C')).toBe('ABC');
   });
 
