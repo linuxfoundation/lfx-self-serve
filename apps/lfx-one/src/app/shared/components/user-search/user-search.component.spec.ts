@@ -168,20 +168,6 @@ describe('UserSearchComponent', () => {
       expect(onRejectedSelection).toHaveBeenCalledWith(pat);
     });
 
-    it('stops a click on a disabled row before it reaches the option handler, and lets an enabled row through', async () => {
-      await render({ candidates: [sam, pat] });
-
-      const stopped = new MouseEvent('click');
-      const stoppedSpy = vi.spyOn(stopped, 'stopPropagation');
-      fixture.componentInstance.onOptionClick(stopped, pat);
-      expect(stoppedSpy).toHaveBeenCalled();
-
-      const passed = new MouseEvent('click');
-      const passedSpy = vi.spyOn(passed, 'stopPropagation');
-      fixture.componentInstance.onOptionClick(passed, sam);
-      expect(passedSpy).not.toHaveBeenCalled();
-    });
-
     it('forwards the disabled flag to the autocomplete so the row renders as disabled', async () => {
       await render({ candidates: [sam, pat] });
 

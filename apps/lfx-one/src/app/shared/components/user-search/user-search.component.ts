@@ -233,11 +233,9 @@ export class UserSearchComponent {
     // A disabled local candidate is the one thing this handler must never commit — and this guard
     // is what prevents it, not `optionDisabled`: PrimeNG (20.4) styles a disabled option and marks
     // it aria-disabled, but its own option handler still commits the value and emits the pick, on
-    // click and on hover-plus-Enter (`focusOnHover` is on by default). A mouse click on a disabled
-    // row is swallowed earlier, in {@link onOptionClick}, so the panel stays open with the row's
-    // note in view; a keyboard pick reaches here after PrimeNG has already closed the panel and
-    // written the option into the box, so snap the box back and let the consumer say why — the
-    // row's `note` rides on the rejected option.
+    // click and on hover-plus-Enter (`focusOnHover` is on by default). By the time the pick lands
+    // here PrimeNG has already closed the panel and written the option into the box, so snap the
+    // box back and let the consumer say why — the row's `note` rides on the rejected option.
     if (selectedUser.disabled) {
       this.userSearchForm.get('userSearch')?.setValue(this.displayValue() ?? '', { emitEvent: false });
       this.onRejectedSelection.emit(selectedUser);
@@ -381,18 +379,6 @@ export class UserSearchComponent {
   public onEnterManually(): void {
     // Emit event to let parent component handle manual entry
     this.onManualEntry.emit();
-  }
-
-  /**
-   * Click on a suggestion row. A disabled row stops the click here, before PrimeNG's own option
-   * handler on the enclosing `<li>` runs — that handler ignores `optionDisabled` and would commit
-   * the row and close the panel — so the list stays open and the row's note stays readable. A
-   * keyboard pick cannot be intercepted this way and is refused in {@link onUserSelected} instead.
-   */
-  public onOptionClick(event: Event, option: UserSearchOption): void {
-    if (option.disabled) {
-      event.stopPropagation();
-    }
   }
 
   /**

@@ -26,10 +26,8 @@
   (onClear)="onSearchClear()"
   (onBlur)="onSearchBlur()">
   <ng-template #item let-user>
-    <!-- A disabled row swallows its own click (onOptionClick): PrimeNG's option handler on the enclosing
-         <li> would otherwise commit it regardless of optionDisabled. Keyboard picks are refused in
-         onUserSelected, so no key handler is needed here. -->
-    <div class="w-full flex justify-between items-center gap-2" [class.cursor-not-allowed]="user.disabled" (click)="onOptionClick($event, user)">
+    <!-- optionDisabled only styles the row and marks it aria-disabled; a pick on it is refused in onUserSelected. -->
+    <div class="w-full flex justify-between items-center gap-2" [class.cursor-not-allowed]="user.disabled">
       <div class="flex flex-col">
         <div class="text-sm flex gap-1 items-center">
           <span>{{ user.fullName }}</span>
