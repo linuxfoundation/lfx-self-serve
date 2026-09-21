@@ -18,11 +18,12 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgLensRoiMethod, OrgLensRoiProjectAnnual, OrgLensRoiProjectDetail, OrgLensRoiProjectYearRow, StatCardItem } from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';

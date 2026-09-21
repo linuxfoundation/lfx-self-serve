@@ -14,6 +14,15 @@ export type OrgLensEmptyStateName =
   | 'section-no-access'
   | 'section-could-not-verify';
 
+/**
+ * Outcome of one section request, classified for the shared empty state (FR-014/FR-015).
+ *
+ * `denied` vs `unverifiable` is decided by the refusal's stated `code`, never by status alone: the
+ * Org Lens read gate answers 403 `FORBIDDEN` when the caller lacks access and 503
+ * `ROLE_GRANTS_UNAVAILABLE` when it could not check — and the second must never read as the first.
+ */
+export type OrgLensSectionOutcome = 'records' | 'empty' | 'denied' | 'unverifiable' | 'failed';
+
 /** What the primary / secondary control does when it is not a plain link. */
 export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters' | 'contact-support';
 
@@ -23,7 +32,7 @@ export interface OrgLensEmptyStateAction {
   href?: string;
   /** In-app route — rendered as a router link. */
   route?: string[];
-  /** Emitted through the component's `retry` / `resetFilters` outputs; `contact-support` opens the support messenger; `org-list` renders the caller's own organizations. */
+  /** `retry` / `reset-filters` emit the component's outputs; `contact-support` opens the support messenger; `org-list` renders the caller's own organizations (`values.orgList`) as the control, each row emitting `orgSelected`. */
   action?: OrgLensEmptyStateActionKind;
 }
 

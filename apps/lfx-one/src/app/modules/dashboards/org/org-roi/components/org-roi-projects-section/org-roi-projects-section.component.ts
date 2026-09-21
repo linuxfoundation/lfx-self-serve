@@ -12,9 +12,10 @@ import {
 } from '@lfx-one/shared/constants';
 import type { OrgLensRoiMethod, OrgLensRoiProjectOption, OrgLensRoiProjectRow, OrgLensRoiProjectView } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 

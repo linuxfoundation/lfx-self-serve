@@ -396,6 +396,27 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.locator('body')).not.toContainText('You do not have access');
     });
 
+    // FR-016 rule 3 on the dead end: a partial roll-up that left the caller holding nothing is an
+    // outage, not a denial — the #2090 class the classifier closes must not reopen on this route.
+    test('S2i: an addressed organization with a partial lookup and nothing held renders could-not-load on the dead end', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ lookupOutcome: 'partial', degraded: true }),
+        orgItems: [],
+        personaOrgs: [],
+        resolvable: [],
+      });
+
+      await page.goto(`/org/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      const root = page.getByTestId('org-not-found-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'could-not-load');
+      await expect(page.getByTestId('org-not-found-retry')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('You do not have access');
+    });
+
     // An LF-team caller reaches organizations through switcher search, not through a list of their
     // own grants — so with no own rows the dead end must still offer a primary action (FR-005) and
     // must not claim they lack access (their entitlement is blanket). Cause-blind per DR-002.

@@ -5,6 +5,7 @@ import { afterNextRender, Component, computed, inject, signal, Signal } from '@a
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_LENS_ROI_DEFAULT_METHOD } from '@lfx-one/shared/constants';
 import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary } from '@lfx-one/shared/interfaces';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
@@ -12,7 +13,7 @@ import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 

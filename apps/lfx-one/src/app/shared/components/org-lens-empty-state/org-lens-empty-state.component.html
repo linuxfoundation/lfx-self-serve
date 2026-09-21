@@ -31,24 +31,18 @@
 
     <p class="text-sm text-gray-600" [attr.data-testid]="testId() + '-description'">{{ reason() }}</p>
 
-    @if (orgList().length > 0) {
-      <ul class="mt-1 flex w-full flex-col gap-1" [attr.data-testid]="testId() + '-org-list'">
-        @for (org of orgList(); track org.uid) {
-          <li>
-            <button
-              type="button"
-              class="w-full rounded-md border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-gray-50"
-              [attr.data-testid]="testId() + '-org-' + org.uid"
-              (click)="orgSelected.emit(org.uid)">
-              {{ org.name }}
-            </button>
-          </li>
-        }
-      </ul>
+    @if (!orgListIsPrimary()) {
+      <ng-container [ngTemplateOutlet]="orgListTpl" />
     }
 
     @if (primary(); as action) {
-      @if (action.action === 'contact-support') {
+      @if (action.action === 'org-list') {
+        <!-- FR-008: the caller's own organizations ARE the primary control — each row is the way out. -->
+        @if (orgList().length > 0) {
+          <p class="mt-1 text-sm font-medium text-gray-900" [attr.data-testid]="testId() + '-primary'">{{ action.label }}</p>
+          <ng-container [ngTemplateOutlet]="orgListTpl" />
+        }
+      } @else if (action.action === 'contact-support') {
         <lfx-button [label]="action.label" severity="primary" size="small" lfxOpenIntercom [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
       } @else if (action.route) {
         <lfx-button [label]="action.label" severity="primary" size="small" [routerLink]="action.route" [attr.data-testid]="testId() + '-primary'"></lfx-button>
@@ -97,4 +91,22 @@
       }
     }
   </div>
+</ng-template>
+
+<ng-template #orgListTpl>
+  @if (orgList().length > 0) {
+    <ul class="flex w-full flex-col gap-1" [attr.data-testid]="testId() + '-org-list'">
+      @for (org of orgList(); track org.uid) {
+        <li>
+          <button
+            type="button"
+            class="w-full rounded-md border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-gray-50"
+            [attr.data-testid]="testId() + '-org-' + org.uid"
+            (click)="orgSelected.emit(org.uid)">
+            {{ org.name }}
+          </button>
+        </li>
+      }
+    </ul>
+  }
 </ng-template>

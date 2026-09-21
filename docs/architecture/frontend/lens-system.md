@@ -182,6 +182,25 @@ The slug in every Org Lens address and link is the **index's** (the org-items ro
 
 Nothing re-writes an address behind a canonical-record fetch; `orgPathParamGuard` still canonicalizes a deep link from the resolver's own answer.
 
+## Org Lens empty states
+
+Every Org Lens "nothing to show" — page-level and section-level — renders from one component, `<lfx-org-lens-empty-state>` (`apps/lfx-one/src/app/shared/components/org-lens-empty-state/`), driven by the copy registry `ORG_LENS_EMPTY_STATE_COPY` (`packages/shared/src/constants/org-lens-empty-state.constants.ts`; state names and action kinds in `packages/shared/src/interfaces/org-lens-empty-state.interface.ts`). Call sites choose a **state**, never a string; product and design review the registry file. The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5), which keeps its static cause-blind wording.
+
+**Page level** is decided by `OrgLensEmptyStateService.pageState` (`apps/lfx-one/src/app/shared/services/org-lens-empty-state.service.ts`), which mirrors the server read gate's precedence (spec 053 FR-016):
+
+1. the caller holds the selected organization (direct, inherited, or LF-team) → render the page; a partial roll-up shows the switcher's "list incomplete" notice instead (FR-010);
+2. the roster never loaded (`lookupOutcome: 'failed'`) → `could-not-load`;
+3. the roster is partial and the caller holds nothing loaded → `could-not-load`;
+4. the LF-team check failed (`staffCheck: 'failed'`) → `staff-check-failed`, with the reference id;
+5. the caller holds nothing → `no-organization`;
+6. otherwise a selection is pending → render the page.
+
+Rule 1 before 2–3 is the #2216 fix (a present grant is authoritative whatever else failed); rule 4 before 5 is the #2533 never-fall-through rule (a failed check must not read as the employee no-access copy). `/org/not-found` applies the same order minus rule 1 (nothing there is held), then picks `not-found-staff` (LF team), `wrong-organization` (the caller's own list is the way out — picking a row leaves through `OrgLensNavigationService.navigateToSelectedOrg('switch')`) or `no-access`. The `no-access` / `wrong-organization` states never name the addressed organization (spec 050 DR-002).
+
+**Section level** is classified per request by `classifySectionError` (`apps/lfx-one/src/app/shared/utils/org-lens-empty-state.utils.ts`) from the refusal's stated `code`, never from HTTP status alone: `FORBIDDEN` → `section-no-access`; `ROLE_GRANTS_UNAVAILABLE` / `ACCESS_CHECK_UNAVAILABLE` (`ORG_LENS_UNVERIFIABLE_ACCESS_CODES`) → `section-could-not-verify` with Retry; anything else, including a 403 without the gate's code → `section-could-not-load`. An empty result set → `section-empty`, which names the selected period and offers "Reset filters" only when a caller-set filter narrows the query (FR-013).
+
+**Wire contract** — `GET /api/orgs/me/role-grants` (`RoleGrantsResponse`, `packages/shared/src/interfaces/org-selector.interface.ts`) carries, besides the grant sets: `lookupOutcome` (`ok` | `partial` | `failed`), `staffCheck` (`ok` | `failed`) and, only when the staff check failed, `correlationId` — also sent as the `X-Request-Id` response header — which matches the server warning logged for that computation. The server (`apps/lfx-one/src/server/services/org-role-grants.service.ts`) never caches a failed roster; a failed staff check or a degraded roll-up is cached only for `ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS`, so Retry cannot re-run the uncached fan-out on every click yet recovery is not pinned for the full TTL.
+
 ## Putting it together
 
 The lens system is designed so that **route depth never reflects context** — every feature lives at a flat top-level route (`/meetings`, `/votes`, etc.) and reads its context at runtime from `LensService` + `ProjectContextService`. This keeps routing simple and lets lens switches change the whole dashboard without a re-route.

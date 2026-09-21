@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
-import { Account } from '@lfx-one/shared/interfaces';
-import { orgUrlSegment } from '@lfx-one/shared/utils';
+import { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -33,9 +32,9 @@ import { SkeletonModule } from 'primeng/skeleton';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgNotFoundComponent {
-  private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgNavigation = inject(OrgNavigationService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly emptyState = inject(OrgLensEmptyStateService);
   private readonly featureFlags = inject(FeatureFlagService);
@@ -64,15 +63,20 @@ export class OrgNotFoundComponent {
   protected readonly orgLensOff: Signal<boolean> = computed(() => !this.orgLensEnabled());
 
   /**
-   * An LF-team caller holds every organization, so an unresolvable address can only mean no such
+   * Same FR-016 precedence as `OrgLensEmptyStateService.pageState`, minus rule 1 (nothing here is
+   * held — the guard already sent the address to this dead end): a roster that never loaded (rule 2),
+   * a partial roster that left the caller holding nothing (rule 3) or a failed team check (rule 4)
+   * says nothing about access, so none may render the no-access wording (FR-009 / FR-011).
+   *
+   * Then: an LF-team caller holds every organization, so an unresolvable address can only mean no such
    * organization or a resolver miss — never "no access" (FR-012; the epic's "never say no access when
    * the truth is a failed lookup"). They get the switcher-search invite, with their own rows beneath
    * when they have any. Otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
    */
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
-    // FR-016 rules 2–4 first: a roster that never loaded or a failed team check says nothing about
-    // access, so neither may render the no-access wording (FR-009 / FR-011).
-    if (this.orgRoleGrants.lookupOutcome() === 'failed') {
+    const outcome = this.orgRoleGrants.lookupOutcome();
+    const held = this.orgList().length > 0;
+    if (outcome === 'failed' || (outcome === 'partial' && !held)) {
       return 'could-not-load';
     }
     if (this.orgRoleGrants.staffCheck() === 'failed') {
@@ -81,7 +85,7 @@ export class OrgNotFoundComponent {
     if (this.orgRoleGrants.isStaff()) {
       return 'not-found-staff';
     }
-    return this.orgList().length > 0 ? 'wrong-organization' : 'no-access';
+    return held ? 'wrong-organization' : 'no-access';
   });
 
   /** FR-011 support reference; null unless the staff check failed. */
@@ -92,7 +96,7 @@ export class OrgNotFoundComponent {
     this.emptyState.retry();
   }
 
-  /** Select one of the caller's own organizations and open its overview. */
+  /** Select one of the caller's own organizations and leave the dead end for its overview — the switcher's own selection path. */
   protected pick(uid: string): void {
     const item = this.orgNavigation.items().find((row) => row.uid === uid);
     if (!item) {
@@ -113,7 +117,8 @@ export class OrgNotFoundComponent {
     this.accountContext.refreshCanonicalRecord(account).catch(() => {
       // Already logged inside refreshCanonicalRecord; the indexed snapshot stays.
     });
-    const segment = orgUrlSegment(account);
-    this.router.navigate(segment ? ['/org', segment, 'overview'] : ['/org/overview']);
+    // Never hand-build an Org Lens address: the navigation service owns address shape and history
+    // semantics, including leaving `/org/not-found` (docs/architecture/frontend/lens-system.md).
+    this.orgLensNavigation.navigateToSelectedOrg('switch');
   }
 }

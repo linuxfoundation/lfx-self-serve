@@ -379,9 +379,9 @@ export interface AccessAwareOrgsResult {
   isStaff: boolean;
   /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;
-  /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are never cached (see `getAccessAwareOrgs`). */
+  /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
   staffCheck: OrgLensStaffCheck;
-  /** Spec 053 — per-computation UUID, set only when `staffCheck === 'failed'`; echoed into that computation's warnings. */
+  /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
   correlationId?: string;
 }
 
@@ -398,4 +398,6 @@ export interface AccessAwareOrgsCacheEntry {
   degraded: boolean;
   /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
   staffCheck: OrgLensStaffCheck;
+  /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it fails the shape guard. */
+  correlationId?: string;
 }

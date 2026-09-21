@@ -7,9 +7,10 @@ import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { ORG_MEETINGS_DEFAULT_TIME_RANGE, ORG_MEETINGS_KPI_ICON_CLASS, ORG_MEETINGS_TIME_RANGE_LABELS } from '@lfx-one/shared/constants';
 import type { OrgMeetingsKpiSummary, OrgMeetingsSupportedTimeRange, StatCardItem } from '@lfx-one/shared/interfaces';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 

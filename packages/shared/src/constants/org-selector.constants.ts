@@ -35,3 +35,6 @@ export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
 
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
+
+/** Spec 053 — TTL for access-aware results the page exposes a Retry for (failed staff check, degraded roll-up): bounds Retry-driven recomputation during an authorizer outage without pinning recovery for the full `ORG_ACCESS_AWARE_CACHE_TTL_MS`. */
+export const ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS = 5 * 1000;

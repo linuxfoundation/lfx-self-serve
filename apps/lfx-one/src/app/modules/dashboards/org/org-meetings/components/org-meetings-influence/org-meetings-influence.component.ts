@@ -27,10 +27,11 @@ import {
   PD_BAND_TAG,
 } from '@lfx-one/shared/constants';
 import type { OrgInfluenceBandBar, OrgInfluenceDisplayRow, OrgInfluenceRow, OrgMeetingsSupportedTimeRange } from '@lfx-one/shared/interfaces';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 /** Display row plus its project-page router commands, so the template binds a value instead of calling a method. */

@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
+  ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -50,7 +51,7 @@ export class OrgRoleGrantsService {
     this.accessCheck = new AccessCheckService();
   }
 
-  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
+  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; upstream failures are never cached, Retry-able results (failed staff check, degraded roll-up) only briefly, and the cache is fail-soft. */
   public async getAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
     // Username is the caller's own identity (the "what can I see" principal), so keying by it is
     // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
@@ -77,12 +78,14 @@ export class OrgRoleGrantsService {
 
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
-      // Cache only successful resolutions; never cache upstream failures (they retry next request).
-      // Spec 053: a failed staff check is likewise never cached — the state renders a correlation id
-      // that must match the log line of the computation that produced it, and an LF-team member must
-      // not stay pinned on "could not confirm your staff access" for the TTL after the authorizer recovers.
-      if (!result.upstreamFailed && result.staffCheck !== 'failed') {
-        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+      // Never cache an upstream failure (the roster never loaded; it retries next request). Everything
+      // else is cached, but a result the page exposes a Retry for — a failed staff check or a degraded
+      // roll-up — only under the short TTL: long enough that a caller pressing Retry during an
+      // authorizer outage cannot re-run the uncached fan-out on every click, short enough that
+      // recovery (and the FR-011 correlation id, stored with the entry) is not pinned for the full TTL.
+      if (!result.upstreamFailed) {
+        const ttl = result.staffCheck === 'failed' || result.degraded ? OrgRoleGrantsService.degradedCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
+        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), ttl);
       }
       return result;
     })();
@@ -146,6 +149,11 @@ export class OrgRoleGrantsService {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
   }
 
+  /** Short TTL (whole seconds) for results the caller can Retry: failed staff check, degraded roll-up. */
+  private static degradedCacheTtlSeconds(): number {
+    return Math.floor(ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS / 1000);
+  }
+
   /**
    * Rejects a corrupt/legacy/partial cached entry (so deserialize never throws and the response contract
    * holds): both Maps must be present as arrays of `[key, value]` tuples, and the fields later surfaced on
@@ -169,10 +177,9 @@ export class OrgRoleGrantsService {
       // connected-component classification. Rejecting it recomputes instead.
       typeof entry.degraded === 'boolean' &&
       // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
-      // `undefined` and hiding the staff-check state; a `failed` entry is never a hit either — the write
-      // path refuses to store one, and an entry that got there some other way carries no
-      // `correlationId` and would pin the staff-check state for the TTL.
-      entry.staffCheck === 'ok'
+      // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
+      // correlation id it was logged under — without it the page would render `Reference: —`.
+      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string'))
     );
   }
 
@@ -227,6 +234,7 @@ export class OrgRoleGrantsService {
       isStaff: result.isStaff,
       degraded: result.degraded,
       staffCheck: result.staffCheck,
+      ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
     };
   }
 
@@ -241,6 +249,7 @@ export class OrgRoleGrantsService {
       isStaff: entry.isStaff,
       degraded: entry.degraded,
       staffCheck: entry.staffCheck,
+      correlationId: entry.correlationId,
     };
   }
 
@@ -399,7 +408,7 @@ export class OrgRoleGrantsService {
   /**
    * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
    * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
-   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccess` over both teams.
+   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccessStrict` over both teams.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for

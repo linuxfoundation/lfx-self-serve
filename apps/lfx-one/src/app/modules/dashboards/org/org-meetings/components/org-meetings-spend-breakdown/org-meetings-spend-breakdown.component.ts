@@ -6,9 +6,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { ORG_MEETINGS_DEFAULT_TIME_RANGE, ORG_MEETINGS_TIME_RANGE_LABELS } from '@lfx-one/shared/constants';
 import type { OrgMeetingsSpendBreakdown, OrgMeetingsSupportedTimeRange } from '@lfx-one/shared/interfaces';
+import { OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
-import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 

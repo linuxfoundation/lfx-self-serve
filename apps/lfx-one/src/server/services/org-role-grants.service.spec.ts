@@ -13,6 +13,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ACCESS_CHECK_BATCH_SIZE: 2,
   LF_TEAM_IDS: ['lf-staff', 'lf-contractor'],
   ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
+  ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS: 5_000,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
   // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
@@ -154,9 +155,10 @@ describe('OrgRoleGrantsService — LF team determination', () => {
 
   // The guard against a future refactor turning a degraded check into an optimistic one. Spec 053
   // FR-011: the failure is *reported* (`staffCheck`, `correlationId`) so the page can say "could not
-  // confirm" instead of the employee copy, and the failing result is never cached (F15) so the id on
-  // the wire is always the one that was logged and recovery is immediate.
-  it('fails closed when the access check throws, reports it, and never caches the failing result', async () => {
+  // confirm" instead of the employee copy. The failing result is cached only under the short TTL,
+  // with the id that was logged, so a caller pressing Retry during an authorizer outage does not
+  // re-run the uncached fan-out on every click and recovery is not pinned for the full TTL.
+  it('fails closed when the access check throws, reports it, and caches the failing result briefly with its reference', async () => {
     teamAnswer = async () => {
       throw new Error('access-check unreachable');
     };
@@ -166,7 +168,27 @@ describe('OrgRoleGrantsService — LF team determination', () => {
     expect(response.isStaff).toBe(false);
     expect(response.staffCheck).toBe('failed');
     expect(response.correlationId).toMatch(/^[0-9a-f-]{36}$/);
-    expect(setJson).not.toHaveBeenCalled();
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ staffCheck: 'failed', correlationId: response.correlationId }), 5);
+  });
+
+  it('serves a briefly cached failed staff check with the reference it was logged under', async () => {
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: USERNAME,
+      isStaff: false,
+      degraded: false,
+      staffCheck: 'failed',
+      correlationId: 'cached-reference',
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.staffCheck).toBe('failed');
+    expect(response.correlationId).toBe('cached-reference');
+    expect(teamCalls()).toHaveLength(0);
   });
 
   it('reports staffCheck ok and no correlation id when the check answers', async () => {
@@ -305,6 +327,25 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
     expect(result.degraded).toBe(true);
+  });
+
+  it('caches a clean result under the full TTL', async () => {
+    setTeamAnswer(teamMembership(false));
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false, staffCheck: 'ok' }), 30);
+  });
+
+  // A degraded roll-up drives the FR-010 notice and the `could-not-load` Retry; caching it for the
+  // full TTL would make Retry a visible no-op for 30s, not caching it would let Retry hammer the walk.
+  it('caches a degraded result only under the short TTL', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(HARD_CAP + 1);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: true }), 5);
   });
 
   // Every roster row carries the caller as a member, but only `accepted` rows become grants, so a
@@ -831,7 +872,9 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     expect(guard(entry)).toBe(false);
     expect(guard({ ...entry, staffCheck: 'ok' })).toBe(true);
     expect(guard({ ...entry, staffCheck: 'bogus' })).toBe(false);
-    // A stored failure is never served: it would pin the staff-check state for the TTL with no reference.
+    // A stored failure is served only with the reference it was logged under; without one the page
+    // would render `Reference: —` for the (short) TTL.
     expect(guard({ ...entry, staffCheck: 'failed' })).toBe(false);
+    expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref' })).toBe(true);
   });
 });

@@ -12,20 +12,20 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 
 /** States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001). */
-const UNHELD_ORG_STATES: Record<string, true> = { 'no-access': true, 'wrong-organization': true, 'section-no-access': true, 'section-could-not-verify': true };
+const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-access', 'wrong-organization', 'section-no-access', 'section-could-not-verify']);
 
 /** States that render the caller's own organization list (FR-008). */
-const ORG_LIST_STATES: Record<string, true> = { 'wrong-organization': true, 'not-found-staff': true };
+const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-organization', 'not-found-staff']);
 
 /** States a first-time visitor can reach — they carry the product line (FR-002). */
-const PAGE_LEVEL_STATES: Record<string, true> = {
-  'no-organization': true,
-  'no-access': true,
-  'wrong-organization': true,
-  'not-found-staff': true,
-  'could-not-load': true,
-  'staff-check-failed': true,
-};
+const PAGE_LEVEL_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
+  'no-organization',
+  'no-access',
+  'wrong-organization',
+  'not-found-staff',
+  'could-not-load',
+  'staff-check-failed',
+]);
 
 /**
  * Spec 053 — the one shared Org Lens empty state. Renders headline → product line → reason → primary →
@@ -63,7 +63,7 @@ export class OrgLensEmptyStateComponent {
     return this.interpolate(template);
   });
 
-  protected readonly productLine = computed(() => (PAGE_LEVEL_STATES[this.state()] ? this.copy().productLine : undefined));
+  protected readonly productLine = computed(() => (PAGE_LEVEL_STATES.has(this.state()) ? this.copy().productLine : undefined));
 
   protected readonly reason = computed(() => {
     const copy = this.copy();
@@ -82,8 +82,11 @@ export class OrgLensEmptyStateComponent {
 
   protected readonly secondary = computed(() => this.copy().secondary);
 
-  /** FR-008 — the caller's own organizations; rendered by `wrong-organization` (as the primary way out) and `not-found-staff` (beneath the search invite). Empty renders nothing rather than an empty box. */
-  protected readonly orgList = computed(() => (ORG_LIST_STATES[this.state()] ? (this.values().orgList ?? []) : []));
+  /** FR-008 — the caller's own organizations, honoured only for the states that list them. Empty renders nothing rather than an empty box. */
+  protected readonly orgList = computed(() => (ORG_LIST_STATES.has(this.state()) ? (this.values().orgList ?? []) : []));
+
+  /** The list is the primary control (`wrong-organization`: the way out is picking a held organization) — rendered under the primary's label, in the primary's slot. */
+  protected readonly orgListIsPrimary = computed(() => this.primary()?.action === 'org-list');
 
   protected onAction(action: OrgLensEmptyStateAction): void {
     if (action.action === 'retry') {
@@ -96,7 +99,7 @@ export class OrgLensEmptyStateComponent {
   private interpolate(template: string): string {
     const values = this.values();
     // FR-017: an unheld organization is never named, whatever the caller passed.
-    const orgName = UNHELD_ORG_STATES[this.state()] ? 'This organization' : values.orgName?.trim() || 'This organization';
+    const orgName = UNHELD_ORG_STATES.has(this.state()) ? 'This organization' : values.orgName?.trim() || 'This organization';
     return template
       .replace(/\{orgName\}/g, orgName)
       .replace(/\{noun\}/g, values.noun ?? 'records')

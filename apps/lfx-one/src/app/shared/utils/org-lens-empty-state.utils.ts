@@ -2,18 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
-
-/**
- * Spec 053 — outcome of one section request, classified for the shared empty state (FR-014/FR-015).
- *
- * `denied` vs `unverifiable` is decided by the refusal's stated `code`, never by status alone: the
- * Org Lens read gate answers 403 `FORBIDDEN` when the caller lacks access and 503
- * `ROLE_GRANTS_UNAVAILABLE` when it could not check — and the second must never read as the first.
- */
-export type OrgLensSectionOutcome = 'records' | 'empty' | 'denied' | 'unverifiable' | 'failed';
-
-const UNVERIFIABLE_CODES: Record<string, true> = { ROLE_GRANTS_UNAVAILABLE: true, ACCESS_CHECK_UNAVAILABLE: true };
+import { ORG_LENS_UNVERIFIABLE_ACCESS_CODES } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateName, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 
 /** Classify a failed section request. */
 export function classifySectionError(error: unknown): Exclude<OrgLensSectionOutcome, 'records' | 'empty'> {
@@ -22,7 +12,7 @@ export function classifySectionError(error: unknown): Exclude<OrgLensSectionOutc
   }
   const body = error.error as { code?: unknown } | null | undefined;
   const code = body && typeof body === 'object' && typeof body.code === 'string' ? body.code : undefined;
-  if (code && UNVERIFIABLE_CODES[code]) {
+  if (code && ORG_LENS_UNVERIFIABLE_ACCESS_CODES.has(code)) {
     return 'unverifiable';
   }
   // FR-015: denial is decided by the stated reason, never by status alone — a 403 without the gate's
