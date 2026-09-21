@@ -18,7 +18,7 @@ function buildRow(overrides: Partial<FormationQueueRow>): FormationQueueRow {
     parent_uid: null,
     sub_stage: 'engaged',
     sub_stage_raw: 'Formation - Engaged',
-    lifecycle: 'formation',
+    lifecycle: 'live',
     gates_cleared: false,
     is_activating: false,
     announcement_date: null,

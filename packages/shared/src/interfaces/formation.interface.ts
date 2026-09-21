@@ -522,9 +522,16 @@ export type FormationQueueTiles = Record<FormationSubStage, number> & {
   projects: number;
   /**
    * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
-   * `"Active"`, `"Formation - Disengaged"`, or any other unrecognized value. Included in `total`
-   * but in none of the three sub-stage counts, so `total` can legitimately exceed
-   * `exploratory + engaged + on_hold`; that gap is this count. See {@link FormationQueueRow.sub_stage}.
+   * `"Formation - Confidential"` or any other unrecognized value. `"Active"` and
+   * `"Formation - Disengaged"` no longer reach this count: since GH-2584 the queue lists only
+   * formations still in progress, and both have left. Included in `total` but in none of the three
+   * sub-stage counts, so `total` can legitimately exceed `exploratory + engaged + on_hold`; that
+   * gap is this count. See {@link FormationQueueRow.sub_stage}.
+   *
+   * Nothing renders this — GH-2584 removed the tile line that did, because "outside formation
+   * stages" described no row once the queue had excluded everything outside. It is kept because a
+   * non-zero value means a new `Formation - *` sub-stage has appeared upstream that the tiles and
+   * the stage filter cannot represent, which the BFF logs at DEBUG (`formation.service.ts`).
    */
   unmapped: number;
 };
@@ -552,15 +559,35 @@ export interface FormationQueueRow {
   /**
    * Normalized via `normalizeFormationSubStage` (GH-2366) from the upstream projection's full
    * `ProjectStage` string — see {@link sub_stage_raw} for that original value. `null` when the
-   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Active"`,
-   * `"Formation - Disengaged"`); such a row still appears in the queue (never dropped) but in none
-   * of the three stage tiles/filters — see {@link FormationQueueTiles.unmapped}. Whether an
-   * unmapped row belongs in "In formation" at all is #2328's question, not this field's.
+   * upstream stage has no {@link FormationSubStage} equivalent (e.g. `"Formation - Confidential"`).
+   *
+   * An unmapped row still appears in the queue, rendered verbatim, but in none of the three stage
+   * tiles/filters — see {@link FormationQueueTiles.unmapped}. Being unmapped is never itself a
+   * reason to drop a row: since GH-2584 presence is decided by the formation service's published
+   * lifecycle, which is why `"Active"` and `"Formation - Disengaged"` are no longer examples here
+   * despite also normalizing to `null` — they are gone before this field is consulted.
    */
   sub_stage: FormationSubStage | null;
   /** The upstream projection's `sub_stage` value verbatim, before normalization — the only honest thing to render for a row whose {@link sub_stage} is `null` (GH-2366). */
   sub_stage_raw: string;
-  lifecycle: string;
+  /**
+   * Normalized via {@link normalizeFormationLifecycle} from the projection's own `lifecycle`
+   * tag — `live` while forming, `completed` on Active, `frozen` on Archived or Disengaged
+   * (`model.LifecycleForStage`). Since GH-2584 this decides queue membership, so it is always
+   * `'live'` on a served row: `getFormationsQueueLive` filters on it after normalizing, and
+   * fails closed, dropping anything that did not match a known {@link FormationLifecycle}.
+   *
+   * Typed as the union rather than the raw string deliberately: it was a bare `string` until
+   * PR #2767, and an off-taxonomy value is a silently dropped row now that presence turns on
+   * this field, not the cosmetic slip it was before.
+   *
+   * That alone would not have caught the `'formation'` value the queue fixtures carried, which
+   * is what prompted the change — `apps/lfx-one/tsconfig.json` includes the `src` tree only, so
+   * nothing under `e2e` is typechecked and a fixture can still hold any string. The union
+   * constrains the served contract and every consumer under `src`; the fixtures need that
+   * tsconfig gap closed, which is left to its own change.
+   */
+  lifecycle: FormationLifecycle | null;
   /** Every gating item done — the projection's own boolean, not derived client-side (unlike {@link Formation.is_activating}, which is #1957-computed on the checklist read but not yet mirrored into the indexed document). */
   gates_cleared: boolean;
   is_activating: boolean;
@@ -588,8 +615,10 @@ export interface FormationQueueRow {
  * Server-only: `getFormationsQueueLive` (`formation.service.ts`) is the sole consumer, mapping this
  * onto `FormationQueueRow` via `normalizeFormationSubStage` before anything else in the repo sees it.
  */
-export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw'> & {
+export type UpstreamFormationQueueRow = Omit<FormationQueueRow, 'sub_stage' | 'sub_stage_raw' | 'lifecycle'> & {
   sub_stage: string;
+  /** The projection's `lifecycle` verbatim — untrusted, so a bare string here and a {@link FormationLifecycle} only after `normalizeQueueRow`. */
+  lifecycle: string;
 };
 
 /** Response body for `GET /api/formations`. */
@@ -832,10 +861,11 @@ export interface MyFormationWorkResponse {
 }
 
 /**
- * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
- * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
- * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
- * once per row up front rather than via template-called functions.
+ * `MyFormationSummary` decorated with pre-derived display fields for the My Formations page
+ * (`my-formations.component.ts`, built by `decorateMyFormation` in `formation-me.utils.ts`) —
+ * mirrors `DecoratedPendingAction` in `components.interface.ts`. Templates may only read
+ * signals/computed values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel`
+ * must be computed once per row up front rather than via template-called functions.
  */
 export interface DecoratedMyFormation extends MyFormationSummary {
   subtitle: string;

@@ -69,7 +69,7 @@ describe('FormationsQueueComponent — foundation scoping (GH-2367)', () => {
   });
 });
 
-describe('FormationsQueueComponent — unmapped sub_stage tile (GH-2366)', () => {
+describe('FormationsQueueComponent — "In formation" tile subLine (GH-2366, GH-2584)', () => {
   let fixture: ComponentFixture<FormationsQueueComponent>;
 
   const render = async (response: FormationsQueueResponse): Promise<void> => {
@@ -90,20 +90,28 @@ describe('FormationsQueueComponent — unmapped sub_stage tile (GH-2366)', () =>
     fixture.detectChanges();
   };
 
-  it('appends the unmapped count to the "In formation" subLine when tiles.unmapped > 0', async () => {
+  // GH-2584 removed the clause this pair used to assert. The queue now lists only formations still
+  // in progress, so "outside formation stages" described none of its rows — an unmapped row is
+  // inside formation at a sub-stage the tiles have no name for. The count is still computed and
+  // still logged server-side as the detector for a new upstream sub-stage; it just has no honest
+  // one-line phrasing, so the tile stays silent about it.
+  it('never claims rows are outside formation stages, even when tiles.unmapped is non-zero', async () => {
     await render({
       rows: [],
       tiles: { total: 8, foundations: 1, projects: 7, exploratory: 5, engaged: 1, on_hold: 0, unmapped: 2 },
     });
 
     const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
-    expect(subLine).toContain('2 outside formation stages');
+    expect(subLine).not.toContain('outside formation stages');
+    // Asserted positively too: `not.toContain` alone would also pass on an empty or missing
+    // subLine, which is a different bug that would otherwise ship unnoticed.
+    expect(subLine).toContain('1 foundations · 7 projects');
   });
 
-  it('omits the unmapped clause from the "In formation" subLine when tiles.unmapped is 0', async () => {
+  it('renders the foundations and projects breakdown when there is nothing in the queue', async () => {
     await render(createEmptyFormationsQueueResponse());
 
     const subLine = fixture.nativeElement.querySelector('[data-testid="stat-card-In formation"] .text-xs')?.textContent;
-    expect(subLine).not.toContain('outside formation stages');
+    expect(subLine).toContain('0 foundations · 0 projects');
   });
 });

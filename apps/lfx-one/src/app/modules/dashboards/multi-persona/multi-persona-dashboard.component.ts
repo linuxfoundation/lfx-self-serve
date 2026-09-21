@@ -39,21 +39,12 @@ import { BehaviorSubject, catchError, combineLatest, filter, map, of, switchMap,
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { DashboardCastDrawerHostComponent } from '../components/dashboard-cast-drawer-host/dashboard-cast-drawer-host.component';
-import { MyFormationsCardComponent } from '../components/my-formations-card/my-formations-card.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 
 @Component({
   selector: 'lfx-multi-persona-dashboard',
-  imports: [
-    SkeletonModule,
-    MyMeetingsComponent,
-    PendingActionsComponent,
-    MyFormationsCardComponent,
-    CardComponent,
-    TableComponent,
-    DashboardCastDrawerHostComponent,
-  ],
+  imports: [SkeletonModule, MyMeetingsComponent, PendingActionsComponent, CardComponent, TableComponent, DashboardCastDrawerHostComponent],
   templateUrl: './multi-persona-dashboard.component.html',
   styleUrl: './multi-persona-dashboard.component.scss',
 })
@@ -118,7 +109,8 @@ export class MultiPersonaDashboardComponent {
   protected readonly pendingActions: Signal<PendingActionItem[]> = this.initPendingActions();
   // "In formation" tile (GH-1956) — its own independent-loading signal per the section's per-tile
   // convention; only visible once the flag is on and the caller actually has a formation to show,
-  // so it vanishes along with `lfx-my-formations-card` once the caller's last formation goes Active.
+  // so it vanishes once the caller's last formation goes Active — the same moment the My Formations
+  // page (#2753, the card's successor) goes empty; both read the same shared `getMyFormationWork()`.
   protected readonly formationTileLoading = signal(true);
   protected readonly formationWork: Signal<MyFormationWorkResponse | null> = this.initFormationWork();
   protected readonly formationCount: Signal<number> = computed(() => this.formationWork()?.formations.length ?? 0);
