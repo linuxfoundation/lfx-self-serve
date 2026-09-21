@@ -153,6 +153,33 @@ describe('OrgEasyclaManagersComponent', () => {
     expect(added).toContain('May 2, 2024');
   });
 
+  it('links a conservative manager email through buildMeetingOrganizerMailto', async () => {
+    await render();
+
+    component.loadIfNeeded();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const link = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-email"]') as HTMLAnchorElement;
+    expect(link.tagName).toBe('A');
+    expect(link.getAttribute('href')).toBe('mailto:kwame.mensah@example.org');
+  });
+
+  it('renders a suspicious manager email as plain text with no mailto link', async () => {
+    getManagers.mockReturnValue(
+      of({ signatureId: SIGNATURE_ID, managers: [manager({ email: 'victim@example.com%0D%0ABcc:attacker@example.com' })] })
+    );
+    await render();
+
+    component.loadIfNeeded();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const email = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-email"]');
+    expect(email.tagName).toBe('SPAN');
+    expect(fixture.nativeElement.querySelector('a[data-testid="org-easycla-managers-email"]')).toBeFalsy();
+  });
+
   it('renders an em dash for a manager upstream recorded no added date for', async () => {
     getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager({ addedOn: undefined })] }));
     await render();

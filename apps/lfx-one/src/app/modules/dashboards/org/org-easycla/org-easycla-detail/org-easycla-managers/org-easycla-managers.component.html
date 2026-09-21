@@ -55,6 +55,8 @@
                   <span class="font-medium text-gray-900" data-testid="org-easycla-managers-name">{{ row.displayName }}</span>
                   @if (row.mailtoHref) {
                     <a class="text-gray-500 hover:underline" [href]="row.mailtoHref" data-testid="org-easycla-managers-email">{{ row.manager.email }}</a>
+                  } @else if (row.manager.email?.trim()) {
+                    <span class="text-gray-500" data-testid="org-easycla-managers-email">{{ row.manager.email }}</span>
                   }
                 </div>
               </td>
