@@ -394,16 +394,28 @@ function decodeDashIPv6(label: string): string {
  * endpoint written in IPv6-mapped form, and matching text alone lets it straight through.
  * (`URL` already folds decimal and octal IPv4 into dotted-quad, so those arrive normalized.)
  *
- * WHAT THIS DOES: normalises the host (trailing root
- * dots, IPv6 compression expanded) before judging it; decodes translated encodings that carry an
- * IPv4 destination (IPv4-mapped, IPv4-compatible, RFC 2765 translated, NAT64 64:ff9b::/96, 6to4
- * 2002::/16); denies literal private, loopback, link-local, site-local and CGNAT ranges; scans
- * denies blanket-loopback wildcard domains outright (localtest.me, lvh.me, traefik.me, which
- * resolve EVERY subdomain to 127.0.0.1 without spelling an address); scans
- * for spelled-out addresses under known wildcard-DNS suffixes in dotted, dash, hex and packed
- * forms -- including affixed and IPv6 dash spellings, with EVERY reading of an ambiguous label
- * checked rather than one guessed; and FAILS CLOSED on any host that is neither a judged IP
- * literal nor a well-formed name.
+ * WHAT THIS DOES:
+ *   - normalises the host (trailing root dots removed, IPv6 compression expanded) before judging;
+ *   - decodes translated encodings that carry an IPv4 destination (IPv4-mapped, IPv4-compatible,
+ *     RFC 2765 translated, NAT64 64:ff9b::/96, 6to4 2002::/16);
+ *   - denies literal private, loopback, link-local, site-local and CGNAT ranges, IPv4 multicast
+ *     and reserved space (224/4, 240/4, broadcast), and IPv6 multicast (ff00::/8);
+ *   - denies blanket-loopback wildcard domains outright (localtest.me, lvh.me, traefik.me, which
+ *     resolve EVERY subdomain to 127.0.0.1 without spelling an address);
+ *   - scans for spelled-out addresses under known wildcard-DNS suffixes in dotted, dash, hex and
+ *     packed forms -- including affixed and IPv6 dash spellings, with EVERY reading of an
+ *     ambiguous label checked rather than one guessed;
+ *   - FAILS CLOSED on any host that is neither a judged IP literal nor a well-formed name.
+ *
+ * WHAT THIS DELIBERATELY DOES NOT DO: resolve names. A hostname is private only by virtue of
+ * what it RESOLVES to, which this function cannot see, so it cannot converge on names --
+ * `metadata.ec2.internal`, `kubernetes.default.svc.cluster.local`, `localho.st` and every
+ * split-horizon domain a deployment defines all pass here. That class belongs to
+ * campaign-service's DIAL-TIME guard (`internal/platform/eventurl/fetcher.go`,
+ * `net.Dialer{Control: guardDialAddress(...)}`), which judges the resolved address and is the
+ * authoritative control. This function's job is narrower: stop a payload carrying a
+ * spelled-out private destination from being PERSISTED. Adding names here would grow a list
+ * that can never be complete while implying a guarantee it cannot make.
  *
  * Each of those decode branches can also produce a FALSE POSITIVE, which has happened repeatedly
  * here and is why the wildcard-DNS scan is gated to those suffixes and the negative cases are

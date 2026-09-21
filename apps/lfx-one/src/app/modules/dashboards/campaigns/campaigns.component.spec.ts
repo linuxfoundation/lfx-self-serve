@@ -2309,6 +2309,11 @@ describe('CampaignsComponent — email delivery channel', () => {
         },
         { brief: 'https://x.example/reg#frag', generated: 'https://x.example/reg#frag/', accepted: false, why: 'and the same inside a fragment' },
         { brief: 'https://x.example/reg', generated: 'https://evil.example/phish', accepted: false, why: 'an invented URL must never pass' },
+        // The unparseable arm, which is reached routinely rather than defensively: a brief with
+        // no usable registrationUrl canonicalises to '', and `new URL('')` throws. No brief
+        // destination must mean no button, never "any generated url wins".
+        { brief: '', generated: 'https://x.example/reg', accepted: false, why: 'a brief with no registration URL stages no button' },
+        { brief: 'not a url', generated: 'https://x.example/reg', accepted: false, why: 'and the same for an unusable one' },
       ];
 
       for (const { brief, generated, accepted, why } of cases) {

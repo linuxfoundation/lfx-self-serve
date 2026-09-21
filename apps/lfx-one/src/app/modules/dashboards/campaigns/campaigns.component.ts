@@ -48,8 +48,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl } from '@lfx-one/shared/utils';
-import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
+import { canonicalHttpUrl, normalizeSponsors } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1241,7 +1240,11 @@ export class CampaignsComponent {
    * a different value in the preview than the draft receives — `http:example.com/r` previews
    * verbatim and stages as `http://example.com/r`, and `https://user:pass@host/r` would show the
    * credentials. Benign for the draft, which the controller fixes on receipt; not benign for the
-   * preview, whose entire job is to match. Empty when the destination is not stageable.
+   * preview, whose entire job is to match.
+   *
+   * Empty only when the BRIEF has no usable registration URL. It used to be empty whenever the
+   * destination was not stageable; that coupling is gone (see below), and the sentence saying
+   * otherwise outlived it.
    */
   protected readonly emailRegistrationUrl = computed<string>(() =>
     // NOT gated on `emailCtaIsStageable` any more. The two were coupled while that predicate
@@ -1281,10 +1284,11 @@ export class CampaignsComponent {
     // Reuses the ONE canonicalizer the controller uses, rather than restating scheme+host here:
     // a non-empty result means the destination survives `canonicalHttpUrl`, which is exactly
     // what the controller keeps. Three earlier versions of this predicate drifted from it.
-    // The GENERATOR's url when it supplied one, the brief's registration URL otherwise. The
+    // The GENERATOR's url, and NO fallback -- an earlier draft of this comment described one,
+    // which is the opposite of what the next sentence explains and of what the code does. The
     // generator omits `url` for the stages where registration is the wrong destination ("Submit
     // Your Proposal", "Share Feedback", "See You There"), so treating its absence as "use
-    // registration" pointed those buttons at the registration page.
+    // registration" pointed those buttons at the registration page. Absent means no button.
     () => this.emailCtaDestination() !== ''
   );
 
@@ -1323,9 +1327,17 @@ export class CampaignsComponent {
         parsed.pathname = parsed.pathname.replace(/\/+$/, '');
         return parsed.toString();
       } catch {
-        // Not parseable: compare verbatim rather than guessing. Both sides come from
-        // canonicalHttpUrl, so this is unreachable in practice -- and falling back to the old
-        // whole-string strip here would reintroduce the very gap this closes.
+        // Not parseable: compare verbatim rather than guessing.
+        //
+        // REACHED ROUTINELY, not a defensive dead branch -- an earlier version of this comment
+        // claimed it was unreachable, which was wrong. `canonicalHttpUrl` returns '' for a brief
+        // with no usable registrationUrl, and `new URL('')` throws, so every such brief lands
+        // here while the generator has supplied a url.
+        //
+        // Returning the input verbatim is the right answer for that case: '' can then only equal
+        // '', so a generated url never matches an absent brief url and no button is staged --
+        // which is what "the brief has no registration destination" should mean. Falling back to
+        // the old whole-string strip here would reintroduce the query/fragment gap.
         return url;
       }
     };

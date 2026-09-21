@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
-import { escapeHtml } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml, sanitizeDisplayText } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -889,7 +889,13 @@ export class CampaignServiceClient {
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
-      const cta = buttonSection?.text ?? '';
+      // Sanitised for the same reason a sponsor NAME is, and it reaches the same kind of sink:
+      // model-generated display text rendered in a sent email. A BIDI override in a button label
+      // renders as something other than what it contains, and nothing else on the CTA path --
+      // not `emailCtaLabel` in the component, not `rawButtonText.trim()` in the controller --
+      // sanitises it. Doing it HERE, where the value is produced, covers every consumer rather
+      // than the one path in front of me.
+      const cta = sanitizeDisplayText(buttonSection?.text ?? '');
       // The generator OMITS `url` when registration is not the right destination for the stage,
       // so an absent value must stay absent rather than be replaced downstream.
       const ctaUrl = buttonSection?.url ?? '';

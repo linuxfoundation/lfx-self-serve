@@ -28,9 +28,14 @@ function isDecodableCodePoint(code: number): boolean {
  * Drops what cannot legitimately appear in a display name: control characters (C0, C1, DEL),
  * BIDI overrides, and zero-width formatting. An earlier version checked only C0/DEL and five
  * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
- * after it, letting a sponsor name render as something other than what it contains. A denylist of control characters is
- * easy to under-specify and trips `no-control-regex`, which exists because literal control
- * characters in a pattern are hard to read and easy to get wrong.
+ * after it, letting a sponsor name render as something other than what it contains.
+ *
+ * Denies by CODE POINT RANGE rather than by regex. An earlier version of this docstring argued
+ * against denylists entirely, which the implementation below stopped matching: a character-class
+ * regex over literal control characters trips `no-control-regex` and is hard to read, while a
+ * numeric range check over the decoded code points is both lintable and exhaustive for the
+ * ranges it names. What made the first attempt wrong was enumerating five ASCII characters, not
+ * the choice to deny -- an allow-list here refused `O'Reilly` and other ordinary names.
  *
  * Shared because BOTH paths that produce a sponsor name feed the same sink (a HubSpot image
  * module's `alt` in a sent email): the scrape path, which decodes entities and so can resurrect

@@ -2462,11 +2462,42 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     // `body` is the only field rendered through `[innerHTML]`, so the button section must not
-    // reach it. The text rides on `cta`, which the template renders as an interpolated label
-    // (Angular escapes it) and the controller forwards as the `buttonText` field -- neither is
-    // an HTML sink, so it is carried through unmodified rather than escaped here.
+    // reach it. That part is unchanged.
     expect(result.copy?.body).toBe('<p>Hello</p>');
-    expect(result.copy?.cta).toBe('<script>alert(1)</script>');
+
+    // The label IS sanitised now, and the original reasoning here -- "neither sink is an HTML
+    // sink, so carry it unmodified" -- was right about XSS and wrong about the threat that
+    // matters for display text. Angular interpolation and the controller's `buttonText` both
+    // escape markup, so `<script>` could never execute; but a BIDI override needs no markup and
+    // no sink to exploit. It renders the label as something other than what it contains, in a
+    // SENT EMAIL, where escaping does not help.
+    //
+    // So the angle brackets go too -- not because they are dangerous here, but because a button
+    // label is short human text ("Register now") where they have no legitimate use, and keeping
+    // the shared sanitiser whole is worth more than preserving them on one path.
+    expect(result.copy?.cta).toBe('scriptalert(1)/script');
+    expect(result.copy?.cta).not.toContain('<');
+  });
+
+  it('strips a BIDI override from the button label, which escaping cannot defend against', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: 'Register \u202Eeman ruoy\u202C now', url: 'https://x.example/r' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // U+202E alone visually REVERSES everything after it, so a label can render as text it does
+    // not contain. It reaches a sent email, where no downstream escaping applies.
+    expect(result.copy?.cta).not.toContain('\u202E');
+    expect(result.copy?.cta).not.toContain('\u202C');
+    expect(result.copy?.cta).toContain('Register');
   });
 
   it('keeps a URL-less button label in the body, so the CTA does not vanish', async () => {

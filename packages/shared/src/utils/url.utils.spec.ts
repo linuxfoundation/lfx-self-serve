@@ -436,6 +436,14 @@ describe('canonicalHttpUrl', () => {
     ['a hostname containing a hex-like label', 'deadbeef-cafe.example.com'],
     ['a hostname with a double dash', 'x--y.example.com'],
     ['a build label with dotted numbers', 'release-10-0-0-5.example.com'],
+    // A PUBLIC address whose interface id is ::1 -- the shape review predicted the every-reading
+    // scan would over-deny, by assuming it produces a bare `--1` (loopback) reading. It does not:
+    // readings start at segment boundaries, so `2001-db8--1` yields `2001:db8::1` and `db8::1`,
+    // both public, and the `-1`/`1` tails decode to nothing. Pinned because the claim was
+    // specific and plausible, and because the allow cases previously only used `::8888`.
+    ['a public IPv6 whose interface id is ::1', '2001-db8--1.sslip.io'],
+    ['another public ::1 under a wildcard suffix', '2606-4700--1.sslip.io'],
+    ['a public ::1 with a longer prefix', '2a00-1450-4001--1.sslip.io'],
   ])('allows %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(false);
   });
