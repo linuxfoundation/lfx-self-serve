@@ -47,24 +47,53 @@ export class FormationService {
     shareReplay({ bufferSize: 1, refCount: true })
   );
 
+  /** Per-slug memo behind {@link getFormationPeople}. */
+  private readonly formationPeople = new Map<string, Observable<FormationPeopleResponse>>();
+
   public getProjectFormation(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
   }
 
   /**
-   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724).
-   * Degrades to the `unavailable` shape on any HTTP failure (repo GET convention), which the card
-   * renders as its unavailable state — the same shape the BFF itself returns when the caller
-   * cleared the checklist read but upstream refused the settings read. Deliberately uncached: the
-   * card re-fetches after an invite, and both checklist hosts mount it once per checklist load.
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724) and,
+   * since #2772, the item drawer's assignee picker on every open. Memoised per slug: the BFF read
+   * behind it re-runs the checklist gate, the settings read and a per-person metadata fan-out, so
+   * both hosts share one answer for the page's lifetime, and a successful invite — the one event
+   * that changes the list — drops it through {@link invalidateFormationPeople}. Degrades to the
+   * `unavailable` shape on any HTTP failure (repo GET convention), which the card renders as its
+   * unavailable state — the same shape the BFF itself returns when the caller cleared the
+   * checklist read but upstream refused the settings read. An unavailable answer is never kept,
+   * so a transient failure is retried by the next reader.
    */
   public getFormationPeople(projectSlug: string): Observable<FormationPeopleResponse> {
-    return this.http.get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`).pipe(
-      catchError((error: unknown) => {
-        console.error('[FormationService] Failed to load formation people', error);
-        return of(createUnavailableFormationPeopleResponse());
-      })
-    );
+    const memoised = this.formationPeople.get(projectSlug);
+    if (memoised) {
+      return memoised;
+    }
+
+    const read$: Observable<FormationPeopleResponse> = this.http
+      .get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`)
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('[FormationService] Failed to load formation people', error);
+          return of(createUnavailableFormationPeopleResponse());
+        }),
+        tap((response) => {
+          // Only this read's own entry — an invalidate-then-re-read may already have replaced it.
+          if (response.state === 'unavailable' && this.formationPeople.get(projectSlug) === read$) {
+            this.formationPeople.delete(projectSlug);
+          }
+        }),
+        // Completed HTTP source: the buffer outlives the subscribers (the drawer closes between reads).
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    this.formationPeople.set(projectSlug, read$);
+    return read$;
+  }
+
+  /** Drops the per-slug memo so the next {@link getFormationPeople} reads afresh — after a successful invite. */
+  public invalidateFormationPeople(projectSlug: string): void {
+    this.formationPeople.delete(projectSlug);
   }
 
   /**

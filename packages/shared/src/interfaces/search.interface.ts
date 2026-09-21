@@ -115,6 +115,13 @@ export interface UserSearchParams {
   tags?: string;
   /** Type of resource to search */
   type: UserSearchType;
+  /**
+   * `best_match` opts into upstream `_score` ordering — meaningful only alongside `name`, and set
+   * whenever `name` is: the query service defaults to `name_asc`, and OpenSearch discards relevance
+   * once an explicit non-score sort is present, so a typeahead without it gets the alphabetically
+   * first page of matches rather than the closest ones.
+   */
+  sort?: 'name_asc' | 'best_match';
 }
 
 /**

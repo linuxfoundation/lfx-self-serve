@@ -23,6 +23,9 @@ export class SearchService {
     const queryParams = {
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
+      // Relevance ordering for a name typeahead — without it upstream sorts `name_asc` and the
+      // closest match can land on a later page (see `UserSearchParams.sort`).
+      ...(params.sort ? { sort: params.sort } : {}),
       type: params.type,
     };
 

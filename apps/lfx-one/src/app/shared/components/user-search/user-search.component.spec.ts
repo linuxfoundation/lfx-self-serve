@@ -49,6 +49,8 @@ describe('UserSearchComponent', () => {
       form?: FormGroup;
       candidates?: readonly UserSearchOption[] | null;
       searchUsers?: ReturnType<typeof vi.fn>;
+      /** `null` leaves the corpus unbound, to exercise the misconfiguration path. */
+      searchType?: 'committee_member' | null;
     } = {}
   ): Promise<void> => {
     TestBed.resetTestingModule();
@@ -66,7 +68,9 @@ describe('UserSearchComponent', () => {
     fixture = TestBed.createComponent(UserSearchComponent);
     fixture.componentRef.setInput('form', overrides.form ?? new FormGroup({ ownerUsername: new FormControl<string | null>('') }));
     fixture.componentRef.setInput('usernameControl', 'ownerUsername');
-    fixture.componentRef.setInput('searchType', 'committee_member');
+    if (overrides.searchType !== null) {
+      fixture.componentRef.setInput('searchType', overrides.searchType ?? 'committee_member');
+    }
     fixture.componentRef.setInput('disabled', overrides.disabled ?? false);
     fixture.componentRef.setInput('readonly', overrides.readonly ?? false);
     fixture.componentRef.setInput('requireLfAccount', overrides.requireLfAccount ?? false);
@@ -186,6 +190,17 @@ describe('UserSearchComponent', () => {
       await typeAndSettle('sa');
 
       expect(searchUsersMock).toHaveBeenCalledWith('sa', 'committee_member');
+    });
+
+    it('reports a consumer that binds neither searchType nor candidates instead of failing silently', async () => {
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+      await render({ searchType: null });
+
+      await typeAndSettle('sa');
+
+      expect(searchUsersMock).not.toHaveBeenCalled();
+      expect(consoleError).toHaveBeenCalledWith('[UserSearchComponent] requires either searchType or candidates');
+      consoleError.mockRestore();
     });
   });
 

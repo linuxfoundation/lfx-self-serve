@@ -145,9 +145,16 @@ export class UserSearchComponent {
           return of(filterUserSearchCandidates(candidates, trimmedTerm));
         }
 
-        // Only fetch suggestions when user types at least 2 characters
+        // A consumer that binds neither `searchType` nor `candidates` would otherwise render a box
+        // that looks functional and answers nothing forever — indistinguishable from an empty corpus.
         const searchType = this.searchType();
-        if (trimmedTerm.length < 2 || !searchType) {
+        if (!searchType) {
+          console.error('[UserSearchComponent] requires either searchType or candidates');
+          return of([]);
+        }
+
+        // Only fetch suggestions when user types at least 2 characters
+        if (trimmedTerm.length < 2) {
           return of([]);
         }
 

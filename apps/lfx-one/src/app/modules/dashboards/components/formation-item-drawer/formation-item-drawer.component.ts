@@ -678,11 +678,12 @@ export class FormationItemDrawerComponent {
 
   private initPeople(): Signal<FormationPeopleResponse> {
     // Read on every open (this drawer instance is reused across items and the list can change
-    // between opens — an invite from the People panel, say). Read for readers too, not only
-    // writers: it costs one settings GET the sidebar card already makes, and it is what lets a
-    // committed assignee render as a name rather than a username. `getFormationPeople` never
-    // errors — it degrades to the unavailable shape itself — so clearing `peopleLoading` on next
-    // is complete.
+    // between opens — an invite from the People panel, say). The service memoises the read per
+    // slug and the invite flow invalidates it, so reopening replays the sidebar card's own answer
+    // rather than re-running the BFF's checklist gate, settings read and per-person metadata
+    // fan-out. Read for readers too, not only writers: it is what lets a committed assignee render
+    // as a name rather than a username. `getFormationPeople` never errors — it degrades to the
+    // unavailable shape itself — so clearing `peopleLoading` on next is complete.
     return toSignal(
       toObservable(this.visible).pipe(
         skip(1),

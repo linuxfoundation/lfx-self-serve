@@ -67,8 +67,10 @@ export class SearchController {
       }
 
       // Build search parameters
+      // A name typeahead asks for relevance ordering; the upstream default (`name_asc`) would hand
+      // back the alphabetically first page instead (see `UserSearchParams.sort`).
       const searchParams: UserSearchParams = {
-        ...(name ? { name: name as string } : {}),
+        ...(name ? { name: name as string, sort: 'best_match' as const } : {}),
         ...(tags ? { tags: tags as string } : {}),
         type: type as UserSearchType,
       };
