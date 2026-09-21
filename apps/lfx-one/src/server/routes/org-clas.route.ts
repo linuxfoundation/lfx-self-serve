@@ -64,10 +64,10 @@ router.put('/:orgUid/lens/cla-groups/:signatureId/approval-list', blockDuringImp
 );
 
 router.get('/:orgUid/lens/cla-groups/:signatureId/managers', requireOrgLensAccess, (req, res, next) => orgClasController.listManagers(req, res, next));
-router.post('/:orgUid/lens/cla-groups/:signatureId/managers', requireOrgLensAccess, blockDuringImpersonation, (req, res, next) =>
+router.post('/:orgUid/lens/cla-groups/:signatureId/managers', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.addManager(req, res, next)
 );
-router.delete('/:orgUid/lens/cla-groups/:signatureId/managers/:lfUsername', requireOrgLensAccess, blockDuringImpersonation, (req, res, next) =>
+router.delete('/:orgUid/lens/cla-groups/:signatureId/managers/:lfUsername', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.removeManager(req, res, next)
 );
 

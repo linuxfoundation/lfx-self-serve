@@ -467,5 +467,17 @@ describe('org-clas router — CLA managers', () => {
       expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
       expect(handler()).not.toHaveBeenCalled();
     });
+
+    it.each([
+      ['add', 'POST', MANAGERS],
+      ['remove', 'DELETE', `${MANAGERS}/aporter`],
+    ] as const)('names impersonation, not a missing grant, on the %s of an org the caller cannot see', async (_name, method, path) => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    });
   });
 });
