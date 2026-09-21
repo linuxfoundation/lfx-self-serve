@@ -217,6 +217,59 @@ describe('MenteeOverviewComponent', () => {
     expect(component['hasLoaded']()).toBe(true);
   });
 
+  it('renders lfx-empty-state with Retry ctaLabel on error', async () => {
+    getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
+    comingSoonNotify = vi.fn();
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [MenteeOverviewComponent],
+      providers: [
+        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
+      ],
+    });
+
+    await TestBed.compileComponents();
+    fixture = TestBed.createComponent(MenteeOverviewComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const emptyState = element().querySelector('lfx-empty-state');
+    expect(emptyState).toBeTruthy();
+    expect(emptyState?.getAttribute('ctalabel')).toBe('Retry');
+  });
+
+  it('calls retry and re-fetches data when Retry CTA is triggered', async () => {
+    getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
+    comingSoonNotify = vi.fn();
+
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      imports: [MenteeOverviewComponent],
+      providers: [
+        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
+      ],
+    });
+
+    await TestBed.compileComponents();
+    fixture = TestBed.createComponent(MenteeOverviewComponent);
+    component = fixture.componentInstance;
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const initialCallCount = getMenteeOverview.mock.calls.length;
+    component['retry']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getMenteeOverview.mock.calls.length).toBeGreaterThan(initialCallCount);
+  });
+
   // ---- Withdraw action ------------------------------------------------------
 
   it('calls comingSoonService.notify on withdraw', async () => {

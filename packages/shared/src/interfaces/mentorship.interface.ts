@@ -711,9 +711,9 @@ export interface MentorshipMenteeApplication {
   term: MentorshipMenteeTermRef;
   programName: string;
   status: MentorshipMenteeApplicationStatus;
-  /** Latest prerequisite-task update timestamp. */
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
   lastTaskUpdatedOn: string;
-  /** Expected decision date for this application. */
+  /** BFF pre-formatted display string (e.g. `'Aug 15, 2026'`). Rendered verbatim — no `DatePipe` needed. */
   decisionExpectedDate: string;
   prerequisiteTasksCompleted: number;
   prerequisiteTasksTotal: number;
@@ -732,8 +732,9 @@ export interface MentorshipMenteePastApplication {
   programName: string;
   projectName: string;
   termName: string;
-  /** Latest prerequisite-task update timestamp. */
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
   lastTaskUpdatedOn: string;
+  /** BFF pre-formatted display string (e.g. `'Jul 10, 2026'`). Rendered verbatim — no `DatePipe` needed. */
   decidedOn: string;
   outcome: MentorshipMenteePastOutcome;
 }
@@ -758,7 +759,7 @@ export interface MentorshipMenteeUpNextTask {
   id: string;
   name: string;
   status: MentorshipMenteeUpNextTaskStatus;
-  /** ISO date string (YYYY-MM-DD). */
+  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF normalises the backend's date-only value to an explicit UTC instant so `DatePipe` with `'UTC'` renders the correct calendar day in every timezone. */
   dueDate: string;
   /** `tasks.category` */
   category?: 'prerequisite' | 'non_prerequisite';

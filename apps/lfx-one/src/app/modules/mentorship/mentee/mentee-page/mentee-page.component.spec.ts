@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { Component, OutputEmitterRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, RouterOutlet, UrlTree } from '@angular/router';
+import { MentorshipMenteePhase } from '@lfx-one/shared/interfaces';
 import { MENTORSHIP_MENTEE_SHELL_TITLE } from '@lfx-one/shared/constants';
 import { Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -204,5 +205,43 @@ describe('MenteePageComponent', () => {
     const profileBtn = selectedTab()!;
     profileBtn.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true, cancelable: true }));
     expect(router.navigate).toHaveBeenLastCalledWith(['/mentorship/mentee', 'overview']);
+  });
+
+  // ---- Router-outlet activate wiring ----------------------------------------
+
+  it('updates tabs and task count when onChildActivate receives outputs', async () => {
+    await bootstrap();
+    expect(tabButtons().length).toBe(2);
+
+    const mockPhaseChange = { subscribe: vi.fn() } as unknown as OutputEmitterRef<MentorshipMenteePhase>;
+    const mockTaskCount = { subscribe: vi.fn() } as unknown as OutputEmitterRef<number>;
+
+    // Simulate child activation with outputs
+    component.onChildActivate({
+      phaseChange: mockPhaseChange,
+      openTaskCountChange: mockTaskCount,
+    });
+
+    expect(mockPhaseChange.subscribe).toHaveBeenCalled();
+    expect(mockTaskCount.subscribe).toHaveBeenCalled();
+
+    // Invoke the subscribed callbacks to simulate output emission
+    const phaseCallback = (mockPhaseChange.subscribe as ReturnType<typeof vi.fn>).mock.calls[0][0] as (phase: MentorshipMenteePhase) => void;
+    const countCallback = (mockTaskCount.subscribe as ReturnType<typeof vi.fn>).mock.calls[0][0] as (count: number) => void;
+
+    phaseCallback('applicant');
+    countCallback(5);
+    fixture.detectChanges();
+
+    expect(tabButtons().length).toBe(3);
+    const tasksTab = tabButtons().find((btn) => btn.textContent?.includes('Application Tasks'));
+    expect(tasksTab?.textContent).toContain('5 open');
+  });
+
+  it('handles child activation without outputs gracefully', async () => {
+    await bootstrap();
+    // Child with no outputs — should not throw
+    component.onChildActivate({});
+    expect(tabButtons().length).toBe(2);
   });
 });

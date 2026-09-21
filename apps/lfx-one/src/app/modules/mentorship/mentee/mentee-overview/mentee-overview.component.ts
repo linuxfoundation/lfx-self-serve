@@ -15,7 +15,8 @@ import {
   MENTORSHIP_MENTEE_ACTIVE_BADGE_LABEL,
   MENTORSHIP_MENTEE_ALL_TASKS_LABEL,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY,
-  MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX,
+  MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL,
+  MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR,
   MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX,
   MENTORSHIP_MENTEE_APPLICATION_LIMIT,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
@@ -100,7 +101,10 @@ export class MenteeOverviewComponent {
   protected readonly emptySubtitle = MENTORSHIP_MENTEE_EMPTY_SUBTITLE;
   protected readonly findProgramLabel = MENTORSHIP_MENTEE_FIND_PROGRAM_LABEL;
   protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
-  protected readonly bannerTitleSuffix = MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX;
+  /** "N application(s) under review" — switches between singular and plural. */
+  protected readonly bannerTitleSuffix = computed(() =>
+    this.applicationCount() === 1 ? MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR : MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL
+  );
 
   /** Conditionally appends the application-limit sentence when the user has reached the limit. */
   protected readonly bannerBody = computed(() => {

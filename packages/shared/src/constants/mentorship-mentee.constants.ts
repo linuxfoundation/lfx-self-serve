@@ -197,7 +197,8 @@ export const MENTORSHIP_MENTEE_EMPTY_SUBTITLE =
 // Overview — applicant phase (screen 2)
 // ---------------------------------------------------------------------------
 
-export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX = 'applications under review';
+export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_SINGULAR = 'application under review';
+export const MENTORSHIP_MENTEE_APPLICANT_BANNER_TITLE_SUFFIX_PLURAL = 'applications under review';
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_BODY =
   'Program admins review submissions after the application window closes. Finish the prerequisite tasks to be considered.';
 export const MENTORSHIP_MENTEE_APPLICANT_BANNER_LIMIT_SUFFIX =
