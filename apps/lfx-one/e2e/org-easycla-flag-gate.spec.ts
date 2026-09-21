@@ -12,7 +12,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  *
  * `org-lens-cla-m3-enabled` needs no LaunchDarkly targeting — both cases pin it through the same
  * `stubFeatureFlags` localStorage override the ROI specs use (GH-1655). Pinning is what makes the
@@ -62,12 +61,6 @@ async function deepLinkToEasycla(page: Page, flagEnabled: boolean): Promise<void
 
   await page.goto(EASYCLA_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  // A redirect away from the whole lens means `org-lens-enabled` is off for this user, which is a
-  // missing prerequisite rather than a failure of the flag under test.
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 test.describe('Org Lens EasyCLA dark-launch gate', () => {

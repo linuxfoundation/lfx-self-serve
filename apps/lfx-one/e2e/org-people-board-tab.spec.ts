@@ -150,9 +150,6 @@ async function gotoBoardTab(page: Page): Promise<void> {
   await page.goto(PEOPLE_BOARD_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 
-  if (!page.url().includes('/org/people')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/people redirected away');
-  }
   await expect(page.getByTestId('org-people-panel-board')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 

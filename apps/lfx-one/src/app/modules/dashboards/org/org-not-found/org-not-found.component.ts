@@ -2,13 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
-import { ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { Router } from '@angular/router';
 import { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
-import { ButtonComponent } from '@components/button/button.component';
 import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -27,7 +24,7 @@ import { SkeletonModule } from 'primeng/skeleton';
  */
 @Component({
   selector: 'lfx-org-not-found',
-  imports: [RouterLink, ButtonComponent, OrgLensEmptyStateComponent, SkeletonModule],
+  imports: [OrgLensEmptyStateComponent, SkeletonModule],
   templateUrl: './org-not-found.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -38,30 +35,20 @@ export class OrgNotFoundComponent {
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly emptyState = inject(OrgLensEmptyStateService);
-  private readonly featureFlags = inject(FeatureFlagService);
-
-  /** Spec 050 US5: the same dead end also serves a viewer for whom Org Lens is switched off; their switcher never loads a list. */
-  private readonly orgLensEnabled: Signal<boolean> = this.featureFlags.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   /**
    * Both bootstrap loads have answered, and — when the caller can see the switcher at all — its list
-   * has too. Two callers never trigger the list fetch and must not be held on the skeleton for it: one
-   * without switcher access, and one for whom Org Lens is disabled (the selector is never enabled).
+   * has too. A caller without switcher access never triggers the list fetch and must not be held on
+   * the skeleton for it.
    */
   protected readonly settled: Signal<boolean> = computed(
-    () => this.emptyState.settled() && (!this.orgLensEnabled() || !this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
+    () => this.emptyState.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
   );
 
   /** The caller's own held organizations — the same access-filtered rows the switcher shows. */
   protected readonly orgList: Signal<{ uid: string; name: string }[]> = computed(() =>
     this.orgNavigation.items().map((item) => ({ uid: item.uid, name: item.name }))
   );
-
-  /**
-   * Spec 050 US5: Org Lens switched off for this viewer — the static, cause-blind dead end, no list
-   * and no registry state (an access-themed wording would imply an administrator could help).
-   */
-  protected readonly orgLensOff: Signal<boolean> = computed(() => !this.orgLensEnabled());
 
   /**
    * Whether the caller holds anything at all — from the grant sets (unfiltered) OR the list rows: the

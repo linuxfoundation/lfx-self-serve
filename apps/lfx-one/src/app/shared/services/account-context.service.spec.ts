@@ -2,17 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { signal, WritableSignal } from '@angular/core';
+import { PLATFORM_ID, signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
-import { FeatureFlagService } from './feature-flag.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 // Spec 050: the organization a `/org/{segment}/…` address names is adopted by the path-param guard
@@ -56,7 +55,6 @@ describe('AccountContextService — address-adopted selection', () => {
         },
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
-        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn().mockReturnValue(signal(false)) } },
         { provide: OrgRoleGrantsService, useValue: grants },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
@@ -341,7 +339,6 @@ describe('AccountContextService — address-adopted selection', () => {
       (TestBed.inject(AnalyticsService) as unknown as { getOrgLensAccountContext: ReturnType<typeof vi.fn> }).getOrgLensAccountContext.mockReturnValue(
         of([staleRow])
       );
-      (TestBed.inject(FeatureFlagService) as unknown as { getBooleanFlag: ReturnType<typeof vi.fn> }).getBooleanFlag.mockReturnValue(signal(true));
       service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo' }]);
       expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
 
@@ -358,5 +355,93 @@ describe('AccountContextService — address-adopted selection', () => {
       service.setAccount(service.selectedAccount());
       expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
     });
+  });
+});
+
+describe('AccountContextService — Snowflake enrichment platform boundary', () => {
+  const UID_A = '0014100000MgaAAAAA';
+  const seedA: Account = { accountId: 'acc-A', accountName: 'Alpha', accountSlug: '', membershipTier: '', uid: UID_A };
+
+  const liveRow = (accountId: string, accountName: string): OrgLensAccountContextResponse =>
+    ({
+      accountId,
+      accountName,
+      accountSlug: null,
+      logoUrl: null,
+      cdevOrgId: null,
+      membershipTierDisplayName: null,
+    }) as OrgLensAccountContextResponse;
+
+  const setup = (platformId: string, responses: unknown[] = []) => {
+    const cookies = new Map<string, string>();
+    const getOrgLensAccountContext = vi.fn();
+    for (const response of responses) {
+      getOrgLensAccountContext.mockReturnValueOnce(response);
+    }
+    getOrgLensAccountContext.mockReturnValue(of([]));
+    TestBed.resetTestingModule();
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PLATFORM_ID, useValue: platformId },
+        {
+          provide: SsrCookieService,
+          useValue: {
+            get: (key: string) => cookies.get(key) ?? '',
+            set: (key: string, value: string) => cookies.set(key, value),
+            delete: (key: string) => cookies.delete(key),
+          },
+        },
+        { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
+        { provide: AnalyticsService, useValue: { getOrgLensAccountContext } },
+        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false) } },
+        { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
+      ],
+    });
+    return { service: TestBed.inject(AccountContextService), getOrgLensAccountContext };
+  };
+
+  // The retired Org Lens rollout flag used to gate this fetch; with the flag gone it runs on every browser bootstrap.
+  it('runs enrichment unconditionally in the browser', () => {
+    const { service, getOrgLensAccountContext } = setup('browser');
+
+    service.initializeUserOrganizations([seedA]);
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
+    expect(getOrgLensAccountContext).toHaveBeenCalledWith(['acc-A']);
+  });
+
+  // The flag defaulted to false on the server (no OpenFeature provider there), so enrichment never ran during SSR —
+  // the platform guard preserves that boundary now that the flag is gone.
+  it('skips enrichment on the server so SSR never blocks on Snowflake', () => {
+    const { service, getOrgLensAccountContext } = setup('server');
+
+    service.initializeUserOrganizations([seedA]);
+
+    expect(getOrgLensAccountContext).not.toHaveBeenCalled();
+    expect(service.selectedAccount().accountId).toBe('acc-A');
+  });
+
+  // Bootstrap (transfer-state seeds) and the later persona re-seed each trigger a fetch; the earlier response
+  // must not overwrite the later one when it lands last. Both generations cover the same account so the
+  // stale payload would clobber the fresh one without the generation guard (a stub selection with a
+  // non-matching cookie uid would ignore enrichment entirely, which would not exercise the guard).
+  it('drops a superseded enrichment response when the re-seed fetch answers first', () => {
+    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
+    const reseed$ = new Subject<OrgLensAccountContextResponse[]>();
+    const { service } = setup('browser', [bootstrap$.asObservable(), reseed$.asObservable()]);
+
+    service.initializeUserOrganizations([seedA]);
+    service.initializeUserOrganizations([seedA]);
+
+    reseed$.next([liveRow('acc-A', 'Alpha Fresh')]);
+    reseed$.complete();
+    expect(service.selectedAccount().accountName).toBe('Alpha Fresh');
+
+    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
+    bootstrap$.complete();
+
+    expect(service.selectedAccount().accountName).toBe('Alpha Fresh');
+    expect(service.availableAccounts()).toHaveLength(1);
+    expect(service.availableAccounts()[0].accountName).toBe('Alpha Fresh');
   });
 });

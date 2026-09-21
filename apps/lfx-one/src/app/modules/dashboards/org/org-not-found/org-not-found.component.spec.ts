@@ -7,7 +7,6 @@ import { provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
@@ -29,7 +28,6 @@ interface Harness {
   isStaff: WritableSignal<boolean>;
   lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   staffCheck: WritableSignal<OrgLensStaffCheck>;
-  orgLensEnabled: WritableSignal<boolean>;
   refresh: Mock<(bypassCache?: boolean) => unknown>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => void>;
@@ -47,7 +45,6 @@ function setup(): Harness {
   const isStaff = signal(false);
   const lookupOutcome = signal<OrgLensLookupOutcome>('ok');
   const staffCheck = signal<OrgLensStaffCheck>('ok');
-  const orgLensEnabled = signal(true);
   const refresh: Mock<(bypassCache?: boolean) => unknown> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
   const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
@@ -64,7 +61,6 @@ function setup(): Harness {
       provideRouter([]),
       MessageService,
       OrgLensEmptyStateService,
-      { provide: FeatureFlagService, useValue: { getBooleanFlag: () => orgLensEnabled } },
       { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, loading: signal(false), upstreamFailed: listFailed, refreshList } },
       { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
       {
@@ -109,7 +105,6 @@ function setup(): Harness {
     isStaff,
     lookupOutcome,
     staffCheck,
-    orgLensEnabled,
     refresh,
     grantsLoading,
     refreshList,
@@ -185,14 +180,6 @@ describe('OrgNotFoundComponent.state', () => {
     h.lookupOutcome.set('partial');
 
     expect(renderedState(h)).toBe<OrgLensEmptyStateName>('not-found-staff');
-  });
-
-  it('renders the static flag-off dead end with no registry state (spec 050 US5)', () => {
-    h.orgLensEnabled.set(false);
-    h.lookupOutcome.set('failed');
-
-    expect(renderedState(h)).toBe('unavailable');
-    expect((h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-title"]')?.textContent?.trim()).toBe('Organization not found');
   });
 
   it('retries through the shared Retry: role grants, then the already-fetched list pinned to the cookie selection', () => {

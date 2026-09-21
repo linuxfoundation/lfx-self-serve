@@ -28,7 +28,6 @@ import { gatewazeEmbedEnabledGuard } from './shared/guards/gatewaze-embed-enable
 import { lensRedirectGuard } from './shared/guards/lens-redirect.guard';
 import { marketingImpactAccessGuard } from './shared/guards/marketing-impact-access.guard';
 import { newsletterAccessGuard } from './shared/guards/newsletter-access.guard';
-import { orgLensEnabledGuard } from './shared/guards/org-lens-enabled.guard';
 import { orgPathParamGuard } from './shared/guards/org-path-param.guard';
 import { orgSegmentMatchGuard } from './shared/guards/org-segment-match.guard';
 import { orgLensClaM3EnabledGuard } from './shared/guards/org-lens-cla-m3-enabled.guard';
@@ -326,19 +325,18 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/formation/formation-page/formation-page.component').then((m) => m.FormationPageComponent),
       },
       // Org Lens dead end (spec 050 US4/US5, FR-022). Declared BEFORE the `org` node, as a sibling
-      // outside its CanMatch: `orgLensEnabledGuard` and `orgPathParamGuard` both redirect here, so the
-      // address must resolve without re-entering the guard that sent the viewer to it (no loop), and
-      // it must render even when the Org Lens flag is off or LaunchDarkly never answered.
+      // outside the `org/:orgSegment` subtree: `orgPathParamGuard` (CanActivate on that subtree)
+      // redirects here, so the address must resolve without re-entering the guard that sent the
+      // viewer to it (no loop).
       {
         path: 'org/not-found',
         title: 'Organization Not Found',
         data: { lens: 'org' },
         loadComponent: () => import('./modules/dashboards/org/org-not-found/org-not-found.component').then((m) => m.OrgNotFoundComponent),
       },
-      // Org Lens — dark-launched behind `org-lens-enabled` (CanMatch); /org/* lands on the dead end above when the flag is off.
+      // Org Lens (GA) — unresolvable /org/* addresses land on the dead end above via `orgPathParamGuard`.
       {
         path: 'org',
-        canMatch: [orgLensEnabledGuard],
         data: { lens: 'org' },
         children: [
           {

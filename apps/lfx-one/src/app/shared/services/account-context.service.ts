@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -12,7 +13,6 @@ import { take } from 'rxjs/operators';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
-import { FeatureFlagService } from './feature-flag.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
@@ -28,13 +28,19 @@ export class AccountContextService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly http = inject(HttpClient);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly storageKey = ACCOUNT_COOKIE_KEY;
 
   /** Request-scope dedup (spec 020 D-006) — concurrent calls for the same uid share one in-flight promise; cleared on settle. */
   private readonly canonicalFetchInFlight = new Map<string, Promise<void>>();
+
+  /**
+   * Monotonic generation for Snowflake enrichment. `initializeUserOrganizations` runs at bootstrap (transfer-state seeds) and again on
+   * every persona re-seed, so two enrichments can be in flight at once — the earlier (stale-seed) response must never overwrite the later.
+   */
+  private enrichmentGeneration = 0;
 
   /** Persona-authorised accounts seeded at bootstrap; enriched from Snowflake via getOrgLensAccountContext. */
   private readonly userOrganizations: WritableSignal<Account[]> = signal<Account[]>([]);
@@ -146,7 +152,7 @@ export class AccountContextService {
     // the guard has adopted; for a staff viewer the seeds are empty and would reset the selection to
     // the placeholder, for anyone else a seed or uid stub would replace the resolved record.
     if (this.isAddressedSelection()) {
-      if (seeds.length > 0 && this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
+      if (seeds.length > 0) {
         this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       }
       return;
@@ -173,9 +179,7 @@ export class AccountContextService {
       this.setAccount(seeds[0]);
     }
 
-    if (this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
-      this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
-    }
+    this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
   }
 
   /**
@@ -345,15 +349,27 @@ export class AccountContextService {
   }
 
   private refreshFromSnowflake(accountIds: string[]): void {
+    // Browser-only: the retired Org Lens flag defaulted to false in SSR (no OpenFeature
+    // provider on the server), so enrichment never ran there; running it now would stall SSR
+    // serialization on a Snowflake-backed call the browser refetches after hydration anyway.
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     const ids = [...new Set(accountIds.filter((id) => !!id))];
     if (ids.length === 0) {
       return;
     }
 
+    // A newer re-seed supersedes this fetch: only the latest generation may write `liveAccounts` and the selection.
+    const generation = ++this.enrichmentGeneration;
+
     this.analyticsService
       .getOrgLensAccountContext(ids)
       .pipe(take(1))
       .subscribe((rows) => {
+        if (generation !== this.enrichmentGeneration) {
+          return;
+        }
         if (rows.length === 0) {
           return;
         }
