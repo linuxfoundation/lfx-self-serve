@@ -1575,6 +1575,12 @@ describe('FormationService', () => {
         { ...baseRow, formation_uid: 'formation:disengaged', project_uid: 'disengaged', sub_stage: 'Formation - Disengaged', lifecycle: 'frozen' },
         { ...baseRow, formation_uid: 'formation:ready', project_uid: 'ready', gates_cleared: true, is_activating: true },
         { ...baseRow, formation_uid: 'formation:unknown', project_uid: 'unknown', sub_stage: 'not-a-real-stage' },
+        // Confidential is pre-announcement and hidden elsewhere (navigation.service.ts), which is
+        // exactly why it is pinned here: it is still forming, so it must survive a filter that no
+        // longer looks at the stage at all. It has no queue-taxonomy equivalent, so it lands in
+        // `unmapped` rather than a sub-stage tile. Access, not sub-stage, is what hides it from a
+        // caller who shouldn't see it — and that happens upstream of this filter (PR #2767 review).
+        { ...baseRow, formation_uid: 'formation:confidential', project_uid: 'confidential', sub_stage: 'Formation - Confidential' },
       ];
       proxyRequest.mockResolvedValue({
         resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
@@ -1582,9 +1588,9 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown']);
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown', 'confidential']);
       expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
-      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 1, total: 2, foundations: 0, projects: 2 });
+      expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3 });
     });
 
     // The filter fails CLOSED on a lifecycle it doesn't recognise: `normalizeFormationLifecycle`
@@ -1596,11 +1602,15 @@ describe('FormationService', () => {
     // Pinned because it is a decision, not a consequence, and because it is the one way this
     // change can hide work that is genuinely in progress. A row whose stage still says
     // `Formation - *` while its lifecycle is missing or stale is exactly that case.
-    it.each([
-      ['missing', ''],
-      ['unrecognised', 'retired'],
-    ])('drops a row whose lifecycle is %s, even though its stage says it is still forming', async (_label, lifecycle) => {
-      const row: UpstreamFormationQueueRow = {
+    // The third case omits the key rather than emptying it: `lifecycle` is a required `string` on
+    // the type, so only a malformed upstream document can reach `undefined` — which is precisely
+    // the document this filter has to survive, and which an empty string does not stand in for.
+    it.each<[string, Partial<UpstreamFormationQueueRow>]>([
+      ['an empty string', { lifecycle: '' }],
+      ['unrecognised', { lifecycle: 'retired' }],
+      ['absent from the document', {}],
+    ])('drops a row whose lifecycle is %s, even though its stage says it is still forming', async (_label, lifecyclePatch) => {
+      const row = {
         formation_uid: 'formation:no-lifecycle',
         project_uid: 'no-lifecycle',
         project_name: 'No Lifecycle',
@@ -1608,14 +1618,14 @@ describe('FormationService', () => {
         is_foundation: false,
         parent_uid: null,
         sub_stage: 'Formation - Engaged',
-        lifecycle,
         gates_cleared: false,
         is_activating: false,
         announcement_date: null,
         progress: {},
         blocked_item_titles: [],
         assignees: [],
-      };
+        ...lifecyclePatch,
+      } as UpstreamFormationQueueRow;
       proxyRequest.mockResolvedValue({
         resources: [{ type: 'formation', id: row.formation_uid, data: row }],
       } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);

@@ -690,11 +690,18 @@ export class FormationService {
     const isFormationTeamMember = await teamMembershipPromise;
     // Stage gate on items[] (#2734 review, Cursor Bugbot): the row's View item links into
     // `/project/formation`, whose `formationProjectEnabledGuard` admits only Formation-stage
-    // projects, and production checklists stay `lifecycle: live` after a project goes Active
-    // (GH-2328) — so lifecycle alone would hand out a link that bounces to the overview. Same
-    // `isFormationStageGate` the formations[] join applies below. An unknown stage (the lookup
-    // failed) keeps the row: hiding the caller's real work on a transient error is worse than a
-    // link that may redirect.
+    // projects — so the stage, not the lifecycle, is what decides whether that link lands, and
+    // lifecycle alone would hand out a link that bounces to the overview.
+    //
+    // GH-2328 recorded that production checklists stay `lifecycle: live` after a project goes
+    // Active. That no longer holds for the `formation` aggregate document — PR #2767 measured
+    // every prod formation's lifecycle against its stage and found them consistent — but the
+    // `formation_item` documents this query reads were not re-measured, so nothing here may
+    // assume it either way. The gate is the route guard's own condition regardless.
+    //
+    // Same `isFormationStageGate` the formations[] join applies below. An unknown stage (the
+    // lookup failed) keeps the row: hiding the caller's real work on a transient error is worse
+    // than a link that may redirect.
     const stagedItems = openItems.filter((row) => {
       const stage = stageByProject.get(row.project_uid);
       return stage === undefined || isFormationStageGate(stage);
@@ -732,15 +739,24 @@ export class FormationService {
           logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
           continue;
         }
-        // `lifecycle:live` alone doesn't gate this the way the card's own doc comment promises
-        // ("an Active project drops out of the response entirely") — GH-2328 found every production
-        // formation's checklist `lifecycle` is `'live'` regardless of the project's stage, since
-        // nothing yet flips it on an Active/Disengaged transition. `isFormationStageGate` is the
-        // actual stage-based gate the pre-live fixture path used for this same exclusion (matches any
-        // `Formation - *` stage except the terminal `Disengaged` one, so Confidential still shows to
-        // an assignee who holds access to it — only Active/Archived/Prospect/Disengaged drop out).
-        // `items[]` applies the same gate above, off the project read (#2734 review), so a row is
-        // never handed a checklist link its route guard would bounce.
+        // The items query's `lifecycle:live` tag filters `formation_item` documents and says
+        // nothing about this aggregate row, whose own lifecycle this path never reads — so the
+        // stage gate is what delivers the card's promise that "an Active project drops out of
+        // the response entirely".
+        //
+        // It is not a lifecycle filter in disguise, and swapping it for one would lose rows this
+        // catches: `LifecycleForStage` returns no lifecycle at all for `Prospect`, so a project
+        // moved there keeps whatever lifecycle its checklist last held. GH-2328's "always live
+        // regardless of stage" finding was re-measured by PR #2767 on the `formation` aggregate
+        // document and no longer holds there; it was not re-measured on the item documents read
+        // here, so this gate stays either way.
+        //
+        // `isFormationStageGate` is the stage-based gate the pre-live fixture path used for this
+        // same exclusion: it matches any `Formation - *` stage except the terminal `Disengaged`
+        // one, so Confidential still shows to an assignee who holds access to it, and only
+        // Active/Archived/Prospect/Disengaged drop out. `items[]` applies the same gate above,
+        // off the project read (#2734 review), so a row is never handed a checklist link its
+        // route guard would bounce.
         if (!isFormationStageGate(aggregateRow.sub_stage_raw)) {
           continue;
         }
@@ -944,7 +960,28 @@ export class FormationService {
     // `live`, so GH-2366's fail-open rule survives without naming any stage here. `gates_cleared`/
     // `is_activating` rows likewise keep their `Formation - *` stage until the formation team
     // flips the project Active, so "Ready to activate" rows survive by construction.
-    const inFormationRows = scopedRows.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
+    const inFormationRows = scopedRows.filter((row) => isFormationLifecycleLive(row.lifecycle));
+
+    // Normally zero, because `tags_all` already dropped these upstream — so a non-zero count is
+    // the backstop above earning its place, not routine filtering. WARN when it is every row:
+    // that is the tag being ignored outright, or `lifecycle` renamed/unpopulated, and it renders
+    // an empty queue that otherwise looks exactly like "nothing is forming right now" (PR #2767
+    // review). Counts only — a row that fails this check is the one we know least about.
+    const droppedNonLive = scopedRows.length - inFormationRows.length;
+    if (droppedNonLive > 0) {
+      const dropDetail = {
+        dropped: droppedNonLive,
+        of: scopedRows.length,
+        // Normalized, so this is `completed`/`frozen`/`null` — and `null` is the one that says
+        // the field itself went unreadable rather than the row having genuinely left formation.
+        lifecycles: [...new Set(scopedRows.filter((row) => !isFormationLifecycleLive(row.lifecycle)).map((row) => row.lifecycle))],
+      };
+      if (droppedNonLive === scopedRows.length) {
+        logger.warning(req, 'get_formations_queue', 'Every row failed the lifecycle backstop — lifecycle:live may no longer be honoured upstream', dropDetail);
+      } else {
+        logger.debug(req, 'get_formations_queue', 'Dropped rows whose lifecycle is not live', dropDetail);
+      }
+    }
 
     // What reaches this log has narrowed to one case: a formation still in progress whose
     // `Formation - *` sub-stage has no queue-taxonomy equivalent (see normalizeFormationSubStage).
@@ -997,6 +1034,7 @@ export class FormationService {
       ...row,
       parent_uid: collapseRootParentUid(row.parent_uid || null, rootUid) ?? null,
       sub_stage: normalizeFormationSubStage(row.sub_stage),
+      lifecycle: normalizeFormationLifecycle(row.lifecycle),
       // `?? ''` guards the same malformed-document case as the other defaults in this pass — the
       // contract says `sub_stage` is always present (indexer_publisher.go), but a row that omits it
       // must not leave `sub_stage_raw` as `undefined` against its `string`-typed contract.

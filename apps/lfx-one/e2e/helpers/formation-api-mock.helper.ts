@@ -5,7 +5,7 @@ import { FormationItem, FormationPeopleResponse, FormationsQueueResponse } from 
 // Deep import, not the `utils` barrel (GH-2381): the barrel re-exports form.utils.ts, which
 // statically imports @angular/forms — that throws in Playwright's plain Node runtime (no
 // @angular/compiler loaded). See "Non-Angular runtimes" in package-architecture.md.
-import { deriveFormationEntityType, isFormationLifecycleLive, normalizeFormationLifecycle } from '@lfx-one/shared/utils/formation.utils';
+import { deriveFormationEntityType, isFormationLifecycleLive } from '@lfx-one/shared/utils/formation.utils';
 import { Page } from '@playwright/test';
 
 import {
@@ -122,7 +122,7 @@ export class FormationApiMockHelper {
       // reports as still in progress reach the rows or any tile. It must stay a mirror — if this
       // filtered by stage while the BFF filtered by lifecycle, a Disengaged fixture would be
       // dropped here for the wrong reason and the queue tests would pass without the fix.
-      const inFormationRows = rows.filter((row) => isFormationLifecycleLive(normalizeFormationLifecycle(row.lifecycle)));
+      const inFormationRows = rows.filter((row) => isFormationLifecycleLive(row.lifecycle));
 
       let filtered = inFormationRows;
       if (subStage) filtered = filtered.filter((row) => row.sub_stage === subStage);
