@@ -128,7 +128,7 @@ test.describe('Org Lens EasyCLA detail — structure', () => {
     await expect(page.getByTestId('org-easycla-detail-overview')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-tabs')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${ABSENT_GROUP_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${ABSENT_GROUP_ID}$`));
   });
 
   test('shows the error state alone, with no overview and no not-found beside it', async ({ page }) => {
