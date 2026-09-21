@@ -127,6 +127,24 @@ test.describe('Formation checklist drill-down (LFXV2-3386)', () => {
     await expect(page.getByTestId('formation-checklist-section')).toHaveCount(0);
   });
 
+  // The guard against the tempting one-line version of GH-2584: adding `Formation - Disengaged` to
+  // isPostFormationStage drops it from the queue in a single edit and blanks this page at the same
+  // time, which is the opposite of what GH-2328 asked for. Leaving the queue and losing the
+  // checklist are different things.
+  //
+  // Scoped to the page GATE, which is all this can honestly check. `mockFormationChecklistApis`
+  // serves a hard-coded `lifecycle: 'live'` checklist, so the frozen read-only rendering is not
+  // exercised here — and read-only is driven by `can_write` and a server-side CHECKLIST_READ_ONLY
+  // conflict rather than by anything this page derives from the stage.
+  test('a Disengaged project still opens its checklist by direct link rather than the not-in-formation state', async ({ page }) => {
+    await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG, { stage: 'Formation - Disengaged' }) });
+
+    await gotoFormationDetail(page, FORMATION_PROJECT_SLUG);
+
+    await expect(page.getByTestId('formation-checklist-section')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('formation-detail-not-in-formation')).toHaveCount(0);
+  });
+
   test('a non-auditor contributor is redirected to /foundation/overview', async ({ page }) => {
     await stubPersona(page, false);
     await mockFormationChecklistApis(page, { project: buildBaseProject(FORMATION_PROJECT_SLUG) });

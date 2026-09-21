@@ -95,10 +95,15 @@ export class FormationsQueueComponent {
         {
           value: t.total,
           label: 'In formation',
-          // `unmapped` (GH-2366) surfaces rows whose upstream sub_stage has no queue-taxonomy
-          // equivalent — never invisible in `total`, only appended here when non-zero so the
-          // common case (0 unmapped) reads exactly as it did before this field existed.
-          subLine: `${t.foundations} foundations · ${t.projects} projects${t.unmapped > 0 ? ` · ${t.unmapped} outside formation stages` : ''}`,
+          // GH-2584 dropped the `unmapped` clause that used to append here. It read "N outside
+          // formation stages", which stopped being true once the queue began listing only
+          // formations still in progress — every row is inside formation now, and an unmapped row
+          // means only that its sub-stage has no tile to sit in.
+          //
+          // `tiles.unmapped` is still on the response but nothing reads it; the same gap is what
+          // the BFF logs at DEBUG, and that log — not this tile — is the detector for a new
+          // upstream sub-stage.
+          subLine: `${t.foundations} foundations · ${t.projects} projects`,
           icon: 'fa-light fa-diagram-project',
           iconContainerClass: 'bg-blue-50 text-blue-600',
         },
