@@ -1671,7 +1671,7 @@ describe('FormationService', () => {
         ...lifecyclePatch,
       };
       proxyRequest.mockResolvedValue({
-        resources: [{ type: 'formation', id: row.formation_uid, data: row }],
+        resources: [{ type: 'formation', id: 'formation:no-lifecycle', data: row }],
       } satisfies QueryServiceResponse<Partial<UpstreamFormationQueueRow>>);
 
       const result = await service.getFormationsQueue(buildReq());
