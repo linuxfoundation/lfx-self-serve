@@ -48,8 +48,21 @@ export function sanitizeDisplayText(value: string): string {
       if (code >= 0x202a && code <= 0x202e) return false;
       if (code >= 0x2066 && code <= 0x2069) return false;
       // Zero-width and other invisible formatting: ZWSP/ZWNJ/ZWJ, LRM/RLM, word joiner, BOM.
-      if (code === 0x200b || code === 0x200c || code === 0x200d) return false;
+      // ZERO WIDTH SPACE only. U+200C (ZWNJ) and U+200D (ZWJ) are KEPT: they are required
+      // orthography in Devanagari, Telugu, Bengali, Arabic and Persian, where they select
+      // conjunct or joined forms -- stripping them corrupts real sponsor names. `नमस्‍ते` and
+      // `అమ్‌మ` came back altered, which is the same over-stripping that once turned `O'Reilly`
+      // into `OReilly`, and that this function's own doc warns against.
+      //
+      // Keeping them is safe for the threat this function exists to stop: a joiner cannot
+      // REORDER text the way a BIDI override can. It can only render two adjacent glyphs as one,
+      // which is a legibility question rather than a spoof -- and the alternative is refusing to
+      // display a correctly-spelled name in five writing systems.
+      if (code === 0x200b) return false;
+      // LRM/RLM are directional MARKS, not joiners: they alter how the surrounding run is laid
+      // out, which is the same class as the overrides denied above.
       if (code === 0x200e || code === 0x200f) return false;
+      // WORD JOINER and BOM: invisible, and neither is orthography in any script.
       if (code === 0x2060 || code === 0xfeff) return false;
       // `<` and `>` only. Quotes, apostrophes and backticks are ordinary punctuation in real
       // names -- stripping them turned `O'Reilly` into `OReilly`, which is the over-stripping

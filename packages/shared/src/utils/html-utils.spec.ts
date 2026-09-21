@@ -183,4 +183,38 @@ describe('htmlClipboardToText', () => {
     const html = '<p>Check out the <a href="https://example.com/post">new post</a> — <strong>big</strong> update!</p>';
     expect(htmlClipboardToText(html)).toBe('Check out the [new post](https://example.com/post) — big update!');
   });
+  /**
+   * ZWJ (U+200D) and ZWNJ (U+200C) are ORTHOGRAPHY, not decoration.
+   *
+   * They select conjunct and joined forms in Devanagari, Telugu, Bengali, Arabic and Persian, so
+   * stripping them corrupts correctly-spelled sponsor names -- `नमस्‍ते` came back as `नमस्ते`.
+   * That is the same over-stripping that once turned `O'Reilly` into `OReilly`.
+   *
+   * Safe to keep for the threat this function exists to stop: a joiner cannot REORDER text the
+   * way a BIDI override can, only render two adjacent glyphs as one. The deny list below is
+   * asserted alongside, because the fix must not have widened into "keep every invisible".
+   */
+  it.each([
+    ['Devanagari with ZWJ', 'नमस्\u200Dते'],
+    ['Telugu with ZWNJ', 'అమ్\u200Cమ'],
+    ['an apostrophe', "O'Reilly"],
+    ['a curly apostrophe', 'O\u2019Reilly'],
+    ['an accent', 'Nestlé'],
+    ['an Arabic name', 'مرحبا'],
+  ])('keeps %s intact', (_label, name) => {
+    expect(sanitizeDisplayText(name)).toBe(name);
+  });
+
+  it.each([
+    ['a right-to-left override', 'a\u202Eb'],
+    ['a left-to-right override', 'a\u202Db'],
+    ['a zero-width space', 'a\u200Bb'],
+    ['a left-to-right mark', 'a\u200Eb'],
+    ['a right-to-left mark', 'a\u200Fb'],
+    ['a word joiner', 'a\u2060b'],
+    ['a byte-order mark', 'a\uFEFFb'],
+    ['an isolate', 'a\u2066b'],
+  ])('still strips %s', (_label, input) => {
+    expect(sanitizeDisplayText(input)).toBe('ab');
+  });
 });
