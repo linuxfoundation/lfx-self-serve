@@ -39,7 +39,7 @@ test.describe('Formations queue — structural contract', () => {
     });
 
     test('renders one stat tile per queue metric', async ({ page }) => {
-      for (const label of ['In formation', 'Ready to activate', 'Exploratory', 'Engaged']) {
+      for (const label of ['In formation', 'Ready to activate', 'Blocked', 'On hold']) {
         await expect(page.getByTestId(`stat-card-${label}`)).toBeVisible({ timeout: ELEMENT_TIMEOUT });
       }
     });
@@ -70,9 +70,11 @@ test.describe('Formations queue — structural contract', () => {
       await expect(headers.nth(4)).toHaveText('Blocking');
     });
 
-    test('renders one row per queue formation, keyed by uid', async ({ page }) => {
+    test('renders one row per queue formation, keyed by uid, each with a named progress bar and a blocking cell', async ({ page }) => {
       for (const row of mockFormationsQueue) {
         await expect(page.getByTestId(`formations-table-row-${row.formation_uid}`)).toBeAttached();
+        await expect(page.getByTestId(`formations-table-progress-${row.formation_uid}`).locator('[role="img"]')).toHaveAttribute('aria-label', /item/);
+        await expect(page.getByTestId(`formations-table-blocking-${row.formation_uid}`)).toBeAttached();
       }
     });
 

@@ -5,7 +5,9 @@
 
 Internal support note. Not Help Center copy.
 
-## Who can open `/org/easycla`
+## Who can open `/org/{organization}/easycla`
+
+The organization-addressed form is the page's address for every in-app link (spec 050 phase 2, lfx-self-serve#2743). The corporate-signing `return_url` the BFF mints follows only once the `ORG_EASYCLA_RETURN_IN_PATH` rollout gate is on (`ServerFeatureFlag.OrgEasyclaReturnInPath`, shipped `false` — see the chart README, "EasyCLA Signing Return Address"); until then every new return is still minted on the leftover `/org/easycla/{group}?org={org}&signed=1` shape, which every release reads. The leftover mount and its `?org=` reader stay for one release after the gate flips, then go under #2743 item 4.
 
 Anyone with an Organization Lens **Writer**, **Viewer** (auditor), or **Staff** grant on that organization. This is the page see-gate. It did not change.
 

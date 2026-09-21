@@ -516,17 +516,29 @@ export interface FormationChecklistResponse {
 }
 
 /**
- * Per-`sub_stage` counts for the queue's filter pills. `foundations` and `projects` name the
- * {@link FormationEntityType} derived taxonomy — `projects` counts both `child_project` and
- * `project` rows (i.e. every non-foundation), so a plain top-level project isn't dropped from the
- * breakdown while still counting toward `total`. Named `projects`, not `child_projects`, because
- * the taxonomy now deliberately distinguishes a plain top-level `project` from a `child_project`
- * and this aggregate deliberately includes both.
+ * The queue's server-side counts — the four stat tiles and the per-`sub_stage` filter-pill
+ * counts. Every count here is taken over the same pre-filter set (`total`'s), never over the rows a
+ * stage pill or search has narrowed, so the strip can't disagree with itself once a filter is
+ * active. `foundations` and `projects` name the {@link FormationEntityType} derived taxonomy —
+ * `projects` counts both `child_project` and `project` rows (i.e. every non-foundation), so a plain
+ * top-level project isn't dropped from the breakdown while still counting toward `total`. Named
+ * `projects`, not `child_projects`, because the taxonomy now deliberately distinguishes a plain
+ * top-level `project` from a `child_project` and this aggregate deliberately includes both.
  */
 export type FormationQueueTiles = Record<FormationSubStage, number> & {
   total: number;
   foundations: number;
   projects: number;
+  /**
+   * Rows whose every gating item is done (`gates_cleared`) — the "Ready to activate" tile. Counted
+   * here rather than client-side over the served rows, which are already filtered: that was how the
+   * tile used to read "0" the moment an Engaged pill hid the one ready Exploratory row.
+   */
+  ready: number;
+  /** Rows with at least one item in `blocked` status (`blocked_item_titles.length > 0`) — the "Blocked" tile. */
+  blocked: number;
+  /** Sum of `blocked_item_titles.length` across every row — the "Blocked" tile's "N blocked items" sub-line. */
+  blocked_items: number;
   /**
    * Rows whose upstream `sub_stage` has no {@link FormationSubStage} equivalent (GH-2366) —
    * `"Formation - Confidential"` or any other unrecognized value. `"Active"` and

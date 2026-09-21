@@ -97,7 +97,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Both halves: the URL carries the clicked row's signature id, and the page renders that row.
     // Asserting only the URL would pass while the page showed the first agreement in the list.
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${UNSIGNED_GROUP_ID}\\?sig=sig-unsigned$`), { timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${UNSIGNED_GROUP_ID}\\?sig=sig-unsigned$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-detail-title')).toHaveText('Lumen CLA');
   });
 
@@ -169,7 +169,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     expect(request.url()).toContain('/lens/cla-groups/sig-signed/pdf-url');
 
     // And the page it was asked from is the page the viewer is left on.
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${SIGNED_GROUP_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${SIGNED_GROUP_ID}$`));
   });
 
   test('reports a refused document as a failure, and stays on the page', async ({ page }) => {
@@ -188,7 +188,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
 
     // Silence is the real failure here: a refused document that leaves the button to settle back
     // with no message reads as a download that simply did nothing.
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${SIGNED_GROUP_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${SIGNED_GROUP_ID}$`));
   });
 
   test('offers no document for an agreement that was never signed', async ({ page }) => {
@@ -215,7 +215,7 @@ test.describe('Org Lens EasyCLA detail — content', () => {
     await gotoEasyclaDetail(page, UNHELD_GROUP_ID, stubList());
 
     await expect(page.getByTestId('org-easycla-detail-cannot-preview-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
-    await expect(page).toHaveURL(new RegExp(`/org/easycla/${UNHELD_GROUP_ID}$`));
+    await expect(page).toHaveURL(new RegExp(`/org/(?:[^/]+/)?easycla/${UNHELD_GROUP_ID}$`));
     await expect(page.getByTestId('org-easycla-detail-not-found-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-error-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-detail-header')).toHaveCount(0);

@@ -1,11 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpErrorResponse } from '@angular/common/http';
+import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ERROR_CODES } from '@lfx-one/shared/constants';
-import { FormationInviteDialogData } from '@lfx-one/shared/interfaces';
+import { By } from '@angular/platform-browser';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { FormGroup } from '@angular/forms';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
+import { ERROR_CODES, FORMATION_INVITE_NAME_NEEDED_SUMMARY } from '@lfx-one/shared/constants';
+import { FormationInviteDialogData, FormationInviteMode, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
+import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, Subject, throwError } from 'rxjs';
@@ -34,9 +40,13 @@ describe('FormationInviteDialogComponent', () => {
     await TestBed.configureTestingModule({
       imports: [FormationInviteDialogComponent],
       providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideNoopAnimations(),
         { provide: DynamicDialogRef, useValue: { close } },
         { provide: DynamicDialogConfig, useValue: { data } },
         { provide: PermissionsService, useValue: { addUserToProject, invalidateProjectSettings } },
+        { provide: SearchService, useValue: { searchUsers: vi.fn(() => of([])) } },
         { provide: MessageService, useValue: { add: toast } },
       ],
     }).compileComponents();
@@ -61,16 +71,138 @@ describe('FormationInviteDialogComponent', () => {
     component.form.setValue({ name, email, role });
   }
 
-  it('defaults the role to view', () => {
+  // The search/manual toggles and the picker's handlers are template-driven and protected, like onSubmit.
+  const handlers = (): {
+    switchToManual(): void;
+    backToSearch(): void;
+    onPersonPicked(user: UserSearchResult): void;
+    onPersonCleared(): void;
+    mode(): FormationInviteMode;
+    selectedLabel(): string;
+  } =>
+    component as unknown as {
+      switchToManual(): void;
+      backToSearch(): void;
+      onPersonPicked(user: UserSearchResult): void;
+      onPersonCleared(): void;
+      mode(): FormationInviteMode;
+      selectedLabel(): string;
+    };
+
+  // Await stability rather than forcing detectChanges — the file's own `submit()` pairs the two the same way.
+  async function switchToManual(): Promise<void> {
+    handlers().switchToManual();
+    await fixture.whenStable();
+  }
+
+  async function settle(): Promise<void> {
+    await fixture.whenStable();
+  }
+
+  const kim: UserSearchResult = {
+    uid: 'cm:kim',
+    email: 'kim.park@partner-corp.example',
+    first_name: 'Kim',
+    last_name: 'Park',
+    job_title: null,
+    organization: null,
+    committee: null,
+    type: 'committee_member',
+    username: 'kim.park',
+  };
+
+  it('defaults the role to view, and opens on the search path', () => {
     expect(component.form.controls.role.value).toBe('view');
+    expect(handlers().mode()).toBe('search');
   });
 
-  it('blocks an empty submission with both required errors and no request', async () => {
+  // #2772: the search path needs a pick (which supplies the name); only the manual path requires a typed name.
+  it('in search mode, an empty submission asks for a pick and requires no name', async () => {
+    await submit();
+
+    expect(addUserToProject).not.toHaveBeenCalled();
+    expect(errorId('email')).toBe('formation-invite-email-required');
+    expect(errorId('name')).toBeUndefined();
+  });
+
+  it('blocks an empty manual submission with both required errors and no request', async () => {
+    await switchToManual();
     await submit();
 
     expect(addUserToProject).not.toHaveBeenCalled();
     expect(errorId('name')).toBe('formation-invite-name-required');
     expect(errorId('email')).toBe('formation-invite-email-required');
+  });
+
+  it('a pick composes the name and the committed label; the in-field clear resets both', async () => {
+    // lfx-user-search writes the address into the bound `email` control before emitting the pick.
+    component.form.controls.email.setValue(kim.email);
+    handlers().onPersonPicked(kim);
+    await settle();
+
+    expect(component.form.controls.name.value).toBe('Kim Park');
+    expect(handlers().selectedLabel()).toBe('Kim Park (kim.park@partner-corp.example)');
+
+    handlers().onPersonCleared();
+    await settle();
+
+    expect(component.form.controls.name.value).toBe('');
+    expect(component.form.controls.email.value).toBe('');
+    expect(handlers().selectedLabel()).toBe('');
+  });
+
+  it('a directory miss for a pick that carried no name switches to manual entry, asks for the name, and does not re-send', async () => {
+    addUserToProject.mockReturnValueOnce(throwError(directoryMiss));
+    fill('', 'kim.park@partner-corp.example');
+    await submit();
+
+    expect(addUserToProject).toHaveBeenCalledTimes(1);
+    expect(handlers().mode()).toBe('manual');
+    expect(errorId('name')).toBe('formation-invite-name-required');
+    expect(component.form.controls.email.value).toBe('kim.park@partner-corp.example');
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ severity: 'info', summary: FORMATION_INVITE_NAME_NEEDED_SUMMARY }));
+    expect(close).not.toHaveBeenCalled();
+    expect((component as unknown as { submitting(): boolean }).submitting()).toBe(false);
+  });
+
+  // GH-2694: the click on "Enter details manually" blurs the search box first, which discards the
+  // typed text — the switch carries it into the field it belongs in instead of making the user retype it.
+  it('carries typed search text into the manual fields — an address into Email, anything else into Name', async () => {
+    const picker = (): UserSearchComponent => fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+    const typeThenBlur = (text: string): void => {
+      (picker() as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue(text, { emitEvent: false });
+      picker().onSearchBlur();
+    };
+
+    typeThenBlur('pat@partner.example');
+    await switchToManual();
+    expect(handlers().mode()).toBe('manual');
+    expect(component.form.controls.email.value).toBe('pat@partner.example');
+    expect(component.form.controls.name.value).toBe('');
+
+    handlers().backToSearch();
+    await settle();
+    typeThenBlur('Pat Lee');
+    await switchToManual();
+    expect(component.form.controls.name.value).toBe('Pat Lee');
+    expect(component.form.controls.email.value).toBe('');
+  });
+
+  it('back to search resets both fields and drops the manual name requirement', async () => {
+    await switchToManual();
+    fill('Kim Park', 'not-an-email');
+    await submit();
+    expect(errorId('email')).toBe('formation-invite-email-invalid');
+
+    handlers().backToSearch();
+    await settle();
+
+    expect(handlers().mode()).toBe('search');
+    expect(component.form.controls.name.value).toBe('');
+    expect(component.form.controls.email.value).toBe('');
+    expect(component.form.controls.name.valid).toBe(true);
+    expect(errorId('name')).toBeUndefined();
+    expect(errorId('email')).toBeUndefined();
   });
 
   it('rejects a malformed address without a request', async () => {

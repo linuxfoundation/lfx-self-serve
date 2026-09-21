@@ -5,7 +5,7 @@
 // Angular-dependent siblings. Without the compiler the suite fails to collect at all.
 import '@angular/compiler';
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { Request } from 'express';
 
@@ -35,11 +35,17 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
     '../../../../../packages/shared/src/utils/org-cla-permissions'
   );
+  const orgLensUrl = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-lens-url.utils')>(
+    '../../../../../packages/shared/src/utils/org-lens-url.utils'
+  );
   return {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
+    // The return-address builders ship as written: the spec asserts the minted shapes.
+    orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
+    legacyOrgEasyclaReturnPath: orgLensUrl.legacyOrgEasyclaReturnPath,
   };
 });
 
@@ -762,6 +768,16 @@ describe('OrgClaService.getSignOptions', () => {
 });
 
 describe('OrgClaService.requestCorporateSignature', () => {
+  // The return address is gated (spec 050 phase 2 rollout, #2743): this block runs with the gate ON —
+  // the target shape once every replica routes `/org/{org}/easycla`; the leftover shape is pinned
+  // separately below.
+  beforeEach(() => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', 'true');
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   const upstreamOk = {
     signature_id: 'signature-uuid-1',
     sign_url: 'https://docusign.example.org/session/1',
@@ -789,7 +805,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
-          return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1`,
+          return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
           authority_acked: true,
           embargo_acked: true,
         },
@@ -821,7 +837,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
       expect.anything(),
       expect.any(String),
       expect.objectContaining({
-        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/easycla/${CLA_GROUP_ID}?org=${ORG_UID}&signed=1` }),
+        body: expect.objectContaining({ return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1` }),
       })
     );
   });
@@ -836,7 +852,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
 
-    expect(new URL(body.return_url).pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
   });
 
   // The row is not on the organization's list the instant they arrive. Without the flag the page
@@ -853,8 +869,9 @@ describe('OrgClaService.requestCorporateSignature', () => {
 
   // Without this the signatory returns through a cross-site navigation carrying only a
   // `SameSite=Lax` cookie, and when it does not come back the page selects the first organization
-  // in their list — so signing for one company lands them looking at another.
-  it('names the organization on the return address rather than leaving the page to guess it', async () => {
+  // in their list — so signing for one company lands them looking at another. Since spec 050 the
+  // organization is the address's own segment (lfx-self-serve#2743), not a `?org=` parameter.
+  it('names the organization in the return address path rather than leaving the page to guess it', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 
     await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
@@ -862,12 +879,41 @@ describe('OrgClaService.requestCorporateSignature', () => {
     const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
     const returned = new URL(body.return_url);
 
-    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
     // The organization the grant check cleared and the request was made for, not a client value.
-    expect(returned.searchParams.get('org')).toBe(ORG_UID);
+    expect(returned.pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.has('org')).toBe(false);
   });
 
   // Self-sign still omits the mail fields. `send_as_email` in particular changes what the response means.
+  // Gate OFF (the default): a `return_url` is fixed when the session opens and may be served by a
+  // replica still on the previous release — during the rolling deploy or after a rollback — which
+  // only routes the leftover shape. Every release reads this one.
+  it('mints the leftover return address, organization in the query, while the rollout gate is off', async () => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', '');
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+    const returned = new URL(body.return_url);
+    expect(returned.pathname).toBe(`/org/easycla/${CLA_GROUP_ID}`);
+    expect(returned.searchParams.get('org')).toBe(ORG_UID);
+    expect(returned.searchParams.get('signed')).toBe('1');
+  });
+
+  // The gate reads through `isServerFeatureEnabled`, so it accepts the same spellings as every
+  // other server flag — an operator writing `=1` or `=on` per convention must not silently get
+  // the leftover shape.
+  it.each(['1', 'on', ' TRUE '])('accepts %j as the rollout gate being on', async (spelling) => {
+    vi.stubEnv('ORG_EASYCLA_RETURN_IN_PATH', spelling);
+    gatewayFetch.mockResolvedValueOnce(upstreamOk);
+
+    await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest());
+
+    const body = gatewayFetch.mock.calls[0][2].body as { return_url: string };
+    expect(new URL(body.return_url).pathname).toBe(`/org/${ORG_UID}/easycla/${CLA_GROUP_ID}`);
+  });
+
   it('sends none of the designee or send-by-email fields', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamOk);
 

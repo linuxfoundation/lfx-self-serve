@@ -610,6 +610,30 @@ this flag confers no data access a caller did not already have.
 key is publishable and protected by RLS, so that is correct — but a **service-role key in that slot
 would be published to every visitor**. Check the `role` claim before setting it.
 
+#### EasyCLA Signing Return Address
+
+| Parameter                                | Description                                                                                                                                                                             | Required | Default   |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | --------- |
+| `environment.ORG_EASYCLA_RETURN_IN_PATH` | Mint the corporate-signing `return_url` as `/org/{org}/easycla/{group}?signed=1` (organization in the path, spec 050) instead of the leftover `/org/easycla/{group}?org={org}&signed=1` | No       | `"false"` |
+
+Rollout gate for [lfx-self-serve#2743](https://github.com/linuxfoundation/lfx-self-serve/issues/2743).
+A `return_url` is fixed when the DocuSign session opens and is served by **whichever replica takes
+the return**, minutes or days later — during a rolling deploy, or after a rollback, that can be a
+release that only routes the leftover shape, where a new-shape return is an in-shell not-found.
+Every release routes and reads the leftover shape, which is what makes `"false"` safe in any overlap.
+Accepts the same spellings as the other server flags (`true`/`1`/`yes`/`on`).
+
+Order:
+
+1. Ship the release carrying the twin `/org/:orgSegment/easycla` route with this **off** (the default).
+2. Once that release is the rollback floor, set `"true"` — dev first, and verify a real DocuSign
+   return lands on `/org/{org}/easycla/{group}` — then prod.
+3. One release after it has been on for a full signing-session lifetime, remove the leftover
+   `/org/easycla` mount, its `?org=` reader and this knob together (#2743 item 4).
+
+Rollback of step 2 is setting `"false"` again; returns already minted in the new shape keep landing
+as long as the twin route is deployed, which is why step 1 precedes it.
+
 #### AI Service Configuration
 
 | Parameter                  | Description                              | Required | Default |

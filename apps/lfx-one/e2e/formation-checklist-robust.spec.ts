@@ -280,6 +280,23 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
     });
 
+    // #2594: the assignee picker lists the people on this formation — typing nests option rows from
+    // that list, and a pending invitee's option nests the note explaining it cannot be picked.
+    test('the assignee picker nests scoped-people options, with a note on a pending invitee', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
+
+      // The drawer's panel is portaled out of its <p-drawer> host, so its contents are page-level
+      // locators, never descendants of the drawer's own testid.
+      const search = page.getByTestId('formation-item-drawer-assignee-search').locator('input');
+      await expect(search).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await search.fill('jordan');
+
+      const option = page.getByRole('option', { name: /Jordan Lee/ });
+      await expect(option).toBeAttached();
+      await expect(option.getByTestId('formation-item-drawer-assignee-search-option-note')).toBeAttached();
+    });
+
     test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';

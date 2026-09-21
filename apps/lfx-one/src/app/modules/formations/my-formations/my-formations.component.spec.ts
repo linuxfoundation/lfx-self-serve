@@ -82,7 +82,7 @@ describe('MyFormationsComponent (#2753)', () => {
 
     expect(rowIds(fixture)).toEqual(['my-formations-row-formation-1']);
     expect(byTestId(fixture, 'my-formations-open-formation-1')?.textContent).toContain('Acme Project');
-    expect(byTestId(fixture, 'my-formations-stage-formation-1')?.textContent).toContain('Formation · Exploratory');
+    expect(byTestId(fixture, 'my-formations-stage-formation-1')?.textContent).toContain('Exploratory');
     expect(byTestId(fixture, 'my-formations-items-formation-1')?.textContent).toContain('2 to do · 1 done');
     expect(byTestId(fixture, 'my-formations-progress-formation-1')?.textContent).toContain('1 of 4');
     expect(byTestId(fixture, 'my-formations-progress-formation-1')?.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('25');

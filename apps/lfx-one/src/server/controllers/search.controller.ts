@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeOrganizationReference, UserSearchParams } from '@lfx-one/shared/interfaces';
+import { USER_SEARCH_TYPES } from '@lfx-one/shared/constants';
+import { CommitteeOrganizationReference, UserSearchParams, UserSearchType } from '@lfx-one/shared/interfaces';
 import { currentEmployerFromWorkExperiences } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -53,9 +54,9 @@ export class SearchController {
         return;
       }
 
-      // Validate type value
-      if (!['committee_member', 'meeting_registrant'].includes(type)) {
-        const validationError = ServiceValidationError.forField('type', 'Type must be either "committee_member" or "meeting_registrant"', {
+      // Validate type value against the shared allowlist `UserSearchType` is derived from
+      if (!(USER_SEARCH_TYPES as readonly string[]).includes(type)) {
+        const validationError = ServiceValidationError.forField('type', `Type must be one of: ${USER_SEARCH_TYPES.join(', ')}`, {
           operation: 'search_users',
           service: 'search_controller',
           path: req.path,
@@ -66,10 +67,12 @@ export class SearchController {
       }
 
       // Build search parameters
+      // A name typeahead asks for relevance ordering; the upstream default (`name_asc`) would hand
+      // back the alphabetically first page instead (see `UserSearchParams.sort`).
       const searchParams: UserSearchParams = {
-        ...(name ? { name: name as string } : {}),
+        ...(name ? { name: name as string, sort: 'best_match' as const } : {}),
         ...(tags ? { tags: tags as string } : {}),
-        type: type as 'committee_member' | 'meeting_registrant',
+        type: type as UserSearchType,
       };
 
       // Perform the search
