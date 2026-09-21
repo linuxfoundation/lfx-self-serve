@@ -661,21 +661,55 @@ export interface MentorshipMenteeTasksResponse {
   total: number;
 }
 
-/** Mentee's own profile detail fields on `/mentorship/mentee/profile`. */
+/**
+ * Mentee's own profile fields on `/mentorship/mentee/profile`.
+ *
+ * BFF mapping from `user_profiles` (`profile_type = mentee`) — do not invent columns:
+ * - `aboutMe` ← `introduction`
+ * - `skillsHave` ← `skill_set.skills`
+ * - `skillsWant` ← `skill_set.improvementSkills`
+ * - `additionalNotes` ← `skill_set.comments`
+ * - `resumeUrl` ← `profile_links.resumeLink` (Mentorship stores a URL; it has no upload API)
+ * - `resumeFileName` is display-only (derived from the URL). Not a stored column.
+ */
 export interface MentorshipMenteeProfileDetails {
-  /** Rich-text HTML or plain text authored on the Become a Mentee form. */
   aboutMe: string;
   skillsHave: string[];
   skillsWant: string[];
-  /** Optional resume file name, matching the picker on the register form. */
+  additionalNotes?: string;
   resumeFileName?: string;
-  /** Optional signed URL for the stored resume, if the upload endpoint is live. */
   resumeUrl?: string;
+}
+
+/**
+ * Stored `applications.status` values. Never send `rejected` (program-only) or `active`
+ * (directory filter only — persisted value is `accepted`).
+ */
+export type MentorshipMenteeApplicationHistoryStatus = 'pending' | 'accepted' | 'declined' | 'withdrawn' | 'graduated' | 'hold';
+
+/**
+ * One Application History row: an `applications` row with `role = mentee`, joined to
+ * `program_terms` + `programs`. Mentees are not `program_members`.
+ *
+ * - `id` ← `applications.id`
+ * - `programName` ← `programs.name` (`project_uid` is not a column — do not send a project)
+ * - `termName` ← `program_terms.name`
+ * - `submittedOn` ← BFF-formatted `applications.created_on`
+ * - `status` ← `applications.status`
+ */
+export interface MentorshipMenteeApplicationHistoryEntry {
+  id: string;
+  programName: string;
+  termName: string;
+  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  submittedOn: string;
+  status: MentorshipMenteeApplicationHistoryStatus;
 }
 
 /** Response body from `GET /api/mentorship/mentee/profile`. */
 export interface MentorshipMenteeProfileResponse {
   profile: MentorshipMenteeProfileDetails;
+  history: MentorshipMenteeApplicationHistoryEntry[];
 }
 
 // ---------------------------------------------------------------------------
