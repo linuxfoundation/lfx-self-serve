@@ -642,16 +642,38 @@ export interface MentorshipMentorProfileResponse {
 /** Underline tabs on the mentee shell at `/mentorship/mentee/*`. */
 export type MentorshipMenteePageTab = 'overview' | 'tasks' | 'profile';
 
-/** Mentee task lifecycle on the My Application Tasks tab. */
-export type MentorshipMenteeTaskStatus = 'pending' | 'in-progress' | 'submitted' | 'completed';
+/**
+ * Unified mentee task status — used by both applicant and accepted phases.
+ *
+ * | Backend value  | Display label |
+ * |----------------|---------------|
+ * | `pending`      | To Do         |
+ * | `incomplete`   | To Do         |
+ * | `in_progress`  | In Progress   |
+ * | `submitted`    | Submitted     |
+ * | `complete`     | Submitted     |
+ */
+export type MentorshipMenteeTaskStatus = 'pending' | 'incomplete' | 'in_progress' | 'submitted' | 'complete';
 
-/** One task row on the mentee My Application Tasks tab. */
+/**
+ * One task row on the mentee My Tasks tab (accepted/graduated phase).
+ *
+ * BFF mapping from `tasks`:
+ * - `submitFile` ← `tasks.submit_file` (`null` = no submission, `'required'` = needs upload, URL = file already uploaded)
+ * - `fileUrl` ← `tasks.file` (uploaded file URL, null until the mentee uploads)
+ */
 export interface MentorshipMenteeTask {
   id: string;
   title: string;
   description: string;
   status: MentorshipMenteeTaskStatus;
+  /** `null` = no submission needed, `'required'` = needs upload, URL string = file already uploaded */
+  submitFile: string | null;
+  /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
+  fileUrl?: string;
+  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). The BFF **must** normalise date-only values. */
   dueDate?: string;
+  /** BFF pre-formatted display string (e.g. `'Sep 12, 2026'`). Present when status is `'submitted'` or `'completed'`. */
   submittedDate?: string;
 }
 
@@ -659,6 +681,37 @@ export interface MentorshipMenteeTask {
 export interface MentorshipMenteeTasksResponse {
   data: MentorshipMenteeTask[];
   total: number;
+}
+
+// ---------------------------------------------------------------------------
+// Mentee application tasks — prerequisite tasks grouped by application
+// ---------------------------------------------------------------------------
+
+/** @deprecated Use `MentorshipMenteeTaskStatus` — kept as an alias for backward compatibility. */
+export type MentorshipMenteeApplicationTaskStatus = MentorshipMenteeTaskStatus;
+
+/**
+ * One prerequisite task row inside an application card on the My Application Tasks tab.
+ *
+ * BFF mapping from `tasks` (where `category = prerequisite`):
+ * - `submitFile` ← `tasks.submit_file` (`null` | `'required'` | URL)
+ * - `fileUrl` ← `tasks.file`
+ * - `dueDate` ← `tasks.due_date` normalised to UTC instant
+ * - `submittedOn` ← BFF pre-formatted `tasks.updated_on` when status is `'submitted'`
+ */
+export interface MentorshipMenteeApplicationTask {
+  id: string;
+  name: string;
+  description: string;
+  status: MentorshipMenteeApplicationTaskStatus;
+  /** `null` = no submission needed, `'required'` = needs upload, URL string = file already uploaded */
+  submitFile: string | null;
+  /** Uploaded file URL — present when `submitFile` is a URL or after a successful upload */
+  fileUrl?: string;
+  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). */
+  dueDate: string;
+  /** BFF pre-formatted display string when status is `'submitted'` (e.g. `'Jul 2, 2026'`). */
+  submittedOn?: string;
 }
 
 /**
@@ -752,6 +805,8 @@ export interface MentorshipMenteeApplication {
   prerequisiteTasksCompleted: number;
   prerequisiteTasksTotal: number;
   programLogoUrl?: string;
+  /** Prerequisite tasks for this application (populated on the My Application Tasks tab). */
+  tasks?: MentorshipMenteeApplicationTask[];
 }
 
 /**

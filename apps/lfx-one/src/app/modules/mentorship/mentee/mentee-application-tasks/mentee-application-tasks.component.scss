@@ -1,0 +1,21 @@
+:host ::ng-deep .mentee-task-status-dropdown {
+  &.p-select {
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    min-width: 6.5rem;
+    height: auto;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .p-select-label {
+    padding: 0.125rem 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: inherit;
+  }
+  .p-select-dropdown {
+    width: auto;
+    padding: 0 0.25rem;
+  }
+}

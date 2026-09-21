@@ -1,10 +1,269 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-5" data-testid="mentorship-mentee-application-tasks">
+<!-- ================================================================= -->
+<!-- APPLICANT PHASE — My Application Tasks                            -->
+<!-- ================================================================= -->
+@if (phase() === 'applicant') {
+  @if (!applicantLoaded()) {
+    <lfx-route-loading />
+  } @else if (applicantError(); as errorMessage) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      [title]="errorMessage"
+      subtitle="Check your connection and try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-rotate-right"
+      data-testid="mentee-tasks-applicant-error"
+      (ctaClick)="retryApplicant()" />
+  } @else {
+    @let data = applicantData();
+    @if (data) {
+      <div class="flex flex-col gap-8" data-testid="mentee-tasks-applicant">
+        @for (app of data.applications; track app.id; let idx = $index) {
+          <div class="flex flex-col gap-4">
+            <!-- Application header label -->
+            <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Application {{ idx + 1 }} of {{ data.applications.length }}</p>
+
+            <!-- Application card -->
+            <div class="rounded-xl border border-gray-200 bg-white" data-testid="mentee-tasks-application-card">
+              <!-- Card header -->
+              <div class="flex flex-col gap-1 border-b border-gray-100 px-6 py-4 bg-gray-50">
+                <div class="flex items-center gap-3">
+                  <h3 class="text-base font-semibold text-gray-900">{{ app.programName }}</h3>
+                  <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" [ngClass]="appStatusClasses[app.status]">
+                    {{ appStatusLabels[app.status] }}
+                  </span>
+                </div>
+                <p class="text-sm text-gray-500">
+                  {{ app.projectName }} &middot; {{ app.term.name }} &middot; {{ applicationSubmittedCount(app) }} of
+                  {{ app.tasks?.length ?? app.prerequisiteTasksTotal }} submitted
+                </p>
+              </div>
+
+              <!-- Prerequisite tasks -->
+              <div class="px-6 py-4">
+                <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">
+                  {{ prerequisiteLabel }}
+                </p>
+                <hr class="mb-3 border-gray-100" />
+                <div class="flex flex-col divide-y divide-gray-100">
+                  @for (task of app.tasks; track task.id) {
+                    <div class="flex flex-col gap-3 py-3 md:flex-row md:items-center md:gap-4" data-testid="mentee-tasks-task-row">
+                      <!-- Check icon -->
+                      <div class="flex items-center gap-3">
+                        @if (isTaskSubmitted(task.status)) {
+                          <i class="fa-solid fa-circle-check text-lg text-emerald-500" aria-hidden="true"></i>
+                        } @else {
+                          <i class="fa-light fa-circle text-lg text-gray-300" aria-hidden="true"></i>
+                        }
+                        <!-- Task name + description -->
+                        <div class="flex flex-col gap-0.5">
+                          <span class="text-sm font-medium text-gray-900">{{ task.name }}</span>
+                          <span class="text-xs text-gray-500">{{ task.description }}</span>
+                        </div>
+                      </div>
+
+                      <!-- Spacer -->
+                      <div class="flex-1"></div>
+
+                      <!-- File actions -->
+                      <div class="flex items-center gap-2">
+                        @if (hasUploadedFile(task)) {
+                          <button
+                            type="button"
+                            class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                            data-testid="mentee-tasks-view-file"
+                            (click)="onViewFile(task.fileUrl!)">
+                            <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+                          </button>
+                          <button
+                            type="button"
+                            class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                            data-testid="mentee-tasks-download-file"
+                            (click)="onDownloadFile(task.fileUrl!)">
+                            <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+                          </button>
+                        } @else if (needsUpload(task)) {
+                          <button
+                            type="button"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                            data-testid="mentee-tasks-upload"
+                            (click)="onUpload(task.id)">
+                            <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
+                            Upload
+                          </button>
+                        }
+                      </div>
+
+                      <!-- Status dropdown -->
+                      <div class="shrink-0">
+                        <lfx-select
+                          [form]="applicantForm()"
+                          [control]="task.id"
+                          [options]="taskStatusOptions"
+                          optionLabel="label"
+                          optionValue="value"
+                          size="small"
+                          variant="filled"
+                          [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
+                          [dataTest]="'mentee-tasks-status-dropdown'"
+                          (onChange)="onStatusChange(task.id)" />
+                      </div>
+
+                      <!-- Date -->
+                      <div class="shrink-0 text-right text-xs text-gray-500" style="min-width: 90px">
+                        @if (isTaskSubmitted(task.status) && task.submittedOn) {
+                          Submitted {{ task.submittedOn | date: 'MMM d, yyyy' }}
+                        } @else {
+                          Due {{ task.dueDate | date: 'MMM d, yyyy' : 'UTC' }}
+                        }
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  }
+}
+
+<!-- ================================================================= -->
+<!-- ACCEPTED PHASE — My Tasks                                         -->
+<!-- ================================================================= -->
+@if (phase() === 'accepted') {
+  @if (!acceptedLoaded()) {
+    <lfx-route-loading />
+  } @else if (acceptedError(); as errorMessage) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      [title]="errorMessage"
+      subtitle="Check your connection and try again."
+      ctaLabel="Retry"
+      ctaIcon="fa-light fa-rotate-right"
+      data-testid="mentee-tasks-accepted-error"
+      (ctaClick)="retryAccepted()" />
+  } @else {
+    <div class="flex flex-col gap-5" data-testid="mentee-tasks-accepted">
+      <!-- Filter bar -->
+      <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+        <!-- Filter chips -->
+        <div class="flex flex-wrap items-center gap-2" data-testid="mentee-tasks-filter-chips">
+          @for (opt of filterOptions; track opt.label) {
+            <button
+              type="button"
+              class="rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
+              [ngClass]="
+                activeFilter() === opt.value ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              "
+              (click)="onFilterChange(opt.value)">
+              {{ opt.label }}
+            </button>
+          }
+        </div>
+
+        <!-- Submitted summary -->
+        <p class="text-sm text-gray-500" data-testid="mentee-tasks-submitted-summary">
+          {{ submittedSummary() }}
+        </p>
+      </div>
+
+      <!-- Task list -->
+      <div class="rounded-xl border border-gray-200 bg-white">
+        <div class="flex flex-col divide-y divide-gray-100">
+          @for (task of filteredTasks(); track task.id) {
+            <div class="flex flex-col gap-3 px-6 py-4 md:flex-row md:items-center md:gap-4" data-testid="mentee-tasks-task-row">
+              <!-- Check icon -->
+              <div class="flex items-center gap-3">
+                @if (isTaskSubmitted(task.status)) {
+                  <i class="fa-solid fa-circle-check text-lg text-emerald-500" aria-hidden="true"></i>
+                } @else if (task.status === 'in_progress') {
+                  <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
+                } @else {
+                  <i class="fa-light fa-circle text-lg text-gray-300" aria-hidden="true"></i>
+                }
+                <!-- Task name + description -->
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-sm font-medium text-gray-900">{{ task.title }}</span>
+                  <span class="text-xs text-gray-500">{{ task.description }}</span>
+                </div>
+              </div>
+
+              <!-- Spacer -->
+              <div class="flex-1"></div>
+
+              <!-- File actions -->
+              <div class="flex items-center gap-2">
+                @if (hasUploadedFile(task)) {
+                  <button
+                    type="button"
+                    class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    data-testid="mentee-tasks-view-file"
+                    (click)="onViewFile(task.fileUrl!)">
+                    <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+                  </button>
+                  <button
+                    type="button"
+                    class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+                    data-testid="mentee-tasks-download-file"
+                    (click)="onDownloadFile(task.fileUrl!)">
+                    <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+                  </button>
+                } @else if (needsUpload(task)) {
+                  <button
+                    type="button"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                    data-testid="mentee-tasks-upload"
+                    (click)="onUpload(task.id)">
+                    <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
+                    Upload
+                  </button>
+                }
+              </div>
+
+              <!-- Status dropdown -->
+              <div class="shrink-0">
+                <lfx-select
+                  [form]="acceptedForm()"
+                  [control]="task.id"
+                  [options]="taskStatusOptions"
+                  optionLabel="label"
+                  optionValue="value"
+                  size="small"
+                  variant="filled"
+                  [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
+                  [dataTest]="'mentee-tasks-status-dropdown'"
+                  (onChange)="onStatusChange(task.id)" />
+              </div>
+
+              <!-- Date -->
+              <div class="shrink-0 text-right text-xs text-gray-500" style="min-width: 90px">
+                @if (isTaskSubmitted(task.status) && task.submittedDate) {
+                  Submitted {{ task.submittedDate | date: 'MMM d, yyyy' }}
+                } @else if (task.dueDate) {
+                  Due {{ task.dueDate | date: 'MMM d, yyyy' : 'UTC' }}
+                }
+              </div>
+            </div>
+          } @empty {
+            <div class="px-6 py-12 text-center text-sm text-gray-500">No tasks match the selected filter.</div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+}
+
+<!-- ================================================================= -->
+<!-- EMPTY PHASE — no tasks tab visible, but guard against it          -->
+<!-- ================================================================= -->
+@if (phase() === 'empty') {
   <lfx-empty-state
     icon="fa-light fa-list-check"
-    title="Coming Soon"
-    subtitle="Your application tasks will appear here once the feature is available."
-    data-testid="mentorship-mentee-application-tasks-placeholder" />
-</div>
+    title="No tasks yet"
+    subtitle="Apply to a mentorship program to see your application tasks here."
+    data-testid="mentee-tasks-empty" />
+}
