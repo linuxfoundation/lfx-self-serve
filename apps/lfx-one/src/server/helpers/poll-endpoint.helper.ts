@@ -5,12 +5,29 @@ import { Request } from 'express';
 
 import { logger } from '../services/logger.service';
 
+export interface PollEndpointContext {
+  /**
+   * Remaining wall-clock budget in ms — set only when `maxDurationMs` is. Callers should pass it
+   * as the per-request timeout of any upstream call inside `pollFn` so an in-flight request can
+   * never overshoot the deadline (a timeout throws, and a throw at/past the deadline is reported
+   * as budget exhaustion rather than an unexpected error).
+   */
+  remainingMs?: number;
+}
+
 export interface PollEndpointOptions {
   req: Request | undefined;
   operation: string;
-  pollFn: () => Promise<boolean>;
+  pollFn: (ctx: PollEndpointContext) => Promise<boolean>;
   maxRetries?: number;
   retryDelayMs?: number;
+  /**
+   * Wall-clock budget in ms covering request duration plus delays; polling stops once it is
+   * spent, even with attempts remaining. Attempt counts alone cannot bound wall-clock time —
+   * each `pollFn` call takes as long as its upstream request — so latency-sensitive callers
+   * must set this. Omit for attempt-count-only bounding.
+   */
+  maxDurationMs?: number;
   metadata?: Record<string, unknown>;
 }
 
@@ -20,16 +37,30 @@ export interface PollEndpointOptions {
  * - `pollFn` returns `true`  → polling resolved, stop retrying.
  * - `pollFn` returns `false` → condition not met, retry after delay.
  * - `pollFn` throws          → unexpected error, stop polling.
+ * - `pollFn` throws at/after the deadline → reported as budget exhaustion, not an unexpected
+ *   error (a tail request timing out at the deadline lands here); the error detail is still logged.
+ * - deadline passed          → `maxDurationMs` spent (request time counts), stop polling.
  *
- * Returns `true` if polling resolved, `false` if retries were exhausted
- * or an unexpected error occurred.
+ * Returns `true` if polling resolved, `false` if retries or the wall-clock budget were
+ * exhausted or an unexpected error occurred.
  */
 export async function pollEndpoint(options: PollEndpointOptions): Promise<boolean> {
-  const { req, operation, pollFn, maxRetries = 5, retryDelayMs = 2000, metadata = {} } = options;
+  const { req, operation, pollFn, maxRetries = 5, retryDelayMs = 2000, maxDurationMs, metadata = {} } = options;
+  const deadline = maxDurationMs === undefined ? undefined : Date.now() + maxDurationMs;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    const remainingMs = deadline === undefined ? undefined : deadline - Date.now();
+    if (remainingMs !== undefined && remainingMs <= 0) {
+      logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
+        ...metadata,
+        attempts_made: attempt - 1,
+        max_duration_ms: maxDurationMs,
+      });
+      return false;
+    }
+
     try {
-      const resolved = await pollFn();
+      const resolved = await pollFn({ remainingMs });
 
       if (resolved) {
         logger.debug(req, operation, 'Poll resolved successfully', { ...metadata, attempt });
@@ -37,12 +68,17 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
       }
 
       if (attempt < maxRetries) {
+        // The sleep is still taken when budget remains — it is only capped at the deadline, since
+        // time slept past it would be discarded by the next iteration's budget check anyway.
+        const delayMs = deadline === undefined ? retryDelayMs : Math.min(retryDelayMs, Math.max(deadline - Date.now(), 0));
         logger.debug(req, operation, 'Poll condition not met, retrying', {
           ...metadata,
           attempt,
-          next_retry_ms: retryDelayMs,
+          next_retry_ms: delayMs,
         });
-        await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+        if (delayMs > 0) {
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
         continue;
       }
 
@@ -52,6 +88,19 @@ export async function pollEndpoint(options: PollEndpointOptions): Promise<boolea
       });
       return false;
     } catch (error: any) {
+      // A tail request whose timeout aborts it at the deadline lands here — report it as budget
+      // exhaustion rather than a generic polling error, so the two signals stay distinguishable.
+      // The error detail still rides along: a throw coinciding with the deadline can be something
+      // other than exhaustion (e.g. an upstream 5xx), and the log must be able to tell them apart.
+      if (deadline !== undefined && Date.now() >= deadline) {
+        logger.warning(req, operation, 'Poll wall-clock budget exhausted, proceeding anyway', {
+          ...metadata,
+          attempts_made: attempt,
+          max_duration_ms: maxDurationMs,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return false;
+      }
       logger.warning(req, operation, 'Unexpected error during polling', {
         ...metadata,
         attempt,
@@ -75,6 +124,8 @@ export interface PollUntilIndexedOptions<T> {
 
 /**
  * Polls an endpoint until `pollFn` returns a non-null value (resource indexed).
+ * Attempt-count bounding only, by design — there is no wall-clock budget here; callers needing
+ * one use `pollEndpoint` with `maxDurationMs`.
  *
  * - `pollFn` returns `T`    → resource found, stop retrying.
  * - `pollFn` returns `null` → not yet indexed, retry after delay.
