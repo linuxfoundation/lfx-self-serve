@@ -462,7 +462,7 @@ describe('isPrivateHost', () => {
     // NOT just the /48 -- the first fix here matched `64:ff9b:1:` alone, so these two, with the
     // identical layout, still misdecoded. Only the TRUE well-known /96 is decodable; every other
     // prefix in 64:ff9b::/32 is undeclared at this layer and fails closed.
-    ['an unallocated /32 prefix whose tail spells a PUBLIC address', '64:ff9b:2:a9fe:a9:fe00:808:808'],
+    ['an unallocated prefix inside 64:ff9b::/32 whose tail spells a PUBLIC address', '64:ff9b:2:a9fe:a9:fe00:808:808'],
     ['the same layout with a zero middle group', '64:ff9b:0:a9fe:a9:fe00:808:808'],
     ['a high middle group', '64:ff9b:ffff::a9fe:a9fe'],
     // RFC 4291's MIXED form -- the trailing 32 bits written as a dotted quad. Same addresses,
@@ -470,7 +470,13 @@ describe('isPrivateHost', () => {
     ['the /96 mixed form carrying the metadata endpoint', '64:ff9b::169.254.169.254'],
     ['the /96 mixed form carrying RFC1918', '64:ff9b::10.0.0.1'],
     ['the /48 mixed form', '64:ff9b:1::169.254.169.254'],
-    ['an unallocated /32 in mixed form', '64:ff9b:2::8.8.8.8'],
+    // UNCOMPRESSED mixed notation: the dotted quad occupies ONE slot, so this expands to SEVEN
+    // parts and every `parts.length === 8` gate skipped it. The quad is folded into two hex
+    // groups inside expandIPv6 now, so no downstream rule has to know about the spelling.
+    ['the UNCOMPRESSED mixed form carrying the metadata endpoint', '64:ff9b:0:0:0:0:169.254.169.254'],
+    ['the UNCOMPRESSED mixed form carrying RFC1918', '64:ff9b:0:0:0:0:10.0.0.1'],
+    ['the UNCOMPRESSED /48 mixed form', '64:ff9b:1:0:0:0:169.254.169.254'],
+    ['an unallocated prefix inside the block, mixed form', '64:ff9b:2::8.8.8.8'],
   ])('denies %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(true);
   });
@@ -485,7 +491,13 @@ describe('isPrivateHost', () => {
     // NAT64-reachable public host.
     ['the /96 mixed form carrying a PUBLIC address', '64:ff9b::8.8.8.8', false],
     ['the /96 mixed form carrying another public address', '64:ff9b::93.184.216.34', false],
+    ['the UNCOMPRESSED mixed form carrying a PUBLIC address', '64:ff9b:0:0:0:0:8.8.8.8', false],
+    ['a ZERO-PADDED spelling of the well-known prefix, public', '0064:0ff9b:0:0:0:0:808:808', false],
     ['6to4 carrying a private address', '2002:a9fe:a9fe::', true],
+    ['6to4 private, fully expanded', '2002:a9fe:a9fe:0:0:0:0:0', true],
+    // The raw-string `/^2002:/` let this through; the group test does not.
+    ['6to4 private, ZERO-PADDED first group', '02002:a9fe:a9fe::', true],
+    ['6to4 public, zero-padded first group', '02002:808:808::', false],
     ['6to4 carrying a public address', '2002:808:808::', false],
   ])('still judges %s by its EMBEDDED address', (_label, host, expected) => {
     // The /48 denial must not swallow the prefixes that ARE decodable -- denying 64:ff9b::/96

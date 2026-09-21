@@ -472,12 +472,33 @@ export function isPrivateHost(hostname: string): boolean {
   // decode path handles every spelling of the same address.
   /** Every group of an IPv6 address, with `::` expanded to the zeros it elides. */
   const expandIPv6 = (value: string): string[] => {
-    if (!value.includes('::')) return value.split(':');
-    const [left, right] = value.split('::');
+    // A trailing DOTTED QUAD becomes its two hex groups FIRST, before anything counts parts.
+    //
+    // RFC 4291 allows the low 32 bits as `a.b.c.d`, which occupies ONE slot -- so
+    // `64:ff9b:0:0:0:0:169.254.169.254` expands to SEVEN parts, and every downstream rule that
+    // tests `parts.length === 8` skips it silently. That reopened the NAT64 bypass one commit
+    // after closing it, and it is the third length/shape assumption in this function that a
+    // legal spelling violated.
+    //
+    // Folding it in HERE, at the one place every rule reads from, means the mixed form cannot
+    // be a special case any rule has to remember -- which is what the per-rule patches kept
+    // getting wrong.
+    const quadToGroups = (v: string): string => {
+      const m = /^(.*:)((?:\d{1,3}\.){3}\d{1,3})$/.exec(v);
+      if (!m) return v;
+      const octets = m[2].split('.').map(Number);
+      if (octets.some((o) => !Number.isInteger(o) || o < 0 || o > 255)) return v;
+      const hi = ((octets[0] << 8) | octets[1]).toString(16);
+      const lo = ((octets[2] << 8) | octets[3]).toString(16);
+      return `${m[1]}${hi}:${lo}`;
+    };
+    const normalized = quadToGroups(value);
+    if (!normalized.includes('::')) return normalized.split(':');
+    const [left, right] = normalized.split('::');
     const head = left ? left.split(':') : [];
     const tail = right ? right.split(':') : [];
     const missing = 8 - head.length - tail.length;
-    if (missing < 0) return value.split(':');
+    if (missing < 0) return normalized.split(':');
     return [...head, ...Array(missing).fill('0'), ...tail];
   };
   const parts = expandIPv6(addr);
@@ -547,7 +568,8 @@ export function isPrivateHost(hostname: string): boolean {
     // literal alone misses it entirely: 64:ff9b::/96 is well-known NAT64 (RFC 6052) and
     // 2002::/16 is 6to4 (RFC 3056). campaign-service's dial-time guard decodes NAT64 for exactly
     // this reason; mirroring it here keeps the persisted value from carrying the payload at all.
-    // The last two groups are the embedded IPv4 in both encodings.
+    // NAT64 carries the address in its last two groups and 6to4 in groups 2-3, which is why the
+    // two are read differently below.
     // Only the TRUE well-known /96 is decodable; the rest of 64:ff9b::/32 fails closed.
     //
     // RFC 6052's well-known prefix is 64:ff9b::/96, i.e. groups 3-6 are all zero and the
@@ -566,25 +588,25 @@ export function isPrivateHost(hostname: string): boolean {
     // Fail-closed for the rest, matching campaign-service's dial-time guard: an address under a
     // prefix nobody declared cannot be decoded, and this layer has no prefix configuration to
     // consult, so every prefix but the well-known one is undeclared here.
-    const isWellKnownNat64 = parts.length === 8 && /^0*64$/.test(parts[0]) && /^0*ff9b$/.test(parts[1]) && parts.slice(2, 6).every((g) => /^0*$/.test(g));
+    // ONE predicate for the block, one for the decodable prefix within it -- the earlier version
+    // spelled the same test three ways, which is how they drift apart.
+    //
+    // `/^0+$/` not `/^0*$/`: the latter accepts an EMPTY group, and a malformed spelling with a
+    // gap is not a well-formed zero group. Expansion only produces '0' for elided groups, so a
+    // genuine well-known address is unaffected.
     const inNat64Block = parts.length === 8 && /^0*64$/.test(parts[0]) && /^0*ff9b$/.test(parts[1]);
+    const isWellKnownNat64 = inNat64Block && parts.slice(2, 6).every((g) => /^0+$/.test(g));
     if (inNat64Block && !isWellKnownNat64) return true;
 
     const isNat64 = isWellKnownNat64;
-    const is6to4 = /^2002:/.test(addr);
+    // Group-based, like the NAT64 test above: `/^2002:/` on the raw string let the zero-padded
+    // `02002:a9fe:a9fe::` through, and review was right that the paragraph above rules out
+    // exactly that shape of check while the next line used one.
+    const is6to4 = parts.length === 8 && /^0*2002$/.test(parts[0]);
     if (isNat64 || is6to4) {
       // The EXPANDED groups, not the non-empty ones: compression can elide a zero group inside
       // the embedded address (`[64:ff9b::a9fe]` is 0.0.169.254), and filtering empties reads the
       // wrong pair or none at all. `parts` is already expanded above.
-      // RFC 4291 allows the trailing 32 bits as a DOTTED QUAD -- `64:ff9b::8.8.8.8` is the same
-      // address as `64:ff9b::808:808`. Expansion leaves it in the last slot as one part, so the
-      // hex pair read below finds `8.8.8.8` in a group it expects to be hex, fails, and hits the
-      // fail-closed return -- denying every NAT64-reachable PUBLIC host. Handled before the hex
-      // path rather than after, since the quad already IS the embedded address.
-      const lastPart = parts[parts.length - 1] ?? '';
-      if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(lastPart)) {
-        return isPrivateHost(lastPart);
-      }
       const pair = isNat64 ? parts.slice(-2) : parts.slice(1, 3);
       if (pair.length === 2 && pair.every((g) => /^[0-9a-f]{1,4}$/.test(g))) {
         const hi = parseInt(pair[0], 16);
