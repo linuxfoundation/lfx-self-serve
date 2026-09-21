@@ -253,6 +253,35 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(true);
     });
 
+    // The integrated flow (Copilot on lfx-self-serve#2793): the default write produces the addressed
+    // route, whose guard takes the shortcut and pins as 'address'. That must not upgrade the default
+    // pin, or no org-items reload could ever release a revoked default.
+    it('the guard shortcut does not upgrade a default pin to an address pin', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.pinSelection('address');
+
+      expect(service.isAddressedSelection()).toBe(true);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    it('a resolver adoption does set an address pin over a default one', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.adoptFromAddress(addressedB);
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('a pin on a different organization replaces the old pin outright', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.setAccount(seedA);
+      service.pinSelection('address');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
     it('clearAccount releases both kinds', () => {
       service.setAccount(addressedB);
       service.pinSelection('address');
