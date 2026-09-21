@@ -2002,6 +2002,7 @@ describe('OrgEasyclaDetailComponent', () => {
               selectedUrlSegment,
               hasOrgSelectorAccess,
               setAccount: (account: { uid?: string; accountName: string }) => selectedAccount.set(account),
+              adoptFromAddress: (account: { uid?: string; accountName: string }) => selectedAccount.set(account),
               refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
             },
           },

@@ -24,6 +24,7 @@ describe('orgPathParamGuard', () => {
   let platformId: string;
   let selectedAccount: WritableSignal<Account>;
   let adoptFromAddress: Mock;
+  let pinSelection: Mock;
   let clearAccount: Mock;
   let refreshCanonicalRecord: Mock;
   let resolve: Mock;
@@ -62,6 +63,7 @@ describe('orgPathParamGuard', () => {
     platformId = 'browser';
     selectedAccount = signal<Account>(placeholder);
     adoptFromAddress = vi.fn((next: Account) => selectedAccount.set(next));
+    pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
     resolve = vi.fn().mockReturnValue(of(null));
@@ -70,7 +72,7 @@ describe('orgPathParamGuard', () => {
       providers: [
         provideRouter([]),
         { provide: PLATFORM_ID, useFactory: () => platformId },
-        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, clearAccount, refreshCanonicalRecord } },
+        { provide: AccountContextService, useValue: { selectedAccount, adoptFromAddress, pinSelection, clearAccount, refreshCanonicalRecord } },
         { provide: OrgSlugResolverService, useValue: { resolve } },
       ],
     });
@@ -144,6 +146,30 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug: 'acme-inc' }));
       expect(await outcome(UID_A, `/org/${UID_A}/projects/abc?tab=active#top`)).toBe('/org/acme-inc/projects/abc?tab=active#top');
       expect(resolve).not.toHaveBeenCalled();
+    });
+
+    // lfx-self-serve#2570 (prod): the address names the selection, so the selection is addressed and
+    // is pinned exactly as a resolver hit would be. A selection that reached the address by any other
+    // route (the org-items default, the cookie) is otherwise left unpinned here, and a later persona
+    // refresh — empty for a staff viewer — re-seeds over it under the address it does not match.
+    it.each([
+      ['slug', 'acme-inc', '/org/acme-inc/overview', true],
+      ['SFID (no slug)', null, `/org/${UID_A}/overview`, true],
+      ['SFID (slug known — canonicalizes)', 'acme-inc', `/org/${UID_A}/overview`, '/org/acme-inc/overview'],
+    ])('pins the already-selected organization when the address names it by %s, with the shortcut outcome intact', async (_label, slug, url, expected) => {
+      selectedAccount.set(account({ uid: UID_A, slug }));
+      expect(await outcome(url.split('/')[2], url)).toBe(expected);
+      expect(pinSelection).toHaveBeenCalledTimes(1);
+      expect(pinSelection).toHaveBeenCalledWith('address');
+      expect(adoptFromAddress).not.toHaveBeenCalled();
+      expect(resolve).not.toHaveBeenCalled();
+    });
+
+    it('does not pin through the shortcut when the resolver is the one answering', async () => {
+      resolve.mockReturnValue(of(hit(UID_B, 'beta')));
+      await outcome('beta', '/org/beta/overview');
+      expect(adoptFromAddress).toHaveBeenCalledTimes(1);
+      expect(pinSelection).not.toHaveBeenCalled();
     });
 
     it('keeps the SFID form when the organization is known to have no slug', async () => {

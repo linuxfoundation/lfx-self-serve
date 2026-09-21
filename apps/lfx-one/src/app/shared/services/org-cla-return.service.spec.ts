@@ -19,14 +19,14 @@ describe('OrgClaReturnService', () => {
   let items: ReturnType<typeof signal>;
   let loaded: ReturnType<typeof signal<boolean>>;
   let resetAndReload: ReturnType<typeof vi.fn>;
-  let setAccount: ReturnType<typeof vi.fn>;
+  let adoptFromAddress: ReturnType<typeof vi.fn>;
   let service: OrgClaReturnService;
 
   beforeEach(() => {
     items = signal([catalogueItem(ELSEWHERE)]);
     loaded = signal(true);
     resetAndReload = vi.fn();
-    setAccount = vi.fn();
+    adoptFromAddress = vi.fn();
 
     TestBed.configureTestingModule({
       providers: [
@@ -35,7 +35,7 @@ describe('OrgClaReturnService', () => {
           provide: AccountContextService,
           useValue: {
             hasOrgSelectorAccess: signal(true),
-            setAccount,
+            adoptFromAddress,
             refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
           },
         },
@@ -73,7 +73,7 @@ describe('OrgClaReturnService', () => {
 
     expect(resetAndReload).toHaveBeenCalledWith(NAMED.uid);
     expect(match?.uid).toBe(NAMED.uid);
-    expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: NAMED.uid, accountName: NAMED.name }));
+    expect(adoptFromAddress).toHaveBeenCalledWith(expect.objectContaining({ uid: NAMED.uid, accountName: NAMED.name }));
   });
 
   it('does not start a pin reload when the catalogue already lists the name', async () => {

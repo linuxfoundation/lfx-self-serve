@@ -66,6 +66,17 @@ export class OrgLensNavigationService {
   }
 
   /**
+   * True when the router's current address names an organization — `/org/{segment}/…` where the
+   * segment is not a page name and not the not-found dead end. On such a page the selection may
+   * only change by a switch that re-addresses it; a default written from the org list would leave
+   * the address naming one organization and the page rendering another (spec 050 FR-013/FR-022).
+   */
+  public isOnAddressedPage(): boolean {
+    const segments = this.currentPrimarySegments();
+    return segments[0] === 'org' && !!segments[1] && ORG_LENS_PAGE_SEGMENTS[segments[1]] !== true && !this.isNotFoundAddress(segments);
+  }
+
+  /**
    * Re-address the current page to the selected organization. No-op outside Org Lens (a switch
    * from the Me or Project lens changes the selection only), when no segment is known yet, or when
    * the address already names the selected organization (FR-014). EasyCLA pages follow the same
