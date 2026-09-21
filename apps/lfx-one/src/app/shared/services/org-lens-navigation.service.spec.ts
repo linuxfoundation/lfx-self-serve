@@ -76,6 +76,23 @@ describe('OrgLensNavigationService', () => {
       expect(navigatedTo()).toBe(expected);
     });
 
+    // A switch off a pre-deploy return (`/org/easycla/{g}?org={A}&signed=1`) must not carry the
+    // return state onto the organization-addressed page: preserved, `?org=` would be re-adopted
+    // under B's address (undoing the switch) and `?signed=1` would resume A's wait under B.
+    it('drops the legacy return parameters when a switch leaves a legacy EasyCLA address', () => {
+      currentUrl = '/org/easycla/abc-123?org=0014100000MgbBBBBB&signed=1&sig=s1';
+      service.navigateToSelectedOrg('switch');
+      expect(navigatedTo()).toBe('/org/acme-inc/easycla/abc-123');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'merge', queryParams: { org: null, signed: null } }));
+    });
+
+    it('preserves the query on a switch between organization-addressed EasyCLA pages', () => {
+      currentUrl = '/org/other-org/easycla/abc-123?sig=s1';
+      service.navigateToSelectedOrg('switch');
+      expect(navigate.mock.calls[0][1]).toEqual(expect.objectContaining({ queryParamsHandling: 'preserve' }));
+      expect(navigate.mock.calls[0][1]).not.toHaveProperty('queryParams');
+    });
+
     // Why the selector's same-org early return is load-bearing: on a legacy address a switch does
     // not know the selection is unchanged (there is no segment to compare) and inserts regardless.
     it('inserts the organization on a legacy page address even when the selection did not change', () => {

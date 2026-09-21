@@ -47,6 +47,12 @@ describe('OrgEasyclaDetailComponent', () => {
   const OTHER_ORG = { uid: '0014100000OtherOrgAA', accountName: 'Other' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
+  /** Which mount the page is rendered under: the legacy `/org/easycla/…` (no `orgSegment` ancestor) or `/org/{segment}/easycla/…`. */
+  let orgSegment: string | null = null;
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [
+    { paramMap: convertToParamMap(orgSegment ? { orgSegment } : {}) },
+    { paramMap: paramMap.value },
+  ];
   // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
   const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
@@ -105,7 +111,7 @@ describe('OrgEasyclaDetailComponent', () => {
         provideNoopAnimations(),
         {
           provide: ActivatedRoute,
-          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
@@ -165,6 +171,7 @@ describe('OrgEasyclaDetailComponent', () => {
   }
 
   beforeEach(() => {
+    orgSegment = null;
     selectedAccount.set(SELECTED_ACCOUNT);
     hasOrgSelectorAccess.set(true);
     grantsLoaded.set(true);
@@ -1925,8 +1932,11 @@ describe('OrgEasyclaDetailComponent', () => {
          * waits there while the page carries on. The case lands it by calling `landAdoption`.
          */
         adoptionLandsLater?: Held[];
+        /** Render under `/org/{orgSegment}/easycla/…` instead of the legacy mount. */
+        orgSegment?: string;
       } = {}
     ) {
+      orgSegment = options.orgSegment ?? null;
       const {
         org = NAMED.uid,
         flag = '1',
@@ -1980,7 +1990,7 @@ describe('OrgEasyclaDetailComponent', () => {
           provideNoopAnimations(),
           {
             provide: ActivatedRoute,
-            useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+            useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
           },
           {
             provide: AccountContextService,
@@ -2039,6 +2049,15 @@ describe('OrgEasyclaDetailComponent', () => {
       await renderReturn();
 
       expect(selectedAccount()?.uid).toBe(NAMED.uid);
+    });
+
+    // Spec 050 phase 2: under `/org/{segment}/easycla/…` the path names the organization and the
+    // path guard is its authority. A `?org=` there — carried over by a switch off a legacy return,
+    // or crafted — must not override it: the selection stays what the guard adopted.
+    it('ignores ?org= on the organization-addressed mount', async () => {
+      await renderReturn({ orgSegment: 'containership-inc' });
+
+      expect(selectedAccount()?.uid).toBe(SELECTED_ACCOUNT.uid);
     });
 
     /**
@@ -2528,6 +2547,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [{ paramMap: convertToParamMap({}) }, { paramMap: paramMap.value }];
   // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
   const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   // Both halves of the address (#2364), as the main describe above supplies them: the CLA Group in
@@ -2568,7 +2588,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         provideNoopAnimations(),
         {
           provide: ActivatedRoute,
-          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value } },
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },

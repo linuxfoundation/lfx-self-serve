@@ -3,7 +3,7 @@
 
 import { inject, Injectable } from '@angular/core';
 import { Router } from '@angular/router';
-import { ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_SEGMENTS } from '@lfx-one/shared/constants';
+import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_LENS_PAGE_SEGMENTS, ORG_NOT_FOUND_SEGMENTS } from '@lfx-one/shared/constants';
 import { OrgLensAddressIntent } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
@@ -86,6 +86,10 @@ export class OrgLensNavigationService {
     if (intent === 'default' && segments[1] === 'easycla') {
       return;
     }
+    // A viewer's switch off that legacy address must not carry the return state with it: preserved,
+    // `?org={A}` would be re-adopted by the re-mounted page under B's address (undoing the switch),
+    // and `?signed=1` would resume a wait for A's row under B. The organization is in the path now.
+    const leavingLegacyReturn = segments[1] === 'easycla';
     const segment = this.accountContext.selectedUrlSegment();
     if (!segment) {
       return;
@@ -127,8 +131,10 @@ export class OrgLensNavigationService {
     // now showing the new selection.
     void this.router.navigate(['/org', segment, ...child], {
       replaceUrl: intent === 'default' || canonicalizes,
-      queryParamsHandling: 'preserve',
       preserveFragment: true,
+      ...(leavingLegacyReturn
+        ? { queryParamsHandling: 'merge', queryParams: { [ORG_EASYCLA_RETURN_ORG_PARAM]: null, [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null } }
+        : { queryParamsHandling: 'preserve' }),
     });
   }
 

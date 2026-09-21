@@ -1136,8 +1136,13 @@ export class OrgEasyclaDetailComponent {
    * make the page withhold a render it should be showing.
    */
   private readReturnOrgUid(): string | null {
-    if (!this.readReturnFlag()) return null;
+    if (!this.readReturnFlag() || !this.isOnLegacyMount()) return null;
     return this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+  }
+
+  /** True on the legacy `/org/easycla/…` mount — the only place the pre-deploy `?org=` return parameter is honoured. */
+  private isOnLegacyMount(): boolean {
+    return !this.route.snapshot.pathFromRoot.some((r) => r.paramMap.has('orgSegment'));
   }
 
   /**
@@ -1159,7 +1164,11 @@ export class OrgEasyclaDetailComponent {
     // and the address rewrite at the end is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
+    // `?org=` is a legacy-mount reader (`/org/easycla/…`, one release for pre-deploy returns). Under
+    // `/org/:orgSegment/easycla/…` the path names the organization and `orgPathParamGuard` is its
+    // authority; a `?org=` there is stale or crafted and is ignored — the wait, if flagged, runs
+    // against the addressed selection.
+    const named = this.isOnLegacyMount() ? this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM) : null;
     if (!named && !this.awaitingSignedRow()) return;
 
     // A flagged address with no organization on it: there is nothing to adopt and nothing to order

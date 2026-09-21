@@ -432,6 +432,10 @@ export class OrgEasyclaComponent {
     // The address is only followed in a browser, and the strip below is a browser navigation.
     if (!isPlatformBrowser(this.platformId)) return;
 
+    // Legacy mount only (`/org/easycla…`, one release for pre-deploy returns): under
+    // `/org/:orgSegment/easycla` the path names the organization and `orgPathParamGuard` is its
+    // authority — a `?org=` there is a stale or crafted parameter and must not override it.
+    if (this.route.snapshot.pathFromRoot.some((r) => r.paramMap.has('orgSegment'))) return;
     const named = this.route.snapshot.queryParamMap.get(ORG_EASYCLA_RETURN_ORG_PARAM);
     if (!named) return;
 

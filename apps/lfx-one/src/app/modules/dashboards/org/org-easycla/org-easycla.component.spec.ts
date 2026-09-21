@@ -250,7 +250,7 @@ describe('OrgEasyclaComponent', () => {
         providers: [
           provideRouter([]),
           provideNoopAnimations(),
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), pathFromRoot: [] } } },
           { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
           { provide: PersonaService, useValue: { personaLoaded } },
@@ -1073,7 +1073,11 @@ describe('OrgEasyclaComponent', () => {
       };
     }
 
-    async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
+    async function renderReturnedFrom(
+      namedOrg: string | null,
+      catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT],
+      opts: { holdPin?: boolean; orgSegment?: string } = {}
+    ) {
       const setAccount = vi.fn();
       const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
@@ -1097,7 +1101,16 @@ describe('OrgEasyclaComponent', () => {
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          {
+            provide: ActivatedRoute,
+            useValue: {
+              snapshot: {
+                queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}),
+                // Legacy mount by default (no `orgSegment` ancestor); the org-addressed mount when given.
+                pathFromRoot: opts.orgSegment ? [{ paramMap: convertToParamMap({ orgSegment: opts.orgSegment }) }, { paramMap: convertToParamMap({}) }] : [],
+              },
+            },
+          },
           MessageService,
         ],
       })
@@ -1126,6 +1139,15 @@ describe('OrgEasyclaComponent', () => {
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
+    // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is ignored.
+    it('ignores ?org= on the organization-addressed mount', async () => {
+      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], { orgSegment: 'containership-inc' });
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
