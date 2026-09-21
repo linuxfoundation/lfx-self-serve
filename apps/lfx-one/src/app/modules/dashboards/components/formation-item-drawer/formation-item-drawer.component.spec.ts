@@ -10,8 +10,16 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
-import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
-import { FormationItem, FormationItemDetail, UserSearchResult } from '@lfx-one/shared/interfaces';
+import {
+  createFormationAllAvailableActions,
+  createUnavailableFormationPeopleResponse,
+  FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER,
+  FORMATION_ASSIGNEE_EMPTY_MESSAGE,
+  FORMATION_ASSIGNEE_LOADING_PLACEHOLDER,
+  FORMATION_ASSIGNEE_PENDING_NOTE,
+  FORMATION_ASSIGNEE_PLACEHOLDER,
+} from '@lfx-one/shared/constants';
+import { FormationItem, FormationItemDetail, FormationPeopleResponse, FormationPerson, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { NEVER, of, Subject, throwError } from 'rxjs';
@@ -71,6 +79,26 @@ function buildUserSearchResult(overrides: Partial<UserSearchResult>): UserSearch
   };
 }
 
+function buildPerson(overrides: Partial<FormationPerson>): FormationPerson {
+  return {
+    key: 'jdoe',
+    username: 'jdoe',
+    name: 'Jane Doe',
+    email: 'jdoe@example.com',
+    role: 'view',
+    group: 'invited',
+    is_pending: false,
+    job_title: null,
+    organization: null,
+    avatar: null,
+    ...overrides,
+  };
+}
+
+function buildPeople(people: FormationPerson[]): FormationPeopleResponse {
+  return { state: 'loaded', people };
+}
+
 describe('FormationItemDrawerComponent', () => {
   let fixture: ComponentFixture<FormationItemDrawerComponent>;
 
@@ -87,10 +115,13 @@ describe('FormationItemDrawerComponent', () => {
     readOnly: boolean,
     overrides?: {
       getFormationItem?: ReturnType<typeof vi.fn>;
+      getFormationPeople?: ReturnType<typeof vi.fn>;
       updateFormationItem?: ReturnType<typeof vi.fn>;
       updateFormationItemAssignment?: ReturnType<typeof vi.fn>;
       updateFormationItemStatus?: ReturnType<typeof vi.fn>;
       messageServiceAdd?: ReturnType<typeof vi.fn>;
+      /** The people read behind the assignee picker only runs when the host binds a slug (#2594); most tests leave it unbound. */
+      projectSlug?: string;
     },
     canWrite = true,
     // Defaults to canWrite for fixture brevity; production keeps them independent (GH-2705:
@@ -99,6 +130,7 @@ describe('FormationItemDrawerComponent', () => {
   ): Promise<void> => {
     TestBed.resetTestingModule();
     const getFormationItemMock = overrides?.getFormationItem ?? vi.fn().mockReturnValue(of(buildDetail(item)));
+    const getFormationPeopleMock = overrides?.getFormationPeople ?? vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse()));
     const updateFormationItemMock = overrides?.updateFormationItem ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const updateFormationItemAssignmentMock = overrides?.updateFormationItemAssignment ?? vi.fn().mockReturnValue(of({ item, etag: null }));
     const updateFormationItemStatusMock = overrides?.updateFormationItemStatus ?? vi.fn().mockReturnValue(of({ item, etag: null }));
@@ -118,6 +150,7 @@ describe('FormationItemDrawerComponent', () => {
           provide: FormationService,
           useValue: {
             getFormationItem: getFormationItemMock,
+            getFormationPeople: getFormationPeopleMock,
             updateFormationItem: updateFormationItemMock,
             updateFormationItemAssignment: updateFormationItemAssignmentMock,
             updateFormationItemStatus: updateFormationItemStatusMock,
@@ -129,6 +162,7 @@ describe('FormationItemDrawerComponent', () => {
     fixture = TestBed.createComponent(FormationItemDrawerComponent);
     fixture.componentRef.setInput('itemProjectUid', item.project_uid);
     fixture.componentRef.setInput('itemKey', item.template_item_key);
+    fixture.componentRef.setInput('projectSlug', overrides?.projectSlug ?? null);
     fixture.componentRef.setInput('readOnly', readOnly);
     fixture.componentRef.setInput('canWrite', canWrite);
     fixture.componentRef.setInput('canSetStatus', canSetStatus);
@@ -492,6 +526,96 @@ describe('FormationItemDrawerComponent', () => {
   });
 
   describe('assignee (#2583)', () => {
+    // #2594: the picker offers the people on this formation (the project's grant holders — the
+    // only population upstream accepts as an assignee) rather than a global directory, and falls
+    // back to the directory only while that list is unavailable.
+    describe('scoped to the people on this formation (#2594)', () => {
+      const assigneeInput = (): HTMLInputElement | null => query('[data-testid="formation-item-drawer-assignee"] input') as HTMLInputElement | null;
+
+      it('reads the people list on open when the host binds a slug and hands it to the picker as candidates, pending rows disabled', async () => {
+        const item = buildItem({ owner: null });
+        const getFormationPeopleMock = vi
+          .fn()
+          .mockReturnValue(
+            of(
+              buildPeople([
+                buildPerson({}),
+                buildPerson({ key: 'pat@partner.example', username: null, name: 'Pat Lee', email: 'pat@partner.example', is_pending: true }),
+              ])
+            )
+          );
+        await render(item, false, { getFormationPeople: getFormationPeopleMock, projectSlug: 'demo-project' });
+
+        expect(getFormationPeopleMock).toHaveBeenCalledWith('demo-project');
+        const picker = queryUserSearch();
+        expect(picker.candidates()?.map((candidate) => [candidate.username, candidate.email, candidate.disabled, candidate.note])).toEqual([
+          ['jdoe', 'jdoe@example.com', false, null],
+          [null, 'pat@partner.example', true, FORMATION_ASSIGNEE_PENDING_NOTE],
+        ]);
+        expect(picker.placeholder()).toBe(FORMATION_ASSIGNEE_PLACEHOLDER);
+        expect(picker.emptyMessage()).toBe(FORMATION_ASSIGNEE_EMPTY_MESSAGE);
+        expect(picker.readonly()).toBe(false);
+      });
+
+      it('renders the committed assignee as name and email once the people list knows the username', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+        await render(item, false, { getFormationPeople: vi.fn().mockReturnValue(of(buildPeople([buildPerson({})]))), projectSlug: 'demo-project' });
+
+        expect(ownerUsernameValue()).toBe('jdoe');
+        expect(assigneeInput()?.value).toBe('Jane Doe (jdoe@example.com)');
+      });
+
+      it('falls back to the directory search when the people read is unavailable, labelling the owner by the enriched name the item carries (#2742)', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'Jane Doe' } });
+        await render(item, false, { getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())), projectSlug: 'demo-project' });
+
+        const picker = queryUserSearch();
+        expect(picker.candidates()).toBeNull();
+        expect(picker.searchType()).toBe('committee_member');
+        expect(picker.placeholder()).toBe(FORMATION_ASSIGNEE_DIRECTORY_PLACEHOLDER);
+        expect(assigneeInput()?.value).toBe('Jane Doe');
+      });
+
+      it('shows the bare username when neither the people list nor the item carries a name for it', async () => {
+        const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
+        await render(item, false, { getFormationPeople: vi.fn().mockReturnValue(of(createUnavailableFormationPeopleResponse())), projectSlug: 'demo-project' });
+
+        expect(assigneeInput()?.value).toBe('jdoe');
+      });
+
+      it('does not read the people list when the host binds no slug', async () => {
+        const getFormationPeopleMock = vi.fn().mockReturnValue(of(buildPeople([buildPerson({})])));
+        await render(buildItem({ owner: null }), false, { getFormationPeople: getFormationPeopleMock });
+
+        expect(getFormationPeopleMock).not.toHaveBeenCalled();
+        expect(queryUserSearch().candidates()).toBeNull();
+      });
+
+      it('refuses a pending invitee picked by keyboard with the row’s own note, leaving the assignee untouched', async () => {
+        const messageServiceAddMock = vi.fn();
+        const pending = buildPerson({ key: 'pat@partner.example', username: null, name: 'Pat Lee', email: 'pat@partner.example', is_pending: true });
+        await render(buildItem({ owner: null }), false, {
+          getFormationPeople: vi.fn().mockReturnValue(of(buildPeople([pending]))),
+          messageServiceAdd: messageServiceAddMock,
+          projectSlug: 'demo-project',
+        });
+
+        const [candidate] = queryUserSearch().candidates() ?? [];
+        queryUserSearch().onUserSelected({ value: candidate } as AutoCompleteSelectEvent);
+
+        expect(ownerUsernameValue()).toBe('');
+        expect(messageServiceAddMock).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', detail: FORMATION_ASSIGNEE_PENDING_NOTE }));
+      });
+
+      it('keeps the picker read-only while the people read is in flight, so a fast typist cannot search the wrong corpus', async () => {
+        await render(buildItem({ owner: null }), false, { getFormationPeople: vi.fn().mockReturnValue(NEVER), projectSlug: 'demo-project' });
+
+        const picker = queryUserSearch();
+        expect(picker.readonly()).toBe(true);
+        expect(picker.placeholder()).toBe(FORMATION_ASSIGNEE_LOADING_PLACEHOLDER);
+      });
+    });
+
     it('renders an existing assignee on open', async () => {
       const item = buildItem({ owner: { username: 'jdoe', name: 'jdoe' } });
       await render(item, false);

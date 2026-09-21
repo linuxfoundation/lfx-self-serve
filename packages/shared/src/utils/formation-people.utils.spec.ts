@@ -3,17 +3,19 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
+import { FORMATION_ASSIGNEE_PENDING_NOTE, LF_STAFF_EMAIL_DOMAIN } from '../constants/formation-people.constants';
 import type { FormationPerson } from '../interfaces/formation-people.interface';
 import {
   buildFormationPeople,
   countAssignedFormationItems,
+  findFormationPersonByUsername,
   formatFormationPersonSubtitle,
   formationPeopleGroupKeys,
   formationPersonKey,
   groupFormationPeople,
   isLfStaffEmail,
   resolveFormationPersonStatus,
+  toAssigneeSearchOption,
   toFormationPersonRow,
 } from './formation-people.utils';
 
@@ -221,5 +223,55 @@ describe('toFormationPersonRow', () => {
     const row = toFormationPersonRow(person({ username: null, is_pending: true }), ['sam.chen']);
 
     expect(row).toEqual(expect.objectContaining({ assigned_item_count: 0, subtitle: 'sam.chen@cascade-data.example', status: 'invite_sent' }));
+  });
+});
+
+describe('toAssigneeSearchOption', () => {
+  it('maps a listed person to a selectable picker row carrying the whole name in first_name', () => {
+    const option = toAssigneeSearchOption(person({ job_title: 'Legal', organization: 'Cascade Data' }));
+
+    expect(option).toEqual({
+      uid: 'sam.chen',
+      email: 'sam.chen@cascade-data.example',
+      first_name: 'Sam Chen',
+      last_name: '',
+      job_title: 'Legal',
+      organization: { name: 'Cascade Data' },
+      committee: null,
+      type: 'project_member',
+      username: 'sam.chen',
+      disabled: false,
+      note: null,
+    });
+  });
+
+  it('lists a pending invitee but disables the row with the pending note', () => {
+    const option = toAssigneeSearchOption(person({ key: 'pat@partner.example', username: null, is_pending: true, email: 'pat@partner.example' }));
+
+    expect(option).toEqual(expect.objectContaining({ uid: 'pat@partner.example', username: null, disabled: true, note: FORMATION_ASSIGNEE_PENDING_NOTE }));
+    expect(option.organization).toBeNull();
+  });
+
+  it('leaves the name empty for an entry whose name fell back to its email, so the address is not shown twice', () => {
+    const option = toAssigneeSearchOption(
+      person({ key: 'pat@partner.example', username: null, name: 'pat@partner.example', email: 'pat@partner.example', is_pending: true })
+    );
+
+    expect(option.first_name).toBe('');
+    expect(option.email).toBe('pat@partner.example');
+  });
+});
+
+describe('findFormationPersonByUsername', () => {
+  const people = [person(), person({ key: 'alex.rivera', username: 'alex.rivera', name: 'Alex Rivera' })];
+
+  it('finds the person holding the (trimmed) username', () => {
+    expect(findFormationPersonByUsername(people, ' alex.rivera ')?.name).toBe('Alex Rivera');
+  });
+
+  it('returns null for a blank or unknown username', () => {
+    expect(findFormationPersonByUsername(people, '')).toBeNull();
+    expect(findFormationPersonByUsername(people, null)).toBeNull();
+    expect(findFormationPersonByUsername(people, 'nobody')).toBeNull();
   });
 });
