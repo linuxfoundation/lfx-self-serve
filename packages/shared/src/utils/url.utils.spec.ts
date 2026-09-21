@@ -465,6 +465,12 @@ describe('isPrivateHost', () => {
     ['an unallocated /32 prefix whose tail spells a PUBLIC address', '64:ff9b:2:a9fe:a9:fe00:808:808'],
     ['the same layout with a zero middle group', '64:ff9b:0:a9fe:a9:fe00:808:808'],
     ['a high middle group', '64:ff9b:ffff::a9fe:a9fe'],
+    // RFC 4291's MIXED form -- the trailing 32 bits written as a dotted quad. Same addresses,
+    // different spelling, and the hex pair read misses it entirely.
+    ['the /96 mixed form carrying the metadata endpoint', '64:ff9b::169.254.169.254'],
+    ['the /96 mixed form carrying RFC1918', '64:ff9b::10.0.0.1'],
+    ['the /48 mixed form', '64:ff9b:1::169.254.169.254'],
+    ['an unallocated /32 in mixed form', '64:ff9b:2::8.8.8.8'],
   ])('denies %s', (_label, host) => {
     expect(isPrivateHost(host)).toBe(true);
   });
@@ -474,6 +480,11 @@ describe('isPrivateHost', () => {
     ['the WELL-KNOWN /96 carrying a public address', '64:ff9b::808:808', false],
     ['the WELL-KNOWN /96 fully expanded, public', '64:ff9b:0:0:0:0:808:808', false],
     ['the WELL-KNOWN /96 fully expanded, private', '64:ff9b:0:0:0:0:a9fe:a9fe', true],
+    // The over-denial half: before the mixed form was handled, the dotted quad landed in a slot
+    // the hex read expected to be hex, failed, and hit the fail-closed return -- denying EVERY
+    // NAT64-reachable public host.
+    ['the /96 mixed form carrying a PUBLIC address', '64:ff9b::8.8.8.8', false],
+    ['the /96 mixed form carrying another public address', '64:ff9b::93.184.216.34', false],
     ['6to4 carrying a private address', '2002:a9fe:a9fe::', true],
     ['6to4 carrying a public address', '2002:808:808::', false],
   ])('still judges %s by its EMBEDDED address', (_label, host, expected) => {

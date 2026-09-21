@@ -576,6 +576,15 @@ export function isPrivateHost(hostname: string): boolean {
       // The EXPANDED groups, not the non-empty ones: compression can elide a zero group inside
       // the embedded address (`[64:ff9b::a9fe]` is 0.0.169.254), and filtering empties reads the
       // wrong pair or none at all. `parts` is already expanded above.
+      // RFC 4291 allows the trailing 32 bits as a DOTTED QUAD -- `64:ff9b::8.8.8.8` is the same
+      // address as `64:ff9b::808:808`. Expansion leaves it in the last slot as one part, so the
+      // hex pair read below finds `8.8.8.8` in a group it expects to be hex, fails, and hits the
+      // fail-closed return -- denying every NAT64-reachable PUBLIC host. Handled before the hex
+      // path rather than after, since the quad already IS the embedded address.
+      const lastPart = parts[parts.length - 1] ?? '';
+      if (/^(?:\d{1,3}\.){3}\d{1,3}$/.test(lastPart)) {
+        return isPrivateHost(lastPart);
+      }
       const pair = isNat64 ? parts.slice(-2) : parts.slice(1, 3);
       if (pair.length === 2 && pair.every((g) => /^[0-9a-f]{1,4}$/.test(g))) {
         const hi = parseInt(pair[0], 16);
