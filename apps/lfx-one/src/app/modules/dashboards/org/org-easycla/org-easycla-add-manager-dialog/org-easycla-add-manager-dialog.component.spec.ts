@@ -17,11 +17,7 @@ describe('OrgEasyclaAddManagerDialogComponent', () => {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaAddManagerDialogComponent],
-      providers: [
-        provideNoopAnimations(),
-        { provide: DynamicDialogConfig, useValue: {} },
-        { provide: DynamicDialogRef, useValue: { close: closeDialog } },
-      ],
+      providers: [provideNoopAnimations(), { provide: DynamicDialogConfig, useValue: {} }, { provide: DynamicDialogRef, useValue: { close: closeDialog } }],
     }).compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaAddManagerDialogComponent);
