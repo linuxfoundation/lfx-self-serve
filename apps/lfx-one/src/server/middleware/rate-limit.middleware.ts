@@ -43,8 +43,9 @@ export const publicApiRateLimiter = rateLimit({
  *
  * The counter lives in the default in-process MemoryStore — per pod, not cluster-wide:
  * `ecosystem.config.js` runs a single PM2 instance per pod, but the Helm chart deploys
- * `replicaCount: 3`, so the effective production ceiling is `limit × pods` (~30/min today). A
- * shared store would be needed for an exact cluster-wide cap.
+ * `replicaCount: 3` (100% surge ⇒ up to 6 pods mid-rollout), so the effective production ceiling
+ * is `limit × pods` (~30/min today, ~60 during a surge). A shared store would be needed for an
+ * exact cluster-wide cap.
  */
 export const aiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window

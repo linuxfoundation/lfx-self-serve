@@ -50,10 +50,10 @@ export class VoteService {
    * `WriteTimeout: 15s` (cmd/voting-api/main.go) plus a 1 s transport margin — this timer starts
    * before gateway/network transit while the server's write deadline starts after the request
    * arrives, so an exact 15 s could still abort a response completing just under the upstream
-   * limit (PR #2797 review). A slower enable can never return successfully end-to-end, so the
-   * first attempt gets the full slow-success window instead of the 11.7 s retry deadline (a
-   * legitimate 11.7–15 s enable would otherwise abort as a 408 one timeout short of the server's
-   * own ceiling).
+   * limit (PR #2797 review). Anything slower can never return successfully end-to-end, so the
+   * first attempt gets the full slow-success window instead of the 11.7 s retry deadline — a
+   * legitimate enable taking 11.7 s up to the server's 15 s ceiling would otherwise abort as a
+   * 408 one timeout short, and the 16 s budget covers that full window plus transit.
    */
   private static readonly enableFirstAttemptMaxDurationMs = 16000;
 
@@ -222,9 +222,11 @@ export class VoteService {
 
   /**
    * Creates a new vote/poll. With `options.open` (GH-2731) the vote is also opened in the same
-   * call: after the FGA-readiness probe resolves, the enable PUT runs inline and the returned
-   * vote carries `status: 'active'`; if the enable fails, the created vote is returned in its
-   * real (disabled) status — the draft exists and can be opened later from the list. Worst-case
+   * call: the enable PUT runs inline once the FGA-readiness probe resolves — or exhausts without
+   * a standing 403, since only a confirmed-unready probe skips the enable — and the returned vote
+   * carries `status: 'active'`; if the enable fails or is skipped, the created vote is returned
+   * in its real (disabled) status — the draft exists and can be opened later from the list. A
+   * probe anomaly (5xx etc.) rethrows on this fused path but never fails a plain create. Worst-case
    * fused create+open hold is ~40 s (16 s create + 8 s probe + 16 s enable attempt-1 — the three
    * budgets are independent by design), under the 60 s ingress-nginx default.
    */
@@ -249,13 +251,19 @@ export class VoteService {
     // response.
     const voteUid = newVote.uid;
     let fetchedVote: Vote | undefined;
-    // Captured inside the probe so an anomalous mid-poll failure (5xx, transport) is rethrown
-    // after pollEndpoint returns: the helper's contract deliberately converts any pollFn throw
-    // into `false`, which would otherwise mask a backend outage as ordinary "not yet fetchable"
-    // exhaustion. Request timeouts (408) are NOT captured — each probe attempt's timeout is the
-    // remaining budget itself, so a 408 can only coincide with budget exhaustion, an ordinary
-    // outcome that keeps the graceful fallback below.
+    // Captured inside the probe so an anomalous mid-poll failure (5xx, transport) can be rethrown
+    // on the fused create+open path after pollEndpoint returns: the helper's contract deliberately
+    // converts any pollFn throw into `false`, which would otherwise mask a backend outage as
+    // ordinary "not yet fetchable" exhaustion. Request timeouts (408) are NOT captured — a 408
+    // here is a BFF-raised transport timeout on the read side, deliberately treated as
+    // non-anomalous regardless of when it lands (the vote exists; only the readiness confirmation
+    // failed), so it keeps the graceful fallback below.
     let probeError: unknown;
+    // The last upstream status the probe observed (403 = tuple not replicated yet, 404 = DynamoDB
+    // read lag) — the enable gate below keys on it: only a standing 403 confirms the enable
+    // precondition is unmet. A locally raised 408 is never recorded here (it says nothing about
+    // upstream state).
+    let lastProbeStatus: number | undefined;
 
     // The probe shares the voteIndexPoll* fine grid — see those constants for the budget rationale.
     const resolved = await pollEndpoint({
@@ -274,6 +282,7 @@ export class VoteService {
           // ResourceNotFoundError (the 200-with-empty-body anomaly) extends BaseApiError, not
           // MicroserviceError — it still rethrows here; that is deliberate.
           if (error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404)) {
+            lastProbeStatus = error.statusCode;
             return false;
           }
           if (!(error instanceof MicroserviceError && error.statusCode === 408)) {
@@ -288,35 +297,50 @@ export class VoteService {
       metadata: { vote_uid: voteUid },
     });
 
-    // An anomalous probe failure (5xx etc.) surfaces as itself — never as the benign
-    // "not yet fetchable" fallback, and never into an enable attempt on a vote whose readiness
+    let createdVote = newVote;
+    if (resolved && fetchedVote) {
+      createdVote = fetchedVote;
+    } else if (probeError === undefined) {
+      // (Skipped when the probe failed anomalously — the helper already logged that on the
+      // warning channel, and "not yet fetchable" would misdescribe it.)
+      logger.warning(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', { vote_uid: voteUid });
+    }
+
+    if (!open) {
+      // A probe anomaly never fails a plain create: the POST already succeeded, so the caller
+      // gets its vote — only the fused path (which enables next) rethrows the captured anomaly.
+      return createdVote;
+    }
+
+    // An anomalous probe failure (5xx etc.) on the fused create+open path surfaces as itself —
+    // never as the benign fallback, and never into an enable attempt on a vote whose readiness
     // was never confirmed (pollEndpoint swallowed the throw by contract; rethrow it here).
     if (probeError !== undefined) {
       throw probeError;
     }
 
-    let createdVote = newVote;
-    if (resolved && fetchedVote) {
-      createdVote = fetchedVote;
-    } else {
-      logger.warning(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', { vote_uid: voteUid });
-    }
-
-    if (!open) {
-      return createdVote;
-    }
-
-    // open=true requires the probe resolved at FGA-tuple readiness (the enable PUT's
-    // precondition): an unconfirmed vote must not be treated as openable (GH-2729) — return the
-    // created draft for the frontend's recoverable warning path rather than PUT an enable that
-    // can only 403-retry against the same unconfirmed precondition.
-    if (!resolved) {
+    // Gate the enable on WHY the probe ended (GH-2729): only a standing 403 confirms the FGA
+    // tuple has not replicated — enabling then can only 403-retry against the same unconfirmed
+    // precondition, so return the created draft for the frontend's recoverable warning path. The
+    // warning keeps the denied-and-exhausted pattern distinguishable for security monitoring (a
+    // genuine denial and slow replication are indistinguishable here — the same framing as
+    // enableVoteWithRetry's logExhaustedForbidden, once per call, not per attempt). A 404- or
+    // timeout-flavored exhaustion says nothing about tuple readiness, so the bounded enable loop
+    // still runs — its 403-retry grid covers a tuple landing mid-loop.
+    if (!resolved && lastProbeStatus === 403) {
+      logger.warning(
+        req,
+        'create_vote',
+        'FGA-readiness probe denied through budget exhaustion, returning the created draft without enabling — a genuine denial and slow replication are indistinguishable',
+        { vote_uid: voteUid }
+      );
       return createdVote;
     }
 
     // open=true (GH-2731): the probe resolved at FGA-tuple readiness — the enable PUT's
     // precondition — so the inline enable should succeed on the first attempt; the bounded
-    // 403-retry loop covers the residual race (probe resolution → PUT in flight).
+    // 403-retry loop covers the residual race (probe resolution → PUT in flight) and the case
+    // where the probe exhausted without an observed 403 (read lag / timeouts — see the gate above).
     try {
       await this.enableVoteWithRetry(req, voteUid);
     } catch (error) {
@@ -684,11 +708,12 @@ export class VoteService {
         // already-ended vote; the list renders the server's status, which the carrier only overlays
         // while the index row is still disabled). Enable is semantically idempotent, so the signature
         // is success: a double-open or a 408-after-PutPoll (response lost after the write landed) must
-        // not report an opened vote as failed. The match is anchored to ITX's exact verified
-        // message (lfx-itx-service polling.go returns {"code":"400","message":"poll is already
-        // enabled"} — the code field is just the HTTP status, no stable error code exists to match
-        // instead) rather than a bare substring, so an unrelated 400 can never be swallowed as
-        // success; a wording change misses loudly, reverting to the pre-fix failure — fail-safe.
+        // not report an opened vote as failed. The match is a substring check on ITX's exact
+        // verified message (ITX main/polling.go:1865 returns {"code":"400","message":"poll is
+        // already enabled"} — the code field is just the HTTP status, no stable error code exists
+        // to match instead), tightened from the bare "already enabled" to reduce the set of
+        // colliding messages. It is still a substring match, not an anchored one; a wording change
+        // misses loudly, reverting to the pre-fix failure rather than a wrong success — fail-safe.
         const alreadyEnabled = error instanceof MicroserviceError && error.statusCode === 400 && error.message.includes('poll is already enabled');
         if (alreadyEnabled) {
           logger.debug(req, 'enable_vote', 'Enable PUT answered "already enabled" — treating as success (enable is idempotent)', {

@@ -411,29 +411,79 @@ describe('VoteService', () => {
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('probe exhaustion with open=true never attempts the enable — an unconfirmed vote is not openable (GH-2729)', async () => {
-      // The probe burns its whole budget without the tuple landing…
-      pollEndpoint.mockResolvedValueOnce(false);
-      proxyRequest.mockResolvedValue({ ...voteFixture, status: 'disabled' });
+    it('probe exhaustion without an observed 403 still runs the bounded enable loop with open=true', async () => {
+      vi.useFakeTimers();
+      try {
+        // The probe mock resolves false without the pollFn running — no standing 403 was observed,
+        // so the create+open path still gets the bounded enable loop (its 403-retry grid covers a
+        // tuple landing mid-loop; a confirmed-unready probe is the only skip case — pinned by the
+        // standing-403 test below)…
+        pollEndpoint.mockResolvedValueOnce(false);
+        proxyRequest.mockResolvedValue({ ...voteFixture, status: 'disabled' });
+        proxyRequestWithResponse.mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN'));
 
-      // …the draft comes back in its real status (the frontend branches on it into the
-      // recoverable warning)…
-      await expect(service.createVote(req, { name: 'New ballot' } as never, { open: true })).resolves.toMatchObject({ uid: CANONICAL_UID, status: 'disabled' });
-      // …the enable PUT is never sent against an unconfirmed precondition — FGA-tuple readiness
-      // is the enable's requirement, so an unresolved probe returns the draft for the frontend's
-      // recoverable warning path instead of 403-retrying against the same unconfirmed state…
-      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
-      // …and only the probe-exhaustion warning fired (no enable-failure warning — there was no
-      // enable attempt to fail).
-      expect(logger.warning).toHaveBeenCalledWith(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', {
-        vote_uid: CANONICAL_UID,
-      });
-      expect(logger.warning).not.toHaveBeenCalledWith(
-        req,
-        'create_vote',
-        'Vote created but enable failed, returning the created vote in its current status',
-        expect.anything()
-      );
+        const promise = service.createVote(req, { name: 'New ballot' } as never, { open: true });
+        const assertion = expect(promise).resolves.toMatchObject({ uid: CANONICAL_UID, status: 'disabled' });
+        await vi.advanceTimersByTimeAsync(1200);
+        await assertion;
+
+        // …the probe-exhaustion fallback warning fired…
+        expect(logger.warning).toHaveBeenCalledWith(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', {
+          vote_uid: CANONICAL_UID,
+        });
+        // …the enable ran its bounded 3-attempt grid against the standing 403…
+        expect(proxyRequestWithResponse).toHaveBeenCalledTimes(3);
+        // …the loop's own denial signal fired…
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'enable_vote',
+          'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+          { vote_uid: CANONICAL_UID, attempts: 3 }
+        );
+        // …and the create side logged the partial-failure context before returning the draft.
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'create_vote',
+          'Vote created but enable failed, returning the created vote in its current status',
+          expect.objectContaining({ vote_uid: CANONICAL_UID })
+        );
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('skips the enable and logs the denial signal when the probe sees a standing 403 through exhaustion', async () => {
+      vi.useFakeTimers();
+      try {
+        const { pollEndpoint: realPollEndpoint } = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
+        pollEndpoint.mockImplementationOnce(realPollEndpoint as () => Promise<boolean>);
+        proxyRequest.mockResolvedValueOnce(voteFixture); // the create POST succeeds…
+        proxyRequest.mockRejectedValue(new MicroserviceError('Forbidden', 403, 'FORBIDDEN')); // …then every probe GET 403s
+
+        const promise = service.createVote(req, { name: 'New ballot' } as never, { open: true });
+        const assertion = expect(promise).resolves.toEqual(voteFixture);
+        await vi.advanceTimersByTimeAsync(9000); // burn the 8 s budget across the 300 ms grid
+        await assertion;
+
+        // A standing 403 confirms the tuple never replicated — the enable is never sent against
+        // that confirmed-unready precondition…
+        expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+        // …the once-per-call denial signal fired, keeping the denied-and-exhausted pattern
+        // queryable (a genuine denial and slow replication are indistinguishable — the same
+        // framing as enableVote's logExhaustedForbidden)…
+        expect(logger.warning).toHaveBeenCalledWith(
+          req,
+          'create_vote',
+          'FGA-readiness probe denied through budget exhaustion, returning the created draft without enabling — a genuine denial and slow replication are indistinguishable',
+          { vote_uid: CANONICAL_UID }
+        );
+        // …alongside the benign fallback warning.
+        expect(logger.warning).toHaveBeenCalledWith(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', {
+          vote_uid: CANONICAL_UID,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     // PR #2797 review: drive createVote through the REAL pollEndpoint (the module mock above is
@@ -461,20 +511,39 @@ describe('VoteService', () => {
       expect(proxyRequestWithResponse).not.toHaveBeenCalled();
     });
 
-    it('treats a probe request timeout (408) as ordinary budget exhaustion, not an anomaly', async () => {
+    it('treats a probe request timeout (408) as non-anomalous — the bounded enable loop still runs', async () => {
       const { pollEndpoint: realPollEndpoint } = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
       pollEndpoint.mockImplementationOnce(realPollEndpoint as () => Promise<boolean>);
       proxyRequest.mockResolvedValueOnce(voteFixture);
       proxyRequest.mockRejectedValueOnce(new MicroserviceError('Request timeout after 5000ms', 408, 'TIMEOUT'));
 
-      // Each probe attempt's request timeout IS the remaining budget, so a 408 can only coincide
-      // with budget exhaustion — the graceful fallback is kept: no rethrow, no enable, and the
-      // draft comes back exactly as the POST echoed it, with the exhaustion warning.
-      await expect(service.createVote(req, { name: 'New ballot' } as never, { open: true })).resolves.toEqual(voteFixture);
-      expect(proxyRequestWithResponse).not.toHaveBeenCalled();
+      // A 408 is a BFF-raised transport timeout on the read side — deliberately treated as
+      // non-anomalous regardless of when it lands (the vote exists; only the readiness
+      // confirmation failed): no rethrow, and since no standing 403 was observed, the enable
+      // still runs on its bounded grid (the default PUT mock succeeds on attempt 1).
+      await expect(service.createVote(req, { name: 'New ballot' } as never, { open: true })).resolves.toMatchObject({ uid: CANONICAL_UID, status: 'active' });
+      expect(proxyRequestWithResponse).toHaveBeenCalledTimes(1);
       expect(logger.warning).toHaveBeenCalledWith(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', {
         vote_uid: CANONICAL_UID,
       });
+    });
+
+    it('never fails a plain create (open=false) on a probe anomaly — the POST already succeeded', async () => {
+      const { pollEndpoint: realPollEndpoint } = await vi.importActual<typeof import('../helpers/poll-endpoint.helper')>('../helpers/poll-endpoint.helper');
+      pollEndpoint.mockImplementationOnce(realPollEndpoint as () => Promise<boolean>);
+      proxyRequest.mockResolvedValueOnce(voteFixture); // the create POST succeeds…
+      proxyRequest.mockRejectedValueOnce(new MicroserviceError('Internal', 500, 'INTERNAL_ERROR')); // …then the first probe GET 5xxes
+
+      // The caller still gets its created vote — a read-side blip must not fail a create that
+      // succeeded; the anomaly stays on the warning channel (logged by the real helper), and the
+      // probeError rethrow is gated on the fused create+open path only.
+      await expect(service.createVote(req, { name: 'New ballot' } as never)).resolves.toEqual(voteFixture);
+      expect(logger.warning).toHaveBeenCalledWith(
+        req,
+        'create_vote',
+        'Unexpected error during polling',
+        expect.objectContaining({ attempt: 1, vote_uid: CANONICAL_UID })
+      );
     });
 
     it('returns the fetched vote (not the POST echo) when the probe resolves', async () => {
@@ -497,12 +566,12 @@ describe('VoteService', () => {
   // the indexer message before the fga-sync one (verified in lfx-v2-voting-service). The create
   // poll resolving at FGA-readiness (GH-2729) closes that gap on the create+open path; the loop
   // remains as the bounded safety net for the residual race and for callers enabling a vote they
-  // did not just create. enableVote retries only that signature
-  // on a bounded 3-attempt / 600 ms grid. Attempt 1 is exempt from the deadline: it gets the fixed
-  // 16 s slow-success budget (the voting-api's hardcoded WriteTimeout plus a 1 s transport margin —
-  // a slower enable can never succeed end-to-end anyway). Retries run under the 11.7 s end-to-end deadline (each retry PUT
-  // gets the remaining budget as its request timeout, sleeps truncate to the deadline) so slow 403s
-  // can't stretch retries past the documented cap — three 30 s-default-timeout denials would
+  // did not just create. enableVote retries only that signature on a bounded 3-attempt / 600 ms
+  // grid. Attempt 1 is exempt from the deadline: it gets the fixed 16 s slow-success budget (the
+  // voting-api's hardcoded WriteTimeout plus a 1 s transport margin — a slower enable can never
+  // succeed end-to-end anyway). Retries run under the 11.7 s end-to-end deadline (each retry PUT
+  // gets the remaining budget as its request timeout, sleeps truncate to the deadline) so slow
+  // 403s can't stretch retries past the documented cap — three 30 s-default-timeout denials would
   // otherwise take ~90 s. Post-GH-2730 there is no index poll after the loop — the method returns
   // `{ uid, status: 'active' }` immediately.
   describe('enableVote FGA-gap retry', () => {
