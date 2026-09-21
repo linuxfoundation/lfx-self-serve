@@ -2,19 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Mentee Profile page — empty states + error state (KB: `code-truthiness/missing-e2e-for-empty-state`).
+ * Mentee Profile page — empty/error states plus the populated edit-drawer golden path
+ * (KB: `code-truthiness/missing-e2e-for-empty-state`).
  *
  * The mentorship module is still mock-backed (`MOCK_MENTORSHIP_MENTEE_PROFILE`), so the profile
  * page renders through distinct empty-state branches: profile error, about-me empty, skills empty,
  * areas-to-improve empty, additional-notes empty, resume empty, application-history empty. This
- * suite locks each empty-state test id independently of the mock's default payload.
+ * suite locks each empty-state independently of the mock's default payload, and drives the
+ * Edit Mentee Profile drawer through its seeded cancel/save workflow.
  *
  * Prerequisites:
  *   - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
@@ -90,5 +92,62 @@ test.describe('Mentee Profile — error state', () => {
     await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('mentorship-mentee-profile-details')).toHaveCount(0);
     await expect(page.getByTestId('mentorship-application-history')).toHaveCount(0);
+  });
+});
+
+const POPULATED_PROFILE = {
+  profile: {
+    aboutMe: '<p>Campus microgrid telemetry.</p><p>Want production pipelines.</p>',
+    skillsHave: ['Python', 'Go'],
+    skillsWant: ['Observability'],
+    additionalNotes: 'Comfortable working asynchronously.',
+    resumeFileName: 'test-user-1-resume.pdf',
+    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
+  },
+  history: [{ id: 'hist_pending', programName: 'GridFlow Ingestion', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' }],
+};
+
+test.describe('Mentee Profile — edit drawer golden path', () => {
+  test.beforeEach(async ({ page }) => {
+    await enableMentorshipFlag(page);
+    await page.route('**/api/mentorship/mentee/profile', (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify(POPULATED_PROFILE),
+      })
+    );
+    await page.goto(MENTEE_PROFILE_URL, { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  });
+
+  test('shows the populated profile and seeds the edit drawer, then cancel leaves it closed', async ({ page }) => {
+    await expect(page.getByTestId('mentorship-mentee-profile-details-about-text')).toContainText('Campus microgrid telemetry.');
+    await expect(page.getByTestId('mentorship-mentee-profile-details-about-text')).toContainText('Want production pipelines.');
+    await expect(page.getByTestId('mentorship-mentee-profile-details-skills-list')).toContainText('Python');
+    await expect(page.getByTestId('mentorship-mentee-profile-details-notes-text')).toHaveText('Comfortable working asynchronously.');
+    await expect(page.getByTestId('mentorship-mentee-profile-details-resume-link')).toContainText('test-user-1-resume.pdf');
+    await expect(page.getByTestId('mentorship-application-history-name-hist_pending')).toHaveText('GridFlow Ingestion');
+
+    await page.getByTestId('mentorship-mentee-profile-details-edit').click();
+    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
+    await expect(page.locator('[data-test="mentee-profile-edit-about-me"]')).toHaveValue(
+      'Campus microgrid telemetry.\nWant production pipelines.'
+    );
+    await expect(page.locator('[data-test="mentee-profile-edit-additional-notes"]')).toHaveValue('Comfortable working asynchronously.');
+    await expect(page.getByTestId('mentee-profile-edit-have-skill-list')).toContainText('Python');
+
+    await page.getByTestId('mentee-profile-edit-drawer-cancel').click();
+    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
+  });
+
+  test('Save Changes closes the drawer and shows the coming-soon toast', async ({ page }) => {
+    await page.getByTestId('mentorship-mentee-profile-details-edit').click();
+    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
+
+    await page.getByTestId('mentee-profile-edit-drawer-save').click();
+    await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
+    await expect(page.locator('.p-toast')).toContainText(MENTORSHIP_COMING_SOON_DETAIL);
   });
 });

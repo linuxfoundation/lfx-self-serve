@@ -124,7 +124,7 @@ describe('MenteeProfileEditDrawerComponent', () => {
     await fixture.whenStable();
   });
 
-  it('seeds the form from the profile context on open, stripping HTML from About Me', () => {
+  it('seeds the form from the profile context on open, converting About Me HTML to plain text', () => {
     const raw = comp['form'].getRawValue();
 
     expect(raw.introduction).toBe('Hello world');
@@ -132,6 +132,22 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(raw.skillsWant).toEqual(PROFILE.skillsWant);
     expect(raw.additionalNotes).toBe(PROFILE.additionalNotes);
     expect(raw.resumeFileName).toBe(PROFILE.resumeFileName);
+  });
+
+  it('preserves paragraph breaks when seeding a multi-paragraph introduction', () => {
+    drawer.open({ ...PROFILE, aboutMe: '<p>First paragraph.</p><p>Second paragraph.</p>' });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe('First paragraph.\nSecond paragraph.');
+  });
+
+  it('caps a register-length introduction to the drawer limit and keeps the counter in sync', () => {
+    const overLimit = 'a'.repeat(2500);
+    drawer.open({ ...PROFILE, aboutMe: `<p>${overLimit}</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe('a'.repeat(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX));
+    expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
   });
 
   it('fires the coming-soon toast and closes the drawer on save', () => {

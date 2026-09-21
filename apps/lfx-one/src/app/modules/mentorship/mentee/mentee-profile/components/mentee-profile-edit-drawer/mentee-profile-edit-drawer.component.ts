@@ -22,7 +22,7 @@ import {
   MENTORSHIP_MENTEE_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
-import { capCodePointEdit, codePointLength, stripHtml } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, htmlClipboardToText } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
@@ -117,16 +117,22 @@ export class MenteeProfileEditDrawerComponent {
   }
 
   private seedForm(profile: MentorshipMenteeProfileDetails): void {
-    const introduction = stripHtml(profile.aboutMe ?? '');
-    this.form.patchValue({
-      introduction,
-      skillsHave: profile.skillsHave ?? [],
-      skillsWant: profile.skillsWant ?? [],
-      additionalNotes: profile.additionalNotes ?? '',
-      resumeFileName: profile.resumeFileName ?? '',
-    });
-    this.seededIntroduction = introduction;
+    // Register allows 3000 code points of rich HTML; the drawer is a 2000-code-point
+    // plain-text field. Convert block boundaries to newlines, then cap, *before*
+    // patching so the control, counter, and baselines share one value.
+    const introduction = capCodePointEdit('', htmlClipboardToText(profile.aboutMe ?? ''), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
     this.lastValidIntroduction = introduction;
+    this.seededIntroduction = introduction;
+    this.form.patchValue(
+      {
+        introduction,
+        skillsHave: profile.skillsHave ?? [],
+        skillsWant: profile.skillsWant ?? [],
+        additionalNotes: profile.additionalNotes ?? '',
+        resumeFileName: profile.resumeFileName ?? '',
+      },
+      { emitEvent: false }
+    );
     this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
