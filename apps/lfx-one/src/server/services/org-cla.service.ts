@@ -1015,16 +1015,6 @@ export class OrgClaService {
     return this.managerFromAddRequest(request);
   }
 
-  /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
-  private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
-    const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
-    return {
-      lfUsername: '',
-      email: request.email.trim(),
-      ...(name ? { name } : {}),
-    };
-  }
-
   public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_remove_manager');
     if (!target) return false;
@@ -1051,6 +1041,16 @@ export class OrgClaService {
 
     logger.debug(req, 'org_cla_remove_manager', 'removed a cla manager', { org_uid: orgUid, signature_id: signatureId });
     return true;
+  }
+
+  /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
+  private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
+    const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
+    return {
+      lfUsername: '',
+      email: request.email.trim(),
+      ...(name ? { name } : {}),
+    };
   }
 
   private async fetchUpstreamClaGroups(req: Request, orgUid: string): Promise<(EasyClaCompanyClaGroup & { signatureID: string })[]> {
