@@ -10,11 +10,10 @@ import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
  * it to seed its form. Open state is derived from the context — a non-null
  * context means the drawer is open.
  *
- * Provided at {@link MenteeProfileComponent} so the page-scoped instance is torn
- * down when the mentee profile page is left. `providedIn: 'root'` keeps the
- * class tree-shakeable; the component `providers` entry still wins at runtime.
+ * Provided at {@link MenteeProfileComponent} (not root) so the instance is torn
+ * down when the mentee profile page is left.
  */
-@Injectable({ providedIn: 'root' })
+@Injectable()
 export class MenteeProfileEditDrawerService {
   private readonly _context = signal<MentorshipMenteeProfileDetails | null>(null);
 

@@ -28,6 +28,7 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
+const MENTEE_OVERVIEW_URL = '/mentorship/mentee/overview';
 const MENTEE_PROFILE_URL = '/mentorship/mentee/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
 
@@ -38,6 +39,15 @@ async function enableMentorshipFlag(page: Page): Promise<void> {
     FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
     JSON.stringify({ [MENTORSHIP_ENABLED_FLAG]: true }),
   ] as const);
+}
+
+/** Overview SSR does not fetch this profile API; the tab click is a browser GET `page.route` can mock. */
+async function openMenteeProfile(page: Page): Promise<void> {
+  await page.goto(MENTEE_OVERVIEW_URL, { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('mentee-page-tab-profile')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  await page.getByTestId('mentee-page-tab-profile').click();
+  await expect(page).toHaveURL((url) => url.pathname === MENTEE_PROFILE_URL);
 }
 
 test.describe('Mentee Profile — empty states', () => {
@@ -53,8 +63,7 @@ test.describe('Mentee Profile — empty states', () => {
         }),
       })
     );
-    await page.goto(MENTEE_PROFILE_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
+    await openMenteeProfile(page);
   });
 
   test('shows the about-me empty label when the mentee has no introduction', async ({ page }) => {
@@ -89,8 +98,7 @@ test.describe('Mentee Profile — error state', () => {
   test.beforeEach(async ({ page }) => {
     await enableMentorshipFlag(page);
     await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
-    await page.goto(MENTEE_PROFILE_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
+    await openMenteeProfile(page);
   });
 
   test('renders the error state when the BFF fails to serve the profile', async ({ page }) => {
@@ -122,8 +130,7 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
         body: JSON.stringify(POPULATED_PROFILE),
       })
     );
-    await page.goto(MENTEE_PROFILE_URL, { waitUntil: 'domcontentloaded' });
-    await expect(page).not.toHaveURL(/auth0\.com/);
+    await openMenteeProfile(page);
     await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   });
 

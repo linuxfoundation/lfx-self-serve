@@ -20,6 +20,7 @@ import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
 
+const MENTEE_OVERVIEW_URL = '/mentorship/mentee/overview';
 const MENTEE_PROFILE_URL = '/mentorship/mentee/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
 const ELEMENT_TIMEOUT = 10_000;
@@ -80,9 +81,13 @@ async function fulfillMenteeProfile(page: Page, body: unknown, delayMs = 0): Pro
   });
 }
 
-async function gotoMenteeProfile(page: Page): Promise<void> {
-  await page.goto(MENTEE_PROFILE_URL, { waitUntil: 'domcontentloaded' });
+/** Overview SSR does not fetch this profile API; the tab click is a browser GET `page.route` can mock. */
+async function openMenteeProfile(page: Page): Promise<void> {
+  await page.goto(MENTEE_OVERVIEW_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('mentee-page-tab-profile')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+  await page.getByTestId('mentee-page-tab-profile').click();
+  await expect(page).toHaveURL((url) => url.pathname === MENTEE_PROFILE_URL);
 }
 
 test.describe('Mentee Profile — Robust Tests', () => {
@@ -90,7 +95,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test.beforeEach(async ({ page }) => {
       await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, POPULATED_PROFILE);
-      await gotoMenteeProfile(page);
+      await openMenteeProfile(page);
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     });
 
@@ -139,7 +144,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test('shows the loading testid before the details card', async ({ page }) => {
       await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, POPULATED_PROFILE, 3_000);
-      await gotoMenteeProfile(page);
+      await openMenteeProfile(page);
 
       const loading = page.getByTestId('mentorship-mentee-profile-loading');
       const details = page.getByTestId('mentorship-mentee-profile-details');
@@ -155,7 +160,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test.beforeEach(async ({ page }) => {
       await enableMentorshipFlag(page);
       await fulfillMenteeProfile(page, EMPTY_PROFILE);
-      await gotoMenteeProfile(page);
+      await openMenteeProfile(page);
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
     });
 
@@ -180,7 +185,7 @@ test.describe('Mentee Profile — Robust Tests', () => {
     test('replaces details and history with the error-state testid', async ({ page }) => {
       await enableMentorshipFlag(page);
       await page.route('**/api/mentorship/mentee/profile', (route) => route.fulfill({ status: 503, contentType: 'text/plain', body: 'Service Unavailable' }));
-      await gotoMenteeProfile(page);
+      await openMenteeProfile(page);
 
       await expect(page.getByTestId('mentorship-mentee-profile-error-state')).toBeAttached({ timeout: DATA_LOAD_TIMEOUT });
       await expect(page.getByTestId('mentorship-mentee-profile-details')).toHaveCount(0);

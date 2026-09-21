@@ -29,7 +29,7 @@
       </div>
 
       <div class="flex flex-col gap-1">
-        <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 2000 code-point cap. -->
+        <!-- No native [maxlength] — it counts UTF-16 units and would block emoji below the 3000 code-point cap. -->
         <label for="mentee-profile-edit-about-me" class="sr-only">About Me</label>
         <lfx-textarea
           [form]="form"
@@ -60,9 +60,19 @@
         <p class="text-sm text-gray-500">{{ skillsIntro }}</p>
       </div>
 
-      <lfx-mentorship-skills-picker [form]="form" [label]="skillsHaveLabel" control="skillsHave" idPrefix="mentee-profile-edit-have" />
+      <lfx-mentorship-skills-picker
+        [form]="form"
+        [label]="skillsHaveLabel"
+        control="skillsHave"
+        idPrefix="mentee-profile-edit-have"
+        [error]="skillsHaveError()" />
 
-      <lfx-mentorship-skills-picker [form]="form" [label]="skillsWantLabel" control="skillsWant" idPrefix="mentee-profile-edit-want" />
+      <lfx-mentorship-skills-picker
+        [form]="form"
+        [label]="skillsWantLabel"
+        control="skillsWant"
+        idPrefix="mentee-profile-edit-want"
+        [error]="skillsWantError()" />
 
       <div class="flex flex-col gap-1" data-testid="mentee-profile-edit-additional-notes">
         <label for="mentee-profile-edit-additional-notes" class="text-sm font-medium text-gray-700">{{ additionalNotesLabel }}</label>

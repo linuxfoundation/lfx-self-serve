@@ -141,13 +141,60 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['form'].controls.introduction.value).toBe('First paragraph.\nSecond paragraph.');
   });
 
-  it('caps a register-length introduction to the drawer limit and keeps the counter in sync', () => {
-    const overLimit = 'a'.repeat(2500);
+  it('caps a register-length introduction past the shared 3000 cap and keeps the counter in sync', () => {
+    const overLimit = 'a'.repeat(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX + 500);
     drawer.open({ ...PROFILE, aboutMe: `<p>${overLimit}</p>` });
     fixture.detectChanges();
 
     expect(comp['form'].controls.introduction.value).toBe('a'.repeat(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX));
     expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
+  it('keeps a register-length introduction that sits at the shared 3000 cap', () => {
+    const atCap = 'a'.repeat(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+    drawer.open({ ...PROFILE, aboutMe: `<p>${atCap}</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe(atCap);
+    expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
+  it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {
+    const emitted: unknown[] = [];
+    const sub = comp['form'].valueChanges.subscribe((value) => emitted.push(value));
+
+    drawer.open({ ...PROFILE, skillsHave: ['Rust'], resumeFileName: 'seeded-resume.pdf' });
+    fixture.detectChanges();
+    sub.unsubscribe();
+
+    expect(emitted.length).toBeGreaterThan(0);
+    expect(emitted[emitted.length - 1]).toEqual(
+      expect.objectContaining({
+        skillsHave: ['Rust'],
+        resumeFileName: 'seeded-resume.pdf',
+      })
+    );
+  });
+
+  it('derives the resume filename from the URL when the profile has no resumeFileName', () => {
+    drawer.open({ ...PROFILE, resumeFileName: undefined, resumeUrl: 'https://example.com/files/url-only-resume.pdf' });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.resumeFileName.value).toBe('url-only-resume.pdf');
+  });
+
+  it('does not close or toast when Save is pressed with empty required skill pickers', () => {
+    drawer.open({ ...PROFILE, skillsHave: [], skillsWant: [] });
+    fixture.detectChanges();
+
+    comp['onSave']();
+
+    expect(drawer.isOpen()).toBe(true);
+    expect(messageAdd).not.toHaveBeenCalled();
+    expect(comp['form'].controls.skillsHave.touched).toBe(true);
+    expect(comp['form'].controls.skillsWant.touched).toBe(true);
+    expect(comp['skillsHaveError']()).toBe('Add at least one skill you currently have.');
+    expect(comp['skillsWantError']()).toBe('Add at least one skill you would like to improve.');
   });
 
   it('fires the coming-soon toast and closes the drawer on save', () => {

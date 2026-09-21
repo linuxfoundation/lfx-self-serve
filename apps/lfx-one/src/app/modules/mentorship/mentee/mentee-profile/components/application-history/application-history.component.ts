@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, Signal } from '@angular/core';
 import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_SUBTITLE,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_EMPTY_TITLE,
@@ -53,12 +53,21 @@ export class ApplicationHistoryComponent {
     this.comingSoon.notify(this.withdrawLabel);
   }
 
-  private initRows() {
+  private initRows(): Signal<
+    (MentorshipMenteeApplicationHistoryEntry & {
+      statusLabel: string;
+      statusBadgeClass: string;
+      canWithdraw: boolean;
+    })[]
+  > {
+    const labels: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS;
+    const badgeClasses: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES;
+
     return computed(() =>
       this.entries().map((entry) => ({
         ...entry,
-        statusLabel: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS[entry.status],
-        statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES[entry.status],
+        statusLabel: labels[entry.status] ?? entry.status,
+        statusBadgeClass: badgeClasses[entry.status] ?? MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES.declined,
         // Applicant self-withdraw is `pending → withdrawn` only. Declined cannot re-apply;
         // accepted/graduated/hold/withdrawn are not self-withdrawable.
         canWithdraw: entry.status === 'pending',

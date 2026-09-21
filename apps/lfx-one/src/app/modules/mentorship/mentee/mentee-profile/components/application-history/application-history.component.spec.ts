@@ -19,6 +19,9 @@ describe('ApplicationHistoryComponent', () => {
     { id: 'app_accepted', programName: 'GridFlow: Ingestion Pipeline', termName: 'Fall 2026', submittedOn: 'Jun 28, 2026', status: 'accepted' },
     { id: 'app_pending', programName: 'Apicurio Registry: Playground', termName: 'Fall 2026', submittedOn: 'Jul 2, 2026', status: 'pending' },
     { id: 'app_declined', programName: 'Backstage: Accessibility Audit', termName: 'Summer 2026', submittedOn: 'Apr 9, 2026', status: 'declined' },
+    { id: 'app_withdrawn', programName: 'Envoy: WASM Filters', termName: 'Spring 2026', submittedOn: 'Jan 12, 2026', status: 'withdrawn' },
+    { id: 'app_graduated', programName: 'Kubernetes: Scheduling', termName: 'Fall 2025', submittedOn: 'Sep 3, 2025', status: 'graduated' },
+    { id: 'app_hold', programName: 'CNCF: Storage Drivers', termName: 'Winter 2026', submittedOn: 'Feb 18, 2026', status: 'hold' },
   ];
 
   let fixture: ComponentFixture<ApplicationHistoryComponent>;
@@ -54,7 +57,7 @@ describe('ApplicationHistoryComponent', () => {
       'GridFlow: Ingestion Pipeline'
     );
     expect(element().querySelector('[data-testid="mentorship-application-history-term-app_accepted"]')?.textContent?.trim()).toBe('Fall 2026');
-    expect(element().querySelectorAll('[data-testid^="mentorship-application-history-row-"]').length).toBe(3);
+    expect(element().querySelectorAll('[data-testid^="mentorship-application-history-row-"]').length).toBe(6);
   });
 
   it('lets the program name wrap freely so long upstream names never clip at narrow widths', () => {
@@ -79,6 +82,15 @@ describe('ApplicationHistoryComponent', () => {
 
     const declined = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_declined"]');
     expect(declined?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS.declined);
+
+    const withdrawn = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_withdrawn"]');
+    expect(withdrawn?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS.withdrawn);
+
+    const graduated = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_graduated"]');
+    expect(graduated?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS.graduated);
+
+    const hold = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_hold"]');
+    expect(hold?.textContent?.trim()).toBe(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS.hold);
   });
 
   it('offers withdraw only on pending applications — Mentorship has no hard delete', () => {
@@ -87,6 +99,9 @@ describe('ApplicationHistoryComponent', () => {
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_pending"]')).not.toBeNull();
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_accepted"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_declined"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_withdrawn"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_graduated"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_hold"]')).toBeNull();
   });
 
   it('fires the coming-soon toast when the mentee withdraws a pending application', () => {
@@ -108,5 +123,24 @@ describe('ApplicationHistoryComponent', () => {
 
     expect(element().querySelector('[data-testid="mentorship-application-history-list"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-application-history-empty"]')).not.toBeNull();
+  });
+
+  it('falls back to the raw status and the declined badge when applications.status is unmapped', () => {
+    setup([
+      {
+        id: 'app_unknown',
+        programName: 'Unknown Status Program',
+        termName: 'Fall 2026',
+        submittedOn: 'Jul 2, 2026',
+        status: 'unpublished' as MentorshipMenteeApplicationHistoryEntry['status'],
+      },
+    ]);
+
+    const badge = element().querySelector<HTMLElement>('[data-testid="mentorship-application-history-status-app_unknown"]');
+    expect(badge?.textContent?.trim()).toBe('unpublished');
+    for (const cls of MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES.declined.split(' ')) {
+      expect(badge?.classList.contains(cls)).toBe(true);
+    }
+    expect(element().querySelector('[data-testid="mentorship-application-history-withdraw-app_unknown"]')).toBeNull();
   });
 });

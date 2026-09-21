@@ -143,4 +143,13 @@ describe('MenteeProfileComponent', () => {
     expect(fixture.componentInstance['profile']()).toEqual(EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE.profile);
     expect(fixture.componentInstance['history']()).toEqual(EMPTY_MENTORSHIP_MENTEE_PROFILE_RESPONSE.history);
   });
+
+  it('keeps Application History rendering when the BFF omits history', async () => {
+    getMenteeProfile.mockReturnValue(of({ profile: mockProfile.profile } as MentorshipMenteeProfileResponse));
+
+    await bootstrap();
+
+    expect(fixture.componentInstance['history']()).toEqual([]);
+    expect(element().querySelector('[data-testid="mentorship-application-history"]')).not.toBeNull();
+  });
 });

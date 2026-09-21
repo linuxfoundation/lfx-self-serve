@@ -283,6 +283,11 @@ export class MentorshipService {
     return response;
   }
 
+  /**
+   * Mock BFF until the Mentorship `user_profiles` read is wired. Authenticated, but not
+   * scoped to `req`'s user — do not invent authorization here; identity filtering lands
+   * with the real read.
+   */
   public async getMenteeProfile(req: Request): Promise<MentorshipMenteeProfileResponse> {
     logger.debug(req, 'mentorship_get_mentee_profile', 'Loading mentee profile');
     const response: MentorshipMenteeProfileResponse = {

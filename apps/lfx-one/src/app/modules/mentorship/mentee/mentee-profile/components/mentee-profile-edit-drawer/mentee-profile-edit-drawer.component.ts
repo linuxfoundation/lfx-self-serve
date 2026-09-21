@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, Validators } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import {
@@ -22,15 +22,20 @@ import {
   MENTORSHIP_MENTEE_RESUME_INTRO,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
-import { capCodePointEdit, codePointLength, htmlClipboardToText } from '@lfx-one/shared/utils';
+import { capCodePointEdit, codePointLength, htmlClipboardToText, normalizeToUrl } from '@lfx-one/shared/utils';
 import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DrawerModule } from 'primeng/drawer';
-import { filter } from 'rxjs';
+import { filter, startWith } from 'rxjs';
 
 import { ResumeSectionComponent } from '../../../../components/resume-section/resume-section.component';
 import { SkillsPickerComponent } from '../../../../components/skills-picker/skills-picker.component';
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MenteeProfileEditDrawerService } from './mentee-profile-edit-drawer.service';
+
+/** Angular `minLength` skips empty values, so `[]` would otherwise pass as valid. */
+function requiredStringList(): ValidatorFn {
+  return (control) => (Array.isArray(control.value) && control.value.length > 0 ? null : { required: true });
+}
 
 /**
  * Right-side mentee profile edit drawer, opened from the "Edit Mentee Profile" button
@@ -70,8 +75,8 @@ export class MenteeProfileEditDrawerComponent {
   // is omitted on the About Me textarea for the same reason.
   protected readonly form = new FormGroup({
     introduction: new FormControl('', { nonNullable: true, validators: [maxCodePointsValidator(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX)] }),
-    skillsHave: new FormControl<string[]>([], { nonNullable: true }),
-    skillsWant: new FormControl<string[]>([], { nonNullable: true }),
+    skillsHave: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList()] }),
+    skillsWant: new FormControl<string[]>([], { nonNullable: true, validators: [requiredStringList()] }),
     additionalNotes: new FormControl('', { nonNullable: true, validators: [Validators.maxLength(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_MAX)] }),
     resumeFileName: new FormControl('', { nonNullable: true }),
   });
@@ -79,6 +84,11 @@ export class MenteeProfileEditDrawerComponent {
   protected readonly aboutMeLength = signal(0);
   private lastValidIntroduction = '';
   private seededIntroduction = '';
+  private readonly saveAttempted = signal(false);
+  private readonly formStatus = toSignal(this.form.statusChanges.pipe(startWith(this.form.status)), { initialValue: this.form.status });
+
+  protected readonly skillsHaveError = computed(() => this.skillPickerError('skillsHave', 'Add at least one skill you currently have.'));
+  protected readonly skillsWantError = computed(() => this.skillPickerError('skillsWant', 'Add at least one skill you would like to improve.'));
 
   public constructor() {
     toObservable(this.drawer.context)
@@ -103,6 +113,13 @@ export class MenteeProfileEditDrawerComponent {
   }
 
   protected onSave(): void {
+    this.form.markAllAsTouched();
+    this.saveAttempted.set(true);
+    if (this.form.invalid) {
+      return;
+    }
+    // TODO: persist the mentee profile (introduction, skills, notes, resume) when the
+    // update endpoint is wired. Until then Save stays a coming-soon stub, same as withdraw.
     this.comingSoon.notify(MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL);
     this.drawer.close();
   }
@@ -118,24 +135,49 @@ export class MenteeProfileEditDrawerComponent {
   }
 
   private seedForm(profile: MentorshipMenteeProfileDetails): void {
-    // Register allows 3000 code points of rich HTML; the drawer is a 2000-code-point
-    // plain-text field. Convert block boundaries to newlines, then cap, *before*
-    // patching so the control, counter, and baselines share one value.
+    // Register and the drawer share the 3000 code-point cap. Convert block boundaries
+    // to newlines, then cap, *before* patching so the control, counter, and baselines
+    // share one value. patchValue must emit so skills pickers and the resume section
+    // (which snapshot `valueChanges`) pick up the seeded skills and filename.
     const introduction = capCodePointEdit('', htmlClipboardToText(profile.aboutMe ?? ''), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
     this.lastValidIntroduction = introduction;
     this.seededIntroduction = introduction;
-    this.form.patchValue(
-      {
-        introduction,
-        skillsHave: profile.skillsHave ?? [],
-        skillsWant: profile.skillsWant ?? [],
-        additionalNotes: profile.additionalNotes ?? '',
-        resumeFileName: profile.resumeFileName ?? '',
-      },
-      { emitEvent: false }
-    );
+    this.saveAttempted.set(false);
+    this.form.patchValue({
+      introduction,
+      skillsHave: profile.skillsHave ?? [],
+      skillsWant: profile.skillsWant ?? [],
+      additionalNotes: profile.additionalNotes ?? '',
+      resumeFileName: this.resumeFileNameFromProfile(profile),
+    });
     this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
+  }
+
+  private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {
+    this.formStatus();
+    this.saveAttempted();
+    const field = this.form.controls[control];
+    if (!field.touched || field.valid) return undefined;
+    return message;
+  }
+
+  /**
+   * `resumeFileName` is display-only and independently optional from `resumeUrl`.
+   * When the BFF only has the URL, derive the last path segment so the resume
+   * section is not seeded empty.
+   */
+  private resumeFileNameFromProfile(profile: MentorshipMenteeProfileDetails): string {
+    const named = profile.resumeFileName?.trim();
+    if (named) return named;
+    const normalized = normalizeToUrl(profile.resumeUrl?.trim() ?? '');
+    if (!normalized) return '';
+    try {
+      const last = new URL(normalized).pathname.split('/').filter(Boolean).pop();
+      return last ? decodeURIComponent(last) : '';
+    } catch {
+      return '';
+    }
   }
 }

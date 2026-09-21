@@ -265,6 +265,8 @@ export class MentorshipController {
   }
 
   // GET /api/mentorship/mentee/profile
+  // Requires a logged-in user. Scoping the payload to that identity is TODO until the
+  // Mentorship user_profiles read replaces this mock — do not fake authorization here.
   public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_mentee_profile');
 

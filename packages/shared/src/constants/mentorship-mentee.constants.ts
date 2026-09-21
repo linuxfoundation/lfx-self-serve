@@ -148,12 +148,12 @@ export const MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL =
 // ---------------------------------------------------------------------------
 
 import type {
+  MentorshipMenteeApplicationHistoryEntry,
+  MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteeApplicationStatus,
   MentorshipMenteeOverviewAccepted,
   MentorshipMenteeOverviewApplicant,
   MentorshipMenteeOverviewEmpty,
-  MentorshipMenteeApplicationHistoryEntry,
-  MentorshipMenteeApplicationHistoryStatus,
   MentorshipMenteePastOutcome,
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTask,
@@ -446,14 +446,14 @@ export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
  * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
- * endpoint is wired. Drawer-only: the Become a Mentee register form keeps its own
- * intro / skill labels and the 3000-char rich-text introduction cap.
+ * endpoint is wired. Drawer-only labels: the Become a Mentee register form keeps its
+ * own intro / skill copy. About Me uses the same 3000 code-point cap as register.
  */
 export const MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE =
   'Your mentee profile is shared with mentors reviewing your applications. It is separate from your LFX account details.';
 export const MENTORSHIP_MENTEE_PROFILE_ABOUT_INTRO = 'Your background, goals, and what makes you a good fit for a mentorship. Answer the following:';
-/** Plain-text About Me cap in the profile edit drawer. */
-export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = 2000;
+/** Same code-point cap as register About Me (`introduction`). */
+export const MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX = MENTORSHIP_MENTEE_INTRODUCTION_MAX;
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO =
   'Enter your current skills as well as skills you would like to improve, so mentors can match you with the right program.';
 export const MENTORSHIP_MENTEE_PROFILE_SKILLS_HAVE_EDIT_LABEL = 'What skills are you currently proficient in?';

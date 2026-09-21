@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, output, SecurityContext } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, SecurityContext, Signal } from '@angular/core';
 import { DomSanitizer } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import {
@@ -91,11 +91,11 @@ export class MenteeProfileDetailsComponent {
     this.editClick.emit();
   }
 
-  private initAboutMeHtml() {
+  private initAboutMeHtml(): Signal<string> {
     return computed(() => this.sanitizer.sanitize(SecurityContext.HTML, this.profile().aboutMe ?? '') ?? '');
   }
 
-  private initResumeUrl() {
+  private initResumeUrl(): Signal<string> {
     return computed(() => {
       const raw = this.profile().resumeUrl?.trim() ?? '';
       if (!raw) return '';

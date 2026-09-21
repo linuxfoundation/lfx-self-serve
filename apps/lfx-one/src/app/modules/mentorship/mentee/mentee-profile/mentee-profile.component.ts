@@ -57,7 +57,7 @@ export class MenteeProfileComponent {
   private readonly profileState: Signal<MentorshipMenteeProfileResponse> = this.initProfile();
 
   protected readonly profile = computed(() => this.profileState().profile);
-  protected readonly history = computed(() => this.profileState().history);
+  protected readonly history = computed(() => this.profileState().history ?? []);
 
   protected onEditProfile(): void {
     this.drawerService.open(this.profile());
