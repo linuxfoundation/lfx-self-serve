@@ -614,6 +614,16 @@ describe('FormationChecklistRowComponent', () => {
       expect(byTestId('owner-chip')?.textContent).toContain('IT');
     });
 
+    // The full tier's fixed team track truncates an upstream-controlled label, so — like the assignee
+    // name — the label is a focusable tooltip host that exposes the full string to keyboard users.
+    it('keeps the team label keyboard-reachable via a focusable tooltip host', async () => {
+      await render(buildItem({ uid: 'owner-tooltip', owner_team: 'legal_review' }));
+
+      const label = byTestId('owner-chip')?.querySelector('span[tabindex="0"]');
+      expect(label?.textContent).toContain('Legal Review');
+      expect(label?.querySelector('.p-component')).toBeNull();
+    });
+
     // #2774: the team is a fixed column now, so an unset team still renders its placeholder cell
     // (mirroring the assignee/due-date cells) rather than dropping the column.
     it('renders an em-dash placeholder cell when there is no owner team', async () => {

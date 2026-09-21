@@ -10,6 +10,7 @@ import {
   deriveFormationReadinessSummary,
   formatFormationAnnouncementLabel,
   formatFormationRelativeDayCount,
+  formatFormationSubItemsDoneLabel,
   groupFormationItemsBySection,
 } from './formation-checklist.utils';
 
@@ -126,6 +127,18 @@ describe('deriveFormationReadinessSummary', () => {
       done: 0,
       skipped: 0,
     });
+  });
+});
+
+describe('formatFormationSubItemsDoneLabel (#2774)', () => {
+  it('reads "N of M sub-items done" off a tally', () => {
+    const summary = deriveFormationReadinessSummary([
+      { uid: 'a', title: 'A', status: 'done' },
+      { uid: 'b', title: 'B', status: 'not_started' },
+      { uid: 'c', title: 'C', status: 'done' },
+    ] as FormationSubItem[]);
+
+    expect(formatFormationSubItemsDoneLabel(summary)).toBe('2 of 3 sub-items done');
   });
 });
 

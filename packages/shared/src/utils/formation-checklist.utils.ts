@@ -53,6 +53,15 @@ export function deriveFormationReadinessSummary(items: Pick<FormationItem, 'stat
 }
 
 /**
+ * "N of M sub-items done" — the one wording both sub-item segment bars announce (the row's
+ * disclosure bar and `lfx-formation-sub-item-list`'s), so a screen reader hears the same sentence
+ * for the same tally wherever it meets it (#2774).
+ */
+export function formatFormationSubItemsDoneLabel(summary: Pick<FormationReadinessSummary, 'totalItems' | 'counts'>): string {
+  return `${summary.counts.done} of ${summary.totalItems} sub-items done`;
+}
+
+/**
  * The readiness strip's "blocked on…" title(s) — every gating item actually in `blocked` status,
  * joined for display, or `null` when none are blocked. Deliberately not "first not-done gating
  * item": `in_progress`/`not_started` items are open but not blocking, only `blocked` is. Used by

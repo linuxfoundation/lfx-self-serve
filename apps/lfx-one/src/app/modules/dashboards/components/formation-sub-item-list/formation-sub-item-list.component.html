@@ -7,7 +7,7 @@
       <span class="text-xs font-medium text-gray-500 uppercase tracking-wide" data-testid="formation-sub-item-list-summary"
         >Sub-items · {{ summaryLabel() }}</span
       >
-      <div class="flex gap-0.5 h-1.5" role="img" [attr.aria-label]="summaryLabel() + ' sub-items'" data-testid="formation-sub-item-list-bar">
+      <div class="flex gap-0.5 h-1.5" role="img" [attr.aria-label]="barLabel()" data-testid="formation-sub-item-list-bar">
         @for (seg of indexedSegments(); track seg.id) {
           <div class="flex-1 rounded-sm" [ngClass]="segmentColorClass[seg.status]"></div>
         }
@@ -19,7 +19,8 @@
     @for (row of rows(); track row.uid) {
       <li class="flex items-center gap-2 text-sm" [attr.data-testid]="'formation-sub-item-row-' + row.uid">
         <i class="{{ row.glyph.icon }} {{ row.glyph.colorClass }} shrink-0 w-4 text-center" aria-hidden="true"></i>
-        <span class="flex-1 min-w-0 truncate text-gray-700">{{ row.title }}</span>
+        <!-- Titles are upstream-supplied and the list renders at drawer and inline-panel widths, so they wrap rather than truncate. -->
+        <span class="flex-1 min-w-0 text-gray-700">{{ row.title }}</span>
         <span class="shrink-0 text-xs text-gray-500">{{ row.statusLabel }}</span>
       </li>
     }

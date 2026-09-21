@@ -44,7 +44,8 @@ describe('FormationSubItemListComponent', () => {
 
     const bar = byTestId('formation-sub-item-list-bar');
     expect(bar?.getAttribute('role')).toBe('img');
-    expect(bar?.getAttribute('aria-label')).toBe('1 of 3 done sub-items');
+    // Same sentence the row disclosure's bar announces — one shared helper, so the two can't drift.
+    expect(bar?.getAttribute('aria-label')).toBe('1 of 3 sub-items done');
     const segments = Array.from(bar?.children ?? []) as HTMLElement[];
     expect(segments.map((segment) => segment.className)).toEqual([
       expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.done),
@@ -80,5 +81,16 @@ describe('FormationSubItemListComponent', () => {
     });
     // Status is text, not a chip — the parent item's status pill is the only pill on the surface.
     expect(fixture.nativeElement.querySelector('lfx-tag')).toBeNull();
+  });
+
+  // The wire status is an unchecked cast and the mapper passes it through unnormalized, so a value
+  // outside the union must degrade (not-started glyph, raw label) rather than crash the template.
+  it('renders a status outside the known union with the not-started glyph and the raw value as its label', async () => {
+    await render([{ uid: 'sub_future', title: 'Future', status: 'weird_future_status' as FormationItemStatus }]);
+
+    const row = byTestId('formation-sub-item-row-sub_future');
+    const glyph = row?.querySelector('i');
+    expect(glyph?.classList.contains('fa-circle')).toBe(true);
+    expect(row?.textContent).toContain('weird_future_status');
   });
 });

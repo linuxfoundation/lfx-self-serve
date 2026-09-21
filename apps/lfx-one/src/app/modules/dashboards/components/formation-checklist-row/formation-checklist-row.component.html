@@ -138,9 +138,14 @@
          a date-only field). -->
     <div
       class="flex items-center gap-4 flex-wrap @2xl:col-start-2 @2xl:row-start-2 @5xl:row-start-1 @5xl:col-start-3 @5xl:col-span-3 @5xl:grid @5xl:grid-cols-subgrid">
-      <div class="min-w-0 truncate text-xs text-gray-600" [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
+      <div class="min-w-0 text-xs text-gray-600" [attr.data-testid]="'formation-checklist-row-owner-chip-' + item().uid">
         @if (ownerTeamLabel(); as ownerTeam) {
-          <span class="sr-only">Team: </span>{{ ownerTeam }}
+          <!-- Wraps freely in the stacked/compact tiers; only the full tier's fixed 7rem track truncates,
+               and then the same focusable pTooltip host as the assignee cell exposes the full,
+               upstream-controlled label (PR #2692 review). Plain span, no .p-component descendant. -->
+          <span class="@5xl:block @5xl:truncate" tabindex="0" [pTooltip]="ownerTeam" tooltipPosition="top" tooltipEvent="both">
+            <span class="sr-only">Team: </span>{{ ownerTeam }}
+          </span>
         } @else {
           <span class="text-gray-400" aria-hidden="true">&mdash;</span>
           <span class="sr-only">No team</span>

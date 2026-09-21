@@ -22,6 +22,7 @@ import {
 import {
   deriveFormationReadinessSummary,
   formatFormationOwnerTeam,
+  formatFormationSubItemsDoneLabel,
   formationItemHasAction,
   isFormationItemExternal,
   isRelativeInAppPath,
@@ -217,9 +218,10 @@ export class FormationChecklistRowComponent {
     const summary = this.subItemsSummary();
     return summary ? `${summary.counts.done} of ${summary.totalItems} sub-items` : '';
   });
+  /** The mini bar's accessible name — shared wording with `lfx-formation-sub-item-list`'s bar (`formatFormationSubItemsDoneLabel`). */
   protected readonly subItemsBarLabel = computed(() => {
     const summary = this.subItemsSummary();
-    return summary ? `${summary.counts.done} of ${summary.totalItems} sub-items done` : '';
+    return summary ? formatFormationSubItemsDoneLabel(summary) : '';
   });
   /** Same indexed-track shape as the readiness strip — statuses repeat, so a stable per-position id is the track key. */
   protected readonly subItemSegments = computed(() => (this.subItemsSummary()?.segments ?? []).map((status, index) => ({ id: index, status })));
