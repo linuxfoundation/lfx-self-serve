@@ -3,6 +3,8 @@
 
 import { Routes } from '@angular/router';
 
+import { menteeRegisterGuard } from '@shared/guards/mentee-profile.guard';
+
 export const MENTORSHIP_ROUTES: Routes = [
   {
     path: '',
@@ -48,12 +50,41 @@ export const MENTORSHIP_ROUTES: Routes = [
     loadComponent: () => import('./mentor/mentor-program-detail/mentor-program-detail.component').then((m) => m.MentorProgramDetailComponent),
   },
   {
-    // Serves the Become a Mentee form until the profiles API can tell us the signed-in
-    // user already has a Mentee profile, at which point this path serves that instead.
+    // Register form — matches `/mentorship/mentee` exactly. `canActivate` checks whether
+    // the user already has a mentee profile; if so it redirects to the shell's overview.
+    // Today the mock always returns `false` (no profile), so this always renders.
+    // `pathMatch: 'full'` keeps it from swallowing shell children.
     path: 'mentee',
     pathMatch: 'full',
     title: 'Become a Mentee',
+    canActivate: [menteeRegisterGuard],
     loadComponent: () => import('./mentee/mentee-register/mentee-register.component').then((m) => m.MenteeRegisterComponent),
+  },
+  {
+    // Mentee shell — owns the underline tabs and the page H1. No guard: child routes
+    // like `/mentorship/mentee/overview` are always accessible (deep-linkable, and the
+    // dev shortcut on the register page navigates here directly).
+    path: 'mentee',
+    loadComponent: () => import('./mentee/mentee-page/mentee-page.component').then((m) => m.MenteePageComponent),
+    children: [
+      { path: '', pathMatch: 'full', redirectTo: 'overview' },
+      {
+        path: 'overview',
+        title: 'Overview',
+        loadComponent: () => import('./mentee/mentee-overview/mentee-overview.component').then((m) => m.MenteeOverviewComponent),
+      },
+      {
+        path: 'tasks',
+        title: 'My Application Tasks',
+        loadComponent: () => import('./mentee/mentee-application-tasks/mentee-application-tasks.component').then((m) => m.MenteeApplicationTasksComponent),
+      },
+      {
+        path: 'profile',
+        title: 'Mentee Profile',
+        loadComponent: () => import('./mentee/mentee-profile/mentee-profile.component').then((m) => m.MenteeProfileComponent),
+      },
+      { path: '**', redirectTo: 'overview' },
+    ],
   },
   {
     // Mentor shell — owns the underline tabs and the page H1. Each child renders only
