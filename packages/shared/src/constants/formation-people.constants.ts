@@ -65,7 +65,7 @@ export const FORMATION_INVITE_ROLE_OPTIONS = [
 export const FORMATION_PEOPLE_ENRICHMENT_BATCH_SIZE = 8;
 
 /**
- * How long the BFF memoises one person's user-metadata read (title / organization / picture)
+ * How long the BFF memoises one person's user-metadata read (name, title, organization, picture)
  * across requests. The people card mounts on every checklist load on both hosts, and these
  * fields change rarely, so a revisit inside this window replays no per-person NATS fan-out.
  */
@@ -81,6 +81,13 @@ export const FORMATION_PEOPLE_ENRICHMENT_BUDGET_MS = 4000;
 
 /** Hard cap on memoised user-metadata entries per process; the oldest entry is evicted once reached. */
 export const FORMATION_PEOPLE_METADATA_CACHE_MAX_ENTRIES = 2000;
+
+/**
+ * The reserved username the formation service uses for system-generated activity entries. Activity
+ * mapper and enrichment helper both need to recognise it; sharing a constant prevents silent drift
+ * if the sentinel ever changes.
+ */
+export const FORMATION_SYSTEM_ACTOR_USERNAME = 'system';
 
 /**
  * Factory, not a shared object — it backs both a `toSignal` initial value and a `catchError`

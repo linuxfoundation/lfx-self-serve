@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { FormationActivity, FormationUser, UpstreamFormationActivityEntry, UpstreamFormationActivityPage } from '@lfx-one/shared/interfaces';
+import { FORMATION_SYSTEM_ACTOR_USERNAME } from '@lfx-one/shared/constants';
 import { normalizeFormationActivityAction } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
@@ -28,8 +29,8 @@ export interface FormationActivityFetchResult {
  * the field non-optional for template simplicity.
  */
 function mapActor(raw: UpstreamFormationActivityEntry): FormationUser {
-  if (raw.set_by === 'system' || raw.actor === 'system') {
-    return { username: 'system', name: 'System' };
+  if (raw.set_by === FORMATION_SYSTEM_ACTOR_USERNAME || raw.actor === FORMATION_SYSTEM_ACTOR_USERNAME) {
+    return { username: FORMATION_SYSTEM_ACTOR_USERNAME, name: 'System' };
   }
   return { username: raw.actor, name: raw.actor };
 }
