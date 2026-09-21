@@ -1576,6 +1576,18 @@ describe('FormationItemDrawerComponent', () => {
         await render(buildItem({}), false);
 
         expect(query('[data-testid="formation-item-drawer-history-empty"]')?.textContent).toContain('No activity yet');
+        expect(query('[data-testid="formation-item-drawer-history-unavailable"]')).toBeNull();
+      });
+
+      it('shows the unavailable state, not the empty one, when the activity read failed (GH-2372)', async () => {
+        // A failed feed must never read as "no activity" — the item above is still valid, the history is simply unknown.
+        const item = buildItem({});
+        const detail: FormationItemDetail = { item, history: [], history_state: 'unavailable' };
+        await render(item, false, { getFormationItem: vi.fn().mockReturnValue(of(detail)) });
+
+        expect(query('[data-testid="formation-item-drawer-history-unavailable"]')?.textContent).toContain("Couldn't load activity for this item.");
+        expect(query('[data-testid="formation-item-drawer-history-empty"]')).toBeNull();
+        expect(query('[data-testid="formation-item-drawer-details"]')).not.toBeNull();
       });
     });
   });
