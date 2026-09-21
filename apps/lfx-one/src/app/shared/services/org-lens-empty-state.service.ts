@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Signal } from '@angular/core';
-import { OrgLensEmptyStateName } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';

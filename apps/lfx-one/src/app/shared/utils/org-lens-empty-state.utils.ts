@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { OrgLensEmptyStateName } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 
 /**
  * Spec 053 — outcome of one section request, classified for the shared empty state (FR-014/FR-015).
@@ -25,7 +25,9 @@ export function classifySectionError(error: unknown): Exclude<OrgLensSectionOutc
   if (code && UNVERIFIABLE_CODES[code]) {
     return 'unverifiable';
   }
-  return error.status === 403 ? 'denied' : 'failed';
+  // FR-015: denial is decided by the stated reason, never by status alone — a 403 without the gate's
+  // `FORBIDDEN` code (a proxy page, an unrelated handler) is a load failure, not a permission verdict.
+  return code === 'FORBIDDEN' ? 'denied' : 'failed';
 }
 
 /** Map a section outcome to the registry state it renders, or `null` when the section has records. */

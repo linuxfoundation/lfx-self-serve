@@ -169,8 +169,10 @@ export class OrgRoleGrantsService {
       // connected-component classification. Rejecting it recomputes instead.
       typeof entry.degraded === 'boolean' &&
       // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
-      // `undefined` and hiding the staff-check state.
-      (entry.staffCheck === 'ok' || entry.staffCheck === 'failed')
+      // `undefined` and hiding the staff-check state; a `failed` entry is never a hit either — the write
+      // path refuses to store one, and an entry that got there some other way carries no
+      // `correlationId` and would pin the staff-check state for the TTL.
+      entry.staffCheck === 'ok'
     );
   }
 

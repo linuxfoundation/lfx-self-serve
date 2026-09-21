@@ -191,7 +191,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       const trigger = page.getByTestId('org-selector');
       await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await trigger.click();
-      await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: 5_000 });
+      await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: SETTLE_TIMEOUT });
       const notice = page.getByTestId('org-selector-list-incomplete');
       await expect(notice).toBeVisible();
       await expect(notice).toContainText('may be missing');
@@ -268,16 +268,17 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // FR-002: a first-time visitor learns what Organization Lens is.
       await expect(state.productLine).toBeVisible();
       await expect(state.productLine).toContainText('Organization Lens shows how a company is involved in open source');
-      // Primary: Add an affiliation → the LFX profile attributions page (SC-004 destination).
-      const primaryLink = state.primary.locator('a');
-      await expect(primaryLink).toBeVisible();
-      await expect(primaryLink).toContainText('Add an affiliation');
-      await expect(primaryLink).toHaveAttribute('href', /profile\/attributions/);
+      // Primary: Add an affiliation → the in-app profile attributions page (SC-004 destination).
+      await expect(state.primary).toBeVisible();
+      await expect(state.primary).toContainText('Add an affiliation');
       // Secondary: Contact support.
       await expect(state.contactSupport).toBeVisible();
       await expect(state.retry).toHaveCount(0);
       await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
       await expect(page.getByTestId('org-overview-empty-state')).toHaveCount(0);
+      // Following the primary must reach its destination, not just render (SC-004).
+      await state.primary.click();
+      await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
     });
 
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
@@ -343,6 +344,56 @@ test.describe('Org Lens empty states (spec 053)', () => {
       const askForAccess = page.getByTestId('org-not-found-contact-support');
       await expect(askForAccess).toBeVisible();
       await expect(askForAccess).toContainText('Ask for access');
+
+      // The list is the primary action, so it must actually lead somewhere: picking the held
+      // organization selects it and opens its overview (FR-005 / SC-004).
+      await page.getByTestId(`org-not-found-org-${ORG_A_UID}`).click();
+      await expect(page).toHaveURL(new RegExp(`/org/${ORG_A_SLUG}/overview(\\?|#|$)`), { timeout: SETTLE_TIMEOUT });
+    });
+
+    // FR-016 rules 2–4 apply on the dead end too: a roster that never loaded, or a team check that
+    // threw, says nothing about access — the page must not fall back to the no-access wording
+    // (FR-009 / FR-011). Both are reachable with an addressed slug because the guard lands here
+    // before the classifier has anything to say.
+    test('S2g: an addressed organization with a failed lookup renders could-not-load on the dead end, never no-access', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ lookupOutcome: 'failed', degraded: true }),
+        orgItems: [],
+        personaOrgs: [],
+        resolvable: [],
+      });
+
+      await page.goto(`/org/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      const root = page.getByTestId('org-not-found-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'could-not-load');
+      await expect(page.getByTestId('org-not-found-title')).toHaveText('Some organizations could not be loaded');
+      await expect(page.getByTestId('org-not-found-retry')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('You do not have access');
+    });
+
+    test('S2h: an addressed organization with a failed staff check renders staff-check-failed with the reference on the dead end', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isStaff: false, staffCheck: 'failed', correlationId: CORRELATION_ID, lookupOutcome: 'ok' }),
+        orgItems: [],
+        personaOrgs: [],
+        resolvable: [],
+      });
+
+      await page.goto(`/org/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      const root = page.getByTestId('org-not-found-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'staff-check-failed');
+      await expect(page.getByTestId('org-not-found-title')).toHaveText('We could not confirm your staff access');
+      await expect(page.getByTestId('org-not-found-description')).toContainText(CORRELATION_ID);
+      await expect(page.getByTestId('org-not-found-retry')).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('You do not have access');
     });
 
     // An LF-team caller reaches organizations through switcher search, not through a list of their
@@ -446,7 +497,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'section-empty');
       // FR-013: "No {things} recorded" where no period applies — and no Retry, because nothing failed.
-      await expect(title).toHaveText(/^No .+ recorded$/);
+      await expect(title).toHaveText('No ROI records recorded');
       await expect(retry).toHaveCount(0);
       await expect(root).not.toContainText('could not');
       await expect(page.getByTestId('org-roi-annual-trend-chart')).toHaveCount(0);

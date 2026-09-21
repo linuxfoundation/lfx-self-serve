@@ -4,25 +4,12 @@
 import { NgTemplateOutlet } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { ORG_LENS_EMPTY_STATE_COPY, OrgLensEmptyStateAction, OrgLensEmptyStateName } from '@lfx-one/shared/constants';
+import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateAction, OrgLensEmptyStateName, OrgLensEmptyStateValues } from '@lfx-one/shared/interfaces';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-
-/** Resolved values a state may interpolate. `orgName` is honoured only for states rendered to a caller who holds the org (FR-019). */
-export interface OrgLensEmptyStateValues {
-  orgName?: string | null;
-  /** FR-013 — the section's plural noun ("meetings", "commits"). */
-  noun?: string;
-  /** FR-013 — human-readable selected period; absent ⇒ the `noPeriod` wording. */
-  period?: string | null;
-  correlationId?: string | null;
-  /** FR-008 — the caller's own held organizations, rendered as the primary action list. */
-  orgList?: { uid: string; name: string }[];
-  /** FR-013 — false when no caller-set filter narrows the query, so `section-empty` renders reason-only. Defaults true. */
-  filterActive?: boolean;
-}
 
 /** States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001). */
 const UNHELD_ORG_STATES: Record<string, true> = { 'no-access': true, 'wrong-organization': true, 'section-no-access': true, 'section-could-not-verify': true };

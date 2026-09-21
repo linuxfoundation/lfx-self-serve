@@ -316,12 +316,12 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
 
     await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
     await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
-    // The dead end is reached before any resolution: the addressed organization is never named in
-    // the state's copy, and the selection is untouched. B is one of the viewer's OWN held
-    // organizations here, so it may legitimately appear in the FR-008 held-organization list
-    // (spec 053 FR-019) — the wording is what must stay silent about the address.
-    await expect(page.getByTestId('org-not-found-title')).not.toContainText(ORG_B_NAME);
-    await expect(page.getByTestId('org-not-found-description')).not.toContainText(ORG_B_NAME);
+    // Flag off is the spec-050 static dead end: cause-blind text, no organization list, nothing
+    // about the addressed organization anywhere on the page (FR-023), selection untouched.
+    await expect(page.getByTestId('org-not-found-state')).toHaveAttribute('data-state', 'unavailable');
+    await expect(page.getByTestId('org-not-found-title')).toHaveText('Organization not found');
+    await expect(page.getByTestId('org-not-found-org-list')).toHaveCount(0);
+    await expect(page.locator('body')).not.toContainText(ORG_B_NAME);
     expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
   });
 

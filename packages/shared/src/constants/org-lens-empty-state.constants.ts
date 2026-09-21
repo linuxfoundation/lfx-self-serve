@@ -15,51 +15,13 @@
  * does not hold it. `{orgName}` is accepted only by states rendered to a caller who holds the org.
  */
 
-/** Names of the states shipped in phase 1. */
-export type OrgLensEmptyStateName =
-  | 'no-organization'
-  | 'no-access'
-  | 'wrong-organization'
-  | 'could-not-load'
-  | 'staff-check-failed'
-  | 'not-found-staff'
-  | 'section-empty'
-  | 'section-could-not-load'
-  | 'section-no-access'
-  | 'section-could-not-verify';
-
-/** What the primary / secondary control does when it is not a plain link. */
-export type OrgLensEmptyStateActionKind = 'retry' | 'org-list' | 'reset-filters' | 'contact-support';
-
-export interface OrgLensEmptyStateAction {
-  label: string;
-  /** External URL — rendered as an anchor. */
-  href?: string;
-  /** In-app route — rendered as a router link. */
-  route?: string[];
-  /** Emitted through the component's `primaryAction` / `secondaryAction` output. */
-  action?: OrgLensEmptyStateActionKind;
-}
-
-export interface OrgLensEmptyStateCopy {
-  headline: string;
-  /** One line on what Organization Lens is — present for every state a first-time visitor can reach. */
-  productLine?: string;
-  /** May interpolate `{orgName}` `{noun}` `{period}` `{correlationId}`. */
-  reason: string;
-  /** Font Awesome class. */
-  icon: string;
-  /** Exactly one primary action, except `section-empty` with no applicable filter (renders reason-only). */
-  primary?: OrgLensEmptyStateAction;
-  secondary?: OrgLensEmptyStateAction;
-  /** `section-empty` only — wording when the section has no selectable period (FR-013 "No {noun} recorded"). */
-  noPeriod?: { headline: string; reason: string };
-}
+import { OrgLensEmptyStateCopy, OrgLensEmptyStateName } from '../interfaces/org-lens-empty-state.interface';
+import { LINKS_CONFIG } from './links.config';
 
 const PRODUCT_LINE = 'Organization Lens shows how a company is involved in open source — the projects it contributes to, the people doing the work, and its membership footprint.';
 
-export const ORG_LENS_PROFILE_ATTRIBUTIONS_URL = 'https://app.lfx.dev/profile/attributions';
-export const ORG_LENS_INSIGHTS_PUBLIC_URL = 'https://insights.linuxfoundation.org';
+/** In-app route of the LFX profile attributions page (FR-006 primary) — environment-agnostic. */
+export const ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE = ['/profile', 'attributions'];
 
 export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmptyStateCopy> = {
   'no-organization': {
@@ -67,7 +29,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     productLine: PRODUCT_LINE,
     reason: 'Your account is not linked to an organization yet, so there is nothing to show here. Add your organization as an affiliation in your LFX profile. Once it is verified, it will appear here.',
     icon: 'fa-light fa-building',
-    primary: { label: 'Add an affiliation', href: ORG_LENS_PROFILE_ATTRIBUTIONS_URL },
+    primary: { label: 'Add an affiliation', route: ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE },
     secondary: { label: 'Already added one? Contact support', action: 'contact-support' },
   },
   'no-access': {
@@ -77,7 +39,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
       "Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation. Contact your administrators and they can grant you access. If you are not sure who they are, your OSPO is a good place to start.",
     icon: 'fa-light fa-lock',
     primary: { label: 'Contact support', action: 'contact-support' },
-    secondary: { label: 'See public activity in LFX Insights', href: ORG_LENS_INSIGHTS_PUBLIC_URL },
+    secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
   },
   'wrong-organization': {
     headline: 'You do not have access to this organization',
@@ -105,7 +67,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
     headline: 'We could not confirm your staff access',
     productLine: PRODUCT_LINE,
     reason:
-      'Your account looks like Linux Foundation staff, but the staff access check did not complete. This is a system problem, not a change to your permissions. Reference: {correlationId}',
+      'The staff access check did not complete. This is a system problem on our side, not a change to your permissions. Reference: {correlationId}',
     icon: 'fa-light fa-id-badge',
     primary: { label: 'Retry', action: 'retry' },
     secondary: { label: 'Still failing? Send this reference to support', action: 'contact-support' },

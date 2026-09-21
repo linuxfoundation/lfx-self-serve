@@ -14,10 +14,24 @@
       </div>
       <h2 class="text-base font-semibold text-gray-900" data-testid="org-not-found-title">Organization not found</h2>
       <p class="max-w-lg text-sm text-gray-600" data-testid="org-not-found-description">It may not exist, or you may not have access to it.</p>
+      <div class="flex justify-center">
+        <lfx-button
+          routerLink="/"
+          icon="fa-light fa-house"
+          label="Go to Dashboard"
+          size="small"
+          [text]="true"
+          data-testid="org-not-found-dashboard-button"></lfx-button>
+      </div>
     </section>
   } @else if (settled()) {
     <!-- Spec 053 FR-007/FR-008 — decided by the caller's OWN list only; the addressed organization is never named. -->
-    <lfx-org-lens-empty-state [state]="state()" [testId]="'org-not-found'" [values]="{ orgList: orgList() }" (orgSelected)="pick($event)" />
+    <lfx-org-lens-empty-state
+      [state]="state()"
+      [testId]="'org-not-found'"
+      [values]="{ orgList: orgList(), correlationId: correlationId() }"
+      (orgSelected)="pick($event)"
+      (retry)="retry()" />
   } @else {
     <section class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16" data-testid="org-not-found-loading">
       <p-skeleton width="3rem" height="3rem" borderRadius="9999px" />
@@ -25,14 +39,4 @@
       <p-skeleton width="24rem" height="0.875rem" />
     </section>
   }
-
-  <div class="flex justify-center">
-    <lfx-button
-      routerLink="/"
-      icon="fa-light fa-house"
-      label="Go to Dashboard"
-      size="small"
-      [text]="true"
-      data-testid="org-not-found-dashboard-button"></lfx-button>
-  </div>
 </div>

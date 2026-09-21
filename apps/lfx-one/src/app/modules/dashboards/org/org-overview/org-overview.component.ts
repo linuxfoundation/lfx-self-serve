@@ -39,7 +39,9 @@ export class OrgOverviewComponent {
   protected readonly tierLabel: Signal<string | null> = computed(() => this.selectedAccount().membershipTier || null);
 
   /** Page is "loaded" once BOTH dependencies have returned their first response. Prevents an FOEC race. */
-  protected readonly loaded: Signal<boolean> = computed(() => this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded());
+  protected readonly loaded: Signal<boolean> = computed(
+    () => this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.emptyState.settled()
+  );
 
   /** True ONLY after both dependencies have completed their initial load and the user genuinely has no selectable org. Drives the empty-state render. */
   protected readonly isEmpty: Signal<boolean> = computed(

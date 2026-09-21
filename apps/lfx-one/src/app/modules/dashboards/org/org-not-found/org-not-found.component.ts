@@ -3,7 +3,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { ORG_LENS_ENABLED_FLAG, OrgLensEmptyStateName } from '@lfx-one/shared/constants';
+import { ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { Account } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
@@ -69,11 +70,27 @@ export class OrgNotFoundComponent {
    * when they have any. Otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
    */
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
+    // FR-016 rules 2–4 first: a roster that never loaded or a failed team check says nothing about
+    // access, so neither may render the no-access wording (FR-009 / FR-011).
+    if (this.orgRoleGrants.lookupOutcome() === 'failed') {
+      return 'could-not-load';
+    }
+    if (this.orgRoleGrants.staffCheck() === 'failed') {
+      return 'staff-check-failed';
+    }
     if (this.orgRoleGrants.isStaff()) {
       return 'not-found-staff';
     }
     return this.orgList().length > 0 ? 'wrong-organization' : 'no-access';
   });
+
+  /** FR-011 support reference; null unless the staff check failed. */
+  protected readonly correlationId: Signal<string | null> = this.orgRoleGrants.correlationId;
+
+  /** Retry action of `could-not-load` / `staff-check-failed`: re-run the lookup in place. */
+  protected retry(): void {
+    this.emptyState.retry();
+  }
 
   /** Select one of the caller's own organizations and open its overview. */
   protected pick(uid: string): void {

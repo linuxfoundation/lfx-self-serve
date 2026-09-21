@@ -831,5 +831,7 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     expect(guard(entry)).toBe(false);
     expect(guard({ ...entry, staffCheck: 'ok' })).toBe(true);
     expect(guard({ ...entry, staffCheck: 'bogus' })).toBe(false);
+    // A stored failure is never served: it would pin the staff-check state for the TTL with no reference.
+    expect(guard({ ...entry, staffCheck: 'failed' })).toBe(false);
   });
 });

@@ -148,6 +148,7 @@ export * from './navigation.interface';
 
 // Org selector (spec 020) — paginated FGA-filtered org list + role grants + canonical record
 export * from './org-selector.interface';
+export * from './org-lens-empty-state.interface';
 
 // Org Lens URL scheme (spec 050) — address intent
 export * from './org-lens-url.interface';
