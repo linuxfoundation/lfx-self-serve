@@ -348,10 +348,10 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect(page.getByTestId('org-selector')).toContainText(ORG_B_NAME, { timeout: SIDEBAR_TIMEOUT });
     await expect.poll(async () => (await readSelectionCookie(page))?.uid, { timeout: SIDEBAR_TIMEOUT }).toBe(ORG_B_UID);
     // Every rendered Org Lens link now addresses B — a leftover literal such as `/org/projects` fails
-    // this, not just a stale A link. EasyCLA excepted: legacy address in phase 1 (DR-004).
+    // this, not just a stale A link. EasyCLA included since lfx-self-serve#2743.
     const orgHrefs = await page.locator(`a[href^="/org/"]`).evaluateAll((links) => links.map((a) => a.getAttribute('href') ?? ''));
     expect(orgHrefs).toContain(`/org/${ORG_B_SLUG}/overview`);
-    expect(orgHrefs.filter((href) => href !== '/org/easycla' && !href.startsWith('/org/easycla/') && !href.startsWith(`/org/${ORG_B_SLUG}/`))).toEqual([]);
+    expect(orgHrefs.filter((href) => !href.startsWith(`/org/${ORG_B_SLUG}/`))).toEqual([]);
 
     // The switch is a user intent: Back returns to the pre-switch organization and page (not an intermediate address).
     await page.goBack({ waitUntil: 'domcontentloaded' });

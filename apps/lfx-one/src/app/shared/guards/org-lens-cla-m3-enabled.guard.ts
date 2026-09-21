@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
 import { CanMatchFn, Router, UrlTree } from '@angular/router';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { orgLensPagePath } from '@lfx-one/shared/utils';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { OrgLensNavigationService } from '../services/org-lens-navigation.service';
@@ -21,12 +22,17 @@ export const orgLensClaM3EnabledGuard: CanMatchFn = async () => {
   const router = inject(Router);
   // Injected up front: the fallback also runs after the `await` below, outside the injection context.
   const orgLensNavigation = inject(OrgLensNavigationService);
-  // Spec 050 US2: the fallback stays with the selected organization (`/org/{segment}/overview`);
-  // the legacy `/org/overview` only while nothing is selected yet. Derived from the *selection*
-  // rather than the URL being recognized (as `orgLensRoiEnabledGuard` does with `orgLensPagePath`)
-  // because EasyCLA's legacy address names no organization — there is nothing in the URL to keep.
-  // Built from commands, not a joined string, so the segment stays one path segment whatever it holds.
-  const fallback = (): UrlTree => router.createUrlTree(orgLensNavigation.orgLensLink('overview'));
+  // Spec 050: the fallback keeps the organization the address names. This CanMatch runs during
+  // recognition, before `orgPathParamGuard` has adopted `/org/{segment}/easycla`'s organization, so
+  // the selection may still be the cookie's — the URL being recognized is the authority
+  // (`orgLensPagePath`, as `orgLensRoiEnabledGuard` does). Only the legacy `/org/easycla` names no
+  // organization; there the selected one is the best available (`/org/overview` while none is).
+  const fallback = (): UrlTree => {
+    const target = router.getCurrentNavigation()?.extractedUrl;
+    const segments = target?.root.children['primary']?.segments.map((segment) => segment.path) ?? [];
+    const addressed = orgLensPagePath(segments, 'overview');
+    return addressed === '/org/overview' ? router.createUrlTree(orgLensNavigation.orgLensLink('overview')) : router.parseUrl(addressed);
+  };
 
   // A locally pinned value decides on its own, before the provider is consulted at all — waiting
   // first would let a readiness timeout answer for it, and a pinned `false` must never be
