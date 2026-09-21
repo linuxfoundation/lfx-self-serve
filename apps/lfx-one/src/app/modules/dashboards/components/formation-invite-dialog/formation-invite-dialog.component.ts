@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, viewChild } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ControlEvent, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -33,7 +33,7 @@ import type {
   FormationPersonRole,
   UserSearchResult,
 } from '@lfx-one/shared/interfaces';
-import { composeFullName, formatUserLabel } from '@lfx-one/shared/utils';
+import { composeFullName, formatUserLabel, isEmailShape } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { PermissionsService } from '@services/permissions.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -78,6 +78,9 @@ export class FormationInviteDialogComponent {
     email: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.pattern(EMAIL_REGEX)] }),
     role: new FormControl<FormationPersonRole>('view', { nonNullable: true }),
   });
+
+  /** The search box, while search mode renders it — asked for its discarded typed text on the switch to manual entry. */
+  private readonly picker = viewChild(UserSearchComponent);
 
   protected readonly submitting = signal(false);
   /** Search first; the manual fields are the escape hatch, never the default (#2772). */
@@ -199,7 +202,9 @@ export class FormationInviteDialogComponent {
    * writing into this form's single `name` control.
    */
   protected onPersonPicked(user: UserSearchResult): void {
-    this.form.controls.name.setValue(composeFullName(user.first_name, user.last_name));
+    // Capped to the persisted length: the search path renders no name field, so an over-long
+    // directory name would otherwise fail `maxLength` with nothing on screen to say so.
+    this.form.controls.name.setValue(composeFullName(user.first_name, user.last_name).slice(0, FORMATION_INVITE_NAME_MAX_LENGTH));
     this.form.controls.email.markAsTouched();
   }
 
@@ -213,13 +218,28 @@ export class FormationInviteDialogComponent {
     this.form.controls.name.setValue('');
   }
 
-  /** "Enter their details manually": swap the search box for the Name + Email fields, which then require a name for the invite email. */
+  /**
+   * "Enter details manually": swap the search box for the Name + Email fields, which then require
+   * a name for the invite email. The click that brings the user here blurred the search box first,
+   * which snapped it back and recorded whatever they had typed (GH-2694) — a search that found
+   * nobody is usually the very text the manual fields want, so it is carried over: an address
+   * into Email, anything else into Name.
+   */
   protected switchToManual(): void {
     if (this.submitting()) {
       return;
     }
+    const typed = this.picker()?.consumeDiscardedText() ?? null;
     this.mode.set('manual');
     this.applyModeValidators('manual');
+    if (!typed) {
+      return;
+    }
+    if (isEmailShape(typed) || typed.includes('@')) {
+      this.form.controls.email.setValue(typed);
+    } else {
+      this.form.controls.name.setValue(typed.slice(0, FORMATION_INVITE_NAME_MAX_LENGTH));
+    }
   }
 
   /**
@@ -237,25 +257,6 @@ export class FormationInviteDialogComponent {
     this.form.controls.email.markAsUntouched();
     this.mode.set('search');
     this.applyModeValidators('search');
-  }
-
-  private applyModeValidators(mode: FormationInviteMode): void {
-    const name = this.form.controls.name;
-    const validators = [Validators.maxLength(FORMATION_INVITE_NAME_MAX_LENGTH)];
-    if (mode === 'manual') {
-      validators.push(trimmedRequired());
-    }
-    name.setValidators(validators);
-    name.updateValueAndValidity();
-  }
-
-  /** The address survives into the manual fields; the name field opens already flagged as required. */
-  private requireNameForInvite(): void {
-    this.submitting.set(false);
-    this.mode.set('manual');
-    this.applyModeValidators('manual');
-    this.form.controls.name.markAsTouched();
-    this.messageService.add({ severity: 'info', summary: FORMATION_INVITE_NAME_NEEDED_SUMMARY, detail: FORMATION_INVITE_NAME_NEEDED_DETAIL, life: 5000 });
   }
 
   private initControlState(control: 'name' | 'email'): Signal<ControlEvent | null> {
@@ -294,6 +295,25 @@ export class FormationInviteDialogComponent {
       }
       return undefined;
     });
+  }
+
+  private applyModeValidators(mode: FormationInviteMode): void {
+    const name = this.form.controls.name;
+    const validators = [Validators.maxLength(FORMATION_INVITE_NAME_MAX_LENGTH)];
+    if (mode === 'manual') {
+      validators.push(trimmedRequired());
+    }
+    name.setValidators(validators);
+    name.updateValueAndValidity();
+  }
+
+  /** The address survives into the manual fields; the name field opens already flagged as required. */
+  private requireNameForInvite(): void {
+    this.submitting.set(false);
+    this.mode.set('manual');
+    this.applyModeValidators('manual');
+    this.form.controls.name.markAsTouched();
+    this.messageService.add({ severity: 'info', summary: FORMATION_INVITE_NAME_NEEDED_SUMMARY, detail: FORMATION_INVITE_NAME_NEEDED_DETAIL, life: 5000 });
   }
 
   /**

@@ -64,6 +64,16 @@ describe('SearchService', () => {
     await expect(result).resolves.toEqual([expect.objectContaining({ uid: 'as-typed' })]);
   });
 
+  it('keeps a plus-addressed email encoded, so Express does not read the plus as a space', async () => {
+    const result = collect('jane+lfx@example.com');
+
+    const req = http.expectOne((r) => r.url === '/api/search/users');
+    expect(req.request.urlWithParams).toContain('tags=email%3Ajane%2Blfx%40example.com');
+    req.flush({ results: [] });
+
+    await expect(result).resolves.toEqual([]);
+  });
+
   it('issues a single tag lookup for an address that is already lowercase', async () => {
     const result = collect('jane.doe@example.com');
 

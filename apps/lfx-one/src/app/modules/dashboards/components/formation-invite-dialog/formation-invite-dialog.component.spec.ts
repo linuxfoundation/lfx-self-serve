@@ -4,7 +4,10 @@
 import { HttpErrorResponse, provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
+import { FormGroup } from '@angular/forms';
+import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { ERROR_CODES, FORMATION_INVITE_NAME_NEEDED_SUMMARY } from '@lfx-one/shared/constants';
 import { FormationInviteDialogData, FormationInviteMode, UserSearchResult } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
@@ -86,9 +89,14 @@ describe('FormationInviteDialogComponent', () => {
       selectedLabel(): string;
     };
 
-  function switchToManual(): void {
+  // Await stability rather than forcing detectChanges — the file's own `submit()` pairs the two the same way.
+  async function switchToManual(): Promise<void> {
     handlers().switchToManual();
-    fixture.detectChanges();
+    await fixture.whenStable();
+  }
+
+  async function settle(): Promise<void> {
+    await fixture.whenStable();
   }
 
   const kim: UserSearchResult = {
@@ -118,7 +126,7 @@ describe('FormationInviteDialogComponent', () => {
   });
 
   it('blocks an empty manual submission with both required errors and no request', async () => {
-    switchToManual();
+    await switchToManual();
     await submit();
 
     expect(addUserToProject).not.toHaveBeenCalled();
@@ -126,17 +134,17 @@ describe('FormationInviteDialogComponent', () => {
     expect(errorId('email')).toBe('formation-invite-email-required');
   });
 
-  it('a pick composes the name and the committed label; the in-field clear resets both', () => {
+  it('a pick composes the name and the committed label; the in-field clear resets both', async () => {
     // lfx-user-search writes the address into the bound `email` control before emitting the pick.
     component.form.controls.email.setValue(kim.email);
     handlers().onPersonPicked(kim);
-    fixture.detectChanges();
+    await settle();
 
     expect(component.form.controls.name.value).toBe('Kim Park');
     expect(handlers().selectedLabel()).toBe('Kim Park (kim.park@partner-corp.example)');
 
     handlers().onPersonCleared();
-    fixture.detectChanges();
+    await settle();
 
     expect(component.form.controls.name.value).toBe('');
     expect(component.form.controls.email.value).toBe('');
@@ -157,14 +165,37 @@ describe('FormationInviteDialogComponent', () => {
     expect((component as unknown as { submitting(): boolean }).submitting()).toBe(false);
   });
 
+  // GH-2694: the click on "Enter details manually" blurs the search box first, which discards the
+  // typed text — the switch carries it into the field it belongs in instead of making the user retype it.
+  it('carries typed search text into the manual fields — an address into Email, anything else into Name', async () => {
+    const picker = (): UserSearchComponent => fixture.debugElement.query(By.directive(UserSearchComponent)).componentInstance as UserSearchComponent;
+    const typeThenBlur = (text: string): void => {
+      (picker() as unknown as { userSearchForm: FormGroup }).userSearchForm.get('userSearch')?.setValue(text, { emitEvent: false });
+      picker().onSearchBlur();
+    };
+
+    typeThenBlur('pat@partner.example');
+    await switchToManual();
+    expect(handlers().mode()).toBe('manual');
+    expect(component.form.controls.email.value).toBe('pat@partner.example');
+    expect(component.form.controls.name.value).toBe('');
+
+    handlers().backToSearch();
+    await settle();
+    typeThenBlur('Pat Lee');
+    await switchToManual();
+    expect(component.form.controls.name.value).toBe('Pat Lee');
+    expect(component.form.controls.email.value).toBe('');
+  });
+
   it('back to search resets both fields and drops the manual name requirement', async () => {
-    switchToManual();
+    await switchToManual();
     fill('Kim Park', 'not-an-email');
     await submit();
     expect(errorId('email')).toBe('formation-invite-email-invalid');
 
     handlers().backToSearch();
-    fixture.detectChanges();
+    await settle();
 
     expect(handlers().mode()).toBe('search');
     expect(component.form.controls.name.value).toBe('');

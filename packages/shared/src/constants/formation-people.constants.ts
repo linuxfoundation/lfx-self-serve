@@ -77,7 +77,8 @@ export const FORMATION_ASSIGNEE_PENDING_NOTE = 'Invite pending — assignable on
  */
 export const FORMATION_INVITE_SEARCH_PLACEHOLDER = 'Search people by name or email';
 export const FORMATION_INVITE_SEARCH_HINT = 'Not finding them?';
-export const FORMATION_INVITE_MANUAL_ENTRY_LABEL = 'Enter their details manually';
+/** Same wording as lfx-user-search's own panel footer, which triggers the same switch. */
+export const FORMATION_INVITE_MANUAL_ENTRY_LABEL = 'Enter details manually';
 export const FORMATION_INVITE_BACK_TO_SEARCH_LABEL = '← Back to search';
 export const FORMATION_INVITE_SEARCH_REQUIRED_MESSAGE = 'Pick a person from the search results, or enter their details manually.';
 /** Toast when a searched address has no LF account and the pick carried no name to put on the invite email. */

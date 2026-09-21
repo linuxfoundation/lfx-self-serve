@@ -19,6 +19,8 @@
         [readonly]="submitting()"
         inputId="formation-invite-search"
         [placeholder]="searchPlaceholder"
+        [describedBy]="emailErrorId()"
+        [invalid]="emailErrorId() !== undefined"
         styleClass="w-full"
         inputStyleClass="w-full text-sm"
         panelStyleClass="w-full"
@@ -33,6 +35,11 @@
       } @else if (emailErrorId() === 'formation-invite-email-required') {
         <p id="formation-invite-email-required" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-search-error">
           {{ searchRequiredMessage }}
+        </p>
+      } @else if (emailErrorId() === 'formation-invite-email-invalid') {
+        <!-- A directory record can carry a malformed address; without this branch the refusal would be silent. -->
+        <p id="formation-invite-email-invalid" class="m-0 text-xs text-red-600" role="alert" data-testid="formation-people-invite-email-error">
+          Enter a valid email address.
         </p>
       }
       <p class="m-0 text-xs text-gray-500">

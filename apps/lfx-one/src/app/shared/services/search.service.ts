@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CommitteeOrganizationReference, UserSearchResponse, UserSearchResult, UserSearchType } from '@lfx-one/shared/interfaces';
 import { dedupeUserSearchResults, isEmailShape } from '@lfx-one/shared/utils';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { catchError, forkJoin, map, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -59,15 +60,22 @@ export class SearchService {
       .pipe(catchError(() => of(null)));
   }
 
-  /** One `GET /api/search/users` call; a failed lookup degrades to no results rather than breaking the typeahead. */
+  /**
+   * One `GET /api/search/users` call; a failed lookup degrades to no results rather than breaking
+   * the typeahead. Strict encoding, so a plus-addressed email survives the query string.
+   */
   private fetchUsers(type: UserSearchType, query: { name: string } | { tags: string }): Observable<UserSearchResult[]> {
-    let params = new HttpParams().set('type', type);
+    let params = strictHttpParams().set('type', type);
     params = 'name' in query ? params.set('name', query.name) : params.set('tags', query.tags);
 
     return this.http.get<UserSearchResponse>('/api/search/users', { params }).pipe(
       map((response) => response.results || []),
-      catchError((error) => {
-        console.error('Error searching users:', error);
+      catchError((error: unknown) => {
+        // Status and code only — the response object carries the request URL, whose query string
+        // holds the searched person's address, and the console override ships it to CloudWatch.
+        const status = error instanceof HttpErrorResponse ? error.status : undefined;
+        const code = error instanceof HttpErrorResponse ? error.error?.code : undefined;
+        console.error('Error searching users:', { status, code });
         return of([]);
       })
     );
