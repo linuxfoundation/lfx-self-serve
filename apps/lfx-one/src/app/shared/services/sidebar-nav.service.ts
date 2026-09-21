@@ -74,7 +74,11 @@ export class SidebarNavService {
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
-  /** Dark-launch gate for the formation routes (GH-1958, #2753); hides the project checklist, foundation queue and Me-lens My Formations nav items when off. */
+  /**
+   * Dark-launch gate for the formation routes (GH-1958, #2753); hides the project checklist, foundation
+   * queue and Me-lens My Formations nav items when off. With it on, a Formation-stage project's sidebar
+   * is the checklist item alone (#2754).
+   */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
@@ -93,6 +97,19 @@ export class SidebarNavService {
 
   private readonly activeLens = this.lensService.activeLens;
 
+  /**
+   * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
+   * stand — flag off, or LaunchDarkly not ready within its budget (#2754). The nav then keeps its full
+   * shape in step with the dashboard the guard admitted, rather than collapsing to Formation-only
+   * under it once the provider catches up. Cleared when navigation leaves the overview
+   * (`formationOverviewReleaseGuard`) and before every run of the redirect guard, so it never
+   * applies on a page where the formation experience hides the nav.
+   */
+  private readonly formationOverviewAllowed = computed((): boolean => {
+    const slug = this.projectContextService.formationOverviewAllowedSlug();
+    return slug !== null && slug === this.projectContextService.selectedProject()?.slug;
+  });
+
   // Newsletter nav visibility: ED persona always sees it; non-ED users see it
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
@@ -104,19 +121,35 @@ export class SidebarNavService {
       case 'foundation':
         return this.foundationLensItems();
       case 'project': {
+        // A project in a Formation stage (GH-1958, #2754) gets a Formation-only sidebar: nothing else
+        // in the lens is meaningful while it forms, so the checklist is the single entry — for every
+        // persona, hybrid marketing-grant users included: the Marketing section they regained in this
+        // lens under LFXV2-2235 (see the end of this case) is knowingly withheld while the project is
+        // forming, a product decision on #2754. Dark-launched behind the formation flag plus
+        // `isFormationStageGate` on the active project: the same conjunction
+        // `formationOverviewRedirectGuard` uses to send `/project/overview` to the checklist, so the
+        // nav and the landing route never disagree. With the flag on, the nav's shape depends on the
+        // stage, so while that fetch is still in flight nothing is rendered rather than the full nav
+        // that the resolved stage may then collapse (a click in that window would reach a route the
+        // formation experience hides). Flag off never waits: the full nav is the answer regardless —
+        // as it is for a dashboard the redirect guard let stand (`formationOverviewAllowed`): the nav
+        // stays in step with that page rather than collapsing under it once the flag arrives late.
+        if (this.isFormationEnabled() && !this.formationOverviewAllowed()) {
+          if (!this.projectContextService.activeProjectStageResolved()) {
+            return [];
+          }
+          if (isFormationStageGate(this.projectContextService.activeProjectStage())) {
+            return [this.formationNavItem];
+          }
+        }
         // Governance (Votes / Surveys / Permissions) is always surfaced under Project lens —
         // matching Foundation lens behavior. Authorization for write actions (add user,
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
-        // Documents (last of projectLensItemsTail) and the Governance section in the project sidebar.
+        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        // Formation (GH-1958) is dark-launched behind its own flag plus a Formation sub-stage check on
-        // the active project — inserted directly under Dashboard, ahead of Meetings, hence the
-        // head/tail split of projectLensItems rather than an append like mktgOsItems above.
-        const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
-        const formationItems = showFormationNav ? [this.formationNavItem] : [];
-        const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
+        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
         const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
@@ -600,16 +633,13 @@ export class SidebarNavService {
     };
   });
 
-  // --- Project Lens Items (base), split so Formation (GH-1958) can be spliced in directly under Dashboard ---
-  private readonly projectLensItemsHead: SidebarMenuItem[] = [
+  // --- Project Lens Items (base) ---
+  private readonly projectLensItems: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/project/overview',
     },
-  ];
-
-  private readonly projectLensItemsTail: SidebarMenuItem[] = [
     {
       label: 'Meetings',
       icon: 'fa-light fa-calendar',
@@ -632,7 +662,7 @@ export class SidebarNavService {
     },
   ];
 
-  // --- Project — Formation checklist (GH-1958; dark-launched, inserted directly under Dashboard) ---
+  // --- Project — Formation checklist (GH-1958; dark-launched, the only item for a Formation-stage project — #2754) ---
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
     icon: 'fa-light fa-list-check',

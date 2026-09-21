@@ -4,6 +4,7 @@
 import { PLATFORM_ID, signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Router, UrlTree } from '@angular/router';
+import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@shared/services/feature-flag.service';
 import { ProjectService } from '@shared/services/project.service';
 import { of } from 'rxjs';
@@ -14,6 +15,7 @@ import { formationProjectEnabledGuard } from './formation-project-enabled.guard'
 describe('formationProjectEnabledGuard', () => {
   let getFlagOverride: ReturnType<typeof vi.fn>;
   let providerReady: ReturnType<typeof signal<boolean>>;
+  let waitForReady: ReturnType<typeof vi.fn>;
   let getBooleanFlag: ReturnType<typeof vi.fn>;
   let getCurrentNavigation: ReturnType<typeof vi.fn>;
   let getProject: ReturnType<typeof vi.fn>;
@@ -39,6 +41,7 @@ describe('formationProjectEnabledGuard', () => {
   beforeEach(() => {
     getFlagOverride = vi.fn().mockReturnValue(undefined);
     providerReady = signal(true);
+    waitForReady = vi.fn().mockResolvedValue(true);
     getBooleanFlag = vi.fn().mockReturnValue(signal(true));
     getCurrentNavigation = vi.fn().mockReturnValue(null);
     getProject = vi.fn().mockReturnValue(of({ stage: 'Formation - Exploratory' }));
@@ -54,7 +57,7 @@ describe('formationProjectEnabledGuard', () => {
       providers: [
         {
           provide: FeatureFlagService,
-          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), getBooleanFlag },
+          useValue: { getFlagOverride, providerReady: providerReady.asReadonly(), waitForReady, getBooleanFlag },
         },
         { provide: ProjectService, useValue: { getProject } },
         { provide: Router, useValue: router },
@@ -103,18 +106,25 @@ describe('formationProjectEnabledGuard', () => {
   });
 
   it('fails closed to project overview when the provider never becomes ready', async () => {
-    vi.useFakeTimers();
+    providerReady.set(false);
+    waitForReady.mockResolvedValue(false);
+    setNavigationProject('my-project');
+
+    const result = await runGuard();
+
+    expect(waitForReady).toHaveBeenCalledWith({ guard: 'formationProjectEnabledGuard', flag: FORMATION_ENABLED_FLAG });
+    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
+    expect(getProject).not.toHaveBeenCalled();
+  });
+
+  it('waits for the provider and allows once it is ready with the flag on', async () => {
     providerReady.set(false);
     setNavigationProject('my-project');
 
-    const pending = runGuard();
-    await vi.advanceTimersByTimeAsync(5000);
-    const result = await pending;
+    const result = await runGuard();
 
-    vi.useRealTimers();
-
-    expect(result).toEqual({ denied: '/project/overview', opts: { queryParams: { project: 'my-project' } } });
-    expect(getProject).not.toHaveBeenCalled();
+    expect(waitForReady).toHaveBeenCalledWith({ guard: 'formationProjectEnabledGuard', flag: FORMATION_ENABLED_FLAG });
+    expect(result).toBe(true);
   });
 
   it('redirects to project overview (no query param) when the flag is on but no project slug can be resolved', async () => {
