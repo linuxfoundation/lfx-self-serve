@@ -2,9 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { ORG_CLA_MANAGER_NAME_MAX, ORG_CLA_MANAGER_NAME_MIN } from '../constants/cla.constants';
-import { EMAIL_REGEX } from '../constants/regex.constants';
 import type { OrgClaManagerAddRequest, OrgClaManagerAddValidation, OrgClaManagerRefusal } from '../interfaces/cla.interface';
 import { codePointLength } from './string.utils';
+
+/**
+ * Matches EasyCLA `cla-manager-user.userEmail`: alphanumeric/`_+.-` local part and a 2–10 letter
+ * TLD. The app-wide email regex accepts values the producer rejects as invalid email.
+ */
+const ORG_CLA_MANAGER_ADD_EMAIL_PATTERN = /^[A-Za-z0-9._+-]+@(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,10}$/;
+
+export function isOrgClaManagerAddEmail(value: string): boolean {
+  return ORG_CLA_MANAGER_ADD_EMAIL_PATTERN.test(value);
+}
 
 /**
  * Order matters. `last-manager` is checked before `not-authorized` because the sole-manager
@@ -104,7 +113,7 @@ export function validateOrgClaManagerAdd(request: Partial<OrgClaManagerAddReques
   if (lastNameError) result.lastName = lastNameError;
 
   if (!email) result.email = 'Email address is required.';
-  else if (!EMAIL_REGEX.test(email)) result.email = 'Enter a valid email address.';
+  else if (!isOrgClaManagerAddEmail(email)) result.email = 'Enter a valid email address.';
 
   return result;
 }

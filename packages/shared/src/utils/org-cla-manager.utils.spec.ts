@@ -3,7 +3,13 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { classifyOrgClaManagerRefusal, hasOrgClaManagerAddErrors, isOrgClaManagerLfUsername, validateOrgClaManagerAdd } from './org-cla-manager.utils';
+import {
+  classifyOrgClaManagerRefusal,
+  hasOrgClaManagerAddErrors,
+  isOrgClaManagerAddEmail,
+  isOrgClaManagerLfUsername,
+  validateOrgClaManagerAdd,
+} from './org-cla-manager.utils';
 
 describe('classifyOrgClaManagerRefusal', () => {
   describe.each([
@@ -114,6 +120,15 @@ describe('validateOrgClaManagerAdd', () => {
 
   it('accepts a plus-addressed and a subdomain address, which are legal and deliverable', () => {
     expect(hasOrgClaManagerAddErrors(validateOrgClaManagerAdd({ ...valid, email: 'ada+cla@eng.example.org' }))).toBe(false);
+  });
+
+  it.each([
+    ['a one-letter TLD the producer rejects', 'ada@example.c'],
+    ['a TLD longer than ten letters', 'ada@example.engineering'],
+    ['a local part with a slash', 'ada/cla@example.org'],
+  ] as const)('rejects %s', (_label, email) => {
+    expect(isOrgClaManagerAddEmail(email)).toBe(false);
+    expect(validateOrgClaManagerAdd({ ...valid, email }).email).toBeDefined();
   });
 });
 
