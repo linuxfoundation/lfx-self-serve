@@ -82,7 +82,7 @@
                       [label]="copy.removeAction"
                       severity="danger"
                       [text]="true"
-                      [disabled]="writing()"
+                      [disabled]="writing() || loading()"
                       [ariaLabel]="row.removeLabel"
                       (onClick)="confirmRemove(row.manager)"
                       data-testid="org-easycla-managers-remove" />

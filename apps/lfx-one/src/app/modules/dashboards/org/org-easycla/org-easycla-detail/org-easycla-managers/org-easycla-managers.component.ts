@@ -154,7 +154,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected confirmRemove(manager: OrgClaManager): void {
-    if (!this.canRemove() || this.writing() || this.lastManager()) return;
+    if (!this.canRemove() || this.writing() || this.loading() || this.lastManager()) return;
 
     const target = this.writeTarget();
     if (!target) return;

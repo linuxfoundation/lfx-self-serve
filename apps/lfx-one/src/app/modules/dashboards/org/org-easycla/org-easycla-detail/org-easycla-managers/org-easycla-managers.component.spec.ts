@@ -513,5 +513,15 @@ describe('OrgEasyclaManagersComponent', () => {
 
       expect(openDialog).not.toHaveBeenCalled();
     });
+
+    it('does not open Remove while the roster is still loading', async () => {
+      const pending = new Subject<{ signatureId: string; managers: OrgClaManager[] }>();
+      getManagers.mockReturnValue(pending);
+      await render();
+
+      component['confirmRemove'](manager());
+
+      expect(confirm).not.toHaveBeenCalled();
+    });
   });
 });
