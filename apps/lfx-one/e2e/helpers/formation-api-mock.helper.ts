@@ -141,6 +141,12 @@ export class FormationApiMockHelper {
         // GH-2584 lifecycle fixture (its unmapped and Confidential rows are both still forming and
         // both unlabelled), zero for the default queue fixture.
         unmapped: inFormationRows.filter((row) => row.sub_stage === null).length,
+        // Mirrors buildQueueTilesFromRows's ready/blocked counts — over the unfiltered set, like
+        // every other tile, so the "Ready to activate" and "Blocked" tiles hold still while a pill
+        // narrows the rows.
+        ready: inFormationRows.filter((row) => row.gates_cleared).length,
+        blocked: inFormationRows.filter((row) => row.blocked_item_titles.length > 0).length,
+        blocked_items: inFormationRows.reduce((sum, row) => sum + row.blocked_item_titles.length, 0),
       };
 
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ tiles, rows: filtered }) });

@@ -2,43 +2,73 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="formations-table-card">
+  <!-- Wrap so the search box drops under the pills on a phone instead of squeezing them (opt-in on the shared bar). -->
   <lfx-card-tabs-bar
-    [options]="statusTabOptions"
+    [options]="statusTabOptions()"
     [selectedFilter]="statusTab()"
     (filterChange)="onStatusTabChange($event)"
+    styleClass="flex-wrap gap-x-4 gap-y-3"
     data-testid="formations-status-tabs">
-  </lfx-card-tabs-bar>
-
-  <div class="px-5 pt-4 pb-3">
-    <div class="w-full sm:w-72">
+    <!-- Search only matches the project name (formation.service.ts), so the placeholder says so. -->
+    <div class="w-full sm:w-64">
       <lfx-input-text
         [form]="searchForm"
         control="search"
-        placeholder="Search formations…"
+        placeholder="Search by name"
         icon="fa-light fa-search"
         styleClass="w-full"
         size="small"
         data-testid="formations-search-input">
       </lfx-input-text>
     </div>
-  </div>
+  </lfx-card-tabs-bar>
 
-  <div class="px-5 pb-5">
+  <div class="px-5 pt-4 pb-5">
     @if (!loading() && rows().length === 0) {
-      <lfx-empty-state
-        [withCard]="false"
-        icon="fa-light fa-eyes"
-        [title]="isFiltered() ? 'No results found' : 'No formations yet'"
-        [subtitle]="isFiltered() ? 'Try adjusting your filters.' : ''"
-        data-testid="formations-table-empty">
-      </lfx-empty-state>
+      @if (isFiltered()) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try a different search or stage."
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters()"
+          data-testid="formations-table-empty">
+        </lfx-empty-state>
+      } @else {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-list-check"
+          title="No formations yet"
+          subtitle="Formations between Prospect and Active will appear here."
+          data-testid="formations-table-empty">
+        </lfx-empty-state>
+      }
     } @else {
-      <lfx-table [value]="displayRows()" [loading]="loading()" [ariaLabel]="'Formations queue'" data-testid="formations-table">
+      <!-- min-w-[44rem] is exact by design: below it the five fixed columns crush each other (headers
+           overlapped at 390px), so the table keeps its shape and the card scrolls sideways instead. -->
+      <lfx-table
+        [value]="displayRows()"
+        [loading]="loading()"
+        [paginator]="displayRows().length > pageSize"
+        [rows]="pageSize"
+        [rowsPerPageOptions]="pageSizeOptions"
+        [first]="first()"
+        (onPage)="onPage($event)"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+        dataKey="formation_uid"
+        tableStyleClass="table-fixed min-w-[44rem]"
+        selectionMode="single"
+        (onRowSelect)="onRowSelect($event)"
+        [ariaLabel]="'Formations queue'"
+        data-testid="formations-table">
         <ng-template #header>
           <tr>
             <th scope="col" class="w-[30%]">Formation</th>
-            <th scope="col" class="w-[20%]">Stage</th>
-            <th scope="col" class="w-[14%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
+            <th scope="col" class="w-[14%]">Stage</th>
+            <th scope="col" class="w-[20%]" [attr.aria-sort]="ariaSortMap().readiness" data-testid="formations-sort-readiness">
               <button
                 type="button"
                 class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -46,7 +76,7 @@
                 Progress <i [class]="sortIcons().readiness"></i>
               </button>
             </th>
-            <th scope="col" class="w-[16%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
+            <th scope="col" class="w-[18%]" [attr.aria-sort]="ariaSortMap().announcement_date" data-testid="formations-sort-announcement">
               <button
                 type="button"
                 class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
@@ -54,42 +84,87 @@
                 Announcement <i [class]="sortIcons().announcement_date"></i>
               </button>
             </th>
-            <th scope="col" class="w-[20%]">Blocking</th>
+            <th scope="col" class="w-[18%]">Blocking</th>
           </tr>
         </ng-template>
 
         <ng-template #body let-row let-rowIndex="rowIndex">
+          <!-- data-row-index is what lfx-table's host click handler resolves the row from (whole-row navigation, onRowSelect). -->
           <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'formations-table-row-' + row.formation_uid">
             <td>
-              <!-- Opens the checklist drill-down in the FOUNDATION context (LFXV2-3386): the child
-                   rides the path param, and queryParamsHandling="preserve" keeps `?project=` naming
-                   the foundation — never `{ project: row.project_slug }`, which would hand the
-                   whole context to the child. -->
-              <a
-                [routerLink]="['/foundation/formations', row.project_slug]"
-                queryParamsHandling="preserve"
-                class="flex flex-col gap-0.5 no-underline hover:underline"
-                [attr.data-testid]="'formations-table-open-' + row.formation_uid">
-                <span class="text-sm font-medium text-gray-900">{{ row.project_name }}</span>
-              </a>
+              <div class="flex flex-col gap-0.5 min-w-0">
+                <!-- Opens the checklist drill-down in the FOUNDATION context (LFXV2-3386): the child
+                     rides the path param, and queryParamsHandling="preserve" keeps `?project=` naming
+                     the foundation — never `{ project: row.project_slug }`, which would hand the
+                     whole context to the child. -->
+                <a
+                  [routerLink]="['/foundation/formations', row.project_slug]"
+                  queryParamsHandling="preserve"
+                  class="lfx-table-name-link text-sm"
+                  [attr.data-testid]="'formations-table-open-' + row.formation_uid">
+                  {{ row.project_name }}
+                </a>
+                <span class="text-xs text-gray-500" [attr.data-testid]="'formations-table-type-' + row.formation_uid">{{ row.entityTypeLabel }}</span>
+              </div>
             </td>
             <td>
-              <lfx-tag [value]="row.stageLabel" [severity]="row.stageSeverity" [attr.data-testid]="'formations-table-stage-' + row.formation_uid" />
+              <lfx-tag
+                [value]="row.stageLabel"
+                [severity]="row.stageSeverity"
+                [dot]="true"
+                [rounded]="true"
+                [attr.data-testid]="'formations-table-stage-' + row.formation_uid" />
             </td>
-            <td>
-              <div class="flex items-center gap-2">
+            <td [attr.data-testid]="'formations-table-progress-' + row.formation_uid">
+              <div class="flex flex-col gap-1.5">
                 <span class="text-sm text-gray-700 tabular-nums">{{ row.doneCount }} of {{ row.totalCount }}</span>
-                @if (row.gates_cleared) {
-                  <lfx-tag value="Gates cleared" severity="warn" />
+                <!-- One width-weighted segment per status bucket, resolved → open, on the readiness
+                     strip's fills. gap-[2px] is exact by design (the 14px root makes gap-0.5 1.75px):
+                     the 2px surface gap is what keeps two adjacent fills readable as two. Focusable so
+                     the tooltip is reachable from the keyboard; the aria-label carries the same text. -->
+                <div
+                  class="flex h-1.5 w-full gap-[2px] overflow-hidden rounded-full"
+                  role="img"
+                  tabindex="0"
+                  [attr.aria-label]="row.progressSummary"
+                  [pTooltip]="row.progressSummary"
+                  tooltipPosition="top"
+                  tooltipEvent="both">
+                  @for (segment of row.progressSegments; track segment.status) {
+                    <div class="h-full" [class]="segment.colorClass" [style.width.%]="segment.widthPercent"></div>
+                  } @empty {
+                    <div class="h-full w-full bg-gray-200"></div>
+                  }
+                </div>
+              </div>
+            </td>
+            <td [attr.data-testid]="'formations-table-announcement-' + row.formation_uid" [attr.data-timing]="row.announcementTiming">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm" [class]="row.announcementLabelClass">{{ row.announcementLabel }}</span>
+                @if (row.announcementDetail) {
+                  <span class="text-xs" [class]="row.announcementDetailClass">{{ row.announcementDetail }}</span>
                 }
               </div>
             </td>
-            <td class="text-sm text-gray-700" [attr.data-testid]="'formations-table-announcement-' + row.formation_uid">{{ row.announcementLabel }}</td>
-            <td class="text-sm text-gray-700">
-              @if (row.blocked_item_titles.length > 0) {
-                {{ row.blocked_item_titles.join(', ') }}
+            <td [attr.data-testid]="'formations-table-blocking-' + row.formation_uid">
+              @if (row.blockedCount > 0) {
+                <div class="flex flex-col gap-1 min-w-0">
+                  <div>
+                    <lfx-tag
+                      [value]="row.blockedLabel"
+                      severity="danger"
+                      [dot]="true"
+                      [rounded]="true"
+                      [tooltip]="row.blockedTitlesLabel"
+                      tooltipPosition="top" />
+                  </div>
+                  <span class="text-xs text-gray-500 truncate">{{ row.firstBlockedTitle }}</span>
+                </div>
+              } @else if (row.gates_cleared) {
+                <!-- "Gates cleared" is the formation-level queue badge agreed on #1958 — nothing blocks Active. -->
+                <lfx-tag value="Gates cleared" severity="success" [dot]="true" [rounded]="true" />
               } @else {
-                {{ row.gates_cleared ? 'Formation to set Active' : '—' }}
+                <span class="text-sm text-gray-400">—</span>
               }
             </td>
           </tr>

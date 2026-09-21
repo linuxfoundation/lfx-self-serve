@@ -32,5 +32,11 @@ import { FilterPillsComponent } from '../filter-pills/filter-pills.component';
 export class CardTabsBarComponent {
   public readonly options = input.required<FilterPillOption[]>();
   public readonly selectedFilter = input.required<string>();
+  /**
+   * Extra classes for the bar's container, appended to its defaults — e.g. `flex-wrap gap-x-4
+   * gap-y-3` so a wide projected control (a search box) drops below the pills on a phone instead
+   * of squeezing them. Opt-in per consumer: the default bar keeps its single-row layout.
+   */
+  public readonly styleClass = input<string>('');
   public readonly filterChange = output<string>();
 }

@@ -1533,11 +1533,25 @@ export class FormationService {
    * with no {@link FormationSubStage} equivalent. Those rows are never dropped from `total`, so
    * `total` can legitimately exceed `exploratory + engaged + on_hold`; `unmapped` is that gap made
    * explicit rather than a silently-created extra key (the bug this replaces).
+   *
+   * `ready`/`blocked`/`blocked_items` are counted here, over this same unfiltered set, for the
+   * "Ready to activate" and "Blocked" tiles. The ready count used to be a client-side filter over
+   * the served rows — which are already narrowed by `sub_stage`/`search` — so that one tile
+   * disagreed with its three server-counted neighbours the moment a pill was active.
    */
   private buildQueueTilesFromRows(rows: FormationQueueRow[]): FormationsQueueResponse['tiles'] {
     const bySubStage = Object.fromEntries(FORMATION_QUEUE_SUB_STAGES.map((stage) => [stage, 0])) as Record<FormationSubStage, number>;
     let unmapped = 0;
+    let ready = 0;
+    let blocked = 0;
+    let blockedItems = 0;
     for (const row of rows) {
+      if (row.gates_cleared) ready += 1;
+      const blockedCount = row.blocked_item_titles.length;
+      if (blockedCount > 0) {
+        blocked += 1;
+        blockedItems += blockedCount;
+      }
       if (row.sub_stage === null) {
         unmapped += 1;
         continue;
@@ -1551,6 +1565,9 @@ export class FormationService {
       foundations: rows.filter((row) => deriveFormationEntityType(row) === 'foundation').length,
       projects: rows.filter((row) => deriveFormationEntityType(row) !== 'foundation').length,
       unmapped,
+      ready,
+      blocked,
+      blocked_items: blockedItems,
     };
   }
 
