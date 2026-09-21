@@ -62,6 +62,10 @@ export class UserSearchComponent {
   public readonly = input<boolean>(false);
   // Forwarded to the underlying p-autocomplete input so an external <label for> can target it.
   public inputId = input<string>();
+  // Forwarded to lfx-autocomplete, which puts them on the native input — the same pair
+  // `lfx-input-text` takes, so a form's error message can describe this field too.
+  public describedBy = input<string | undefined>();
+  public invalid = input<boolean>(false);
   // When true, a pick without a resolvable LF account (`username` blank/whitespace) is rejected
   // before any bound control is touched — `onUserSelect` doesn't fire and `onRejectedSelection`
   // does instead. Consumers that don't require an LF account (e.g. meeting-details' organizer,

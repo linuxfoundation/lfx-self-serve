@@ -407,6 +407,26 @@ describe('UserSearchComponent', () => {
     });
   });
 
+  // #2772: a form's error message can describe this field the way it describes an lfx-input-text.
+  describe('describedBy + invalid', () => {
+    it('puts aria-describedby and aria-invalid on the native input, and clears them again', async () => {
+      await render();
+      fixture.componentRef.setInput('describedBy', 'invite-email-error');
+      fixture.componentRef.setInput('invalid', true);
+      await fixture.whenStable();
+
+      expect(query()?.getAttribute('aria-describedby')).toBe('invite-email-error');
+      expect(query()?.getAttribute('aria-invalid')).toBe('true');
+
+      fixture.componentRef.setInput('describedBy', undefined);
+      fixture.componentRef.setInput('invalid', false);
+      await fixture.whenStable();
+
+      expect(query()?.getAttribute('aria-describedby')).toBeNull();
+      expect(query()?.getAttribute('aria-invalid')).toBeNull();
+    });
+  });
+
   describe('readonly + showClear interaction', () => {
     it('suppresses the clear icon when readonly, even if showClear is true', async () => {
       await render({ readonly: true, showClear: true });

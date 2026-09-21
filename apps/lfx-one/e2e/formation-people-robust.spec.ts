@@ -68,11 +68,20 @@ test.describe('Formation people card — structural contract', () => {
     const dialog = page.getByTestId('formation-people-invite-dialog');
     await expect(dialog).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     expect(await dialog.evaluate((el) => el.tagName)).toBe('FORM');
-    await expect(dialog.locator('input[data-test="formation-people-invite-name"]')).toBeAttached();
-    await expect(dialog.locator('input[data-test="formation-people-invite-email"]')).toBeAttached();
+    // #2772: the dialog opens on the search box; the Name + Email fields sit behind the manual-entry link.
+    await expect(dialog.getByTestId('formation-people-invite-search').locator('input')).toBeAttached();
+    await expect(dialog.locator('input[data-test="formation-people-invite-name"]')).toHaveCount(0);
     await expect(dialog.getByTestId('formation-people-invite-role').locator('input[type="radio"]')).toHaveCount(2);
     await expect(dialog.getByTestId('formation-people-invite-submit')).toBeAttached();
     await expect(dialog.getByTestId('formation-people-invite-cancel')).toBeAttached();
+
+    await dialog.getByTestId('formation-people-invite-manual-link').click();
+    await expect(dialog.locator('input[data-test="formation-people-invite-name"]')).toBeAttached();
+    await expect(dialog.locator('input[data-test="formation-people-invite-email"]')).toBeAttached();
+    await expect(dialog.getByTestId('formation-people-invite-search')).toHaveCount(0);
+
+    await dialog.getByTestId('formation-people-invite-back-to-search').click();
+    await expect(dialog.getByTestId('formation-people-invite-search').locator('input')).toBeAttached();
 
     await dialog.getByTestId('formation-people-invite-cancel').click();
     await expect(dialog).toBeHidden();
