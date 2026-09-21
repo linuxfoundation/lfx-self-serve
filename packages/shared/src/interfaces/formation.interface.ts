@@ -832,10 +832,11 @@ export interface MyFormationWorkResponse {
 }
 
 /**
- * `MyFormationSummary` decorated with pre-derived display fields for `my-formations-card` — mirrors
- * `DecoratedPendingAction` in `components.interface.ts`. Templates may only read signals/computed
- * values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel` must be computed
- * once per row up front rather than via template-called functions.
+ * `MyFormationSummary` decorated with pre-derived display fields for the My Formations page
+ * (`my-formations.component.ts`, built by `decorateMyFormation` in `formation-me.utils.ts`) —
+ * mirrors `DecoratedPendingAction` in `components.interface.ts`. Templates may only read
+ * signals/computed values, never call a method, so `subtitle`/`progressPercent`/`announcementLabel`
+ * must be computed once per row up front rather than via template-called functions.
  */
 export interface DecoratedMyFormation extends MyFormationSummary {
   subtitle: string;
