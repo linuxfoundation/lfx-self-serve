@@ -71,9 +71,10 @@ export interface HealthOverviewKpisRow {
 
 /**
  * One period's slice of a `HEALTH_OVERVIEW_REVENUE` row (LFXV2-3365). Field names are the underlying
- * columns' uppercase aliases with the period suffix stripped. `REVENUE_DOMAIN` is period-invariant
- * and stays out of {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS}, which the service generates both
- * the SELECT list and its readers from.
+ * columns' uppercase aliases with the period suffix stripped. `REVENUE_DOMAIN` is period-invariant and
+ * stays out of {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS}, which the service generates the SELECT
+ * list from and type-checks its readers against. The KPI side funnels through one `projectKpiRow`
+ * projection; revenue is read by two inline `revenueAlias` calls, so a new field needs a reader by hand.
  */
 export interface HealthOverviewRevenueRow {
   REVENUE_USD: number | null;

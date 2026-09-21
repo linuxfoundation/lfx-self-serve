@@ -345,6 +345,9 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('no data this period');
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).not.toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).toBeNull();
+      // Same guard on the summary rail: without it the zero-filled default renders as a real
+      // "0 projects / N/A tiers" for an ED who hasn't picked a foundation yet.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).not.toBeNull();
       httpMock.verify();
     });
 
@@ -371,6 +374,12 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('loading…');
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();
+      // The rail leaves its skeleton too, falling back to the zero-filled default rather than keeping
+      // the cleared foundation's real figures on screen.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
+      expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
+      // Positive too: the absences above would also hold if the rail stopped rendering altogether.
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]').textContent).toContain('N/A');
       httpMock.verify();
     });
   });
