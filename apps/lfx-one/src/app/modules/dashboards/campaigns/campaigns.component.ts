@@ -1272,6 +1272,30 @@ export class CampaignsComponent {
   );
 
   /**
+   * The CTA text to show when the generator produced a label but its destination was REFUSED.
+   *
+   * Without this the call to action disappears entirely, from every surface at once. The server
+   * keeps a button's label inline in `body` only when its url is BLANK, while this component
+   * additionally refuses a url that does not canonicalise or does not match the brief's
+   * registration URL -- so a hallucinated destination is dropped server-side (the url was
+   * truthy) and refused client-side (the url was wrong), and nothing reports it. Two encodings
+   * of one question that disagree on the middle case.
+   *
+   * The check cannot be consolidated server-side: `generateEmailCopy` has only the project slug
+   * and brief id, so comparing against the brief's registrationUrl would mean fetching the
+   * brief on a hot path. It is resolved HERE, where both values are already in hand.
+   *
+   * Deliberately NOT folded into `emailCtaLabel`: that value gates the staged BUTTON, and
+   * showing a label for a destination that was refused would promise a button the draft will
+   * not carry. This is preview-only text, so the operator can see the generator's wording and
+   * that it has no usable destination.
+   */
+  protected readonly emailCtaUnlinkedLabel = computed<string>(() => {
+    if (this.emailCtaIsStageable() || !this.emailBodyIsStageable()) return '';
+    return (this.emailCopy()?.cta ?? '').trim();
+  });
+
+  /**
    * Whether a generated CTA will actually reach the staged draft.
    *
    * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
@@ -1284,11 +1308,10 @@ export class CampaignsComponent {
     // Reuses the ONE canonicalizer the controller uses, rather than restating scheme+host here:
     // a non-empty result means the destination survives `canonicalHttpUrl`, which is exactly
     // what the controller keeps. Three earlier versions of this predicate drifted from it.
-    // The GENERATOR's url, and NO fallback -- an earlier draft of this comment described one,
-    // which is the opposite of what the next sentence explains and of what the code does. The
-    // generator omits `url` for the stages where registration is the wrong destination ("Submit
-    // Your Proposal", "Share Feedback", "See You There"), so treating its absence as "use
-    // registration" pointed those buttons at the registration page. Absent means no button.
+    // The GENERATOR's url, and NO fallback. The generator omits `url` for the stages where
+    // registration is the wrong destination ("Submit Your Proposal", "Share Feedback", "See You
+    // There"), so treating its absence as "use registration" pointed those buttons at the
+    // registration page. Absent means no button.
     () => this.emailCtaDestination() !== ''
   );
 
@@ -1329,10 +1352,9 @@ export class CampaignsComponent {
       } catch {
         // Not parseable: compare verbatim rather than guessing.
         //
-        // REACHED ROUTINELY, not a defensive dead branch -- an earlier version of this comment
-        // claimed it was unreachable, which was wrong. `canonicalHttpUrl` returns '' for a brief
-        // with no usable registrationUrl, and `new URL('')` throws, so every such brief lands
-        // here while the generator has supplied a url.
+        // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a
+        // brief with no usable registrationUrl, and `new URL('')` throws, so every such brief
+        // lands here while the generator has supplied a url.
         //
         // Returning the input verbatim is the right answer for that case: '' can then only equal
         // '', so a generated url never matches an absent brief url and no button is staged --

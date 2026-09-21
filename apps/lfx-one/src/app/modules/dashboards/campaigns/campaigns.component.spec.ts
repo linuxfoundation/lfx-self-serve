@@ -1865,6 +1865,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailTypeId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
     emailCtaDestination: Signal<string>;
+    emailCtaUnlinkedLabel: Signal<string>;
     emailAudience: WritableSignal<CampaignAudience | null>;
     emailAudienceState: WritableSignal<'idle' | 'building' | 'error'>;
     emailAudienceMessage: WritableSignal<string>;
@@ -2323,6 +2324,59 @@ describe('CampaignsComponent — email delivery channel', () => {
 
         expect(internals().emailCtaDestination() !== '', `${generated} vs ${brief}: ${why}`).toBe(accepted);
       }
+    });
+
+    /**
+     * A refused CTA destination must not make the call to action VANISH.
+     *
+     * The server keeps a button's label inline in `body` only when its url is blank, while this
+     * component additionally refuses a url that does not canonicalise or does not match the
+     * brief's registration URL. A hallucinated destination therefore falls between them: dropped
+     * server-side because the url was truthy, refused client-side because it was wrong, and the
+     * operator sees no call to action at all with nothing explaining why.
+     *
+     * Shown as plain text rather than as a button, because a button would promise a link the
+     * staged draft will not carry.
+     */
+    it('shows a refused CTA as plain text instead of dropping it silently', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Hello</p>',
+        cta: 'Register now',
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      // Refused: the generated url is not the brief's.
+      expect(internals().emailCtaDestination()).toBe('');
+      expect(internals().emailCtaLabel()).toBe('');
+      // ...but the wording survives, so the operator can see what the model produced.
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register now');
+    });
+
+    it('does not double-render a CTA whose destination is accepted', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', countryCode: 'NL', registrationUrl: 'https://x.example/reg' },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Hello</p>',
+        cta: 'Register now',
+        ctaUrl: 'https://x.example/reg',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      // The button is staged, so the plain-text twin must stay empty -- otherwise the preview
+      // shows the call to action twice.
+      expect(internals().emailCtaLabel()).toBe('Register now');
+      expect(internals().emailCtaUnlinkedLabel()).toBe('');
     });
 
     it('cannot generate without a brief', () => {

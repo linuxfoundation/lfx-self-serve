@@ -2500,6 +2500,29 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.cta).toContain('Register');
   });
 
+  it('strips a BIDI override from the URL-less button label rendered into body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          // No url: the documented CFP / Feedback / See-You-There case, where the label is kept
+          // INLINE in body rather than riding on cta. It is the same generator-supplied text, so
+          // sanitising only `cta` left this branch open -- escapeHtml encodes markup and does
+          // nothing to a BIDI override.
+          { type: 'button', text: 'Submit \u202Elasoporp ruoy\u202C now' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).not.toContain('\u202E');
+    expect(result.copy?.body).not.toContain('\u202C');
+    expect(result.copy?.body).toContain('Submit');
+  });
+
   it('keeps a URL-less button label in the body, so the CTA does not vanish', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
@@ -2519,10 +2542,15 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     // as well made the call to action disappear from the email entirely -- the label IS the
     // content; only the link is missing.
     expect(result.copy?.body).toContain('Submit');
-    // Escaped: `body` is rendered through [innerHTML] and lands in a rich-text widget, so model
-    // output must not become markup.
+    // `body` is rendered through [innerHTML] and lands in a rich-text widget, so model output
+    // must not become markup. The PROPERTY is asserted rather than the mechanism: this used to
+    // expect `&lt;b&gt;` specifically, which pinned "escapeHtml ran" rather than "no live markup
+    // survives" -- and it broke the moment sanitizeDisplayText began stripping the angle
+    // brackets before escapeHtml saw them, even though the guarantee got STRONGER. The label is
+    // now defended twice: the brackets are removed, and anything left is escaped.
     expect(result.copy?.body).not.toContain('<b>');
-    expect(result.copy?.body).toContain('&lt;b&gt;');
+    expect(result.copy?.body).not.toContain('</b>');
+    expect(result.copy?.body).toContain('Submit');
     // Still no destination, so no native button.
     expect(result.copy?.ctaUrl).toBe('');
   });

@@ -323,12 +323,13 @@ function packedAddressCandidates(label: string): number[] {
 }
 
 /**
- * The IPv6 address a label spells in sslip.io's dash notation, or '' when it spells none.
+ * Every IPv6 address a single label could be spelling in sslip.io's dash notation.
  *
  * sslip.io maps `-` to `:`, so `fd00--1.sslip.io` is `fd00::1` and `--1.sslip.io` is `::1` --
- * both private, and neither reachable by the IPv4 scans above.
+ * both private, and neither reachable by the IPv4 scans above. The IPv6 twin of
+ * packedAddressCandidates: same "every reading" job, same plural contract.
  */
-function dashNotationIPv6Addresses(label: string): string[] {
+function dashNotationIPv6Candidates(label: string): string[] {
   // EVERY reading is returned, not the first that decodes -- the same contract
   // packedAddressCandidates has for IPv4, and for the same reason.
   //
@@ -590,7 +591,7 @@ export function isPrivateHost(hostname: string): boolean {
         const quad = `${(packed >>> 24) & 0xff}.${(packed >>> 16) & 0xff}.${(packed >>> 8) & 0xff}.${packed & 0xff}`;
         if (isPrivateHost(quad)) return true;
       }
-      for (const spelled of dashNotationIPv6Addresses(label)) {
+      for (const spelled of dashNotationIPv6Candidates(label)) {
         if (isPrivateHost(`[${spelled}]`)) return true;
       }
     }

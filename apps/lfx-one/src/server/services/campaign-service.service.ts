@@ -884,7 +884,20 @@ export class CampaignServiceClient {
         )
         .map((section) => {
           if (section.type === 'divider') return '<hr />';
-          if (section.type === 'button') return `<p class="lfx-cta-text">${escapeHtml(section.text ?? '')}</p>`;
+          // `lfx-block lfx-button` matches what campaign-service's own renderer emits for a
+          // button section (`internal/service/email_wizard_sections.go`), so the two producers
+          // of this markup agree. The previous `lfx-cta-text` was invented here, defined by no
+          // stylesheet, and matched nothing upstream -- dead markup that also read as a
+          // convention it was not part of. Email clients strip most CSS, so this is a structural
+          // hook for whoever styles the template, not a visual effect on its own.
+          // sanitizeDisplayText BEFORE escapeHtml, and both: they defend against different
+          // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
+          // break out of the markup; it does nothing to a BIDI override or a zero-width
+          // character, which need no markup to render the label as something it is not. This is
+          // the SAME generator-supplied `section.text` that rides on `cta`, so sanitising only
+          // that field left the identical value unsanitised one branch away.
+          if (section.type === 'button')
+            return `<div class="lfx-block lfx-button"><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
           return section.html;
         })
         .join('');

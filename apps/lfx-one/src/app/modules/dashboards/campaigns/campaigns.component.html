@@ -648,6 +648,18 @@
                         </span>
                       </div>
                     }
+                    <!-- The generator produced a call to action but its destination was refused.
+                         Shown as plain text, NOT as a button: a button here would promise a link
+                         the staged draft will not carry. Without it the call to action vanishes
+                         from the preview entirely and the operator has no way to know the model
+                         produced one. -->
+                    @if (emailCtaUnlinkedLabel(); as unlinkedLabel) {
+                      <div class="px-4 pb-4">
+                        <span class="text-sm font-semibold text-gray-500" data-testid="campaigns-email-preview-cta-unlinked">
+                          {{ unlinkedLabel }}
+                        </span>
+                      </div>
+                    }
                     <!-- Both guards are load-bearing: `@if` treats an EMPTY ARRAY as truthy, so the
                          outer one only binds the alias and the inner one is what stops an empty
                          sponsors bar rendering. Collapsing them renders a bordered empty strip. -->
