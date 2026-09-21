@@ -10,7 +10,15 @@
         <h2 class="text-lg font-semibold text-gray-900 m-0">{{ copy.heading }}</h2>
         <p class="text-sm text-gray-600 m-0 max-w-3xl">{{ copy.intro }}</p>
       </div>
-      <lfx-button [label]="copy.addAction" icon="fa-light fa-plus" [disabled]="writing()" (onClick)="openAdd()" data-testid="org-easycla-managers-add" />
+      <!--
+        Absent rather than disabled when ACS denies Add. An org admin who can read this page is
+        routinely not a CLA manager — a disabled button would sit there with no way to explain
+        itself. Same hop as Approval List Add (`approval-list-update`). Hidden while the grant is
+        still unknown.
+      -->
+      @if (canAdd()) {
+        <lfx-button [label]="copy.addAction" icon="fa-light fa-plus" [disabled]="writing()" (onClick)="openAdd()" data-testid="org-easycla-managers-add" />
+      }
     </div>
 
     @if (loading()) {
@@ -56,25 +64,32 @@
               </td>
               <td class="py-3 text-gray-600" data-testid="org-easycla-managers-added">{{ row.addedLabel }}</td>
               <td class="py-3 text-right">
-                @if (lastManager()) {
-                  <lfx-button
-                    [label]="copy.removeAction"
-                    severity="danger"
-                    [text]="true"
-                    [disabled]="true"
-                    [tooltip]="copy.lastManagerHint"
-                    tooltipPosition="left"
-                    [ariaLabel]="copy.removeBlockedLabel"
-                    data-testid="org-easycla-managers-remove-blocked" />
-                } @else {
-                  <lfx-button
-                    [label]="copy.removeAction"
-                    severity="danger"
-                    [text]="true"
-                    [disabled]="writing()"
-                    [ariaLabel]="row.removeLabel"
-                    (onClick)="confirmRemove(row.manager)"
-                    data-testid="org-easycla-managers-remove" />
+                <!--
+                  Remove is a different ACS string (`cla_manager_delete:remove`). Last-manager
+                  stays a server-side refusal plus this disabled control — it is not an ACS
+                  substitute, and it only appears when ACS already allows the write.
+                -->
+                @if (canRemove()) {
+                  @if (lastManager()) {
+                    <lfx-button
+                      [label]="copy.removeAction"
+                      severity="danger"
+                      [text]="true"
+                      [disabled]="true"
+                      [tooltip]="copy.lastManagerHint"
+                      tooltipPosition="left"
+                      [ariaLabel]="copy.removeBlockedLabel"
+                      data-testid="org-easycla-managers-remove-blocked" />
+                  } @else {
+                    <lfx-button
+                      [label]="copy.removeAction"
+                      severity="danger"
+                      [text]="true"
+                      [disabled]="writing()"
+                      [ariaLabel]="row.removeLabel"
+                      (onClick)="confirmRemove(row.manager)"
+                      data-testid="org-easycla-managers-remove" />
+                  }
                 }
               </td>
             </tr>

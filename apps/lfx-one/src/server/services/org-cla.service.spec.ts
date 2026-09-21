@@ -1877,6 +1877,16 @@ describe('OrgClaService.getManagers', () => {
     expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
   });
 
+  it('uses approved_on when the events-backed added_on is empty, as Corporate Console does', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ added_on: '', approved_on: '2021-09-13T11:59:00.981612+0000' })] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0].addedOn).toBe(
+      '2021-09-13T11:59:00.981612+0000'
+    );
+  });
+
   it('omits a missing name rather than mapping it to an empty string', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager({ name: '  ' })] });
 
@@ -2052,7 +2062,7 @@ describe('OrgClaService.removeManager', () => {
 
 const REFUSAL_SENTENCE = 'user jdelacroix does not have an LF Login account for company company-uuid-1 on project a09410000182dD3AAI';
 
-function upstreamRefusal(status = 400, body: string = JSON.stringify({ Message: REFUSAL_SENTENCE })): MicroserviceError {
+function upstreamRefusal(status = 400, body: string = JSON.stringify({ Message: REFUSAL_SENTENCE })): MicroserviceErrorType {
   return new MicroserviceError(`Failed: ${status}`, status, 'UPSTREAM_ERROR', { operation: 'op', service: 'cla', errorBody: body });
 }
 
@@ -2084,7 +2094,7 @@ describe.each([
     ['already-manager', 409, ''],
     ['unknown', 400, JSON.stringify({ Message: 'the request could not be completed at this time' })],
   ] as const)('classifies the refusal as %s and carries only that name', async (expected, status, body) => {
-    const error = (await refusalFrom(status, body)) as MicroserviceError;
+    const error = (await refusalFrom(status, body)) as MicroserviceErrorType;
 
     expect(error).toBeInstanceOf(MicroserviceError);
     expect(error.errorBody).toEqual({ error: expected });
@@ -2122,7 +2132,7 @@ describe.each([
     const error = (await invoke(new OrgClaService()).then(
       () => undefined,
       (caught: unknown) => caught
-    )) as MicroserviceError;
+    )) as MicroserviceErrorType;
 
     expect(error.statusCode).toBe(504);
     expect(error.errorBody).toBe('');

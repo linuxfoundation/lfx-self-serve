@@ -515,7 +515,16 @@ export interface EasyClaCompanyClaManager {
   lf_username?: string;
   name?: string;
   email?: string;
+  /**
+   * From a `cla_manager.added` event, when one exists. Often empty for the
+   * signatory who became the first manager with the signature.
+   */
   added_on?: string;
+  /**
+   * The CCLA's `signature_created`. Always set. Corporate Console's Added
+   * column reads this (`approvedOn`), not `added_on`.
+   */
+  approved_on?: string;
 }
 
 export interface EasyClaCompanyClaManagerList {

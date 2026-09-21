@@ -935,6 +935,16 @@ describe('OrgClasController.checkPermission', () => {
     expect(res.json).toHaveBeenCalledWith({ allowed: false });
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
+
+  it('accepts the manager-delete action the Managers tab uses', async () => {
+    checkAcs.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'cla-manager-delete', projectSfid: PROJECT }), res, vi.fn());
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT);
+    expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
 });
 
 describe('OrgClasController — CLA manager path parameters', () => {

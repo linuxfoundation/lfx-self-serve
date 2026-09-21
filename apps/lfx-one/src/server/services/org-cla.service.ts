@@ -283,7 +283,9 @@ function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = entry.name?.trim() ?? '';
   const email = entry.email?.trim() ?? '';
-  const addedOn = entry.added_on?.trim() ?? '';
+  // Prefer the events-backed add time. Fall back to `approved_on` — that is
+  // `signature_created`, and it is what Corporate Console puts in Added.
+  const addedOn = entry.added_on?.trim() || entry.approved_on?.trim() || '';
 
   return {
     lfUsername: entry.lf_username?.trim() ?? '',

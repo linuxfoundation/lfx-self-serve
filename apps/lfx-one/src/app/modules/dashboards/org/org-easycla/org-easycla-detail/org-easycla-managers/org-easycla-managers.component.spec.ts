@@ -7,7 +7,7 @@ import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REMOVE_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaManager } from '@lfx-one/shared/interfaces';
+import type { OrgClaGroup, OrgClaManager } from '@lfx-one/shared/interfaces';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { UserService } from '@services/user.service';
 import { Confirmation, ConfirmationService, MessageService } from 'primeng/api';
@@ -21,10 +21,12 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers.component';
 describe('OrgEasyclaManagersComponent', () => {
   const ORG_UID = '0014100000Te2ovAAB';
   const SIGNATURE_ID = 'signature-uuid-1';
+  const PROJECT = 'a09410000182dD2AAI';
 
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const viewerUsername = signal<string | null>('aporter');
@@ -38,17 +40,33 @@ describe('OrgEasyclaManagersComponent', () => {
     return { lfUsername: 'kmensah', name: 'Kwame Mensah', email: 'kwame.mensah@example.org', addedOn: '2024-05-02T11:00:00Z', ...overrides };
   }
 
+  function group(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
+    return {
+      id: SIGNATURE_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      foundationSfid: PROJECT,
+      projects: [{ projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' }],
+      signed: true,
+      status: 'signed',
+      needsClaManager: false,
+      claManagersCount: 2,
+      ...overrides,
+    };
+  }
+
   let fixture: ComponentFixture<OrgEasyclaManagersComponent>;
   let component: OrgEasyclaManagersComponent;
 
-  async function render(signed = true): Promise<void> {
+  async function render(signed = true, row: OrgClaGroup = group({ signed })): Promise<void> {
     fixture = TestBed.createComponent(OrgEasyclaManagersComponent);
     fixture.componentRef.setInput('orgUid', ORG_UID);
     fixture.componentRef.setInput('signatureId', SIGNATURE_ID);
     fixture.componentRef.setInput('signed', signed);
+    fixture.componentRef.setInput('claGroup', row);
     component = fixture.componentInstance;
     fixture.detectChanges();
     await fixture.whenStable();
+    fixture.detectChanges();
   }
 
   function acceptConfirmation(): void {
@@ -63,6 +81,7 @@ describe('OrgEasyclaManagersComponent', () => {
     getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager(), manager({ lfUsername: 'aporter', name: 'Ada Porter' })] }));
     addManager.mockReturnValue(of(manager()));
     removeManager.mockReturnValue(of(undefined));
+    checkPermission.mockReturnValue(of(true));
 
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaManagersComponent],
@@ -71,7 +90,7 @@ describe('OrgEasyclaManagersComponent', () => {
       .overrideComponent(OrgEasyclaManagersComponent, {
         set: {
           providers: [
-            { provide: OrgLensClaService, useValue: { getManagers, addManager, removeManager } },
+            { provide: OrgLensClaService, useValue: { getManagers, addManager, removeManager, checkPermission } },
             { provide: UserService, useValue: { viewerUsername } },
             { provide: DialogService, useValue: { open: openDialog } },
             { provide: ConfirmationService, useValue: confirmationService },
@@ -81,13 +100,13 @@ describe('OrgEasyclaManagersComponent', () => {
       .compileComponents();
   });
 
-  it('fetches nothing until the tab is opened', async () => {
+  it('fetches once constructed, because the parent only creates this panel while the tab is selected', async () => {
     await render();
 
-    expect(getManagers).not.toHaveBeenCalled();
+    expect(getManagers).toHaveBeenCalledTimes(1);
   });
 
-  it('fetches once the tab is opened, and not again on re-opening it', async () => {
+  it('does not fetch again when asked to load a second time', async () => {
     await render();
 
     component.loadIfNeeded();
@@ -107,10 +126,14 @@ describe('OrgEasyclaManagersComponent', () => {
 
   it('reports the roster length so the tab badge follows the list', async () => {
     const counts: number[] = [];
-    await render();
+    fixture = TestBed.createComponent(OrgEasyclaManagersComponent);
+    fixture.componentRef.setInput('orgUid', ORG_UID);
+    fixture.componentRef.setInput('signatureId', SIGNATURE_ID);
+    fixture.componentRef.setInput('signed', true);
+    fixture.componentRef.setInput('claGroup', group());
+    component = fixture.componentInstance;
     component.managerCountChanged.subscribe((count) => counts.push(count));
-
-    component.loadIfNeeded();
+    fixture.detectChanges();
     await fixture.whenStable();
 
     expect(counts).toEqual([2]);
@@ -296,6 +319,84 @@ describe('OrgEasyclaManagersComponent', () => {
 
       expect(getManagers).not.toHaveBeenCalled();
       expect(fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-managers-row"]')).toHaveLength(2);
+    });
+  });
+
+  describe('ACS write grants', () => {
+    it('asks ACS for Add and Remove as two strings, not one', async () => {
+      await render();
+
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'approval-list-update', PROJECT);
+      expect(checkPermission).toHaveBeenCalledWith(ORG_UID, 'cla-manager-delete', PROJECT);
+    });
+
+    it('does not ask ACS for an unsigned agreement', async () => {
+      await render(false);
+
+      expect(checkPermission).not.toHaveBeenCalled();
+    });
+
+    it('hides Add and Remove when ACS denies both', async () => {
+      checkPermission.mockReturnValue(of(false));
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-table"]')).toBeTruthy();
+    });
+
+    it('shows Add only when approval-list-update is allowed', async () => {
+      checkPermission.mockImplementation((_org: string, action: string) => of(action === 'approval-list-update'));
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
+    });
+
+    it('shows Remove only when cla-manager-delete is allowed', async () => {
+      checkPermission.mockImplementation((_org: string, action: string) => of(action === 'cla-manager-delete'));
+      await render();
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeTruthy();
+    });
+
+    it('fails closed when the pair cannot be resolved rather than guessing a project', async () => {
+      await render(
+        true,
+        group({
+          foundationSfid: undefined,
+          projects: [
+            { projectName: 'Cascade', projectSfid: 'a09410000182dD3AAI' },
+            { projectName: 'Driftwood', projectSfid: 'a09410000182dD4AAI' },
+          ],
+        })
+      );
+      component.loadIfNeeded();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(checkPermission).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-add"]')).toBeFalsy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-remove"]')).toBeFalsy();
+    });
+
+    it('does not open Add when ACS has denied it', async () => {
+      checkPermission.mockReturnValue(of(false));
+      await render();
+
+      component['openAdd']();
+
+      expect(openDialog).not.toHaveBeenCalled();
     });
   });
 });

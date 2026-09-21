@@ -303,6 +303,7 @@
           [orgUid]="selectedOrgUid()"
           [signatureId]="group.id"
           [signed]="group.signed"
+          [claGroup]="group"
           (managerCountChanged)="onManagerCountChanged($event)" />
       </div>
     } @else if (activeTab() === 'approval' && claGroup()?.signed) {

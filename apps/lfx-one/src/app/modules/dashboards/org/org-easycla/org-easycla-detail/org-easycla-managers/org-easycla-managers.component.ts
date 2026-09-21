@@ -4,14 +4,14 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
-import type { OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
+import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
+import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, finalize, skip, take, takeUntil } from 'rxjs';
+import { combineLatest, distinctUntilChanged, finalize, forkJoin, of, skip, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -42,6 +42,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   public readonly orgUid = input.required<string>();
   public readonly signatureId = input.required<string>();
   public readonly signed = input.required<boolean>();
+  public readonly claGroup = input.required<OrgClaGroup>();
 
   public readonly managerCountChanged = output<number>();
 
@@ -62,8 +63,48 @@ export class OrgEasyclaManagersComponent implements OnInit {
 
   protected readonly rows = computed(() => this.initRows());
 
+  /**
+   * ACS grants for the two manager writes (#1984). Separate strings: Add is the same
+   * `signature_approval_list:update` Corporate Console uses for that button; Remove is
+   * `cla_manager_delete:remove`. Null while the hop has not arrived — hide, do not guess.
+   */
+  private readonly addGrant = signal<boolean | null>(null);
+  private readonly removeGrant = signal<boolean | null>(null);
+
+  protected readonly canAdd = computed(() => this.addGrant() === true);
+  protected readonly canRemove = computed(() => this.removeGrant() === true);
+
   public constructor() {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.onContextChanged());
+
+    toObservable(
+      computed(() => {
+        if (!this.signed()) return '';
+        const orgUid = this.orgUid();
+        const projectSfid = orgClaPairProjectSfid(this.claGroup());
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    )
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => {
+          this.addGrant.set(null);
+          this.removeGrant.set(null);
+        }),
+        switchMap((pair) => {
+          if (!pair) return of({ add: false, remove: false });
+          const [orgUid, projectSfid] = pair.split('::');
+          return forkJoin({
+            add: this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
+            remove: this.claService.checkPermission(orgUid, 'cla-manager-delete', projectSfid),
+          });
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(({ add, remove }) => {
+        this.addGrant.set(add);
+        this.removeGrant.set(remove);
+      });
   }
 
   // The parent renders this panel only while its tab is selected, so being constructed is the
@@ -71,7 +112,17 @@ export class OrgEasyclaManagersComponent implements OnInit {
   // that creates this component is scheduled as a macrotask, and anything the parent queues on
   // selection runs while its own view query is still empty.
   public ngOnInit(): void {
-    if (this.signed()) this.fetchManagers();
+    this.loadIfNeeded();
+  }
+
+  /**
+   * Loads the roster once the tab is showing. Idempotent: a second call after the first
+   * request or a completed load is a no-op. The parent used to drive this; construction is
+   * now the same moment (the panel is created only while the tab is selected).
+   */
+  public loadIfNeeded(): void {
+    if (!this.signed() || this.loading() || this.managers() !== null || this.loadFailed()) return;
+    this.fetchManagers();
   }
 
   protected retry(): void {
@@ -79,7 +130,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected openAdd(): void {
-    if (this.writing()) return;
+    if (!this.canAdd() || this.writing()) return;
 
     const ref = this.dialogService.open(OrgEasyclaAddManagerDialogComponent, orgClaAddManagerDialogConfig());
     if (!ref) return;
@@ -90,7 +141,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected confirmRemove(manager: OrgClaManager): void {
-    if (this.writing() || this.lastManager()) return;
+    if (!this.canRemove() || this.writing() || this.lastManager()) return;
 
     const label = this.displayName(manager);
     this.confirmationService.confirm({
