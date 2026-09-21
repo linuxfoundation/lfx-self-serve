@@ -17,6 +17,7 @@ import { authenticatedMatchGuard } from './shared/guards/authenticated-match.gua
 import { dashboardAccessGuard } from './shared/guards/dashboard-access.guard';
 import { campaignAccessGuard } from './shared/guards/campaign-access.guard';
 import { formationEnabledGuard } from './shared/guards/formation-enabled.guard';
+import { formationMeEnabledGuard } from './shared/guards/formation-me-enabled.guard';
 import { formationOverviewRedirectGuard } from './shared/guards/formation-overview-redirect.guard';
 import { formationProjectEnabledGuard } from './shared/guards/formation-project-enabled.guard';
 import { formationsQueueAuditorGuard } from './shared/guards/formations-queue-auditor.guard';
@@ -662,6 +663,20 @@ export const routes: Routes = [
         data: { lens: 'me' },
         canMatch: [mentorshipEnabledGuard],
         loadChildren: () => import('./modules/mentorship/mentorship.routes').then((m) => m.MENTORSHIP_ROUTES),
+      },
+      {
+        // My Formations (#2753) — the Me-lens list of formations with checklist items assigned to
+        // the caller, off the dashboard. A Me-only page like crowdfunding/mentorship: `data.lens: 'me'`
+        // makes a deep link switch to the Me lens (MainLayoutComponent.syncLensFromRoute) instead of
+        // lensRedirectGuard rewriting it to /foundation/formations (the auditor-only queue) or the
+        // non-existent /project/formations. No projectQueryParamGuard either: the page carries no
+        // `?project=` context of its own. Dark-launched behind `formation-enabled` (CanMatch; denies
+        // to My Dashboard).
+        path: 'formations',
+        title: 'My Formations',
+        data: { lens: 'me' },
+        canMatch: [formationMeEnabledGuard],
+        loadComponent: () => import('./modules/formations/my-formations/my-formations.component').then((m) => m.MyFormationsComponent),
       },
       {
         path: 'me/events',

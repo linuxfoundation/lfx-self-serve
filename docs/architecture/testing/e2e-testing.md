@@ -17,6 +17,8 @@ apps/lfx-one/
 │   ├── pending-actions-formation-item-robust.spec.ts # structural
 │   ├── formation-sidebar.spec.ts                    # content-based — Formation-only project sidebar + overview redirect (#2754)
 │   ├── formation-sidebar-robust.spec.ts             # structural
+│   ├── my-formations.spec.ts                        # content-based — Me-lens My Formations page (#2753)
+│   ├── my-formations-robust.spec.ts                 # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/
@@ -26,7 +28,7 @@ apps/lfx-one/
 │       ├── auth.helper.ts           # Auth0 login helper
 │       ├── api-mock.helper.ts       # page.route() utilities
 │       ├── formation-api-mock.helper.ts # page.route() utilities for the formation checklist/queue
-│       ├── formation-checklist.helper.ts # navigation + route-mock bundles for the checklist hosts and the Me-dashboard formation row
+│       ├── formation-checklist.helper.ts # navigation + route-mock bundles for the checklist hosts, the Me-dashboard formation row and the My Formations page
 │       └── global-setup.ts          # runs once before the suite, saves auth state
 ├── playwright/
 │   └── .auth/user.json              # auth state produced by global-setup (gitignored)

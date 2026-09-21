@@ -220,7 +220,15 @@ describe('deriveItemAction (GH-2613 review — status_only stranding fix)', () =
   });
 
   it('falls back to the template action for a provisionable-templated item once status_source is manual', () => {
-    expect(deriveItemAction({ status_source: 'manual', item_key: 'repositories_github_owner' })).toBe('provisionable');
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'mailing_lists' })).toBe('provisionable');
+  });
+
+  // #2595 made the repositories row manual because no LFX service provisions it, and this is the
+  // half that edit exists for: once upstream stops reporting the row as `platform`, nothing may
+  // put "Set up" back on it. Keyed separately from the case above because that one needs a
+  // genuinely provisionable template to assert anything, and this key is no longer one.
+  it('returns manual for the manual-templated repositories row once status_source is manual', () => {
+    expect(deriveItemAction({ status_source: 'manual', item_key: 'repositories_github_owner' })).toBe('manual');
   });
 
   it('does NOT override a status_only-templated item to provisionable, even while status_source is platform — the one-way manual-write stranding hole this fix closes', () => {
