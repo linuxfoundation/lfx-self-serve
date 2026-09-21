@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { buildHealthMetricsOverviewPeriods, SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { SALESFORCE_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
@@ -2779,15 +2779,14 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/health-overview-revenue
-   * Get Health Metrics Overview "Foundation Revenue" rail data for a foundation
-   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   * Get Health Metrics Overview "Foundation Revenue" rail data for a foundation, keyed by period
+   * Query params: foundationSlug (required)
    */
   public async getHealthOverviewRevenue(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_health_overview_revenue');
 
     try {
       const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-      const range = getStringQueryParam(req, 'range') || 'YTD';
 
       if (!foundationSlug) {
         throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
@@ -2801,24 +2800,12 @@ export class AnalyticsController {
         });
       }
 
-      const validatedRange = assertHealthMetricsRange(range, 'get_health_overview_revenue');
-
-      // HEALTH_OVERVIEW_REVENUE only exposes 4 period-suffix columns (no 4th-year-back variant) — reuse
-      // the same 4-option set the period selector renders so this never silently drifts from the UI.
-      const allowedRanges = new Set(buildHealthMetricsOverviewPeriods().map((period) => period.range));
-      if (!allowedRanges.has(validatedRange)) {
-        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${[...allowedRanges].join(', ')}`, {
-          operation: 'get_health_overview_revenue',
-        });
-      }
-
-      const response = await this.projectService.getHealthOverviewRevenue(foundationSlug, validatedRange);
+      // No `range` param: one read covers every selectable period, so the client projects by range.
+      const response = await this.projectService.getHealthOverviewRevenue(foundationSlug);
 
       logger.success(req, 'get_health_overview_revenue', startTime, {
         foundation_slug: foundationSlug,
-        range: validatedRange,
-        data_available: response.dataAvailable,
-        stream_count: response.streams.length,
+        range_count: Object.keys(response).length,
       });
 
       res.json(response);
@@ -2829,15 +2816,14 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/health-overview-kpis
-   * Get Health Metrics Overview KPI tile-strip data for a foundation
-   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   * Get Health Metrics Overview KPI tile-strip data for a foundation, keyed by period
+   * Query params: foundationSlug (required)
    */
   public async getHealthOverviewKpis(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_health_overview_kpis');
 
     try {
       const foundationSlug = getStringQueryParam(req, 'foundationSlug');
-      const range = getStringQueryParam(req, 'range') || 'YTD';
 
       if (!foundationSlug) {
         throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
@@ -2851,23 +2837,12 @@ export class AnalyticsController {
         });
       }
 
-      const validatedRange = assertHealthMetricsRange(range, 'get_health_overview_kpis');
-
-      // HEALTH_OVERVIEW_KPIS only exposes 4 period-suffix columns (no 4th-year-back variant) — reuse
-      // the same 4-option set the period selector renders so this never silently drifts from the UI.
-      const allowedRanges = new Set(buildHealthMetricsOverviewPeriods().map((period) => period.range));
-      if (!allowedRanges.has(validatedRange)) {
-        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${[...allowedRanges].join(', ')}`, {
-          operation: 'get_health_overview_kpis',
-        });
-      }
-
-      const response = await this.projectService.getHealthOverviewKpis(foundationSlug, validatedRange);
+      // No `range` param: one read covers every selectable period, so the client projects by range.
+      const response = await this.projectService.getHealthOverviewKpis(foundationSlug);
 
       logger.success(req, 'get_health_overview_kpis', startTime, {
         foundation_slug: foundationSlug,
-        range: validatedRange,
-        area_count: response.length,
+        range_count: Object.keys(response).length,
       });
 
       res.json(response);

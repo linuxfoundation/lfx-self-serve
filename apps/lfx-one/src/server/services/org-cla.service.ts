@@ -15,7 +15,7 @@ import {
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   orgEasyclaReturnPath,
 } from '@lfx-one/shared/constants';
-import { isSameClaGroup, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import { isSameClaGroup, orgClaPairProjectSfid, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -206,14 +206,14 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * that is the one question `signed` is here for.
  */
 function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, companyName: string): OrgClaGroup {
-  const projects: OrgClaGroupProject[] = (entry.projects ?? [])
-    .map((project) => ({
-      projectName: project.projectName?.trim() ?? '',
-      ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
-    }))
-    // A project that arrives without a name cannot be rendered as a chip or matched by
-    // search, and counting it would overstate coverage on the "Covers N projects" line.
-    .filter((project) => !!project.projectName);
+  const projects: OrgClaGroupProject[] = (entry.projects ?? []).map((project) => ({
+    projectName: project.projectName?.trim() ?? '',
+    ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
+  }));
+  // ACS pair is scanned on the unfiltered list so a covered project with an id and no name
+  // still beats a parent foundation. `projects` then drops nameless rows for chips/search.
+  const pairProjectSfid = orgClaPairProjectSfid({ projects });
+  const visibleProjects = projects.filter((project) => !!project.projectName);
 
   const signingEntityName = entry.signingEntityName?.trim() ?? '';
   const claGroupName = entry.claGroupName?.trim() ?? '';
@@ -231,7 +231,10 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     ...(signingEntityName && signingEntityName !== companyName.trim() ? { signingEntityName } : {}),
     ...(entry.foundationName ? { foundationName: entry.foundationName } : {}),
     ...(entry.foundationSFID ? { foundationSfid: entry.foundationSFID } : {}),
-    projects,
+    // Nameless projects cannot be rendered as a chip or matched by search, and counting them
+    // would overstate coverage on the "Covers N projects" line. The ACS pair is already pinned.
+    projects: visibleProjects,
+    ...(pairProjectSfid ? { pairProjectSfid } : {}),
     // Only for an agreement that was actually signed. Upstream backfills this field with the
     // signature's creation time when there is no signing timestamp, so on an unsigned row it
     // holds when the signing was begun, not when it completed. Carrying it under a field the

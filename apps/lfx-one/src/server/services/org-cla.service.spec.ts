@@ -12,6 +12,7 @@ import type { Request } from 'express';
 import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/utils/cla-identifier.utils';
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
+import { orgClaPairProjectSfid } from '../../../../../packages/shared/src/utils/org-cla-permissions';
 
 const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
   gatewayFetch: vi.fn(),
@@ -31,10 +32,14 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const approval = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-approval.utils')>(
     '../../../../../packages/shared/src/utils/org-cla-approval.utils'
   );
+  const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
+    '../../../../../packages/shared/src/utils/org-cla-permissions'
+  );
   return {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
+    orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
   };
 });
 
@@ -501,6 +506,7 @@ describe('OrgClaService.listClaGroups — coverage', () => {
 
     expect(row.projects.map((project) => project.projectName)).toEqual(['Cascade', 'Driftwood']);
     expect(row.projects[0].projectSfid).toBe('a09410000182dD3AAI');
+    expect(row.pairProjectSfid).toBe('a09410000182dD3AAI');
   });
 
   it('drops a project with no name rather than counting it', async () => {
@@ -512,6 +518,23 @@ describe('OrgClaService.listClaGroups — coverage', () => {
 
     expect(row.projects).toHaveLength(1);
     expect(row.projects[0].projectName).toBe('Cascade');
+  });
+
+  it('pins a nameless covered project SFID for the approval-list ACS pair', async () => {
+    const projectSfid = 'a09410000182dD3AAI';
+    gatewayFetch.mockResolvedValue(
+      upstreamList(
+        upstreamEntry({
+          foundationSFID: 'a09410000182dFOUND',
+          projects: [{ projectSFID: projectSfid }],
+        })
+      )
+    );
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.projects).toEqual([]);
+    expect(orgClaPairProjectSfid(row)).toBe(projectSfid);
   });
 
   it('yields an empty coverage list when upstream sends none', async () => {

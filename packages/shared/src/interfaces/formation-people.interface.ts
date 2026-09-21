@@ -42,11 +42,14 @@ export interface FormationPerson {
 }
 
 /**
- * The three user-metadata fields the people card consumes — and the ONLY profile data the BFF
+ * The user-metadata fields the formation feature consumes — and the ONLY profile data the BFF
  * memoises across requests. The auth-service profile also carries address, phone and other PII
  * this feature never renders, so it is projected to this shape before any value enters the cache.
+ * `name` is derived from `given_name`/`family_name`/`name` and used to personalise item-owner
+ * and activity-actor displays (`FormationUser.name`).
  */
 export interface FormationPersonMetadata {
+  name: string | null;
   job_title: string | null;
   organization: string | null;
   picture: string | null;
