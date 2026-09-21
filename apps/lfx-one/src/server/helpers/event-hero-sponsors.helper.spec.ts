@@ -254,4 +254,19 @@ describe('extractHeroAndSponsors — URL canonicalization', () => {
       expect(sponsor.name).toBe('Sponsor');
     }
   });
+  /**
+   * The percent-decode that keeps the name readable is also what makes sanitising it necessary:
+   * `%E2%80%AE` is a RIGHT-TO-LEFT OVERRIDE, so a crafted filename can render as something other
+   * than what it contains -- the same display spoof `sanitizeDisplayText` was added to stop on
+   * the `alt` path, arriving through the filename instead. Decoding without re-sanitising trades
+   * one bug for another.
+   */
+  it('sanitises the fallback name it decodes, not just the alt text', () => {
+    const html = `<div class="partners"><h2>Our Sponsors</h2><img src="https://cdn.example.com/logos/%E2%80%AEevil%20gnp.png" alt="" /></div>`;
+
+    const [sponsor] = extractHeroAndSponsors(html, BASE_URL).sponsors;
+
+    expect(sponsor.name).not.toContain('\u202E');
+    expect(sponsor.name).not.toContain('\u202D');
+  });
 });

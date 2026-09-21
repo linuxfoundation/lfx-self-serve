@@ -328,7 +328,44 @@ function packedAddressCandidates(label: string): number[] {
  * sslip.io maps `-` to `:`, so `fd00--1.sslip.io` is `fd00::1` and `--1.sslip.io` is `::1` --
  * both private, and neither reachable by the IPv4 scans above.
  */
-function dashNotationIPv6(label: string): string {
+function dashNotationIPv6Addresses(label: string): string[] {
+  // EVERY reading is returned, not the first that decodes -- the same contract
+  // packedAddressCandidates has for IPv4, and for the same reason.
+  //
+  // Two bugs meet here, and fixing only one leaves the bypass:
+  //
+  //   - sslip.io documents a `<prefix>-<address>` affix. The IPv4 decoder strips it and this
+  //     one did not, so `app-fd00--1.sslip.io` decoded to `app:fd00::1`, failed the hex test
+  //     and returned '' (not private). An asymmetry between two decoders of the SAME notation
+  //     is a bypass by omission rather than a missing rule.
+  //   - Returning the FIRST reading that decodes is not enough either, because an affixed
+  //     label can decode as a valid PUBLIC address before its private reading is reached:
+  //     `web-01-fd00--1` yields `01:fd00::1` (public) from one split point and `fd00::1`
+  //     (private) from the next. Stopping at the first answer returns the public one and the
+  //     host passes.
+  //
+  // So every reading is judged by the caller. The whole label is included first because `-` is
+  // this notation's own separator -- splitting unconditionally would turn the legitimate
+  // `fd00--1` into a bare `1` -- and the affix-stripped readings only ever ADD spellings the
+  // label could also be.
+  const decoded: string[] = [];
+  const segments = label.split('-');
+
+  for (let i = 0; i < segments.length; i++) {
+    // Every suffix of the label is a reading, INCLUDING those that begin with an empty segment.
+    // Skipping those was itself a bypass: in `app---1` the address's own leading `::` renders as
+    // empty segments, so `--1` (which is `::1`) was never judged and the host passed. The
+    // decoder rejects a reading that is not a well-formed address, so offering it more readings
+    // cannot create a false positive -- only fewer readings can create a bypass.
+    const address = decodeDashIPv6(segments.slice(i).join('-'));
+    if (address !== '') decoded.push(address);
+  }
+
+  return decoded;
+}
+
+/** The IPv6 address one candidate spells, or '' when it spells none. */
+function decodeDashIPv6(label: string): string {
   // sslip.io also accepts the address as 32 bare hex digits, no separators at all --
   // `fd001234567890abcdef1234567890ab.sslip.io`. No dash to key off, so the dash branch below
   // could never see it.
@@ -541,8 +578,9 @@ export function isPrivateHost(hostname: string): boolean {
         const quad = `${(packed >>> 24) & 0xff}.${(packed >>> 16) & 0xff}.${(packed >>> 8) & 0xff}.${packed & 0xff}`;
         if (isPrivateHost(quad)) return true;
       }
-      const spelled = dashNotationIPv6(label);
-      if (spelled !== '' && isPrivateHost(`[${spelled}]`)) return true;
+      for (const spelled of dashNotationIPv6Addresses(label)) {
+        if (isPrivateHost(`[${spelled}]`)) return true;
+      }
     }
 
     // Every label is scanned. Two failure modes meet here and both are real, so neither a blanket

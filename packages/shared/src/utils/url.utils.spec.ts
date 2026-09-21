@@ -397,4 +397,46 @@ describe('canonicalHttpUrl', () => {
     expect(isPrivateHost('93.184.216.34')).toBe(false);
     expect(isPrivateHost('10.0.0.1')).toBe(true);
   });
+  /**
+   * sslip.io documents a `<prefix>-<address>` affix, and the IPv4 decoder strips it while the
+   * IPv6 one did not -- so `app-fd00--1.sslip.io` decoded to `app:fd00::1`, failed the hex test
+   * and returned "not private". An asymmetry between two decoders of the SAME notation is a
+   * bypass by omission.
+   *
+   * Fixing the strip alone was not enough, and the second half is the part worth pinning: an
+   * affixed label can decode as a valid PUBLIC address BEFORE its private reading is reached.
+   * `web-01-fd00--1` yields `01:fd00::1` (public) at one split point and `fd00::1` (private) at
+   * the next, so returning the first reading that decodes returns the public one and the host
+   * passes. Every reading is judged now, which is the contract the IPv4 side already had.
+   *
+   * And a reading that BEGINS with an empty segment must be judged too: in `app---1` the
+   * address's own leading `::` renders as empty segments, so skipping them hid `::1` entirely.
+   */
+  it.each([
+    ['an affixed compressed IPv6 wildcard host', 'app-fd00--1.sslip.io'],
+    ['an affix containing its own dash', 'web-01-fd00--1.sslip.io'],
+    ['an affixed loopback whose address starts with ::', 'app---1.sslip.io'],
+    ['an affixed link-local', 'x-fe80--1.sslip.io'],
+    ['an affixed expanded form', 'app-fd00-0-0-0-0-0-0-1.sslip.io'],
+    ['an affixed 32-hex packed form', 'app-fd001234567890abcdef1234567890ab.sslip.io'],
+  ])('denies %s', (_label, host) => {
+    expect(isPrivateHost(host)).toBe(true);
+  });
+
+  /**
+   * The negative half, in the same commit as the positive half on purpose. Every previous round
+   * of hardening this function created a FALSE POSITIVE -- `release-10-0-0-5.example.com` and
+   * `163.com` were both refused at some point -- because the allow cases were never written
+   * alongside the deny cases. Dropping a legitimate hero image is a real defect.
+   */
+  it.each([
+    ['a PUBLIC IPv6 under a wildcard suffix', '2001-4860-4860--8888.sslip.io'],
+    ['an AFFIXED public IPv6', 'app-2001-4860-4860--8888.sslip.io'],
+    ['an ordinary host that merely looks like the notation', 'web-01-prod.example.com'],
+    ['a hostname containing a hex-like label', 'deadbeef-cafe.example.com'],
+    ['a hostname with a double dash', 'x--y.example.com'],
+    ['a build label with dotted numbers', 'release-10-0-0-5.example.com'],
+  ])('allows %s', (_label, host) => {
+    expect(isPrivateHost(host)).toBe(false);
+  });
 });
