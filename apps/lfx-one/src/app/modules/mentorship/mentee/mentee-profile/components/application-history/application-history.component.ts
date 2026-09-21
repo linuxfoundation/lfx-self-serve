@@ -41,16 +41,7 @@ export class ApplicationHistoryComponent {
   protected readonly viewLabel = MENTORSHIP_MENTEE_APPLICATION_HISTORY_VIEW_LABEL;
   protected readonly withdrawLabel = MENTORSHIP_MENTEE_APPLICATION_HISTORY_WITHDRAW_LABEL;
 
-  protected readonly rows = computed(() =>
-    this.entries().map((entry) => ({
-      ...entry,
-      statusLabel: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS[entry.status],
-      statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES[entry.status],
-      // Applicant self-withdraw is `pending → withdrawn` only. Declined cannot re-apply;
-      // accepted/graduated/hold/withdrawn are not self-withdrawable.
-      canWithdraw: entry.status === 'pending',
-    }))
-  );
+  protected readonly rows = this.initRows();
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars -- row reserved for real application navigation
   protected onView(_entry: MentorshipMenteeApplicationHistoryEntry): void {
@@ -60,5 +51,18 @@ export class ApplicationHistoryComponent {
   protected onWithdraw(entry: MentorshipMenteeApplicationHistoryEntry): void {
     if (entry.status !== 'pending') return;
     this.comingSoon.notify(this.withdrawLabel);
+  }
+
+  private initRows() {
+    return computed(() =>
+      this.entries().map((entry) => ({
+        ...entry,
+        statusLabel: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_LABELS[entry.status],
+        statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES[entry.status],
+        // Applicant self-withdraw is `pending → withdrawn` only. Declined cannot re-apply;
+        // accepted/graduated/hold/withdrawn are not self-withdrawable.
+        canWithdraw: entry.status === 'pending',
+      }))
+    );
   }
 }

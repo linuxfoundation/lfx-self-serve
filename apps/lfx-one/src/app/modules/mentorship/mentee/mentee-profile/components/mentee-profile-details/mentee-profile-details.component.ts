@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, input, output } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, SecurityContext } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   MENTORSHIP_MENTEE_PROFILE_ABOUT_EMPTY,
@@ -36,6 +37,8 @@ import { normalizeToUrl, stripHtml } from '@lfx-one/shared/utils';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MenteeProfileDetailsComponent {
+  private readonly sanitizer = inject(DomSanitizer);
+
   public readonly profile = input.required<MentorshipMenteeProfileDetails>();
   public readonly editClick = output<void>();
 
@@ -59,10 +62,10 @@ export class MenteeProfileDetailsComponent {
    * fall out of that:
    *   - Emptiness has to be decided on the stripped-tags value, not `raw.trim()` —
    *     the editor stores `<p></p>` for an empty answer, which is truthy under `.trim()`.
-   *   - Rendering has to go through `[innerHTML]` (Angular sanitises on the way in),
+   *   - Rendering has to go through `[innerHTML]` after `DomSanitizer.sanitize`,
    *     otherwise the template interpolates the tags literally.
    */
-  protected readonly aboutMeHtml = computed(() => this.profile().aboutMe ?? '');
+  protected readonly aboutMeHtml = this.initAboutMeHtml();
   protected readonly aboutMeIsEmpty = computed(() => stripHtml(this.aboutMeHtml()).length === 0);
   protected readonly skillsHave = computed(() => this.profile().skillsHave);
   protected readonly skillsWant = computed(() => this.profile().skillsWant);
@@ -76,11 +79,7 @@ export class MenteeProfileDetailsComponent {
    * normalized value rather than the raw input is load-bearing: a scheme-less
    * value bound to `[href]` would otherwise resolve as an in-app relative path.
    */
-  protected readonly resumeUrl = computed(() => {
-    const raw = this.profile().resumeUrl?.trim() ?? '';
-    if (!raw) return '';
-    return normalizeToUrl(raw) ?? '';
-  });
+  protected readonly resumeUrl = this.initResumeUrl();
   /**
    * The profile contract lets `resumeFileName` and `resumeUrl` be present
    * independently, so the empty state has to be `neither`, not `no filename`.
@@ -90,5 +89,17 @@ export class MenteeProfileDetailsComponent {
 
   protected onEdit(): void {
     this.editClick.emit();
+  }
+
+  private initAboutMeHtml() {
+    return computed(() => this.sanitizer.sanitize(SecurityContext.HTML, this.profile().aboutMe ?? '') ?? '');
+  }
+
+  private initResumeUrl() {
+    return computed(() => {
+      const raw = this.profile().resumeUrl?.trim() ?? '';
+      if (!raw) return '';
+      return normalizeToUrl(raw) ?? '';
+    });
   }
 }

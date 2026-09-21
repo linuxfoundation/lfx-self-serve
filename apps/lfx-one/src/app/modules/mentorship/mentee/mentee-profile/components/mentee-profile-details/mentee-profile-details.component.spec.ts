@@ -65,6 +65,15 @@ describe('MenteeProfileDetailsComponent', () => {
     expect(rendered?.textContent).not.toContain('<strong>');
   });
 
+  it('strips script payloads from aboutMe before binding [innerHTML]', () => {
+    setup({ ...baseProfile, aboutMe: '<p>Safe intro</p><script>alert(1)</script>' });
+
+    const rendered = element().querySelector<HTMLElement>('[data-testid="mentorship-mentee-profile-details-about-text"]');
+    expect(rendered?.textContent).toContain('Safe intro');
+    expect(rendered?.querySelector('script')).toBeNull();
+    expect(rendered?.innerHTML).not.toContain('<script>');
+  });
+
   it.each([
     ['   ', 'whitespace-only string'],
     ['<p></p>', 'empty editor paragraph'],

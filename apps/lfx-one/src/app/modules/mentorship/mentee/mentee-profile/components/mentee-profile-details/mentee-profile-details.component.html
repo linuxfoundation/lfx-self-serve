@@ -19,9 +19,9 @@
     @if (!aboutMeIsEmpty()) {
       <!--
         Register form authors this via `lfx-rich-editor` → the payload is HTML (`<p>…</p>`).
-        Angular sanitises the value on the way into `[innerHTML]`; the `prose` container is
-        the same typography wrapper campaigns/committees/announcements use for
-        editor-authored HTML elsewhere in the app.
+        The computed sanitises with `DomSanitizer.sanitize(SecurityContext.HTML)` before
+        `[innerHTML]`; the `prose` container is the same typography wrapper
+        campaigns/committees/announcements use for editor-authored HTML elsewhere.
       -->
       <div
         class="prose prose-sm max-w-none text-sm text-gray-700 leading-6"
@@ -37,7 +37,7 @@
     @if (skillsHave().length > 0) {
       <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-skills-list">
         @for (skill of skillsHave(); track skill) {
-          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
+          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 px-3 py-1 text-xs">
             {{ skill }}
           </span>
         }
@@ -52,7 +52,7 @@
     @if (skillsWant().length > 0) {
       <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-areas-list">
         @for (skill of skillsWant(); track skill) {
-          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-neutral-100 text-neutral-600 px-3 py-1 text-xs">
+          <span class="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-100 text-gray-600 px-3 py-1 text-xs">
             {{ skill }}
           </span>
         }

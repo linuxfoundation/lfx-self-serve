@@ -537,8 +537,8 @@ export const MOCK_MENTORSHIP_MENTEE_PROFILE: MentorshipMenteeProfileResponse = {
     skillsWant: ['Distributed Systems', 'Code Review', 'Observability'],
     additionalNotes:
       'I co-run a student Linux user group and have been maintaining our campus microgrid dashboards for two terms. I am comfortable working asynchronously across time zones.',
-    resumeFileName: 'dana-okafor-resume.pdf',
-    resumeUrl: 'https://example.com/dana-okafor-resume.pdf',
+    resumeFileName: 'test-user-1-resume.pdf',
+    resumeUrl: 'https://example.com/test-user-1-resume.pdf',
   },
   history: MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY,
 };
