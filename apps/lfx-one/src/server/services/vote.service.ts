@@ -47,7 +47,7 @@ export class VoteService {
   /**
    * Attempt-1 enable PUT budget (GH-2729 review M-1), exempt from the
    * `enableEndToEndMaxDurationMs` retry deadline: 15 s matches the v2 voting-api's hardcoded
-   * `WriteTimeout: 15s` (main/cmd/voting-api/main.go) — a slower enable can never return
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) — a slower enable can never return
    * successfully end-to-end, so the first attempt gets the full slow-success window instead of
    * the 11.7 s retry deadline (a legitimate 11.7–15 s enable would otherwise abort as a 408 one
    * timeout short of the server's own ceiling).
@@ -96,7 +96,7 @@ export class VoteService {
 
   /**
    * Create-POST request timeout (GH-2729 review m-7): 15 s matches the v2 voting-api's hardcoded
-   * `WriteTimeout: 15s` (main/cmd/voting-api/main.go) — a slower create can never return
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) — a slower create can never return
    * successfully end-to-end, so the API client's 30 s default would only outwait the server's own
    * ceiling. Worst-case fused create+open hold = 15 s create + 8 s probe + 15 s enable attempt-1
    * ≈ 38 s, under the 60 s ingress-nginx default; the three budgets stay independent by design —
