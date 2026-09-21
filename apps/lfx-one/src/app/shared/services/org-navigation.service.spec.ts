@@ -31,23 +31,27 @@ describe('OrgNavigationService default selection', () => {
   const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
 
   let selectedAccount: WritableSignal<Account>;
-  let isAddressedSelection: ReturnType<typeof vi.fn>;
+  let isAdoptedFromAddress: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
   let setIndexedSlug: ReturnType<typeof vi.fn>;
-  let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
-  let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
+  let pinSelection: ReturnType<typeof vi.fn>;
   let clearAccount: ReturnType<typeof vi.fn>;
+  let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
+  let isOnAddressedPage: ReturnType<typeof vi.fn>;
+  let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
 
   beforeEach(() => {
     selectedAccount = signal<Account>(placeholder);
-    isAddressedSelection = vi.fn(() => false);
+    isAdoptedFromAddress = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
+    pinSelection = vi.fn();
+    clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     navigateToSelectedOrg = vi.fn();
+    isOnAddressedPage = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
-    clearAccount = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -56,10 +60,10 @@ describe('OrgNavigationService default selection', () => {
         MessageService,
         { provide: LensService, useValue: {} },
         { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
-        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
+        { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, refreshCanonicalRecord, clearAccount },
+          useValue: { selectedAccount, isAdoptedFromAddress, setAccount, setIndexedSlug, pinSelection, clearAccount, refreshCanonicalRecord },
         },
       ],
     });
@@ -134,10 +138,69 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
   });
 
+  // lfx-self-serve#2570 (prod): the persona refresh can land after the default is selected — with no
+  // seeds at all for a grant-only (staff) viewer — and would reset an unpinned selection to the
+  // placeholder under the address just written. The default is pinned like an adopted selection,
+  // and pinned *before* the write: landing in the gap would otherwise clear the selection, the write
+  // would find no segment, and the legacy address would stay put, empty.
+  it('pins the default selection before writing it into the address', () => {
+    bootstrapWith([item(UID_A, 'Acme')]);
+
+    expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection).toHaveBeenCalledWith('default');
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeGreaterThan(setAccount.mock.invocationCallOrder[0]);
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  // A default pin came from this list, so it is not the address pin the early return above honours:
+  // a later authoritative reload re-runs the selection, which is how a revoked organization is
+  // released instead of kept for the rest of the session (Copilot on lfx-self-serve#2793).
+  describe('a default-pinned selection on a later reload', () => {
+    beforeEach(() => {
+      // `isAdoptedFromAddress` stays false: the pin is a default one.
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+    });
+
+    it('re-defaults to the first row when the pinned organization is no longer listed', () => {
+      bootstrapWith([item(UID_A, 'Acme')]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      expect(pinSelection).toHaveBeenCalledWith('default');
+    });
+
+    it('routes an empty list through the no-access handling, releasing the selection', () => {
+      bootstrapWith([]);
+
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    it('keeps it, re-pinned, when it is still listed', () => {
+      bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+      expect(pinSelection).toHaveBeenCalledWith('default');
+    });
+
+    // On an addressed page the address names the selection. A default from the list would leave
+    // that address in place with another organization rendering under it — spec 050's silent
+    // substitution — so the selection stays, whatever the list says (Copilot on lfx-self-serve#2793).
+    it('never re-defaults under an address that names the unlisted organization', () => {
+      isOnAddressedPage.mockReturnValue(true);
+
+      bootstrapWith([item(UID_A, 'Acme')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+      expect(selectedAccount().uid).toBe(UID_B);
+    });
+  });
+
   // The organization the address named was access-verified by the resolver a moment ago; whether or
   // not it appears on the first page, it stays selected and the address is not touched.
   it('leaves an addressed selection alone', () => {
-    isAddressedSelection.mockReturnValue(true);
+    isAdoptedFromAddress.mockReturnValue(true);
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
 
     bootstrapWith([item(UID_A, 'Acme')]);
@@ -157,6 +220,10 @@ describe('OrgNavigationService default selection', () => {
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    // Same exposure as the default: the restored selection is about to become the address.
+    expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection).toHaveBeenCalledWith('default');
+    expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
   // A cookie-restored selection carries no slug, or a stale one from an earlier session; the indexed

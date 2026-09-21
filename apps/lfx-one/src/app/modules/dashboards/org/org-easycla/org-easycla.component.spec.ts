@@ -1103,7 +1103,15 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              selectedUrlSegment,
+              availableAccounts: signal([]),
+              setAccount,
+              adoptFromAddress: setAccount,
+              refreshCanonicalRecord,
+            },
           },
           { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },

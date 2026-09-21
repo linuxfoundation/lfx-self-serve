@@ -66,6 +66,15 @@ async function render(response: MyFormationWorkResponse): Promise<{
 }
 
 describe('MyFormationsComponent (#2753)', () => {
+  it('renders a dash under "Your items" for an invited-only formation with nothing assigned (#2795)', async () => {
+    const { fixture } = await render(complete([formation({ assigned_to_do: 0, assigned_done: 0, assigned_skipped: 0, items_done: 0, items_total: 17 })]));
+
+    expect(rowIds(fixture)).toEqual(['my-formations-row-formation-1']);
+    expect(byTestId(fixture, 'my-formations-items-formation-1')?.textContent?.trim()).toBe('—');
+    expect(byTestId(fixture, 'my-formations-progress-formation-1')?.textContent).toContain('0 of 17');
+    expect(byTestId(fixture, 'my-formations-empty-state')).toBeNull();
+  });
+
   it('renders one table row per formation with its stage chip, your-items subtitle, progress, announcement and blocking gate', async () => {
     const { fixture } = await render(
       complete([
