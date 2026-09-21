@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -15,14 +16,21 @@ import { OrgOverviewInvolvementComponent } from '../components/org-overview-invo
 
 @Component({
   selector: 'lfx-org-overview',
-  imports: [TagComponent, SkeletonModule, OpenIntercomDirective, OrgOverviewInvolvementComponent, OrgOverviewFoundationsAndProjectsComponent],
+  imports: [
+    TagComponent,
+    SkeletonModule,
+    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
+    OrgOverviewInvolvementComponent,
+    OrgOverviewFoundationsAndProjectsComponent,
+  ],
   templateUrl: './org-overview.component.html',
 })
 export class OrgOverviewComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly selectedAccount = this.accountContextService.selectedAccount;
 
@@ -46,20 +54,11 @@ export class OrgOverviewComponent {
   protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
 
   /**
-   * True once the role-grants fetch has completed and the caller has no org access. Reuses the shared
-   * `AccountContextService.hasOrgSelectorAccess` predicate so this gate cannot drift from the sidebar
-   * org-selector visibility rule — direct writer/auditor grants or a persona-seeded account count;
-   * indirect grants do not (the selector is direct-only, so a user with only indirect access never
-   * triggers the selector's list fetch and would otherwise stay on the skeleton forever).
-   *
-   * "Completed" here means each async request has returned its first response — these are one-shot
-   * loads on page init, not eventually-consistent streams. We also wait on the personas fetch: for
-   * users whose org seeds arrive only via the async personas response (empty `auth.organizations` at
-   * SSR), role grants can return empty before personas seed `availableAccounts`, so gating on
-   * `personaLoaded()` prevents a one-tick flash of the not-available message. Both requests always
-   * resolve, so this never re-introduces an indefinite skeleton.
+   * Spec 053 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
+   * `no-organization`), or `null` when the page itself renders. Decided by the shared classifier so
+   * this gate cannot drift from the other Org Lens pages or from the sidebar org-selector rule.
    */
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContextService.hasOrgSelectorAccess()
-  );
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId: Signal<string | null> = this.orgRoleGrantsService.correlationId;
 }

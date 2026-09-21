@@ -20,6 +20,7 @@ import {
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
+  OrgLensStaffCheck,
   OrgRolePersona,
   QueryServiceResponse,
   ResolvedOrgRole,
@@ -27,6 +28,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -76,7 +78,10 @@ export class OrgRoleGrantsService {
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
       // Cache only successful resolutions; never cache upstream failures (they retry next request).
-      if (!result.upstreamFailed) {
+      // Spec 053: a failed staff check is likewise never cached — the state renders a correlation id
+      // that must match the log line of the computation that produced it, and an LF-team member must
+      // not stay pinned on "could not confirm your staff access" for the TTL after the authorizer recovers.
+      if (!result.upstreamFailed && result.staffCheck !== 'failed') {
         await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
       }
       return result;
@@ -93,14 +98,27 @@ export class OrgRoleGrantsService {
   /**
    * Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`.
    *
-   * `upstreamFailed` folds into the single wire-level `degraded` flag because this response has no
-   * separate transport-failure field (unlike the org list, which reports `upstream_failed` on its
-   * own). Dropping it would hand an empty, unverifiable grant set to `assertCanManage` as an
-   * authoritative denial — a 403 where the caller is owed a 503.
+   * `upstreamFailed` folds into the single wire-level `degraded` flag because that flag predates the
+   * finer `lookupOutcome` (spec 053) and server gates still read it. Dropping it would hand an empty,
+   * unverifiable grant set to `assertCanManage` as an authoritative denial — a 403 where the caller is
+   * owed a 503. `lookupOutcome` carries the distinction the page needs: `failed` (roster never loaded)
+   * vs `partial` (roll-up incomplete).
    */
   public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded, upstreamFailed } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
+    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username);
+    const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
+    if (upstreamFailed) {
+      response.lookupOutcome = 'failed';
+    } else if (degraded) {
+      response.lookupOutcome = 'partial';
+    } else {
+      response.lookupOutcome = 'ok';
+    }
+    response.staffCheck = staffCheck;
+    if (staffCheck === 'failed' && correlationId) {
+      response.correlationId = correlationId;
+    }
+    return response;
   }
 
   /**
@@ -149,7 +167,10 @@ export class OrgRoleGrantsService {
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
       // connected-component classification. Rejecting it recomputes instead.
-      typeof entry.degraded === 'boolean'
+      typeof entry.degraded === 'boolean' &&
+      // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
+      // `undefined` and hiding the staff-check state.
+      (entry.staffCheck === 'ok' || entry.staffCheck === 'failed')
     );
   }
 
@@ -203,6 +224,7 @@ export class OrgRoleGrantsService {
       username: result.username,
       isStaff: result.isStaff,
       degraded: result.degraded,
+      staffCheck: result.staffCheck,
     };
   }
 
@@ -216,11 +238,16 @@ export class OrgRoleGrantsService {
       username: entry.username,
       isStaff: entry.isStaff,
       degraded: entry.degraded,
+      staffCheck: entry.staffCheck,
     };
   }
 
   private async computeAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
     const loadedAt = new Date().toISOString();
+    // Spec 053: one id per computation, echoed into every warning below and returned on the wire only
+    // when the staff check failed. Not `req.id` — pino's request id is a per-process counter, so a
+    // caller quoting it back could not be found in the logs (see `ensureGwRequestId`).
+    const correlationId = randomUUID();
     const empty: AccessAwareOrgsResult = {
       resolved: new Map(),
       orgDocByUid: new Map(),
@@ -229,6 +256,7 @@ export class OrgRoleGrantsService {
       username,
       isStaff: false,
       degraded: false,
+      staffCheck: 'ok',
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -241,7 +269,7 @@ export class OrgRoleGrantsService {
     // Started here so it overlaps the roster query rather than serialising behind it, and
     // resolved on every path below: the LF-team affordance is independent of the roster, so it must survive
     // both "no grants" (the defining LF-team case) and a roster lookup failure.
-    const teamPromise = this.resolveIsStaff(req, username);
+    const teamPromise = this.resolveIsStaff(req, username, correlationId);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -262,8 +290,8 @@ export class OrgRoleGrantsService {
         page_size: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff: await teamPromise };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, ...(await teamPromise), correlationId };
     }
 
     // Operator-visibility signal: when the caller has more direct grants than
@@ -288,7 +316,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const isStaff = await teamPromise;
+    const { isStaff, staffCheck } = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
@@ -296,7 +324,17 @@ export class OrgRoleGrantsService {
       // caller as a member, but only `accepted` ones become grants, so a roster of pending invites
       // wide enough to hit the cap can push the one accepted grant out of the slice — an empty
       // answer that must not read as a verified denial.
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff, degraded: directRosterTruncated };
+      return {
+        resolved: new Map(),
+        orgDocByUid: new Map(),
+        upstreamFailed: false,
+        loadedAt,
+        username,
+        isStaff,
+        degraded: directRosterTruncated,
+        staffCheck,
+        correlationId,
+      };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -305,8 +343,8 @@ export class OrgRoleGrantsService {
     try {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, isStaff, staffCheck, correlationId };
     }
 
     // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
@@ -326,7 +364,10 @@ export class OrgRoleGrantsService {
       // already verified against the caller's own settings rows. Discarding them because roll-up
       // expansion failed would revoke access the caller demonstrably holds, so the failure
       // degrades the answer instead of emptying it.
-      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', { err: error });
+      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', {
+        err: error,
+        correlation_id: correlationId,
+      });
       walk = { candidates: new Map(), docByUid: new Map(directOrgDocs), truncated: false };
       walkFailed = true;
     }
@@ -348,6 +389,8 @@ export class OrgRoleGrantsService {
       username,
       isStaff,
       degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
+      staffCheck,
+      correlationId,
     };
   }
 
@@ -364,23 +407,25 @@ export class OrgRoleGrantsService {
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed — `checkAccess` already degrades to all-false, and the extra catch keeps
-   * an unexpected throw from failing the whole role-grants resolution for a caller who is simply not
-   * in either team.
+   * principle. Fails closed on `isStaff` (`false`), but reports the failure as `staffCheck: 'failed'`
+   * (spec 053 FR-011) so the page can say "we could not confirm your staff access" instead of the
+   * employee no-access copy. `checkAccessStrict` is used so an authorizer outage surfaces as a throw
+   * rather than a silent all-false that would read as "not staff".
    */
-  private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
+  private async resolveIsStaff(req: Request, username: string, correlationId: string): Promise<{ isStaff: boolean; staffCheck: OrgLensStaffCheck }> {
     try {
-      const membership = await this.accessCheck.checkAccess(
+      const membership = await this.accessCheck.checkAccessStrict(
         req,
         LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
       );
-      return LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
+      return { isStaff: LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true), staffCheck: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
+        correlation_id: correlationId,
       });
-      return false;
+      return { isStaff: false, staffCheck: 'failed' };
     }
   }
 

@@ -4,6 +4,7 @@
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import {
   lfxColors,
   ORG_LENS_ROI_CATEGORY_REMAINDER_THRESHOLD,
@@ -16,15 +17,16 @@ import type { OrgLensRoiCategoryRow, OrgLensRoiCategorySlice, OrgLensRoiInvestme
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, filter, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 const EMPTY_BREAKDOWN: OrgLensRoiInvestmentBreakdown = { rows: [], total: 0 };
 
 @Component({
   selector: 'lfx-org-roi-category-donut',
-  imports: [ChartComponent, SkeletonModule],
+  imports: [ChartComponent, OrgLensEmptyStateComponent, SkeletonModule],
   templateUrl: './org-roi-category-donut.component.html',
 })
 export class OrgRoiCategoryDonutComponent {
@@ -38,8 +40,10 @@ export class OrgRoiCategoryDonutComponent {
   protected readonly investmentExplanation = ORG_LENS_ROI_KPI_EXPLANATION.totalExpenditure;
 
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  protected readonly forbidden = signal(false);
+  /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the slices in hand, below. */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  /** Bumped by Retry; part of the request key so the same organization re-issues the read. */
+  private readonly attempt = signal(0);
 
   /** Currency or share of total. Presentation only; the underlying values never change. */
   protected readonly asShare = signal(false);
@@ -54,6 +58,14 @@ export class OrgRoiCategoryDonutComponent {
    * alone rendered a blank canvas beside an empty legend instead of saying so.
    */
   protected readonly hasSlices: Signal<boolean> = computed(() => this.slices().length > 0);
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  /** The shared state to render instead of the chart, or `null` while there are slices to draw. */
+  protected readonly emptyState = computed(() => {
+    const outcome = this.loadOutcome();
+    return sectionEmptyState(outcome === 'records' && !this.hasSlices() ? 'empty' : outcome);
+  });
 
   /**
    * The reconciliation anchor. It is the sum of exactly the rows drawn below, and the warehouse
@@ -201,28 +213,30 @@ export class OrgRoiCategoryDonutComponent {
     this.asShare.set(asShare);
   }
 
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
+
   private initBreakdown(): Signal<OrgLensRoiInvestmentBreakdown> {
     // Keyed by the account id alone: category investment carries no estimation method, so a method
     // change is not a reason to refetch this surface.
-    const accountId$ = toObservable(computed(() => this.accountContext.selectedAccount()?.accountId ?? ''));
+    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.attempt()}`));
 
     return toSignal(
-      accountId$.pipe(
-        filter((orgUid) => !!orgUid),
+      requestKey$.pipe(
+        map((key) => key.split('|') as [string, string]),
+        filter(([orgUid]) => !!orgUid),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
         }),
-        switchMap((orgUid) =>
+        switchMap(([orgUid]) =>
           this.roiService.getInvestmentBreakdown(orgUid).pipe(
             tap(() => this.loading.set(false)),
             catchError((error: unknown) => {
               console.error('Failed to load ROI investment breakdown', error);
               this.loading.set(false);
-              // Only a 403 may show the no-access message; a 503 must not.
-              if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
-              else this.failed.set(true);
+              this.loadOutcome.set(classifySectionError(error));
               return of(EMPTY_BREAKDOWN);
             })
           )

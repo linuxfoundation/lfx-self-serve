@@ -7,14 +7,8 @@
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="20rem" />
     </section>
-  } @else if (hasNoOrgAccess()) {
-    <section class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-easycla-no-access-state">
-      <h2 class="text-base font-semibold text-gray-900">Organization Lens is not available</h2>
-      <p class="max-w-md text-sm text-gray-600">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
-        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-no-access-contact-support">contact us</button>.
-      </p>
-    </section>
+  } @else if (pageState(); as state) {
+    <lfx-org-lens-empty-state [state]="state" [testId]="'org-easycla-no-access'" [values]="{ correlationId: correlationId() }" (retry)="emptyState.retry()" />
   } @else if (!hasCompany()) {
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"

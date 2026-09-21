@@ -321,8 +321,11 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
 
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-forbidden')).toBeVisible();
-    await expect(page.getByTestId('org-roi-forbidden')).toContainText('do not have Org Lens access');
+    const forbidden = page.getByTestId('org-roi-forbidden-state');
+    await expect(forbidden).toBeVisible();
+    await expect(forbidden).toHaveAttribute('data-state', 'section-no-access');
+    await expect(page.getByTestId('org-roi-forbidden-title')).toHaveText('You do not have access to this organization');
+    await expect(page.getByTestId('org-roi-forbidden-contact-support')).toBeVisible();
     await expect(page.getByTestId('org-roi-kpi-cards')).toHaveCount(0);
 
     expect(responses.length).toBeGreaterThan(0);
@@ -345,7 +348,7 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-error')).toBeVisible();
+    await expect(page.getByTestId('org-roi-error-state')).toBeVisible();
     await expect(page.getByTestId('org-roi-portfolio-loading')).toHaveCount(0);
   });
 
@@ -356,9 +359,41 @@ test.describe('Org Lens ROI Metrics — portfolio summary', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-error')).toBeVisible();
-    await expect(page.getByTestId('org-roi-error')).toContainText("couldn't be loaded");
-    await expect(page.getByTestId('org-roi-forbidden')).toHaveCount(0);
+    // Spec 053 FR-015: decided by the refusal's stated code, so a check that could not run never reads
+    // as a permissions message — and it carries a Retry rather than a contact-support action.
+    const error = page.getByTestId('org-roi-error-state');
+    await expect(error).toBeVisible();
+    await expect(error).toHaveAttribute('data-state', 'section-could-not-verify');
+    await expect(page.getByTestId('org-roi-error-title')).toHaveText('Access could not be verified');
+    await expect(page.getByTestId('org-roi-error-retry')).toBeVisible();
+    await expect(page.getByTestId('org-roi-forbidden-state')).toHaveCount(0);
+  });
+
+  test('retries the portfolio in place and renders figures once the second response is healthy', async ({ page }) => {
+    await stubOrgLensContext(page);
+    // Refuse the first summary and the first coverage request only; Retry's second attempt falls
+    // through to the healthy fixtures registered by stubOrgLensContext.
+    const refused = new Set<string>();
+    await page.route('**/api/orgs/*/lens/roi/summary*', (route) => {
+      if (refused.has('summary')) return route.fallback();
+      refused.add('summary');
+      return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'INTERNAL' }) });
+    });
+    await page.route('**/api/orgs/*/lens/roi/coverage*', (route) => {
+      if (refused.has('coverage')) return route.fallback();
+      refused.add('coverage');
+      return route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 'INTERNAL' }) });
+    });
+    await gotoOrgRoiPage(page);
+
+    const error = page.getByTestId('org-roi-error-state');
+    await expect(error).toBeVisible();
+    await expect(error).toHaveAttribute('data-state', 'section-could-not-load');
+
+    await page.getByTestId('org-roi-error-retry').click();
+
+    await expect(page.getByTestId('org-roi-kpi-cards')).toBeVisible();
+    await expect(page.getByTestId('org-roi-error-state')).toHaveCount(0);
   });
 
   test('renders the no-company empty state when no account is selected', async ({ page }) => {
@@ -484,7 +519,10 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     await stubOrgLensContext(page, { investmentBreakdown: { rows: [], total: 0 } });
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
+    const empty = page.getByTestId('org-roi-category-donut-empty-state');
+    await expect(empty).toBeVisible();
+    await expect(empty).toHaveAttribute('data-state', 'section-empty');
+    await expect(empty).toContainText('No ROI categories recorded');
     await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
   });
 
@@ -496,7 +534,9 @@ test.describe('Org Lens ROI Metrics — investment by category', () => {
     });
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-category-donut-empty')).toBeVisible();
+    const empty = page.getByTestId('org-roi-category-donut-empty-state');
+    await expect(empty).toBeVisible();
+    await expect(empty).toHaveAttribute('data-state', 'section-empty');
     await expect(page.getByTestId('org-roi-category-donut-chart')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-category-donut-legend')).toHaveCount(0);
   });

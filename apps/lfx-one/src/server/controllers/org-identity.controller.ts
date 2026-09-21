@@ -50,9 +50,19 @@ export class OrgIdentityController {
 
       const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username);
 
-      logger.success(req, 'get_org_role_grants', startTime, { writer_count: result.writers.length, auditor_count: result.auditors.length });
+      logger.success(req, 'get_org_role_grants', startTime, {
+        writer_count: result.writers.length,
+        auditor_count: result.auditors.length,
+        lookup_outcome: result.lookupOutcome,
+        staff_check: result.staffCheck,
+      });
 
       res.setHeader('Cache-Control', 'no-store');
+      // Spec 053 FR-011: the reference the page shows must be findable in the logs; the service logged
+      // this exact id with the failing computation, so it is also the response's request id.
+      if (result.correlationId) {
+        res.setHeader('X-Request-Id', result.correlationId);
+      }
       res.json(result);
     } catch (error) {
       next(error);

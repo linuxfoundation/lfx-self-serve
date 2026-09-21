@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import {
   lfxColors,
   ORG_LENS_ROI_DONUT_PALETTE,
@@ -18,6 +19,7 @@ import type { OrgLensRoiMethod, OrgLensRoiProjectMeasure, OrgLensRoiProjectRow, 
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { classifySectionError, OrgLensSectionOutcome, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
@@ -25,7 +27,7 @@ import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 /** Highest-contributing projects by a selectable measure. */
 @Component({
   selector: 'lfx-org-roi-projects-donut',
-  imports: [ChartComponent, SkeletonModule],
+  imports: [ChartComponent, OrgLensEmptyStateComponent, SkeletonModule],
   templateUrl: './org-roi-projects-donut.component.html',
 })
 export class OrgRoiProjectsDonutComponent {
@@ -43,8 +45,10 @@ export class OrgRoiProjectsDonutComponent {
   protected readonly measure = signal<OrgLensRoiProjectMeasure>('investment');
 
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  protected readonly forbidden = signal(false);
+  /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the rows in hand, below. */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  /** Bumped by Retry; part of the request key so the same organization and method re-issue the read. */
+  private readonly attempt = signal(0);
 
   /**
    * The rows alone, not the whole response. Holding the envelope meant inventing a `method` for the
@@ -54,6 +58,14 @@ export class OrgRoiProjectsDonutComponent {
   private readonly projectRows: Signal<OrgLensRoiProjectRow[]> = this.initProjectRows();
 
   protected readonly hasRows: Signal<boolean> = computed(() => this.projectRows().length > 0);
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  /** The shared state to render instead of the chart, or `null` while there are projects to draw. */
+  protected readonly emptyState = computed(() => {
+    const outcome = this.loadOutcome();
+    return sectionEmptyState(outcome === 'records' && !this.hasRows() ? 'empty' : outcome);
+  });
 
   /**
    * The disclosure names the investment figure, but Net Return is `totalReturn - totalExpenditure`
@@ -222,6 +234,10 @@ export class OrgRoiProjectsDonutComponent {
     this.measure.set(measure);
   }
 
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
+
   /**
    * Codepoint order, deliberately not `localeCompare`. The tie-break key is an opaque warehouse id,
    * so collation carries no meaning — and an unpinned locale would let Node and the browser order
@@ -240,16 +256,15 @@ export class OrgRoiProjectsDonutComponent {
 
   private initProjectRows(): Signal<OrgLensRoiProjectRow[]> {
     // Keyed by string, not the account object: that object is rewritten in place and would retrigger the fetch.
-    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}`));
+    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}|${this.attempt()}`));
 
     return toSignal(
       requestKey$.pipe(
-        map((key) => key.split('|') as [string, OrgLensRoiMethod]),
+        map((key) => key.split('|') as [string, OrgLensRoiMethod, string]),
         filter(([orgUid]) => !!orgUid),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
         }),
         switchMap(([orgUid, method]) =>
           this.roiService.getProjects(orgUid, method).pipe(
@@ -258,9 +273,7 @@ export class OrgRoiProjectsDonutComponent {
             catchError((error: unknown) => {
               console.error('Failed to load ROI projects', error);
               this.loading.set(false);
-              // Only a 403 may show the no-access message; a 503 must not.
-              if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
-              else this.failed.set(true);
+              this.loadOutcome.set(classifySectionError(error));
               return of([] as OrgLensRoiProjectRow[]);
             })
           )

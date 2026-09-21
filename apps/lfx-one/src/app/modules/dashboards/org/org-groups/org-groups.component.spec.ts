@@ -9,6 +9,7 @@ import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/consta
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -76,8 +77,9 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
         useValue: { selectedAccount, selectedUrlSegment: signal('acme'), hasOrgSelectorAccess: signal(true) },
       },
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
-      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+      { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retry: vi.fn() } },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
       // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
@@ -937,8 +939,9 @@ describe('OrgGroupsComponent stat strip', () => {
           },
         },
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
+        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retry: vi.fn() } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
         { provide: PersonDetailDrawerService, useValue: personDrawerStub() },

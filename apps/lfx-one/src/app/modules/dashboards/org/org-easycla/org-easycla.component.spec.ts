@@ -10,6 +10,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
@@ -32,6 +33,10 @@ describe('OrgEasyclaComponent', () => {
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
   const navLoaded = signal(true);
+  const correlationId = signal<string | null>(null);
+  // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
+  const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
+  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retry: vi.fn() };
 
   const getClaGroups = vi.fn();
   const checkPermission = vi.fn();
@@ -67,9 +72,10 @@ describe('OrgEasyclaComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateService },
         { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
         MessageService,
       ],
@@ -153,7 +159,7 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('select an organization first');
     });
 
-    // `hasNoOrgAccess()` reads false while the grants and persona are still resolving, so without
+    // `pageState()` reads null while the grants and persona are still resolving, so without
     // this gate a viewer holding no grant can start the flow inside the loading window and reach a
     // refusal the page would otherwise have prevented.
     it('cannot be used while the organization context is still resolving', async () => {
@@ -252,9 +258,10 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), pathFromRoot: [] } } },
           { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+          { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           MessageService,
         ],
@@ -450,9 +457,10 @@ describe('OrgEasyclaComponent', () => {
             provideRouter([]),
             provideNoopAnimations(),
             { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
+            { provide: OrgLensEmptyStateService, useValue: emptyStateService },
             { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
             MessageService,
           ],
@@ -587,7 +595,7 @@ describe('OrgEasyclaComponent', () => {
      * company but no Org Lens grant, and it is the one the other no-access cases miss by clearing
      * `selectedAccount` — which disables the control for the unrelated reason that there is
      * nothing to sign for. With the company left in place, only an access term can disable it.
-     * Without one, the page offered "Organization Lens is not available" and a live Sign CLA
+     * Without one, the page offered the no-organization state and a live Sign CLA
      * button together, and every request the flow made would be refused by the server.
      */
     it('does not offer Sign CLA to a caller with a company but no org access', async () => {
@@ -597,7 +605,7 @@ describe('OrgEasyclaComponent', () => {
 
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
-      expect(button?.getAttribute('aria-label')).toContain('Organization Lens is not available');
+      expect(button?.getAttribute('aria-label')).toContain('No organization linked to your account');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {
@@ -1097,9 +1105,10 @@ describe('OrgEasyclaComponent', () => {
             provide: AccountContextService,
             useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
           },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           {
             provide: ActivatedRoute,
