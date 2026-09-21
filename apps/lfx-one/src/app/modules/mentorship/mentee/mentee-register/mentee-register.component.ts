@@ -4,6 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
@@ -24,6 +25,7 @@ import {
   MENTORSHIP_MENTEE_SKILLS_WANT_LABEL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL,
   MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY,
+  MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL,
   MENTORSHIP_MENTEE_TERMS_INTRO,
   MENTORSHIP_MENTOR_COMPLIANCE_ITEMS,
   MENTORSHIP_MENTOR_COMPLIANCE_LEAD,
@@ -67,8 +69,11 @@ import { MenteeEligibilitySectionComponent } from './components/mentee-eligibili
 })
 export class MenteeRegisterComponent {
   private readonly messageService = inject(MessageService);
+  private readonly router = inject(Router);
 
   protected readonly title = MENTORSHIP_MENTEE_REGISTER_TITLE;
+  /** Dev shortcut — bypasses the guard while the mock returns `hasProfile: false`. */
+  protected readonly devDashboardLabel = MENTORSHIP_MENTEE_DEV_DASHBOARD_LABEL;
   protected readonly subtitlePrefix = MENTORSHIP_MENTEE_REGISTER_SUBTITLE_PREFIX;
   protected readonly subtitleSuffix = MENTORSHIP_MENTEE_REGISTER_SUBTITLE_SUFFIX;
   protected readonly introductionIntro = MENTORSHIP_MENTEE_INTRODUCTION_INTRO;
@@ -116,6 +121,11 @@ export class MenteeRegisterComponent {
   });
 
   protected readonly errors = computed(() => (this.showErrors() ? getMentorshipMenteeRegisterErrors(this.currentForm()) : {}));
+
+  /** Dev shortcut to the mentee dashboard, bypassing the profile guard. */
+  protected onMyDashboard(): void {
+    void this.router.navigate(['/mentorship/mentee/overview']);
+  }
 
   protected onSubmit(): void {
     const errors = getMentorshipMenteeRegisterErrors(this.currentForm());

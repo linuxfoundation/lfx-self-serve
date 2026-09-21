@@ -14,6 +14,11 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMenteeHasProfileResponse,
+  MentorshipMenteeOverviewResponse,
+  MentorshipMenteePhase,
+  MentorshipMenteeProfileResponse,
+  MentorshipMenteeTasksResponse,
   MentorshipMentorProfileResponse,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramsResponse,
@@ -95,6 +100,33 @@ export class MentorshipService {
     return this.http
       .get<MentorshipInvitableUsersResponse>('/api/mentorship/invitable-users', { params: httpParams })
       .pipe(catchError(this.handleError(EMPTY_MENTORSHIP_INVITABLE_USERS_RESPONSE, 'getInvitableUsers')));
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mentee endpoints
+  // ---------------------------------------------------------------------------
+
+  /** Checks whether the signed-in user already has a mentee profile. */
+  public hasMenteeProfile(): Observable<MentorshipMenteeHasProfileResponse> {
+    return this.http
+      .get<MentorshipMenteeHasProfileResponse>('/api/mentorship/mentee/has-profile')
+      .pipe(catchError(this.handleError({ hasProfile: false }, 'hasMenteeProfile')));
+  }
+
+  public getMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
+    let params = new HttpParams();
+    if (phase) params = params.set('phase', phase);
+    return this.http
+      .get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params })
+      .pipe(catchError(this.rethrowError('getMenteeOverview')));
+  }
+
+  public getMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
+    return this.http.get<MentorshipMenteeTasksResponse>('/api/mentorship/mentee/tasks').pipe(catchError(this.rethrowError('getMenteeTasks')));
+  }
+
+  public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {
+    return this.http.get<MentorshipMenteeProfileResponse>('/api/mentorship/mentee/profile').pipe(catchError(this.rethrowError('getMenteeProfile')));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {
