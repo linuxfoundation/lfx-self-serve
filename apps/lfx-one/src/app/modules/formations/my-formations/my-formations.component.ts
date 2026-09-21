@@ -73,8 +73,10 @@ export class MyFormationsComponent {
   /**
    * `'unavailable'` always; `'partial'` only when it left nothing to show. A partial read that still
    * carries rows renders them (the better failure mode than hiding all of them), but a partial read
-   * with none must not be mistaken for the genuine "No formations yet" — the caller has assigned
-   * items, the aggregate query just failed to describe their formations, so Retry is the honest offer.
+   * with none must not be mistaken for the genuine "No formations yet" — either the caller has
+   * assigned items and the aggregate query failed to describe their formations, or the direct-grant
+   * read failed and the caller may be invited somewhere the BFF could not see (#2795). Either way
+   * Retry is the honest offer.
    */
   protected readonly hasError: Signal<boolean> = computed(() => {
     if (this.loading()) return false;

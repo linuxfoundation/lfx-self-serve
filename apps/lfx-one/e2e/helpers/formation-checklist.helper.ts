@@ -373,10 +373,12 @@ export function buildMyFormationSummary(overrides: Partial<MyFormationSummary> =
 }
 
 /**
- * Three rows in deliberately wrong order for the page's need-based sort (#2753): the fixture
- * project (2 to do, blocked), an exploratory one with 1 to do and no announcement date, and an
- * invited-only one (#2795 — a direct project grant, nothing assigned, all-zero buckets) whose
- * upstream `sub_stage` has no queue-taxonomy equivalent (rendered verbatim, only under "All").
+ * Four rows in deliberately wrong order for the page's need-based sort (#2753): the fixture
+ * project (2 to do, blocked), an exploratory one with 1 to do and no announcement date, an
+ * invited-only one on a live stage (#2795 — a direct project grant, nothing assigned yet, so
+ * all-zero `assigned_*` buckets and a dash under "Your items"), and one whose upstream `sub_stage`
+ * has no queue-taxonomy equivalent (rendered verbatim, only under "All"). The live BFF never
+ * serves that last, Disengaged row — it is a render-contract fixture, not a data one.
  */
 export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
   buildMyFormationSummary({
@@ -388,8 +390,22 @@ export const MY_FORMATIONS_ROWS: MyFormationSummary[] = [
     sub_stage_raw: 'Formation - Disengaged',
     announcement_date: null,
     assigned_to_do: 0,
-    assigned_done: 0,
+    assigned_done: 2,
     items_done: 17,
+    items_total: 17,
+    blocking_item_title: null,
+  }),
+  buildMyFormationSummary({
+    formation_uid: 'formation-tidewater-registry',
+    project_uid: 'e2e-tidewater-registry-uid',
+    project_slug: 'tidewater-registry',
+    project_name: 'Tidewater Registry',
+    sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
+    assigned_to_do: 0,
+    assigned_done: 0,
+    assigned_skipped: 0,
+    items_done: 3,
     items_total: 17,
     blocking_item_title: null,
   }),

@@ -657,22 +657,43 @@ export class FormationService {
     let formationsDegraded = false;
     if (includeFormations) {
       try {
-        // One read for the assigned-OR-invited set (#2795): the query service OR's `tags` (a
-        // `should` clause with minimum_should_match 1) and AND's `tags_all` (`must` terms) in the
-        // same body, and the `formation` document carries both an `assignee:<username>` tag per
-        // assignee and a `project_uid:<uid>` tag (indexer_publisher.go's `projectionTags`).
-        const rawFormationRows = await fetchAllQueryResources<UpstreamFormationQueueRow>(
-          req,
-          (pageToken) =>
-            this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-              type: 'formation',
-              tags: [assigneeTag, ...[...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`)],
-              tags_all: ['lifecycle:live'],
-              page_size: 100,
-              ...(pageToken && { page_token: pageToken }),
-            }),
-          { failOnPartial: true }
+        // The assigned-OR-invited set in as few reads as the tag list allows (#2795). The query
+        // service OR's `tags` and AND's `tags_all` inside one bool query — `tags` renders as a
+        // `should` clause with `minimum_should_match: 1`, `tags_all` as `must` terms
+        // (`lfx-v2-query-service` `internal/infrastructure/opensearch/template.go`, `criteriaShould`
+        // / `criteriaMust`; `docs/query-service-contract.md`: "`tags` — OR filter, any tag matches",
+        // "`tags_all` — AND filter, all tags must match") — and the `formation` document carries
+        // both an `assignee:<username>` tag per assignee and a `project_uid:<uid>` tag
+        // (`lfx-v2-formation-service` `indexer_publisher.go`'s `projectionTags`).
+        //
+        // Chunked because every tag becomes its own `&tags=` query-string pair: the same URL-length
+        // guard `ProjectService.getProjectsByIds` applies to its `filters_or` UIDs, so a caller
+        // directly granted on many formations costs a few reads rather than a request-line
+        // overflow that would degrade the whole list to `'partial'`. The assignee tag rides on the
+        // first batch only; the join below dedupes by `formation_uid` across batches regardless.
+        const TAG_BATCH_SIZE = 100;
+        const projectUidTags = [...grantProjectUids].map((projectUid) => `project_uid:${projectUid}`);
+        const tagBatches: string[][] = [];
+        for (let i = 0; i < Math.max(projectUidTags.length, 1); i += TAG_BATCH_SIZE) {
+          tagBatches.push([...(i === 0 ? [assigneeTag] : []), ...projectUidTags.slice(i, i + TAG_BATCH_SIZE)]);
+        }
+        const batchRows = await Promise.all(
+          tagBatches.map((tags) =>
+            fetchAllQueryResources<UpstreamFormationQueueRow>(
+              req,
+              (pageToken) =>
+                this.microserviceProxy.proxyRequest<QueryServiceResponse<UpstreamFormationQueueRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                  type: 'formation',
+                  tags,
+                  tags_all: ['lifecycle:live'],
+                  page_size: 100,
+                  ...(pageToken && { page_token: pageToken }),
+                }),
+              { failOnPartial: true }
+            )
+          )
         );
+        const rawFormationRows = batchRows.flat();
         // Same client-side lifecycle backstop `liveItems` applies above (PR #2444 review) — without
         // it, a stale/mismatched non-live aggregate document that the upstream tag failed to
         // exclude could still join a live item row below and render as an active "My formation".
@@ -1139,6 +1160,15 @@ export class FormationService {
    * `project_uid:` tag per formation project rather than one per direct grant of any stage. Never
    * throws: a failed read is a WARN plus `degraded: true`, so the caller's assigned formations still
    * render and only `state` records that invited ones may be missing.
+   *
+   * Not narrowed by relation — `filter_grants=direct` discards it upstream, so a project the caller
+   * holds only `meeting_coordinator` (or any other non-invite relation) on lands in this set too.
+   * That is not what the page renders, though: the `formation` document's access object is
+   * `project:<uid>#auditor`, and the platform model's project `auditor` composes direct auditors,
+   * writers, the executive director and inherited auditors, never `meeting_coordinator`, so the
+   * aggregate read that follows returns nothing for such a project and no row appears. A
+   * relation-scoped read would need upstream to expose the matched relation; until then this set
+   * is "projects with a direct tuple" and the aggregate read's own access filter is the invite gate.
    */
   private async readFormationGrantProjectUids(req: Request): Promise<{ uids: Set<string>; degraded: boolean }> {
     try {

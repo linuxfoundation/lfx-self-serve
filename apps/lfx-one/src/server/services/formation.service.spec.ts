@@ -2084,6 +2084,35 @@ describe('FormationService', () => {
       expect(getProjectById).not.toHaveBeenCalled();
     });
 
+    it('chunks the project_uid tags across aggregate reads so a caller granted on many formations never overflows the request line (#2795)', async () => {
+      const grants = Array.from({ length: 150 }, (_, i) => ({ uid: `formation-project-${i}`, slug: `formation-project-${i}`, stage: 'Formation - Engaged' }));
+      getDirectGrantProjectRows.mockResolvedValue(grants);
+      // Every aggregate read returns both rows, so the join must also dedupe across batches.
+      mockQueryResources(
+        [],
+        [
+          formationIndexRow({ formation_uid: 'formation:formation-project-0', project_uid: 'formation-project-0' }),
+          formationIndexRow({ formation_uid: 'formation:formation-project-149', project_uid: 'formation-project-149' }),
+        ]
+      );
+
+      const result = await service.getMyFormationWork(buildReq(), 'alice');
+
+      const formationCalls = proxyRequest.mock.calls
+        .filter((c) => (c[4] as { type: string }).type === 'formation')
+        .map((c) => c[4] as { tags: string[]; tags_all: string[] });
+      expect(formationCalls).toHaveLength(2);
+      expect(formationCalls[0].tags).toHaveLength(101);
+      expect(formationCalls[0].tags[0]).toBe('assignee:alice');
+      expect(formationCalls[0].tags[1]).toBe('project_uid:formation-project-0');
+      expect(formationCalls[1].tags).toHaveLength(50);
+      expect(formationCalls[1].tags).not.toContain('assignee:alice');
+      expect(formationCalls[1].tags[49]).toBe('project_uid:formation-project-149');
+      expect(formationCalls.every((call) => call.tags_all.join() === 'lifecycle:live')).toBe(true);
+      expect(result.state).toBe('complete');
+      expect(result.formations.map((f) => f.formation_uid).sort()).toEqual(['formation:formation-project-0', 'formation:formation-project-149']);
+    });
+
     it('folds an assigned formation the caller is also invited to into one row, with its buckets (#2795)', async () => {
       getDirectGrantProjectRows.mockResolvedValue([{ uid: 'live-project-1', slug: 'live-project', stage: 'Formation - Engaged' }]);
       mockQueryResources([itemIndexRow({ object_id: 'item-1', status: 'done' })], [formationIndexRow({ progress: { done: 1, not_started: 2 } })]);
