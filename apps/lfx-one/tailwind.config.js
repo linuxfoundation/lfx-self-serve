@@ -10,7 +10,9 @@ import {
   BAND_SIGNAL_FILL_LIGHT,
   BEHAVIORAL_CLASS_CONFIG,
   DELTA_DIRECTION_TEXT_CLASS,
+  FORMATION_CHECKLIST_COLUMN_CLASSES,
   FORMATION_ITEM_SEGMENT_COLORS,
+  FORMATION_ITEM_STATUS_GLYPHS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
@@ -97,6 +99,10 @@ export default {
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
+    // Formation checklist — row/section-header column widths and sub-item glyph colors
+    // (FORMATION_CHECKLIST_COLUMN_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
+    ...Object.values(FORMATION_CHECKLIST_COLUMN_CLASSES).flatMap((classes) => classes.split(' ')),
+    ...Object.values(FORMATION_ITEM_STATUS_GLYPHS).map((glyph) => glyph.colorClass),
     // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups
     // cards, and the public group pages all key off this map (BEHAVIORAL_CLASS_CONFIG in
     // @lfx-one/shared, not scanned here). `.split(' ')` guards against a future multi-token value.

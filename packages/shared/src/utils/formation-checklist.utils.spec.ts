@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
-import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
+import type { FormationItem, FormationItemStatus, FormationSubItem, FormationTemplateSection } from '../interfaces/formation.interface';
 import {
   collectFormationOrphanItems,
   deriveFormationReadinessSummary,
@@ -94,6 +94,24 @@ describe('deriveFormationReadinessSummary', () => {
 
     expect(summary.counts.done).toBe(1);
     expect(typeof summary.counts.toString).toBe('function');
+  });
+
+  // #2774: the row's sub-item disclosure and lfx-formation-sub-item-list tally an item's sub_items
+  // through the same function — anything with a `status` counts, not only a full FormationItem.
+  it('tallies an item’s sub-items the same way, keeping their order as segments', () => {
+    const subItems: FormationSubItem[] = [
+      { uid: 'sub_a', title: 'A', status: 'done' },
+      { uid: 'sub_b', title: 'B', status: 'not_started' },
+      { uid: 'sub_c', title: 'C', status: 'in_progress' },
+    ];
+
+    const summary = deriveFormationReadinessSummary(subItems);
+
+    expect(summary.segments).toEqual(['done', 'not_started', 'in_progress']);
+    expect(summary.totalItems).toBe(3);
+    expect(summary.counts.done).toBe(1);
+    expect(summary.counts.not_started).toBe(1);
+    expect(summary.counts.in_progress).toBe(1);
   });
 
   it('returns zeroed counts and no segments for an empty item list', () => {

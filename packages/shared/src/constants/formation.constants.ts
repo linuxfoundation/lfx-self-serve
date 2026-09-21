@@ -5,11 +5,17 @@ import { FormationOwnerTeam } from '../enums/formation.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
+import type {
+  FormationDrawerData,
+  FormationItemStatusGlyph,
+  FormationLinkRowActionConfig,
+  FormationRowActionConfig,
+} from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
   FormationItemAudience,
   FormationItemAvailableAction,
+  FormationItemExternalAudience,
   FormationItemStatus,
   FormationQueueTiles,
   FormationsQueueResponse,
@@ -180,6 +186,17 @@ export const FORMATION_ITEM_AUDIENCE_LABELS = {
 } as const satisfies Record<FormationItemAudience, string>;
 
 /**
+ * `FormationChecklistRowComponent`'s audience icon tooltip AND accessible name (#2774), keyed on
+ * the external-involving audiences only — `internal` and `null` render no icon at all (see
+ * `isFormationItemExternal`, `formation.utils.ts`). The drawer shows
+ * {@link FORMATION_ITEM_AUDIENCE_LABELS} as plain text instead of the icon.
+ */
+export const FORMATION_ITEM_AUDIENCE_TOOLTIPS = {
+  external: "External — involves people outside the Linux Foundation, such as the project's partners.",
+  both: "Internal and external — LF staff and the project's partners both take part.",
+} as const satisfies Record<FormationItemExternalAudience, string>;
+
+/**
  * Display labels for {@link FormationOwnerTeam}'s curated members. Consumers go through
  * `formatFormationOwnerTeam` (`formation.utils.ts`), which falls back to `formatTag` for the
  * off-enum values upstream can send (see `FormationItem.owner_team`'s TODO(#1957)). Curated rather
@@ -211,6 +228,33 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
   not_started: 'bg-gray-200',
   skipped: 'bg-gray-400',
 } as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * `lfx-formation-sub-item-list`'s per-status glyph (#2774) — the icon a sub-item row leads with
+ * and its text color. `colorClass` is spread into `tailwind.config.js`'s safelist because the
+ * shared package is outside Tailwind's `content` glob; a color added here is picked up there.
+ */
+export const FORMATION_ITEM_STATUS_GLYPHS = {
+  done: { icon: 'fa-light fa-circle-check', colorClass: 'text-emerald-600' },
+  in_progress: { icon: 'fa-light fa-circle-half-stroke', colorClass: 'text-amber-600' },
+  blocked: { icon: 'fa-light fa-circle-xmark', colorClass: 'text-red-600' },
+  skipped: { icon: 'fa-light fa-forward', colorClass: 'text-gray-400' },
+  not_started: { icon: 'fa-light fa-circle', colorClass: 'text-gray-400' },
+} as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
+
+/**
+ * The `md:`-and-up column widths `FormationChecklistRowComponent`'s meta cells and
+ * `FormationChecklistSectionComponent`'s header captions both bind (#2774) — one source so the
+ * captions can't drift off the columns they label. The actions column is fixed too: a
+ * variable-width action button would otherwise shift every column to its left by row. Spread into
+ * `tailwind.config.js`'s safelist (the shared package is outside Tailwind's `content` glob).
+ */
+export const FORMATION_CHECKLIST_COLUMN_CLASSES = {
+  owner_team: 'md:w-32',
+  assignee: 'md:w-36',
+  due_date: 'md:w-24',
+  actions: 'md:w-44',
+} as const;
 
 /**
  * Every action the deployed `lfx-v2-formation-service` publishes across every status (GH-2576,

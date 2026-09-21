@@ -100,6 +100,15 @@ export interface FormationLinkRowActionConfig {
 }
 
 /**
+ * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape (#2774) — the FontAwesome class and Tailwind text
+ * color `lfx-formation-sub-item-list` leads each sub-item row with.
+ */
+export interface FormationItemStatusGlyph {
+  icon: string;
+  colorClass: string;
+}
+
+/**
  * `FormationsTableComponent`'s render row — {@link FormationQueueRow} plus the pre-resolved stage
  * chip label/severity/gating summary, so the `#body` template (where PrimeNG types the row context
  * `any`) does a plain property read instead of a method call that re-executes on every
