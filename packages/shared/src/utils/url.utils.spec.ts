@@ -476,9 +476,10 @@ describe('isPrivateHost', () => {
     ['the UNCOMPRESSED mixed form carrying the metadata endpoint', '64:ff9b:0:0:0:0:169.254.169.254'],
     ['the UNCOMPRESSED mixed form carrying RFC1918', '64:ff9b:0:0:0:0:10.0.0.1'],
     ['the UNCOMPRESSED /48 mixed form', '64:ff9b:1:0:0:0:169.254.169.254'],
-    // MALFORMED trailing quads. `quadToGroups` refuses to fold these, so they keep the 7-part
-    // shape and the length gates refuse them -- fail-closed, which is the answer a malformed
-    // address deserves. Pinned because review read the deleted special case as a deny->allow
+    // MALFORMED trailing quads. `quadToGroups` refuses to fold an out-of-range or wrong-length
+    // quad, so the literal keeps its dotted tail and every later rule reads that slot as a hex
+    // group, which it is not -- the address is never decoded and the prefix block's fail-closed
+    // arm denies it. Pinned because review read the deleted special case as a deny->allow
     // narrowing; it is not, and without these nothing would prove that either way.
     ['a mixed form with an out-of-range octet', '64:ff9b::999.999.999.999'],
     ['a mixed form with an octet above 255', '64:ff9b::256.0.0.1'],
@@ -489,17 +490,29 @@ describe('isPrivateHost', () => {
     // Zero-padded first group, private payload -- the padding must be seen through in BOTH
     // directions, so this sits opposite the public zero-padded allow case.
     ['a zero-padded well-known prefix carrying a private address', '0064:ff9b:0:0:0:0:a9fe:a9fe'],
-    // A five-digit group is MALFORMED (a group is at most 4 hex digits), so it is refused rather
-    // than read as zero-padded -- fail-closed, the same answer every other malformed shape gets.
-    ['a malformed five-digit group', '0064:0ff9b:0:0:0:0:a9fe:a9fe'],
+    // `0ff9b` is FIVE hex digits, which a literal cannot legally contain -- but `/^0*ff9b$/`
+    // reads the leading zero as padding and accepts it, so this is denied for its PRIVATE
+    // payload, not for the malformed group. Recorded accurately because the earlier comment
+    // here claimed the opposite, and a test that passes for a reason its comment denies is
+    // worse than no comment.
+    ['a five-digit prefix group carrying a private payload', '0064:0ff9b:0:0:0:0:a9fe:a9fe'],
     // A TRUNCATED 6to4 literal. The move from `/^2002:/` to a group test fixed the zero-padded
     // bypass but let this through, because a malformed literal never reaches 8 groups. Declaring
     // the prefix without being a well-formed address now fails closed.
     ['a truncated 6to4 literal', '2002:a9fe'],
+    // The NAT64 counterpart. Without it these were ALLOWED while `2002:a9fe` was denied -- the
+    // same malformed shape judged two ways by two adjacent rules, which is exactly the parity
+    // the comment claimed and did not have.
+    ['a truncated NAT64 literal', '64:ff9b'],
+    ['a truncated local-use NAT64 literal', '64:ff9b:1'],
     ['a 6to4 prefix with nothing after it', '2002:'],
-    // An EMPTY group is not a zero group: `/^0*$/` accepted it, `/^0+$/` does not, so a spelling
-    // with a gap is refused instead of being read as the well-known prefix.
-    ['a well-known NAT64 prefix with an empty group', '64:ff9b::0::a9fe:a9fe'],
+    // Denied by the DOUBLE-`::` guard, not by `/^0+$/`. RFC 4291 allows one `::`; a second makes
+    // the literal malformed, and `expandIPv6` cannot represent it -- `split('::')` yields three
+    // pieces and destructuring silently drops the tail, so this expanded to all-zeros and the
+    // address it spells never reached a rule. It is refused before expansion now, rather than
+    // failing closed by accident.
+    ['a literal with two :: runs', '64:ff9b::0::a9fe:a9fe'],
+    ['another double-:: literal', '2001::db8::1'],
     // 6to4 reads its embedded IPv4 from groups 2-3, so a trailing quad leaves those zero and the
     // address decodes to 0.0.0.0 -- reserved, and denied. Review read this as a silent flip to
     // allow; it never was.

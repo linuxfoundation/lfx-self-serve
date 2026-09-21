@@ -494,6 +494,12 @@ export function isPrivateHost(hostname: string): boolean {
     };
     const normalized = quadToGroups(value);
     if (!normalized.includes('::')) return normalized.split(':');
+    // A second `::` is MALFORMED -- RFC 4291 allows one. `split('::')` returns three pieces for
+    // it and destructuring keeps the first two, silently DISCARDING the tail: `64:ff9b::0::
+    // a9fe:a9fe` expanded to all-zeros, so the address it actually spelled never reached any
+    // rule. That happened to fail closed, which is luck rather than design -- the same
+    // truncation on a private payload would have hidden it. Refused explicitly now, so the
+    // caller's fail-closed branch judges a shape nobody has to reason about.
     const [left, right] = normalized.split('::');
     const head = left ? left.split(':') : [];
     const tail = right ? right.split(':') : [];
@@ -501,6 +507,14 @@ export function isPrivateHost(hostname: string): boolean {
     if (missing < 0) return normalized.split(':');
     return [...head, ...Array(missing).fill('0'), ...tail];
   };
+  // A second `::` is MALFORMED -- RFC 4291 allows one -- and `expandIPv6` cannot represent it:
+  // `split('::')` yields three pieces and destructuring keeps the first two, silently DISCARDING
+  // the tail, so `64:ff9b::0::a9fe:a9fe` expanded to all-zeros and the address it actually
+  // spelled never reached any rule. That happened to fail closed here, which is luck rather than
+  // design: the same truncation on a different prefix would hide the payload instead. Refused
+  // outright, before expansion, so no rule has to reason about a shape that cannot be expanded.
+  if (addr.split('::').length > 2) return true;
+
   const parts = expandIPv6(addr);
   const leadingZeroGroupsOnly = parts.slice(0, -3).every((g) => g === '' || /^0+$/.test(g));
   const tail = parts.slice(-3);
@@ -594,7 +608,15 @@ export function isPrivateHost(hostname: string): boolean {
     // `/^0+$/` not `/^0*$/`: the latter accepts an EMPTY group, and a malformed spelling with a
     // gap is not a well-formed zero group. Expansion only produces '0' for elided groups, so a
     // genuine well-known address is unaffected.
-    const inNat64Block = parts.length === 8 && /^0*64$/.test(parts[0]) && /^0*ff9b$/.test(parts[1]);
+    // The NAT64 counterpart to the 6to4 guard below, and the reason that comment could claim
+    // parity: without it a TRUNCATED `64:ff9b` or `64:ff9b:1` was allowed while the equivalent
+    // `2002:a9fe` was denied -- the same malformed shape judged two different ways by two
+    // adjacent rules. Declaring a translation prefix and not being a well-formed address is
+    // refused for both.
+    const declaresNat64 = /^0*64$/.test(parts[0] ?? '') && /^0*ff9b$/.test(parts[1] ?? '');
+    if (declaresNat64 && parts.length !== 8) return true;
+
+    const inNat64Block = declaresNat64 && parts.length === 8;
     const isWellKnownNat64 = inNat64Block && parts.slice(2, 6).every((g) => /^0+$/.test(g));
     if (inNat64Block && !isWellKnownNat64) return true;
 
