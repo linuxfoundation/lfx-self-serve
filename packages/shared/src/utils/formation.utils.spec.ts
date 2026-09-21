@@ -176,7 +176,15 @@ describe('isFormationLifecycleLive (GH-2328)', () => {
 
 describe('getFormationQueueStageDisplay (GH-2366)', () => {
   it('renders the canonical label/severity for a mapped sub-stage', () => {
-    expect(getFormationQueueStageDisplay('engaged', 'Formation - Engaged')).toEqual({ label: 'Formation · Engaged', severity: 'accent' });
+    expect(getFormationQueueStageDisplay('engaged', 'Formation - Engaged')).toEqual({ label: 'Engaged', severity: 'accent' });
+  });
+
+  // Three distinct tones, not one violet pill: early conversations read informational, a parked
+  // formation reads as a prompt. The short labels drop the upstream "Formation - " prefix — both
+  // list surfaces that render them are already titled Formations.
+  it('gives each mapped sub-stage its own severity', () => {
+    expect(getFormationQueueStageDisplay('exploratory', 'Formation - Exploratory')).toEqual({ label: 'Exploratory', severity: 'info' });
+    expect(getFormationQueueStageDisplay('on_hold', 'Formation - On Hold')).toEqual({ label: 'On hold', severity: 'warn' });
   });
 
   it('renders the raw upstream value verbatim, muted, for an unmapped sub-stage', () => {
