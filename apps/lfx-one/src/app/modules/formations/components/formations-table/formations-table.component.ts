@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, linkedSignal, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterLink } from '@angular/router';
@@ -16,6 +16,8 @@ import {
   FORMATION_ANNOUNCEMENT_TIMING_CLASS,
   FORMATION_EMPTY_QUEUE_TILES,
   FORMATION_ENTITY_TYPE_LABELS,
+  FORMATION_QUEUE_PAGE_SIZE,
+  FORMATION_QUEUE_PAGE_SIZE_OPTIONS,
   FORMATION_QUEUE_SUB_STAGES,
   FORMATION_SUB_STAGE_LABELS,
 } from '@lfx-one/shared/constants';
@@ -45,9 +47,6 @@ import { debounceTime, map } from 'rxjs';
 type FormationSortAria = 'ascending' | 'descending' | 'none';
 /** The two GH-1958 sortable columns — "Progress"/readiness and "Announcement". */
 type FormationSortableField = 'readiness' | 'announcement_date';
-
-/** Rows per page before the paginator appears — a foundation's queue can run past a hundred rows (GH-2699), and every row is already on the client. */
-const QUEUE_PAGE_SIZE = 25;
 
 @Component({
   selector: 'lfx-formations-table',
@@ -86,14 +85,16 @@ export class FormationsTableComponent {
   protected readonly sortField = signal<FormationSortableField | null>('announcement_date');
   protected readonly sortOrder = signal<'ASC' | 'DESC'>('ASC');
   /**
-   * Paginator offset. Tracked so that narrowing the list sends the table back to the first page —
-   * PrimeNG keeps its own offset when the value array shrinks underneath it (mirrors
-   * `my-formations.component.ts`).
+   * Paginator offset. Linked to `rows` so any replacement of the list — a foundation switch
+   * refetches without recreating this component — lands on the first page, and reset explicitly by
+   * the filter, sort and reset paths below. PrimeNG only self-corrects by one page: its
+   * `updateFirst()` runs on a `totalRecords` change and no-ops when the old page is still past the
+   * new page count, so a 120-row queue left on page 5 would render a 30-row queue as an empty body.
    */
-  protected readonly first = signal(0);
+  protected readonly first = linkedSignal({ source: this.rows, computation: () => 0 });
 
-  protected readonly pageSize = QUEUE_PAGE_SIZE;
-  protected readonly pageSizeOptions = [QUEUE_PAGE_SIZE, 50, 100];
+  protected readonly pageSize = FORMATION_QUEUE_PAGE_SIZE;
+  protected readonly pageSizeOptions = FORMATION_QUEUE_PAGE_SIZE_OPTIONS;
 
   protected readonly statusTabOptions: Signal<FilterPillOption[]> = this.initStatusTabOptions();
   protected readonly isFiltered = computed(() => this.statusTab() !== 'all' || !!this.searchValue().trim());
@@ -164,6 +165,9 @@ export class FormationsTableComponent {
 
   /** Sorting is entirely client-side (no server sort param — `rows()` already holds every filtered row), so a repeat click on the active column toggles direction instead of round-tripping. */
   protected onHeaderClick(field: FormationSortableField): void {
+    // A re-sorted list starts from page one (PrimeNG's own `resetPageOnSort` default) — page N of
+    // the old order says nothing about page N of the new one.
+    this.first.set(0);
     if (this.sortField() === field) {
       this.sortOrder.set(this.sortOrder() === 'ASC' ? 'DESC' : 'ASC');
     } else {

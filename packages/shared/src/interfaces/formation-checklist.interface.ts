@@ -80,7 +80,7 @@ export type FormationAnnouncementTiming = 'past' | 'today' | 'upcoming' | 'unset
 
 /**
  * One proportional segment of the queue's per-row progress bar (`buildFormationProgressSegments`)
- * — a status bucket with a non-zero count, in `FORMATION_PROGRESS_SEGMENT_ORDER`. Distinct from
+ * — a status bucket with a non-zero count, in `FORMATION_PROGRESS_SEGMENT_RANK` order. Distinct from
  * {@link FormationReadinessSummary.segments}, which is one entry per item in template order: the
  * queue projection only carries per-status counts, so it renders one width-weighted segment per
  * status instead of one per item.

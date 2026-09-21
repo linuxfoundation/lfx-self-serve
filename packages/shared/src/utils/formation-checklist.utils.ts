@@ -12,9 +12,14 @@ import {
   FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ORPHAN_SECTION,
-  FORMATION_PROGRESS_SEGMENT_ORDER,
+  FORMATION_PROGRESS_SEGMENT_RANK,
 } from '../constants/formation.constants';
 import { parseIsoDateAsUtcMidnight } from './date-time.utils';
+
+/** Every status in `FORMATION_PROGRESS_SEGMENT_RANK` order — derived once from the exhaustiveness-checked map so the two can't drift. */
+const PROGRESS_SEGMENT_STATUSES: FormationItemStatus[] = (Object.keys(FORMATION_PROGRESS_SEGMENT_RANK) as FormationItemStatus[]).sort(
+  (a, b) => FORMATION_PROGRESS_SEGMENT_RANK[a] - FORMATION_PROGRESS_SEGMENT_RANK[b]
+);
 
 const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
   not_started: 0,
@@ -185,14 +190,14 @@ export function sumFormationProgress(progress: FormationQueueRow['progress']): n
 
 /**
  * The queue row's per-status progress bar — one width-weighted segment per non-zero bucket, in
- * `FORMATION_PROGRESS_SEGMENT_ORDER`, coloured by `FORMATION_ITEM_SEGMENT_COLORS` (the same fills
- * the readiness strip uses, so a blocked item reads red on both surfaces). Empty for a `0 of 0`
- * row so the template can render a bare track instead of dividing by zero.
+ * `FORMATION_PROGRESS_SEGMENT_RANK` order, coloured by `FORMATION_ITEM_SEGMENT_COLORS` (the same
+ * fills the readiness strip uses, so a blocked item reads red on both surfaces). Empty for a
+ * `0 of 0` row so the template can render a bare track instead of dividing by zero.
  */
 export function buildFormationProgressSegments(progress: FormationQueueRow['progress']): FormationProgressSegment[] {
   const total = sumFormationProgress(progress);
   if (total === 0) return [];
-  return FORMATION_PROGRESS_SEGMENT_ORDER.flatMap((status): FormationProgressSegment[] => {
+  return PROGRESS_SEGMENT_STATUSES.flatMap((status): FormationProgressSegment[] => {
     const count = progress[status] ?? 0;
     if (count === 0) return [];
     return [{ status, count, widthPercent: (count / total) * 100, colorClass: FORMATION_ITEM_SEGMENT_COLORS[status] }];
@@ -209,7 +214,7 @@ export function buildFormationProgressSegments(progress: FormationQueueRow['prog
 export function formatFormationProgressSummary(progress: FormationQueueRow['progress']): string {
   const total = sumFormationProgress(progress);
   if (total === 0) return 'No checklist items';
-  const parts = FORMATION_PROGRESS_SEGMENT_ORDER.flatMap((status) => {
+  const parts = PROGRESS_SEGMENT_STATUSES.flatMap((status) => {
     const count = progress[status] ?? 0;
     return count > 0 ? [`${count} ${FORMATION_ITEM_STATUS_LABELS[status].toLowerCase()}`] : [];
   });

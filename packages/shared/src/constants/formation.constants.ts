@@ -56,10 +56,11 @@ export const FORMATION_SUB_STAGE_SEVERITY = {
 export const FORMATION_QUEUE_SUB_STAGES: FormationSubStage[] = ['exploratory', 'engaged', 'on_hold'];
 
 /**
- * The stage filter pills both formation list surfaces render — the foundation Formations queue
- * (`formations-table.component.ts`) and the Me-lens My Formations page (#2753): `All` first, then
+ * The Me-lens My Formations page's stage filter pills (#2753): `All` first, then
  * {@link FORMATION_QUEUE_SUB_STAGES} in order, labelled through {@link FORMATION_SUB_STAGE_LABELS}.
- * Shared so a new sub-stage lands on both surfaces at once.
+ * The foundation Formations queue builds its own pills from that same stage list and label map
+ * (`formations-table.component.ts`'s `initStatusTabOptions`) so it can append the server-side
+ * counts — the shared pair underneath is what still lands a new sub-stage on both surfaces at once.
  */
 export const FORMATION_STAGE_TAB_OPTIONS: FilterPillOption[] = [
   { id: 'all', label: 'All' },
@@ -273,11 +274,20 @@ export const FORMATION_CHECKLIST_GRID_CLASSES = {
 } as const;
 
 /**
- * `FormationsTableComponent`'s progress-bar segment order (`buildFormationProgressSegments`) —
- * resolved work first, open work last, so the bar reads left to right as "how far along". Only
- * non-zero buckets render, so a fully-`not_started` row is one gray track.
+ * `FormationsTableComponent`'s progress-bar segment order (`buildFormationProgressSegments`) as a
+ * rank per status — resolved work first, open work last, so the bar reads left to right as "how
+ * far along". A rank map rather than an ordered array so it is exhaustiveness-checked like its
+ * siblings: a status added to {@link FormationItemStatus} fails the build here instead of silently
+ * producing a bar whose widths sum below 100% and a summary whose buckets don't add up to its own
+ * item count. Only non-zero buckets render, so a fully-`not_started` row is one gray track.
  */
-export const FORMATION_PROGRESS_SEGMENT_ORDER: FormationItemStatus[] = ['done', 'in_progress', 'blocked', 'skipped', 'not_started'];
+export const FORMATION_PROGRESS_SEGMENT_RANK = {
+  done: 0,
+  in_progress: 1,
+  blocked: 2,
+  skipped: 3,
+  not_started: 4,
+} as const satisfies Record<FormationItemStatus, number>;
 
 /**
  * `FormationsTableComponent`'s countdown-line colour per {@link FormationAnnouncementTiming}. A
@@ -295,6 +305,14 @@ export const FORMATION_ANNOUNCEMENT_TIMING_CLASS = {
 
 /** The Announcement cell's second line for a `needed` timing (see {@link FormationAnnouncementTiming}). */
 export const FORMATION_ANNOUNCEMENT_NEEDED_LABEL = 'Needed to activate';
+
+/**
+ * `FormationsTableComponent`'s rows per page before the paginator appears, and the sizes it offers.
+ * Every row is already on the client (the BFF materialises the whole queue), and a foundation's
+ * queue can run past a hundred rows (GH-2699), so paging is a rendering courtesy, not a fetch size.
+ */
+export const FORMATION_QUEUE_PAGE_SIZE = 25;
+export const FORMATION_QUEUE_PAGE_SIZE_OPTIONS: number[] = [FORMATION_QUEUE_PAGE_SIZE, 50, 100];
 
 /** The queue name cell's sub-line per derived {@link FormationEntityType} (`deriveFormationEntityType`) — the same taxonomy the "N foundations · N projects" tile counts. */
 export const FORMATION_ENTITY_TYPE_LABELS = {

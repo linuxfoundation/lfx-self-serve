@@ -287,6 +287,67 @@ describe('FormationsTableComponent', () => {
       expect(text('filter-pill-on_hold')).toBe('On hold (1)');
     });
 
+    it('paginates past 25 rows and returns to the first page when a filter changes', async () => {
+      const rows = Array.from({ length: 26 }, (_, index) =>
+        buildRow({ formation_uid: `formation:page-${index}`, announcement_date: `2026-01-${String(index + 1).padStart(2, '0')}` })
+      );
+      await render(rows);
+
+      // 26 rows, 25 per page: page one shows 25 and the paginator names the range.
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(25);
+      const paginator = fixture.nativeElement.querySelector('.p-paginator') as HTMLElement | null;
+      expect(paginator).not.toBeNull();
+      expect(paginator?.textContent).toContain('Showing 1 to 25 of 26');
+
+      (paginator?.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(1);
+
+      // A stage pill narrows the list server-side; the offset must not outlive the page it was on.
+      (fixture.nativeElement.querySelector('[data-testid="filter-pill-engaged"]') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(25);
+    });
+
+    // A foundation switch refetches without recreating this component, so a shorter list can arrive
+    // while the offset still points past its end. PrimeNG only self-corrects by one page, which
+    // would leave an empty body under live headers.
+    it('returns to the first page when the rows input is replaced, and when the sort changes', async () => {
+      const rows = Array.from({ length: 26 }, (_, index) => buildRow({ formation_uid: `formation:page-${index}` }));
+      await render(rows);
+      (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(1);
+
+      fixture.componentRef.setInput('rows', rows.slice(0, 3));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(3);
+
+      fixture.componentRef.setInput('rows', rows);
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      (fixture.nativeElement.querySelector('.p-paginator-next') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(1);
+
+      readinessHeaderButton()?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(fixture.nativeElement.querySelectorAll('[data-row-index]')).toHaveLength(25);
+    });
+
     it('offers "Reset filters" on a filtered-empty result and re-emits the default filters when clicked', async () => {
       await render([]);
       const emitted: FormationsQueueFilterState[] = [];
