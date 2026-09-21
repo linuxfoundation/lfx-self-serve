@@ -42,28 +42,21 @@ describe('campaigns email preview template', () => {
     expect(bound).toEqual([]);
   });
 
-  it('has no img element in the email preview block at all', () => {
-    // The name promised an `<img>` check and the body only asserted a testid existed -- it could
-    // not fail for the reason it claimed. It now scopes to the preview region and looks for the
-    // element, so a STATIC `<img src="...">` (which the bound-src test above would miss) is
-    // caught too: the preview names images rather than rendering them, so any `<img>` here is
-    // the change worth knowing about.
-    const start = template.indexOf('campaigns-email-preview-hero');
-    expect(start).toBeGreaterThan(-1);
-    const end = template.indexOf('campaigns-email-preview-cta', start);
-    expect(end).toBeGreaterThan(start);
-
-    // Comment BODIES are excluded by walking the region rather than by a strip-regex: the
-    // preview carries a comment explaining why an `<img [src]>` is not used, and matching that
-    // text would fail on the documentation of the very property asserted here. A
-    // `replace(/<!--...-->/)` did that job but is the incomplete-multi-character-sanitization
-    // shape CodeQL flags, and a partial strip is not worth defending in a test -- so the region
-    // is split on comment boundaries and only the code between them is searched.
-    const region = template.slice(start, end);
-    const outsideComments = region
+  it('has no img element anywhere in the template', () => {
+    // WHOLE template, not a region. The region-scoped version covered the first preview block
+    // and missed the two A/B variant blocks, which render the same placeholder -- so a
+    // reintroduced `<img>` in either was invisible to it. There is no `<img>` anywhere in this
+    // template by design, which makes the broader assertion both simpler and stronger.
+    //
+    // Comment BODIES are excluded by splitting on comment boundaries: the preview documents why
+    // an `<img [src]>` is not used, and matching that text would fail on the documentation of
+    // the property asserted here. A strip-regex did this and was the incomplete-sanitization
+    // shape CodeQL flags.
+    const outsideComments = template
       .split('<!--')
       .map((part, index) => (index === 0 ? part : part.slice(part.indexOf('-->') + 3)))
       .join('');
+
     expect(outsideComments).not.toMatch(/<img\b/);
   });
 

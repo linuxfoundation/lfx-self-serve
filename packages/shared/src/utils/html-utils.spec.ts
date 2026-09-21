@@ -35,6 +35,46 @@ describe('sanitizeDisplayText', () => {
     expect(sanitizeDisplayText('日本語スポンサー')).toBe('日本語スポンサー');
     expect(sanitizeDisplayText('Acme & Co')).toBe('Acme & Co');
   });
+
+  // Why the joiners are kept lives in html-utils.ts; this pins the BEHAVIOUR, in both
+  // directions plus the joiner-only floor between them.
+  it.each([
+    ['Devanagari with ZWJ', 'नमस्\u200Dते'],
+    ['Telugu with ZWNJ', 'అమ్\u200Cమ'],
+    ['an apostrophe', "O'Reilly"],
+    ['a curly apostrophe', 'O\u2019Reilly'],
+    ['an accent', 'Nestlé'],
+    ['an Arabic name', 'مرحبا'],
+    ['a joiner between real letters', 'a\u200Db'],
+    ['a joiner at the end of real text', 'Acme\u200C'],
+  ])('keeps %s intact', (_label, name) => {
+    expect(sanitizeDisplayText(name)).toBe(name);
+  });
+
+  it.each([
+    ['a right-to-left override', 'a\u202Eb'],
+    ['a left-to-right override', 'a\u202Db'],
+    ['a zero-width space', 'a\u200Bb'],
+    ['a left-to-right mark', 'a\u200Eb'],
+    ['a right-to-left mark', 'a\u200Fb'],
+    ['a word joiner', 'a\u2060b'],
+    ['a byte-order mark', 'a\uFEFFb'],
+    ['an isolate', 'a\u2066b'],
+  ])('still strips %s', (_label, input) => {
+    expect(sanitizeDisplayText(input)).toBe('ab');
+  });
+
+  // The floor between the two tables above. A joiner-only value renders BLANK while reading as
+  // non-empty, so `normalizeSponsors`' `name !== ''` check would admit it and the email would
+  // carry a sponsor whose name shows nothing.
+  it.each([
+    ['a single ZWJ', '\u200D'],
+    ['a single ZWNJ', '\u200C'],
+    ['several joiners', '\u200D\u200C\u200D'],
+    ['joiners around whitespace', '\u200D \u200C'],
+  ])('returns empty for %s', (_label, input) => {
+    expect(sanitizeDisplayText(input)).toBe('');
+  });
 });
 
 describe('decodeHtmlEntities', () => {
@@ -185,78 +225,47 @@ describe('htmlClipboardToText', () => {
   });
 });
 
-describe('sanitizeDisplayText — joiner carve-out', () => {
-  // Why the joiners are kept lives in html-utils.ts; this pins the BEHAVIOUR, in both
-  // directions plus the joiner-only floor between them.
-  it.each([
-    ['Devanagari with ZWJ', 'नमस्\u200Dते'],
-    ['Telugu with ZWNJ', 'అమ్\u200Cమ'],
-    ['an apostrophe', "O'Reilly"],
-    ['a curly apostrophe', 'O\u2019Reilly'],
-    ['an accent', 'Nestlé'],
-    ['an Arabic name', 'مرحبا'],
-    ['a joiner between real letters', 'a\u200Db'],
-    ['a joiner at the end of real text', 'Acme\u200C'],
-  ])('keeps %s intact', (_label, name) => {
-    expect(sanitizeDisplayText(name)).toBe(name);
-  });
-
-  it.each([
-    ['a right-to-left override', 'a\u202Eb'],
-    ['a left-to-right override', 'a\u202Db'],
-    ['a zero-width space', 'a\u200Bb'],
-    ['a left-to-right mark', 'a\u200Eb'],
-    ['a right-to-left mark', 'a\u200Fb'],
-    ['a word joiner', 'a\u2060b'],
-    ['a byte-order mark', 'a\uFEFFb'],
-    ['an isolate', 'a\u2066b'],
-  ])('still strips %s', (_label, input) => {
-    expect(sanitizeDisplayText(input)).toBe('ab');
-  });
-
-  // The floor between the two tables above. A joiner-only value renders BLANK while reading as
-  // non-empty, so `normalizeSponsors`' `name !== ''` check would admit it and the email would
-  // carry a sponsor whose name shows nothing.
-  it.each([
-    ['a single ZWJ', '\u200D'],
-    ['a single ZWNJ', '\u200C'],
-    ['several joiners', '\u200D\u200C\u200D'],
-    ['joiners around whitespace', '\u200D \u200C'],
-  ])('returns empty for %s', (_label, input) => {
-    expect(sanitizeDisplayText(input)).toBe('');
-  });
-});
-
 describe('stripResourceLoadingHtml', () => {
-  // Angular's `[innerHTML]` sanitizer covers scripts, handlers and `javascript:` urls; what it
-  // KEEPS is a plain `<img src>`, which is safe for XSS and is precisely the browser-side fetch
-  // the campaign preview must not make.
+  // An ALLOW-LIST, after a denylist of resource tags was bypassed four ways in one review round.
+  // Every one of those is pinned here, plus two nobody reported, because the point is that the
+  // rule no longer depends on having named them.
   it.each([
-    ['a remote image', '<p>hi</p><img src="https://evil.test/x.png">', '<p>hi</p>'],
-    ['a self-closing image', '<p>a</p><img src="x" />', '<p>a</p>'],
-    ['an iframe and its content', '<iframe src="x">inner</iframe>ok', 'ok'],
-    ['a picture/source set', '<picture><source srcset="x"></picture>t', 't'],
-    ['a video', '<video src="x"></video>t', 't'],
-    ['an object', '<object data="x">fallback</object>t', 't'],
-    ['a stylesheet link', '<link rel="stylesheet" href="x">t', 't'],
-    ['a style block', '<style>.a{background:url(x)}</style>t', 't'],
-    ['an svg', '<svg><image href="x"/></svg>t', 't'],
-    ['a background-image style attribute', '<p style="background:url(https://evil.test/x)">t</p>', '<p>t</p>'],
-    ['a background attribute', '<td background="https://evil.test/x">t</td>', '<td>t</td>'],
-  ])('strips %s', (_label, input, want) => {
-    expect(stripResourceLoadingHtml(input)).toBe(want);
+    ['a plain image', '<img src="https://evil.test/x">t'],
+    ['an uppercase image', '<IMG SRC="https://evil.test/x">t'],
+    ['a newline inside the tag', '<img\nsrc="https://evil.test/x">t'],
+    ['the <image> alias', '<image href="https://evil.test/x">t'],
+    ['input type=image', '<input type=image src="https://evil.test/x">t'],
+    ['an UNQUOTED background attribute', '<td background=https://evil.test/x>t</td>'],
+    ['an UNQUOTED style attribute', '<p style=background:url(https://evil.test/x)>t</p>'],
+    ['a quoted background attribute', '<p background="https://evil.test/x">t</p>'],
+    ['a picture/source set', '<picture><source srcset="https://evil.test/x"></picture>t'],
+    ['a video poster', '<video poster="https://evil.test/x"></video>t'],
+    ['an iframe', '<iframe src="https://evil.test/x">i</iframe>t'],
+    ['an svg image', '<svg><image href="https://evil.test/x"/></svg>t'],
+  ])('removes every fetch path in %s', (_label, input) => {
+    expect(stripResourceLoadingHtml(input)).not.toContain('evil.test');
   });
 
-  // The copy is the point of the preview -- this is a narrow strip, not a formatting allow-list.
+  // The copy is the point of the preview: this must not become a blanket strip.
   it.each([
     ['paragraphs and emphasis', '<p><strong>keep</strong> <em>me</em></p>'],
-    ['an anchor', '<a href="https://x.test">link</a>'],
+    ['an http anchor', '<a href="https://x.test/r">link</a>'],
     ['lists', '<ul><li>one</li><li>two</li></ul>'],
     ['headings', '<h2>Title</h2>'],
-    ['a divider', '<hr />'],
+    ['a table', '<table><tbody><tr><td>cell</td></tr></tbody></table>'],
     ['plain text', 'just words'],
   ])('leaves %s intact', (_label, input) => {
     expect(stripResourceLoadingHtml(input)).toBe(input);
+  });
+
+  it('keeps the TEXT of a disallowed tag, but drops code content', () => {
+    expect(stripResourceLoadingHtml('<marquee>keep this</marquee>')).toBe('keep this');
+    expect(stripResourceLoadingHtml('<p>a</p><script>evil()</script><p>b</p>')).toBe('<p>a</p><p>b</p>');
+  });
+
+  it('drops a non-http href rather than rewriting it', () => {
+    expect(stripResourceLoadingHtml('<a href="javascript:evil()">t</a>')).toBe('<a>t</a>');
+    expect(stripResourceLoadingHtml('<a href="/relative">t</a>')).toBe('<a>t</a>');
   });
 
   it.each([

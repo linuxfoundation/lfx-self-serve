@@ -261,38 +261,119 @@ export function htmlClipboardToText(html: string | null | undefined): string {
 }
 
 /**
- * Elements that make a browser FETCH something, and the attributes that do the same on any tag.
+ * Tags a campaign preview may contain. Everything else has its TAGS removed, text kept.
  *
- * Not a general XSS allow-list. Angular's `[innerHTML]` sanitizer already removes `<script>`,
- * event handlers and `javascript:` urls, so those are covered. What it deliberately KEEPS is an
- * ordinary `<img src="https://…">` -- which is safe for XSS and is exactly the browser-side
- * fetch the campaign preview must not make, because the html comes from a model whose output can
- * be prompt-injected and campaign-service's `/email-copy` path applies no sanitizer of its own.
+ * An ALLOW-LIST, after a denylist of resource tags was bypassed four ways in one review round:
+ * `<image>` (a live alias for `<img>`), `<input type=image>`, and unquoted `background=` /
+ * `style=` values. Each fix would have named one more spelling; the space of spellings is
+ * adversarial and unbounded, so the rule is inverted instead -- anything not named here does not
+ * survive, and a new HTML element cannot become a bypass by existing.
  */
-const RESOURCE_LOADING_TAGS = ['img', 'picture', 'source', 'video', 'audio', 'track', 'iframe', 'embed', 'object', 'svg', 'link', 'style', 'script'];
+const PREVIEW_ALLOWED_TAGS = new Set([
+  'p',
+  'br',
+  'hr',
+  'strong',
+  'b',
+  'em',
+  'i',
+  'u',
+  's',
+  'ul',
+  'ol',
+  'li',
+  'blockquote',
+  'a',
+  'span',
+  'div',
+  'h1',
+  'h2',
+  'h3',
+  'h4',
+  'h5',
+  'h6',
+  'table',
+  'thead',
+  'tbody',
+  'tr',
+  'td',
+  'th',
+]);
+
+/** Attributes a preview tag may keep. `href` is further restricted to http(s) below. */
+const PREVIEW_ALLOWED_ATTRS = new Set(['href', 'colspan', 'rowspan']);
 
 /**
- * Removes elements and attributes that would make the renderer fetch a remote resource.
+ * Reduces html to formatting that cannot make the renderer fetch anything.
  *
- * For html destined for `[innerHTML]`. A resource tag is dropped WITH its content -- an `<img>`
- * has none, and for `<iframe>`/`<object>`/`<script>`/`<style>` the content is markup rather than
- * copy, so keeping it would leak code into the page as text. Everything else is left intact:
- * this is a narrow strip, not a formatting allow-list, because the surrounding copy is the
- * point of the preview.
+ * For html destined for `[innerHTML]`. Angular's sanitizer already removes scripts, event
+ * handlers and `javascript:` urls -- what it deliberately KEEPS is a plain
+ * `<img src="https://…">`, which is no XSS risk and is exactly the browser-side fetch a preview
+ * of model-generated content must not make. campaign-service's `/email-copy` path applies no
+ * sanitizer of its own, so this is the only place it can be stopped.
  *
- * Background-image urls in a `style` attribute fetch too, so `style` is dropped wherever it
- * appears rather than only on resource tags.
+ * Text is preserved for a disallowed tag; content is DROPPED for `script`/`style`/`iframe`/
+ * `object`/`embed`, whose contents are code rather than copy. Attributes are allow-listed, so
+ * `src`, `srcset`, `background`, `style`, `poster` and anything added to HTML later are gone
+ * regardless of quoting.
  */
 export function stripResourceLoadingHtml(html: string | null | undefined): string {
   if (!html) return '';
-  let out = html;
-  for (const tag of RESOURCE_LOADING_TAGS) {
-    // Paired form, then the self-closing/void form. Both spellings occur in generated html.
-    out = out.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}\\s*>`, 'gi'), '');
-    out = out.replace(new RegExp(`<${tag}\\b[^>]*\\/?>`, 'gi'), '');
+
+  const dropContent = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math']);
+  let out = '';
+  let index = 0;
+  let skipDepth = 0;
+
+  // A hand-rolled scan rather than a regex sweep: the browser tokenises, and matching whole
+  // tags with a pattern is what let the four bypasses through.
+  while (index < html.length) {
+    const lt = html.indexOf('<', index);
+    if (lt === -1) {
+      if (skipDepth === 0) out += html.slice(index);
+      break;
+    }
+    if (skipDepth === 0) out += html.slice(index, lt);
+
+    const gt = html.indexOf('>', lt);
+    if (gt === -1) break;
+
+    const raw = html.slice(lt + 1, gt);
+    const closing = raw.startsWith('/');
+    const name = (closing ? raw.slice(1) : raw)
+      .trim()
+      .split(/[\s/>]/)[0]
+      .toLowerCase();
+
+    if (dropContent.has(name)) {
+      if (closing) skipDepth = Math.max(0, skipDepth - 1);
+      else if (!raw.trimEnd().endsWith('/')) skipDepth++;
+    } else if (skipDepth === 0 && PREVIEW_ALLOWED_TAGS.has(name)) {
+      out += closing ? `</${name}>` : `<${name}${allowedAttributes(raw)}>`;
+    }
+    index = gt + 1;
   }
-  // `style` and `background` on a SURVIVING tag can still name a url.
-  out = out.replace(/\sstyle\s*=\s*"[^"]*"/gi, '').replace(/\sstyle\s*=\s*'[^']*'/gi, '');
-  out = out.replace(/\sbackground\s*=\s*"[^"]*"/gi, '').replace(/\sbackground\s*=\s*'[^']*'/gi, '');
+
   return out;
+}
+
+/** The allow-listed attributes of one start tag, re-rendered with quoted values. */
+function allowedAttributes(rawTag: string): string {
+  let attrs = '';
+  const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'`=<>]+)/g;
+  let match = pattern.exec(rawTag);
+
+  while (match !== null) {
+    const key = match[1].toLowerCase();
+    const value = match[2].replace(/^["']|["']$/g, '');
+    if (PREVIEW_ALLOWED_ATTRS.has(key)) {
+      // `href` is the one attribute that can name a destination, so it is scheme-checked. A
+      // relative or non-http(s) href is dropped rather than rewritten.
+      if (key !== 'href' || /^https?:\/\//i.test(value)) {
+        attrs += ` ${key}="${escapeHtml(value)}"`;
+      }
+    }
+    match = pattern.exec(rawTag);
+  }
+  return attrs;
 }
