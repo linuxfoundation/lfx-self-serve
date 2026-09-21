@@ -444,4 +444,47 @@ describe('AccountContextService — Snowflake enrichment platform boundary', () 
     expect(service.availableAccounts()).toHaveLength(1);
     expect(service.availableAccounts()[0].accountName).toBe('Alpha Fresh');
   });
+
+  // An empty persona re-seed (staff viewers carry no orgs) starts no fetch, but it still
+  // supersedes the in-flight bootstrap enrichment: the late response must neither repopulate
+  // `liveAccounts` nor touch the placeholder selection. Probed via `setAccount`, which merges
+  // any live row for the id — a repopulated cache would surface the stale name here.
+  it('invalidates an in-flight enrichment on an empty re-seed', () => {
+    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
+    const { service, getOrgLensAccountContext } = setup('browser', [bootstrap$.asObservable()]);
+
+    service.initializeUserOrganizations([seedA]);
+    service.initializeUserOrganizations([]);
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
+    expect(service.availableAccounts()).toHaveLength(0);
+
+    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
+    bootstrap$.complete();
+
+    service.setAccount({ ...seedA, accountName: 'Seed Name' });
+    expect(service.selectedAccount().accountName).toBe('Seed Name');
+  });
+
+  // Same supersession for an addressed selection: the empty re-seed preserves it (staff re-seed
+  // behavior), and the late bootstrap response for the same account must not clobber the
+  // canonical display fields with stale Snowflake ones.
+  it('preserves an addressed selection when an empty re-seed beats a late bootstrap response', () => {
+    const bootstrap$ = new Subject<OrgLensAccountContextResponse[]>();
+    const { service, getOrgLensAccountContext } = setup('browser', [bootstrap$.asObservable()]);
+
+    service.initializeUserOrganizations([seedA]);
+    service.adoptFromAddress({ ...seedA, accountName: 'Canonical Name' });
+    expect(service.isAddressedSelection()).toBe(true);
+
+    service.initializeUserOrganizations([]);
+    expect(service.selectedAccount().accountName).toBe('Canonical Name');
+
+    bootstrap$.next([liveRow('acc-A', 'Alpha Stale')]);
+    bootstrap$.complete();
+
+    expect(getOrgLensAccountContext).toHaveBeenCalledTimes(1);
+    expect(service.selectedAccount().accountName).toBe('Canonical Name');
+    expect(service.availableAccounts()).toHaveLength(0);
+  });
 });

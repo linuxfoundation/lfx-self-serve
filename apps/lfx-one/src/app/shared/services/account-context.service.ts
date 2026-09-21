@@ -39,6 +39,7 @@ export class AccountContextService {
   /**
    * Monotonic generation for Snowflake enrichment. `initializeUserOrganizations` runs at bootstrap (transfer-state seeds) and again on
    * every persona re-seed, so two enrichments can be in flight at once — the earlier (stale-seed) response must never overwrite the later.
+   * Every (re-)seed advances this, including empty ones that start no fetch, so a late response for a superseded seed list is always dropped.
    */
   private enrichmentGeneration = 0;
 
@@ -145,6 +146,12 @@ export class AccountContextService {
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
   public initializeUserOrganizations(organizations: Account[]): void {
     const seeds = organizations ?? [];
+    // Every (re-)seed supersedes any in-flight enrichment — including empty ones, which return
+    // early without starting a fetch (as does the addressed-selection branch below). Without this,
+    // a late bootstrap response would repopulate `liveAccounts` and could patch the selection with
+    // stale fields. A fetching re-seed advances the generation once more when its fetch starts;
+    // only order matters, gaps are irrelevant.
+    this.enrichmentGeneration++;
     this.userOrganizations.set(seeds);
     this.liveAccounts.set(new Map());
 
