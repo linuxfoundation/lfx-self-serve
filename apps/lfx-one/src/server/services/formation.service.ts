@@ -8,6 +8,7 @@ import type {
   FormationItemMapContext,
   FormationItemStatus,
   FormationItemWriteState,
+  FormationLifecycle,
   FormationPeopleResponse,
   FormationPerson,
   FormationPersonMetadata,
@@ -739,17 +740,17 @@ export class FormationService {
           logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
           continue;
         }
-        // The items query's `lifecycle:live` tag filters `formation_item` documents and says
-        // nothing about this aggregate row, whose own lifecycle this path never reads — so the
-        // stage gate is what delivers the card's promise that "an Active project drops out of
-        // the response entirely".
+        // Not the Active gate, despite where it sits. `formationRows` is already lifecycle-live
+        // twice over — the `tags_all` tag on its query and the backstop filter above it — and
+        // PR #2767 measured every prod formation's lifecycle against its stage and found them
+        // consistent, so an Active or Archived project's aggregate row is gone before this line
+        // runs. Debugging a missing Active formation starts there, not here.
         //
-        // It is not a lifecycle filter in disguise, and swapping it for one would lose rows this
-        // catches: `LifecycleForStage` returns no lifecycle at all for `Prospect`, so a project
-        // moved there keeps whatever lifecycle its checklist last held. GH-2328's "always live
-        // regardless of stage" finding was re-measured by PR #2767 on the `formation` aggregate
-        // document and no longer holds there; it was not re-measured on the item documents read
-        // here, so this gate stays either way.
+        // What this still catches is `Prospect`: `LifecycleForStage` returns no lifecycle for it
+        // at all, so a project moved there keeps whatever its checklist last held and stays
+        // `live`. Unknown and transient stages likewise. GH-2328's "always live regardless of
+        // stage" finding no longer holds for the aggregate document, and was never re-measured
+        // for the `formation_item` documents, so nothing here assumes it either way.
         //
         // `isFormationStageGate` is the stage-based gate the pre-live fixture path used for this
         // same exclusion: it matches any `Formation - *` stage except the terminal `Disengaged`
@@ -960,7 +961,14 @@ export class FormationService {
     // `live`, so GH-2366's fail-open rule survives without naming any stage here. `gates_cleared`/
     // `is_activating` rows likewise keep their `Formation - *` stage until the formation team
     // flips the project Active, so "Ready to activate" rows survive by construction.
-    const inFormationRows = scopedRows.filter((row) => isFormationLifecycleLive(row.lifecycle));
+    // One pass, because the log below needs the rejected rows' lifecycle values and re-deriving
+    // them with the inverse predicate would walk the whole list a second time (PR #2767 review).
+    const inFormationRows: FormationQueueRow[] = [];
+    const droppedLifecycles = new Set<FormationLifecycle | null>();
+    for (const row of scopedRows) {
+      if (isFormationLifecycleLive(row.lifecycle)) inFormationRows.push(row);
+      else droppedLifecycles.add(row.lifecycle);
+    }
 
     // Normally zero, because `tags_all` already dropped these upstream — so a non-zero count is
     // the backstop above earning its place, not routine filtering. WARN when it is every row:
@@ -974,7 +982,7 @@ export class FormationService {
         of: scopedRows.length,
         // Normalized, so this is `completed`/`frozen`/`null` — and `null` is the one that says
         // the field itself went unreadable rather than the row having genuinely left formation.
-        lifecycles: [...new Set(scopedRows.filter((row) => !isFormationLifecycleLive(row.lifecycle)).map((row) => row.lifecycle))],
+        lifecycles: [...droppedLifecycles],
       };
       if (droppedNonLive === scopedRows.length) {
         logger.warning(req, 'get_formations_queue', 'Every row failed the lifecycle backstop — lifecycle:live may no longer be honoured upstream', dropDetail);

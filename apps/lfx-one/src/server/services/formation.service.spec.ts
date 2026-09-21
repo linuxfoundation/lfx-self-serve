@@ -1593,6 +1593,50 @@ describe('FormationService', () => {
       expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3 });
     });
 
+    // The contradictory state, pinned deliberately: a terminal stage still carrying `live`.
+    //
+    // These rows are KEPT, and that is the whole design rather than an oversight. GH-2584 moved
+    // the queue off re-deriving membership from the stage precisely because two sources of truth
+    // disagreeing is what produced the original bug, so the stage cannot be allowed to overrule
+    // the lifecycle here — asserting exclusion would reinstate the deny-list this PR removed and
+    // give the queue back its second opinion.
+    //
+    // The combination does not occur today: every one of the 134 prod formation documents agrees
+    // with its stage (PR #2767). If it ever does occur, the defect is upstream in the formation
+    // service's reconcile, and this test is where a reader learns the queue will faithfully show
+    // the row rather than quietly paper over it. Flipping these expectations is therefore a
+    // deliberate reversal of GH-2584, not a fix — which is exactly why it is written down.
+    it('keeps a terminal-stage row whose lifecycle still says live — lifecycle is the single source of truth, by design', async () => {
+      const baseRow: UpstreamFormationQueueRow = {
+        formation_uid: 'formation:p',
+        project_uid: 'p',
+        project_name: 'P',
+        project_slug: 'p',
+        is_foundation: false,
+        parent_uid: null,
+        sub_stage: 'Formation - Engaged',
+        lifecycle: 'live',
+        gates_cleared: false,
+        is_activating: false,
+        announcement_date: null,
+        progress: {},
+        blocked_item_titles: [],
+        assignees: [],
+      };
+      const rows: UpstreamFormationQueueRow[] = [
+        { ...baseRow, formation_uid: 'formation:stale-disengaged', project_uid: 'stale-disengaged', sub_stage: 'Formation - Disengaged' },
+        { ...baseRow, formation_uid: 'formation:stale-active', project_uid: 'stale-active', sub_stage: 'Active' },
+      ];
+      proxyRequest.mockResolvedValue({
+        resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
+      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+
+      const result = await service.getFormationsQueue(buildReq());
+
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['stale-disengaged', 'stale-active']);
+      expect(result.tiles).toMatchObject({ unmapped: 2, total: 2 });
+    });
+
     // The filter fails CLOSED on a lifecycle it doesn't recognise: `normalizeFormationLifecycle`
     // maps anything outside live/completed/frozen to null, and `isFormationLifecycleLive(null)` is
     // false, so the row is dropped. That is the opposite of GH-2366's fail-open treatment of an
@@ -1610,7 +1654,7 @@ describe('FormationService', () => {
       ['unrecognised', { lifecycle: 'retired' }],
       ['absent from the document', {}],
     ])('drops a row whose lifecycle is %s, even though its stage says it is still forming', async (_label, lifecyclePatch) => {
-      const row = {
+      const row: Partial<UpstreamFormationQueueRow> = {
         formation_uid: 'formation:no-lifecycle',
         project_uid: 'no-lifecycle',
         project_name: 'No Lifecycle',
@@ -1625,10 +1669,10 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
         ...lifecyclePatch,
-      } as UpstreamFormationQueueRow;
+      };
       proxyRequest.mockResolvedValue({
         resources: [{ type: 'formation', id: row.formation_uid, data: row }],
-      } satisfies QueryServiceResponse<UpstreamFormationQueueRow>);
+      } satisfies QueryServiceResponse<Partial<UpstreamFormationQueueRow>>);
 
       const result = await service.getFormationsQueue(buildReq());
 
