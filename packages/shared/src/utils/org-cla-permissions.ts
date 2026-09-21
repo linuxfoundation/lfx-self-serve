@@ -26,9 +26,7 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
  * `cla-manager` on mapped projects, not the parent. Yields nothing only when there is no project
  * id and no foundation id, so the caller can hide Add.
  */
-export function orgClaPairProjectSfid(
-  group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>
-): string | undefined {
+export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' | 'projects' | 'pairProjectSfid'>): string | undefined {
   const pinned = group.pairProjectSfid?.trim();
   if (pinned) return pinned;
 

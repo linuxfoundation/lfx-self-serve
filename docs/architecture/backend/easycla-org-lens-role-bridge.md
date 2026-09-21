@@ -33,7 +33,7 @@ The agreement's roster `canEdit` flag does **not** drive those buttons. It may s
 
 CLA authority is per **project|organization pair**, not org-wide. A signatory for company A / project X cannot attestation-Continue for project Y.
 
-The ACS pair is the first covered project SFID, falling back to the foundation SFID only when the group lists no project (the same id `resolveApprovalContext` keys the PUT on). Hide Add/Edit/Remove only when the group carries neither a project nor a foundation id.
+The ACS pair is the first covered project SFID, falling back to the foundation SFID when no listed project has a usable SFID (the same id `resolveApprovalContext` keys the PUT on). Hide Add/Edit/Remove only when the group carries neither a usable project SFID nor a foundation id.
 
 ## Impersonation
 
