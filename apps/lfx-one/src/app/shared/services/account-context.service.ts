@@ -223,8 +223,16 @@ export class AccountContextService {
    * names the selection (the path guard's no-round-trip shortcut) — an `'address'` pin, exactly as a
    * resolver hit. See `addressedUid` for what each kind holds against. Not a `setAccount`: that would
    * re-merge the live Snowflake row and revert display fields the canonical record has since patched.
-   * A `'default'` pin never downgrades an existing `'address'` pin on the same organization. No-op on
-   * the placeholder — there is nothing to pin.
+   *
+   * An `'address'` pin **upgrades** a `'default'` pin on the same organization, and a `'default'` pin
+   * never downgrades an `'address'` one. The upgrade is deliberate (lfx-self-serve#2793): once the
+   * default write has produced `/org/A/…`, the address names A and must keep naming what is rendered.
+   * Were the default pin kept, an org-items reload whose page lacks A would fall through to
+   * `selectDefaultOrg(B)`, whose `'default'` write leaves an addressed page alone — B rendered under
+   * `/org/A`, the silent substitution spec 050 forbids. So on an addressed page a revoked selection is
+   * kept, not drifted; routing it to `/org/not-found` (what a resolver miss does) is the follow-up.
+   * The `'default'` kind therefore only ever governs pages no address names (Me / Project lens, the
+   * legacy `/org/{page}` form before its write). No-op on the placeholder.
    */
   public pinSelection(source: 'address' | 'default'): void {
     const uid = this.selectedAccount().uid ?? null;

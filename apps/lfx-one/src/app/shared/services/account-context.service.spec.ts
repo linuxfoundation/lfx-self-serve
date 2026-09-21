@@ -253,6 +253,17 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.isAdoptedFromAddress()).toBe(true);
     });
 
+    // Deliberate (lfx-self-serve#2793): the default write produces `/org/A/…`, whose guard shortcut
+    // pins 'address'. Keeping the default kind there would let a later org-items reload re-default
+    // the selection to B while the address still names A — spec 050's silent substitution.
+    it('the guard shortcut upgrades a default pin to an address pin, so an addressed page cannot drift', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.pinSelection('address');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
     it('clearAccount releases both kinds', () => {
       service.setAccount(addressedB);
       service.pinSelection('address');
