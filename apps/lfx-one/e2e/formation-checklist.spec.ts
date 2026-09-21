@@ -38,10 +38,10 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     await expect(section.getByText('Community and launch')).toBeVisible();
     await expect(page.getByTestId('formation-checklist-row-title-formation-item:cascade-data-alliance:draft_project_record')).toBeVisible();
 
-    // #2689 row metadata: humanized owner-team label (seeded as snake_case `brand_counsel`) and the
-    // audience chip's longest label render as visible text.
+    // #2689 row metadata: the humanized owner-team label (seeded as snake_case `brand_counsel`)
+    // renders as visible text. #2774 turned the row's audience into an icon — its presence is the
+    // structural spec's contract; the visible label now lives in the drawer (asserted below).
     await expect(section.getByText('Brand Counsel')).toBeVisible();
-    await expect(section.getByText('Internal + External')).toBeVisible();
   });
 
   test('renders the sidebar formation card with stage, announcement date and slug — and no date in the strip (GH-2702)', async ({ page }) => {
@@ -99,6 +99,8 @@ test.describe('Formation Checklist section (GH-1958)', () => {
     const drawer = page.getByTestId('formation-item-drawer');
     await expect(drawer).toBeVisible();
     await expect(page.getByTestId('formation-item-drawer-history')).toContainText('updated the note');
+    // #2774: the drawer's header meta line spells the audience out in full (the seeded item is `both`).
+    await expect(page.getByText('Internal + External')).toBeVisible();
   });
 
   // #2732: a Me-lens pending-action row (and, per #2573/#2616, the item-assigned email) lands here

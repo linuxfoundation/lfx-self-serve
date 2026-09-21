@@ -59,6 +59,7 @@ describe('FormationReadinessStripComponent', () => {
   const activatingText = (): string | null =>
     fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-activating-text"]')?.textContent ?? null;
   const countsText = (): string | null => fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-counts"]')?.textContent ?? null;
+  const requiredLegend = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-required-legend"]');
 
   /**
    * GH-2329 regression guard: a skipped gating item is checklist-complete (nothing left for a human
@@ -82,6 +83,26 @@ describe('FormationReadinessStripComponent', () => {
 
     expect(activatingText()).toContain('All gating items done');
     expect(gatingText()).toBeNull();
+  });
+
+  // #2774: the rows mark gating items with a red asterisk; the "Required for Active" caption carries
+  // the same mark so it doubles as the legend — only while there are open gates for it to point at.
+  it('marks the "Required for Active" caption with the rows’ red asterisk legend while gates are open', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'not_started', is_gating: true })];
+    await render(items, 1, 2);
+
+    const legend = requiredLegend();
+    expect(legend?.textContent).toBe('*');
+    expect(legend?.className).toContain('text-red-500');
+    expect(legend?.getAttribute('aria-hidden')).toBe('true');
+    expect(gatingText()).toContain('1 of 2 open');
+  });
+
+  it('omits the asterisk legend in the "all done" branch', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true })];
+    await render(items, 0, 1);
+
+    expect(requiredLegend()).toBeNull();
   });
 
   it('tallies `skipped` as its own checklist-completion bucket, separate from `done`', async () => {
