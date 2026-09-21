@@ -1999,10 +1999,19 @@ describe('OrgClaService.getManagers', () => {
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
   });
 
-  it('reads an absent list as an agreement with no managers', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+  it('reads an empty list array as an agreement with no managers', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
 
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toEqual([]);
+  });
+
+  it('rejects a manager list response with no list array', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
   });
 
   it('calls upstream with the internal company id, never the Salesforce organization id', async () => {
@@ -2133,14 +2142,16 @@ describe('OrgClaService.addManager', () => {
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects a 200 carrying no manager record rather than reporting an anonymous success', async () => {
+  it('returns a display payload when the roster re-read is empty, because the write already succeeded', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
       .mockResolvedValueOnce({ signatureID: 'signature-uuid-1' })
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))
       .mockResolvedValueOnce({ list: [] });
 
-    await expect(new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request)).rejects.toThrow(/no manager record/);
+    const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(manager).toEqual({ lfUsername: '', name: 'Ada Porter', email: 'ada.porter@example.org' });
   });
 
   it('re-reads the roster when POST returns a Signature without a top-level lf_username', async () => {

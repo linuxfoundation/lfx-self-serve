@@ -952,11 +952,16 @@ export class OrgClaService {
       }
     );
 
-    const list = Array.isArray(upstream?.list) ? upstream.list : [];
+    if (!upstream || !Array.isArray(upstream.list)) {
+      throw new MicroserviceError('Failed to fetch CLA managers: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_list_managers',
+        service: SERVICE,
+      });
+    }
 
     return {
       signatureId,
-      managers: list.filter((entry): entry is EasyClaCompanyClaManager => !!entry?.lf_username?.trim()).map((entry) => toOrgClaManager(entry)),
+      managers: upstream.list.filter((entry): entry is EasyClaCompanyClaManager => !!entry?.lf_username?.trim()).map((entry) => toOrgClaManager(entry)),
     };
   }
 
@@ -987,19 +992,37 @@ export class OrgClaService {
       throw asManagerRefusal(error, 'org_cla_add_manager', 'Failed to add the CLA manager');
     }
 
-    const roster = await this.getManagers(req, orgUid, signatureId);
-    const normalizedEmail = request.email.trim().toLowerCase();
-    const added = roster?.managers.find((manager) => manager.email?.trim().toLowerCase() === normalizedEmail);
-
-    if (!added?.lfUsername?.trim()) {
-      throw new MicroserviceError('Failed to add the CLA manager: upstream returned no manager record', 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: 'org_cla_add_manager',
-        service: SERVICE,
+    try {
+      const roster = await this.getManagers(req, orgUid, signatureId);
+      const normalizedEmail = request.email.trim().toLowerCase();
+      const added = roster?.managers.find((manager) => manager.email?.trim().toLowerCase() === normalizedEmail);
+      if (added?.lfUsername?.trim()) {
+        logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
+        return added;
+      }
+    } catch (error) {
+      logger.warning(req, 'org_cla_add_manager', 'add succeeded but re-reading the roster failed', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
 
-    logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
-    return added;
+    logger.debug(req, 'org_cla_add_manager', 'added a cla manager; roster re-read did not return the new row yet', {
+      org_uid: orgUid,
+      signature_id: signatureId,
+    });
+    return this.managerFromAddRequest(request);
+  }
+
+  /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
+  private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
+    const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
+    return {
+      lfUsername: '',
+      email: request.email.trim(),
+      ...(name ? { name } : {}),
+    };
   }
 
   public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {
