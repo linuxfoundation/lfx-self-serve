@@ -234,6 +234,49 @@ describe('OrgEasyclaManagersComponent', () => {
     expect(getManagers).toHaveBeenLastCalledWith('0014100000Te2owAAB', SIGNATURE_ID);
   });
 
+  it('fetches the roster when the agreement becomes signed while the tab is already open', async () => {
+    await render(false);
+
+    expect(getManagers).not.toHaveBeenCalled();
+
+    fixture.componentRef.setInput('signed', true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getManagers).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a failed load for a previous agreement rather than masking the new roster', async () => {
+    const late = new Subject<{ signatureId: string; managers: OrgClaManager[] }>();
+    getManagers.mockReturnValueOnce(late).mockReturnValueOnce(of({ signatureId: 'signature-uuid-2', managers: [manager()] }));
+    await render();
+    component.loadIfNeeded();
+
+    fixture.componentRef.setInput('signatureId', 'signature-uuid-2');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    late.error(new Error('upstream down'));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-error"]')).toBeFalsy();
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-table"]')).toBeTruthy();
+  });
+
+  it('closes an open confirm when the panel is destroyed', async () => {
+    const close = vi.spyOn(confirmationService, 'close');
+    await render();
+    component.loadIfNeeded();
+    await fixture.whenStable();
+
+    component['confirmRemove'](manager());
+    fixture.destroy();
+
+    expect(close).toHaveBeenCalled();
+  });
+
   describe('removal', () => {
     it('uses second-person copy when the viewer is removing themselves', async () => {
       await render();
@@ -337,6 +380,16 @@ describe('OrgEasyclaManagersComponent', () => {
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: ORG_CLA_MANAGER_REFUSAL_COPY.unknown }));
     });
 
+    it('uses the read-only copy when impersonation blocked the write', async () => {
+      addManager.mockReturnValue(throwError(() => ({ status: 403, error: { code: 'IMPERSONATION_READ_ONLY' } })));
+      await render();
+
+      component['addManager']({ firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }, { orgUid: ORG_UID, signatureId: SIGNATURE_ID });
+      await fixture.whenStable();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: 'This change is not available while impersonating a user.' }));
+    });
+
     it('leaves the roster untouched when a write is refused', async () => {
       await render();
       component.loadIfNeeded();
@@ -422,6 +475,16 @@ describe('OrgEasyclaManagersComponent', () => {
 
     it('does not open Add when ACS has denied it', async () => {
       checkPermission.mockReturnValue(of(false));
+      await render();
+
+      component['openAdd']();
+
+      expect(openDialog).not.toHaveBeenCalled();
+    });
+
+    it('does not open Add while the roster is still loading', async () => {
+      const pending = new Subject<{ signatureId: string; managers: OrgClaManager[] }>();
+      getManagers.mockReturnValue(pending);
       await render();
 
       component['openAdd']();

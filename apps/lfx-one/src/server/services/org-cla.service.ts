@@ -302,6 +302,15 @@ function requireProjectSfid(target: ManagerTarget, operation: string): string {
   return target.projectSfid;
 }
 
+function requireSignedManagerTarget(target: ManagerTarget, operation: string): void {
+  if (target.signed) return;
+
+  throw new MicroserviceError('This CLA has not been signed yet, so its managers cannot be changed', 400, 'AGREEMENT_NOT_SIGNED', {
+    operation,
+    service: SERVICE,
+  });
+}
+
 function asManagerRefusal(error: unknown, operation: string, errorMessage: string): unknown {
   if (!(error instanceof MicroserviceError)) return error;
 
@@ -932,6 +941,7 @@ export class OrgClaService {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_add_manager');
     if (!target) return null;
 
+    requireSignedManagerTarget(target, 'org_cla_add_manager');
     const projectSfid = requireProjectSfid(target, 'org_cla_add_manager');
 
     let result: EasyClaCompanyClaManager | null;
@@ -968,6 +978,7 @@ export class OrgClaService {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_remove_manager');
     if (!target) return false;
 
+    requireSignedManagerTarget(target, 'org_cla_remove_manager');
     const projectSfid = requireProjectSfid(target, 'org_cla_remove_manager');
 
     try {
@@ -1043,9 +1054,7 @@ export class OrgClaService {
    */
   private async resolveManagerTarget(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ManagerTarget | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
-    const entry = entries.find(
-      (candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId
-    );
+    const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
       logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
       return null;
@@ -1060,7 +1069,7 @@ export class OrgClaService {
       });
     }
 
-    return { companyId, claGroupId, projectSfid: pickProjectSfid(entry) };
+    return { companyId, claGroupId, projectSfid: pickProjectSfid(entry), signed: entry.signed === true };
   }
 
   private async resolveApprovalContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {

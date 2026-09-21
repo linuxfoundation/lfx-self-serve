@@ -55,7 +55,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   private destroyed = false;
   private addDialog: DynamicDialogRef | null = null;
 
-  private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId)]).pipe(skip(1));
+  private readonly contextChanged$ = combineLatest([toObservable(this.orgUid), toObservable(this.signatureId), toObservable(this.signed)]).pipe(skip(1));
 
   protected readonly viewerUsername = computed(() => this.userService.viewerUsername()?.trim().toLowerCase() ?? '');
 
@@ -110,6 +110,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
 
     this.destroyRef.onDestroy(() => {
       this.destroyed = true;
+      this.dismissPendingWrites();
     });
   }
 
@@ -136,7 +137,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
   }
 
   protected openAdd(): void {
-    if (!this.canAdd() || this.writing()) return;
+    if (!this.canAdd() || this.writing() || this.loading()) return;
 
     const target = this.writeTarget();
     if (!target) return;
@@ -201,6 +202,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
     const signatureId = this.signatureId();
     if (!orgUid || !signatureId) return;
 
+    const request = { orgUid, signatureId };
     this.loading.set(true);
     this.loadFailed.set(false);
 
@@ -216,13 +218,15 @@ export class OrgEasyclaManagersComponent implements OnInit {
           // `contextChanged$` re-emits a cycle after the inputs change, so `takeUntil` can let one
           // response for the previous agreement through. The echoed id is what tells them apart;
           // the context-change handler that is already queued refetches.
-          if (result.signatureId !== this.signatureId()) return;
+          if (!this.stillOn(request) || result.signatureId !== this.signatureId()) return;
 
           this.loading.set(false);
+          this.loadFailed.set(false);
           this.managers.set(result.managers);
           this.managerCountChanged.emit(result.managers.length);
         },
         error: () => {
+          if (!this.stillOn(request)) return;
           this.loading.set(false);
           this.loadFailed.set(true);
           this.managers.set(null);
@@ -236,9 +240,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
     this.writing.set(true);
     this.claService
       .addManager(target.orgUid, target.signatureId, request)
-      .pipe(finalize(() => {
-        if (!this.destroyed) this.writing.set(false);
-      }))
+      .pipe(
+        finalize(() => {
+          if (!this.destroyed) this.writing.set(false);
+        })
+      )
       .subscribe({
         next: (manager) => {
           if (this.destroyed || !this.stillOn(target)) return;
@@ -262,9 +268,11 @@ export class OrgEasyclaManagersComponent implements OnInit {
     this.writing.set(true);
     this.claService
       .removeManager(target.orgUid, target.signatureId, manager.lfUsername)
-      .pipe(finalize(() => {
-        if (!this.destroyed) this.writing.set(false);
-      }))
+      .pipe(
+        finalize(() => {
+          if (!this.destroyed) this.writing.set(false);
+        })
+      )
       .subscribe({
         next: () => {
           if (this.destroyed || !this.stillOn(target)) return;
@@ -290,8 +298,17 @@ export class OrgEasyclaManagersComponent implements OnInit {
     this.messageService.add({
       severity: 'error',
       summary: 'Could not update CLA Managers',
-      detail: ORG_CLA_MANAGER_REFUSAL_COPY[this.refusalFrom(error)],
+      detail: this.refusalDetail(error),
     });
+  }
+
+  private refusalDetail(error: unknown): string {
+    const http = error as { status?: number; error?: { code?: string } };
+    if (http.status === 403 && http.error?.code === 'IMPERSONATION_READ_ONLY') {
+      return 'This change is not available while impersonating a user.';
+    }
+
+    return ORG_CLA_MANAGER_REFUSAL_COPY[this.refusalFrom(error)];
   }
 
   // Membership is tested against the canonical list, not with `in` on the copy table: `in` walks

@@ -45,6 +45,10 @@ describe('classifyOrgClaManagerRefusal', () => {
     expect(classifyOrgClaManagerRefusal(403, JSON.stringify({ error: 'company_sanctioned' }))).toBe('unknown');
   });
 
+  it('reads a top-level company_sanctioned code before the free-form message', () => {
+    expect(classifyOrgClaManagerRefusal(403, JSON.stringify({ code: 'company_sanctioned', message: 'pending trade-compliance review' }))).toBe('unknown');
+  });
+
   describe('degrades to `unknown` rather than guessing', () => {
     it.each([
       ['a sentence it has never seen', 'the request could not be completed at this time'],
@@ -111,7 +115,7 @@ describe('isOrgClaManagerLfUsername', () => {
     expect(isOrgClaManagerLfUsername(username)).toBe(true);
   });
 
-  it.each(['', 'a porter/../..', 'ada porter'])('rejects %s', (username) => {
+  it.each(['', 'a porter/../..', 'ada porter', '.', '..'])('rejects %s', (username) => {
     expect(isOrgClaManagerLfUsername(username)).toBe(false);
   });
 });

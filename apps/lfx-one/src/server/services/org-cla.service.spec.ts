@@ -2057,6 +2057,20 @@ describe('OrgClaService.addManager', () => {
     expect(await new OrgClaService().addManager(req(), ORG_UID, 'signature-other', request)).toBeNull();
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
+
+  it('refuses an unsigned agreement without calling the write endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const error = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request).then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect((error as MicroserviceErrorType).statusCode).toBe(400);
+    expect((error as MicroserviceErrorType).code).toBe('AGREEMENT_NOT_SIGNED');
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('OrgClaService.removeManager', () => {
@@ -2077,6 +2091,20 @@ describe('OrgClaService.removeManager', () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
 
     expect(await new OrgClaService().removeManager(req(), ORG_UID, 'signature-other', 'aporter')).toBe(false);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an unsigned agreement without calling the write endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const error = await new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter').then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect((error as MicroserviceErrorType).statusCode).toBe(400);
+    expect((error as MicroserviceErrorType).code).toBe('AGREEMENT_NOT_SIGNED');
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
 

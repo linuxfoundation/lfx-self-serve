@@ -575,7 +575,9 @@ export class OrgEasyclaDetailComponent {
   }
 
   protected onManagerCountChanged(count: number): void {
-    this.loadedManagerCount.set({ signatureId: this.signatureId(), count });
+    const signatureId = this.claGroup()?.id;
+    if (!signatureId) return;
+    this.loadedManagerCount.set({ signatureId, count });
   }
 
   protected onTabKeydown(event: KeyboardEvent): void {
@@ -1007,7 +1009,7 @@ export class OrgEasyclaDetailComponent {
 
   private initManagersBadge(): string {
     const loaded = this.loadedManagerCount();
-    const current = loaded?.signatureId === this.signatureId() ? loaded.count : undefined;
+    const current = loaded != null && loaded.signatureId === this.claGroup()?.id ? loaded.count : undefined;
     return String(current ?? this.claGroup()?.claManagersCount ?? 0);
   }
 

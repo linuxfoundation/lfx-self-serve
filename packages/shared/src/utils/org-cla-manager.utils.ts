@@ -18,6 +18,7 @@ const REFUSAL_PATTERNS: readonly (readonly [OrgClaManagerRefusal, readonly strin
 
 export function classifyOrgClaManagerRefusal(status: number, body: unknown): OrgClaManagerRefusal {
   if (status === 409) return 'already-manager';
+  if (refusalCodeFrom(body) === 'company_sanctioned') return 'unknown';
 
   const text = refusalTextFrom(body);
   if (text) {
@@ -30,6 +31,25 @@ export function classifyOrgClaManagerRefusal(status: number, body: unknown): Org
   if (status === 403) return 'not-authorized';
 
   return 'unknown';
+}
+
+function refusalCodeFrom(body: unknown): string {
+  if (typeof body === 'string') {
+    const raw = body.trim();
+    if (!raw) return '';
+    try {
+      return refusalCodeFrom(JSON.parse(raw));
+    } catch {
+      return '';
+    }
+  }
+
+  if (body && typeof body === 'object') {
+    const code = (body as Record<string, unknown>)['code'];
+    if (typeof code === 'string') return code.trim().toLowerCase();
+  }
+
+  return '';
 }
 
 function refusalTextFrom(body: unknown): string {
@@ -101,5 +121,5 @@ export function hasOrgClaManagerAddErrors(validation: OrgClaManagerAddValidation
  * segment). Dots and short handles are valid — that is not the Org People `PERSON_KEY_PATTERN`.
  */
 export function isOrgClaManagerLfUsername(value: string): boolean {
-  return value.length > 0 && !value.includes('/') && !/\s/.test(value);
+  return value.length > 0 && value !== '.' && value !== '..' && !value.includes('/') && !/\s/.test(value);
 }

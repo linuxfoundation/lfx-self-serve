@@ -535,4 +535,5 @@ export interface ManagerTarget {
   companyId: string;
   claGroupId: string;
   projectSfid: string;
+  signed: boolean;
 }

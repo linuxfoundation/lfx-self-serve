@@ -1004,4 +1004,13 @@ describe('OrgClasController — CLA manager path parameters', () => {
 
     expect(removeManager).toHaveBeenCalledWith(expect.anything(), ORG_UID, SIGNATURE_ID, lfUsername);
   });
+
+  it.each(['.', '..'])('rejects a dot-segment LF username %s before calling the service', async (lfUsername) => {
+    const next = vi.fn();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(removeManager).not.toHaveBeenCalled();
+  });
 });

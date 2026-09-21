@@ -11,7 +11,12 @@
         <p class="text-sm text-gray-600 m-0 max-w-3xl">{{ copy.intro }}</p>
       </div>
       @if (canAdd()) {
-        <lfx-button [label]="copy.addAction" icon="fa-light fa-plus" [disabled]="writing()" (onClick)="openAdd()" data-testid="org-easycla-managers-add" />
+        <lfx-button
+          [label]="copy.addAction"
+          icon="fa-light fa-plus"
+          [disabled]="writing() || loading()"
+          (onClick)="openAdd()"
+          data-testid="org-easycla-managers-add" />
       }
     </div>
 
