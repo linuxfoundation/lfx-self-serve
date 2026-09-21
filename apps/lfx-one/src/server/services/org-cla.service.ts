@@ -8,7 +8,12 @@
 // One upstream call per page load, whatever the number of agreements. Searching and paging
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
+import {
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_VALUE,
+} from '@lfx-one/shared/constants';
 import { isSameClaGroup, legacyOrgEasyclaReturnPath, orgClaPairProjectSfid, orgEasyclaReturnPath, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
@@ -17,10 +22,14 @@ import type {
   OrgClaApprovalEntry,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
+  OrgClaContributorAcknowledgment,
+  OrgClaContributorAcknowledgmentList,
   OrgClaGroup,
   OrgClaGroupList,
   OrgClaGroupProject,
   OrgClaGroupStatus,
+  OrgClaInvalidateAcknowledgmentInput,
+  OrgClaInvalidateAcknowledgmentResult,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
@@ -32,8 +41,12 @@ import type {
   EasyClaApprovalListUpdateRequest,
   EasyClaCompanyClaGroup,
   EasyClaCompanyClaGroupList,
+  EasyClaCorporateContributor,
+  EasyClaCorporateContributorList,
   EasyClaCorporateSignature,
   EasyClaCorporateSignatureList,
+  EasyClaEclaInvalidateInput,
+  EasyClaEclaInvalidateResult,
   EasyClaSearchList,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
@@ -854,6 +867,150 @@ export class OrgClaService {
   }
 
   /**
+   * Lists one agreement's contributor acknowledgments (#1986).
+   *
+   * Resolved through the organization's own CLA list first, exactly as `getApprovalList` and
+   * `getPdfUrl` are and for the same reason: `requireOrgLensAccess` proves which organization the
+   * caller may view as, and says nothing about which signatures belong to it. Without that step
+   * the `orgUid` in the path is decorative and the signature id alone selects the list.
+   *
+   * Returns `null` for a signature this organization does not hold. An unsigned agreement is a
+   * different answer: it has no acknowledgments to hold, but it is a real row, so it comes back
+   * as an empty uneditable page rather than as absent — matching the sibling approval-list posture.
+   *
+   * Never drops a row for a missing LF Login: the identity fallback lives at the mapper below, and
+   * the source-of-truth attribute for each fallback stays on the wire only when the producer sent
+   * a non-empty value.
+   */
+  public async getContributorAcknowledgments(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    query: ContributorAcknowledgmentQuery
+  ): Promise<OrgClaContributorAcknowledgmentList | null> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_acknowledgments');
+    if (!context) return null;
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_get_acknowledgments', 'agreement is not signed, so it holds no acknowledgments', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { signatureId, list: [], canEdit: false, resultCount: 0, totalCount: 0, nextKey: null };
+    }
+
+    const page = await this.fetchContributorAcknowledgmentsPage(req, context, query, 'org_cla_get_acknowledgments');
+    return {
+      signatureId,
+      list: (page.list ?? []).map((row) => toContributorAcknowledgment(row)),
+      canEdit: context.canEdit,
+      resultCount: page.resultCount ?? page.list?.length ?? 0,
+      totalCount: page.totalCount ?? page.list?.length ?? 0,
+      nextKey: page.nextKey && page.nextKey.trim().length > 0 ? page.nextKey : null,
+    };
+  }
+
+  /**
+   * Invalidates one specific acknowledgment on this CCLA (#1986).
+   *
+   * Middleware order (in the route file) is `blockDuringImpersonation` then `requireOrgLensAccess`.
+   * This method adds two further gates before it calls the producer:
+   *
+   *  1. `canEdit` — the caller must be named on the CCLA's own manager roster. Fails open only
+   *     when the producer sent no roster, matching the sibling approval-list posture.
+   *  2. Per-acknowledgment id verify — the acknowledgment id in the route must belong to the
+   *     resolved (company × CLA Group). A verify-miss returns not-found (the id may belong to
+   *     another agreement), not bad-request.
+   *
+   * Only after both gates does the producer POST fire. The caller's own token is forwarded (no
+   * impersonated override), matching every other write on this router.
+   */
+  public async invalidateAcknowledgment(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    acknowledgmentSignatureId: string,
+    input: OrgClaInvalidateAcknowledgmentInput
+  ): Promise<OrgClaInvalidateAcknowledgmentOutcome> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment');
+    if (!context) return { outcome: 'not-found' };
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'agreement is not signed, so it has no acknowledgments to invalidate', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'not-signed' };
+    }
+
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
+    }
+
+    // Verify the acknowledgment id belongs to this CCLA before the producer call. The producer
+    // authorises on its own contract (matching the LF Login on the invalidate token against the
+    // CCLA roster of the CLA Group id on the URL), and would accept an acknowledgment id from a
+    // *different* CLA Group as long as the token itself is authorised on the URL's group. This
+    // BFF cannot rely on that — the caller has already told us which agreement they meant on the
+    // `:signatureId` route parameter — so we must not forward a mismatched acknowledgment id.
+    const acknowledgmentOnAgreement = await this.acknowledgmentBelongsToAgreement(req, context, acknowledgmentSignatureId, 'org_cla_invalidate_acknowledgment');
+    if (!acknowledgmentOnAgreement) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment id is not on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        acknowledgment_signature_id: acknowledgmentSignatureId,
+      });
+      return { outcome: 'not-found' };
+    }
+
+    const body: EasyClaEclaInvalidateInput = {};
+    const reason = typeof input.reason === 'string' ? input.reason.trim() : '';
+    const note = typeof input.note === 'string' ? input.note.trim() : '';
+    if (reason.length > 0) body.invalidation_reason = reason;
+    if (note.length > 0) body.invalidation_note = note;
+
+    const upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+      {
+        method: 'POST',
+        body,
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+        errorMessage: 'Failed to invalidate the acknowledgment',
+        errorCode: 'UPSTREAM_ERROR',
+        // The producer's success body echoes the identity triple, and a non-OK body names the
+        // authenticated user. Both stay out of application logs — the client refetches instead of
+        // rendering the echo.
+        redactResponseBody: true,
+        // No `bearerToken` override: the route blocks this path during impersonation, so there is
+        // no impersonated identity to forward. A write must run as the acting user.
+      }
+    );
+
+    if (!upstream) {
+      throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+      });
+    }
+
+    return {
+      outcome: 'invalidated',
+      result: {
+        signatureId: upstream.signature_id?.trim() ?? acknowledgmentSignatureId,
+        claGroupId: upstream.cla_group_id?.trim() ?? context.claGroupId,
+        companyId: upstream.company_id?.trim() ?? context.companyId,
+        userId: upstream.user_id?.trim() ?? '',
+      },
+    };
+  }
+
+  /**
    * The organization's agreements as upstream sends them, validated but unmapped.
    *
    * Split out from `listClaGroups` because the write paths need three ids the shared row
@@ -1039,6 +1196,99 @@ export class OrgClaService {
     // CLA Group. Taking `[0]` would show one signing entity's approval list under another's name.
     return upstream.signatures.find((signature) => signature?.signatureID === context.signatureId) ?? null;
   }
+
+  /**
+   * Fetches one page of the paginated contributor list for the resolved agreement.
+   *
+   * `redactResponseBody: true` because the page carries every listed contributor's identity
+   * attributes — logging them on a non-OK status would put them in application logs, which is the
+   * only reason the mapper below can drop them cleanly.
+   *
+   * Impersonated read: forwards the impersonated bearer so a support engineer sees what the
+   * target sees, matching the sibling approval-list read.
+   */
+  private async fetchContributorAcknowledgmentsPage(
+    req: Request,
+    context: ApprovalContext,
+    query: ContributorAcknowledgmentQuery,
+    operation: string
+  ): Promise<EasyClaCorporateContributorList> {
+    const params = new URLSearchParams();
+    if (query.search) params.set('searchTerm', query.search);
+    params.set('pageSize', String(query.pageSize));
+    if (query.nextKey) params.set('nextKey', query.nextKey);
+
+    const url =
+      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(context.companyId)}` +
+      `/cla-group/${encodeURIComponent(context.claGroupId)}/corporate-contributors?${params.toString()}`;
+
+    const upstream = await gatewayFetch<EasyClaCorporateContributorList>(req, url, {
+      operation,
+      service: SERVICE,
+      errorMessage: 'Failed to fetch the contributor acknowledgments',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+    });
+
+    if (!upstream) {
+      throw new MicroserviceError('Failed to fetch the contributor acknowledgments: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    if (upstream.list && !Array.isArray(upstream.list)) {
+      throw new MicroserviceError('Failed to fetch the contributor acknowledgments: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return upstream;
+  }
+
+  /**
+   * Walks the paginated contributor list for the resolved agreement until the acknowledgment id
+   * is found, or the pages are exhausted.
+   *
+   * Bounded by the producer's own paging cursor; a cap on the number of pages walked protects
+   * against a runaway loop if the producer keeps handing us a non-null `nextKey` forever. The
+   * common case is a hit on page one — the browser only shows the invalidate control on rows
+   * already rendered.
+   */
+  private async acknowledgmentBelongsToAgreement(
+    req: Request,
+    context: ApprovalContext,
+    acknowledgmentSignatureId: string,
+    operation: string
+  ): Promise<boolean> {
+    const target = acknowledgmentSignatureId.trim();
+    if (!target) return false;
+
+    let nextKey: string | undefined;
+    for (let pages = 0; pages < CONTRIBUTOR_ACK_VERIFY_MAX_PAGES; pages += 1) {
+      const page = await this.fetchContributorAcknowledgmentsPage(
+        req,
+        context,
+        { search: '', pageSize: ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX, nextKey },
+        operation
+      );
+
+      if (Array.isArray(page.list) && page.list.some((row) => row?.signatureID === target)) return true;
+
+      const cursor = page.nextKey?.trim();
+      if (!cursor) return false;
+      nextKey = cursor;
+    }
+
+    logger.warning(req, operation, 'acknowledgment id verify walked more pages than allowed', {
+      cla_group_id: context.claGroupId,
+      company_id: context.companyId,
+      pages_walked: CONTRIBUTOR_ACK_VERIFY_MAX_PAGES,
+    });
+    return false;
+  }
 }
 
 /**
@@ -1054,6 +1304,72 @@ export type OrgClaApprovalUpdateOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
   | { outcome: 'forbidden' };
+
+/**
+ * Result of a per-acknowledgment invalidate (#1986).
+ *
+ * Mirrors `OrgClaApprovalUpdateOutcome`: three ordinary refusals map to distinct HTTP answers,
+ * and only `invalidated` carries an echo. Impersonation is refused by middleware before this
+ * union is reached.
+ */
+export type OrgClaInvalidateAcknowledgmentOutcome =
+  | { outcome: 'invalidated'; result: OrgClaInvalidateAcknowledgmentResult }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
+
+/** Query parameters accepted on the acknowledgments read. Every field is already validated. */
+export interface ContributorAcknowledgmentQuery {
+  search: string;
+  pageSize: number;
+  nextKey?: string;
+}
+
+/**
+ * Cap on the number of paginated pages the id-verify walker will consume before giving up.
+ *
+ * The invalidate flow only reaches this walker for acknowledgment ids the browser has already
+ * rendered, so a hit on the first page is by far the common case. This cap is a safety valve
+ * against a producer that keeps handing us a non-null `nextKey` forever — 100 pages of 100 rows
+ * each covers a per-agreement roster orders of magnitude larger than any this feature has seen.
+ */
+const CONTRIBUTOR_ACK_VERIFY_MAX_PAGES = 100;
+
+/**
+ * Maps one producer row onto the shared `OrgClaContributorAcknowledgment` shape.
+ *
+ * Never drops a row for a missing LF Login — the identity fallback lives at the render site, and
+ * this mapper's job is to pass through every attribute the producer sent as a non-empty string.
+ * `github_id` and `gitlab_id` are documented on the producer model as usernames (logins); this
+ * mapper carries them forward as `githubUsername` / `gitlabUsername` for that reason.
+ *
+ * `approved` defaults to `true` when the producer omits it — the field was added later and older
+ * rows predate it. `signedOn` prefers `userDocusignDateSigned` (a signing timestamp) and falls
+ * back to `signatureModified` (last-modified, which is what the producer's older audit surfaces
+ * report against).
+ */
+function toContributorAcknowledgment(row: EasyClaCorporateContributor): OrgClaContributorAcknowledgment {
+  const signatureId = row?.signatureID?.trim() ?? '';
+  const nonEmpty = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim() ?? '';
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  return {
+    signatureId,
+    lfLogin: nonEmpty(row?.linux_foundation_id),
+    githubUsername: nonEmpty(row?.github_id),
+    gitlabUsername: nonEmpty(row?.gitlab_id),
+    email: nonEmpty(row?.email),
+    name: nonEmpty(row?.name ?? row?.userDocusignName),
+    cclaVersion: (row?.signature_version ?? '').trim(),
+    signedOn: nonEmpty(row?.userDocusignDateSigned ?? row?.signatureModified),
+    approved: row?.signatureApproved !== false,
+    invalidatedAt: nonEmpty(row?.invalidatedAt),
+    invalidatedBy: nonEmpty(row?.invalidatedBy),
+    invalidationReason: nonEmpty(row?.invalidationReason),
+  };
+}
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */
 interface ApprovalContext {

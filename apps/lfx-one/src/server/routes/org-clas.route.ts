@@ -51,6 +51,13 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess
 router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensAccess, (req, res, next) => orgClasController.getApprovalList(req, res, next));
 
+// Contributor Acknowledgments (#1986). Read is an org-lens grant only, matching every other read
+// on this router; the impersonated token is forwarded upstream so a support engineer sees what
+// the target sees.
+router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLensAccess, (req, res, next) =>
+  orgClasController.getContributorAcknowledgments(req, res, next)
+);
+
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
 // The reads above forward the impersonated identity to upstream deliberately; a write must not.
 // Changing an approval list revokes acknowledgements and emails the affected contributors, and
@@ -60,6 +67,18 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLens
 // refused for impersonating rather than told they lack a grant they may well hold.
 router.put('/:orgUid/lens/cla-groups/:signatureId/approval-list', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.updateApprovalList(req, res, next)
+);
+
+// Invalidate one contributor acknowledgment on this CCLA (#1986). Same middleware order as the
+// approval-list write above and for the same reason: the producer stamps the acting user on the
+// invalidated signature (`invalidatedBy`), so an impersonated write would attribute the change
+// to the person being impersonated in a legal audit trail. Impersonation is refused before the
+// org-lens grant check for the same posture as the approval-list write.
+router.post(
+  '/:orgUid/lens/cla-groups/:signatureId/acknowledgments/:acknowledgmentSignatureId/invalidate',
+  blockDuringImpersonation,
+  requireOrgLensAccess,
+  (req, res, next) => orgClasController.invalidateAcknowledgment(req, res, next)
 );
 
 export default router;
