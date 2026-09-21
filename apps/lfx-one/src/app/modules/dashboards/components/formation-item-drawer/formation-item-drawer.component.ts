@@ -8,21 +8,39 @@ import { Component, computed, effect, inject, input, model, output, signal, Sign
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
-import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { FormationService } from '@services/formation.service';
 import type { FormationDrawerData, FormationItem, FormationItemWriteResult } from '@lfx-one/shared/interfaces';
-import { createEmptyFormationDrawerData, FORMATION_ITEM_STATUS_LABELS, FORMATION_ITEM_STATUS_SEVERITY } from '@lfx-one/shared/constants';
-import { formationItemHasAction, getFormationActivityDisplay, isValidUrl, toLocalDateOnlyString, tryParseLocalDateString } from '@lfx-one/shared/utils';
+import { createEmptyFormationDrawerData, FORMATION_ITEM_AUDIENCE_LABELS } from '@lfx-one/shared/constants';
+import {
+  formatFormationOwnerTeam,
+  formationItemHasAction,
+  getFormationActivityDisplay,
+  isFormationItemExternal,
+  isValidUrl,
+  toLocalDateOnlyString,
+  tryParseLocalDateString,
+} from '@lfx-one/shared/utils';
 import { extractErrorMessage } from '@shared/utils/http-error.utils';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, finalize, map, merge, Observable, of, skip, startWith, Subject, switchMap, take, tap } from 'rxjs';
 
+import { FormationSubItemListComponent } from '../formation-sub-item-list/formation-sub-item-list.component';
+
 @Component({
   selector: 'lfx-formation-item-drawer',
-  imports: [DrawerModule, ReactiveFormsModule, ButtonComponent, TagComponent, TextareaComponent, UserSearchComponent, CalendarComponent, DatePipe],
+  imports: [
+    DrawerModule,
+    ReactiveFormsModule,
+    ButtonComponent,
+    TextareaComponent,
+    UserSearchComponent,
+    CalendarComponent,
+    DatePipe,
+    FormationSubItemListComponent,
+  ],
   templateUrl: './formation-item-drawer.component.html',
   styleUrl: './formation-item-drawer.component.scss',
 })
@@ -234,14 +252,17 @@ export class FormationItemDrawerComponent {
     const currentItem = this.item();
     return !!currentItem && formationItemHasAction(currentItem, 'skip');
   });
-  /** Sub-item rows for the template, with status pre-resolved to its chip label/severity — same maps the parent item's own status chip uses. Templates may only read signals/pipes, not call methods. */
-  protected readonly subItemRows = computed(() =>
-    (this.item()?.sub_items ?? []).map((subItem) => ({
-      ...subItem,
-      statusLabel: FORMATION_ITEM_STATUS_LABELS[subItem.status],
-      statusSeverity: FORMATION_ITEM_STATUS_SEVERITY[subItem.status],
-    }))
-  );
+  /** Header meta line (#2774) — humanized owner team, curated map with `formatTag` fallback for off-enum upstream values (same resolver as the row). */
+  protected readonly ownerTeamLabel = computed(() => {
+    const team = this.item()?.owner_team;
+    return team ? formatFormationOwnerTeam(team) : null;
+  });
+  /** Header meta line (#2774) — the audience spelled out in full; the row shows only a globe for the external-involving audiences. `null` for a missing/unrecognized upstream value. */
+  protected readonly audienceLabel = computed(() => {
+    const audience = this.item()?.audience;
+    return audience ? FORMATION_ITEM_AUDIENCE_LABELS[audience] : null;
+  });
+  protected readonly audienceIsExternal = computed(() => isFormationItemExternal(this.item()?.audience));
   /**
    * The committed assignee label bound into lfx-user-search's `[displayValue]` — `FormationUser`
    * has no separate name/email to compose (name === username today — see the mapper at

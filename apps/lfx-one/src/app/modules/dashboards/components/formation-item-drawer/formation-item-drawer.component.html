@@ -17,10 +17,29 @@
              visual clipping, so screen readers announce it either way; this is a mouse-only nicety. -->
         <h2 class="text-lg font-semibold text-gray-900 lg:truncate" [attr.title]="item()?.title">{{ item()?.title }}</h2>
         @if (item(); as currentItem) {
-          @if (currentItem.is_gating) {
-            <span [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
-              <lfx-tag value="Required for Active" severity="warn" />
-            </span>
+          <!-- Meta line (#2774): the same three facts the checklist row shows — gating (the row's red
+               asterisk, with the full phrase spelled out here), owner team, and the audience as plain
+               text with the row's globe for the external-involving audiences. -->
+          @if (currentItem.is_gating || ownerTeamLabel() || audienceLabel()) {
+            <div class="flex items-center gap-3 flex-wrap text-xs text-gray-600">
+              @if (currentItem.is_gating) {
+                <span class="inline-flex items-center gap-1 text-gray-700" [attr.data-testid]="'formation-item-drawer-gates-active-' + currentItem.uid">
+                  <span class="text-red-500 font-semibold" aria-hidden="true">*</span>
+                  <span>Required for Active</span>
+                </span>
+              }
+              @if (ownerTeamLabel(); as team) {
+                <span [attr.data-testid]="'formation-item-drawer-owner-team-' + currentItem.uid"><span class="sr-only">Team: </span>{{ team }}</span>
+              }
+              @if (audienceLabel(); as audience) {
+                <span class="inline-flex items-center gap-1" [attr.data-testid]="'formation-item-drawer-audience-' + currentItem.uid">
+                  @if (audienceIsExternal()) {
+                    <i class="fa-light fa-globe text-gray-400" aria-hidden="true"></i>
+                  }
+                  <span class="sr-only">Audience: </span>{{ audience }}
+                </span>
+              }
+            </div>
           }
         }
       </div>
@@ -181,16 +200,10 @@
       }
 
       @if (currentItem.sub_items.length > 0) {
+        <!-- The list renders its own "Sub-items · N of M done" header (#2774); this wrapper keeps the
+             testid the structural e2e contract nests on. -->
         <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items">
-          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
-          <div class="flex flex-col gap-1">
-            @for (subItem of subItemRows(); track subItem.uid) {
-              <div class="flex items-center justify-between text-sm">
-                <span class="text-gray-700">{{ subItem.title }}</span>
-                <lfx-tag [value]="subItem.statusLabel" [severity]="subItem.statusSeverity" />
-              </div>
-            }
-          </div>
+          <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
         </div>
       }
 

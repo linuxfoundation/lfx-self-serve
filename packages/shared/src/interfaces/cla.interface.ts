@@ -643,6 +643,12 @@ export interface OrgClaGroup {
   /** Covered projects, in the upstream's `projectName` order. May be empty. */
   projects: OrgClaGroupProject[];
   /**
+   * First covered-project SFID from upstream, captured before nameless projects are dropped
+   * from `projects` for display. Approval-list ACS pair — the same id `resolveApprovalContext`
+   * keys the PUT on. Absent when upstream sent no project SFID.
+   */
+  pairProjectSfid?: string;
+  /**
    * RFC3339 instant the CCLA was signed. Carried for the agreement detail view.
    *
    * Absent on an agreement that is not signed, and the absence is load-bearing: the source

@@ -29,8 +29,11 @@ const EMPTY_COUNTS: Record<FormationItemStatus, number> = {
  * directly off the formation instead of re-deriving a second, possibly-divergent formula. Never widen
  * this function to also produce a readiness/gating number — that is how the two formulas end up
  * fighting again.
+ *
+ * Takes anything with a `status` (not just `FormationItem`) so an item's `sub_items` get the same
+ * tally for the row's sub-item disclosure and `lfx-formation-sub-item-list` (#2774).
  */
-export function deriveFormationReadinessSummary(items: FormationItem[]): FormationReadinessSummary {
+export function deriveFormationReadinessSummary(items: Pick<FormationItem, 'status'>[]): FormationReadinessSummary {
   const counts = { ...EMPTY_COUNTS };
 
   for (const item of items) {
@@ -47,6 +50,15 @@ export function deriveFormationReadinessSummary(items: FormationItem[]): Formati
     totalItems: items.length,
     counts,
   };
+}
+
+/**
+ * "N of M sub-items done" — the one wording both sub-item segment bars announce (the row's
+ * disclosure bar and `lfx-formation-sub-item-list`'s), so a screen reader hears the same sentence
+ * for the same tally wherever it meets it (#2774).
+ */
+export function formatFormationSubItemsDoneLabel(summary: Pick<FormationReadinessSummary, 'totalItems' | 'counts'>): string {
+  return `${summary.counts.done} of ${summary.totalItems} sub-items done`;
 }
 
 /**

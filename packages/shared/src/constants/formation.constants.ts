@@ -5,11 +5,17 @@ import { FormationOwnerTeam } from '../enums/formation.enum';
 import { ProjectStage } from '../enums/project-stage.enum';
 import type { TagSeverity } from '../interfaces/components.interface';
 import type { FilterPillOption } from '../interfaces/dashboard-metric.interface';
-import type { FormationDrawerData, FormationLinkRowActionConfig, FormationRowActionConfig } from '../interfaces/formation-checklist.interface';
+import type {
+  FormationDrawerData,
+  FormationItemStatusGlyph,
+  FormationLinkRowActionConfig,
+  FormationRowActionConfig,
+} from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
   FormationItemAudience,
   FormationItemAvailableAction,
+  FormationItemExternalAudience,
   FormationItemStatus,
   FormationQueueTiles,
   FormationsQueueResponse,
@@ -180,6 +186,17 @@ export const FORMATION_ITEM_AUDIENCE_LABELS = {
 } as const satisfies Record<FormationItemAudience, string>;
 
 /**
+ * `FormationChecklistRowComponent`'s audience icon tooltip AND accessible name (#2774), keyed on
+ * the external-involving audiences only — `internal` and `null` render no icon at all (see
+ * `isFormationItemExternal`, `formation.utils.ts`). The drawer shows
+ * {@link FORMATION_ITEM_AUDIENCE_LABELS} as plain text instead of the icon.
+ */
+export const FORMATION_ITEM_AUDIENCE_TOOLTIPS = {
+  external: "External — involves people outside the Linux Foundation, such as the project's partners.",
+  both: "Internal and external — LF staff and the project's partners both take part.",
+} as const satisfies Record<FormationItemExternalAudience, string>;
+
+/**
  * Display labels for {@link FormationOwnerTeam}'s curated members. Consumers go through
  * `formatFormationOwnerTeam` (`formation.utils.ts`), which falls back to `formatTag` for the
  * off-enum values upstream can send (see `FormationItem.owner_team`'s TODO(#1957)). Curated rather
@@ -197,9 +214,10 @@ export const FORMATION_OWNER_TEAM_LABELS = {
 
 /**
  * The row-level gating indicator's tooltip/accessible-name copy (`FormationChecklistRowComponent`)
- * — shared with its spec so the aria-label can't drift from the rendered tooltip. The row shows an
- * icon-only indicator; the full-text "Required for Active" tag remains in the drawer and the
- * readiness strip owns the gating summary copy.
+ * — shared with its spec so the aria-label can't drift from the rendered tooltip. The row shows a
+ * red asterisk only (#2774, the form-field "required" convention); the full "Required for Active"
+ * phrase is visible text in the drawer's meta line and the readiness strip's caption, which carries
+ * the same asterisk as the legend.
  */
 export const FORMATION_GATING_ICON_TOOLTIP = 'Required for Active — must be done before the project can go Active';
 
@@ -211,6 +229,36 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
   not_started: 'bg-gray-200',
   skipped: 'bg-gray-400',
 } as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * `lfx-formation-sub-item-list`'s per-status glyph (#2774) — the icon a sub-item row leads with
+ * and its text color. `colorClass` is spread into `tailwind.config.js`'s safelist because the
+ * shared package is outside Tailwind's `content` glob; a color added here is picked up there.
+ */
+export const FORMATION_ITEM_STATUS_GLYPHS = {
+  done: { icon: 'fa-light fa-circle-check', colorClass: 'text-emerald-600' },
+  in_progress: { icon: 'fa-light fa-circle-half-stroke', colorClass: 'text-amber-600' },
+  blocked: { icon: 'fa-light fa-circle-xmark', colorClass: 'text-red-600' },
+  skipped: { icon: 'fa-light fa-forward', colorClass: 'text-gray-400' },
+  not_started: { icon: 'fa-light fa-circle', colorClass: 'text-gray-400' },
+} as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
+
+/**
+ * The checklist row's grid template per panel-width tier (#2774). Container-query variants
+ * (`@2xl`/`@5xl` from Tailwind's container-queries plugin; each section panel is the `@container`)
+ * rather than viewport breakpoints, because what decides whether the columns fit is the width left
+ * beside the nav rail and the page sidebar, not the viewport — a 1440px viewport leaves the panel
+ * ~720px. `compact` (panel ≥ 42rem): status | title | actions on one line, with the team/assignee/
+ * due meta on a second line under the title. `full` (panel ≥ 64rem): one column per cell, and
+ * `FormationChecklistSectionComponent`'s header captions bind the same template so they sit over
+ * the columns they label by construction. Fixed tracks: status 9rem, team 7rem, assignee 8rem, due
+ * 6rem, actions 9.5rem ("View details" plus the overflow button). Spread into `tailwind.config.js`'s
+ * safelist (the shared package is outside Tailwind's `content` glob).
+ */
+export const FORMATION_CHECKLIST_GRID_CLASSES = {
+  compact: '@2xl:grid-cols-[9rem_minmax(0,1fr)_9.5rem]',
+  full: '@5xl:grid-cols-[9rem_minmax(0,1fr)_7rem_8rem_6rem_9.5rem]',
+} as const;
 
 /**
  * Every action the deployed `lfx-v2-formation-service` publishes across every status (GH-2576,

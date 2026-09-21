@@ -175,6 +175,13 @@ export type FormationItemStatus = 'not_started' | 'in_progress' | 'blocked' | 'd
 export type FormationItemAudience = 'internal' | 'external' | 'both';
 
 /**
+ * The {@link FormationItemAudience} members that involve people outside the LF (#2774) — the row's
+ * globe icon renders for exactly these, and `FORMATION_ITEM_AUDIENCE_TOOLTIPS` is keyed on them.
+ * Narrowed by `isFormationItemExternal` (`formation.utils.ts`).
+ */
+export type FormationItemExternalAudience = Extract<FormationItemAudience, 'external' | 'both'>;
+
+/**
  * One row's action affordance. `request` is a real, working Epic-1 action: files a lightweight
  * request and flips the item to `blocked`, with no SLA/target-team object — that richer `request`
  * type is #1957/Epic 2. `status_only` items never expose how the underlying tooling was set up

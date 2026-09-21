@@ -9,7 +9,13 @@ import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { MenuComponent } from '@components/menu/menu.component';
-import { createFormationAllAvailableActions, FORMATION_GATING_ICON_TOOLTIP } from '@lfx-one/shared/constants';
+import {
+  createFormationAllAvailableActions,
+  FORMATION_CHECKLIST_GRID_CLASSES,
+  FORMATION_GATING_ICON_TOOLTIP,
+  FORMATION_ITEM_AUDIENCE_TOOLTIPS,
+  FORMATION_ITEM_SEGMENT_COLORS,
+} from '@lfx-one/shared/constants';
 import { FormationItem, FormationKnownAvailableAction, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
@@ -540,14 +546,21 @@ describe('FormationChecklistRowComponent', () => {
   // real breakpoint media queries) — a manual check at 390/360/320px is the actual regression guard.
   // #2689 moved the stack breakpoint sm: → md:: the assignee/due-date meta columns re-created the
   // same crush between 640–768px with a side-by-side layout.
-  describe('responsive layout (GH-2440)', () => {
-    it('stacks the root below md: and restores a row at md: and above', async () => {
+  describe('responsive layout (GH-2440, #2774)', () => {
+    // #2774 wrapped the row in a column container (main row + sub-item panel) and switched the
+    // tiers from viewport breakpoints to container queries on the section panel: stacked below
+    // @2xl, the compact grid from @2xl, the full column grid (shared with the header captions) from
+    // @5xl. JSDOM evaluates neither, so this pins the classes; a manual pass is the visual guard.
+    it('stacks the main row by default and carries the compact and full grid templates', async () => {
       const item = buildItem({ uid: 'responsive-row' });
       await render(item);
 
-      const root = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-responsive-row"]');
-      expect(root?.className).toContain('flex-col');
-      expect(root?.className).toContain('md:flex-row');
+      const mainRow = fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-main-responsive-row"]');
+      expect(mainRow?.className).toContain('flex-col');
+      expect(mainRow?.className).toContain('@2xl:grid');
+      expect(mainRow?.classList.contains(FORMATION_CHECKLIST_GRID_CLASSES.compact)).toBe(true);
+      expect(mainRow?.classList.contains(FORMATION_CHECKLIST_GRID_CLASSES.full)).toBe(true);
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-responsive-row"]')?.contains(mainRow)).toBe(true);
     });
   });
 
@@ -555,22 +568,43 @@ describe('FormationChecklistRowComponent', () => {
     const byTestId = (name: string): HTMLElement | null =>
       fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-${name}-${fixture.componentInstance.item().uid}"]`);
 
-    it('renders the audience chip from the normalized audience', async () => {
-      await render(buildItem({ uid: 'audience-both', audience: 'both' }));
+    // #2774: the audience is one keyboard-reachable globe icon for the external-involving audiences,
+    // with the description as its tooltip and accessible name; the full label lives in the drawer.
+    it('renders the globe icon with the external description for an external audience', async () => {
+      await render(buildItem({ uid: 'audience-external', audience: 'external' }));
 
-      expect(byTestId('audience-chip')?.textContent).toContain('Internal + External');
+      const icon = byTestId('audience-chip');
+      expect(icon?.querySelector('i.fa-globe')).not.toBeNull();
+      expect(icon?.getAttribute('aria-label')).toBe(FORMATION_ITEM_AUDIENCE_TOOLTIPS.external);
+      expect(icon?.getAttribute('role')).toBe('img');
+      expect(icon?.getAttribute('tabindex')).toBe('0');
+      expect(icon?.querySelector('.p-component')).toBeNull();
     });
 
-    it('renders no audience chip when audience is null', async () => {
+    it('renders the globe icon with the internal-and-external description for a both audience — no label text on the row', async () => {
+      await render(buildItem({ uid: 'audience-both', audience: 'both' }));
+
+      expect(byTestId('audience-chip')?.getAttribute('aria-label')).toBe(FORMATION_ITEM_AUDIENCE_TOOLTIPS.both);
+      expect(fullText()).not.toContain('Internal + External');
+    });
+
+    it('renders no audience icon for an internal audience', async () => {
+      await render(buildItem({ uid: 'audience-internal', audience: 'internal' }));
+
+      expect(byTestId('audience-chip')).toBeNull();
+    });
+
+    it('renders no audience icon when audience is null', async () => {
       await render(buildItem({ uid: 'audience-null', audience: null }));
 
       expect(byTestId('audience-chip')).toBeNull();
     });
 
-    it('humanizes the owner-team chip through the curated label map', async () => {
+    it('humanizes the owner-team cell through the curated label map', async () => {
       await render(buildItem({ uid: 'owner-curated', owner_team: 'brand_counsel' }));
 
       expect(byTestId('owner-chip')?.textContent).toContain('Brand Counsel');
+      expect(byTestId('owner-chip')?.textContent).toContain('Team:');
       expect(fullText()).not.toContain('brand_counsel');
     });
 
@@ -578,6 +612,25 @@ describe('FormationChecklistRowComponent', () => {
       await render(buildItem({ uid: 'owner-acronym', owner_team: 'it' }));
 
       expect(byTestId('owner-chip')?.textContent).toContain('IT');
+    });
+
+    // The full tier's fixed team track truncates an upstream-controlled label, so — like the assignee
+    // name — the label is a focusable tooltip host that exposes the full string to keyboard users.
+    it('keeps the team label keyboard-reachable via a focusable tooltip host', async () => {
+      await render(buildItem({ uid: 'owner-tooltip', owner_team: 'legal_review' }));
+
+      const label = byTestId('owner-chip')?.querySelector('span[tabindex="0"]');
+      expect(label?.textContent).toContain('Legal Review');
+      expect(label?.querySelector('.p-component')).toBeNull();
+    });
+
+    // #2774: the team is a fixed column now, so an unset team still renders its placeholder cell
+    // (mirroring the assignee/due-date cells) rather than dropping the column.
+    it('renders an em-dash placeholder cell when there is no owner team', async () => {
+      await render(buildItem({ uid: 'owner-null', owner_team: null }));
+
+      expect(byTestId('owner-chip')?.textContent).toContain('—');
+      expect(byTestId('owner-chip')?.textContent).toContain('No team');
     });
 
     // Username-shaped on purpose: production's mapper sets name === assignee username (no
@@ -687,17 +740,23 @@ describe('FormationChecklistRowComponent', () => {
     });
   });
 
-  describe('gating indicator (#2689)', () => {
+  describe('gating indicator (#2689, #2774)', () => {
     const gatingIcon = (uid: string): HTMLElement | null =>
       fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-gates-active-chip-${uid}"]`);
 
-    it('renders an icon-only indicator whose accessible name is the shared tooltip copy — no row-level "Required for Active" text', async () => {
+    it('renders a solid red asterisk whose accessible name is the shared tooltip copy — no row-level "Required for Active" text', async () => {
       await render(buildItem({ uid: 'gating-row', is_gating: true }));
 
       const icon = gatingIcon('gating-row');
       expect(icon).not.toBeNull();
+      // #2774: the form-field "required" convention — a text asterisk, not a FontAwesome glyph.
+      expect(icon?.textContent?.trim()).toBe('*');
+      expect(icon?.querySelector('i')).toBeNull();
+      expect(icon?.className).toContain('text-red-500');
+      expect(icon?.getAttribute('role')).toBe('img');
+      expect(icon?.getAttribute('tabindex')).toBe('0');
       expect(icon?.getAttribute('aria-label')).toBe(FORMATION_GATING_ICON_TOOLTIP);
-      // aria-label is an attribute, not text content: the full wording now lives in the drawer only.
+      // aria-label is an attribute, not text content: the full wording lives in the drawer and the strip legend.
       expect(fullText()).not.toContain('Required for Active');
     });
 
@@ -705,6 +764,73 @@ describe('FormationChecklistRowComponent', () => {
       await render(buildItem({ uid: 'non-gating-row', is_gating: false }));
 
       expect(gatingIcon('non-gating-row')).toBeNull();
+    });
+  });
+
+  // #2774: sub-items surface as a disclosure — a "N of M sub-items" trigger with a mini per-status
+  // bar, expanding an inline read-only list inside the row's own wrapper.
+  describe('sub-items disclosure (#2774)', () => {
+    const byTestId = (name: string): HTMLElement | null =>
+      fixture.nativeElement.querySelector(`[data-testid="formation-checklist-row-${name}-${fixture.componentInstance.item().uid}"]`);
+    const withSubItems = (uid: string): FormationItem =>
+      buildItem({
+        uid,
+        sub_items: [
+          { uid: 'sub_a', title: 'Create workspace', status: 'done' },
+          { uid: 'sub_b', title: 'Configure channels', status: 'in_progress' },
+          { uid: 'sub_c', title: 'Onboard admins', status: 'not_started' },
+        ],
+      });
+
+    it('renders no trigger, bar or panel for an item without sub-items', async () => {
+      await render(buildItem({ uid: 'no-subs', sub_items: [] }));
+
+      expect(byTestId('sub-items')).toBeNull();
+      expect(byTestId('sub-items-bar')).toBeNull();
+      expect(byTestId('sub-items-panel')).toBeNull();
+    });
+
+    it('renders a collapsed trigger with the done count and a mini bar with one segment per sub-item', async () => {
+      await render(withSubItems('subs-collapsed'));
+
+      const trigger = byTestId('sub-items');
+      expect(trigger?.textContent).toContain('1 of 3 sub-items');
+      expect(trigger?.getAttribute('aria-expanded')).toBe('false');
+      expect(trigger?.getAttribute('aria-controls')).toBeNull();
+      expect(byTestId('sub-items-panel')).toBeNull();
+
+      const bar = byTestId('sub-items-bar');
+      expect(bar?.getAttribute('role')).toBe('img');
+      expect(bar?.getAttribute('aria-label')).toBe('1 of 3 sub-items done');
+      const segments = Array.from(bar?.children ?? []) as HTMLElement[];
+      expect(segments.map((segment) => segment.className)).toEqual([
+        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.done),
+        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.in_progress),
+        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.not_started),
+      ]);
+    });
+
+    it('expands an inline list inside the row on click and collapses it again', async () => {
+      await render(withSubItems('subs-toggle'));
+
+      (byTestId('sub-items') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      const trigger = byTestId('sub-items');
+      const panel = byTestId('sub-items-panel');
+      expect(trigger?.getAttribute('aria-expanded')).toBe('true');
+      expect(trigger?.getAttribute('aria-controls')).toBe('formation-checklist-row-sub-items-panel-subs-toggle');
+      expect(panel?.id).toBe('formation-checklist-row-sub-items-panel-subs-toggle');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-subs-toggle"]')?.contains(panel)).toBe(true);
+      expect(panel?.querySelectorAll('[data-testid^="formation-sub-item-row-"]').length).toBe(3);
+      // The trigger already carries the count and bar, so the inline list renders without its own summary.
+      expect(panel?.querySelector('[data-testid="formation-sub-item-list-summary"]')).toBeNull();
+
+      (byTestId('sub-items') as HTMLButtonElement).click();
+      fixture.detectChanges();
+
+      expect(byTestId('sub-items')?.getAttribute('aria-expanded')).toBe('false');
+      expect(byTestId('sub-items-panel')).toBeNull();
     });
   });
 
