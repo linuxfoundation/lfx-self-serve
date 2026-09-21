@@ -55,6 +55,15 @@ export class AccountContextService {
    * the persona refresh answers with *no* seeds, which without the pin resets an addressed page to the
    * placeholder mid-render. Released when the user switches (`setAccount` with another uid) or the
    * selection is cleared.
+   *
+   * The pin outlives the write. A default or restored selection made outside Org Lens (Me or Project
+   * lens, where the `'default'` write is a no-op) stays pinned even though no address names it, so
+   * the unpinned persona re-seed paths (`[]` → placeholder, cookie-restored selection deferring to
+   * seeds) run only before any default / restored / adopted selection exists. Intended: the
+   * mid-session reset is the defect wherever it happens — on the Me lens it blanks the selector the
+   * same way. A viewer whose organizations are revoked mid-session keeps the bar's name until the next
+   * org-items reload routes through the empty-response handling; the data behind it is FGA-gated
+   * regardless, so the exposure is display-only.
    */
   private readonly addressedUid: WritableSignal<string | null> = signal<string | null>(null);
 
