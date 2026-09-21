@@ -14,7 +14,6 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
   MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS,
   MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_TASK_STATUS_LABELS,
   MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
   MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL,
   MENTORSHIP_MENTEE_TASKS_TAB_STATUS_CHANGE_TOAST_SUMMARY,
@@ -31,7 +30,7 @@ import {
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { SelectComponent } from '@components/select/select.component';
-import { catchError, filter, map, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, map, of, switchMap } from 'rxjs';
 
 /**
  * My Application Tasks / My Tasks tab — renders phase-specific task views:
@@ -50,30 +49,43 @@ import { catchError, filter, map, of, switchMap } from 'rxjs';
   styleUrl: './mentee-application-tasks.component.scss',
 })
 export class MenteeApplicationTasksComponent {
+  // ---- 1. DI ----------------------------------------------------------------
   private readonly mentorshipService = inject(MentorshipService);
   private readonly comingSoonService = inject(MentorshipComingSoonService);
 
-  // ---- Phase (writable — set by the shell via onChildActivate) ---------------
+  // ---- 2. Template constants ------------------------------------------------
+  protected readonly prerequisiteLabel = MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL;
+  protected readonly appStatusLabels: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS;
+  protected readonly appStatusClasses: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES;
+  protected readonly taskStatusClasses: Record<string, string> = MENTORSHIP_MENTEE_TASK_STATUS_CLASSES;
+  protected readonly taskStatusOptions = MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS;
+  protected readonly filterOptions = MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS;
+
+  // ---- 3. Simple writable signals -------------------------------------------
   public readonly phase = signal<MentorshipMenteePhase>('applicant');
+  protected readonly applicantError = signal<string | null>(null);
+  protected readonly acceptedError = signal<string | null>(null);
+  protected readonly activeFilter = signal<MentorshipMenteeTaskStatus | null>(null);
 
   /** Reload trigger — bumped by retry handlers to force re-fetch. */
   private readonly reloadTrigger = signal(0);
+  /** True while a retry request is in flight — forces the loading spinner. */
+  private readonly acceptedRetrying = signal(false);
 
-  // ---- Applicant phase data -------------------------------------------------
+  // ---- 4. Forms (one FormControl per task, keyed by task ID) ----------------
+  protected readonly applicantForm = this.initApplicantForm();
+  protected readonly acceptedForm = this.initAcceptedForm();
+
+  // ---- 5. Complex computed / toSignal signals (via private init functions) ---
   private readonly overviewData = this.initOverviewData();
-  protected readonly applicantError = signal<string | null>(null);
   protected readonly applicantData = computed(() => this.overviewData());
   protected readonly applicantLoaded = computed(() => this.phase() !== 'applicant' || this.overviewData() !== null || this.applicantError() !== null);
 
-  // ---- Accepted phase data --------------------------------------------------
   private readonly tasksData = this.initTasksData();
-  protected readonly acceptedError = signal<string | null>(null);
   protected readonly acceptedTasks = computed(() => this.tasksData()?.data ?? []);
-  protected readonly acceptedLoaded = computed(() => this.phase() !== 'accepted' || this.tasksData() !== null || this.acceptedError() !== null);
-
-  // ---- Accepted filter chips ------------------------------------------------
-  protected readonly activeFilter = signal<MentorshipMenteeTaskStatus | null>(null);
-  protected readonly filterOptions = MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS;
+  protected readonly acceptedLoaded = computed(
+    () => !this.acceptedRetrying() && (this.phase() !== 'accepted' || this.tasksData() !== null || this.acceptedError() !== null)
+  );
 
   protected readonly filteredTasks = computed(() => {
     const tasks = this.acceptedTasks();
@@ -91,29 +103,12 @@ export class MenteeApplicationTasksComponent {
     return `${submitted} of ${tasks.length} submitted`;
   });
 
-  // ---- Form groups (one FormControl per task, keyed by task ID) --------------
-  protected readonly applicantForm = this.initApplicantForm();
-  protected readonly acceptedForm = this.initAcceptedForm();
-
-  // ---- Template constants ---------------------------------------------------
-  protected readonly prerequisiteLabel = MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL;
-  protected readonly appStatusLabels: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS;
-  protected readonly appStatusClasses: Record<string, string> = MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES;
-  protected readonly taskStatusLabels: Record<string, string> = MENTORSHIP_MENTEE_TASK_STATUS_LABELS;
-  protected readonly taskStatusClasses: Record<string, string> = MENTORSHIP_MENTEE_TASK_STATUS_CLASSES;
-  protected readonly taskStatusOptions = MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS;
+  // ---- 6. Protected helpers -------------------------------------------------
 
   /** Safe lookup — returns empty string for unknown status values to avoid template crashes. */
   protected statusClass(status: string): string {
     return this.taskStatusClasses[status] ?? '';
   }
-
-  /** Safe lookup — returns the raw status for unknown values. */
-  protected statusLabel(status: string): string {
-    return this.taskStatusLabels[status] ?? status;
-  }
-
-  // ---- Applicant helpers ----------------------------------------------------
 
   protected applicationSubmittedCount(app: MentorshipMenteeApplication): number {
     return app.tasks?.filter((t) => t.status === 'submitted' || t.status === 'complete').length ?? 0;
@@ -131,7 +126,7 @@ export class MenteeApplicationTasksComponent {
     return task.submitFile === 'required' && !task.fileUrl;
   }
 
-  // ---- Actions (Coming Soon) ------------------------------------------------
+  // ---- 7. Actions (Coming Soon) ---------------------------------------------
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   protected onStatusChange(_taskId: string): void {
@@ -164,10 +159,11 @@ export class MenteeApplicationTasksComponent {
 
   protected retryAccepted(): void {
     this.acceptedError.set(null);
+    this.acceptedRetrying.set(true);
     this.reloadTrigger.update((n) => n + 1);
   }
 
-  // ---- Private initializers -------------------------------------------------
+  // ---- 8. Private initializers ----------------------------------------------
 
   private initOverviewData(): Signal<MentorshipMenteeOverviewApplicant | null> {
     return toSignal(
@@ -209,7 +205,8 @@ export class MenteeApplicationTasksComponent {
                   : 'Could not load your tasks. Please retry.';
               this.acceptedError.set(msg);
               return of({ data: [], total: 0 } as MentorshipMenteeTasksResponse);
-            })
+            }),
+            finalize(() => this.acceptedRetrying.set(false))
           )
         )
       ),
@@ -217,7 +214,6 @@ export class MenteeApplicationTasksComponent {
     );
   }
 
-  /** FormGroup for applicant-phase tasks — rebuilt when data changes. */
   private initApplicantForm(): Signal<FormGroup<Record<string, FormControl<string>>>> {
     return computed(() => {
       const data = this.applicantData();
@@ -233,7 +229,6 @@ export class MenteeApplicationTasksComponent {
     });
   }
 
-  /** FormGroup for accepted-phase tasks — rebuilt when data changes. */
   private initAcceptedForm(): Signal<FormGroup<Record<string, FormControl<string>>>> {
     return computed(() => {
       const tasks = this.acceptedTasks();

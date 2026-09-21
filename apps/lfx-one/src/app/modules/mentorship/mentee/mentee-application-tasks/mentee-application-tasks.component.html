@@ -111,6 +111,7 @@
                           optionValue="value"
                           size="small"
                           variant="filled"
+                          [ariaLabel]="'Status of ' + task.name"
                           [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
                           [dataTest]="'mentee-tasks-status-dropdown-' + task.id"
                           (onChange)="onStatusChange(task.id)" />
@@ -246,6 +247,7 @@
                   optionValue="value"
                   size="small"
                   variant="filled"
+                  [ariaLabel]="'Status of ' + task.title"
                   [styleClass]="'mentee-task-status-dropdown ' + statusClass(task.status)"
                   [dataTest]="'mentee-tasks-status-dropdown-' + task.id"
                   (onChange)="onStatusChange(task.id)" />
