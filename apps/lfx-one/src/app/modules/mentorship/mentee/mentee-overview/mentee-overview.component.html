@@ -54,7 +54,7 @@
     @if (data) {
       <div class="flex flex-col gap-6">
         <!-- Info banner -->
-        <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5">
+        <div class="flex flex-col items-start gap-4 rounded-xl border border-gray-200 bg-white p-5 md:flex-row md:items-center">
           <!-- Info icon -->
           <div class="mt-0.5 shrink-0">
             <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
@@ -95,14 +95,14 @@
 
         <!-- Application cards -->
         @for (app of data.applications; track app.id) {
-          <div class="flex items-center gap-4 rounded-xl border border-gray-200 bg-white p-5" data-testid="mentee-application-card">
+          <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 md:flex-row md:items-center" data-testid="mentee-application-card">
             <!-- Org abbreviation badge -->
             <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-gray-200 bg-gray-50 text-sm font-bold text-gray-600">
               {{ app.orgAbbreviation }}
             </div>
             <!-- Details -->
             <div class="flex flex-1 flex-col gap-0.5">
-              <div class="flex items-center gap-2 text-xs text-gray-500">
+              <div class="flex flex-wrap items-center gap-2 text-xs text-gray-500">
                 <span>{{ app.projectName }} · {{ app.term.name }}</span>
                 <span class="inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium" [ngClass]="applicationStatusClass(app.status)">
                   {{ applicationStatusLabel(app.status) }}
@@ -111,14 +111,20 @@
               <p class="text-sm font-semibold text-gray-900">{{ app.programName }}</p>
               <p class="text-xs text-gray-400">Last updated {{ app.lastTaskUpdatedOn }} · Decision expected {{ app.decisionExpectedDate }}</p>
             </div>
-            <!-- Prerequisite tasks + actions -->
-            <div class="flex shrink-0 items-center gap-4">
+            <!-- Prerequisite tasks + actions — stacks on mobile, row on md+ -->
+            <div class="flex flex-col gap-4 md:shrink-0 md:flex-row md:items-center">
               <!-- Prerequisite progress -->
-              <div class="flex w-36 flex-col gap-1">
+              <div class="flex w-full flex-col gap-1 md:w-36">
                 <!-- text-[10px]: design spec — matches small-caps label in the design -->
                 <span class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Prerequisite Tasks</span>
                 <div class="flex items-center gap-2">
-                  <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200">
+                  <div
+                    class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"
+                    role="progressbar"
+                    [attr.aria-valuenow]="taskProgress(app.prerequisiteTasksCompleted, app.prerequisiteTasksTotal)"
+                    [attr.aria-valuemin]="0"
+                    [attr.aria-valuemax]="100"
+                    [attr.aria-label]="app.programName + ' prerequisite progress'">
                     <div
                       class="h-full rounded-full bg-primary-600 transition-all"
                       [style.width.%]="taskProgress(app.prerequisiteTasksCompleted, app.prerequisiteTasksTotal)"></div>
@@ -127,21 +133,23 @@
                 </div>
               </div>
               <!-- Action buttons -->
-              <button
-                type="button"
-                data-testid="mentee-overview-view-tasks"
-                class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
-                (click)="onViewTasks(app)">
-                {{ viewTasksLabel }}
-              </button>
-              <button
-                type="button"
-                data-testid="mentee-overview-withdraw"
-                class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
-                (click)="onWithdraw(app)">
-                <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
-                {{ withdrawLabel }}
-              </button>
+              <div class="flex gap-2 md:gap-4">
+                <button
+                  type="button"
+                  data-testid="mentee-overview-view-tasks"
+                  class="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+                  (click)="onViewTasks(app)">
+                  {{ viewTasksLabel }}
+                </button>
+                <button
+                  type="button"
+                  data-testid="mentee-overview-withdraw"
+                  class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-red-600 shadow-sm hover:bg-red-50"
+                  (click)="onWithdraw(app)">
+                  <i class="fa-light fa-trash-can text-xs" aria-hidden="true"></i>
+                  {{ withdrawLabel }}
+                </button>
+              </div>
             </div>
           </div>
         }
@@ -213,7 +221,13 @@
           <!-- Progress bar -->
           <div class="mt-4 flex items-center">
             <!-- h-[5px]: design spec — progress bar height per design -->
-            <div class="h-[5px] flex-1 overflow-hidden rounded-full bg-gray-200">
+            <div
+              class="h-[5px] flex-1 overflow-hidden rounded-full bg-gray-200"
+              role="progressbar"
+              [attr.aria-valuenow]="taskProgress(data.program.tasksCompleted, data.program.tasksTotal)"
+              [attr.aria-valuemin]="0"
+              [attr.aria-valuemax]="100"
+              [attr.aria-label]="data.program.programName + ' overall progress'">
               <div
                 class="h-full rounded-full bg-primary-500 transition-all"
                 [style.width.%]="taskProgress(data.program.tasksCompleted, data.program.tasksTotal)"></div>
