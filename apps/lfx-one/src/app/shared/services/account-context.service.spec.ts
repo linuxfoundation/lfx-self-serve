@@ -191,7 +191,7 @@ describe('AccountContextService — address-adopted selection', () => {
   describe('pinSelection', () => {
     it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
       service.setAccount(addressedB);
-      service.pinSelection();
+      service.pinSelection('default');
 
       expect(service.isAddressedSelection()).toBe(true);
       service.initializeUserOrganizations([]);
@@ -200,7 +200,7 @@ describe('AccountContextService — address-adopted selection', () => {
 
     it('keeps the current selection through a re-seed that does not list it', () => {
       service.setAccount(addressedB);
-      service.pinSelection();
+      service.pinSelection('default');
 
       service.initializeUserOrganizations([seedA]);
       expect(service.selectedAccount()).toEqual(addressedB);
@@ -208,7 +208,7 @@ describe('AccountContextService — address-adopted selection', () => {
     });
 
     it('does nothing on the placeholder, so seeding still selects normally', () => {
-      service.pinSelection();
+      service.pinSelection('default');
       expect(service.isAddressedSelection()).toBe(false);
 
       service.initializeUserOrganizations([seedA]);
@@ -217,10 +217,49 @@ describe('AccountContextService — address-adopted selection', () => {
 
     it('is released when the user switches, like an adopted selection', () => {
       service.setAccount(addressedB);
-      service.pinSelection();
+      service.pinSelection('default');
       service.setAccount(seedA);
 
       expect(service.isAddressedSelection()).toBe(false);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    // The two kinds: only an address pin is honoured by an org-items reload (`isAdoptedFromAddress`);
+    // both hold against the persona re-seed (`isAddressedSelection`).
+    it('a default pin is not an address pin', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+
+      expect(service.isAddressedSelection()).toBe(true);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    it('an address pin from the guard shortcut counts like a resolver adoption', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('address');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('adoptFromAddress is an address pin', () => {
+      service.adoptFromAddress(addressedB);
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('a later default pin does not downgrade an address pin on the same organization', () => {
+      service.adoptFromAddress(addressedB);
+      service.pinSelection('default');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('clearAccount releases both kinds', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('address');
+      service.clearAccount();
+
+      expect(service.isAddressedSelection()).toBe(false);
+      expect(service.isAdoptedFromAddress()).toBe(false);
     });
   });
 });

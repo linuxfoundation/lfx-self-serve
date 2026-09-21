@@ -262,8 +262,10 @@ export class OrgNavigationService {
     // Spec 050: the organization the address named was access-verified for this viewer by the
     // resolver a moment ago. Whether or not it appears on the first org-items page (inherited or
     // catalogue-only access, an empty assigned list), it stays selected — defaulting here would be
-    // the silent substitution deep links remove.
-    if (this.accountContextService.isAddressedSelection()) {
+    // the silent substitution deep links remove. Only the *address* pin is honoured here: a default
+    // pin (below) came from this very list, so a later authoritative page re-runs the selection —
+    // that is how a revoked organization is released instead of kept for the session.
+    if (this.accountContextService.isAdoptedFromAddress()) {
       return;
     }
     if (page.items.length === 0) {
@@ -300,7 +302,7 @@ export class OrgNavigationService {
         // between here and the page's render, and for a grant-only (staff) viewer it carries no
         // seeds — unpinned, that resets the selection to the placeholder under the address just
         // written, and the page renders empty for the organization the bar names.
-        this.accountContextService.pinSelection();
+        this.accountContextService.pinSelection('default');
         // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
         // bar as a default's — written the same way. A default never touches an addressed page or the
         // not-found dead end, so this is a no-op everywhere but the bare legacy form.
@@ -321,7 +323,7 @@ export class OrgNavigationService {
     // grant-only viewer — must not replace it. Pinned at selection time, not at the write, because
     // that refresh can also land in the gap before the write; unpinned it would clear the selection,
     // the write would find no segment, and the legacy address would stay put, empty.
-    this.accountContextService.pinSelection();
+    this.accountContextService.pinSelection('default');
     // Fire-and-forget: it settles either way (failures are logged inside and leave the indexed snapshot).
     void this.accountContextService.refreshCanonicalRecord(account);
     // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address

@@ -159,6 +159,7 @@ describe('orgPathParamGuard', () => {
       selectedAccount.set(account({ uid: UID_A, slug }));
       await outcome(slug ?? UID_A, url);
       expect(pinSelection).toHaveBeenCalledTimes(1);
+      expect(pinSelection).toHaveBeenCalledWith('address');
       expect(adoptFromAddress).not.toHaveBeenCalled();
     });
 

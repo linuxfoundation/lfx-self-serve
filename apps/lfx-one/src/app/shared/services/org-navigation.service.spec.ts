@@ -31,10 +31,11 @@ describe('OrgNavigationService default selection', () => {
   const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
 
   let selectedAccount: WritableSignal<Account>;
-  let isAddressedSelection: ReturnType<typeof vi.fn>;
+  let isAdoptedFromAddress: ReturnType<typeof vi.fn>;
   let setAccount: ReturnType<typeof vi.fn>;
   let setIndexedSlug: ReturnType<typeof vi.fn>;
   let pinSelection: ReturnType<typeof vi.fn>;
+  let clearAccount: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
@@ -42,10 +43,11 @@ describe('OrgNavigationService default selection', () => {
 
   beforeEach(() => {
     selectedAccount = signal<Account>(placeholder);
-    isAddressedSelection = vi.fn(() => false);
+    isAdoptedFromAddress = vi.fn(() => false);
     setAccount = vi.fn((account: Account) => selectedAccount.set(account));
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
     pinSelection = vi.fn();
+    clearAccount = vi.fn(() => selectedAccount.set(placeholder));
     navigateToSelectedOrg = vi.fn();
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     TestBed.configureTestingModule({
@@ -59,7 +61,7 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, pinSelection, refreshCanonicalRecord },
+          useValue: { selectedAccount, isAdoptedFromAddress, setAccount, setIndexedSlug, pinSelection, clearAccount, refreshCanonicalRecord },
         },
       ],
     });
@@ -143,14 +145,47 @@ describe('OrgNavigationService default selection', () => {
     bootstrapWith([item(UID_A, 'Acme')]);
 
     expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection).toHaveBeenCalledWith('default');
     expect(pinSelection.mock.invocationCallOrder[0]).toBeGreaterThan(setAccount.mock.invocationCallOrder[0]);
     expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
+  });
+
+  // A default pin came from this list, so it is not the address pin the early return above honours:
+  // a later authoritative reload re-runs the selection, which is how a revoked organization is
+  // released instead of kept for the rest of the session (Copilot on lfx-self-serve#2793).
+  describe('a default-pinned selection on a later reload', () => {
+    beforeEach(() => {
+      // `isAdoptedFromAddress` stays false: the pin is a default one.
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+    });
+
+    it('re-defaults to the first row when the pinned organization is no longer listed', () => {
+      bootstrapWith([item(UID_A, 'Acme')]);
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+      expect(pinSelection).toHaveBeenCalledWith('default');
+    });
+
+    it('routes an empty list through the no-access handling, releasing the selection', () => {
+      bootstrapWith([]);
+
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+      expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    it('keeps it, re-pinned, when it is still listed', () => {
+      bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+      expect(pinSelection).toHaveBeenCalledWith('default');
+    });
   });
 
   // The organization the address named was access-verified by the resolver a moment ago; whether or
   // not it appears on the first page, it stays selected and the address is not touched.
   it('leaves an addressed selection alone', () => {
-    isAddressedSelection.mockReturnValue(true);
+    isAdoptedFromAddress.mockReturnValue(true);
     selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B });
 
     bootstrapWith([item(UID_A, 'Acme')]);
@@ -172,6 +207,7 @@ describe('OrgNavigationService default selection', () => {
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
     // Same exposure as the default: the restored selection is about to become the address.
     expect(pinSelection).toHaveBeenCalledTimes(1);
+    expect(pinSelection).toHaveBeenCalledWith('default');
     expect(pinSelection.mock.invocationCallOrder[0]).toBeLessThan(navigateToSelectedOrg.mock.invocationCallOrder[0]);
   });
 
