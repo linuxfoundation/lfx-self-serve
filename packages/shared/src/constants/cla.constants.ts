@@ -612,3 +612,87 @@ export const ORG_CLA_APPROVAL_RECEIPT = {
   edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
   removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
 } as const;
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+// ---------------------------------------------------------------------------
+
+/**
+ * The heading the Contributor Acknowledgments tab carries.
+ *
+ * Verbatim from the design; matches the label the corporate CLA console uses for the same list,
+ * so a CLA manager migrating between the two surfaces reads the same words.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments';
+
+/**
+ * Cap on the acknowledgment page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the CLA
+ * manager fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN = 1;
+
+/**
+ * Empty-state copy for a signed agreement with no acknowledgments yet.
+ *
+ * Parent story #1973 AC4 forbids the smiley icon the M3 prototype's pre-signed empty state used;
+ * this copy renders a short sentence with no decorative imagery. Do not add a signed-checkmark or
+ * a success color: those would imply a successful state where the answer is simply "not yet".
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY = 'No employee has acknowledged this agreement yet.';
+
+/**
+ * Copy for the invalidate confirmation modal and its toast.
+ *
+ * The confirmation names the contributor (identity fallback resolved by the panel) and the CLA
+ * Group in the body sentence, so the CLA manager sees which one specifically is about to lose
+ * coverage. The destructive control is enabled on mount — a single-row destructive action against
+ * a named contributor does not warrant a typed-to-confirm gate, and the modal itself is the
+ * consent moment.
+ *
+ * Verbs are past tense on the toast because the write has already happened; a "will be" toast
+ * would read as a queued action.
+ */
+export const ORG_CLA_INVALIDATE_ACKNOWLEDGMENT_COPY = {
+  title: 'Invalidate this acknowledgment?',
+  body: (contributor: string, claGroup: string) =>
+    `${contributor} will no longer be covered under ${claGroup}. This does not change the approval list; it invalidates only this one acknowledgment.`,
+  confirmLabel: 'Invalidate',
+  cancelLabel: 'Cancel',
+  reasonLabel: 'Reason (optional)',
+  reasonPlaceholder: 'Why is this acknowledgment being invalidated?',
+  noteLabel: 'Note (optional)',
+  notePlaceholder: 'Any additional detail worth recording',
+} as const;
+
+export const ORG_CLA_INVALIDATE_ACKNOWLEDGMENT_RECEIPT = {
+  summary: 'Acknowledgment invalidated',
+  detail: (contributor: string) => `${contributor}'s acknowledgment is no longer valid coverage for this agreement.`,
+} as const;
+
+/** Column headers for the Contributor Acknowledgments table. */
+export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
+  identity: 'Contributor',
+  cclaVersion: 'CCLA Version',
+  signedOn: 'Acknowledged',
+  state: 'Status',
+  actions: '',
+} as const;
+
+/**
+ * Two visible acknowledgment states (see plan.md Complexity Tracking).
+ *
+ * The M3 prototype's third amber "Not Authorized" state is deliberately out of scope for #1986;
+ * its design is unresolved. Do not add a third entry here without a locked contract decision.
+ */
+export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
+  acknowledged: 'Acknowledged',
+  invalidated: 'Invalidated',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';

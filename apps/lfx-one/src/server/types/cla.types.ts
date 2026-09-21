@@ -505,3 +505,106 @@ export interface EasyClaSignatureApprovalLists {
   gitlabUsernameApprovalList?: string[] | null;
   gitlabOrgApprovalList?: string[] | null;
 }
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+//
+// Two producer endpoints, both already deployed:
+//
+//  1. READ — `GET /v4/company/external/{companySFID}/cla-group/{claGroupID}/corporate-contributors`
+//     returns paginated ECLA signatures under one CCLA. Snake_case.
+//  2. WRITE — `POST /v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate` invalidates one
+//     specific acknowledgment. Snake_case for the input body; the response echoes the row's
+//     identity triple.
+//
+// The shared BFF contract lives in `packages/shared/src/interfaces/cla.interface.ts`. Every
+// snake_case ↔ camelCase conversion stops here in `org-cla.service.ts`.
+// ---------------------------------------------------------------------------
+
+/**
+ * One row on the corporate-contributor list (`#/definitions/corporate-contributor`).
+ *
+ * `github_id` and `gitlab_id` carry the contributor's **username (login)**, not a numeric id —
+ * `fillCorporateContributorModel` in `cla-backend-go/v2/company/service.go` assigns them from the
+ * signature's `UserGithubUsername` / `UserGitlabUsername`. The producer swagger example for
+ * `github_id` is a stale `"123456"`; the description ("the contributor's GitHub username (login)")
+ * is correct. A login is user-changeable, so nothing in this codebase may treat these as stable
+ * identifiers or as client-side join keys — the stable identifier is `signatureID` below.
+ */
+export interface EasyClaCorporateContributor {
+  /** Per-ack signature id. Stable. Needed to address an invalidate. */
+  signatureID?: string;
+  name?: string;
+  linux_foundation_id?: string;
+  /** GitHub username (login). Display only; NOT a stable identifier. */
+  github_id?: string;
+  /** GitLab username (login). Display only; NOT a stable identifier. */
+  gitlab_id?: string;
+  email?: string;
+  /** The CCLA version the acknowledgment was recorded against ("v1", "v2", etc.). */
+  signature_version?: string;
+  timestamp?: string;
+  userDocusignName?: string;
+  userDocusignDateSigned?: string;
+  signatureModified?: string;
+  signatureSigned?: boolean;
+  /** False when the signature was invalidated. Absent on legacy rows, treated as `true`. */
+  signatureApproved?: boolean;
+  /** Producer's stored date_invalidated, stamped at the first invalidation. */
+  invalidatedAt?: string;
+  /**
+   * Username of the acting CLA manager or admin who invalidated the acknowledgment. Whichever
+   * identity the invalidate call authenticated as is written here — the reason invalidate is
+   * blocked while impersonating (`invalidatedBy` would name the impersonated target).
+   */
+  invalidatedBy?: string;
+  /**
+   * Invalidation reason — "approved list removal (<criteria>)" for approval-list removals, or
+   * the reason given by the invalidating manager / admin for a direct invalidate.
+   */
+  invalidationReason?: string;
+  /** Free-text invalidation note. Deliberately not surfaced on the BFF row. */
+  invalidationNote?: string;
+  /** Signature note; predates the invalidation attributes above on older rows. */
+  note?: string;
+}
+
+/**
+ * Response for `GET /v4/company/external/{companySFID}/cla-group/{claGroupID}/corporate-contributors`
+ * (`#/definitions/corporate-contributors-list`).
+ *
+ * Paginated, with an opaque cursor. `resultCount` is the size of `list` on this page;
+ * `totalCount` is the total across the paginated set. `nextKey` is empty on the last page.
+ */
+export interface EasyClaCorporateContributorList {
+  companySFID?: string;
+  claGroupID?: string;
+  resultCount?: number;
+  totalCount?: number;
+  nextKey?: string;
+  list?: EasyClaCorporateContributor[];
+}
+
+/**
+ * Body for `POST /v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`
+ * (`#/definitions/ecla-invalidate-input`).
+ *
+ * Both fields optional. Empty strings are elided before the upstream call.
+ */
+export interface EasyClaEclaInvalidateInput {
+  invalidation_reason?: string;
+  invalidation_note?: string;
+}
+
+/**
+ * Response for the same POST (`#/definitions/ecla-invalidate-result`).
+ *
+ * The producer echoes the invalidated row's identity triple. The BFF returns this envelope
+ * unchanged on 200; the client refetches the page rather than deriving the new row state from it.
+ */
+export interface EasyClaEclaInvalidateResult {
+  signature_id?: string;
+  cla_group_id?: string;
+  company_id?: string;
+  user_id?: string;
+}
