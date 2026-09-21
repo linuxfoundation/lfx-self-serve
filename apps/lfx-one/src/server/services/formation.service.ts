@@ -740,11 +740,17 @@ export class FormationService {
           logger.warning(req, 'get_my_formation_work', 'No formation-aggregate row for an assigned formation; dropping from formations', { formationUid });
           continue;
         }
-        // Not the Active gate, despite where it sits. `formationRows` is already lifecycle-live
-        // twice over — the `tags_all` tag on its query and the backstop filter above it — and
-        // PR #2767 measured every prod formation's lifecycle against its stage and found them
-        // consistent, so an Active or Archived project's aggregate row is gone before this line
-        // runs. Debugging a missing Active formation starts there, not here.
+        // Usually not the Active gate, despite where it sits. `formationRows` is already
+        // lifecycle-live twice over — the `tags_all` tag on its query and the backstop filter
+        // above it — and PR #2767 measured every prod formation's lifecycle against its stage and
+        // found them consistent, so an Active or Archived project's aggregate row is normally gone
+        // before this line runs, and a missing-Active-formation report is worth checking there
+        // first.
+        //
+        // Not guaranteed, though: both of those filters read `lifecycle` alone, so a terminal
+        // stage still carrying a stale `live` passes them and arrives here — the queue pins that
+        // combination deliberately in `formation.service.spec.ts`. For such a row this gate is
+        // what drops it, so it is not dead code for Active/Archived.
         //
         // What this still catches is `Prospect`: `LifecycleForStage` returns no lifecycle for it
         // at all, so a project moved there keeps whatever its checklist last held and stays
@@ -961,8 +967,10 @@ export class FormationService {
     // `live`, so GH-2366's fail-open rule survives without naming any stage here. `gates_cleared`/
     // `is_activating` rows likewise keep their `Formation - *` stage until the formation team
     // flips the project Active, so "Ready to activate" rows survive by construction.
-    // One pass, because the log below needs the rejected rows' lifecycle values and re-deriving
-    // them with the inverse predicate would walk the whole list a second time (PR #2767 review).
+    //
+    // One pass so the keep/drop decision lives in one place. The log below needs the rejected
+    // rows' lifecycle values, and collecting them with a separate inverse-predicate filter would
+    // be a second copy of this rule, free to drift from it (PR #2767 review).
     const inFormationRows: FormationQueueRow[] = [];
     const droppedLifecycles = new Set<FormationLifecycle | null>();
     for (const row of scopedRows) {

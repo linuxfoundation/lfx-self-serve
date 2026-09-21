@@ -193,6 +193,7 @@ describe('FormationService', () => {
     getProjectSettings.mockReset();
     vi.mocked(logger.info).mockClear();
     vi.mocked(logger.warning).mockClear();
+    vi.mocked(logger.debug).mockClear();
     natsRequest.mockReset();
     natsRequest.mockResolvedValue({ data: '' });
     resetRootProjectUidCacheForTests();
@@ -1494,14 +1495,16 @@ describe('FormationService', () => {
         blocked_item_titles: [],
         assignees: [],
       };
-      // `Active` and `Formation - Disengaged` are dropped from the queue entirely — see the
-      // dedicated exclusion test below — so the only unmapped survivor here is the unrecognized
-      // stage, which is still a live formation and stays visible (GH-2366 fail-open).
+      // `Active` and `Formation - Disengaged` are dropped by their `completed`/`frozen` lifecycle,
+      // not by their stage — see the dedicated exclusion test below — so the only unmapped
+      // survivor here is the unrecognized stage, which is still a live formation and stays
+      // visible (GH-2366 fail-open).
       //
       // Each row carries the lifecycle the formation service would really publish for its stage
-      // (model.LifecycleForStage). Pairing a finished stage with `live` is a combination upstream
-      // cannot produce, and a fixture that does it can no longer tell a working filter from a
-      // broken one.
+      // (model.LifecycleForStage). Pairing a finished stage with `live` is not what upstream is
+      // expected to produce, so fixtures here pair stage with its real lifecycle; a fixture that
+      // mixes them casually can no longer tell a working filter from a broken one. The deliberate
+      // contradiction is pinned on its own below.
       const rawSubStages: [string, string][] = [
         ['Formation - Exploratory', 'live'],
         ['Formation - Engaged', 'live'],
@@ -1591,6 +1594,15 @@ describe('FormationService', () => {
       expect(result.rows.map((row) => row.project_uid)).toEqual(['ready', 'unknown', 'confidential']);
       expect(result.rows.find((row) => row.project_uid === 'ready')?.gates_cleared).toBe(true);
       expect(result.tiles).toMatchObject({ engaged: 1, unmapped: 2, total: 3, foundations: 0, projects: 3 });
+      // Some rows dropped but not all, so DEBUG rather than the WARN that means the tag stopped
+      // being honoured. The lifecycle list is what an operator reads to tell those apart, so it is
+      // asserted rather than left to the payload's shape: only the dropped rows' values appear,
+      // deduplicated, and no `live` among them (PR #2767 review).
+      expect(vi.mocked(logger.debug)).toHaveBeenCalledWith(expect.anything(), 'get_formations_queue', 'Dropped rows whose lifecycle is not live', {
+        dropped: 3,
+        of: 6,
+        lifecycles: ['completed', 'frozen'],
+      });
     });
 
     // The contradictory state, pinned deliberately: a terminal stage still carrying `live`.
@@ -1626,6 +1638,7 @@ describe('FormationService', () => {
       const rows: UpstreamFormationQueueRow[] = [
         { ...baseRow, formation_uid: 'formation:stale-disengaged', project_uid: 'stale-disengaged', sub_stage: 'Formation - Disengaged' },
         { ...baseRow, formation_uid: 'formation:stale-active', project_uid: 'stale-active', sub_stage: 'Active' },
+        { ...baseRow, formation_uid: 'formation:stale-archived', project_uid: 'stale-archived', sub_stage: 'Archived' },
       ];
       proxyRequest.mockResolvedValue({
         resources: rows.map((row) => ({ type: 'formation', id: row.formation_uid, data: row })),
@@ -1633,8 +1646,8 @@ describe('FormationService', () => {
 
       const result = await service.getFormationsQueue(buildReq());
 
-      expect(result.rows.map((row) => row.project_uid)).toEqual(['stale-disengaged', 'stale-active']);
-      expect(result.tiles).toMatchObject({ unmapped: 2, total: 2 });
+      expect(result.rows.map((row) => row.project_uid)).toEqual(['stale-disengaged', 'stale-active', 'stale-archived']);
+      expect(result.tiles).toMatchObject({ unmapped: 3, total: 3 });
     });
 
     // The filter fails CLOSED on a lifecycle it doesn't recognise: `normalizeFormationLifecycle`
@@ -1678,6 +1691,16 @@ describe('FormationService', () => {
 
       expect(result.rows).toEqual([]);
       expect(result.tiles).toMatchObject({ total: 0, unmapped: 0 });
+      // Every row dropped, so this takes the WARN branch — the one signal that separates an empty
+      // queue caused by `lifecycle:live` no longer being honoured from the identical-looking
+      // "nothing is forming right now". `lifecycles: [null]` is the operator's cue that the field
+      // was unreadable rather than the formation having genuinely finished (PR #2767 review).
+      expect(vi.mocked(logger.warning)).toHaveBeenCalledWith(
+        expect.anything(),
+        'get_formations_queue',
+        'Every row failed the lifecycle backstop — lifecycle:live may no longer be honoured upstream',
+        { dropped: 1, of: 1, lifecycles: [null] }
+      );
     });
 
     // GH-2367: scope the queue to the selected foundation via query-service's `parent` param.
