@@ -141,18 +141,6 @@ describe('OrgEasyclaManagersComponent', () => {
     expect(counts).toEqual([2]);
   });
 
-  it('renders the added date the way the rest of the agreement screen does, not as a raw instant', async () => {
-    await render();
-
-    component.loadIfNeeded();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const added = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-added"]').textContent as string;
-    expect(added).not.toContain('2024-05-02T11:00:00Z');
-    expect(added).toContain('May 2, 2024');
-  });
-
   it('links a conservative manager email through buildMeetingOrganizerMailto', async () => {
     await render();
 
@@ -176,17 +164,6 @@ describe('OrgEasyclaManagersComponent', () => {
     const email = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-email"]');
     expect(email.tagName).toBe('SPAN');
     expect(fixture.nativeElement.querySelector('a[data-testid="org-easycla-managers-email"]')).toBeFalsy();
-  });
-
-  it('renders an em dash for a manager upstream recorded no added date for', async () => {
-    getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager({ addedOn: undefined })] }));
-    await render();
-
-    component.loadIfNeeded();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-added"]').textContent).toContain('—');
   });
 
   it('renders a load failure as a failure, never as an empty roster', async () => {

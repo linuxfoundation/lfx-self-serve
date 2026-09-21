@@ -269,8 +269,8 @@ function upstreamTrimmedString(value: unknown): string {
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = upstreamTrimmedString(entry.name);
   const email = upstreamTrimmedString(entry.email);
-  // Only the events-backed add time. `approved_on` is the CCLA's signature_created and is not when
-  // this manager was added; the UI renders an em dash when this is absent.
+  // Only the events-backed add time. `approved_on` is signature creation time, not manager add time.
+  // The Org Lens managers tab does not surface `addedOn` until upstream populates `added_on`.
   const addedOn = upstreamTrimmedString(entry.added_on);
   const lfUsername = upstreamTrimmedString(entry.lf_username);
 
@@ -920,16 +920,6 @@ export class OrgClaService {
     }
   }
 
-  /**
-   * The organization's agreements as upstream sends them, validated but unmapped.
-   *
-   * Split out from `listClaGroups` because the write paths need three ids the shared row
-   * deliberately does not carry — the internal company UUID, the CLA Group id, and a project SFID
-   * — and widening `OrgClaGroup` to reach them would ship the internal company id to every
-   * browser that loads the list page. The mapper's boundary holds; this is the server-side door
-   * behind it.
-   */
-
   public async getManagers(req: Request, orgUid: string, signatureId: string): Promise<OrgClaManagerList | null> {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
     if (!target) return null;
@@ -1060,6 +1050,15 @@ export class OrgClaService {
     };
   }
 
+  /**
+   * The organization's agreements as upstream sends them, validated but unmapped.
+   *
+   * Split out from `listClaGroups` because the write paths need three ids the shared row
+   * deliberately does not carry — the internal company UUID, the CLA Group id, and a project SFID
+   * — and widening `OrgClaGroup` to reach them would ship the internal company id to every
+   * browser that loads the list page. The mapper's boundary holds; this is the server-side door
+   * behind it.
+   */
   private async fetchUpstreamClaGroups(req: Request, orgUid: string): Promise<(EasyClaCompanyClaGroup & { signatureID: string })[]> {
     const upstream = await gatewayFetch<EasyClaCompanyClaGroupList>(
       req,

@@ -524,10 +524,6 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
  * the empty Overview had.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
-  managers: {
-    title: 'CLA Managers become available once this CLA is signed',
-    subtitle: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
-  },
   approval: {
     title: 'The approval list becomes available once this CLA is signed',
     subtitle: 'Sign this CLA first, then add approval list entries to automatically cover matching contributors.',

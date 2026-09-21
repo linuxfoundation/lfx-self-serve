@@ -5,12 +5,11 @@ import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerMailto, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
 import { combineLatest, distinctUntilChanged, finalize, forkJoin, of, skip, switchMap, take, takeUntil, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -26,7 +25,7 @@ import {
 
 @Component({
   selector: 'lfx-org-easycla-managers',
-  imports: [ButtonComponent, ConfirmDialogModule, EmptyStateComponent, MessageComponent, SkeletonModule, TooltipModule],
+  imports: [ButtonComponent, ConfirmDialogModule, EmptyStateComponent, MessageComponent, SkeletonModule],
   providers: [DialogService, ConfirmationService],
   templateUrl: './org-easycla-managers.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -191,7 +190,6 @@ export class OrgEasyclaManagersComponent implements OnInit {
         displayName,
         removeLabel: `Remove ${displayName} as CLA Manager`,
         mailtoHref: buildMeetingOrganizerMailto({ email: manager.email }),
-        addedLabel: formatClaSignedOnInstant(manager.addedOn ?? ''),
       };
     });
   }

@@ -32,7 +32,6 @@ export function orgClaAddManagerDialogConfig(): DynamicDialogConfig {
 })
 export class OrgEasyclaAddManagerDialogComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
-  protected readonly dialogConfig = inject(DynamicDialogConfig);
 
   protected readonly copy = ORG_CLA_MANAGERS_COPY;
 

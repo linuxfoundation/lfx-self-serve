@@ -43,7 +43,6 @@
           <tr class="text-left text-gray-500 border-b border-gray-200">
             <th scope="col" class="py-2 font-medium">Manager</th>
             <th scope="col" class="py-2 font-medium">Role</th>
-            <th scope="col" class="py-2 font-medium">Added</th>
             <th scope="col" class="py-2 font-medium"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -63,7 +62,6 @@
               <td class="py-3">
                 <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">CLA Manager</span>
               </td>
-              <td class="py-3 text-gray-600" data-testid="org-easycla-managers-added">{{ row.addedLabel }}</td>
               <td class="py-3 text-right">
                 @if (canRemove()) {
                   @if (lastManager()) {

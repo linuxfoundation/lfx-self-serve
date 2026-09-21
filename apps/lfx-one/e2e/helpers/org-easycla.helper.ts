@@ -442,7 +442,7 @@ export async function stubManagers(
     }
     if (method === 'POST') {
       current = options.afterPost ?? managerList({ managers: [...current.managers, postResponse] });
-      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(postResponse) });
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(postResponse) });
     }
     return route.abort();
   });
@@ -452,7 +452,7 @@ export async function stubManagers(
       return route.fallback();
     }
     current = options.afterDelete ?? managerList({ managers: current.managers.slice(1) });
-    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(true) });
+    return route.fulfill({ status: 204 });
   });
 }
 

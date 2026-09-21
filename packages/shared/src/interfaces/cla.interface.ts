@@ -1085,7 +1085,6 @@ export interface OrgClaManagerRow {
   displayName: string;
   removeLabel: string;
   mailtoHref: string | null;
-  addedLabel: string;
 }
 
 export interface OrgClaManagerAddRequest {
