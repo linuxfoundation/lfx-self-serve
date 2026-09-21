@@ -16,7 +16,12 @@
  *   - apps/lfx-one/.env populated with TEST_USERNAME / TEST_PASSWORD (tests skip otherwise)
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import {
+  FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
+  MENTORSHIP_COMING_SOON_DETAIL,
+  MENTORSHIP_ENABLED_FLAG,
+  MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL,
+} from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { skipWhenAuthMissing } from './helpers/auth.helper';
@@ -132,10 +137,8 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
 
     await page.getByTestId('mentorship-mentee-profile-details-edit').click();
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeVisible();
-    await expect(page.locator('[data-test="mentee-profile-edit-about-me"]')).toHaveValue(
-      'Campus microgrid telemetry.\nWant production pipelines.'
-    );
-    await expect(page.locator('[data-test="mentee-profile-edit-additional-notes"]')).toHaveValue('Comfortable working asynchronously.');
+    await expect(page.getByLabel('About Me')).toHaveValue('Campus microgrid telemetry.\nWant production pipelines.');
+    await expect(page.getByLabel(MENTORSHIP_MENTEE_ADDITIONAL_NOTES_LABEL)).toHaveValue('Comfortable working asynchronously.');
     await expect(page.getByTestId('mentee-profile-edit-have-skill-list')).toContainText('Python');
 
     await page.getByTestId('mentee-profile-edit-drawer-cancel').click();
@@ -148,6 +151,6 @@ test.describe('Mentee Profile — edit drawer golden path', () => {
 
     await page.getByTestId('mentee-profile-edit-drawer-save').click();
     await expect(page.getByTestId('mentee-profile-edit-drawer-body')).toBeHidden();
-    await expect(page.locator('.p-toast')).toContainText(MENTORSHIP_COMING_SOON_DETAIL);
+    await expect(page.getByText(MENTORSHIP_COMING_SOON_DETAIL)).toBeVisible();
   });
 });

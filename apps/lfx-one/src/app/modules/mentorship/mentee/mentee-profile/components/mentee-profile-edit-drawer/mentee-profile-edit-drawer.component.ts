@@ -49,7 +49,8 @@ import { MenteeProfileEditDrawerService } from './mentee-profile-edit-drawer.ser
 })
 export class MenteeProfileEditDrawerComponent {
   private readonly comingSoon = inject(MentorshipComingSoonService);
-  protected readonly drawer = inject(MenteeProfileEditDrawerService);
+  private readonly drawer = inject(MenteeProfileEditDrawerService);
+  protected readonly isOpen = this.drawer.isOpen;
 
   protected readonly title = MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL;
   protected readonly subtitle = MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE;

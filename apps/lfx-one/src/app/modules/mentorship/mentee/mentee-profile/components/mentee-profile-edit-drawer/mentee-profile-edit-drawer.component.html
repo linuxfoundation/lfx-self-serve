@@ -3,7 +3,7 @@
 
 <!-- lg:w-[620px] matches the mentor profile edit drawer — design-specified 620px at lg. -->
 <p-drawer
-  [visible]="drawer.isOpen()"
+  [visible]="isOpen()"
   (visibleChange)="onVisibleChange($event)"
   position="right"
   [modal]="true"
