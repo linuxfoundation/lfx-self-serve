@@ -1,3 +1,5 @@
+import sanitizeHtml from 'sanitize-html';
+
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
@@ -265,49 +267,6 @@ export function htmlClipboardToText(html: string | null | undefined): string {
 }
 
 /**
- * Tags a campaign preview may contain. Everything else has its TAGS removed, text kept.
- *
- * An ALLOW-LIST, after a denylist of resource tags was bypassed four ways in one review round:
- * `<image>` (a live alias for `<img>`), `<input type=image>`, and unquoted `background=` /
- * `style=` values. Each fix would have named one more spelling; the space of spellings is
- * adversarial and unbounded, so the rule is inverted instead -- anything not named here does not
- * survive, and a new HTML element cannot become a bypass by existing.
- */
-const PREVIEW_ALLOWED_TAGS = new Set([
-  'p',
-  'br',
-  'hr',
-  'strong',
-  'b',
-  'em',
-  'i',
-  'u',
-  's',
-  'ul',
-  'ol',
-  'li',
-  'blockquote',
-  'a',
-  'span',
-  'div',
-  'h1',
-  'h2',
-  'h3',
-  'h4',
-  'h5',
-  'h6',
-  'table',
-  'thead',
-  'tbody',
-  'tr',
-  'td',
-  'th',
-]);
-
-/** Attributes a preview tag may keep. `href` is further restricted to http(s) below. */
-const PREVIEW_ALLOWED_ATTRS = new Set(['href', 'colspan', 'rowspan']);
-
-/**
  * Reduces html to formatting that cannot make the renderer fetch anything.
  *
  * For html destined for `[innerHTML]`. Angular's sanitizer already removes scripts, event
@@ -316,81 +275,58 @@ const PREVIEW_ALLOWED_ATTRS = new Set(['href', 'colspan', 'rowspan']);
  * of model-generated content must not make. campaign-service's `/email-copy` path applies no
  * sanitizer of its own, so this is the only place it can be stopped.
  *
- * Text is preserved for a disallowed tag; content is DROPPED for `script`/`style`/`iframe`/
- * `object`/`embed`, whose contents are code rather than copy. Attributes are allow-listed, so
- * `src`, `srcset`, `background`, `style`, `poster` and anything added to HTML later are gone
- * regardless of quoting.
+ * Delegates to `sanitize-html`, which PARSES rather than pattern-matches. Three hand-written
+ * versions preceded it -- a regex denylist and two hand-rolled scanners -- and review found
+ * eleven defects across them: `<image>`, `<input type=image>`, unquoted `background=`/`style=`,
+ * spliced tags, a `dropContent` tag whose attribute merely ended in `/`, a mismatched close
+ * tag, and twice a bug that DELETED ordinary copy (a raw `<` truncating the body, entities
+ * double-escaped). None of those exist in a real parser, and each fix I wrote created the next
+ * finding. Tag and attribute allow-lists still express the policy; the parsing is no longer ours.
  */
 export function stripResourceLoadingHtml(html: string | null | undefined): string {
   if (!html) return '';
 
-  const dropContent = new Set(['script', 'style', 'iframe', 'object', 'embed', 'svg', 'math']);
-  let out = '';
-  let index = 0;
-  let skipDepth = 0;
-
-  // A hand-rolled scan rather than a regex sweep: the browser tokenises, and matching whole
-  // tags with a pattern is what let the four bypasses through.
-  while (index < html.length) {
-    const lt = html.indexOf('<', index);
-    if (lt === -1) {
-      if (skipDepth === 0) out += escapeHtml(decodeHtmlEntities(html.slice(index)));
-      break;
-    }
-    // Text between tags is ESCAPED, not copied. A spliced tag such as `<im<img>g src="…">`
-    // leaves `g src="…">` as text once the inner tag is removed, and copying it verbatim put
-    // raw attribute text into the preview -- inert, but it is markup residue the reader sees.
-    // Escaping makes the output's text nodes structurally unable to reopen a tag.
-    if (skipDepth === 0) out += escapeHtml(decodeHtmlEntities(html.slice(index, lt)));
-
-    // A `<` only starts a TAG when a name follows it. `5 < 10` is ordinary copy, and treating it
-    // as a tag opener consumed everything to the next `>` -- so `<p>5 < 10 and more</p>` came out
-    // as `<p>5 `, silently deleting the rest of the email body. Anything else is text.
-    if (!/^<\/?[a-zA-Z]/.test(html.slice(lt, lt + 3))) {
-      if (skipDepth === 0) out += escapeHtml('<');
-      index = lt + 1;
-      continue;
-    }
-
-    const gt = html.indexOf('>', lt);
-    if (gt === -1) break;
-
-    const raw = html.slice(lt + 1, gt);
-    const closing = raw.startsWith('/');
-    const name = (closing ? raw.slice(1) : raw)
-      .trim()
-      .split(/[\s/>]/)[0]
-      .toLowerCase();
-
-    if (dropContent.has(name)) {
-      if (closing) skipDepth = Math.max(0, skipDepth - 1);
-      else if (!raw.trimEnd().endsWith('/')) skipDepth++;
-    } else if (skipDepth === 0 && PREVIEW_ALLOWED_TAGS.has(name)) {
-      out += closing ? `</${name}>` : `<${name}${allowedAttributes(raw)}>`;
-    }
-    index = gt + 1;
-  }
-
-  return out;
-}
-
-/** The allow-listed attributes of one start tag, re-rendered with quoted values. */
-function allowedAttributes(rawTag: string): string {
-  let attrs = '';
-  const pattern = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*=\s*("[^"]*"|'[^']*'|[^\s"'`=<>]+)/g;
-  let match = pattern.exec(rawTag);
-
-  while (match !== null) {
-    const key = match[1].toLowerCase();
-    const value = match[2].replace(/^["']|["']$/g, '');
-    if (PREVIEW_ALLOWED_ATTRS.has(key)) {
-      // `href` is the one attribute that can name a destination, so it is scheme-checked. A
-      // relative or non-http(s) href is dropped rather than rewritten.
-      if (key !== 'href' || /^https?:\/\//i.test(value)) {
-        attrs += ` ${key}="${escapeHtml(decodeHtmlEntities(value))}"`;
-      }
-    }
-    match = pattern.exec(rawTag);
-  }
-  return attrs;
+  return sanitizeHtml(html, {
+    // Formatting only. Every resource-loading element is absent by omission rather than by
+    // being named, so an element added to HTML later cannot become a bypass.
+    allowedTags: [
+      'p',
+      'br',
+      'hr',
+      'strong',
+      'b',
+      'em',
+      'i',
+      'u',
+      's',
+      'ul',
+      'ol',
+      'li',
+      'blockquote',
+      'a',
+      'span',
+      'div',
+      'h1',
+      'h2',
+      'h3',
+      'h4',
+      'h5',
+      'h6',
+      'table',
+      'thead',
+      'tbody',
+      'tr',
+      'td',
+      'th',
+    ],
+    // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
+    allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    // An `href` may only name an absolute http(s) destination; anything else is dropped.
+    allowedSchemes: ['http', 'https'],
+    allowedSchemesAppliedToAttributes: ['href'],
+    allowProtocolRelative: false,
+    // Content is DROPPED for these, because their contents are code rather than copy. For every
+    // other disallowed tag the TEXT survives -- the copy is the point of the preview.
+    nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title'],
+  });
 }

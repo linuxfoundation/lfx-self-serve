@@ -269,10 +269,10 @@ describe('stripResourceLoadingHtml', () => {
   ])('leaves no live markup from %s', (_label, input) => {
     const out = stripResourceLoadingHtml(input);
     expect(out).not.toMatch(/<(img|image|script|iframe)\b/i);
-    // The residue is ESCAPED, not merely tag-free. Asserting only "no `<`" was vacuous: the
-    // residue of a spliced tag (`g src="…">t`) contains none either way, so the assertion
-    // passed with the escaping removed. The quote and `>` are what actually change.
-    expect(out).not.toMatch(/["'<>]/);
+    // No `<` survives, so whatever residue remains is a TEXT node and cannot fetch. The URL
+    // may still appear as visible text -- that is the parser reading malformed input as text
+    // rather than inventing a tag, which is the correct reading.
+    expect(out).not.toMatch(/</);
   });
 
   // A raw `<` in ordinary copy is NOT a tag opener. Treating it as one consumed everything to
@@ -307,9 +307,22 @@ describe('stripResourceLoadingHtml', () => {
     expect(stripResourceLoadingHtml('<p>a</p><script>evil()</script><p>b</p>')).toBe('<p>a</p><p>b</p>');
   });
 
-  it('drops a non-http href rather than rewriting it', () => {
-    expect(stripResourceLoadingHtml('<a href="javascript:evil()">t</a>')).toBe('<a>t</a>');
-    expect(stripResourceLoadingHtml('<a href="/relative">t</a>')).toBe('<a>t</a>');
+  // An href may only name an http(s) destination or a relative path. A RELATIVE href is kept
+  // deliberately: it cannot reach an external host, so dropping it would lose a working link
+  // for no safety gain -- the earlier hand-rolled version dropped it, which was over-strict.
+  it.each([
+    ['a javascript: url', '<a href="javascript:evil()">t</a>', '<a>t</a>'],
+    ['a data: url', '<a href="data:text/html,x">t</a>', '<a>t</a>'],
+    ['a protocol-relative url', '<a href="//evil.test/x">t</a>', '<a>t</a>'],
+  ])('drops %s', (_label, input, want) => {
+    expect(stripResourceLoadingHtml(input)).toBe(want);
+  });
+
+  it.each([
+    ['an https url', '<a href="https://x.test/r">t</a>'],
+    ['a relative path', '<a href="/relative">t</a>'],
+  ])('keeps %s', (_label, input) => {
+    expect(stripResourceLoadingHtml(input)).toBe(input);
   });
 
   it.each([
