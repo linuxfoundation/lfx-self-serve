@@ -36,6 +36,7 @@ describe('OrgNavigationService default selection', () => {
   let setIndexedSlug: ReturnType<typeof vi.fn>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
+  let clearAccount: ReturnType<typeof vi.fn>;
   let http: HttpTestingController;
   let service: OrgNavigationService;
 
@@ -46,6 +47,7 @@ describe('OrgNavigationService default selection', () => {
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
     navigateToSelectedOrg = vi.fn();
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
+    clearAccount = vi.fn();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -57,7 +59,7 @@ describe('OrgNavigationService default selection', () => {
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
         {
           provide: AccountContextService,
-          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, refreshCanonicalRecord },
+          useValue: { selectedAccount, isAddressedSelection, setAccount, setIndexedSlug, refreshCanonicalRecord, clearAccount },
         },
       ],
     });
@@ -209,5 +211,59 @@ describe('OrgNavigationService default selection', () => {
     expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B, slug: 'beta' }));
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+  });
+
+  // Spec 053 Retry. The bootstrap's semantics on an empty or non-matching first page — clear the
+  // selection, or default to the first row — are the wrong contract for "try the same thing again":
+  // a Retry pressed mid-outage must leave the viewer's selection exactly where it was.
+  describe('refreshList (Retry)', () => {
+    const refreshWith = (items: OrgItem[], upstreamFailed = false): void => {
+      service.refreshList(UID_B);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush({ items, next_page_token: null, upstream_failed: upstreamFailed });
+    };
+
+    it('keeps the selection when the refreshed first page is empty, even on an upstream failure', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+
+      refreshWith([], true);
+
+      expect(clearAccount).not.toHaveBeenCalled();
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+      expect(service.upstreamFailed()).toBe(true);
+      expect(service.loaded()).toBe(true);
+    });
+
+    it('does not re-point the selection when the refreshed page lacks the current organization', () => {
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+
+      refreshWith([item(UID_A, 'Acme')]);
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(navigateToSelectedOrg).not.toHaveBeenCalled();
+      expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
+    });
+
+    it('pins the current selection into the refreshed request like the bootstrap does', () => {
+      service.refreshList(UID_B);
+
+      const req = http.expectOne((r) => r.url === '/api/nav/org-items');
+      expect(req.request.params.get('selected_uid')).toBe(UID_B);
+      req.flush(page([item(UID_B, 'Beta')]));
+    });
+
+    // A bootstrap already in flight keeps its own intent: the flag is neither armed nor cleared here.
+    it('leaves an in-flight bootstrap\u2019s default-selection intent intact', () => {
+      service.resetAndReload();
+      service.refreshList(null);
+
+      // The refresh supersedes the bootstrap's request (switchMap); its page lands under the bootstrap's intent.
+      const requests = http.match((req) => req.url === '/api/nav/org-items');
+      expect(requests).toHaveLength(2);
+      expect(requests[0].cancelled).toBe(true);
+      requests[1].flush(page([item(UID_A, 'Acme'), item(UID_B, 'Beta')]));
+
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_A }));
+    });
   });
 });

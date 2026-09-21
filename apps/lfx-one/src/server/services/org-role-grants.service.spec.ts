@@ -13,7 +13,7 @@ vi.mock('@lfx-one/shared/constants', () => ({
   ACCESS_CHECK_BATCH_SIZE: 2,
   LF_TEAM_IDS: ['lf-staff', 'lf-contractor'],
   ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
-  ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS: 5_000,
+  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
   // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
@@ -337,15 +337,38 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
     expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false, staffCheck: 'ok' }), 30);
   });
 
-  // A degraded roll-up drives the FR-010 notice and the `could-not-load` Retry; caching it for the
-  // full TTL would make Retry a visible no-op for 30s, not caching it would let Retry hammer the walk.
-  it('caches a degraded result only under the short TTL', async () => {
+  // A degraded roll-up is often structural (cap, index lag); a short TTL would recompute the whole
+  // walk on every page load for exactly the heaviest callers. It keeps the full TTL — the viewer's
+  // Retry bypasses the cache read instead.
+  it('caches a degraded result under the full TTL', async () => {
     setTeamAnswer(teamMembership(false));
     seedProxy(HARD_CAP + 1);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
-    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: true }), 5);
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: true, staffCheck: 'ok' }), 30);
+  });
+
+  it('bypassCache skips the cache read, recomputes, and still writes the fresh result', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(1);
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'stale',
+      username: USERNAME,
+      isStaff: false,
+      degraded: true,
+      staffCheck: 'ok',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME, true);
+
+    expect(getJson).not.toHaveBeenCalled();
+    expect(result.degraded).toBe(false);
+    expect(result.resolved.size).toBe(1);
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false }), 30);
   });
 
   // Every roster row carries the caller as a member, but only `accepted` rows become grants, so a
@@ -876,5 +899,8 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     // would render `Reference: —` for the (short) TTL.
     expect(guard({ ...entry, staffCheck: 'failed' })).toBe(false);
     expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref' })).toBe(true);
+    // Fail-closed on read as on write: a check that did not complete can never have granted the
+    // LF-team affordance, so an entry claiming both is corrupt and recomputes.
+    expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref', isStaff: true })).toBe(false);
   });
 });

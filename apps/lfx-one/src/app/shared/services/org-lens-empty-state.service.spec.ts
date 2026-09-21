@@ -4,7 +4,7 @@
 import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Account, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
-import { Observable, of } from 'rxjs';
+import { Observable, of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
 
 import { AccountContextService } from './account-context.service';
@@ -27,9 +27,10 @@ interface Harness {
   inheritedAuditorSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   hasOrgSelectorAccess: WritableSignal<boolean>;
-  refresh: Mock<() => Observable<void>>;
+  refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
-  resetAndReload: Mock<(uid?: string | null) => void>;
+  listLoading: WritableSignal<boolean>;
+  refreshList: Mock<(uid?: string | null) => void>;
 }
 
 function account(uid: string): Account {
@@ -46,9 +47,10 @@ function setup(): Harness {
   const inheritedAuditorSet = signal(new Set<string>());
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
-  const refresh: Mock<() => Observable<void>> = vi.fn(() => of(undefined));
+  const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
   const listLoaded = signal(false);
-  const resetAndReload: Mock<(uid?: string | null) => void> = vi.fn();
+  const listLoading = signal(false);
+  const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
 
   TestBed.configureTestingModule({
     providers: [
@@ -68,7 +70,7 @@ function setup(): Harness {
       },
       { provide: PersonaService, useValue: { personaLoaded } },
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
-      { provide: OrgNavigationService, useValue: { loaded: listLoaded, resetAndReload } },
+      { provide: OrgNavigationService, useValue: { loaded: listLoaded, loading: listLoading, refreshList } },
     ],
   });
 
@@ -85,7 +87,8 @@ function setup(): Harness {
     hasOrgSelectorAccess,
     refresh,
     listLoaded,
-    resetAndReload,
+    listLoading,
+    refreshList,
   };
 }
 
@@ -177,22 +180,23 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.pageState()).toBeNull();
   });
 
-  it('retry re-runs the role-grants lookup and leaves a never-fetched list to the switcher bootstrap', () => {
+  it('retry re-runs the role-grants lookup past the BFF cache and leaves a never-requested list to the switcher bootstrap', () => {
     h.service.retry();
 
-    expect(h.refresh).toHaveBeenCalledTimes(1);
-    expect(h.resetAndReload).not.toHaveBeenCalled();
+    expect(h.refresh).toHaveBeenCalledWith(true);
+    expect(h.refreshList).not.toHaveBeenCalled();
   });
 
   // The list is filtered server-side by the same lookup: refreshing grants alone would leave a list
-  // that emptied during the outage stale after the grants recover.
+  // that emptied during the outage stale after the grants recover. The refresh is the non-defaulting
+  // one — it must never clear or re-point the selection (see org-navigation.service.spec).
   it('retry re-fetches a previously fetched list once the grants answer, pinning the selection', () => {
     h.listLoaded.set(true);
     h.selectedAccount.set(account(HELD));
 
     h.service.retry();
 
-    expect(h.resetAndReload).toHaveBeenCalledWith(HELD);
+    expect(h.refreshList).toHaveBeenCalledWith(HELD);
   });
 
   it('retry falls back to the cookie uid when nothing is selected', () => {
@@ -200,7 +204,24 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
     h.service.retry();
 
-    expect(h.resetAndReload).toHaveBeenCalledWith('cookie-uid');
+    expect(h.refreshList).toHaveBeenCalledWith('cookie-uid');
+  });
+
+  // The most likely moment to press Retry is while the first list fetch is still visibly loading;
+  // the decision is made when the grants answer, not snapshotted at the click.
+  it('retry still refreshes a list that was in flight at the click, once the grants answer', () => {
+    const grants = new Subject<void>();
+    h.refresh.mockReturnValue(grants.asObservable());
+    h.listLoading.set(true);
+
+    h.service.retry();
+    expect(h.refreshList).not.toHaveBeenCalled();
+
+    h.listLoading.set(false);
+    h.listLoaded.set(true);
+    grants.next();
+
+    expect(h.refreshList).toHaveBeenCalledTimes(1);
   });
 });
 

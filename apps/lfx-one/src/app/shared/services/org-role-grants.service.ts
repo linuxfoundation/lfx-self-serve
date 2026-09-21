@@ -3,6 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
 import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
@@ -79,11 +80,16 @@ export class OrgRoleGrantsService {
     });
   }
 
-  /** Re-fetch role grants; idempotent. Returns Observable<void> so callers can compose (e.g. forkJoin with persona refresh). */
-  public refresh(): Observable<void> {
+  /**
+   * Re-fetch role grants; idempotent. Returns Observable<void> so callers can compose (e.g. forkJoin
+   * with persona refresh). `bypassCache` (the viewer's explicit Retry, spec 053) asks the BFF to skip
+   * its cache read and recompute — still coalesced and written server-side.
+   */
+  public refresh(bypassCache = false): Observable<void> {
     this.loadingInternal.set(true);
     this.errorInternal.set(null);
-    return this.http.get<RoleGrantsResponse>('/api/orgs/me/role-grants').pipe(
+    const params = bypassCache ? { [ORG_ROLE_GRANTS_REFRESH_PARAM]: '1' } : undefined;
+    return this.http.get<RoleGrantsResponse>('/api/orgs/me/role-grants', { params }).pipe(
       tap((response) => {
         this.writerSetInternal.set(new Set(response.writers));
         this.auditorSetInternal.set(new Set(response.auditors));

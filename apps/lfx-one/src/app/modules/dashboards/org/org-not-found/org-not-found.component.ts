@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, inject, Signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { Account, OrgLensEmptyStateName } from '@lfx-one/shared/interfaces';
 import { ButtonComponent } from '@components/button/button.component';
@@ -32,6 +32,7 @@ import { SkeletonModule } from 'primeng/skeleton';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgNotFoundComponent {
+  private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
@@ -71,11 +72,27 @@ export class OrgNotFoundComponent {
    *   only mean no such organization or a resolver miss — never "no access" (FR-012). Checked ahead of
    *   the roster rules because their own list is empty by design and their way in is switcher search;
    * - a list that failed to load (`upstreamFailed`) says nothing about access either — the caller may
-   *   well hold organizations that never arrived — so it is the outage state, with Retry;
+   *   well hold organizations that never arrived — so it is the outage state, with Retry (a caller
+   *   whose grants already show holdings is still classified as holding: the rows may simply not be
+   *   here yet, and the picker renders whatever did arrive);
    * - otherwise FR-008 when the caller holds something to switch to, FR-007 when not.
    */
+  /**
+   * Whether the caller holds anything at all — from the grant sets (unfiltered) OR the list rows: the
+   * switcher's search replaces `items()` wholesale, so an open search that matches nothing must not
+   * turn a holder into "holds nothing" and flip this page's state.
+   */
+  private readonly holdsAnything: Signal<boolean> = computed(
+    () =>
+      this.orgList().length > 0 ||
+      this.orgRoleGrants.writerSet().size > 0 ||
+      this.orgRoleGrants.auditorSet().size > 0 ||
+      this.orgRoleGrants.inheritedWriterSet().size > 0 ||
+      this.orgRoleGrants.inheritedAuditorSet().size > 0
+  );
+
   protected readonly state: Signal<OrgLensEmptyStateName> = computed(() => {
-    const held = this.orgList().length > 0;
+    const held = this.holdsAnything();
     // Rule-1 analogue: LF team holds everything (a failed team check leaves `isStaff` false, so it
     // reaches `classifyLookup` and renders `staff-check-failed` from there, as on the page).
     if (this.orgRoleGrants.isStaff()) {
@@ -118,7 +135,13 @@ export class OrgNotFoundComponent {
       // Already logged inside refreshCanonicalRecord; the indexed snapshot stays.
     });
     // Never hand-build an Org Lens address: the navigation service owns address shape and history
-    // semantics, including leaving `/org/not-found` (docs/architecture/frontend/lens-system.md).
+    // semantics, including leaving `/org/not-found` (docs/architecture/frontend/lens-system.md). It is
+    // a no-op for a selection with no URL segment (no slug, non-SFID uid) — that row still has to leave
+    // the dead end, on the legacy address that renders the selected organization.
+    if (!this.accountContext.selectedUrlSegment()) {
+      void this.router.navigate(['/org', 'overview']);
+      return;
+    }
     this.orgLensNavigation.navigateToSelectedOrg('switch');
   }
 }

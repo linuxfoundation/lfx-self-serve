@@ -73,6 +73,18 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(picked).toEqual(['b']);
   });
 
+  // A shared component must never render a state with no control: an `org-list` primary with nothing
+  // to list promotes the secondary into the primary slot (and does not render it twice).
+  it('promotes the secondary when the wrong-organization list is empty', () => {
+    const fixture = render('wrong-organization', { orgList: [] });
+
+    expect(byTestId(fixture, 'org-list')).toBeNull();
+    const controls = (fixture.nativeElement as HTMLElement).querySelectorAll(`[data-testid="${TEST_ID}-contact-support"]`);
+    expect(controls).toHaveLength(1);
+    expect(controls[0].textContent).toContain('Ask for access to the organization in this link');
+    expect(controls[0].tagName).toBe('LFX-BUTTON');
+  });
+
   it('lists the caller\u2019s organizations beneath the staff invite without making them the primary', () => {
     const fixture = render('not-found-staff', { orgList: ORG_LIST });
 

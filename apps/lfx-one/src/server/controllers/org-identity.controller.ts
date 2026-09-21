@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_ORG_LOGO_MIME_TYPES, HTTP_HEADERS, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_ORG_LOGO_MIME_TYPES,
+  HTTP_HEADERS,
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_ROLE_GRANTS_CORRELATION_HEADER,
+  ORG_ROLE_GRANTS_REFRESH_PARAM,
+} from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -48,7 +54,9 @@ export class OrgIdentityController {
         });
       }
 
-      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username);
+      // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
+      const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
+      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
 
       logger.success(req, 'get_org_role_grants', startTime, {
         writer_count: result.writers.length,
@@ -58,10 +66,11 @@ export class OrgIdentityController {
       });
 
       res.setHeader('Cache-Control', 'no-store');
-      // Spec 053 FR-011: the reference the page shows must be findable in the logs; the service logged
-      // this exact id with the failing computation, so it is also the response's request id.
+      // Spec 053 FR-011: the reference the page shows must be findable in the logs. It is the id the
+      // service logged with the failing computation — which, within the short cache window, may be an
+      // earlier request's — so it travels in its own header rather than as this request's `X-Request-Id`.
       if (result.correlationId) {
-        res.setHeader('X-Request-Id', result.correlationId);
+        res.setHeader(ORG_ROLE_GRANTS_CORRELATION_HEADER, result.correlationId);
       }
       res.json(result);
     } catch (error) {

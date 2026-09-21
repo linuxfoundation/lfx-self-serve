@@ -5,7 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
-  ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS,
+  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -51,13 +51,20 @@ export class OrgRoleGrantsService {
     this.accessCheck = new AccessCheckService();
   }
 
-  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; upstream failures are never cached, Retry-able results (failed staff check, degraded roll-up) only briefly, and the cache is fail-soft. */
-  public async getAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
+  /**
+   * Single source of truth for the caller's access-aware org universe. Served through the shared Valkey
+   * cache, keyed per caller username; upstream failures are never cached, a failed staff check only
+   * briefly, and the cache is fail-soft. `bypassCache` (the viewer's explicit Retry) skips the read but
+   * still coalesces concurrent computations and still writes the result, so a Retry recomputes once
+   * per burst and refreshes the entry every other reader sees — a degraded roll-up caused by a
+   * structural condition (traversal cap, index lag) is not recomputed on every ordinary page load.
+   */
+  public async getAccessAwareOrgs(req: Request, username: string, bypassCache = false): Promise<AccessAwareOrgsResult> {
     // Username is the caller's own identity (the "what can I see" principal), so keying by it is
     // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
     const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
 
-    if (cacheKey) {
+    if (cacheKey && !bypassCache) {
       // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
       const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
       if (cached) {
@@ -78,13 +85,15 @@ export class OrgRoleGrantsService {
 
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
-      // Never cache an upstream failure (the roster never loaded; it retries next request). Everything
-      // else is cached, but a result the page exposes a Retry for — a failed staff check or a degraded
-      // roll-up — only under the short TTL: long enough that a caller pressing Retry during an
-      // authorizer outage cannot re-run the uncached fan-out on every click, short enough that
-      // recovery (and the FR-011 correlation id, stored with the entry) is not pinned for the full TTL.
+      // Never cache an upstream failure (the roster never loaded; it retries next request). A failed
+      // staff check — transient by nature — is cached only under the short TTL: long enough that a
+      // caller pressing Retry during an authorizer outage cannot re-run the uncached fan-out on every
+      // click, short enough that recovery (and the FR-011 correlation id, stored with the entry) is
+      // not pinned for the full TTL. A degraded roll-up keeps the full TTL: its causes are often
+      // structural (traversal cap, missing index doc) and would otherwise recompute the whole walk on
+      // every page load; the viewer's Retry bypasses the read instead (`bypassCache`).
       if (!result.upstreamFailed) {
-        const ttl = result.staffCheck === 'failed' || result.degraded ? OrgRoleGrantsService.degradedCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
+        const ttl = result.staffCheck === 'failed' ? OrgRoleGrantsService.failedStaffCheckCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
         await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), ttl);
       }
       return result;
@@ -107,8 +116,8 @@ export class OrgRoleGrantsService {
    * owed a 503. `lookupOutcome` carries the distinction the page needs: `failed` (roster never loaded)
    * vs `partial` (roll-up incomplete).
    */
-  public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username);
+  public async getRoleGrants(req: Request, username: string, bypassCache = false): Promise<RoleGrantsResponse> {
+    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username, bypassCache);
     const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
     if (upstreamFailed) {
       response.lookupOutcome = 'failed';
@@ -149,9 +158,9 @@ export class OrgRoleGrantsService {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
   }
 
-  /** Short TTL (whole seconds) for results the caller can Retry: failed staff check, degraded roll-up. */
-  private static degradedCacheTtlSeconds(): number {
-    return Math.floor(ORG_ACCESS_AWARE_DEGRADED_CACHE_TTL_MS / 1000);
+  /** Short TTL (whole seconds) for a failed staff check — the one transient result that is cached at all. */
+  private static failedStaffCheckCacheTtlSeconds(): number {
+    return Math.floor(ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS / 1000);
   }
 
   /**
@@ -178,8 +187,9 @@ export class OrgRoleGrantsService {
       typeof entry.degraded === 'boolean' &&
       // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
       // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
-      // correlation id it was logged under — without it the page would render `Reference: —`.
-      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string'))
+      // correlation id it was logged under — without it the page would render `Reference: —` — and
+      // only fail-closed: a check that did not complete can never have granted the LF-team affordance.
+      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false))
     );
   }
 

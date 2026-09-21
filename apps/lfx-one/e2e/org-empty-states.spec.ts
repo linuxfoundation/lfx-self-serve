@@ -90,13 +90,18 @@ interface IdentityStubs {
 }
 
 /** Stubs every org-identity call the shell makes; counts role-grants requests so Retry can be proven to re-issue the lookup. */
-async function stubOrgIdentity(page: Page, stubs: IdentityStubs): Promise<{ roleGrantsRequests: () => number }> {
+async function stubOrgIdentity(page: Page, stubs: IdentityStubs): Promise<{ roleGrantsRequests: () => number; roleGrantsRefreshes: () => number }> {
   let roleGrantsRequests = 0;
+  let roleGrantsRefreshes = 0;
   const orgItems = stubs.orgItems ?? [];
   const resolvable = stubs.resolvable ?? [];
 
-  await page.route('**/api/orgs/me/role-grants', (route) => {
+  // Bootstrap fetches the bare path; the viewer's Retry adds `?refresh=1` (BFF cache bypass).
+  await page.route('**/api/orgs/me/role-grants*', (route) => {
     roleGrantsRequests += 1;
+    if (new URL(route.request().url()).searchParams.get('refresh') === '1') {
+      roleGrantsRefreshes += 1;
+    }
     if (stubs.roleGrantsStatus !== undefined) {
       return route.fulfill({ status: stubs.roleGrantsStatus, contentType: 'text/plain', body: 'Bad Gateway' });
     }
@@ -139,7 +144,7 @@ async function stubOrgIdentity(page: Page, stubs: IdentityStubs): Promise<{ role
     route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) })
   );
 
-  return { roleGrantsRequests: () => roleGrantsRequests };
+  return { roleGrantsRequests: () => roleGrantsRequests, roleGrantsRefreshes: () => roleGrantsRefreshes };
 }
 
 const HELD_ORG = { uid: ORG_A_UID, slug: ORG_A_SLUG, name: ORG_A_NAME };
@@ -215,7 +220,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
     });
 
     test('S3c: a transport failure of the lookup renders could-not-load, and Retry re-issues the lookup', async ({ page }) => {
-      const { roleGrantsRequests } = await stubOrgIdentity(page, { roleGrantsStatus: 502 });
+      const { roleGrantsRequests, roleGrantsRefreshes } = await stubOrgIdentity(page, { roleGrantsStatus: 502 });
 
       await gotoOverview(page);
 
@@ -228,6 +233,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       const before = roleGrantsRequests();
       await state.retry.click();
       await expect.poll(roleGrantsRequests, { timeout: SETTLE_TIMEOUT }).toBeGreaterThan(before);
+      // Retry asks the BFF to recompute past its cache, so it cannot be served the same stale answer.
+      expect(roleGrantsRefreshes()).toBeGreaterThan(0);
       // Still failing → still could-not-load; the state does not degrade into a different one.
       await expect(state.root).toHaveAttribute('data-state', 'could-not-load');
     });

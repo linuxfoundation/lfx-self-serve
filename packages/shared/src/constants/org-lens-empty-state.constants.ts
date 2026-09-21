@@ -6,11 +6,14 @@
  *
  * Every Org Lens empty state — page-level and section-level — renders from one of these entries
  * through `lfx-org-lens-empty-state`; no page or section may render an empty-state string from any
- * other source. The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5):
- * that viewer's switcher never loads a list, and the static cause-blind wording there must not become
- * an access-themed state that implies an administrator could help. Product and design review this file. Wording rules: sentence-case headlines, no
- * exclamation marks, never "Oops" / "Forbidden" / "Unauthorized" / "error"; the reason never blames
- * the caller.
+ * other source.
+ *
+ * The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5): that viewer's
+ * switcher never loads a list, and the static cause-blind wording there must not become an
+ * access-themed state that implies an administrator could help.
+ *
+ * Product and design review this file. Wording rules: sentence-case headlines, no exclamation marks,
+ * never "Oops" / "Forbidden" / "Unauthorized" / "error"; the reason never blames the caller.
  *
  * Privacy (spec 050 DR-002 / 053 DR-001): the `no-access` and `wrong-organization` entries stay on
  * "this organization" — they never interpolate an addressed organization's name, because the caller

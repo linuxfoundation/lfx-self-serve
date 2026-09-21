@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, WritableSignal } from '@angular/core';
+import { computed, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { provideRouter } from '@angular/router';
+import { provideRouter, Router } from '@angular/router';
 import { Account, OrgItem, OrgLensEmptyStateName, OrgLensLookupOutcome, OrgLensStaffCheck } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -14,7 +15,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
 import { of } from 'rxjs';
-import { beforeEach, describe, expect, it, Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, Mock, MockInstance, vi } from 'vitest';
 
 import { OrgNotFoundComponent } from './org-not-found.component';
 
@@ -29,9 +30,12 @@ interface Harness {
   lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   orgLensEnabled: WritableSignal<boolean>;
-  refresh: Mock<() => unknown>;
-  resetAndReload: Mock<(uid?: string | null) => void>;
-  setAccount: Mock<() => void>;
+  refresh: Mock<(bypassCache?: boolean) => unknown>;
+  refreshList: Mock<(uid?: string | null) => void>;
+  writerSet: WritableSignal<Set<string>>;
+  selectedAccount: WritableSignal<Account>;
+  navigate: MockInstance<Router['navigate']>;
+  setAccount: Mock<(account: Account) => void>;
   navigateToSelectedOrg: Mock<(intent: string) => void>;
 }
 
@@ -43,9 +47,11 @@ function setup(): Harness {
   const lookupOutcome = signal<OrgLensLookupOutcome>('ok');
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const orgLensEnabled = signal(true);
-  const refresh: Mock<() => unknown> = vi.fn(() => of(undefined));
-  const resetAndReload: Mock<(uid?: string | null) => void> = vi.fn();
-  const setAccount: Mock<() => void> = vi.fn();
+  const refresh: Mock<(bypassCache?: boolean) => unknown> = vi.fn(() => of(undefined));
+  const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
+  const writerSet = signal(new Set<string>());
+  const selectedAccount = signal<Account>({ accountId: '', accountName: '', accountSlug: '', membershipTier: '', logoUrl: null, uid: '', slug: null });
+  const setAccount: Mock<(account: Account) => void> = vi.fn((account: Account) => selectedAccount.set(account));
   const navigateToSelectedOrg: Mock<(intent: string) => void> = vi.fn();
   const empty = new Set<string>();
 
@@ -57,7 +63,7 @@ function setup(): Harness {
       MessageService,
       OrgLensEmptyStateService,
       { provide: FeatureFlagService, useValue: { getBooleanFlag: () => orgLensEnabled } },
-      { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, upstreamFailed: listFailed, resetAndReload } },
+      { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, loading: signal(false), upstreamFailed: listFailed, refreshList } },
       { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
       {
         provide: OrgRoleGrantsService,
@@ -67,7 +73,7 @@ function setup(): Harness {
           lookupOutcome,
           staffCheck,
           correlationId: signal('ref-1'),
-          writerSet: signal(empty),
+          writerSet,
           auditorSet: signal(empty),
           inheritedWriterSet: signal(empty),
           inheritedAuditorSet: signal(empty),
@@ -78,7 +84,8 @@ function setup(): Harness {
       {
         provide: AccountContextService,
         useValue: {
-          selectedAccount: signal<Account>({ accountId: '', accountName: '', accountSlug: '', membershipTier: '', logoUrl: null, uid: '', slug: null }),
+          selectedAccount,
+          selectedUrlSegment: computed(() => orgUrlSegment(selectedAccount())),
           hasOrgSelectorAccess: signal(true),
           getStoredUid: () => 'cookie-uid',
           setAccount,
@@ -88,6 +95,7 @@ function setup(): Harness {
     ],
   });
 
+  const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
   const fixture = TestBed.createComponent(OrgNotFoundComponent);
   fixture.detectChanges();
   return {
@@ -100,7 +108,10 @@ function setup(): Harness {
     staffCheck,
     orgLensEnabled,
     refresh,
-    resetAndReload,
+    refreshList,
+    writerSet,
+    selectedAccount,
+    navigate,
     setAccount,
     navigateToSelectedOrg,
   };
@@ -186,8 +197,17 @@ describe('OrgNotFoundComponent.state', () => {
 
     ((h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-retry"] button') as HTMLButtonElement).click();
 
-    expect(h.refresh).toHaveBeenCalledTimes(1);
-    expect(h.resetAndReload).toHaveBeenCalledWith('cookie-uid');
+    expect(h.refresh).toHaveBeenCalledWith(true);
+    expect(h.refreshList).toHaveBeenCalledWith('cookie-uid');
+  });
+
+  // The switcher's search replaces `items()` wholesale; a query that matches nothing must not turn a
+  // holder into "holds nothing" and swap the state under them.
+  it('classifies from the unfiltered grants when the list rows are filtered away', () => {
+    h.writerSet.set(new Set(['some-org']));
+    h.lookupOutcome.set('partial');
+
+    expect(renderedState(h)).toBe<OrgLensEmptyStateName>('wrong-organization');
   });
 
   it('picks a held organization through the switcher\u2019s own selection path', () => {
@@ -198,5 +218,19 @@ describe('OrgNotFoundComponent.state', () => {
 
     expect(h.setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: 'held-uid', slug: 'held-org', accountName: 'Held Org' }));
     expect(h.navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+    expect(h.navigate).not.toHaveBeenCalled();
+  });
+
+  // A row with no slug and a non-SFID uid has no URL segment, so the address-aware switch is a no-op;
+  // the viewer must still leave the dead end, on the legacy address that renders the selection.
+  it('picks a row with no URL segment through the legacy overview address', () => {
+    h.items.set([{ uid: 'legacy-uuid-1234', name: 'Legacy Org', accountId: 'legacy-uuid-1234', slug: null } as OrgItem]);
+    h.fixture.detectChanges();
+
+    ((h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-org-legacy-uuid-1234"]') as HTMLButtonElement).click();
+
+    expect(h.setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: 'legacy-uuid-1234' }));
+    expect(h.navigateToSelectedOrg).not.toHaveBeenCalled();
+    expect(h.navigate).toHaveBeenCalledWith(['/org', 'overview']);
   });
 });

@@ -109,17 +109,17 @@ export class OrgLensEmptyStateService {
 
   /**
    * Retry action of `could-not-load` / `staff-check-failed` (page, dead end, switcher notice): re-run
-   * the role-grants lookup and, once it answers, re-fetch the org list from its first page when one
-   * was fetched before — the list is filtered server-side by the same lookup, so refreshing only one
-   * of the two would leave the other stale (an outage that emptied both would otherwise clear the
-   * state and leave nothing selectable). A list never fetched is left to the switcher's own
-   * enabled-transition bootstrap.
+   * the role-grants lookup past the BFF cache and, once it answers, re-fetch the org list from its
+   * first page when one was fetched or is being fetched — the list is filtered server-side by the same
+   * lookup, so refreshing only one of the two would leave the other stale, and a Retry pressed while
+   * the first list fetch is still in flight must not skip it. The list refresh carries no bootstrap
+   * semantics (`refreshList`, not `resetAndReload`): it can never clear or re-point the selection. A
+   * list never requested is left to the switcher's own enabled-transition bootstrap.
    */
   public retry(): void {
-    const reloadList = this.orgNavigation.loaded();
-    this.roleGrants.refresh().subscribe(() => {
-      if (reloadList) {
-        this.orgNavigation.resetAndReload(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
+    this.roleGrants.refresh(true).subscribe(() => {
+      if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
+        this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
       }
     });
   }

@@ -71,16 +71,24 @@ export class OrgLensEmptyStateComponent {
     return this.interpolate(template);
   });
 
-  /** FR-005 with the one FR-013 exception: `section-empty` without an active filter has no button. */
+  /**
+   * FR-005 with the one FR-013 exception: `section-empty` without an active filter has no button. An
+   * `org-list` primary with nothing to list (the caller's rows are filtered out or not here yet) promotes
+   * the secondary into the primary slot, so the state is never left without a control.
+   */
   protected readonly primary = computed<OrgLensEmptyStateAction | undefined>(() => {
     const copy = this.copy();
     if (this.state() === 'section-empty' && this.values().filterActive === false) {
       return undefined;
     }
+    if (copy.primary?.action === 'org-list' && this.orgList().length === 0) {
+      return copy.secondary;
+    }
     return copy.primary;
   });
 
-  protected readonly secondary = computed(() => this.copy().secondary);
+  /** Hidden when it has been promoted to the primary slot. */
+  protected readonly secondary = computed(() => (this.primary() === this.copy().secondary ? undefined : this.copy().secondary));
 
   /** FR-008 — the caller's own organizations, honoured only for the states that list them. Empty renders nothing rather than an empty box. */
   protected readonly orgList = computed(() => (ORG_LIST_STATES.has(this.state()) ? (this.values().orgList ?? []) : []));
