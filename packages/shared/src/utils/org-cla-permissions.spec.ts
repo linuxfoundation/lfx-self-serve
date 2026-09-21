@@ -50,6 +50,14 @@ describe('orgClaPairProjectSfid', () => {
     ).toBe(PROJECT);
   });
 
+  it('scans past a covered project that carries no SFID', () => {
+    expect(
+      orgClaPairProjectSfid({
+        projects: [{ projectName: 'Unmapped' }, { projectSfid: PROJECT, projectName: 'Cascade' }],
+      })
+    ).toBe(PROJECT);
+  });
+
   it('yields nothing when there is no project id and no foundation id', () => {
     expect(orgClaPairProjectSfid({ projects: [] })).toBeUndefined();
     expect(orgClaPairProjectSfid({ foundationSfid: '   ', projects: [{ projectSfid: '  ', projectName: 'Blank' }] })).toBeUndefined();
