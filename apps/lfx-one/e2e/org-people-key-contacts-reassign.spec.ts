@@ -170,10 +170,6 @@ async function gotoKeyContactsTab(page: Page): Promise<void> {
   await page.goto(PEOPLE_KEY_CONTACTS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 
-  if (!page.url().includes('/org/people')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/people redirected away');
-  }
-
   // Wait for the contacts panel to mount before any assertion.
   await expect(page.getByTestId('org-people-panel-contacts')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }

@@ -20,7 +20,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
 import { expect, Page, test } from '@playwright/test';

@@ -19,7 +19,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
 import type { OrgAccessListResponse } from '@lfx-one/shared/interfaces';
@@ -126,10 +125,6 @@ async function gotoAccessTab(page: Page, list: OrgAccessListResponse = BASE_LIST
   await page.goto(ACCESS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/people')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/people redirected away');
-  }
 
   await expect(page.getByTestId('org-people-tab-access')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
   await expect(page.getByTestId('org-lens-access')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });

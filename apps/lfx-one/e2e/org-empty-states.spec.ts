@@ -20,11 +20,10 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants/org-lens-empty-state.constants';
 import { expect, Page, test } from '@playwright/test';
 
-import { fulfillJson, gotoOrgRoiPage, skipWhenAuthMissing, stubFeatureFlags, stubOrgLensContext } from './helpers/org-roi.helper';
+import { fulfillJson, gotoOrgRoiPage, skipWhenAuthMissing, stubOrgLensContext } from './helpers/org-roi.helper';
 
 test.setTimeout(120_000);
 
@@ -168,11 +167,9 @@ function overviewState(page: Page) {
 }
 
 test.describe('Org Lens empty states (spec 053)', () => {
-  test.beforeEach(async ({ page, context }) => {
-    // Fresh session: no remembered selection, and the Org Lens flag pinned on so the scenarios do not
-    // depend on the environment's LaunchDarkly state.
+  test.beforeEach(async ({ context }) => {
+    // Fresh session: no remembered selection.
     await context.clearCookies({ name: ACCOUNT_COOKIE_KEY });
-    await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true });
   });
 
   test.describe('page level — could not be loaded (#2090, FR-009 / FR-010)', () => {

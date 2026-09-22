@@ -24,7 +24,6 @@
  *
  * Prerequisites:
  * - Dev server running on localhost:4200
- * - User authenticated with org-lens-enabled flag
  * - Organization context has at least one membership
  *   is seeded (see spec 018 quickstart §7 — the seed includes sample foundation data).
  */
