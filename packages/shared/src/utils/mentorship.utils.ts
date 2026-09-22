@@ -17,7 +17,12 @@ import {
   MENTORSHIP_TERM_NAME_MAX,
   MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
+  MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
+} from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -40,9 +45,14 @@ import type {
   MentorshipEnrollStep,
   MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
+  MentorshipMenteeApplication,
+  MentorshipMenteeApplicationView,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
+  MentorshipMenteeTask,
+  MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskView,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
@@ -724,4 +734,125 @@ export function mentorshipPersonInitials(name: string): string {
   const first = tokens[0][0];
   const second = tokens[1]?.[0] ?? tokens[0][1] ?? '';
   return (first + second).toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// Mentee tasks tab — task/application view models
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalise a task status to a status-dropdown value. The dropdown only offers
+ * `pending` / `in_progress` / `submitted`, so the two backend aliases collapse:
+ * `incomplete` → `pending` and `complete` → `submitted` (both display the same).
+ *
+ * The parameter is typed to the status union, so the `default` branch is a
+ * runtime guard for values that reach here without compile-time checking — an
+ * unvalidated BFF payload or a cast — mapping them to `pending` rather than
+ * letting an unknown status render blank/unstyled.
+ */
+export function normalizeMentorshipMenteeTaskStatus(status: MentorshipMenteeTaskStatus): MentorshipMenteeTaskStatus {
+  switch (status) {
+    case 'incomplete':
+      return 'pending';
+    case 'complete':
+      return 'submitted';
+    case 'pending':
+    case 'in_progress':
+    case 'submitted':
+      return status;
+    default:
+      return 'pending';
+  }
+}
+
+/** Count tasks in a submitted/complete state. */
+export function countSubmittedMentorshipMenteeTasks(tasks: readonly { status: MentorshipMenteeTaskStatus }[]): number {
+  return tasks.filter((task) => task.status === 'submitted' || task.status === 'complete').length;
+}
+
+/**
+ * Build a display-ready task row from the fields both mentee phases share, so the
+ * template reads flat fields instead of recomputing presentation logic in bindings.
+ * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
+ * (file already uploaded).
+ */
+export function buildMentorshipMenteeTaskView(input: {
+  id: string;
+  title: string;
+  description: string;
+  status: MentorshipMenteeTaskStatus;
+  submitFile: string | null;
+  fileUrl?: string;
+  dueDate?: string;
+  submittedDate?: string;
+}): MentorshipMenteeTaskView {
+  // Normalise once so an unrecognised runtime status resolves to a real option
+  // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
+  // it would read as `pending` in the dropdown yet render unstyled and vanish
+  // under the Pending filter (which matches on the normalised status).
+  const status = normalizeMentorshipMenteeTaskStatus(input.status);
+  const submitted = status === 'submitted';
+  const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
+  // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
+  // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
+  // so View/Download render for the URL-on-submitFile shape too.
+  const submitFileUrl = input.submitFile && input.submitFile !== 'required' ? input.submitFile : null;
+  return {
+    id: input.id,
+    title: input.title,
+    description: input.description,
+    status,
+    submitted,
+    inProgress: status === 'in_progress',
+    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
+    hasUploadedFile,
+    needsUpload: input.submitFile === 'required' && !input.fileUrl,
+    fileUrl: input.fileUrl ?? submitFileUrl,
+    dueDate: input.dueDate ?? null,
+    submittedDate: input.submittedDate ?? null,
+  };
+}
+
+/** Build the applicant-phase application cards (each with its prerequisite task rows). */
+export function buildMentorshipMenteeApplicationViews(applications: MentorshipMenteeApplication[]): MentorshipMenteeApplicationView[] {
+  return applications.map((app) => ({
+    id: app.id,
+    programName: app.programName,
+    projectName: app.projectName,
+    termName: app.term.name,
+    statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[app.status] ?? '',
+    statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[app.status] ?? '',
+    // Use one consistent source: when the tab-only `tasks` list is present, count/size it;
+    // otherwise fall back to the overview's precomputed counts so both tabs agree.
+    submittedCount: app.tasks ? countSubmittedMentorshipMenteeTasks(app.tasks) : app.prerequisiteTasksCompleted,
+    totalCount: app.tasks ? app.tasks.length : app.prerequisiteTasksTotal,
+    tasks: (app.tasks ?? []).map((task) =>
+      buildMentorshipMenteeTaskView({
+        id: task.id,
+        title: task.name,
+        description: task.description,
+        status: task.status,
+        submitFile: task.submitFile,
+        fileUrl: task.fileUrl,
+        dueDate: task.dueDate,
+        submittedDate: task.submittedOn,
+      })
+    ),
+  }));
+}
+
+/** Build the accepted-phase flat task rows. */
+export function buildMentorshipMenteeTaskViews(tasks: MentorshipMenteeTask[]): MentorshipMenteeTaskView[] {
+  return tasks.map((task) =>
+    buildMentorshipMenteeTaskView({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      submitFile: task.submitFile,
+      fileUrl: task.fileUrl,
+      dueDate: task.dueDate,
+      submittedDate: task.submittedDate,
+    })
+  );
 }

@@ -44,9 +44,9 @@ export class MenteePageComponent {
   protected readonly findProgramUrl = MENTORSHIP_MENTEE_FIND_PROGRAM_URL;
 
   /** Phase reported by the overview child. */
-  readonly phase = signal<MentorshipMenteePhase>('empty');
+  public readonly phase = signal<MentorshipMenteePhase>('empty');
   /** Open task count reported by the overview child. */
-  readonly openTaskCount = signal(0);
+  public readonly openTaskCount = signal(0);
 
   private static readonly tabConfigs: Record<MentorshipMenteePhase, readonly { value: MentorshipMenteePageTab; label: string }[]> = {
     empty: MENTORSHIP_MENTEE_TABS_EMPTY,
@@ -66,28 +66,35 @@ export class MenteePageComponent {
   protected readonly tabWithCount = computed<MentorshipMenteePageTab | null>(() => (this.openTaskCount() > 0 ? 'tasks' : null));
 
   /** Called by the overview child (via output signal or directly) when phase is known. */
-  onPhaseChange(phase: MentorshipMenteePhase): void {
+  public onPhaseChange(phase: MentorshipMenteePhase): void {
     this.phase.set(phase);
   }
 
   /** Called by the overview child when the open task count is known. */
-  onOpenTaskCountChange(count: number): void {
+  public onOpenTaskCountChange(count: number): void {
     this.openTaskCount.set(count);
   }
 
   /**
-   * Wire up `output()` signal subscriptions from the routed child. Only the
-   * overview component emits `phaseChange` and `openTaskCountChange`; other
-   * children simply lack those properties and the wiring is a no-op.
+   * Wire up `output()` signal subscriptions from the routed child. The overview
+   * component emits `phaseChange` and `openTaskCountChange`; the tasks component
+   * exposes a writable `phase` signal. Other children simply lack these
+   * properties and the wiring is a no-op.
    * `OutputEmitterRef.subscribe` returns a cleanup-managed subscription.
    */
-  onChildActivate(child: unknown): void {
+  public onChildActivate(child: unknown): void {
     const c = child as {
       phaseChange?: import('@angular/core').OutputEmitterRef<MentorshipMenteePhase>;
       openTaskCountChange?: import('@angular/core').OutputEmitterRef<number>;
+      phase?: import('@angular/core').WritableSignal<MentorshipMenteePhase>;
     };
     c.phaseChange?.subscribe((phase) => this.onPhaseChange(phase));
     c.openTaskCountChange?.subscribe((count) => this.onOpenTaskCountChange(count));
+
+    // Pass the current phase to children that accept it (e.g. MenteeApplicationTasksComponent)
+    if (c.phase && typeof c.phase.set === 'function') {
+      c.phase.set(this.phase());
+    }
   }
 
   protected onTabClick(tab: MentorshipMenteePageTab): void {

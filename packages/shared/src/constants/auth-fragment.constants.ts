@@ -13,3 +13,9 @@
  * sibling `gw-embed.utils.ts` already imports its constants across that line.
  */
 export const AUTH_FRAGMENT_KEYS = ['access_token', 'refresh_token', 'id_token', 'provider_token', 'provider_refresh_token'] as const;
+
+/**
+ * Query param on `/invite` that carries the single-factor accept credential.
+ * Datadog RUM records `view.url`, so this value must be redacted before send (GH-2290).
+ */
+export const INVITE_TOKEN_QUERY_PARAM = 'token';

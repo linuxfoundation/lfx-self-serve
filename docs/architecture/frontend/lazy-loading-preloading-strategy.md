@@ -94,11 +94,16 @@ The `CustomPreloadingStrategy` implements smart preloading based on:
 1. **Network Connection Quality**
 2. **Route Priority (usage-based)**
 3. **Configurable Delays**
+4. **Invite landing** — `/invite` and `/invite/error` skip preloading entirely so a one-shot accept page does not download meetings/committees/… in the background (GH-2290).
 
 ```typescript
 @Injectable({ providedIn: 'root' })
 export class CustomPreloadingStrategy implements PreloadingStrategy {
   public preload(route: Route, load: () => Observable<any>): Observable<any> {
+    if (isBrowserInviteLandingPath()) {
+      return of(null);
+    }
+
     if (route.data && route.data['preload']) {
       // Network-aware loading
       const connection = (navigator as any).connection;

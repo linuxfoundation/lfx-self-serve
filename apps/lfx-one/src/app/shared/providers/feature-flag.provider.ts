@@ -4,6 +4,7 @@
 import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
 import { environment } from '@environments/environment';
 import { FEATURE_FLAG_READY_TIMEOUT_MS } from '@lfx-one/shared';
+import { isInviteLandingPath } from '@lfx-one/shared/utils';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
@@ -31,6 +32,13 @@ async function initializeOpenFeature(): Promise<void> {
   // Skip if no client ID is configured
   if (!clientId) {
     console.warn('LaunchDarkly client ID not configured - feature flags disabled');
+    return;
+  }
+
+  // Invite landing is a spinner/error shell whose every exit is a full document load, so a
+  // warm LaunchDarkly client cannot survive to the next page. Skip construction entirely
+  // (GH-2290) — getBooleanFlag already falls back to code defaults when uninitialized.
+  if (isInviteLandingPath(window.location.pathname)) {
     return;
   }
 

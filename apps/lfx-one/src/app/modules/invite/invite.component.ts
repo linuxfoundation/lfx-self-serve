@@ -4,15 +4,16 @@
 import { isPlatformBrowser } from '@angular/common';
 import { Component, inject, OnInit, PLATFORM_ID, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { HeaderComponent } from '@components/header/header.component';
 import { InviteTokenPayload, PendingCommitteeInviteForOrg } from '@lfx-one/shared/interfaces';
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InviteService } from '@services/invite.service';
 import { take } from 'rxjs';
 
+import { InviteLandingHeaderComponent } from './invite-landing-header/invite-landing-header.component';
+
 @Component({
   selector: 'lfx-invite',
-  imports: [HeaderComponent],
+  imports: [InviteLandingHeaderComponent],
   templateUrl: './invite.component.html',
 })
 export class InviteComponent implements OnInit {
@@ -93,9 +94,9 @@ export class InviteComponent implements OnInit {
         complete: () => {
           if (!accepted) {
             // User dismissed the org dialog without confirming. The LFID accept already succeeded
-            // but the committee invite is still pending. Navigate home so the user isn't left on a
-            // blank page — they can accept the invite from My Groups.
-            void this.router.navigate(['/']);
+            // but the committee invite is still pending. Full-page home so bootstrap is not the
+            // invite-skipped shell — they can accept the invite from My Groups.
+            window.location.href = '/';
           }
         },
       });

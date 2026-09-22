@@ -36,6 +36,8 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { catchError, distinctUntilChanged, EMPTY, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
 
+import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
+
 @Injectable({
   providedIn: 'root',
 })
@@ -124,7 +126,7 @@ export class UserService {
     // existing /api/profile endpoint. afterNextRender never runs during SSR, so this never adds
     // latency to a server-rendered response — it fires once, after the first client render.
     afterNextRender(() => {
-      if (!this.user()) {
+      if (!this.user() || isBrowserInviteLandingPath()) {
         return;
       }
       this.getCurrentUserProfile()

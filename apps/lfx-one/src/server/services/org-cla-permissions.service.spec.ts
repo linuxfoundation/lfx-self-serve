@@ -27,6 +27,7 @@ const COMPANY = '0014100000Te2ovAAB';
 const PROJECT = 'a09410000182dD2AAI';
 const SIGN_PAIR = `self_serve_request_corporate_signature:create:project|organization:${PROJECT}|${COMPANY}`;
 const APPROVAL_PAIR = `signature_approval_list:update:project|organization:${PROJECT}|${COMPANY}`;
+const MANAGER_DELETE_PAIR = `cla_manager_delete:remove:project|organization:${PROJECT}|${COMPANY}`;
 
 describe('OrgClaPermissionsService', () => {
   const service = new OrgClaPermissionsService();
@@ -58,6 +59,13 @@ describe('OrgClaPermissionsService', () => {
 
     await expect(service.check(req, COMPANY, 'approval-list-update', PROJECT)).resolves.toBe(true);
     expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ body: [APPROVAL_PAIR] }));
+  });
+
+  it('POSTs the manager-delete string', async () => {
+    gatewayFetch.mockResolvedValue({ [MANAGER_DELETE_PAIR]: true });
+
+    await expect(service.check(req, COMPANY, 'cla-manager-delete', PROJECT)).resolves.toBe(true);
+    expect(gatewayFetch.mock.calls[0][2]).toEqual(expect.objectContaining({ body: [MANAGER_DELETE_PAIR] }));
   });
 
   it('fails closed when Sign has no project id rather than listing company grants', async () => {

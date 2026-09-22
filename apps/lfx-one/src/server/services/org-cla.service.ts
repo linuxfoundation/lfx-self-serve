@@ -9,7 +9,14 @@
 // happen client-side over the fetched set, so nothing on this path fans out per row.
 
 import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
-import { isSameClaGroup, legacyOrgEasyclaReturnPath, orgClaPairProjectSfid, orgEasyclaReturnPath, sortOrgClaApprovalEntries } from '@lfx-one/shared/utils';
+import {
+  classifyOrgClaManagerRefusal,
+  isSameClaGroup,
+  legacyOrgEasyclaReturnPath,
+  orgClaPairProjectSfid,
+  orgEasyclaReturnPath,
+  sortOrgClaApprovalEntries,
+} from '@lfx-one/shared/utils';
 import type {
   ClaGroupOption,
   ClaGroupSearchResponse,
@@ -21,6 +28,9 @@ import type {
   OrgClaGroupList,
   OrgClaGroupProject,
   OrgClaGroupStatus,
+  OrgClaManager,
+  OrgClaManagerAddRequest,
+  OrgClaManagerList,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
@@ -32,6 +42,9 @@ import type {
   EasyClaApprovalListUpdateRequest,
   EasyClaCompanyClaGroup,
   EasyClaCompanyClaGroupList,
+  EasyClaCompanyClaManager,
+  EasyClaCompanyClaManagerList,
+  ManagerTarget,
   EasyClaCorporateSignature,
   EasyClaCorporateSignatureList,
   EasyClaSearchList,
@@ -168,34 +181,6 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  * status. `status` remains the single slot the template reads, because sanctions outrank
  * signing there and a consumer forming its own opinion from the two booleans would present a
  * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
- * document exists to fetch, since a `sanctioned` row may be signed or unsigned, and that is the
- * one question `signed` is here for.
-
-/**
- * Maps one upstream entry onto the list row, once its signature id is known to be present.
- *
- * The id is required here rather than defaulted, so the check for it stays at the point where a
- * malformed response can still be rejected as one. A default inside the mapper would silently
- * produce a row that renders.
- *
- * Two upstream fields are dropped here rather than left unrendered, because a field the
- * template ignores still reaches the browser inside the transferred state:
- *
- * - `claManagers` — the managers by id and LF username. This surface shows only how many
- *   there are, so the identities have no reason to leave the server. Rendering them is a
- *   separate feature and needs its own authorization argument.
- * - `approvedContributorsCount` — a real number, but not the one the card's first stat
- *   names. That slot is `approvalCriteriaCount` (the rules deciding who may be covered);
- *   this is the count of employee acknowledgements (the people covered). They are easy to
- *   confuse because the console this replaces labels its rules section as though it listed
- *   contributors. Mapping it here is how it ends up under the wrong label.
- *
- * `autoCreateECLA` is likewise not carried: it belongs to a later feature.
- *
- * `signed` is carried, but only as the answer to "is there a document" — never as a display
- * status. `status` remains the single slot the template reads, because sanctions outrank
- * signing there and a consumer forming its own opinion from the two booleans would present a
- * sanctioned entity's agreement as ordinarily signed. What `status` cannot answer is whether a
  * document exists to fetch, since `sanctioned` describes the entity and not the agreement, and
  * that is the one question `signed` is here for.
  */
@@ -275,6 +260,88 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
 function toStatus(entry: EasyClaCompanyClaGroup): OrgClaGroupStatus {
   if (entry.sanctioned === true) return 'sanctioned';
   return entry.signed === true ? 'signed' : 'not-started';
+}
+
+function upstreamTrimmedString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
+  const name = upstreamTrimmedString(entry.name);
+  const email = upstreamTrimmedString(entry.email);
+  // Only the events-backed add time. `approved_on` is signature creation time, not manager add time.
+  // The Org Lens managers tab does not surface `addedOn` until upstream populates `added_on`.
+  const addedOn = upstreamTrimmedString(entry.added_on);
+  const lfUsername = upstreamTrimmedString(entry.lf_username);
+
+  return {
+    lfUsername,
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {}),
+    ...(addedOn ? { addedOn } : {}),
+  };
+}
+
+/**
+ * The write endpoints key on the same ACS pair the list mapper pins: first covered project,
+ * else the foundation. Sorting here would send Add/Remove at a different grain than the
+ * permission check that hid the buttons.
+ */
+function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
+  return (
+    orgClaPairProjectSfid({
+      foundationSfid: entry.foundationSFID,
+      projects: (entry.projects ?? []).map((project) => ({
+        projectName: project.projectName?.trim() ?? '',
+        ...(project.projectSFID ? { projectSfid: project.projectSFID } : {}),
+      })),
+    }) ?? ''
+  );
+}
+
+/**
+ * The write endpoints key on the project, and an empty id would compose `…/project//cla-manager` —
+ * a path the caller cannot tell from a well-formed one. Only the write paths require it: listing
+ * managers keys on the CLA group alone, so an agreement covering no project still lists.
+ */
+function requireProjectSfid(target: ManagerTarget, operation: string): string {
+  if (!target.projectSfid) {
+    throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its project id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      operation,
+      service: SERVICE,
+    });
+  }
+
+  return target.projectSfid;
+}
+
+function requireSignedManagerTarget(target: ManagerTarget, operation: string): void {
+  if (target.signed) return;
+
+  throw new MicroserviceError('This CLA has not been signed yet, so its managers cannot be changed', 400, 'AGREEMENT_NOT_SIGNED', {
+    operation,
+    service: SERVICE,
+  });
+}
+
+function asManagerRefusal(error: unknown, operation: string, errorMessage: string): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  if (error.statusCode >= 500 || error.transportFailure) {
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation,
+      service: SERVICE,
+      transportFailure: error.transportFailure,
+    });
+  }
+
+  const refusal = classifyOrgClaManagerRefusal(error.statusCode, error.errorBody);
+
+  return new MicroserviceError(`${errorMessage}: refused (${refusal})`, error.statusCode, error.code, {
+    operation,
+    service: SERVICE,
+    errorBody: { error: refusal },
+  });
 }
 
 export class OrgClaService {
@@ -544,11 +611,13 @@ export class OrgClaService {
     // would treat as unaffirmed — so the mail path leaves those keys off the object entirely.
     // `return_url` is the same omit: the producer documents it as self-sign only, and still
     // writes a supplied value onto a mailed signature.
+    // Forward the accepted UUID spelling: linuxfoundation/easycla#5219 normalizes it before comparison.
     let body: EasyClaSelfServeCorporateSignatureInput;
     if (request.sendAsEmail) {
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
+        cla_group_id: request.claGroupId,
         send_as_email: true,
         authority_name: request.authorityName,
         authority_email: request.authorityEmail,
@@ -575,6 +644,7 @@ export class OrgClaService {
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
+        cla_group_id: request.claGroupId,
         return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
           ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
           : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
@@ -677,17 +747,13 @@ export class OrgClaService {
       });
     }
 
-    // The agreement is requested by project, not by CLA Group: the upstream input takes
-    // `project_sfid` and has no field for a CLA Group, so the group the signatory chose cannot be
-    // bound to the request. It comes back on the response, and that echo is the only place the two
-    // can be compared. Without this check a project whose CLA Group mapping moved between the
-    // search and the confirmation — or a client that posted a mismatched pair — hands the signatory
-    // a session for an agreement they did not choose, and nothing anywhere would say so.
-    //
-    // This necessarily refuses after the envelope exists, leaving one abandoned upstream. That is
-    // the cheaper of the two outcomes by a wide margin: the alternative is a corporate agreement
-    // signed against the wrong CLA Group, which is a legal instrument that cannot be withdrawn by
-    // this application. Binding the group in the request instead needs an upstream field.
+    // Deploy this consumer before linuxfoundation/easycla#5219: older producers ignore the
+    // requested `cla_group_id`, so the response echo remains their only chosen-group check.
+    // The upgraded producer independently resolves the project's signing group and rejects
+    // mismatches before creating an envelope; this check then catches inconsistent responses,
+    // not the project/group binding itself.
+    // Refusing here can leave an envelope already created or emailed upstream, but must not
+    // hand the browser a signing session for the wrong agreement.
     // Compared canonically, never as raw strings. The request boundary accepts the hyphenated and
     // unhyphenated spellings in either case, because the producer does, and the producer answers in
     // its own canonical one — so a request that spelled the id differently would fail a raw
@@ -853,6 +919,136 @@ export class OrgClaService {
     }
   }
 
+  public async getManagers(req: Request, orgUid: string, signatureId: string): Promise<OrgClaManagerList | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
+    if (!target) return null;
+
+    if (!target.signed) {
+      // The tab is locked client-side for an unsigned agreement, so this is the defensive arm: a
+      // direct caller gets the truthful empty rather than manager PII from a stale upstream list.
+      logger.warning(req, 'org_cla_list_managers', 'agreement is not signed, so it holds no manager roster', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { signatureId, managers: [] };
+    }
+
+    const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
+      {
+        operation: 'org_cla_list_managers',
+        service: SERVICE,
+        errorMessage: 'Failed to fetch CLA managers',
+        errorCode: 'UPSTREAM_ERROR',
+        redactResponseBody: true,
+        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+      }
+    );
+
+    if (!upstream || !Array.isArray(upstream.list)) {
+      throw new MicroserviceError('Failed to fetch CLA managers: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_list_managers',
+        service: SERVICE,
+      });
+    }
+
+    return {
+      signatureId,
+      managers: upstream.list
+        .filter((entry): entry is EasyClaCompanyClaManager => !!upstreamTrimmedString(entry?.lf_username))
+        .map((entry) => toOrgClaManager(entry)),
+    };
+  }
+
+  public async addManager(req: Request, orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Promise<OrgClaManager | null> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_add_manager');
+    if (!target) return null;
+
+    requireSignedManagerTarget(target, 'org_cla_add_manager');
+    const projectSfid = requireProjectSfid(target, 'org_cla_add_manager');
+
+    try {
+      // The write answers with an updated Signature (`signature_acl`), not a `company-cla-manager`
+      // row, so success is re-read from the manager list rather than parsed off the POST body.
+      await gatewayFetch<unknown>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager`,
+        {
+          operation: 'org_cla_add_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to add the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body: { firstName: request.firstName, lastName: request.lastName, userEmail: request.email },
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_add_manager', 'Failed to add the CLA manager');
+    }
+
+    try {
+      const roster = await this.getManagers(req, orgUid, signatureId);
+      const normalizedEmail = request.email.trim().toLowerCase();
+      const added = roster?.managers.find((manager) => manager.email?.trim().toLowerCase() === normalizedEmail);
+      if (added?.lfUsername?.trim()) {
+        logger.debug(req, 'org_cla_add_manager', 'added a cla manager', { org_uid: orgUid, signature_id: signatureId });
+        return added;
+      }
+    } catch (error) {
+      logger.warning(req, 'org_cla_add_manager', 'add succeeded but re-reading the roster failed', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    logger.debug(req, 'org_cla_add_manager', 'added a cla manager; roster re-read did not return the new row yet', {
+      org_uid: orgUid,
+      signature_id: signatureId,
+    });
+    return this.managerFromAddRequest(request);
+  }
+
+  public async removeManager(req: Request, orgUid: string, signatureId: string, lfUsername: string): Promise<boolean> {
+    const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_remove_manager');
+    if (!target) return false;
+
+    requireSignedManagerTarget(target, 'org_cla_remove_manager');
+    const projectSfid = requireProjectSfid(target, 'org_cla_remove_manager');
+
+    try {
+      await gatewayFetch<null>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager/${encodeURIComponent(lfUsername)}`,
+        {
+          operation: 'org_cla_remove_manager',
+          service: SERVICE,
+          errorMessage: 'Failed to remove the CLA manager',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'DELETE',
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      throw asManagerRefusal(error, 'org_cla_remove_manager', 'Failed to remove the CLA manager');
+    }
+
+    logger.debug(req, 'org_cla_remove_manager', 'removed a cla manager', { org_uid: orgUid, signature_id: signatureId });
+    return true;
+  }
+
+  /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
+  private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
+    const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
+    return {
+      lfUsername: '',
+      email: request.email.trim(),
+      ...(name ? { name } : {}),
+    };
+  }
+
   /**
    * The organization's agreements as upstream sends them, validated but unmapped.
    *
@@ -909,12 +1105,54 @@ export class OrgClaService {
   }
 
   /**
-   * Resolves the three upstream ids an approval-list call is addressed by, plus whether the caller
-   * may write.
-   *
-   * `null` means the signature is not on this organization's list — answered without ever calling
-   * the approval endpoints.
+   * Returns null when the signature is not on this organization's list, which is both the
+   * not-found answer and the authorization gate.
    */
+  private async resolveManagerTarget(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ManagerTarget | null> {
+    const entries = await this.fetchUpstreamClaGroups(req, orgUid);
+    const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
+    if (!entry) {
+      logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
+      return null;
+    }
+
+    const companyId = entry.companyID?.trim() ?? '';
+    const claGroupId = entry.claGroupID?.trim() ?? '';
+    if (!companyId || !claGroupId) {
+      throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing its company or CLA group id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    this.assertUnambiguousManagerTarget(entries, entry, operation);
+
+    return { companyId, claGroupId, projectSfid: pickProjectSfid(entry), signed: entry.signed === true };
+  }
+
+  /**
+   * The company CLA-group manager endpoints are not signature-scoped. When this organization holds
+   * more than one signature on the same pair, upstream resolves the first match — the same class of
+   * bug the approval-list read avoids by filtering on `signatureID`.
+   */
+  private assertUnambiguousManagerTarget(
+    entries: readonly (EasyClaCompanyClaGroup & { signatureID: string })[],
+    entry: EasyClaCompanyClaGroup & { signatureID: string },
+    operation: string
+  ): void {
+    const companyId = entry.companyID?.trim() ?? '';
+    const claGroupId = entry.claGroupID?.trim() ?? '';
+    const peers = entries.filter((candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId);
+    if (peers.length <= 1) return;
+
+    throw new MicroserviceError(
+      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
+      409,
+      'AMBIGUOUS_MANAGER_TARGET',
+      { operation, service: SERVICE }
+    );
+  }
+
   private async resolveApprovalContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
     const entry = entries.find((candidate) => candidate.signatureID === signatureId);
