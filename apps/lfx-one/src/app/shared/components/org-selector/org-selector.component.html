@@ -79,7 +79,15 @@
         data-testid="org-selector-list-incomplete">
         <i class="fa-light fa-triangle-exclamation mt-0.5 shrink-0" aria-hidden="true"></i>
         <span class="grow">{{ listIncompleteNotice }}</span>
-        <button type="button" class="shrink-0 font-medium underline" (click)="retryList()" data-testid="org-selector-list-incomplete-retry">Retry</button>
+        <button
+          type="button"
+          class="shrink-0 font-medium underline disabled:cursor-not-allowed disabled:opacity-50"
+          [disabled]="emptyState.retrying()"
+          [attr.aria-busy]="emptyState.retrying()"
+          (click)="retryList()"
+          data-testid="org-selector-list-incomplete-retry">
+          {{ emptyState.retrying() ? 'Retrying…' : 'Retry' }}
+        </button>
       </div>
     }
 

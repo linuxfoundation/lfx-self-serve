@@ -243,17 +243,35 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // The Retry control binds to `retrying`; it must stay disabled through BOTH phases — the grants
   // refresh and the chained list refresh — or a second click can fire a concurrent list reload.
-  it('retrying reflects the grants refresh and then the chained list refresh', () => {
-    expect(h.service.retrying()).toBe(false);
+  // The Retry control binds to `retrying`; it must stay disabled through BOTH phases with no gap at
+  // the handoff — driven through `retry()` itself, with the mocked list refresh flipping `loading`
+  // synchronously as the real one does.
+  it('retrying stays true across the grants → list handoff of a real retry', () => {
+    const grants = new Subject<void>();
+    h.refresh.mockImplementation(() => {
+      h.grantsLoading.set(true);
+      return grants.asObservable();
+    });
+    h.refreshList.mockImplementation(() => h.listLoading.set(true));
+    h.listLoaded.set(true);
 
-    h.grantsLoading.set(true);
+    h.service.retry();
     expect(h.service.retrying()).toBe(true);
 
     h.grantsLoading.set(false);
-    h.listLoading.set(true);
+    grants.next();
+    // Handoff: grants settled, list fetch started inside the callback — no dip to false.
     expect(h.service.retrying()).toBe(true);
 
     h.listLoading.set(false);
+    TestBed.tick();
+    expect(h.service.retrying()).toBe(false);
+  });
+
+  // `orgNavigation.loading` is one flag for every list fetch; a switcher search must not mark Retry busy.
+  it('retrying ignores list activity that no retry started', () => {
+    h.listLoading.set(true);
+
     expect(h.service.retrying()).toBe(false);
   });
 

@@ -288,6 +288,15 @@ interface StubOptions {
   projectAnnual?: unknown;
 }
 
+/**
+ * Error body the real BFF answers with: the Org Lens read gate refuses with `code: 'FORBIDDEN'` on a 403,
+ * and the section classifier decides denial from that code, never from the status alone (spec 053
+ * FR-015) — a bare 403 is a load failure. Other statuses carry no gate code.
+ */
+function stubbedError(status: number): { message: string; code?: string } {
+  return status === 403 ? { message: 'stubbed', code: 'FORBIDDEN' } : { message: 'stubbed' };
+}
+
 export async function stubOrgLensContext(page: Page, options: StubOptions = {}): Promise<void> {
   const hasAccess = options.hasAccess ?? true;
 
@@ -302,13 +311,13 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   // mirrors the server, where the same distinction is made by registration order instead.
   await page.route('**/api/orgs/*/lens/roi/projects/*', (route) => {
     const status = options.projectDetailStatus ?? 200;
-    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
     return fulfillJson(route, options.projectDetail ?? mockProjectDetail(DETAIL_PROJECT.slug));
   });
 
   await page.route('**/api/orgs/*/lens/roi/projects/*/annual*', (route) => {
     const status = options.projectDetailStatus ?? 200;
-    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
     return fulfillJson(route, options.projectAnnual ?? mockProjectAnnual(DETAIL_PROJECT.slug));
   });
 

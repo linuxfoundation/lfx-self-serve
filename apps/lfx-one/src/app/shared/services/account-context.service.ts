@@ -109,10 +109,11 @@ export class AccountContextService {
   });
 
   /**
-   * Whether the caller may see the org-selector / Org Lens surfaces: a direct writer or auditor
-   * grant, at least one persona-seeded account, or the LF staff grant. Single source of truth shared
-   * by the sidebar selector visibility gate and the Org Overview no-access gate so the two cannot
-   * drift apart. Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   * Whether the caller may see the org-selector / Org Lens surfaces: a direct or inherited (roll-up,
+   * LFXV2-3029) writer or auditor grant, at least one persona-seeded account, or the LF-team grant.
+   * Single source of truth shared by the sidebar selector visibility gate and the page-level
+   * empty-state classifier so the two cannot drift apart. Inherited grants count: the switcher lists
+   * those rows, and a caller holding nothing else must still be able to start the list (spec 053).
    *
    * Staff qualify on the grant alone, with no accounts of their own. That is the whole
    * point: their list starts empty and is filled by search, so gating visibility on a non-empty list

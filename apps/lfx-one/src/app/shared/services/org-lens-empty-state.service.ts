@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal } from '@angular/core';
+import { computed, effect, inject, Injectable, Signal, signal } from '@angular/core';
 import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
@@ -39,6 +39,20 @@ export class OrgLensEmptyStateService {
   private readonly roleGrants = inject(OrgRoleGrantsService);
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
+
+  /**
+   * Phase 2 of `retry()` is in flight. `orgNavigation.loading` is one flag for every list fetch —
+   * bootstrap, switcher search, next page — so on its own it would mark Retry busy while the viewer
+   * merely types in the switcher; this narrows it to the list refresh Retry itself started.
+   */
+  private readonly listRetryInFlight = signal(false);
+
+  /** Clears the phase-2 marker once the list fetch Retry started has settled (loading fell back to false). */
+  private readonly settleListRetry = effect(() => {
+    if (this.listRetryInFlight() && !this.orgNavigation.loading()) {
+      this.listRetryInFlight.set(false);
+    }
+  });
 
   /** Both one-shot bootstrap loads have answered; before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded());
@@ -89,7 +103,7 @@ export class OrgLensEmptyStateService {
    * The shared Retry is in flight — bind to the state's `retrying` so the control cannot be re-fired.
    * Covers both phases of `retry()`: the role-grants refresh and the org-list refresh it chains.
    */
-  public readonly retrying: Signal<boolean> = computed(() => this.roleGrants.loading() || this.orgNavigation.loading());
+  public readonly retrying: Signal<boolean> = computed(() => this.roleGrants.loading() || (this.listRetryInFlight() && this.orgNavigation.loading()));
 
   /**
    * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the
@@ -126,6 +140,7 @@ export class OrgLensEmptyStateService {
   public retry(): void {
     this.roleGrants.refresh(true).subscribe(() => {
       if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
+        this.listRetryInFlight.set(true);
         this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
       }
     });

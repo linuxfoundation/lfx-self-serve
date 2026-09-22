@@ -199,9 +199,6 @@ describe('AccountContextService — address-adopted selection', () => {
     expect(service.selectedAccount().uid).toBeUndefined();
   });
 
-  // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
-  // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
-  // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
   // LFXV2-3029: an inherited (roll-up) grant is a held organization — the switcher lists those rows,
   // so it must be enabled for a caller holding nothing else, or their list never starts (spec 053).
   describe('hasOrgSelectorAccess', () => {
@@ -221,16 +218,29 @@ describe('AccountContextService — address-adopted selection', () => {
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
 
-    it('is true for a direct grant or the LF-team entitlement', () => {
-      grants.auditorSet.set(new Set([UID_A]));
+    it('is true for a direct writer or auditor grant alone', () => {
+      grants.writerSet.set(new Set([UID_A]));
       expect(service.hasOrgSelectorAccess()).toBe(true);
 
-      grants.auditorSet.set(new Set());
+      grants.writerSet.set(new Set());
+      grants.auditorSet.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for the LF-team entitlement alone', () => {
       grants.isStaff.set(true);
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a persona-seeded organization alone', () => {
+      service.initializeUserOrganizations([seedA]);
       expect(service.hasOrgSelectorAccess()).toBe(true);
     });
   });
 
+  // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
+  // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
+  // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
   describe('pinSelection', () => {
     it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
       service.setAccount(addressedB);
