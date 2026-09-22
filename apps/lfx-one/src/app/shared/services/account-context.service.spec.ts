@@ -360,17 +360,16 @@ describe('AccountContextService — address-adopted selection', () => {
 
 describe('AccountContextService — Snowflake enrichment platform boundary', () => {
   const UID_A = '0014100000MgaAAAAA';
-  const seedA: Account = { accountId: 'acc-A', accountName: 'Alpha', accountSlug: '', membershipTier: '', uid: UID_A };
+  const seedA: Account = { accountId: 'acc-A', accountName: 'Alpha', membershipTier: '', uid: UID_A };
 
   const liveRow = (accountId: string, accountName: string): OrgLensAccountContextResponse =>
     ({
       accountId,
       accountName,
-      accountSlug: null,
       logoUrl: null,
       cdevOrgId: null,
       membershipTierDisplayName: null,
-    }) as OrgLensAccountContextResponse;
+    }) as unknown as OrgLensAccountContextResponse;
 
   const setup = (platformId: string, responses: unknown[] = []) => {
     const cookies = new Map<string, string>();
