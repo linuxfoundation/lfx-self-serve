@@ -89,7 +89,6 @@ import {
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
@@ -1102,12 +1101,9 @@ export class AnalyticsService {
       params['projectSlug'] = query.projectSlug;
     }
 
-    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params }).pipe(
-      catchError((error) => {
-        console.error('[analytics] engagement-group-attendance failed', { query, error });
-        return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
-      })
-    );
+    // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
+    // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params });
   }
 
   /**

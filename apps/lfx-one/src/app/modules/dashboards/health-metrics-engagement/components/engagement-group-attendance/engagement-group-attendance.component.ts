@@ -17,7 +17,7 @@ import {
 import { buildHealthMetricsEngagementGroupTrend, formatIsoDateLabel, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
 import { EngagementGroupAttendanceDrawerComponent } from '../engagement-group-attendance-drawer/engagement-group-attendance-drawer.component';
@@ -83,6 +83,8 @@ export class EngagementGroupAttendanceComponent {
   });
   protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);
+  /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
+  protected readonly loadFailed = signal<boolean>(false);
   protected readonly selectedRow = signal<HealthMetricsEngagementGroupRow | null>(null);
   protected readonly drawerVisible = signal<boolean>(false);
 
@@ -102,7 +104,7 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly counts = computed(() => (this.loading() ? null : this.response().counts));
+  protected readonly counts = computed(() => (this.loading() || this.loadFailed() ? null : this.response().counts));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 
@@ -159,11 +161,19 @@ export class EngagementGroupAttendanceComponent {
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-        tap(() => this.loading.set(true)),
+        tap(() => {
+          this.loading.set(true);
+          this.loadFailed.set(false);
+        }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
-        // request for the previous one. AnalyticsService absorbs errors into the default response.
+        // request for the previous one.
         switchMap((query) =>
           (query.foundationSlug ? this.analyticsService.getEngagementGroupAttendance(query) : of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT)).pipe(
+            // Caught per query so a failure ends this read without tearing down the outer pipeline.
+            catchError(() => {
+              this.loadFailed.set(true);
+              return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+            }),
             tap(() => this.loading.set(false))
           )
         )

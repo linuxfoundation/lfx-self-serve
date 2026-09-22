@@ -9,7 +9,7 @@
       (filterChange)="onFilterChange($event)"
       data-testid="engagement-group-attendance-filters" />
     <span class="text-[13px] text-gray-500" data-testid="engagement-group-attendance-count">
-      @if (loading()) {
+      @if (loading() || loadFailed()) {
         &mdash;
       } @else {
         {{ countLabel() }}
@@ -17,7 +17,13 @@
     </span>
   </div>
 
-  @if (!loading() && totalRecords() === 0) {
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Group attendance unavailable"
+      subtitle="We could not load group attendance for this foundation. Refresh the page to try again."
+      data-testid="engagement-group-attendance-error" />
+  } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-users"
       title="No groups of this type"

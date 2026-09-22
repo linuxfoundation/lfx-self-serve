@@ -7,7 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -177,6 +177,41 @@ describe('EngagementGroupAttendanceComponent', () => {
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
+  });
+
+  // A failed read must not render the copy that asserts the foundation has no matching groups.
+  it('separates a failed read from an empty one, and keeps the badges and count off a fabricated zero', async () => {
+    const emitted: unknown[] = [];
+    await render(response(), (counts) => emitted.push(counts));
+    getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
+
+    fixture.componentInstance['onFilterChange']('wg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
+    expect(emitted.at(-1)).toBeNull();
+  });
+
+  // The failure is per query, so the outer pipeline must survive it and serve the next one.
+  it('recovers on the next query after a failed read', async () => {
+    await render();
+    getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
+    fixture.componentInstance['onFilterChange']('wg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    getEngagementGroupAttendance.mockReturnValue(of(response()));
+    fixture.componentInstance['onFilterChange']('gov');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
