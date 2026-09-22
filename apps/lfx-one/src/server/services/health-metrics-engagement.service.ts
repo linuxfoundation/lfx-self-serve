@@ -71,7 +71,8 @@ export class HealthMetricsEngagementService {
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
     }
 
-    const binds: Bind[] = [HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE, query.foundationSlug];
+    // Scope binds come first because the scoped CTE below is the first `?` in the statement.
+    const binds: Bind[] = [query.foundationSlug];
 
     let projectPredicate = '';
     if (query.projectSlug) {
@@ -88,37 +89,58 @@ export class HealthMetricsEngagementService {
       binds.push(...typeLabels);
     }
 
+    binds.push(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE);
+
     const size = clampInteger(query.size, 1, 100, 25);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(RANGE_COLUMN_SUFFIX[range] as string)).join(',\n        ');
 
+    // The totals are a separate aggregate joined onto the page, not a window over it: read as
+    // `COUNT(*) OVER()` off the first row they vanish whenever the page is empty, so an out-of-range
+    // page would report a foundation with zero groups and collapse the table into its empty state.
     const sql = `
-      SELECT
-        committee_id,
-        committee_name,
-        project_slug,
-        project_name,
-        group_type_label,
-        last_met_date,
-        ${periodColumns},
-        COUNT(*) OVER() AS total_records,
-        SUM(CASE WHEN is_dormant_${suffix} THEN 1 ELSE 0 END) OVER() AS dormant_groups,
-        SUM(
-          CASE
-            WHEN NOT COALESCE(is_dormant_${suffix}, FALSE)
-              AND attendance_pct_${suffix} IS NOT NULL
-              AND attendance_pct_${suffix} < ?
-              AND COALESCE(meetings_count_${suffix}, 0) >= ?
-            THEN 1 ELSE 0
-          END
-        ) OVER() AS low_attendance_groups
-      FROM ${GROUP_ATTENDANCE_VIEW}
-      WHERE foundation_slug = ?
-        ${projectPredicate}
-        ${typePredicate}
-      -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
-      ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC, committee_id ASC
-      LIMIT ${size} OFFSET ${offset}
+      WITH scoped AS (
+        SELECT *
+        FROM ${GROUP_ATTENDANCE_VIEW}
+        WHERE foundation_slug = ?
+          ${projectPredicate}
+          ${typePredicate}
+      ),
+      totals AS (
+        SELECT
+          COUNT(*) AS total_records,
+          SUM(CASE WHEN is_dormant_${suffix} THEN 1 ELSE 0 END) AS dormant_groups,
+          SUM(
+            CASE
+              WHEN NOT COALESCE(is_dormant_${suffix}, FALSE)
+                AND attendance_pct_${suffix} IS NOT NULL
+                AND attendance_pct_${suffix} < ?
+                AND COALESCE(meetings_count_${suffix}, 0) >= ?
+              THEN 1 ELSE 0
+            END
+          ) AS low_attendance_groups
+        FROM scoped
+      ),
+      page AS (
+        SELECT
+          committee_id,
+          committee_name,
+          project_slug,
+          project_name,
+          last_met_date,
+          group_type_label,
+          ${periodColumns},
+          sort_rank_${suffix} AS sort_rank
+        FROM scoped
+        -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
+        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC, committee_id ASC
+        LIMIT ${size} OFFSET ${offset}
+      )
+      -- ON TRUE keeps the single totals row when the page selected nothing.
+      SELECT totals.*, page.*
+      FROM totals
+      LEFT JOIN page ON TRUE
+      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC, page.committee_id ASC
     `;
 
     let result;
@@ -143,9 +165,11 @@ export class HealthMetricsEngagementService {
     });
 
     const first = result.rows[0];
+    // A page past the end still returns one row — the totals, with every page column null.
+    const pageRows = result.rows.filter((row) => row.COMMITTEE_ID !== null && row.COMMITTEE_ID !== undefined);
 
     return {
-      rows: result.rows.map(mapGroupRow),
+      rows: pageRows.map(mapGroupRow),
       totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
       counts: {
         groups: Number(first?.TOTAL_RECORDS ?? 0),
