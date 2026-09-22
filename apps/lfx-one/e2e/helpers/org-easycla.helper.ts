@@ -12,7 +12,7 @@
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList, OrgClaManager, OrgClaManagerList } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
@@ -32,6 +32,9 @@ export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
 export const PERMISSIONS_CHECKS_ROUTE = '**/api/orgs/*/lens/cla-groups/permissions/checks';
 
 export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-list';
+
+export const MANAGERS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers';
+export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*';
 
 /**
  * The detail page's presigned-URL route.
@@ -398,4 +401,110 @@ export async function openApprovalTab(page: Page): Promise<void> {
 /** The dialog's value field. Same `data-test` quirk as the list search box. */
 export function approvalDialogValue(page: Page, index = 0): Locator {
   return page.locator(`[data-test="org-easycla-approval-dialog-value-${index}"]`);
+}
+
+// ---------------------------------------------------------------------------
+// The CLA Managers tab (#1984)
+// ---------------------------------------------------------------------------
+
+export function manager(overrides: Partial<OrgClaManager> = {}): OrgClaManager {
+  return {
+    lfUsername: 'kwame.mensah',
+    name: 'Kwame Mensah',
+    email: 'contributor@example.org',
+    addedOn: '2024-05-02T11:00:00Z',
+    ...overrides,
+  };
+}
+
+export function managerList(overrides: Partial<OrgClaManagerList> = {}): OrgClaManagerList {
+  return {
+    signatureId: STUB_SIGNATURE_ID,
+    managers: [manager(), manager({ lfUsername: 'ada.porter', name: 'Ada Porter', email: 'ada.porter@example.org' })],
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs GET/POST/DELETE on the managers path. Mutations never reach a real CLA service.
+ */
+export async function stubManagers(
+  page: Page,
+  options: { initial?: OrgClaManagerList; afterPost?: OrgClaManagerList; afterDelete?: OrgClaManagerList; postBody?: OrgClaManager } = {}
+): Promise<void> {
+  let current = options.initial ?? managerList();
+  const postResponse = options.postBody ?? manager({ lfUsername: 'new.manager', name: 'New Manager', email: 'new.manager@example.org' });
+
+  await page.route(MANAGERS_ROUTE, (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(current) });
+    }
+    if (method === 'POST') {
+      current = options.afterPost ?? managerList({ managers: [...current.managers, postResponse] });
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(postResponse) });
+    }
+    return route.abort();
+  });
+
+  await page.route(MANAGER_DELETE_ROUTE, (route) => {
+    if (route.request().method() !== 'DELETE') {
+      return route.fallback();
+    }
+    current = options.afterDelete ?? managerList({ managers: current.managers.slice(1) });
+    return route.fulfill({ status: 204 });
+  });
+}
+
+export function isManagersPost(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/managers') && request.method() === 'POST' && !request.url().match(/\/managers\/[^/?]+$/);
+}
+
+export function isManagersDelete(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/managers/') && request.method() === 'DELETE';
+}
+
+export function countManagerWriteRequests(page: Page): { readonly postCount: number; readonly deleteCount: number } {
+  let postCount = 0;
+  let deleteCount = 0;
+  page.on('request', (request) => {
+    if (isManagersPost(request)) postCount += 1;
+    if (isManagersDelete(request)) deleteCount += 1;
+  });
+  return {
+    get postCount() {
+      return postCount;
+    },
+    get deleteCount() {
+      return deleteCount;
+    },
+  };
+}
+
+export async function gotoManagers(
+  page: Page,
+  options: { initial?: OrgClaManagerList; afterPost?: OrgClaManagerList; afterDelete?: OrgClaManagerList; postBody?: OrgClaManager } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubManagers(p, options);
+  });
+  await openManagersTab(page);
+}
+
+export async function openManagersTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-managers').click();
+  await expect(page.getByTestId('org-easycla-managers')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+export function addManagerFirstName(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-first-name"]');
+}
+
+export function addManagerLastName(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-last-name"]');
+}
+
+export function addManagerEmail(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-email"]');
 }

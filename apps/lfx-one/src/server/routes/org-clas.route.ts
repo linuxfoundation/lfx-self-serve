@@ -41,10 +41,11 @@ router.post('/:orgUid/lens/cla-groups/sign', requireOrgLensAccess, blockDuringIm
   orgClasController.requestCorporateSignature(req, res, next)
 );
 
-// Visibility hop for Sign CLA and approval-list mutations (#1980). A read of ACS, so impersonation
-// may call it — the UI uses the answer to withhold writes it already cannot perform. Declared
-// ahead of `:signatureId` so `permissions` is not captured as a signature id. Not write middleware:
-// the Sign and approval-list writes below keep the Org Lens grant plus the impersonation block.
+// Visibility hop for Sign CLA, approval-list mutations (#1980), and manager writes (#1984). A
+// read of ACS, so impersonation may call it — the UI uses the answer to withhold writes it already
+// cannot perform. Declared ahead of `:signatureId` so `permissions` is not captured as a signature
+// id. Not write middleware: the Sign, approval-list, and manager writes below keep the Org Lens
+// grant plus the impersonation block.
 router.post('/:orgUid/lens/cla-groups/permissions/checks', requireOrgLensAccess, (req, res, next) => orgClasController.checkPermission(req, res, next));
 
 router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess, (req, res, next) => orgClasController.getPdfUrl(req, res, next));
@@ -60,6 +61,14 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLens
 // refused for impersonating rather than told they lack a grant they may well hold.
 router.put('/:orgUid/lens/cla-groups/:signatureId/approval-list', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.updateApprovalList(req, res, next)
+);
+
+router.get('/:orgUid/lens/cla-groups/:signatureId/managers', requireOrgLensAccess, (req, res, next) => orgClasController.listManagers(req, res, next));
+router.post('/:orgUid/lens/cla-groups/:signatureId/managers', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.addManager(req, res, next)
+);
+router.delete('/:orgUid/lens/cla-groups/:signatureId/managers/:lfUsername', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.removeManager(req, res, next)
 );
 
 export default router;
