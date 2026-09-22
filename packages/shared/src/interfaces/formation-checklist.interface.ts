@@ -136,6 +136,29 @@ export interface FormationItemStatusGlyph {
 }
 
 /**
+ * The one safe binding an API-sourced `FormationItem.action_href` resolves to — see
+ * `resolveFormationActionHref`. A same-origin relative path lands in `internal` (bind
+ * `[routerLink]`); an absolute `http(s)` URL lands in `external` (bind `[href]` + `target="_blank"`).
+ * Both `null` means no safe destination.
+ */
+export interface FormationActionHrefTargets {
+  external: string | null;
+  internal: string | null;
+}
+
+/**
+ * `FormationItemDrawerComponent`'s `editForm` value, read through `getRawValue()` so a disabled
+ * due-date control is still present (#2801). The component's `canWrite()` gate is what actually
+ * keeps a disabled control from reading as cleared; the raw read is defense in depth for the
+ * `readOnly && canWrite` state, where the control is disabled but that gate does not fire.
+ */
+export interface FormationItemDrawerFormValue {
+  notes: string | null;
+  ownerUsername: string | null;
+  dueDate: Date | null;
+}
+
+/**
  * `FormationsTableComponent`'s render row — {@link FormationQueueRow} plus the pre-resolved stage
  * chip label/severity/gating summary, so the `#body` template (where PrimeNG types the row context
  * `any`) does a plain property read instead of a method call that re-executes on every

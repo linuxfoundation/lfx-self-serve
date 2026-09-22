@@ -456,21 +456,50 @@ export class ProjectService {
   }
 
   /**
-   * Direct-FGA-grant projects for the create picker's default tree — NOT a full enumeration.
-   * `filter_grants=direct` narrows the query-service result set to resources the caller holds a
-   * direct OpenFGA tuple on, before any of our own access-check runs. Small by construction (a
-   * user's own direct grants), unlike `getProjects`'s unscoped pull.
+   * Every project the caller holds a direct OpenFGA tuple on, as the index stores it — NOT a full
+   * enumeration, and NOT access-checked here. `filter_grants=direct` has the query service read the
+   * caller's own `user:<username>` tuples on `project:*` objects (any relation — `writer`, `auditor`,
+   * `meeting_coordinator`, ...; the relation itself is discarded upstream) and narrow the result set
+   * to those objects before its normal access filter runs. Direct means direct: a tuple held through
+   * a `team:…#member` userset or inherited from a parent project does not match. Small by
+   * construction (a user's own direct grants), unlike `getProjects`'s unscoped pull.
+   *
+   * Callers that need a particular relation must check it themselves — `getDirectGrantProjects`
+   * below narrows to writers/coordinators for the create picker; `FormationService.getMyFormationWork`
+   * (#2795) deliberately does not, because a view-only formation invite is an `auditor` grant.
+   *
+   * `failOnPartial` is passed straight through to `fetchAllQueryResources`, which otherwise returns
+   * the pages it managed to read when a later one fails. The create picker tolerates that prefix
+   * (a shorter default tree, with search still reaching everything); a caller for whom this set IS
+   * the answer — the formation path, where a missing page silently drops invited formations under a
+   * `'complete'` state — must pass `true` so the failure reaches its own degrade handling.
+   */
+  public async getDirectGrantProjectRows(req: Request, options: { failOnPartial?: boolean } = {}): Promise<Project[]> {
+    const resources = await fetchAllQueryResources<Project>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'project',
+          filter_grants: 'direct',
+          // Not the query service's default 50: pagination is sequential, and this read now sits
+          // on the My Formations render path, so a heavily-granted caller pays ceil(n/100) round
+          // trips rather than ceil(n/50) — the same page size the sibling formation reads use.
+          page_size: 100,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: options.failOnPartial ?? false }
+    );
+    return resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
+  /**
+   * Direct-FGA-grant projects for the create picker's default tree — `getDirectGrantProjectRows`
+   * narrowed to the projects the caller can create under (writer, or meeting coordinator when
+   * requested), via the same access-check pass the picker's search path uses.
    */
   public async getDirectGrantProjects(req: Request, includeMeetingCoordinator: boolean = false): Promise<Project[]> {
-    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'project',
-        filter_grants: 'direct',
-        ...(pageToken && { page_token: pageToken }),
-      })
-    );
-    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
-    return this.filterToCreatableProjects(req, filtered, includeMeetingCoordinator);
+    const rows = await this.getDirectGrantProjectRows(req);
+    return this.filterToCreatableProjects(req, rows, includeMeetingCoordinator);
   }
 
   /**

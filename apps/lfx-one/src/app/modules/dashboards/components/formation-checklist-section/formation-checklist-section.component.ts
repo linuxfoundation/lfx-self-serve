@@ -3,7 +3,7 @@
 
 import { isPlatformBrowser, Location, NgClass } from '@angular/common';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Component, computed, DestroyRef, inject, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, inject, Injector, input, output, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -59,6 +59,7 @@ export class FormationChecklistSectionComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
+  private readonly injector = inject(Injector);
   private readonly platformId = inject(PLATFORM_ID);
 
   /**
@@ -388,7 +389,23 @@ export class FormationChecklistSectionComponent {
         if (state === 'ready') {
           const item = this.items().find((i) => i.template_item_key === itemKey);
           if (item) {
-            this.onOpenDrawer(item);
+            // In Angular 20 zoneless, effects (including toObservable(this.visible) in the
+            // drawer's initDrawerData) can fire before the parent template has propagated new
+            // signal values to child @Input() signals. Setting drawerItemAddress synchronously
+            // here schedules a CD cycle that propagates [itemProjectUid]/[itemKey] to the
+            // drawer's inputs. afterNextRender defers drawerVisible.set(true) until after that
+            // render — so when openTrigger$ fires and reads itemProjectUid()/itemKey(), they are
+            // already non-null and the item fetch succeeds rather than short-circuiting with
+            // createEmptyFormationDrawerData() and "No item selected". This mirrors the
+            // my-events-dashboard.component.ts deep-link pattern (#2247).
+            this.drawerItemUid.set(item.uid);
+            this.drawerItemAddress.set({ projectUid: item.project_uid, itemKey: item.template_item_key });
+            afterNextRender(
+              () => {
+                this.drawerVisible.set(true);
+              },
+              { injector: this.injector }
+            );
           }
         }
         const urlTree = this.router.parseUrl(this.router.url);

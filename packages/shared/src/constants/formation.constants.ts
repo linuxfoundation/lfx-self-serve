@@ -199,10 +199,10 @@ export const FORMATION_ITEM_AUDIENCE_LABELS = {
 } as const satisfies Record<FormationItemAudience, string>;
 
 /**
- * `FormationChecklistRowComponent`'s audience icon tooltip AND accessible name (#2774), keyed on
- * the external-involving audiences only — `internal` and `null` render no icon at all (see
- * `isFormationItemExternal`, `formation.utils.ts`). The drawer shows
- * {@link FORMATION_ITEM_AUDIENCE_LABELS} as plain text instead of the icon.
+ * Audience globe tooltip AND accessible name for the external-involving audiences (#2774) —
+ * `internal` and `null` render no icon at all (see `isFormationItemExternal`, `formation.utils.ts`).
+ * Two consumers: `FormationChecklistRowComponent`'s bare globe, and since #2801 the item drawer's
+ * audience chip, which pairs the same globe with its {@link FORMATION_ITEM_AUDIENCE_LABELS} text.
  */
 export const FORMATION_ITEM_AUDIENCE_TOOLTIPS = {
   external: "External — involves people outside the Linux Foundation, such as the project's partners.",
@@ -255,6 +255,26 @@ export const FORMATION_ITEM_STATUS_GLYPHS = {
   skipped: { icon: 'fa-light fa-forward', colorClass: 'text-gray-400' },
   not_started: { icon: 'fa-light fa-circle', colorClass: 'text-gray-400' },
 } as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
+
+/**
+ * `FormationItemDrawerComponent`'s header status tile (#2801) — the tinted round well beside the
+ * title, paired with {@link FORMATION_ITEM_STATUS_GLYPHS}'s icon for the same status. Spread into
+ * `tailwind.config.js`'s safelist (the shared package is outside Tailwind's `content` glob).
+ */
+export const FORMATION_ITEM_STATUS_TILE_CLASSES = {
+  done: 'bg-emerald-50 text-emerald-600',
+  in_progress: 'bg-amber-50 text-amber-600',
+  blocked: 'bg-red-50 text-red-600',
+  skipped: 'bg-gray-100 text-gray-500',
+  not_started: 'bg-gray-100 text-gray-500',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * `FormationItemDrawerComponent`'s Activity timeline (#2801) shows a relative time ("2 hr ago") for
+ * entries younger than this window and a short absolute date for anything older — "612 days ago" is
+ * arithmetic, not information. The `<time>` element's `title` always carries the exact timestamp.
+ */
+export const FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS = 7 * 86_400_000;
 
 /**
  * The checklist row's grid template per panel-width tier (#2774). Container-query variants
