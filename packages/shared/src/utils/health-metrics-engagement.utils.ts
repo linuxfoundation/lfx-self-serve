@@ -66,7 +66,7 @@ export function selectHealthMetricsEngagementGroupPeriod(
   row: HealthMetricsEngagementGroupRow,
   range: HealthMetricsRange
 ): HealthMetricsEngagementGroupPeriod | null {
-  return row.periods.find((period) => period.range === range) ?? row.periods[row.periods.length - 1] ?? null;
+  return selectPeriod(row.periods, range);
 }
 
 /**
@@ -114,12 +114,15 @@ export function selectHealthMetricsEngagementParticipationPeriod(
   row: HealthMetricsEngagementParticipationRow,
   range: HealthMetricsRange
 ): HealthMetricsEngagementParticipationPeriod | null {
-  return row.periods.find((period) => period.range === range) ?? row.periods[row.periods.length - 1] ?? null;
+  return selectPeriod(row.periods, range);
 }
 
-/** Which way a delta moved. `null` and exactly zero are both "no movement to report". */
+/**
+ * Which way a delta moved. Judged on the rounded value the label prints, not the raw one: a change
+ * too small to show at one decimal must not be coloured as movement the reader cannot see.
+ */
 export function resolveHealthMetricsEngagementDeltaDirection(value: number | null): 'up' | 'down' | 'neutral' {
-  if (value === null || value === 0) {
+  if (value === null || roundDeltaForDisplay(value) === 0) {
     return 'neutral';
   }
 
@@ -128,20 +131,30 @@ export function resolveHealthMetricsEngagementDeltaDirection(value: number | nul
 
 /** A point change on an attendance share: `+3.2pp`. Not a percent — the share itself is one. */
 export function formatHealthMetricsEngagementPpDelta(pointChange: number | null): string {
-  if (pointChange === null) {
-    return '—';
-  }
-
-  const points = pointChange * 100;
-  return `${points >= 0 ? '+' : '−'}${Math.abs(points).toFixed(1)}pp`;
+  return formatDelta(pointChange, 'pp');
 }
 
 /** A fractional change in a count, rendered as a percent: `+12.0%`. */
 export function formatHealthMetricsEngagementPctDelta(fractionChange: number | null): string {
+  return formatDelta(fractionChange, '%');
+}
+
+/** Both views carry the same four periods, so the same fallback serves either row shape. */
+function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
+  return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
+}
+
+/** The one decimal both delta labels print; the direction resolver reads the same value. */
+function roundDeltaForDisplay(fractionChange: number): number {
+  return Number((fractionChange * 100).toFixed(1));
+}
+
+/** `pp` and `%` differ only in unit — the sign comes from the rounded value, never the raw one. */
+function formatDelta(fractionChange: number | null, unit: 'pp' | '%'): string {
   if (fractionChange === null) {
     return '—';
   }
 
-  const percent = fractionChange * 100;
-  return `${percent >= 0 ? '+' : '−'}${Math.abs(percent).toFixed(1)}%`;
+  const rounded = roundDeltaForDisplay(fractionChange);
+  return `${rounded >= 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}${unit}`;
 }

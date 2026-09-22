@@ -1,6 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- The [13px]/[12px] text and [170px] column are the design's exact sizes; the rem scale
+     undershoots them at this root font size. -->
 <div class="flex flex-col gap-4" data-testid="engagement-meeting-participation">
   <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
     <lfx-filter-pills
@@ -24,7 +26,7 @@
       subtitle="We could not load meeting participation for this foundation. Refresh the page to try again."
       data-testid="engagement-meeting-participation-error" />
   } @else if (loading()) {
-    <div class="h-32 animate-pulse rounded-lg bg-gray-50" data-testid="engagement-meeting-participation-loading" aria-hidden="true"></div>
+    <p-skeleton height="8rem" borderRadius="0.5rem" data-testid="engagement-meeting-participation-loading" aria-hidden="true" />
   } @else if (!totalPeriod()) {
     <lfx-empty-state
       icon="fa-light fa-calendar-days"

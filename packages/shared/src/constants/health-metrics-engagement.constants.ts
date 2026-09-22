@@ -190,6 +190,19 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [
 ] as const;
 
 /**
+ * The six values `ENGAGEMENT_MEETING_PARTICIPATION.MEETING_TYPE_GROUP` actually emits at the
+ * `group` level, pinned so the order and governance lists below cannot drift off the view.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_VALUES: readonly string[] = [
+  'Board',
+  'Maintainers',
+  'Marketing',
+  'Other',
+  'Technical',
+  'Working Group',
+];
+
+/**
  * Display order for the participation table's `MEETING_TYPE_GROUP` rows — governance first, the
  * catch-all last. A group the view adds later is unknown here and sorts to the end rather than
  * being dropped.

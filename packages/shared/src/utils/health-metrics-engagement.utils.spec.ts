@@ -290,4 +290,14 @@ describe('participation period selection and delta formatting', () => {
     expect(formatHealthMetricsEngagementPctDelta(-0.12)).toBe('−12.0%');
     expect(formatHealthMetricsEngagementPctDelta(null)).toBe('—');
   });
+
+  // A decline too small to show at one decimal must not print as a signed zero or paint the
+  // label red — the label and its colour read the same rounded value.
+  it('treats a change that rounds away as no movement, in both the label and the direction', () => {
+    expect(formatHealthMetricsEngagementPpDelta(-0.0004)).toBe('+0.0pp');
+    expect(formatHealthMetricsEngagementPctDelta(-0.0004)).toBe('+0.0%');
+    expect(resolveHealthMetricsEngagementDeltaDirection(-0.0004)).toBe('neutral');
+    // One decimal is still movement.
+    expect(resolveHealthMetricsEngagementDeltaDirection(-0.0006)).toBe('down');
+  });
 });

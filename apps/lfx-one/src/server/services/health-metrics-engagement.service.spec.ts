@@ -333,6 +333,27 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
     expect(execute.mock.calls[0]?.[1]).toEqual(['acme', 'all', 'group']);
   });
 
+  // The mapper reads its columns by name off the row, so a column missing from the SELECT reads
+  // `undefined` and maps to a silent zero rather than failing — this is what catches that.
+  it('selects every column the period mapper reads, for all four periods and their priors', () => {
+    const suffixes = ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year'];
+    const columns = ['meetings_held_count', 'invited_count', 'attended_count', 'attendance_pct', 'active_groups_count', 'never_attended_count'];
+    execute.mockResolvedValue({ rows: [participationRow()] });
+
+    return service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' }).then(() => {
+      const sql = lastSql();
+
+      for (const suffix of suffixes) {
+        for (const column of columns) {
+          expect(sql).toContain(`${column}_${suffix}`);
+        }
+      }
+      // YTD's prior is the only one that is not itself a selected period.
+      expect(sql).toContain('attendance_pct_prev_ytd');
+      expect(sql).toContain('meetings_held_count_prev_ytd');
+    });
+  });
+
   // Derived from the prior-period value columns, not the view's own `*_CHANGE_*` columns: those
   // exist for YTD only and are not in the same unit as the 0-1 shares beside them.
   it('derives each delta from the matching prior period', async () => {

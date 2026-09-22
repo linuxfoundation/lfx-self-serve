@@ -19,7 +19,6 @@ import type {
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRow,
-  HealthMetricsRange,
   SnowflakeQueryResult,
 } from '@lfx-one/shared/interfaces';
 
@@ -35,11 +34,14 @@ import type { Bind } from 'snowflake-sdk';
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 
+/** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
+type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
+
 /**
  * Column suffix per period. The view carries no `COMPLETED_YEAR_4` columns, so that range is
  * rejected at the controller rather than silently resolving to a different year.
  */
-const RANGE_COLUMN_SUFFIX: Partial<Record<HealthMetricsRange, string>> = {
+const RANGE_COLUMN_SUFFIX: Record<SupportedEngagementRange, string> = {
   YTD: 'ytd',
   COMPLETED_YEAR: 'last_completed_year',
   COMPLETED_YEAR_2: 'prev_completed_year',
@@ -51,14 +53,14 @@ const RANGE_COLUMN_SUFFIX: Partial<Record<HealthMetricsRange, string>> = {
  * the view's own `*_CHANGE_*` columns: those exist only for YTD, and deriving keeps the delta in
  * the same unit as the value it came from. `COMPLETED_YEAR_3` has no prior period in the view.
  */
-const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<HealthMetricsRange, string>> = {
+const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string>> = {
   YTD: 'prev_ytd',
   COMPLETED_YEAR: 'prev_completed_year',
   COMPLETED_YEAR_2: '3rd_last_completed_year',
 };
 
 /** True when this service can serve the range — the controller uses it to validate before binding. */
-export function isSupportedEngagementRange(range: string): range is HealthMetricsRange {
+export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
   return Object.prototype.hasOwnProperty.call(RANGE_COLUMN_SUFFIX, range);
 }
 
@@ -103,10 +105,11 @@ export class HealthMetricsEngagementService {
    * sorting a single page client-side would rank only that page.
    */
   public async getGroupAttendance(req: Request, query: HealthMetricsEngagementGroupQuery): Promise<HealthMetricsEngagementGroupAttendance> {
-    const suffix = RANGE_COLUMN_SUFFIX[query.range];
-    if (!suffix) {
+    if (!isSupportedEngagementRange(query.range)) {
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
     }
+
+    const suffix = RANGE_COLUMN_SUFFIX[query.range];
 
     const binds: Bind[] = [query.foundationSlug];
 
@@ -127,7 +130,7 @@ export class HealthMetricsEngagementService {
 
     const size = clampInteger(query.size, 1, 100, 25);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(RANGE_COLUMN_SUFFIX[range] as string)).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
     // The totals are a separate aggregate joined onto the page, not a window over it: read as
     // `COUNT(*) OVER()` off the first row they vanish whenever the page is empty, so an out-of-range
@@ -210,11 +213,11 @@ export class HealthMetricsEngagementService {
    * and a second round trip would only re-read the same grain.
    */
   public async getMeetingParticipation(req: Request, query: HealthMetricsEngagementParticipationQuery): Promise<HealthMetricsEngagementMeetingParticipation> {
-    if (!RANGE_COLUMN_SUFFIX[query.range]) {
+    if (!isSupportedEngagementRange(query.range)) {
       return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT;
     }
 
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range] as string)).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
     const levels = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS;
 
     // The project selector is visual-only today, so every read is the all-projects roll-up row the
@@ -306,8 +309,8 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
   };
 }
 
-function mapGroupPeriod(row: GroupAttendanceRow, range: HealthMetricsRange): HealthMetricsEngagementGroupPeriod {
-  const suffix = (RANGE_COLUMN_SUFFIX[range] as string).toUpperCase();
+function mapGroupPeriod(row: GroupAttendanceRow, range: SupportedEngagementRange): HealthMetricsEngagementGroupPeriod {
+  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
   const attendance = row[`ATTENDANCE_PCT_${suffix}`];
 
   return {
@@ -341,8 +344,8 @@ function mapParticipationRow(row: MeetingParticipationRow): HealthMetricsEngagem
   };
 }
 
-function mapParticipationPeriod(row: MeetingParticipationRow, range: HealthMetricsRange): HealthMetricsEngagementParticipationPeriod {
-  const suffix = (RANGE_COLUMN_SUFFIX[range] as string).toUpperCase();
+function mapParticipationPeriod(row: MeetingParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementParticipationPeriod {
+  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
   const priorSuffix = RANGE_PRIOR_COLUMN_SUFFIX[range]?.toUpperCase();
   const attendance = toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]);
   const meetingsHeld = Number(row[`MEETINGS_HELD_COUNT_${suffix}`] ?? 0);

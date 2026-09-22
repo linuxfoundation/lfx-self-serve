@@ -22,6 +22,7 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
@@ -43,7 +44,7 @@ import type {
  */
 @Component({
   selector: 'lfx-engagement-meeting-participation',
-  imports: [EmptyStateComponent, FilterPillsComponent, TableComponent, EngagementAttendanceBarComponent],
+  imports: [EmptyStateComponent, FilterPillsComponent, SkeletonModule, TableComponent, EngagementAttendanceBarComponent],
   templateUrl: './engagement-meeting-participation.component.html',
 })
 export class EngagementMeetingParticipationComponent {
