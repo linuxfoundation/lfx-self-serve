@@ -493,6 +493,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     isMissingObjectError.mockReset();
     isMissingObjectError.mockReturnValue(false);
     loggerError.mockReset();
+    warning.mockReset();
   });
 
   // Search, the lapsed cut and the period pill all project these rows, so one read serves them all.
@@ -542,7 +543,37 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
   it('caps the read rather than letting warehouse cardinality size the response', async () => {
     await service.getOrgParticipation(req, { foundationSlug: 'acme' });
 
-    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP}`);
+    // One past the cap: a scope of exactly the cap must not be reported as truncated.
+    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}`);
+  });
+
+  // A capped read keeps the ranked head, so the cut runs on the best rank across the periods.
+  it('orders the cut by the best rank across periods rather than alphabetically', async () => {
+    await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).toContain('ORDER BY LEAST(');
+    expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
+  });
+
+  it('truncates to the cap and says so out loud when the scope overruns it', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1 }, () => orgWarehouseRow()) });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_org_participation', 'Organization rows hit the read cap', {
+      foundation_slug: 'acme',
+      row_cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+    });
+  });
+
+  it('stays quiet for a scope of exactly the cap, which is complete rather than truncated', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP }, () => orgWarehouseRow()) });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP);
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {

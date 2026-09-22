@@ -285,6 +285,9 @@ export class HealthMetricsEngagementService {
    */
   public async getOrgParticipation(req: Request, query: HealthMetricsEngagementOrgQuery): Promise<HealthMetricsEngagementOrgParticipation> {
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => orgSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    // A capped read has to keep the ranked head, so the cut runs on the best rank across the
+    // periods; the sentinel parks an org the view left unranked behind every ranked one.
+    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // The caption counts are denormalized onto every row and cover the whole scope, so they are
     // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
@@ -303,8 +306,8 @@ export class HealthMetricsEngagementService {
       FROM ${ORG_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-      ORDER BY account_name ASC NULLS LAST
-      LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP}
+      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
     const result = await this.executeRead<OrgParticipationRow>(req, sql, [query.foundationSlug], {
@@ -313,24 +316,28 @@ export class HealthMetricsEngagementService {
       clientMessage: 'Organization participation is unavailable right now.',
     });
 
+    // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
+    const truncated = result.rows.length > HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP;
+    const rows = truncated ? result.rows.slice(0, HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP) : result.rows;
+
     logger.debug(req, 'get_engagement_org_participation', 'Fetched organization participation', {
       foundation_slug: query.foundationSlug,
-      row_count: result.rows.length,
+      row_count: rows.length,
     });
 
-    // Hitting the cap means the table is short of the caption's own count, so say so out loud.
-    if (result.rows.length === HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP) {
+    // Truncating leaves the table short of the caption's own count, so say so out loud.
+    if (truncated) {
       logger.warning(req, 'get_engagement_org_participation', 'Organization rows hit the read cap', {
         foundation_slug: query.foundationSlug,
         row_cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
       });
     }
 
-    const first = result.rows[0];
+    const first = rows[0];
     if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT;
 
     return {
-      rows: result.rows.map(mapOrgRow),
+      rows: rows.map(mapOrgRow),
       counts: mapOrgCounts(first),
     };
   }

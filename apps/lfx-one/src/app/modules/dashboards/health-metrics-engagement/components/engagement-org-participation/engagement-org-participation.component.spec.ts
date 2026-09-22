@@ -3,11 +3,12 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
+import { HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -79,6 +80,18 @@ describe('EngagementOrgParticipationComponent', () => {
     vi.restoreAllMocks();
     selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
   });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** The search box is debounced, so a keystroke only reaches the filter once the pause elapses. */
+  function typeSearch(term: string): void {
+    vi.useFakeTimers();
+    fixture.componentInstance['searchForm'].controls.search.setValue(term);
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS);
+    fixture.detectChanges();
+  }
 
   it('reads the selected foundation and renders the returned rows', async () => {
     await render();
@@ -159,12 +172,52 @@ describe('EngagementOrgParticipationComponent', () => {
     await render(response({ rows: [orgRow(), orgRow({ accountId: 'a-2', accountName: 'Vendor Corp' })], counts: { orgs: 2, lapsedOrgs: 0 } }));
     getEngagementOrgParticipation.mockClear();
 
-    fixture.componentInstance['searchForm'].controls.search.setValue('vendor');
-    fixture.detectChanges();
+    typeSearch('vendor');
 
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-2"]')).not.toBeNull();
+  });
+
+  // The filter runs over the whole loaded scope, so the cut must wait for the typing to pause.
+  it('holds the cut until the search pause elapses rather than re-sorting on every character', async () => {
+    await render(response({ rows: [orgRow(), orgRow({ accountId: 'a-2', accountName: 'Vendor Corp' })], counts: { orgs: 2, lapsedOrgs: 0 } }));
+
+    vi.useFakeTimers();
+    fixture.componentInstance['searchForm'].controls.search.setValue('vendor');
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS - 1);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
+
+    vi.advanceTimersByTime(1);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).toBeNull();
+  });
+
+  // The segment is shareable state, so it belongs in the URL — and the default belongs out of it.
+  it('writes the lapsed segment to the URL and clears the param on the way back to all', async () => {
+    await render();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    fixture.componentInstance['onFilterChange']('lapsed');
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { orgFilter: 'lapsed' }, preserveFragment: true, replaceUrl: true }));
+
+    fixture.componentInstance['onFilterChange']('all');
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { orgFilter: null } }));
+  });
+
+  // An unknown segment in the URL is not a segment — it must land on the default, not an empty table.
+  it('falls back to the all segment for an orgFilter value the table does not have', async () => {
+    await render(response(), undefined, { orgFilter: 'bogus' });
+
+    expect(fixture.componentInstance['filter']()).toBe('all');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
   });
 
   // A failed read renders no rows, and "no organizations" would state that absence as measured fact.

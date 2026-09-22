@@ -184,7 +184,7 @@ export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
- * every one of them has settled. A section from PRs 3-4 on #2802 joins this list only once its
+ * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
  * component emits `reading`/`settled` and the container binds both.
  */
 export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees', 'orgs'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
@@ -244,6 +244,12 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetr
   rows: [],
 };
 
+/**
+ * Debounce on the org search box. The filter runs over the whole loaded scope, so a keystroke is
+ * more expensive than a typical typeahead and deserves the same pause as the other local filters.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS = 200;
+
 /** Client-side page size for the org table — the whole foundation arrives in one read. */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
 
@@ -260,11 +266,21 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
 ] as const;
 
 /**
- * The empty Organization participation shape — pre-hydration, no foundation selected, and the
- * client's post-error placeholder. The server never returns it for a failed read; that error
+ * A foundation the view holds no organizations for — a measured empty scope, which is why the
+ * counts are zero rather than null. The server never returns it for a failed read; that error
  * propagates.
  */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsEngagementOrgParticipation = {
   rows: [],
   counts: { orgs: 0, lapsedOrgs: 0 },
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: null,
 };

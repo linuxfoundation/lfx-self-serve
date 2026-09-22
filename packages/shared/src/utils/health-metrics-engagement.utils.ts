@@ -175,7 +175,8 @@ export function filterHealthMetricsEngagementOrgRows(
   return matched.sort((a, b) => {
     const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
     const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
-    return rankA === rankB ? a.accountName.localeCompare(b.accountName) : rankA - rankB;
+    // Locale pinned: an unpinned compare can order same-rank rows differently on SSR and the client.
+    return rankA === rankB ? a.accountName.localeCompare(b.accountName, 'en-US') : rankA - rankB;
   });
 }
 

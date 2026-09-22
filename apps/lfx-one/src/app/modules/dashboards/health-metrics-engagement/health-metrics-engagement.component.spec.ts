@@ -211,6 +211,15 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(item.textContent).toContain('3 dormant');
   });
 
+  it('badges Organization participation from the counts that section reports', () => {
+    orgChild().countsChange.emit({ orgs: 136, lapsedOrgs: 54 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
+    expect(item.textContent).toContain('136');
+    expect(item.textContent).toContain('54 inactive');
+  });
+
   it('bounds the scrolling pane to what is left of the viewport, so only it scrolls', () => {
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-engagement-page"]').lastElementChild as HTMLElement;
 
@@ -729,6 +738,34 @@ describe('HealthMetricsEngagementComponent', () => {
     fixture.detectChanges();
     await fixture.whenStable();
 
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // The orgs table re-reads on a foundation change like any other section, and its rows move every
+  // anchor below it, so its `reading` has to re-arm the hold exactly as the group section's does.
+  it('holds a fragment again once the orgs section reports a new read', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    orgChild().countsChange.emit(null);
+    orgChild().reading.emit();
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    orgChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Re-settled: the anchor moved while the orgs rows landed, so the link is replayed.
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 

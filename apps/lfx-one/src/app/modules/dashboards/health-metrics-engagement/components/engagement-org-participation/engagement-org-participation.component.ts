@@ -13,7 +13,8 @@ import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE,
-  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS,
+  HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
 } from '@lfx-one/shared/constants';
 import {
   filterHealthMetricsEngagementOrgRows,
@@ -23,10 +24,12 @@ import {
 } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
+
+import type { TablePageEvent } from 'primeng/table';
 
 import type {
   FilterPillOption,
@@ -34,6 +37,7 @@ import type {
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
+  HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementOrgRowView,
 } from '@lfx-one/shared/interfaces';
 
@@ -80,7 +84,11 @@ export class EngagementOrgParticipationComponent {
   /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
   protected readonly loadFailed = signal<boolean>(false);
 
-  protected readonly search = toSignal(this.searchForm.controls.search.valueChanges, { initialValue: '' });
+  // Debounced: the filter runs over the whole loaded scope, so an undebounced keystroke re-sorts
+  // every org the foundation has.
+  protected readonly search = toSignal(this.searchForm.controls.search.valueChanges.pipe(debounceTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS)), {
+    initialValue: '',
+  });
 
   protected readonly query: Signal<HealthMetricsEngagementOrgQuery> = computed(() => this.initQuery());
   protected readonly response: Signal<HealthMetricsEngagementOrgParticipation> = this.initResponse();
@@ -91,23 +99,32 @@ export class EngagementOrgParticipationComponent {
     computation: () => 0,
   });
 
-  protected readonly filteredRows = computed(() =>
-    filterHealthMetricsEngagementOrgRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
-  );
-  // Resolved here rather than per cell: the template only reads signals, and the period lookup runs
-  // once per row per response instead of on every change-detection pass.
-  protected readonly rowViews = computed<HealthMetricsEngagementOrgRowView[]>(() => {
+  // Resolved once per response and period rather than per cell or per keystroke: `formatIsoDateLabel`
+  // builds a fresh `Intl` formatter per call, which the search must not pay for on every character.
+  private readonly rowViewsByRow = computed(() => {
     const range = this.chrome.selectedRange();
-    return this.filteredRows().map((row) => {
-      const period = selectHealthMetricsEngagementOrgPeriod(row, range);
+    return new Map<HealthMetricsEngagementOrgRow, HealthMetricsEngagementOrgRowView>(
+      this.response().rows.map((row) => {
+        const period = selectHealthMetricsEngagementOrgPeriod(row, range);
 
-      return {
-        row,
-        period,
-        lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
-        avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
-      };
-    });
+        return [
+          row,
+          {
+            row,
+            period,
+            lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
+            avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
+          },
+        ];
+      })
+    );
+  });
+  // The cut narrows rows the labels are already resolved for, so a keystroke only filters and sorts.
+  protected readonly rowViews = computed<HealthMetricsEngagementOrgRowView[]>(() => {
+    const views = this.rowViewsByRow();
+    return filterHealthMetricsEngagementOrgRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
+      .map((row) => views.get(row))
+      .filter((view) => view !== undefined);
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
@@ -115,7 +132,8 @@ export class EngagementOrgParticipationComponent {
     const counts = this.response().counts;
     if (!counts) return '—';
 
-    return `${counts.orgs.toLocaleString()} ${counts.orgs === 1 ? 'organization' : 'organizations'} · ${counts.lapsedOrgs.toLocaleString()} lapsed`;
+    // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
+    return `${counts.orgs.toLocaleString('en-US')} ${counts.orgs === 1 ? 'organization' : 'organizations'} · ${counts.lapsedOrgs.toLocaleString('en-US')} lapsed`;
   });
 
   public constructor() {
@@ -135,7 +153,7 @@ export class EngagementOrgParticipationComponent {
     this.filter.set(this.toFilter(key));
   }
 
-  protected onTablePage(event: { first?: number; rows?: number }): void {
+  protected onTablePage(event: TablePageEvent): void {
     this.size.set(event.rows ?? this.size());
     this.first.set(event.first ?? 0);
   }
@@ -147,7 +165,7 @@ export class EngagementOrgParticipationComponent {
   private initResponse(): Signal<HealthMetricsEngagementOrgParticipation> {
     if (!isPlatformBrowser(this.platformId)) {
       // `loading` stays at its static `true` so the serialized skeleton matches the pre-hydration DOM.
-      return computed(() => HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+      return computed(() => HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
     }
 
     return toSignal(
@@ -162,16 +180,16 @@ export class EngagementOrgParticipationComponent {
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.
         switchMap((query) =>
-          (query.foundationSlug ? this.analyticsService.getEngagementOrgParticipation(query) : of(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT)).pipe(
+          (query.foundationSlug ? this.analyticsService.getEngagementOrgParticipation(query) : of(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED)).pipe(
             // Caught per query so a failure ends this read without tearing down the outer pipeline;
             // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.loadFailed.set(true);
-              return of(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+              return of(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
             }),
             tap((response) => {
               this.loading.set(false);
-              // No foundation means no read happened, so the default's zeroes are not a measured count.
+              // No foundation means no read happened, so there is no measured count to report.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Emitted separately from the counts: a failed or foundation-less read reports no
               // counts and still settles, and the container would otherwise wait on it forever.
@@ -180,7 +198,7 @@ export class EngagementOrgParticipationComponent {
           )
         )
       ),
-      { initialValue: HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT }
+      { initialValue: HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED }
     );
   }
 
