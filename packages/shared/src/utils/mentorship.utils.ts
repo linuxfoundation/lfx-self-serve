@@ -46,6 +46,7 @@ import type {
   MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
   MentorshipMenteeApplication,
+  MentorshipMenteeApplyIds,
   MentorshipMenteeApplicationView,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
@@ -303,6 +304,32 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
 
   return errors;
+}
+
+/**
+ * Both apply-link ids, or `null` when either query param is missing or blank.
+ * Callers that navigate back to `/mentorship/mentee/apply` use this so a partial
+ * link is not treated as a complete return target.
+ */
+export function mentorshipMenteeApplyIds(params: { get(name: string): string | null }): MentorshipMenteeApplyIds | null {
+  const programId = params.get('programId')?.trim() ?? '';
+  const programTermId = params.get('programTermId')?.trim() ?? '';
+  if (!programId || !programTermId) return null;
+  return { programId, programTermId };
+}
+
+/**
+ * Copies whichever apply-link ids are present. The register redirect uses this
+ * so a refresh of the register page keeps `programId` and `programTermId` in
+ * the address bar even when only one of them arrived.
+ */
+export function mentorshipMenteeApplyQueryParams(params: { get(name: string): string | null }): Partial<MentorshipMenteeApplyIds> {
+  const programId = params.get('programId')?.trim() ?? '';
+  const programTermId = params.get('programTermId')?.trim() ?? '';
+  const queryParams: Partial<MentorshipMenteeApplyIds> = {};
+  if (programId) queryParams.programId = programId;
+  if (programTermId) queryParams.programTermId = programTermId;
+  return queryParams;
 }
 
 /**

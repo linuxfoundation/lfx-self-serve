@@ -818,10 +818,38 @@ export interface MentorshipMenteeApplicationHistoryEntry {
   status: MentorshipMenteeApplicationHistoryStatus;
 }
 
+/**
+ * Voluntary demographic answers stored with the mentee profile. Tokens match
+ * `MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS` option values. A missing field, a blank
+ * string, or `preferNotToSay` means the mentee did not provide that answer.
+ */
+export interface MentorshipMenteeDemographics {
+  age?: string;
+  raceEthnicity?: string;
+  gender?: string;
+  income?: string;
+  education?: string;
+}
+
 /** Response body from `GET /api/mentorship/mentee/profile`. */
 export interface MentorshipMenteeProfileResponse {
   profile: MentorshipMenteeProfileDetails;
   history: MentorshipMenteeApplicationHistoryEntry[];
+  /** Absent until the mentee has saved demographics. The apply page treats that as all "Not provided". */
+  demographics?: MentorshipMenteeDemographics;
+}
+
+/** Both ids required to open `/mentorship/mentee/apply` and to return there after registration. */
+export interface MentorshipMenteeApplyIds {
+  programId: string;
+  programTermId: string;
+}
+
+/** Header fields for the mentee apply page, from `GET /api/mentorship/mentee/apply-target`. */
+export interface MentorshipMenteeApplyTarget {
+  programName: string;
+  projectName: string;
+  termName: string;
 }
 
 // ---------------------------------------------------------------------------

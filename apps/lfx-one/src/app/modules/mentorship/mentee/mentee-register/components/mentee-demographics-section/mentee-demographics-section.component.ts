@@ -41,6 +41,7 @@ export class MenteeDemographicsSectionComponent implements OnInit {
   private readonly sanitizer = inject(DomSanitizer);
 
   public readonly form = input.required<FormGroup>();
+  public readonly isDrawer = input(false);
 
   protected readonly title = MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE;
   protected readonly intro = MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO;

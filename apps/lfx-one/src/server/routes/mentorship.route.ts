@@ -16,6 +16,7 @@ router.get('/mentee/has-profile', (req, res, next) => mentorshipController.hasMe
 router.get('/mentee/overview', (req, res, next) => mentorshipController.getMenteeOverview(req, res, next));
 router.get('/mentee/tasks', (req, res, next) => mentorshipController.getMenteeTasks(req, res, next));
 router.get('/mentee/profile', (req, res, next) => mentorshipController.getMenteeProfile(req, res, next));
+router.get('/mentee/apply-target', (req, res, next) => mentorshipController.getMenteeApplyTarget(req, res, next));
 router.get('/programs/:programId', (req, res, next) => mentorshipController.getProgram(req, res, next));
 router.get('/programs', (req, res, next) => mentorshipController.getPrograms(req, res, next));
 router.get('/lf-projects', (req, res, next) => mentorshipController.getLfProjects(req, res, next));

@@ -1,0 +1,34 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-apply-demographics">
+  <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-lg font-semibold text-gray-900" data-testid="mentorship-mentee-apply-demographics-title">
+        {{ title }} <span class="text-sm font-normal text-gray-500">{{ optionalLabel }}</span>
+      </h2>
+      <p class="text-sm text-gray-500 leading-5 max-w-xl">{{ intro }}</p>
+    </div>
+    <lfx-button
+      [label]="editLabel"
+      icon="fa-light fa-pen"
+      iconPos="right"
+      severity="secondary"
+      size="small"
+      [outlined]="true"
+      styleClass="shrink-0"
+      (onClick)="onEdit()"
+      data-testid="mentorship-mentee-apply-demographics-edit" />
+  </header>
+
+  <div class="grid grid-cols-1 gap-x-8 gap-y-6 sm:grid-cols-3">
+    @for (field of fields(); track field.answerControl) {
+      <div class="flex flex-col gap-1" [attr.data-testid]="'mentorship-mentee-apply-demographics-' + field.answerControl">
+        <span class="text-xs text-gray-500">{{ field.label }}</span>
+        <span class="text-sm" [class.font-semibold]="field.provided" [class.text-gray-900]="field.provided" [class.text-gray-500]="!field.provided">{{
+          field.value
+        }}</span>
+      </div>
+    }
+  </div>
+</section>

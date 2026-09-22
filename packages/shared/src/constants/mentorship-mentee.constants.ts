@@ -586,6 +586,47 @@ export const MENTORSHIP_MENTEE_PROFILE_RESUME_EMPTY = 'No resume uploaded yet.';
  */
 export const MENTORSHIP_MENTEE_PROFILE_RESUME_VIEW_LABEL = 'View resume';
 
+// ---------------------------------------------------------------------------
+// Mentee apply page — `/mentorship/mentee/apply?programId=&programTermId=`
+// ---------------------------------------------------------------------------
+
+/** Router `state` key set after a validated registration so the apply guard allows that one return trip. */
+export const MENTORSHIP_MENTEE_PROFILE_CREATED_STATE = 'menteeProfileCreated';
+
+export const MENTORSHIP_MENTEE_APPLY_TITLE_PREFIX = 'Apply to ';
+export const MENTORSHIP_MENTEE_APPLY_PROFILE_TITLE = 'Your Mentee Profile';
+export const MENTORSHIP_MENTEE_APPLY_PROFILE_SUBTITLE =
+  'Your about me, skills and links are used from your mentee profile and shared with the mentors reviewing this application.';
+
+export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_OPTIONAL = '(optional)';
+export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_INTRO =
+  'Collected only for aggregate diversity reporting. Kept confidential, never shared with mentors reviewing this application.';
+export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EDIT_LABEL = 'Edit Demographics';
+export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EMPTY = 'Not provided';
+
+/** Short column labels for the apply-page demographics summary. Order matches the design grid. */
+export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHIC_FIELDS = [
+  { answerControl: 'age', label: 'Age' },
+  { answerControl: 'raceEthnicity', label: 'Racial or Ethnic Identity' },
+  { answerControl: 'gender', label: 'Gender' },
+  { answerControl: 'income', label: 'Socioeconomic Class' },
+  { answerControl: 'education', label: 'Education Level' },
+] as const;
+
+export const MENTORSHIP_MENTEE_APPLY_BEFORE_TITLE = 'Before You Apply';
+export const MENTORSHIP_MENTEE_APPLY_BEFORE_INTRO = 'Confirm each of the following. All five are required to submit your application.';
+export const MENTORSHIP_MENTEE_APPLY_PUBLICITY_NOTE =
+  'If you are accepted, the program may display and share portions of your profile information to publicize your participation.';
+export const MENTORSHIP_MENTEE_APPLY_REMAINING_LABEL = 'remaining';
+export const MENTORSHIP_MENTEE_APPLY_SUBMIT_LABEL = 'Submit Application';
+export const MENTORSHIP_MENTEE_APPLY_CANCEL_LABEL = 'Cancel';
+export const MENTORSHIP_MENTEE_APPLY_CONFIRMATION_COUNT = 5;
+
+export const MENTORSHIP_MENTEE_APPLY_MISSING_TITLE = 'This application link is incomplete';
+export const MENTORSHIP_MENTEE_APPLY_MISSING_SUBTITLE = 'Open the apply link from the mentorship program so the program and term are included.';
+export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_TITLE = 'Could not load this application';
+export const MENTORSHIP_MENTEE_APPLY_LOAD_ERROR_FALLBACK = 'We could not load this application. Please retry.';
+
 /**
  * Copy for the mentee profile edit drawer — the slide-in panel opened from the
  * "Edit Mentee Profile" button. Save fires the coming-soon toast until the update
@@ -691,6 +732,10 @@ export const MOCK_MENTORSHIP_MENTEE_PROFILE: MentorshipMenteeProfileResponse = {
       'I co-run a student Linux user group and have been maintaining our campus microgrid dashboards for two terms. I am comfortable working asynchronously across time zones.',
     resumeFileName: 'test-user-1-resume.pdf',
     resumeUrl: 'https://example.com/test-user-1-resume.pdf',
+  },
+  demographics: {
+    age: '20-39',
+    education: 'college',
   },
   history: MOCK_MENTORSHIP_MENTEE_APPLICATION_HISTORY,
 };

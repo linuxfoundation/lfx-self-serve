@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [visible]="visible()"
+  (visibleChange)="onVisibleChange($event)"
+  position="right"
+  [modal]="true"
+  styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="mentorship-mentee-demographics-edit-drawer">
+  <ng-template #header>
+    <div class="flex flex-col gap-2">
+      <h2 class="text-lg font-semibold text-gray-900 pr-8" data-testid="mentorship-mentee-demographics-edit-drawer-header">{{ title }}</h2>
+      <p class="text-sm text-gray-600">{{ intro }}</p>
+    </div>
+  </ng-template>
+
+  <div class="flex flex-col gap-6 h-full">
+    @if (visible()) {
+      <lfx-mentorship-mentee-demographics-section [form]="form" [isDrawer]="true" />
+    }
+
+    <div class="flex justify-end gap-3 border-t border-gray-200 pt-4 mt-auto">
+      <lfx-button
+        type="button"
+        variant="outlined"
+        [label]="cancelLabel"
+        (onClick)="onCancel()"
+        size="small"
+        data-testid="mentorship-mentee-demographics-edit-drawer-cancel" />
+      <lfx-button
+        type="button"
+        severity="info"
+        [label]="saveLabel"
+        (onClick)="onSave()"
+        size="small"
+        data-testid="mentorship-mentee-demographics-edit-drawer-save" />
+    </div>
+  </div>
+</p-drawer>
