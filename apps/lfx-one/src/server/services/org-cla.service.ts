@@ -302,8 +302,8 @@ function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
 }
 
 /**
- * Writes and the primary manager read require a project SFID; an empty id would compose
- * `…/project//…`. `getManagers` falls back to the CLA-group list on upstream 403.
+ * Manager writes require a project SFID; an empty id would compose `…/project//…`.
+ * Reads prefer the project list and use the CLA-group list when project SFID is missing or upstream 403.
  */
 function requireProjectSfid(target: ManagerTarget, operation: string): string {
   if (!target.projectSfid) {
@@ -936,8 +936,7 @@ export class OrgClaService {
       return { signatureId, managers: [] };
     }
 
-    const projectSfid = requireProjectSfid(target, 'org_cla_list_managers');
-
+    const projectSfid = target.projectSfid.trim();
     const managerListFetchOptions = {
       service: SERVICE,
       errorMessage: 'Failed to fetch CLA managers',
@@ -945,31 +944,38 @@ export class OrgClaService {
       redactResponseBody: true,
       bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
     } as const;
+    const claGroupManagerListUrl = `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`;
 
     let upstream: EasyClaCompanyClaManagerList | null;
-    try {
-      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
-        req,
-        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
-        { ...managerListFetchOptions, operation: 'org_cla_list_managers' }
-      );
-    } catch (error) {
-      if (!(error instanceof MicroserviceError) || error.statusCode !== 403) {
-        throw error;
-      }
-
-      logger.warning(req, 'org_cla_list_managers', 'project-scoped manager list refused; falling back to CLA-group list', {
-        org_uid: orgUid,
-        signature_id: signatureId,
-        company_id: target.companyId,
-        project_sfid: projectSfid,
+    if (!projectSfid) {
+      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(req, claGroupManagerListUrl, {
+        ...managerListFetchOptions,
+        operation: 'org_cla_list_managers_cla_group_fallback',
       });
+    } else {
+      try {
+        upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+          req,
+          `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
+          { ...managerListFetchOptions, operation: 'org_cla_list_managers' }
+        );
+      } catch (error) {
+        if (!(error instanceof MicroserviceError) || error.statusCode !== 403) {
+          throw error;
+        }
 
-      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
-        req,
-        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
-        { ...managerListFetchOptions, operation: 'org_cla_list_managers_cla_group_fallback' }
-      );
+        logger.warning(req, 'org_cla_list_managers', 'project-scoped manager list refused; falling back to CLA-group list', {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          company_id: target.companyId,
+          project_sfid: projectSfid,
+        });
+
+        upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(req, claGroupManagerListUrl, {
+          ...managerListFetchOptions,
+          operation: 'org_cla_list_managers_cla_group_fallback',
+        });
+      }
     }
 
     if (!upstream || !Array.isArray(upstream.list)) {
