@@ -48,7 +48,7 @@ describe('EngagementGroupAttendanceComponent', () => {
     onCounts?: (counts: unknown) => void,
     queryParams: Record<string, string> = {},
     followUpPayload?: HealthMetricsEngagementGroupAttendance,
-    onSettled?: () => void
+    lifecycle?: string[]
   ): Promise<void> {
     // `payload` answers the first read; `followUpPayload` every read after it, so a clamp or filter
     // change can resolve to a different page than the one that triggered it.
@@ -73,7 +73,11 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     fixture = TestBed.createComponent(EngagementGroupAttendanceComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
-    if (onSettled) fixture.componentInstance.settled.subscribe(onSettled);
+    // Subscribed before the first change detection, so the initial read's own pair is recorded.
+    if (lifecycle) {
+      fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
+      fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -303,31 +307,32 @@ describe('EngagementGroupAttendanceComponent', () => {
   // The container releases a deep link only once every section has settled, so a read that ends
   // with no counts to report — a failure, or no foundation — still has to say it ended.
   it('settles a failed read, which reports no counts at all', async () => {
-    await render();
-    const settles: unknown[] = [];
-    fixture.componentInstance.settled.subscribe(() => settles.push(true));
+    const lifecycle: string[] = [];
+    await render(response(), undefined, {}, undefined, lifecycle);
+    lifecycle.length = 0;
     getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
 
     fixture.componentInstance['onFilterChange']('wg');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(settles).toHaveLength(1);
+    expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
   // A clamp fires a follow-up fetch, so the first response is not a settled read — settling there
   // would let a deep link anchor against the empty table the replacement page is about to fill.
   it('settles once across a clamp, on the page that has rows', async () => {
-    const settles: unknown[] = [];
+    const lifecycle: string[] = [];
     await render(
       response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
       undefined,
       { groupPage: '9' },
       response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
-      () => settles.push(true)
+      lifecycle
     );
 
-    expect(settles).toHaveLength(1);
+    // The clamp's own read re-holds the deep link and does not settle; the follow-up page does.
+    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
   });
 
   it('writes the filter and page back to the URL, dropping each at its default', async () => {

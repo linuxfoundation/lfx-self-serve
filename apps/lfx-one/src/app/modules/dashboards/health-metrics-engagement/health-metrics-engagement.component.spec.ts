@@ -5,7 +5,11 @@ import { Component, output, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS,
+  HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+} from '@lfx-one/shared/constants';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -737,6 +741,66 @@ describe('HealthMetricsEngagementComponent', () => {
     await fixture.whenStable();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // Participation sits above every anchor and re-reads on every period change, so its own
+  // `reading` has to re-hold a deep link the group section would otherwise release alone.
+  it('holds a fragment that arrives while the participation read is in flight', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    participationChild().reading.emit();
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+
+    // The key is released now, so a later settle is not another yank back to the anchor.
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // A key listed with no component emitting `settled` never leaves `unsettledSections`, so every
+  // deep link would hang on the TTL. This fails the moment the list grows past its emitters.
+  it('has a settle emitter wired for every section the deep link waits on', async () => {
+    const emitters: Record<HealthMetricsEngagementSectionKey, (() => void) | undefined> = {
+      participation: () => participationChild().settled.emit(),
+      committees: () => stubChild().settled.emit(),
+    } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    for (const key of HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS) {
+      const emit = emitters[key];
+      expect(emit, `no component emits settled for the "${key}" section`).toBeTypeOf('function');
+      emit?.();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    // Every listed section settled, so the key is released: a further settle does not re-scroll.
+    const settledCalls = scrollIntoView.mock.calls.length;
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(settledCalls);
   });
 
   it('disconnects both observers on destroy', () => {
