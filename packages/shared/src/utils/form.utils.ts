@@ -61,9 +61,10 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
  * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Composer and manage
  * share this helper so the two surfaces cannot drift.
  *
- * This wrapper is Angular-Forms-specific and stays here, in a file the BFF must not import.
- * The lock predicate it calls lives in `meeting-privacy.utils.ts`, which has no
- * `@angular/forms` dependency, so the server can import that one directly.
+ * This wrapper needs a `FormGroup`, so it stays here with the rest of the Angular-Forms
+ * helpers. The lock predicate it calls lives in `meeting-privacy.utils.ts` and takes plain
+ * values, which is what lets the server reuse the same rule — not any import isolation:
+ * `utils/index.ts` re-exports this file, so the barrel pulls `@angular/forms` in either way.
  */
 export function syncShowMeetingAttendeesLock(form: FormGroup): void {
   const control = form.get('show_meeting_attendees');

@@ -116,6 +116,14 @@ export class MeetingCommitteeManagerComponent {
   private attendeeVisibilityLocked = false;
 
   /**
+   * Whether a committee's attendee preference was skipped because the lock was on.
+   * @description The unlock can only re-apply a preference it actually withheld. Re-applying on
+   * every unlock would also overwrite a deliberate opt-out, since the lock forces the control to
+   * `false` and the value alone cannot say whether the organizer or the lock put it there.
+   */
+  private attendeePreferenceDeferred = false;
+
+  /**
    * Emission gate for `committeeMembersChange`.
    * @description Consumers reconcile their guest list against every emission, so an emission that
    * isn't a truthful picture of the selected groups' membership would queue saved guests for
@@ -225,7 +233,7 @@ export class MeetingCommitteeManagerComponent {
       .subscribe((locked) => {
         const wasLocked = this.attendeeVisibilityLocked;
         this.attendeeVisibilityLocked = locked;
-        if (wasLocked && !locked) {
+        if (wasLocked && !locked && this.attendeePreferenceDeferred) {
           this.applyCommitteeAttendeePreference();
         }
       });
@@ -423,8 +431,9 @@ export class MeetingCommitteeManagerComponent {
 
   /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
-   * unless board/restricted meetings lock the control off. Re-runs only when the lock
-   * lifts so a previously skipped committee preference is not dropped.
+   * unless board/restricted meetings lock the control off. A preference withheld by the lock is
+   * recorded and applied once the lock lifts; an unlock with nothing withheld leaves the control
+   * alone, so an organizer who turned the toggle off before switching meeting types keeps it off.
    */
   private applyCommitteeAttendeePreference(): void {
     const ids = this.selectedCommitteeIds();
@@ -434,8 +443,10 @@ export class MeetingCommitteeManagerComponent {
       return;
     }
     if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
+      this.attendeePreferenceDeferred = true;
       return;
     }
+    this.attendeePreferenceDeferred = false;
     attendeesControl.setValue(true);
   }
 

@@ -13,13 +13,17 @@ import { canJoinMeeting } from './meeting.utils';
  * current type and restricted flag on each write; changing `meeting_type` away from Board lifts
  * it. A Board meeting stays locked if the organizer only turns `restricted` off.
  *
- * The type comparison is normalized for case and surrounding whitespace on purpose. `meeting_type`
- * reaches us from v1 through the ITX proxy, which neither normalizes casing nor validates the
- * value, so a stored `"board"` or a request body carrying `"Board "` must lock the same as
- * `"Board"`. Failing open on either difference would expose exactly the roster this guards.
+ * Both inputs are normalized, because neither is schema-validated on the way in: they reach us
+ * from v1 through the ITX proxy, which does not normalize casing, trim, or coerce types. A
+ * stored `"board"`, a request body carrying `"Board "`, and a stringified `"true"` for
+ * `restricted` all have to lock the same as their canonical forms — failing open on any of
+ * those differences would expose exactly the roster this guards.
  */
-export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | null | undefined): boolean {
-  return meetingType?.trim().toLowerCase() === MeetingType.BOARD.toLowerCase() || restricted === true;
+export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | string | null | undefined): boolean {
+  if (restricted === true || restricted === 'true') {
+    return true;
+  }
+  return meetingType?.trim().toLowerCase() === MeetingType.BOARD.toLowerCase();
 }
 
 /**

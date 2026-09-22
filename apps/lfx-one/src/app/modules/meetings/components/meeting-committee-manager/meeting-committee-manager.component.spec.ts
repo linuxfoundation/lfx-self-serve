@@ -788,4 +788,23 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
+
+  it('keeps an explicit opt-out that predates the lock, rather than reapplying on unlock', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    // Turned off deliberately while the control was still available.
+    component.form().get('show_meeting_attendees')?.setValue(false);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    // The lock withheld nothing on the way in, so the unlock has nothing to restore — a round
+    // trip through Board must not silently re-enable a toggle the organizer switched off.
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
 });
