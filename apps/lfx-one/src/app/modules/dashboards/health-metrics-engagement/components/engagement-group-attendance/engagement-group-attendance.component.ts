@@ -62,10 +62,13 @@ export class EngagementGroupAttendanceComponent {
   /**
    * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
    * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected — and
-   * renders no badge rather than a believable zero. The container restarts its deep-link deadline on
-   * each one, since the only `null` it can act on arrives as a read begins.
+   * renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
+  public readonly settled = output<void>();
+  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  public readonly reading = output<void>();
 
   protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({
     id: filter.key,
@@ -161,10 +164,8 @@ export class EngagementGroupAttendanceComponent {
         tap(() => {
           this.loading.set(true);
           this.loadFailed.set(false);
-          // Emitted per read rather than derived from a `counts` signal: a page clamp leaves that
-          // signal at `null` throughout, so a derived output would never tell the container a
-          // second read had started and its deep-link deadline should restart.
           this.countsChange.emit(null);
+          this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.
@@ -188,6 +189,9 @@ export class EngagementGroupAttendanceComponent {
               this.loading.set(false);
               // No foundation means no read happened, so the default's zeroes are not a measured count.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
+              // Emitted separately from the counts: a failed or foundation-less read reports no
+              // counts and still settles, and the container would otherwise wait on it forever.
+              this.settled.emit();
             })
           )
         )

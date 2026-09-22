@@ -20,9 +20,12 @@
         </div>
 
         @if (section.key === 'participation') {
-          <lfx-engagement-meeting-participation (sectionPicked)="onSectionPicked($event)" (settled)="onParticipationSettled()" />
+          <lfx-engagement-meeting-participation
+            (sectionPicked)="onSectionPicked($event)"
+            (reading)="onParticipationReading()"
+            (settled)="onParticipationSettled()" />
         } @else if (section.key === 'committees') {
-          <lfx-engagement-group-attendance (countsChange)="onGroupCounts($event)" />
+          <lfx-engagement-group-attendance (countsChange)="onGroupCounts($event)" (reading)="onGroupReading()" (settled)="onGroupSettled()" />
         } @else {
           <!-- The remaining four sections' Snowflake reads, tables and controls land in the
                follow-up PRs on #2802. -->
