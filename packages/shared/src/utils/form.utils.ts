@@ -3,7 +3,7 @@
 
 import { AbstractControl, FormArray, FormGroup } from '@angular/forms';
 
-import { isShowMeetingAttendeesLocked } from './meeting-privacy.utils';
+import { isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
 
 /**
  * Generates a temporary ID for entities that need unique identifiers before API assignment
@@ -62,9 +62,9 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
  * share this helper so the two surfaces cannot drift.
  *
  * This wrapper needs a `FormGroup`, so it stays here with the rest of the Angular-Forms
- * helpers. The lock predicate it calls lives in `meeting-privacy.utils.ts` and takes plain
- * values, which is what lets the server reuse the same rule — not any import isolation:
- * `utils/index.ts` re-exports this file, so the barrel pulls `@angular/forms` in either way.
+ * helpers. The lock predicate it calls lives in `meeting-attendee-lock.utils.ts`, which is
+ * free of Angular imports so the server — and its tests — can load the real rule directly
+ * rather than through this barrel.
  */
 export function syncShowMeetingAttendeesLock(form: FormGroup): void {
   const control = form.get('show_meeting_attendees');

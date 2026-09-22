@@ -27,8 +27,10 @@ vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
 vi.mock('@lfx-one/shared/utils', async () => ({
   // The real predicate, not a double: these tests are the only place the server-side lock is
   // exercised end to end, and a hand-written copy would stop tracking its normalization — the
-  // casing, whitespace and string-coercion rules are the whole point of the gate.
-  ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-privacy.utils')>('@lfx-one/shared/utils/meeting-privacy.utils')),
+  // casing, whitespace and string-coercion rules are the whole point of the gate. It is loaded
+  // from its own module rather than the mocked barrel because the barrel reaches @angular/forms
+  // and @angular/common/http, which this suite mocks the barrel to avoid in the first place.
+  ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-attendee-lock.utils')>('@lfx-one/shared/utils/meeting-attendee-lock.utils')),
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:

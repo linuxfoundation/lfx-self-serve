@@ -1950,54 +1950,6 @@ describe('MeetingComposerFormService — hydrating a board meeting with a stale 
 });
 
 /**
- * Legacy rows predate the board/restricted lock, so an edit can hydrate a board meeting that still
- * carries `show_meeting_attendees: true`. Hydration patches the stored value like any other field;
- * only the `syncShowMeetingAttendeesLock` call that trails the patch puts it back. Without this the
- * organizer sees the toggle on for a meeting whose invites never list guests, and a save from any
- * section would send that `true` back for the server to override.
- */
-describe('MeetingComposerFormService — hydrating a board meeting with a stale attendee flag', () => {
-  let service: MeetingComposerFormService;
-
-  const LEGACY_BOARD_MEETING = {
-    id: 'meeting-1',
-    organizer: true,
-    project_uid: 'project-1',
-    title: 'Legacy board meeting',
-    meeting_type: 'Board',
-    restricted: true,
-    show_meeting_attendees: true,
-  } as Meeting;
-
-  beforeEach(() => {
-    TestBed.configureTestingModule({
-      providers: [
-        MeetingComposerFormService,
-        { provide: MessageService, useValue: { add: vi.fn() } },
-        { provide: CommitteeService, useValue: {} },
-        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
-        {
-          provide: MeetingService,
-          useValue: {
-            getMeeting: vi.fn().mockReturnValue(of(LEGACY_BOARD_MEETING)),
-            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
-            getMeetingRegistrants: vi.fn().mockReturnValue(of([] as MeetingRegistrant[])),
-          },
-        },
-      ],
-    });
-
-    service = TestBed.inject(MeetingComposerFormService);
-    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
-  });
-
-  it('shows the toggle off and locked despite the stored true', () => {
-    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
-    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
-  });
-});
-
-/**
  * Covers the two ways a group-scoped create can look ready and save the wrong meeting.
  *
  * The committees control is the only thing on the form that carries the group, and it is empty while
