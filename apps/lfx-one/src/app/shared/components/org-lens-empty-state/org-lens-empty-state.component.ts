@@ -17,23 +17,16 @@ const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-acces
 /** States that render the caller's own organization list (FR-008). */
 const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-organization', 'not-found-staff']);
 
-/** States a first-time visitor can reach — they carry the product line (FR-002). */
-const PAGE_LEVEL_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
-  'no-organization',
-  'no-access',
-  'wrong-organization',
-  'not-found-staff',
-  'could-not-load',
-  'staff-check-failed',
-]);
-
 /**
- * Spec 053 — the one shared Org Lens empty state. Renders headline → product line → reason → primary →
- * secondary from the copy registry; call sites choose a state, never a string (FR-001/FR-004).
+ * Spec 053 — the one shared Org Lens empty state. Renders headline → reason → primary → secondary from
+ * the copy registry; call sites choose a state, never a string (FR-001/FR-004).
+ *
+ * Visual shape follows the LFX Insights empty-state pattern (lfx-self-serve#2533 "Design"): 56px
+ * accent-100 disc with a 32px accent-500 icon, Roboto Slab headline, one Inter paragraph, one primary
+ * `lfx-button` with a leading icon, at most one muted secondary link.
  *
  * Not a thin wrapper over `lfx-empty-state`: that primitive carries one CTA and no secondary line, and
- * FR-002/FR-008 need a secondary action and an organization list. The visual shape (icon disc, headline,
- * muted body) is kept identical so the two read as one family.
+ * FR-002/FR-008 need a secondary action and an organization list.
  *
  * `testId` keeps the scenario hooks of the blocks it replaces — `{testId}-state`, `-title`,
  * `-description`, `-contact-support`, `-retry`, `-org-list`.
@@ -70,8 +63,6 @@ export class OrgLensEmptyStateComponent {
     const template = copy.noPeriod && !this.values().period ? copy.noPeriod.headline : copy.headline;
     return this.interpolate(template);
   });
-
-  protected readonly productLine = computed(() => (PAGE_LEVEL_STATES.has(this.state()) ? this.copy().productLine : undefined));
 
   protected readonly reason = computed(() => {
     const copy = this.copy();

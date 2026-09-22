@@ -41,9 +41,7 @@ export interface OrgLensEmptyStateAction {
 
 export interface OrgLensEmptyStateCopy {
   headline: string;
-  /** One line on what Organization Lens is — present for every state a first-time visitor can reach. */
-  productLine?: string;
-  /** May interpolate `{orgName}` `{noun}` `{period}` `{correlationId}`. */
+  /** May interpolate `{orgName}` `{noun}` `{period}` `{correlationId}`. The two states a first-time visitor can reach (`no-organization`, `no-access`) open with the one line on what Organization Lens is (FR-002). */
   reason: string;
   /** Font Awesome class. */
   icon: string;

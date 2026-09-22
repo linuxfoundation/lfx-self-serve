@@ -149,10 +149,13 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('staff-check-failed'), 'description')?.textContent).toContain('Reference: —');
   });
 
-  // FR-002: the product line is for first-time visitors of a page-level state, not for a section inside a page.
-  it('shows the product line only on page-level states', () => {
-    expect(byTestId(render('no-organization'), 'product-line')).not.toBeNull();
-    expect(byTestId(render('section-could-not-load'), 'product-line')).toBeNull();
+  // FR-002: the reason opens with what Organization Lens is on the two states a first-time visitor
+  // can reach — and nowhere else.
+  it('opens the reason with the product sentence only on no-organization and no-access', () => {
+    expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
+    expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    expect(byTestId(render('could-not-load'), 'description')?.textContent).not.toContain('Organization Lens shows');
+    expect(byTestId(render('section-could-not-load'), 'description')?.textContent).not.toContain('Organization Lens shows');
   });
 
   it('emits retry and resetFilters from their controls', () => {
