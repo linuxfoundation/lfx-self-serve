@@ -4,6 +4,9 @@
 import {
   CLA_GROUP_ID_PATTERN,
   CLA_GROUP_SEARCH_MIN_CHARS,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
@@ -476,6 +479,66 @@ export class OrgClasController {
         entry_count: result.list.entries.length,
       });
       res.json(result.list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments
+  //
+  // Reads the paginated contributor acknowledgments (ECLA signatures) for one CCLA. Impersonation
+  // is allowed; the upstream call runs as the impersonated user. `Cache-Control: no-store` on
+  // every path because the body carries contributor identity attributes and a per-caller flag.
+  public async getContributorAcknowledgments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_acknowledgments');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_acknowledgments' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_acknowledgments');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
+          operation: 'get_org_cla_acknowledgments',
+        });
+      }
+
+      const rawPageSize = getStringQueryParam(req, 'pageSize');
+      const parsedPageSize = rawPageSize ? Number(rawPageSize) : NaN;
+      // Silent clamp — a page above 100 protects the producer, a request for zero rows prevents a
+      // runaway zero-loop. Anything else outside the range is a caller mistake the producer would
+      // punish; treating it as "give me the default" is friendlier than a 400 for what is a hint.
+      const pageSize = Number.isFinite(parsedPageSize)
+        ? Math.min(Math.max(Math.trunc(parsedPageSize), ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN), ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX)
+        : ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT;
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim();
+      const nextKeyRaw = (getStringQueryParam(req, 'nextKey') ?? '').trim();
+      const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : undefined;
+
+      const list = await this.orgClaService.getContributorAcknowledgments(req, orgUid, signatureId, { search, pageSize, nextKey });
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!list) {
+        logger.success(req, 'get_org_cla_acknowledgments', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_acknowledgments', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        result_count: list.resultCount,
+        total_count: list.totalCount,
+        can_edit: list.canEdit,
+        has_next: !!list.nextKey,
+      });
+      res.json(list);
     } catch (error) {
       next(error);
     }
