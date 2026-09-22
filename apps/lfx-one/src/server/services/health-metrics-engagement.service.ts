@@ -14,9 +14,12 @@ import type {
   HealthMetricsRange,
 } from '@lfx-one/shared/interfaces';
 
+import { BaseApiError } from '../errors/base.error';
+import { MicroserviceError } from '../errors/microservice.error';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
+import type { SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
@@ -137,10 +140,7 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
     `;
 
-    // `expectMissingObject` still rejects — it only keeps a missing view or absent GRANT out of the
-    // shared circuit breaker, which five of these reads would otherwise open for every other
-    // Snowflake dashboard. The 500 reaches `apiErrorHandler`, so the fault is still error telemetry.
-    const result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
+    const result = await this.executeGroupAttendance(sql, binds);
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,
@@ -162,6 +162,29 @@ export class HealthMetricsEngagementService {
         dormantGroups: Number(first?.DORMANT_GROUPS ?? 0),
       },
     };
+  }
+
+  /**
+   * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
+   * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
+   * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
+   *
+   * The SDK names the fully-qualified view in its message, so a generic sentence is put in
+   * `clientMessage` — the raw text stays on `message`, which is what the log records.
+   */
+  private async executeGroupAttendance(sql: string, binds: Bind[]): Promise<SnowflakeQueryResult<GroupAttendanceRow>> {
+    try {
+      return await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
+    } catch (error) {
+      if (!(error instanceof BaseApiError) || error.clientMessage) throw error;
+
+      throw new MicroserviceError(error.message, error.statusCode, error.code, {
+        operation: error.operation,
+        service: error.service,
+        clientMessage: 'Group attendance is unavailable right now.',
+        originalError: error,
+      });
+    }
   }
 }
 

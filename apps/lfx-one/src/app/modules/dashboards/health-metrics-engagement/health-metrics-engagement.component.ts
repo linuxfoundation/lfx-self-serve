@@ -76,6 +76,8 @@ export class HealthMetricsEngagementComponent {
   private readonly pendingSection = signal<HealthMetricsEngagementSectionKey | null>(null);
   private readonly resize$ = new Subject<void>();
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
+  /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
+  private removeIntentListeners: (() => void) | null = null;
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
   // Two of the observers' inputs, so a content change that moves neither costs nothing. The sticky
@@ -133,8 +135,8 @@ export class HealthMetricsEngagementComponent {
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
     if (!counts) {
-      // A follow-up read (a page clamp, a filter change) reopened this section, so the deadline
-      // restarts against that read rather than against the fragment that armed it.
+      // The section emits `null` as each read starts, so a follow-up read — a page clamp, a filter
+      // change — restarts the deadline against that read rather than the fragment that armed it.
       const pending = this.pendingSection();
       if (pending) this.armPendingSection(pending);
       return;
@@ -198,20 +200,26 @@ export class HealthMetricsEngagementComponent {
   private observeReaderIntent(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
-    // Only a key that scrolls counts: this page's own rows bind `keydown.enter` / `keydown.space`
-    // and every keystroke in the app shell bubbles to the window, so an unfiltered handler would
-    // drop the deep link on a Tab press.
+    // Only a key that scrolls counts: every keystroke in the app shell bubbles to the window, so an
+    // unfiltered handler would drop the deep link on a Tab press.
     const onIntent = (event: Event) => {
-      if (event.type === 'keydown' && !this.isScrollKey(event as KeyboardEvent)) return;
+      // A row's own `keydown.space` handler has already called `preventDefault()` by the time this
+      // runs — that key opened a drawer, it did not move the pane.
+      if (event.defaultPrevented) return;
+      if (event.type === 'keydown' && !this.isScrollIntent(event as KeyboardEvent)) return;
       this.clearPendingSection();
     };
     // Bound to the window rather than the pane: keyboard scrolling with the body focused never
     // dispatches to the pane at all. A scrollbar drag reaches neither, which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
     for (const event of events) window.addEventListener(event, onIntent, { passive: true });
-    this.destroyRef.onDestroy(() => {
+    // Nothing re-arms a superseded deep link, so the handlers are dead weight on the browser's
+    // hottest event streams once the key is cleared.
+    this.removeIntentListeners = () => {
       for (const event of events) window.removeEventListener(event, onIntent);
-    });
+      this.removeIntentListeners = null;
+    };
+    this.destroyRef.onDestroy(() => this.removeIntentListeners?.());
   }
 
   /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */
@@ -227,10 +235,11 @@ export class HealthMetricsEngagementComponent {
   private clearPendingSection(): void {
     this.pendingSection.set(null);
     clearTimeout(this.pendingSectionTimer);
+    this.removeIntentListeners?.();
   }
 
   /** A keystroke in an editable element is typing, not scrolling, whatever key it carries. */
-  private isScrollKey(event: KeyboardEvent): boolean {
+  private isScrollIntent(event: KeyboardEvent): boolean {
     const target = event.target as HTMLElement | null;
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return false;
 

@@ -1,8 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SNOWFLAKE_CONFIG } from './snowflake.constant';
-
 import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupAttendance,
@@ -181,10 +179,10 @@ export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
 
 /**
  * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
- * The server's own budget for one read is the query timeout plus the wait for a pooled connection,
- * so anything shorter expires on a slow-but-healthy read — a cold warehouse or a contended pool.
+ * Sized at roughly double the server's ~15s worst-case budget for one read, leaving room for
+ * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
  */
-export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = SNOWFLAKE_CONFIG.DEFAULT_QUERY_TIMEOUT + SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT;
+export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];

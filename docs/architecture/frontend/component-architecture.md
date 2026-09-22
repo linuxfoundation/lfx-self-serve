@@ -218,12 +218,12 @@ Two rules this shell establishes:
 - **Chrome that outlives a tab switch is a component-provided service, never `providedIn: 'root'`.** `HealthMetricsChromeService` is listed in the gate's `providers`, so every child route inherits the same instance through the node injector — the selected period and the measured sticky-header height survive tab switches, and both reset when the user leaves the page. A root-provided service would leak that state across unrelated visits.
 - **`routerLinkActive` needs `queryParams: 'ignored'`.** Tab links carry no query params while the URL always carries `foundationSlug`, so the default matching never marks a tab active. Pass an explicit `IsActiveMatchOptions`, using `paths: 'exact'` for the empty-path tab and `paths: 'subset'` for the rest.
 
-For the scroll-spy used inside a Level 2 page, four rules apply. The first two come from `account-settings.component.ts`; the last two from `health-metrics-engagement.component.ts`, whose observer is rebuilt as the sticky offset and the pane's overflow change:
+For the scroll-spy used inside a Level 2 page, four rules apply, each attributed to the component that established it:
 
-- Observe heading **sentinels** rather than whole sections — two whole sections light at once mid-scroll.
-- Keep an `intersecting` Set, so exactly one item is ever active.
-- Give a short last section an end sentinel with a **non-zero height**, and observe it only once the area genuinely overflows. A zero-height sentinel never intersects; one in a non-scrolling area intersects immediately and lights the last item at rest.
-- Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes.
+- Observe heading **sentinels** rather than whole sections — two whole sections light at once mid-scroll (`account-settings.component.ts`).
+- Keep an `intersecting` Set, so exactly one item is ever active (`account-settings.component.ts`).
+- Give a short last section an end sentinel with a **non-zero height** (`account-settings.component.ts`), and observe it only once the area genuinely overflows (`health-metrics-engagement.component.ts`). A zero-height sentinel never intersects; one in a non-scrolling area intersects immediately and lights the last item at rest.
+- Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes (`health-metrics-engagement.component.ts`, whose observer is rebuilt as the sticky offset and the pane's overflow change).
 
 A Level 2 page whose content column scrolls on its own (`health-metrics-engagement`) bounds that column to the viewport and gives the observer that element as its `root`, with a `0px 0px -70% 0px` margin — the sticky-header offset only belongs in the margin when the window is what scrolls. Detect the container at runtime (computed `overflow-y` plus `scrollHeight > clientHeight`) rather than assuming it, so the same code falls back to window scroll at narrow widths.
 

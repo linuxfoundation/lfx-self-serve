@@ -61,7 +61,8 @@ export class EngagementGroupAttendanceComponent {
 
   /**
    * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
-   * `null` while a read is in flight, which renders no badge rather than a believable zero.
+   * Emits `null` as each read starts, which renders no badge rather than a believable zero and
+   * tells the container a fresh read is underway.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
 
@@ -104,16 +105,10 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  // No foundation means no read happened, so the default's zeroes are not a measured count.
-  protected readonly counts = computed(() => (this.loading() || this.loadFailed() || !this.query().foundationSlug ? null : this.response().counts));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 
   public constructor() {
-    toObservable(this.counts)
-      .pipe(takeUntilDestroyed())
-      .subscribe((counts) => this.countsChange.emit(counts));
-
     if (isPlatformBrowser(this.platformId)) {
       toObservable(this.query)
         .pipe(
@@ -165,6 +160,10 @@ export class EngagementGroupAttendanceComponent {
         tap(() => {
           this.loading.set(true);
           this.loadFailed.set(false);
+          // Emitted per read rather than derived from a `counts` signal: a page clamp leaves that
+          // signal at `null` throughout, so a derived output would never tell the container a
+          // second read had started and its deep-link deadline should restart.
+          this.countsChange.emit(null);
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.
@@ -178,9 +177,16 @@ export class EngagementGroupAttendanceComponent {
             }),
             tap((response) => {
               // An out-of-range page is not a settled read: the clamp fires a follow-up fetch, so
-              // `loading` stays set and `counts` stays null until the page that has rows arrives.
-              if (this.clampPage(response.totalRecords)) return;
+              // `loading` stays set and no counts are reported until the page that has rows arrives.
+              if (this.clampPage(response.totalRecords)) {
+                // The clamp can land before the sync subscription's first emission, which `skip(1)`
+                // drops as already-in-the-URL state — so the replacement page is written back here.
+                if (isPlatformBrowser(this.platformId)) this.syncUrl(this.query());
+                return;
+              }
               this.loading.set(false);
+              // No foundation means no read happened, so the default's zeroes are not a measured count.
+              this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
             })
           )
         )

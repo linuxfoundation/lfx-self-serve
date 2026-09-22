@@ -379,6 +379,60 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
+  // A row binds `keydown.space` and calls `preventDefault()` on it — that key opened a drawer, it
+  // did not move the pane, so the deep link must survive it.
+  it('keeps a pending deep link through a space that a row has already handled', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    const heading = headingOf('participation');
+    heading.addEventListener('keydown', (event: Event) => event.preventDefault(), { once: true });
+    heading.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // Space and the arrow keys type or move a caret inside a field; they scroll nothing.
+  it.each([
+    ['an input', () => document.createElement('input')],
+    [
+      'a contentEditable element',
+      () => {
+        const host = document.createElement('div');
+        host.contentEditable = 'true';
+        // jsdom does not derive `isContentEditable` from the attribute.
+        Object.defineProperty(host, 'isContentEditable', { value: true });
+        return host;
+      },
+    ],
+  ])('keeps a pending deep link through a space typed into %s', async (_label, makeTarget) => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    const target = makeTarget();
+    document.body.appendChild(target);
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    target.remove();
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
   // Fake timers cover only the arm-and-wait: `whenStable` below needs the real scheduler.
   it('lets a pending deep link expire rather than scrolling into a read that never settles', async () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
@@ -402,6 +456,26 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS - 1000);
     fragment.next('orgs');
     // Past the first fragment's deadline, well inside the second's.
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+
+    scrollIntoView.mockClear();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // A page clamp re-reads without ever settling the first read, so the deadline has to restart
+  // against the new read rather than expiring on the fragment that armed it.
+  it('restarts the deadline when the section reports a fresh read', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fragment.next('reps');
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS - 1000);
+    stubChild().countsChange.emit(null);
+    // Past the deadline the fragment armed, well inside the one the read restarted.
     vi.advanceTimersByTime(2000);
     vi.useRealTimers();
 

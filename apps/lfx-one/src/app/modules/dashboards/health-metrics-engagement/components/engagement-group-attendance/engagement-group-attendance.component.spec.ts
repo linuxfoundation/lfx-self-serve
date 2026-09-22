@@ -102,14 +102,16 @@ describe('EngagementGroupAttendanceComponent', () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { groups: 34, dormantGroups: 3 } }), (counts) => emitted.push(counts));
 
-    expect(emitted.at(-1)).toEqual({ groups: 34, dormantGroups: 3 });
+    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3 }]);
 
-    fixture.componentInstance['loading'].set(true);
+    emitted.length = 0;
+    fixture.componentInstance['onFilterChange']('wg');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    // The default response's zeroes would otherwise render as a believable "0 groups" badge.
-    expect(emitted.at(-1)).toBeNull();
+    // The in-flight null clears the badge rather than leaving the previous cut's number under a
+    // table that is being replaced.
+    expect(emitted).toEqual([null, { groups: 34, dormantGroups: 3 }]);
   });
 
   it('re-reads from page 1 when the type filter changes, because the rank is per-cut', async () => {
@@ -288,7 +290,9 @@ describe('EngagementGroupAttendanceComponent', () => {
     );
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
-    expect(emissions.filter((counts) => counts !== null)).toEqual([{ groups: 34, dormantGroups: 3 }]);
+    // One null per read: the second is what restarts the container's deep-link deadline, which a
+    // signal derived from the counts could never report while the whole clamp reads as one load.
+    expect(emissions).toEqual([null, null, { groups: 34, dormantGroups: 3 }]);
     // The clamped page is the first settled render, so "34 groups" never sits over an empty table.
     expect(fixture.componentInstance['loading']()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
@@ -314,6 +318,31 @@ describe('EngagementGroupAttendanceComponent', () => {
     await fixture.whenStable();
 
     expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { groupType: null, groupPage: null } }));
+  });
+
+  // Clamping here would re-read page 1 for a set that has no rows on any page.
+  it('settles on an out-of-range page when the filtered set is empty, without re-reading', async () => {
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }), undefined, { groupPage: '9' });
+
+    expect(getEngagementGroupAttendance).toHaveBeenCalledTimes(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).not.toBeNull();
+  });
+
+  // Otherwise a reload or a shared link keeps sending the reader to the page that has no rows.
+  it.each([
+    [34, 2],
+    [12, null],
+  ])('rewrites the URL page when it clamps a set of %i to page %s', async (totalRecords, groupPage) => {
+    const navigate = vi.spyOn(Router.prototype, 'navigate').mockResolvedValue(true);
+    await render(
+      response({ rows: [], totalRecords, counts: { groups: totalRecords, dormantGroups: 0 } }),
+      undefined,
+      { groupPage: '9' },
+      response({ totalRecords })
+    );
+
+    // The default page leaves the URL rather than pinning a redundant param.
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { groupType: null, groupPage } }));
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {

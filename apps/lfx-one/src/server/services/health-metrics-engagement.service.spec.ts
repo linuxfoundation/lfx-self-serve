@@ -23,6 +23,8 @@ vi.mock('./logger.service', () => ({
 
 import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT } from '@lfx-one/shared/constants';
 
+import { MicroserviceError } from '../errors/microservice.error';
+
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from './health-metrics-engagement.service';
 
 import type { Request } from 'express';
@@ -216,6 +218,32 @@ describe('HealthMetricsEngagementService', () => {
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('Object does not exist');
     expect(execute.mock.calls[0][2]).toEqual({ expectMissingObject: true });
     expect(warning).not.toHaveBeenCalled();
+  });
+
+  // The SDK names the fully-qualified view in its message, and the handler sends a bare
+  // `BaseApiError`'s message to the client.
+  it('keeps the warehouse object name out of the client response', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'INTERNAL_ERROR', {
+        operation: 'snowflake_execute',
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Group attendance is unavailable right now.');
+    // The raw text is what the log line records, so it must survive the wrap.
+    expect(error.message).toContain('ENGAGEMENT_GROUP_ATTENDANCE');
+    expect(error.statusCode).toBe(500);
+  });
+
+  it('leaves an error that already carries a client message alone', async () => {
+    execute.mockRejectedValue(new MicroserviceError('upstream said no', 503, 'SERVICE_UNAVAILABLE', { clientMessage: 'Try again shortly.' }));
+
+    const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Try again shortly.');
   });
 
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
