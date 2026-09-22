@@ -9,7 +9,7 @@
 // whether via the '../utils' barrel or a direct file import to an Angular-touching utils file,
 // e.g. form.utils.ts (@angular/forms) or meeting.utils.ts (@angular/common/http). Either one
 // crashes any plain-Node evaluation of this barrel — Vitest here, but also jiti, since
-// apps/lfx-one's tailwind.config.js loads `@lfx-one/shared/constants` — with a JIT-compiler error
+// apps/lfx-one's tailwind.config.js loads this source barrel directly — with a JIT-compiler error
 // that surfaces far from its real cause (e.g. as an unrelated sass error on the global styles
 // entry). The sanctioned constants->utils edges today are dashboard-metrics.constants.ts
 // (color.utils, number.utils), committees.constants.ts (committee.utils),
@@ -19,7 +19,11 @@
 // This only covers the `/constants` subpath: the package root barrel (`packages/shared/src/index.ts`)
 // still does `export * from './utils'` and is plain-Node-hostile by design — so is the `/utils`
 // subpath itself. The second test below pins every `@lfx-one/shared*` specifier tailwind.config.js
-// uses to exactly `/constants`, rather than just blocklisting the bare root import.
+// uses to exactly `@lfx-one/shared/src/constants/index.ts`, rather than just blocklisting the bare
+// root import: jiti loads that config through Node/`exports`-map resolution, where the packaged
+// `/constants` subpath would read a stale-or-missing built `dist/` and silently yield `undefined`
+// (GH-2555) — so the config deliberately reads this source barrel via the package's `"./src/*"`
+// export, which keeps THIS spec the plain-Node guard for the exact module Tailwind evaluates.
 //
 // That test reaches from packages/shared into apps/lfx-one via a relative filesystem read, which
 // inverts the usual shared-package dependency direction. Deliberate: apps/lfx-one's Vitest config
@@ -41,7 +45,7 @@ describe('constants barrel', () => {
 });
 
 describe('tailwind.config.js', () => {
-  it('imports only the plain-Node-safe @lfx-one/shared/constants subpath', () => {
+  it('imports only the plain-Node-safe constants source barrel', () => {
     const configPath = join(__dirname, '../../../../apps/lfx-one/tailwind.config.js');
     // Strip comments first: matching any quoted specifier (not just `from '...'`) means a bare
     // mention inside a comment would otherwise fail the test — a false positive pointing at
@@ -58,7 +62,7 @@ describe('tailwind.config.js', () => {
     // @lfx-one/shared specifier is found at all — e.g. a codemod to a non-string-literal import.
     expect(specifiers).not.toHaveLength(0);
     for (const specifier of specifiers) {
-      expect(specifier).toBe('@lfx-one/shared/constants');
+      expect(specifier).toBe('@lfx-one/shared/src/constants/index.ts');
     }
   });
 });
