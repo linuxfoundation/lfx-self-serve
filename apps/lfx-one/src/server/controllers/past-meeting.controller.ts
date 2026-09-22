@@ -17,6 +17,7 @@ import {
   PresignAttachmentResponse,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
+import { isShowMeetingAttendeesLocked } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
@@ -26,6 +27,7 @@ import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /**
  * Controller for handling past meeting HTTP requests
@@ -142,6 +144,11 @@ export class PastMeetingController {
 
   /**
    * GET /past-meetings/:uid/participants
+   *
+   * Organizers receive the full roster. Invitees receive it only when
+   * `show_meeting_attendees` is on and the meeting is not board or restricted;
+   * otherwise the response is limited to the caller's own row(s). A failed
+   * meeting lookup fails closed to that same caller-only view.
    */
   public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -160,17 +167,32 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting participants
+      let pastMeeting: PastMeeting | null = null;
+      try {
+        pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
+      } catch {
+        pastMeeting = null;
+      }
+
+      const isOrganizer = pastMeeting ? await this.isPastMeetingOrganizer(req, pastMeeting, uid) : false;
       const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
 
-      // Log the success
+      let payload = participants;
+      if (!isOrganizer) {
+        const userEmail = getEffectiveEmail(req)?.toLowerCase();
+        const self = userEmail ? participants.filter((participant) => participant.email?.toLowerCase() === userEmail) : [];
+        const flagOn = pastMeeting?.show_meeting_attendees === true && !isShowMeetingAttendeesLocked(pastMeeting?.meeting_type, pastMeeting?.restricted);
+        payload = flagOn && self.length > 0 ? participants : self;
+      }
+
       logger.success(req, 'get_past_meeting_participants', startTime, {
         past_meeting_id: uid,
-        participant_count: participants.length,
+        participant_count: payload.length,
+        organizer: isOrganizer,
+        truncated: payload.length !== participants.length,
       });
 
-      // Send the participants data to the client
-      res.json(participants);
+      res.json(payload);
     } catch (error) {
       next(error);
     }

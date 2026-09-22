@@ -21,7 +21,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { isShowMeetingAttendeesLocked, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -439,14 +439,21 @@ export class MeetingController {
         } catch {
           meetingForGate = null;
         }
-        if (!meetingForGate?.organizer && meetingForGate?.show_meeting_attendees !== true) {
-          const userEmail = getEffectiveEmail(req);
-          registrants = userEmail ? await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail) : [];
-          if (includeRsvp && registrants.length > 0) {
-            registrants = await this.meetingService.attachRsvpsToRegistrantList(req, uid, registrants, occurrenceId);
-          }
-        } else {
+        if (meetingForGate?.organizer) {
           registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        } else {
+          const userEmail = getEffectiveEmail(req);
+          const self = userEmail ? await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail) : [];
+          const flagOn =
+            meetingForGate?.show_meeting_attendees === true && !isShowMeetingAttendeesLocked(meetingForGate?.meeting_type, meetingForGate?.restricted);
+          if (flagOn && self.length > 0) {
+            registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+          } else {
+            registrants = self;
+            if (includeRsvp && registrants.length > 0) {
+              registrants = await this.meetingService.attachRsvpsToRegistrantList(req, uid, registrants, occurrenceId);
+            }
+          }
         }
       }
 
@@ -497,9 +504,10 @@ export class MeetingController {
   /**
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting. Organizers always receive the full roster.
-   * Invitees receive the full roster only when `show_meeting_attendees` is true; otherwise
-   * they receive only their own registrant row. Callers who are neither a registrant nor an
-   * organizer (or whose email can't be resolved) receive an empty list.
+   * Invitees receive the full roster only when `show_meeting_attendees` is true
+   * and the meeting is not board or restricted; otherwise they receive only their
+   * own registrant row. Callers who are neither a registrant nor an organizer
+   * (or whose email can't be resolved) receive an empty list.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -590,7 +598,7 @@ export class MeetingController {
       // Step 4: Invitees only see the full roster when the organizer opted in. Organizers always
       // see everyone; everyone else gets only their own registrant row(s), with RSVP attached
       // when requested so the join-page contract is unchanged.
-      if (!meeting.organizer && meeting.show_meeting_attendees !== true) {
+      if (!meeting.organizer && (meeting.show_meeting_attendees !== true || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted))) {
         let payload = userRegistrantCheck;
         if (includeRsvp && payload.length > 0) {
           payload = await this.meetingService.attachRsvpsToRegistrantList(req, uid, payload, occurrenceId, { bearerToken: m2mToken });

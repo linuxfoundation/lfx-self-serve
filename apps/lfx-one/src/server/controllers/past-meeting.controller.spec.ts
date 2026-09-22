@@ -6,15 +6,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock } = vi.hoisted(() => ({
+const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, getEffectiveEmailMock } = vi.hoisted(() => ({
   meetingSvc: {
     getPastMeetingById: vi.fn(),
+    getPastMeetingParticipants: vi.fn(),
   },
   reconciliationSvc: {
     reconcilePastMeetingParticipants: vi.fn(),
   },
   addAccessToResourceMock: vi.fn(),
   validateUidParameterMock: vi.fn(() => true),
+  getEffectiveEmailMock: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
@@ -24,6 +26,13 @@ vi.mock('@lfx-one/shared/interfaces', async (importOriginal) => importOriginal()
 vi.mock('@lfx-one/shared/utils', () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
+  isShowMeetingAttendeesLocked: vi.fn(
+    (meetingType?: string | null, restricted?: boolean | null) => (meetingType ?? '').toLowerCase() === 'board' || restricted === true
+  ),
+}));
+
+vi.mock('../utils/auth-helper', () => ({
+  getEffectiveEmail: getEffectiveEmailMock,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
@@ -135,5 +144,84 @@ describe('PastMeetingController.reconcilePastMeetingParticipants — organizer g
     expect(reconciliationSvc.reconcilePastMeetingParticipants).toHaveBeenCalledWith(expect.anything(), PAST_MEETING_UID, buildPastMeeting());
     expect(res.json).toHaveBeenCalledWith(result);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('PastMeetingController.getPastMeetingParticipants — attendee visibility', () => {
+  let controller: PastMeetingController;
+  const roster = [
+    { uid: 'p-self', email: 'user@example.com' },
+    { uid: 'p-other', email: 'other@example.com' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    validateUidParameterMock.mockReturnValue(true);
+    controller = new PastMeetingController();
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue(roster);
+  });
+
+  it('returns the full roster to the organizer even when attendee visibility is off', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: false }));
+    addAccessToResourceMock.mockResolvedValue({ organizer: true });
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(roster);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns only the caller row when an invitee requests the roster with attendee visibility off', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: false }));
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'p-self', email: 'user@example.com' }]);
+  });
+
+  it('returns the full roster to a confirmed participant when attendee visibility is on', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: true }));
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(roster);
+  });
+
+  it('does not hand the full roster to a non-participant when attendee visibility is on', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: true }));
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue([{ uid: 'p-other', email: 'other@example.com' }]);
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('hides the roster from invitees on a board meeting even if the stored flag is on', async () => {
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: true, meeting_type: 'Board' }));
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'p-self', email: 'user@example.com' }]);
+  });
+
+  it('fails closed to the caller row when the meeting lookup throws', async () => {
+    meetingSvc.getPastMeetingById.mockRejectedValue(new Error('upstream down'));
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(addAccessToResourceMock).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'p-self', email: 'user@example.com' }]);
   });
 });

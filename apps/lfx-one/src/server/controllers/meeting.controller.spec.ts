@@ -63,6 +63,8 @@ vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, M
 vi.mock('@lfx-one/shared/utils', async () => ({
   resolveMeetingOrganizer: vi.fn(() => null),
   truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+  isShowMeetingAttendeesLocked: (meetingType?: string | null, restricted?: boolean | null) =>
+    (meetingType ?? '').toLowerCase() === 'board' || restricted === true,
 }));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));

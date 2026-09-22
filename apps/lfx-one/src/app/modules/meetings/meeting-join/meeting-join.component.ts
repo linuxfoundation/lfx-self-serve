@@ -69,7 +69,14 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
+import {
+  getUserTimezone,
+  isHostKeyVisible,
+  isMeetingInviteResponsesEnabled,
+  isPastMeetingCompositeId,
+  isShowMeetingAttendeesLocked,
+  reconcileOptimisticPad,
+} from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -339,11 +346,11 @@ export class MeetingJoinComponent implements OnInit {
   // is truncated to the caller, so passing it here would hide Zoom co-hosts and undercount
   // invitees — fall back to owner/created_by instead, matching dashboard cards.
   protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => {
-    if (this.isPastMeeting()) {
-      return this.pastMeetingParticipants();
-    }
     if (!this.canViewGuestRoster()) {
       return [];
+    }
+    if (this.isPastMeeting()) {
+      return this.pastMeetingParticipants();
     }
     return this.registrants();
   });
@@ -578,7 +585,7 @@ export class MeetingJoinComponent implements OnInit {
 
   /**
    * Organizers always see the roster. Invitees (and newly registered guests) only see it
-   * when the organizer turned Show attendees on.
+   * when the organizer turned Show attendees on and the meeting is not board or restricted.
    */
   public readonly canViewGuestRoster = computed(() => {
     if (!this.authenticated()) {
@@ -587,6 +594,9 @@ export class MeetingJoinComponent implements OnInit {
     const meeting = this.meeting();
     if (meeting?.organizer) {
       return true;
+    }
+    if (isShowMeetingAttendeesLocked(meeting?.meeting_type, meeting?.restricted)) {
+      return false;
     }
     return meeting?.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
   });
@@ -1551,9 +1561,9 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingParticipants(): Signal<PastMeetingParticipant[]> {
     return toSignal(
-      this.pastMeetingResourceKey$(of(null)).pipe(
-        switchMap(({ hasAccess, id }) => {
-          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
+      combineLatest([this.pastMeetingResourceKey$(of(null)), toObservable(this.canViewGuestRoster)]).pipe(
+        switchMap(([{ hasAccess, id }, canView]) => {
+          if (!hasAccess || !id || !this.authenticated() || !canView) return of([] as PastMeetingParticipant[]);
           return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
       ),

@@ -804,10 +804,21 @@ describe('MeetingJoinComponent', () => {
 
     it('shows the roster to invitees when show_meeting_attendees is on', async () => {
       getPublicMeeting.mockReturnValue(
-        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true }), project: buildProject() })
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true, meeting_type: 'Technical' }),
+          project: buildProject(),
+        })
       );
       const component = await createComponent();
       expect(component.canViewGuestRoster()).toBe(true);
+    });
+
+    it('hides the roster from invitees on a board meeting even if the stored flag is on', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true, meeting_type: 'Board' }), project: buildProject() })
+      );
+      const component = await createComponent();
+      expect(component.canViewGuestRoster()).toBe(false);
     });
 
     it('does not feed a truncated roster into the organizer chip when attendee visibility is off', async () => {
@@ -820,10 +831,29 @@ describe('MeetingJoinComponent', () => {
       expect((component as unknown as { organizerChipHosts: () => MeetingRegistrant[] }).organizerChipHosts()).toEqual([]);
     });
 
+    it('does not fetch past-meeting participants when the guest roster is gated off', async () => {
+      const PAST_COMPOSITE_ID = '1-1700000000000';
+      paramMap$.next(convertToParamMap({ id: PAST_COMPOSITE_ID }));
+      getPublicPastMeeting.mockReturnValue(
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false }),
+          project: buildProject(),
+          full_access: true,
+        })
+      );
+
+      await createComponent();
+
+      expect(getPastMeetingParticipants).not.toHaveBeenCalled();
+    });
+
     it('feeds the roster into the organizer chip when the guest list is visible', async () => {
       const registrants = buildRegistrants(2);
       getPublicMeeting.mockReturnValue(
-        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true }), project: buildProject() })
+        of({
+          meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true, meeting_type: 'Technical' }),
+          project: buildProject(),
+        })
       );
       getMyMeetingRegistrants.mockReturnValue(of(registrants));
       const component = await createComponent();

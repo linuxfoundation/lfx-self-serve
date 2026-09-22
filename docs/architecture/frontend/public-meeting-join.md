@@ -37,9 +37,9 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is rendered when `canViewGuestRoster()` is true: organizers always, invitees only when `meeting.show_meeting_attendees` is true. Anonymous viewers never see the functional button. The placeholder variant (shown when the flag is on but the viewer is not yet invited) triggers a toast, not a roster fetch.
+The "Show Members" button is rendered when `canViewGuestRoster()` is true: organizers always, invitees only when `meeting.show_meeting_attendees` is true and the meeting is not board or restricted. Anonymous viewers never see the functional button. The placeholder variant (shown when the flag is on but the viewer is not yet invited) triggers a toast, not a roster fetch.
 
-`GET /api/meetings/:uid/my-meeting-registrants` and the tolerant `GET /api/meetings/:uid/registrants` listing both honor the same gate: invitees with the flag off receive only their own registrant row, not the full roster. Board and restricted meetings cannot opt in.
+`GET /api/meetings/:uid/my-meeting-registrants`, the tolerant `GET /api/meetings/:uid/registrants` listing, and `GET /api/past-meetings/:uid/participants` all honor the same gate: invitees with the flag off receive only their own row, not the full roster. Board and restricted meetings cannot opt in. Past-meeting join pages also skip the participants fetch unless `canViewGuestRoster()` is true.
 
 ---
 

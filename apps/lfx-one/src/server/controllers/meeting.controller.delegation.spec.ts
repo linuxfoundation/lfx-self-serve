@@ -35,6 +35,9 @@ vi.mock('@lfx-one/shared/utils', () => ({
   resolvePeriodRange: vi.fn(),
   resolveMeetingOrganizer: vi.fn(() => null),
   resolveMeetingOwner: vi.fn(() => null),
+  isShowMeetingAttendeesLocked: vi.fn(
+    (meetingType?: string | null, restricted?: boolean | null) => meetingType?.toLowerCase() === 'board' || restricted === true
+  ),
 }));
 
 vi.mock('../utils/auth-helper', () => ({
@@ -133,6 +136,33 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
     expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([self]);
+  });
+
+  it('does not hand the full roster to a non-registrant when attendee visibility is on', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true, committees: [] }));
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({}), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  it('returns the full roster to a registrant when attendee visibility is on', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true, committees: [] }));
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self', email: 'user@example.com' }]);
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }, { uid: 'r2' }]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({}), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'r1' }, { uid: 'r2' }]);
   });
 
   // Completeness without a committee is the composer's Guests section, not the import flow — but

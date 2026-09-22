@@ -58,9 +58,9 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
 /**
  * Locks attendee visibility off for board and restricted meetings.
  * @description Forces `show_meeting_attendees` to false and disables the control when
- * Lives in the generic form utils so the BFF can import {@link isShowMeetingAttendeesLocked}
- * without pulling `@angular/forms` into the server bundle. Composer and manage share this
- * helper so the two surfaces cannot drift.
+ * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Lives in the generic
+ * form utils so the BFF can import the lock predicate without pulling `@angular/forms` into
+ * the server bundle. Composer and manage share this helper so the two surfaces cannot drift.
  */
 export function syncShowMeetingAttendeesLock(form: FormGroup): void {
   const control = form.get('show_meeting_attendees');
