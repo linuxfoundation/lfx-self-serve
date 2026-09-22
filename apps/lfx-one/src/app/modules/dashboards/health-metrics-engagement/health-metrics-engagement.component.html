@@ -20,7 +20,7 @@
         </div>
 
         @if (section.key === 'committees') {
-          <lfx-engagement-group-attendance (countsChange)="groupCounts.set($event)" />
+          <lfx-engagement-group-attendance (countsChange)="onGroupCounts($event)" />
         } @else {
           <!-- PR 1 ships the shell plus Group attendance; the other five sections' Snowflake reads,
                tables and controls land in the follow-up PRs on #2802. -->
@@ -38,8 +38,8 @@
       </section>
     }
 
-    <!-- Zero-height sentinel: lets the scroll-spy snap to the short last section without a scroll
+    <!-- Single-pixel sentinel: lets the scroll-spy snap to the short last section without a scroll
          listener or magic pixel values. -->
-    <div id="engagement-scroll-end-sentinel" aria-hidden="true"></div>
+    <div id="engagement-scroll-end-sentinel" data-testid="engagement-scroll-end-sentinel" class="h-px" aria-hidden="true"></div>
   </div>
 </div>

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, HostListener, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -69,6 +69,9 @@ export class HealthMetricsEngagementComponent {
     })
   );
 
+  // Held until the sections exist, then again until the async section data settles: a deep link
+  // scrolls twice because the group table changes the anchor offsets under the first scroll.
+  private readonly pendingSection = signal<HealthMetricsEngagementSectionKey | null>(null);
   private readonly resize$ = new Subject<void>();
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
@@ -78,6 +81,10 @@ export class HealthMetricsEngagementComponent {
     afterNextRender(() => {
       this.measurePanesHeight();
       this.setupScrollSpy();
+      this.observeWindowResize();
+      // `route.fragment` has already emitted by now, before the section ids existed, so the deep
+      // link is replayed here rather than scrolling against an empty document.
+      this.settlePendingSection();
     });
     // The activation band hangs off the sticky header, which the gate measures after first paint —
     // rebuild the observer whenever that height settles rather than hard-coding a pixel offset.
@@ -97,14 +104,21 @@ export class HealthMetricsEngagementComponent {
       this.setupScrollSpy();
     });
 
-    // Router anchorScrolling already scrolls on navigation; re-settle after paint because async
-    // section data shifts the anchor out from under that first scroll.
-    this.route.fragment.pipe(filter(isHealthMetricsEngagementSectionKey), takeUntilDestroyed()).subscribe((key) => this.scrollToSection(key));
+    // Router `anchorScrolling` cannot serve these links: the fragment is the bare section key while
+    // the DOM id carries the `sec-eng-` prefix.
+    this.route.fragment.pipe(filter(isHealthMetricsEngagementSectionKey), takeUntilDestroyed()).subscribe((key) => {
+      this.pendingSection.set(key);
+      this.scrollToSection(key);
+    });
   }
 
-  @HostListener('window:resize')
-  protected onWindowResize(): void {
-    this.resize$.next();
+  /**
+   * A section reporting its totals also changes the pane's height, so a deep link that was waiting
+   * on that data gets its second and final scroll here.
+   */
+  protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
+    this.groupCounts.set(counts);
+    if (counts) this.settlePendingSection();
   }
 
   protected scrollToSection(key: HealthMetricsEngagementSectionKey): void {
@@ -122,6 +136,26 @@ export class HealthMetricsEngagementComponent {
     }
     const top = container.scrollTop + section.getBoundingClientRect().top - container.getBoundingClientRect().top;
     container.scrollTo({ top, behavior: 'smooth' });
+  }
+
+  /**
+   * Registered outside Angular's event system: a `@HostListener` would notify the zoneless scheduler
+   * on every raw resize event, which the downstream debounce cannot undo.
+   */
+  private observeWindowResize(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    const onResize = () => this.resize$.next();
+    window.addEventListener('resize', onResize, { passive: true });
+    this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
+  }
+
+  /** Replays the deep link. Only the two callers below run it, so it can never fight a user scroll. */
+  private settlePendingSection(): void {
+    const key = this.pendingSection();
+    if (!key) return;
+
+    this.scrollToSection(key);
   }
 
   /** Bounds the pane to what is left of the viewport below it, so the page itself has nothing to scroll. */
@@ -147,6 +181,14 @@ export class HealthMetricsEngagementComponent {
     const scrolls = (overflowY === 'auto' || overflowY === 'scroll') && pane.scrollHeight > pane.clientHeight + 1;
 
     return scrolls ? pane : null;
+  }
+
+  /**
+   * True when the sentinel can only be reached by scrolling. `scrollingPane()` already proves it for
+   * the pane; below `lg` the page scrolls instead, and a page that fits needs no sentinel.
+   */
+  private areaScrolls(container: HTMLElement | null): boolean {
+    return container ? true : document.documentElement.scrollHeight > window.innerHeight + 1;
   }
 
   /**
@@ -186,23 +228,22 @@ export class HealthMetricsEngagementComponent {
     keyByHeading.forEach((_, heading) => observer.observe(heading));
     this.scrollSpyObserver = observer;
 
-    // The last section is short enough that its heading never reaches the activation band; an
-    // invisible end sentinel snaps to it without a scroll listener or magic pixel values.
+    // The last section is short enough that its heading never reaches the activation band, so an
+    // invisible end sentinel snaps to it. Guarding on the heading's position instead would be dead
+    // code: a heading that clears the band's top edge has already activated itself above.
     const sentinel = document.getElementById('engagement-scroll-end-sentinel');
+    if (!sentinel || !this.areaScrolls(container)) return;
+
     const lastKey = keys[keys.length - 1];
-    const lastHeading = document.getElementById(`${buildHealthMetricsEngagementSectionId(lastKey)}-heading`);
     const endObserver = new IntersectionObserver(
+      // Reaching a sentinel that sits below a full screen of content means the user scrolled there —
+      // the area is only observed at all once it genuinely overflows.
       ([entry]) => {
-        // On a pane tall enough to show everything the sentinel intersects from first paint — only
-        // take over once the last heading has actually cleared the top of the scrolling area.
-        const topEdge = container ? container.getBoundingClientRect().top : offsetPx;
-        if (entry.isIntersecting && lastHeading && lastHeading.getBoundingClientRect().bottom <= topEdge) {
-          this.activeSection.set(lastKey);
-        }
+        if (entry.isIntersecting) this.activeSection.set(lastKey);
       },
       container ? { root: container, threshold: 0 } : { threshold: 0 }
     );
-    if (sentinel) endObserver.observe(sentinel);
+    endObserver.observe(sentinel);
     this.scrollEndObserver = endObserver;
   }
 

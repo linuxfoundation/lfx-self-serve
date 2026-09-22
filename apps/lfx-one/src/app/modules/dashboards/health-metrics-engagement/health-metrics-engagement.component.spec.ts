@@ -6,7 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
-import { Subject } from 'rxjs';
+import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
@@ -62,7 +62,7 @@ class FakeIntersectionObserver implements IntersectionObserver {
 describe('HealthMetricsEngagementComponent', () => {
   let fixture: ComponentFixture<HealthMetricsEngagementComponent>;
   let chrome: HealthMetricsChromeService;
-  let fragment: Subject<string | null>;
+  let fragment: BehaviorSubject<string | null>;
 
   function headingOf(key: string): Element {
     return fixture.nativeElement.querySelector(`#sec-eng-${key}-heading`);
@@ -73,14 +73,20 @@ describe('HealthMetricsEngagementComponent', () => {
     return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 2];
   }
 
+  function endObserver(): FakeIntersectionObserver {
+    return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
+  }
+
   function activeKey(): string | null {
     return fixture.nativeElement.querySelector('[aria-current="true"]')?.getAttribute('data-testid')?.replace('engagement-sub-nav-', '') ?? null;
   }
 
-  beforeEach(async () => {
-    FakeIntersectionObserver.instances = [];
-    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
-    fragment = new Subject<string | null>();
+  /**
+   * `initialFragment` is seeded before creation because that is when the real `ActivatedRoute`
+   * replays it — the deep-link path only exists on that first emission.
+   */
+  async function setup(initialFragment: string | null = null): Promise<void> {
+    fragment = new BehaviorSubject<string | null>(initialFragment);
 
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEngagementComponent],
@@ -95,6 +101,18 @@ describe('HealthMetricsEngagementComponent', () => {
     // Flushes `afterNextRender`, which is where the scroll-spy is wired up.
     await fixture.whenStable();
     fixture.detectChanges();
+  }
+
+  beforeEach(async () => {
+    FakeIntersectionObserver.instances = [];
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
+    // skip the end sentinel entirely.
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
+    // Not implemented in jsdom, and the deep-link path calls it on a real section element.
+    Element.prototype.scrollIntoView = vi.fn();
+
+    await setup();
   });
 
   afterEach(() => {
@@ -215,6 +233,45 @@ describe('HealthMetricsEngagementComponent', () => {
 
     expect(activeKey()).toBe('nonmem');
     expect(scrollIntoView).toHaveBeenCalledOnce();
+  });
+
+  it('scrolls to a fragment that was already in the URL before the sections existed', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+
+    await setup('reps');
+
+    expect(activeKey()).toBe('reps');
+    // The constructor subscription runs before the view exists, so this only happens if the deep
+    // link is replayed after render.
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('lights the last section when the end sentinel is reached', () => {
+    const sentinel = fixture.nativeElement.querySelector('[data-testid="engagement-scroll-end-sentinel"]');
+    const lastKey = HEALTH_METRICS_ENGAGEMENT_SECTIONS[HEALTH_METRICS_ENGAGEMENT_SECTIONS.length - 1].key;
+
+    expect(endObserver().observed).toEqual([sentinel]);
+
+    endObserver().fire(sentinel, true);
+    fixture.detectChanges();
+
+    // The last section is too short for its heading to reach the activation band, so the sentinel is
+    // the only thing that can activate it.
+    expect(activeKey()).toBe(lastKey);
+  });
+
+  it('skips the end sentinel when there is nothing to scroll', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+
+    await setup();
+
+    // Otherwise the sentinel intersects from first paint and pins the rail to the last section.
+    expect(FakeIntersectionObserver.instances).toHaveLength(1);
   });
 
   it('disconnects both observers on destroy', () => {
