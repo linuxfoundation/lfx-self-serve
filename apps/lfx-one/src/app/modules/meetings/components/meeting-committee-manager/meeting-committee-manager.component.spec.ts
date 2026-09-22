@@ -50,6 +50,18 @@ function hostForm(committees: MeetingCommittee[], hydrated: { meetingType?: stri
 }
 
 /**
+ * Flips the attendees toggle the way the organizer does, not the way hydration does.
+ * @description The toggle binds through `formControlName`, so a human flipping it marks the
+ * control dirty; a programmatic patch leaves it pristine. The picker reads exactly that
+ * difference, so a spec that only calls `setValue` is simulating hydration, not an edit.
+ */
+function organizerSets(form: FormGroup, value: boolean): void {
+  const control = form.get('show_meeting_attendees');
+  control?.markAsDirty();
+  control?.setValue(value);
+}
+
+/**
  * Mounts the manager over `saved` groups, with each committee's member fetch supplied by `members`.
  * @returns the emissions of `committeeMembersChange`, in order, and the mounted component.
  */
@@ -801,7 +813,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
 
-    component.form().get('show_meeting_attendees')?.setValue(false);
+    organizerSets(component.form(), false);
     component.form().get('meeting_type')?.setValue('Maintainers');
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
@@ -847,7 +859,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
 
-    component.form().get('show_meeting_attendees')?.setValue(false);
+    organizerSets(component.form(), false);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
     await fixture.whenStable();
 
@@ -868,12 +880,12 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
     await fixture.whenStable();
-    component.form().get('show_meeting_attendees')?.setValue(false);
+    organizerSets(component.form(), false);
     await fixture.whenStable();
 
     // Turning it back on withdraws the opt-out, so committee defaults apply again from here —
     // including the one the lock takes away and the unlock puts back.
-    component.form().get('show_meeting_attendees')?.setValue(true);
+    organizerSets(component.form(), true);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
     await fixture.whenStable();
 
@@ -907,7 +919,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
 
   it('puts the organizer’s own attendee visibility back after a board round-trip', async () => {
     const { component, fixture } = await mount([], {}, [BOARD]);
-    component.form().get('show_meeting_attendees')?.setValue(true);
+    organizerSets(component.form(), true);
     await fixture.whenStable();
 
     // The lock wrote `false` over their choice silently, so leaving it off is the lock outliving
@@ -952,6 +964,23 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
+  it('does not read a hydration patch as the organizer choosing to share', async () => {
+    // Opening a legacy Board meeting on the guests step: the picker is already mounted when the
+    // load lands, so it sees the loud patch carrying the stale `true` — and the lock only forces
+    // the control back off afterwards, silently. Treating that patch as a choice would resurrect
+    // the value on unlock through the session cache, going around the saved-value guard that
+    // discards it.
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    component.form().patchValue({ show_meeting_attendees: true, meeting_type: 'Board' });
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
   it('leaves a saved opt-out alone when the lock round-trips', async () => {
     // Editing a meeting whose organizer turned the toggle off on an earlier visit: the form
     // hydrates `false` with the preferring committee already selected, and nothing in this
@@ -978,7 +1007,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
 
     // An edit on the discarded form must not reach the ownership tracking of the live one —
     // the committee still carries its preference, so the unlock below has to apply it.
-    abandoned.get('show_meeting_attendees')?.setValue(false);
+    organizerSets(abandoned, false);
     component.form().get('meeting_type')?.setValue('Board');
     await fixture.whenStable();
     component.form().get('meeting_type')?.setValue('Technical');
@@ -994,7 +1023,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
 
     // Turned off deliberately while the control was still available.
-    component.form().get('show_meeting_attendees')?.setValue(false);
+    organizerSets(component.form(), false);
 
     component.form().get('meeting_type')?.setValue('Board');
     await fixture.whenStable();

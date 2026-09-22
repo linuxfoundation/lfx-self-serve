@@ -471,10 +471,18 @@ export class MeetingCommitteeManagerComponent {
   /**
    * Watches the organizer's own edits to the attendees toggle, handing ownership of the value
    * back to them.
-   * @description Returned as part of the lock stream rather than subscribed on the side, so the
-   * `switchMap` tears it down when the form input is replaced; a side subscription would
-   * outlive its control and accumulate one per form. `ignoreElements` keeps it a side effect:
-   * the edits are the point, the emissions are not.
+   * @description Only a dirty control counts. An emission alone does not mean the organizer did
+   * anything: hydration patches this control loudly, and on a locked meeting it patches the very
+   * stale `true` that {@link getSavedAttendeeVisibility} exists to discard, moments before the
+   * lock silently forces it back off. Recording that as their choice would let the unlock
+   * resurrect it through this cache instead of through the saved value, bypassing the guard
+   * entirely. The toggle binds through `formControlName`, so a human flipping it marks the
+   * control dirty and a programmatic patch does not — that, not the emission, is the signal.
+   *
+   * Returned as part of the lock stream rather than subscribed on the side, so the `switchMap`
+   * tears it down when the form input is replaced; a side subscription would outlive its control
+   * and accumulate one per form. `ignoreElements` keeps it a side effect: the edits are the
+   * point, the emissions are not.
    */
   private watchAttendeeEdits(form: FormGroup): Observable<never> {
     const attendeesControl = form.get('show_meeting_attendees');
@@ -483,7 +491,7 @@ export class MeetingCommitteeManagerComponent {
     }
     return attendeesControl.valueChanges.pipe(
       tap((value) => {
-        if (!this.applyingAttendeeWrite) {
+        if (!this.applyingAttendeeWrite && attendeesControl.dirty) {
           this.committeeOwnsAttendeeToggle = false;
           this.sessionAttendeeChoice = value === true;
         }
