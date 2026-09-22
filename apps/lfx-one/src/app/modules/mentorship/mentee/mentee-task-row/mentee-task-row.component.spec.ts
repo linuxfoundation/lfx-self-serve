@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
@@ -105,18 +104,30 @@ describe('MenteeTaskRowComponent', () => {
     expect(element().querySelector('[data-testid="mentee-tasks-view-file-row_upload"]')).toBeNull();
   });
 
-  it('renders the submitted date pinned to UTC (the UTC calendar day, not the local one)', async () => {
-    await buildRow(uploadedTask());
-    const text = element().textContent ?? '';
-    // uploadedTask()'s submittedDate is a UTC-midnight instant (2026-09-12T00:00:00Z).
-    const utcDay = formatDate('2026-09-12T00:00:00Z', 'MMM d, yyyy', 'en-US', 'UTC');
-    const behindUtcDay = formatDate('2026-09-12T00:00:00Z', 'MMM d, yyyy', 'en-US', '-1000');
-    expect(utcDay).toBe('Sep 12, 2026');
-    // The instant is timezone-sensitive: a zone behind UTC formats the previous day.
-    expect(behindUtcDay).toBe('Sep 11, 2026');
-    // The row must render the UTC day (proves the `: 'UTC'` DatePipe arg is present);
-    // dropping it would surface the previous day for viewers west of UTC.
-    expect(text).toContain('Submitted on ' + utcDay);
-    expect(text).not.toContain(behindUtcDay);
+  it('pins submitted and due dates to UTC even under a non-UTC timezone', async () => {
+    // America/Los_Angeles is UTC-7/8, so a UTC-midnight instant is the *previous* calendar day
+    // locally. With `DatePipe … : 'UTC'` the row must still show the UTC day; dropping the arg
+    // would surface Sep 11 / Sep 29 here — this is what makes the test fail if 'UTC' regresses.
+    // Pattern mirrors packages/shared/src/utils/vote.utils.spec.ts.
+    const previousTz = process.env.TZ;
+    process.env.TZ = 'America/Los_Angeles';
+    try {
+      await buildRow(uploadedTask()); // submittedDate 2026-09-12T00:00:00Z
+      const submittedText = element().textContent ?? '';
+      expect(submittedText).toContain('Submitted on Sep 12, 2026');
+      expect(submittedText).not.toContain('Sep 11, 2026');
+
+      await buildRow(uploadNeededTask()); // dueDate 2026-09-30T00:00:00Z
+      const dueText = element().textContent ?? '';
+      expect(dueText).toContain('Due Sep 30, 2026');
+      expect(dueText).not.toContain('Sep 29, 2026');
+    } finally {
+      // `process.env.TZ = previousTz` alone would coerce an originally-unset TZ into "undefined".
+      if (previousTz === undefined) {
+        delete process.env.TZ;
+      } else {
+        process.env.TZ = previousTz;
+      }
+    }
   });
 });
