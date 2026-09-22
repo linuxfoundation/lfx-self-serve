@@ -84,6 +84,13 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
   const heldSlug = typeof selected.slug === 'string' ? selected.slug.trim().toLowerCase() : null;
   const slugMatches = heldSlug !== null && isOrgSlugSegment(heldSlug) && segment === heldSlug;
   if (selected.uid && selected.slug !== undefined && (segment === selected.uid || slugMatches)) {
+    // The address names the selection, so the selection is addressed — pinned exactly as a resolver
+    // hit would be (lfx-self-serve#2570), upgrading a `'default'` pin: from here on the page is
+    // `/org/A/…` and only A may render under it, so an org-items reload must not re-default it to B
+    // (whose `'default'` write would leave this address in place — spec 050's silent substitution).
+    // Without any pin, a later persona refresh may re-seed over the selection under the address it
+    // does not match.
+    accountContext.pinSelection('address');
     return isBrowser ? canonicalizeAddress(router, state.url, addressed, selected) : true;
   }
 

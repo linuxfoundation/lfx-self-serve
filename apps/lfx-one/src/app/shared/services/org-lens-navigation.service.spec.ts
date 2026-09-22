@@ -56,6 +56,21 @@ describe('OrgLensNavigationService', () => {
     });
   });
 
+  describe('isOnAddressedPage', () => {
+    it.each([
+      ['/org/acme-inc/overview', true],
+      [`/org/${UID_A}/projects/k8s`, true],
+      ['/org/overview', false],
+      ['/org/easycla/abc-123', false],
+      ['/org', false],
+      ['/org/not-found', false],
+      ['/project/cncf/overview', false],
+    ])('%s → %s', (url, expected) => {
+      currentUrl = url;
+      expect(service.isOnAddressedPage()).toBe(expected);
+    });
+  });
+
   describe('navigateToSelectedOrg', () => {
     it('swaps the organization and keeps the page, query and fragment on an addressed page', () => {
       currentUrl = '/org/other-org/projects/k8s?card=contributors#top';

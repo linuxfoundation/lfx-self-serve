@@ -25,8 +25,7 @@ import {
   formatFormationSubItemsDoneLabel,
   formationItemHasAction,
   isFormationItemExternal,
-  isRelativeInAppPath,
-  isValidUrl,
+  resolveFormationActionHref,
   tryParseLocalDateString,
 } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -232,16 +231,12 @@ export class FormationChecklistRowComponent {
    * trust it into `[href]`/`[routerLink]` unvalidated. Split into external/internal so the template
    * can bind each to the right control: an absolute value still needs scheme validation and opens in
    * a new tab, while a relative in-app path routes through `routerLink` in place instead of a raw
-   * anchor. `null` on both means no safe destination — the row falls back to "View details".
+   * anchor. `null` on both means no safe destination — the row falls back to "View details". The
+   * resolution lives in `resolveFormationActionHref`, shared with the item drawer's Links section
+   * (#2801) so the two surfaces can never validate differently.
    */
-  protected readonly safeExternalHref = computed(() => {
-    const href = this.item().action_href;
-    return href && !isRelativeInAppPath(href) && isValidUrl(href) ? href : null;
-  });
-  protected readonly safeInternalPath = computed(() => {
-    const href = this.item().action_href;
-    return href && isRelativeInAppPath(href) ? href : null;
-  });
+  protected readonly safeExternalHref = computed(() => resolveFormationActionHref(this.item().action_href).external);
+  protected readonly safeInternalPath = computed(() => resolveFormationActionHref(this.item().action_href).internal);
 
   protected statusMenuItems: MenuItem[] = [];
   protected overflowMenuItems: MenuItem[] = [];

@@ -22,7 +22,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await gotoMyFormations(page);
 
     await expect(page.getByTestId('my-formations-title')).toHaveText('My Formations', { timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('my-formations-description')).toContainText('checklist items assigned to you');
+    await expect(page.getByTestId('my-formations-description')).toContainText("Formations you're invited to");
 
     // Sidebar: last item of My Engagement, right after My Documents.
     const nav = page.getByTestId('sidebar-my-formations');
@@ -31,10 +31,12 @@ test.describe('Me-lens My Formations page (#2753)', () => {
 
     const rows = page.locator(`[data-testid^="${ROW_PREFIX}"]`);
     await expect(rows).toHaveCount(MY_FORMATIONS_ROWS.length, { timeout: DATA_LOAD_TIMEOUT });
-    // Served out of order; rendered by need — most to do first, then blocked, then name.
+    // Served out of order; rendered by need — most to do first, then blocked, then nearest
+    // announcement date, then name.
     await expect(rows.nth(0)).toHaveAttribute('data-testid', `${ROW_PREFIX}${CASCADE}`);
     await expect(rows.nth(1)).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-harbor-mesh`);
-    await expect(rows.nth(2)).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-orbit-ledger`);
+    await expect(rows.nth(2)).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-tidewater-registry`);
+    await expect(rows.nth(3)).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-orbit-ledger`);
 
     await expect(page.getByTestId(`my-formations-open-${CASCADE}`)).toHaveText('Cascade Data Alliance');
     await expect(page.getByTestId(`my-formations-stage-${CASCADE}`)).toContainText('Engaged');
@@ -42,6 +44,12 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(page.getByTestId(`my-formations-progress-${CASCADE}`)).toContainText('5 of 17');
     await expect(page.getByTestId(`my-formations-announcement-${CASCADE}`)).toContainText('Oct 25');
     await expect(page.getByTestId(`my-formations-blocking-${CASCADE}`)).toContainText('Contribution agreement executed');
+
+    // Tidewater Registry is the invited-only row (#2795): a live stage, nothing assigned yet, so
+    // "Your items" is a dash while the whole-formation progress still renders.
+    await expect(page.getByTestId('my-formations-stage-formation-tidewater-registry')).toContainText('Engaged');
+    await expect(page.getByTestId('my-formations-items-formation-tidewater-registry')).toHaveText('—');
+    await expect(page.getByTestId('my-formations-progress-formation-tidewater-registry')).toContainText('3 of 17');
 
     // An upstream stage outside the queue taxonomy renders verbatim; missing data reads honestly.
     await expect(page.getByTestId('my-formations-stage-formation-orbit-ledger')).toContainText('Formation - Disengaged');
@@ -67,7 +75,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await gotoMyFormations(page);
 
     const rows = page.locator(`[data-testid^="${ROW_PREFIX}"]`);
-    await expect(rows).toHaveCount(3, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(rows).toHaveCount(MY_FORMATIONS_ROWS.length, { timeout: DATA_LOAD_TIMEOUT });
 
     // Stage tab: only the exploratory row; the unmapped-stage row matches no tab.
     await page.getByTestId('filter-pill-exploratory').click();
@@ -75,7 +83,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await expect(rows.first()).toHaveAttribute('data-testid', `${ROW_PREFIX}formation-harbor-mesh`);
 
     await page.getByTestId('filter-pill-all').click();
-    await expect(rows).toHaveCount(3);
+    await expect(rows).toHaveCount(MY_FORMATIONS_ROWS.length);
 
     // Search narrows by formation name.
     const search = page.getByTestId('my-formations-search-input').locator('input');
@@ -92,7 +100,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
       .getByTestId('my-formations-no-results')
       .getByRole('button', { name: /reset filters/i })
       .click();
-    await expect(rows).toHaveCount(3);
+    await expect(rows).toHaveCount(MY_FORMATIONS_ROWS.length);
   });
 
   test('shows the empty state when the caller has no formations', async ({ page }) => {
@@ -115,7 +123,7 @@ test.describe('Me-lens My Formations page (#2753)', () => {
     await page.getByTestId('my-formations-retry').click();
     await retried;
 
-    await expect(page.locator(`[data-testid^="${ROW_PREFIX}"]`)).toHaveCount(3, { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.locator(`[data-testid^="${ROW_PREFIX}"]`)).toHaveCount(MY_FORMATIONS_ROWS.length, { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('my-formations-error')).toHaveCount(0);
   });
 
