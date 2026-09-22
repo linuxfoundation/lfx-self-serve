@@ -12,7 +12,6 @@ const TOAST_TIMEOUT = 10_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Industries';
-const MOCK_ACCOUNT_SLUG = 'acme-industries';
 
 // Three roles across two foundations — gives concrete numbers for the subtitle and Save Changes label.
 const MOCK_PERSON_EMAIL = 'ada.tester@example.com';
@@ -116,7 +115,6 @@ async function stubAccountContext(page: Page, opts: { writers: string[] } = { wr
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: MOCK_ACCOUNT_NAME,
-            accountSlug: MOCK_ACCOUNT_SLUG,
             membershipTier: '',
             uid: MOCK_UID,
           },

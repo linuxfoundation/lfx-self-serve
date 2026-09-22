@@ -119,7 +119,6 @@ async function stubOrgProfileContext(page: Page, options: StubGrantsOptions): Pr
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: MOCK_CANONICAL.name,
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_UID,
           },

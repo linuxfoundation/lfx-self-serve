@@ -105,7 +105,6 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       const account: Account = {
         accountId: resolved.uid,
         accountName: resolved.name,
-        accountSlug: '',
         membershipTier: '',
         logoUrl: null,
         uid: resolved.uid,
@@ -125,7 +124,7 @@ export const orgPathParamGuard: CanActivateFn = (route, state) => {
       // follow the address, never the previous selection (the silent substitution #2570 removes).
       // Adopt a uid-only stub, the same shape a cookie-restored selection uses; display fields fill
       // when the canonical fetch succeeds.
-      const stub: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '', uid: segment };
+      const stub: Account = { accountId: '', accountName: '', membershipTier: '', uid: segment };
       accountContext.adoptFromAddress(stub);
       void accountContext.refreshCanonicalRecord(stub);
       return of<boolean | UrlTree>(true);

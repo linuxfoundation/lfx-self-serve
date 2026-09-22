@@ -22,7 +22,7 @@ import { OrgSelectorComponent } from './org-selector.component';
 describe('OrgSelectorComponent.selectItem', () => {
   const UID_A = '0014100000MgaAAAAA';
   const UID_B = '0014100000MgbBBBBB';
-  const acme: Account = { accountId: UID_A, accountName: 'Acme', accountSlug: '', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
   const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
   const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
 

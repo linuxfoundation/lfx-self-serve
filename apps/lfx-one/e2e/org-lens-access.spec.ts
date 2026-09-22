@@ -101,7 +101,7 @@ async function stubOrgContext(page: Page): Promise<void> {
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat LLC', accountSlug: 'red-hat-llc', membershipTier: '', uid: MOCK_UID }],
+        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat LLC', membershipTier: '', uid: MOCK_UID }],
         isRootWriter: false,
       }),
     })

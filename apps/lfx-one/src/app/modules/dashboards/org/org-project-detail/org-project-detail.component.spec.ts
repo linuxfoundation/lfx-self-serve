@@ -27,7 +27,7 @@ describe('OrgProjectDetailComponent — leaderboard detail drawer opening', () =
 
   const ACCOUNT: Account = { accountId: 'acc-1', accountName: 'Test Org', uid: 'acc-1' } as Account;
   // What AccountContextService.clearAccount() leaves behind: an account with no identifier at all.
-  const CLEARED_ACCOUNT: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' } as Account;
+  const CLEARED_ACCOUNT: Account = { accountId: '', accountName: '', membershipTier: '' } as Account;
 
   // Replayed rather than a plain Subject: the component subscribes during construction and must see
   // the first slug, and a later emission stands in for navigating to another project.

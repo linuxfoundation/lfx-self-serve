@@ -221,11 +221,11 @@ export class OrgGroupsComponent {
     }
     const header = [this.committeeLabel.singular, 'Foundation', 'Type', 'Our Seats', `${this.committeeLabel.singular} UID`];
     const body = rows.map((g) => [g.name, g.projectLabel, BEHAVIORAL_CLASS_CONFIG[g.cls].label, g.org_seat_count, g.uid]);
-    // accountSlug is normalized to '' (not null/undefined) during org-switch/enrichment windows
-    // (see account-context.service.ts's PLACEHOLDER_ACCOUNT and toAccount()) — `||`, not `??`, so
-    // that empty string also falls back rather than producing a bare "org-lens-groups--<date>.csv".
-    const slug = this.accountContext.selectedAccount().accountSlug || 'org';
-    downloadCsv(`org-lens-groups-${slug}-${localDateStamp()}.csv`, [header, ...body]);
+    // The same `/org/{segment}/…` segment the page's own address uses (slug, else SFID). Null when the
+    // selection carries neither a usable slug nor an SFID (placeholder, or a uid that isn't SFID-shaped);
+    // it then falls back rather than producing "org-lens-groups--<date>.csv".
+    const segment = this.accountContext.selectedUrlSegment() ?? 'org';
+    downloadCsv(`org-lens-groups-${segment}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
   // Browser-only (GH-1809). Angular's server render waits for application stability — including any

@@ -52,7 +52,7 @@ function setup(): Harness {
   const grantsLoading = signal(false);
   const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
   const writerSet = signal(new Set<string>());
-  const selectedAccount = signal<Account>({ accountId: '', accountName: '', accountSlug: '', membershipTier: '', logoUrl: null, uid: '', slug: null });
+  const selectedAccount = signal<Account>({ accountId: '', accountName: '', membershipTier: '', logoUrl: null, uid: '', slug: null });
   const setAccount: Mock<(account: Account) => void> = vi.fn((account: Account) => selectedAccount.set(account));
   const navigateToSelectedOrg: Mock<(intent: string) => void> = vi.fn();
   const empty = new Set<string>();

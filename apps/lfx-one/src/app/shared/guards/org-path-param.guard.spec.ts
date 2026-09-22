@@ -33,7 +33,6 @@ describe('orgPathParamGuard', () => {
   const account = (overrides: Partial<Account>): Account => ({
     accountId: overrides.uid ?? '',
     accountName: 'Some Org',
-    accountSlug: '',
     membershipTier: '',
     ...overrides,
   });

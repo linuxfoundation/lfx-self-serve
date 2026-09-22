@@ -489,7 +489,6 @@ test.describe('Org Project Detail — hero health popup', () => {
             {
               accountId: TEST_ACCOUNT_ID,
               accountName: 'Acme Motors',
-              accountSlug: 'acme-motors',
               membershipTier: '',
               uid: TEST_ACCOUNT_ID,
             },
