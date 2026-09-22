@@ -17,23 +17,17 @@ const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-acces
 /** States that render the caller's own organization list (FR-008). */
 const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-organization', 'not-found-staff']);
 
-/** States a first-time visitor can reach — they carry the product line (FR-002). */
-const PAGE_LEVEL_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
-  'no-organization',
-  'no-access',
-  'wrong-organization',
-  'not-found-staff',
-  'could-not-load',
-  'staff-check-failed',
-]);
-
 /**
- * Spec 053 — the one shared Org Lens empty state. Renders headline → product line → reason → primary →
- * secondary from the copy registry; call sites choose a state, never a string (FR-001/FR-004).
+ * Spec 053 — the one shared Org Lens empty state. Renders headline → reason → primary → secondary from
+ * the copy registry; call sites choose a state, never a string (FR-001/FR-004).
+ *
+ * Visual shape follows the LFX Insights empty-state pattern (lfx-self-serve#2533 "Design"), in exact
+ * px because the app root is 14px: a 56px `blue-100` disc (Insights' accent-100) with a 32px `blue-500`
+ * icon, a Roboto Slab 18/20px headline, one 14px paragraph (max 448px), one primary `lfx-button` with a
+ * leading icon at `size="small"` (the app's empty-state CTA default, `lfx-empty-state`), and at most one muted 13px secondary link.
  *
  * Not a thin wrapper over `lfx-empty-state`: that primitive carries one CTA and no secondary line, and
- * FR-002/FR-008 need a secondary action and an organization list. The visual shape (icon disc, headline,
- * muted body) is kept identical so the two read as one family.
+ * FR-002/FR-008 need a secondary action and an organization list.
  *
  * `testId` keeps the scenario hooks of the blocks it replaces — `{testId}-state`, `-title`,
  * `-description`, `-contact-support`, `-retry`, `-org-list`.
@@ -46,7 +40,7 @@ const PAGE_LEVEL_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set([
 export class OrgLensEmptyStateComponent {
   public readonly state = input.required<OrgLensEmptyStateName>();
   public readonly values = input<OrgLensEmptyStateValues>({});
-  /** Wrap in `lfx-card` (section usage) vs the dashed page block (page usage). */
+  /** Wrap in `lfx-card` (section usage) vs the bordered page block (page usage). */
   public readonly withCard = input(false);
   /** `data-testid` prefix, e.g. `org-overview-no-access`. */
   public readonly testId = input.required<string>();
@@ -70,8 +64,6 @@ export class OrgLensEmptyStateComponent {
     const template = copy.noPeriod && !this.values().period ? copy.noPeriod.headline : copy.headline;
     return this.interpolate(template);
   });
-
-  protected readonly productLine = computed(() => (PAGE_LEVEL_STATES.has(this.state()) ? this.copy().productLine : undefined));
 
   protected readonly reason = computed(() => {
     const copy = this.copy();

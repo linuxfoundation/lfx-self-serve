@@ -5,7 +5,12 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_LIST_INCOMPLETE_NOTICE } from '@lfx-one/shared/constants';
+import {
+  ORG_CATALOGUE_SEARCH_MIN_CHARS,
+  ORG_LENS_LIST_INCOMPLETE_NOTICE,
+  ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
+  ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
+} from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -81,6 +86,10 @@ export class OrgSelectorComponent {
    */
   protected readonly listIncomplete: Signal<boolean> = this.emptyState.listIncomplete;
   protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
+  protected readonly listRetrying: Signal<boolean> = this.emptyState.retrying;
+  protected readonly listRetryLabel: Signal<string> = computed(() =>
+    this.listRetrying() ? ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL : ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL
+  );
 
   /**
    * LFXV2-3029 — a single per-caller decision evaluated across the caller's whole resolved set,
@@ -317,6 +326,11 @@ export class OrgSelectorComponent {
 
   /** FR-010 Retry — the one shared Retry: role-grants lookup, then the list from its first page. */
   protected retryList(): void {
+    // The control stays focusable while busy (aria-disabled, not disabled) so keyboard and screen-reader
+    // users keep their place; this guard is what stops a second click from starting another retry.
+    if (this.listRetrying()) {
+      return;
+    }
     this.emptyState.retry();
   }
 
