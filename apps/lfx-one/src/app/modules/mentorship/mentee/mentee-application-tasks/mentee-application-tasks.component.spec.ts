@@ -54,14 +54,14 @@ describe('MenteeApplicationTasksComponent (phase orchestrator)', () => {
 
   it('renders the applicant child when the shell reports the applicant phase', async () => {
     await bootstrap('applicant');
-    expect(component['resolvedPhase']()).toBe('applicant');
+    expect(component.phase()).toBe('applicant');
     expect(element().querySelector('lfx-mentee-applicant-tasks')).toBeTruthy();
     expect(element().querySelector('lfx-mentee-accepted-tasks')).toBeNull();
   });
 
   it('renders the accepted child when the shell reports the accepted phase', async () => {
     await bootstrap('accepted');
-    expect(component['resolvedPhase']()).toBe('accepted');
+    expect(component.phase()).toBe('accepted');
     expect(element().querySelector('lfx-mentee-accepted-tasks')).toBeTruthy();
     expect(element().querySelector('lfx-mentee-applicant-tasks')).toBeNull();
   });

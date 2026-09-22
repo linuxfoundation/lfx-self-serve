@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT } from '@lfx-one/shared/constants';
+import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED, MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT } from '@lfx-one/shared/constants';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of, throwError } from 'rxjs';
@@ -96,6 +96,14 @@ describe('MenteeApplicantTasksComponent', () => {
   it('shows error state when the overview API fails', async () => {
     getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
     await createComponent();
+    expect(component['error']()).toBeTruthy();
+    expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
+  });
+
+  it('shows a terminal error (not an endless spinner) when the overview resolves to a non-applicant phase', async () => {
+    getMenteeOverview = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED));
+    await createComponent();
+    expect(component['loaded']()).toBe(true);
     expect(component['error']()).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
   });

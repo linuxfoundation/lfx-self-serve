@@ -5,11 +5,7 @@ import { DatePipe, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
-import {
-  MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
-  MENTORSHIP_MENTEE_TASKS_TAB_STATUS_CHANGE_TOAST_SUMMARY,
-  MENTORSHIP_MENTEE_TASKS_TAB_UPLOAD_TOAST_SUMMARY,
-} from '@lfx-one/shared/constants';
+import { MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
 import { normalizeMentorshipMenteeTaskStatus } from '@lfx-one/shared/utils';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
@@ -46,25 +42,26 @@ export class MenteeTaskRowComponent {
   // ---- 4. Actions -----------------------------------------------------------
 
   protected onStatusChange(): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_TASKS_TAB_STATUS_CHANGE_TOAST_SUMMARY);
+    const current = this.task();
+    // Summary names the attempted action per MentorshipComingSoonService's contract.
+    this.comingSoonService.notify(`Update status for ${current.title}`);
     // Persistence isn't wired yet — revert the control so the dropdown never
     // displays an unsaved selection that disagrees with the task's real status.
-    const current = this.task();
     const control = this.form().controls[current.id];
     control?.setValue(normalizeMentorshipMenteeTaskStatus(current.status), { emitEvent: false });
   }
 
   protected onUpload(): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_TASKS_TAB_UPLOAD_TOAST_SUMMARY);
+    this.comingSoonService.notify(`Upload submission for ${this.task().title}`);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real view endpoint
   protected onViewFile(_fileUrl: string): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_TASKS_TAB_UPLOAD_TOAST_SUMMARY);
+    this.comingSoonService.notify(`View submission for ${this.task().title}`);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- fileUrl reserved for the real download endpoint
   protected onDownloadFile(_fileUrl: string): void {
-    this.comingSoonService.notify(MENTORSHIP_MENTEE_TASKS_TAB_UPLOAD_TOAST_SUMMARY);
+    this.comingSoonService.notify(`Download submission for ${this.task().title}`);
   }
 }

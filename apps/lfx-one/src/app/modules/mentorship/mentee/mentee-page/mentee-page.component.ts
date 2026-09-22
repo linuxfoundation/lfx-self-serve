@@ -78,7 +78,7 @@ export class MenteePageComponent {
   /**
    * Wire up `output()` signal subscriptions from the routed child. The overview
    * component emits `phaseChange` and `openTaskCountChange`; the tasks component
-   * exposes a writable `phase` model signal. Other children simply lack these
+   * exposes a writable `phase` signal. Other children simply lack these
    * properties and the wiring is a no-op.
    * `OutputEmitterRef.subscribe` returns a cleanup-managed subscription.
    */

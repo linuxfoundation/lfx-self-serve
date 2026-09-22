@@ -44,7 +44,7 @@ describe('MenteeTaskRowComponent', () => {
       status: 'submitted',
       submitFile: 'https://files.example.com/a.pdf',
       fileUrl: 'https://files.example.com/a.pdf',
-      submittedLabel: 'Sep 12, 2026',
+      submittedLabel: '2026-09-12T00:00:00Z',
     });
 
   const uploadNeededTask = (): MentorshipMenteeTaskView =>
@@ -69,7 +69,7 @@ describe('MenteeTaskRowComponent', () => {
 
     component['onStatusChange']();
 
-    expect(notify).toHaveBeenCalledWith('Coming Soon');
+    expect(notify).toHaveBeenCalledWith('Update status for Upload task');
     expect(form.controls[task.id].value).toBe('pending');
   });
 
@@ -78,7 +78,7 @@ describe('MenteeTaskRowComponent', () => {
     const uploadBtn = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-upload-row_upload"]');
     expect(uploadBtn).toBeTruthy();
     uploadBtn?.click();
-    expect(notify).toHaveBeenCalledWith('Coming Soon');
+    expect(notify).toHaveBeenCalledWith('Upload submission for Upload task');
   });
 
   it('renders view/download buttons with aria-labels for an uploaded file', async () => {
@@ -94,7 +94,8 @@ describe('MenteeTaskRowComponent', () => {
     element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-view-file-row_uploaded"]')?.click();
     element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-download-file-row_uploaded"]')?.click();
     expect(notify).toHaveBeenCalledTimes(2);
-    expect(notify).toHaveBeenCalledWith('Coming Soon');
+    expect(notify).toHaveBeenCalledWith('View submission for Uploaded task');
+    expect(notify).toHaveBeenCalledWith('Download submission for Uploaded task');
   });
 
   it('renders the upload button when an upload is required', async () => {

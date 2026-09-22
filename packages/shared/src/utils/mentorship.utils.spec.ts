@@ -912,6 +912,10 @@ describe('normalizeMentorshipMenteeTaskStatus', () => {
     expect(normalizeMentorshipMenteeTaskStatus('in_progress')).toBe('in_progress');
     expect(normalizeMentorshipMenteeTaskStatus('submitted')).toBe('submitted');
   });
+
+  it('defaults an unrecognised status to pending', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('mystery' as never)).toBe('pending');
+  });
 });
 
 describe('countSubmittedMentorshipMenteeTasks', () => {
@@ -980,6 +984,19 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.hasUploadedFile).toBe(false);
     expect(view.needsUpload).toBe(false);
   });
+
+  it('surfaces a submitFile URL as the file URL when fileUrl is absent', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't4',
+      title: 'Uploaded via submitFile',
+      description: 'The URL lives on submitFile only',
+      status: 'submitted',
+      submitFile: 'https://files.example.com/only-submitfile.pdf',
+    });
+    expect(view.hasUploadedFile).toBe(true);
+    expect(view.needsUpload).toBe(false);
+    expect(view.fileUrl).toBe('https://files.example.com/only-submitfile.pdf');
+  });
 });
 
 describe('buildMentorshipMenteeApplicationViews', () => {
@@ -991,6 +1008,27 @@ describe('buildMentorshipMenteeApplicationViews', () => {
     expect(first.statusLabel).toBeTruthy();
     expect(first.totalCount).toBeGreaterThan(0);
     expect(first.submittedCount).toBeLessThanOrEqual(first.totalCount);
+  });
+
+  it('falls back to the overview counts when the tab-only tasks list is absent', () => {
+    const [view] = buildMentorshipMenteeApplicationViews([
+      {
+        id: 'app_no_tasks',
+        programId: 'prog_x',
+        orgAbbreviation: 'XX',
+        projectName: 'Project X',
+        term: { id: 'term_x', name: 'Fall 2026' },
+        programName: 'Program X',
+        status: 'in-progress',
+        lastTaskUpdatedOn: 'Jul 1, 2026',
+        decisionExpectedDate: 'Aug 1, 2026',
+        prerequisiteTasksCompleted: 2,
+        prerequisiteTasksTotal: 5,
+      },
+    ]);
+    expect(view.submittedCount).toBe(2);
+    expect(view.totalCount).toBe(5);
+    expect(view.tasks).toEqual([]);
   });
 });
 

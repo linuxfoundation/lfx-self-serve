@@ -47,6 +47,8 @@ export class MenteeAcceptedTasksComponent {
   private readonly tasksData = this.initTasksData();
   private readonly tasks = computed(() => this.tasksData()?.data ?? []);
   protected readonly loaded = computed(() => !this.retrying() && (this.tasksData() !== null || this.error() !== null));
+  /** View models built once per task-list change; filtering reuses these object identities. */
+  private readonly taskViews = computed(() => buildMentorshipMenteeTaskViews(this.tasks()));
   protected readonly filteredTaskViews = this.initFilteredTaskViews();
   protected readonly submittedSummary = this.initSubmittedSummary();
   protected readonly acceptedForm = this.initAcceptedForm();
@@ -89,7 +91,7 @@ export class MenteeAcceptedTasksComponent {
 
   private initFilteredTaskViews(): Signal<MentorshipMenteeTaskView[]> {
     return computed(() => {
-      const views = buildMentorshipMenteeTaskViews(this.tasks());
+      const views = this.taskViews();
       const active = this.activeFilter();
       if (active === null) return views;
       if (active === 'pending') return views.filter((v) => v.status === 'pending' || v.status === 'incomplete');

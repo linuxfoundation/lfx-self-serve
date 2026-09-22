@@ -744,11 +744,22 @@ export function mentorshipPersonInitials(name: string): string {
  * Normalise a task status to a status-dropdown value. The dropdown only offers
  * `pending` / `in_progress` / `submitted`, so the two backend aliases collapse:
  * `incomplete` → `pending` and `complete` → `submitted` (both display the same).
+ * Any unrecognised value defaults to `pending` so the dropdown and badge always
+ * resolve to a known option rather than rendering blank/unstyled.
  */
-export function normalizeMentorshipMenteeTaskStatus(status: string): string {
-  if (status === 'incomplete') return 'pending';
-  if (status === 'complete') return 'submitted';
-  return status;
+export function normalizeMentorshipMenteeTaskStatus(status: MentorshipMenteeTaskStatus): MentorshipMenteeTaskStatus {
+  switch (status) {
+    case 'incomplete':
+      return 'pending';
+    case 'complete':
+      return 'submitted';
+    case 'pending':
+    case 'in_progress':
+    case 'submitted':
+      return status;
+    default:
+      return 'pending';
+  }
 }
 
 /** Count tasks in a submitted/complete state. */
@@ -774,6 +785,10 @@ export function buildMentorshipMenteeTaskView(input: {
 }): MentorshipMenteeTaskView {
   const submitted = input.status === 'submitted' || input.status === 'complete';
   const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
+  // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
+  // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
+  // so View/Download render for the URL-on-submitFile shape too.
+  const submitFileUrl = input.submitFile && input.submitFile !== 'required' ? input.submitFile : null;
   return {
     id: input.id,
     title: input.title,
@@ -784,7 +799,7 @@ export function buildMentorshipMenteeTaskView(input: {
     statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[input.status] ?? '',
     hasUploadedFile,
     needsUpload: input.submitFile === 'required' && !input.fileUrl,
-    fileUrl: input.fileUrl ?? null,
+    fileUrl: input.fileUrl ?? submitFileUrl,
     dueDate: input.dueDate ?? null,
     submittedLabel: input.submittedLabel ?? null,
   };
@@ -799,8 +814,10 @@ export function buildMentorshipMenteeApplicationViews(applications: MentorshipMe
     termName: app.term.name,
     statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[app.status] ?? '',
     statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[app.status] ?? '',
-    submittedCount: countSubmittedMentorshipMenteeTasks(app.tasks ?? []),
-    totalCount: app.tasks?.length ?? app.prerequisiteTasksTotal,
+    // Use one consistent source: when the tab-only `tasks` list is present, count/size it;
+    // otherwise fall back to the overview's precomputed counts so both tabs agree.
+    submittedCount: app.tasks ? countSubmittedMentorshipMenteeTasks(app.tasks) : app.prerequisiteTasksCompleted,
+    totalCount: app.tasks ? app.tasks.length : app.prerequisiteTasksTotal,
     tasks: (app.tasks ?? []).map((task) =>
       buildMentorshipMenteeTaskView({
         id: task.id,

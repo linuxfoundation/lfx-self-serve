@@ -5,7 +5,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MOCK_MENTORSHIP_MENTEE_TASKS } from '@lfx-one/shared/constants';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MenteeAcceptedTasksComponent } from './mentee-accepted-tasks.component';
@@ -113,5 +113,49 @@ describe('MenteeAcceptedTasksComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(getMenteeTasks.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it('shows the error empty-state when the tasks fetch fails', async () => {
+    getMenteeTasks = vi.fn().mockReturnValue(throwError(() => new Error('boom')));
+    await createComponent();
+    expect(component['error']()).toBeTruthy();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted-error"]')).toBeTruthy();
+  });
+
+  it('recovers to the task list when a retry succeeds after an error', async () => {
+    getMenteeTasks = vi
+      .fn()
+      .mockReturnValueOnce(throwError(() => new Error('boom')))
+      .mockReturnValueOnce(of(MOCK_MENTORSHIP_MENTEE_TASKS));
+    await createComponent();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted-error"]')).toBeTruthy();
+
+    component['retry']();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component['error']()).toBeNull();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
+  });
+
+  it('shows the empty-filter message when there are no tasks', async () => {
+    getMenteeTasks = vi.fn().mockReturnValue(of({ data: [], total: 0 }));
+    await createComponent();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
+    expect(element().textContent).toContain('No tasks match the selected filter.');
+  });
+
+  it('filters via real chip clicks, including the in-progress chip', async () => {
+    await bootstrap();
+    const inProgressChip = element().querySelector<HTMLButtonElement>('[data-testid="mentee-tasks-filter-in_progress"]');
+    expect(inProgressChip).toBeTruthy();
+    inProgressChip?.click();
+    fixture.detectChanges();
+
+    const rows = element().querySelectorAll('[data-testid^="mentee-tasks-task-row-"]');
+    const inProgressCount = MOCK_MENTORSHIP_MENTEE_TASKS.data.filter((t) => t.status === 'in_progress').length;
+    expect(rows.length).toBe(inProgressCount);
+    expect(inProgressChip?.getAttribute('aria-pressed')).toBe('true');
   });
 });

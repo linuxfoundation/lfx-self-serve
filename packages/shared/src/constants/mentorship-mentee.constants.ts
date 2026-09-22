@@ -307,9 +307,8 @@ export const MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS: { value: MentorshipMenteeTas
   ...MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
 ];
 
-export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'PREREQUISITE TASKS';
-export const MENTORSHIP_MENTEE_TASKS_TAB_UPLOAD_TOAST_SUMMARY = 'Coming Soon';
-export const MENTORSHIP_MENTEE_TASKS_TAB_STATUS_CHANGE_TOAST_SUMMARY = 'Coming Soon';
+/** Natural case — the template applies the `uppercase` Tailwind class for display. */
+export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'Prerequisite Tasks';
 
 // ---------------------------------------------------------------------------
 // Empty overview response (loading fallback)
@@ -527,7 +526,7 @@ const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
     submitFile: 'required',
     fileUrl: 'https://example.com/uploads/benchmark-report.pdf',
     dueDate: '2026-09-25T00:00:00Z',
-    submittedDate: 'Sep 25, 2026',
+    submittedDate: '2026-09-25T00:00:00Z',
   },
   {
     id: 'mt_4',
@@ -536,7 +535,7 @@ const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
     status: 'submitted',
     submitFile: null,
     dueDate: '2026-09-04T00:00:00Z',
-    submittedDate: 'Sep 4, 2026',
+    submittedDate: '2026-09-04T00:00:00Z',
   },
   {
     id: 'mt_5',
@@ -545,7 +544,7 @@ const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
     status: 'complete',
     submitFile: null,
     dueDate: '2026-08-29T00:00:00Z',
-    submittedDate: 'Aug 29, 2026',
+    submittedDate: '2026-08-29T00:00:00Z',
   },
   {
     id: 'mt_6',

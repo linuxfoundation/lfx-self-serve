@@ -65,7 +65,13 @@ export class MenteeApplicantTasksComponent {
         tap(() => this.error.set(null)),
         switchMap(() =>
           this.mentorshipService.getMenteeOverview().pipe(
-            map((res): MentorshipMenteeOverviewApplicant | null => (res.phase === 'applicant' ? res : null)),
+            map((res): MentorshipMenteeOverviewApplicant | null => {
+              if (res.phase === 'applicant') return res;
+              // The shell mounted us for the applicant phase but the overview resolved to a
+              // different phase — surface a terminal error+retry instead of spinning forever.
+              this.error.set('Application tasks aren’t available for your current phase. Return to the overview.');
+              return null;
+            }),
             catchError((err: unknown) => {
               const msg =
                 err instanceof HttpErrorResponse

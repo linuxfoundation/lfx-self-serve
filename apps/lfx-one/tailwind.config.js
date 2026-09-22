@@ -30,9 +30,9 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS,
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
-  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES,
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
@@ -73,12 +73,13 @@ export default {
     ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
+    ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee overview: application status, past-outcome, and up-next task status badges come
     // from @lfx-one/shared constants and are applied via ngClass at runtime.
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...MENTORSHIP_MENTEE_APPLICATION_HISTORY_STATUS_UNKNOWN_BADGE_CLASS.split(' '),
-    ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_APPLICANT_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),

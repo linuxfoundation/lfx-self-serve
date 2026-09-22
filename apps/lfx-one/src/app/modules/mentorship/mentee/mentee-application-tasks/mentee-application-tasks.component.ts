@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
@@ -50,10 +50,6 @@ export class MenteeApplicationTasksComponent {
    */
   public readonly phase = signal<MentorshipMenteePhase>('empty');
 
-  // ---- 3. Complex computed signals ------------------------------------------
-  /** The phase this tab renders — the shell's authoritative value. */
-  protected readonly resolvedPhase = computed<MentorshipMenteePhase>(() => this.phase());
-
   public constructor() {
     this.initEmptyPhaseRedirect();
   }
@@ -68,7 +64,7 @@ export class MenteeApplicationTasksComponent {
    */
   private initEmptyPhaseRedirect(): void {
     if (!isPlatformBrowser(this.platformId)) return;
-    toObservable(this.resolvedPhase)
+    toObservable(this.phase)
       .pipe(
         filter((p) => p === 'empty'),
         takeUntilDestroyed()

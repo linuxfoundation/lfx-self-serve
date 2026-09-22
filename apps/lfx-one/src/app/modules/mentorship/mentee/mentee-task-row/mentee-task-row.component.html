@@ -74,7 +74,7 @@
   <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short -->
   <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]">
     @if (task().submitted && task().submittedLabel) {
-      Submitted {{ task().submittedLabel | date: 'MMM d, yyyy' }}
+      Submitted {{ task().submittedLabel | date: 'MMM d, yyyy' : 'UTC' }}
     } @else if (task().dueDate) {
       Due {{ task().dueDate | date: 'MMM d, yyyy' : 'UTC' }}
     }
