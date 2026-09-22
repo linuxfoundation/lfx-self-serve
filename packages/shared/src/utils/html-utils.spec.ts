@@ -242,6 +242,36 @@ describe('htmlClipboardToText', () => {
   });
 });
 
+describe('invisible-only values and surrogate entities', () => {
+  it('treats ANY invisible-only value as empty, not just the two joiners', () => {
+    // The floor was a denylist naming U+200C and U+200D, so every other invisible-but-kept code
+    // point still counted as content and rendered a blank name. Inverted to an allow-list:
+    // "does anything here actually render".
+    for (const invisible of ['\u200D', '\u200C', '\u2060', '\uFEFF', '\u00AD', '\u180E', '\u200D\u200C']) {
+      expect(sanitizeDisplayText(invisible)).toBe('');
+    }
+  });
+
+  it('keeps every value that actually renders', () => {
+    // The negative half. Without it, "strip all format characters" passes the test above and
+    // deletes real sponsor names -- the over-strip this floor exists to avoid.
+    for (const name of ['Acme Corp', '株式会社', '🚀 Labs', 'नमस्ते', "O'Reilly"]) {
+      expect(sanitizeDisplayText(name)).toBe(name);
+    }
+  });
+
+  it('refuses to decode a surrogate-range numeric entity', () => {
+    // String.fromCodePoint accepts D800-DFFF without throwing and returns an unpaired surrogate,
+    // so `&#xD800;` produced a string that is not well-formed UTF-16 -- the same lone-surrogate
+    // class closed elsewhere, reached through the entity decoder.
+    expect(decodeHtmlEntities('&#xD800;')).toBe('&#xD800;');
+    expect(decodeHtmlEntities('&#55296;')).toBe('&#55296;');
+    // Astral characters are a single code point above 0xFFFF and must still decode.
+    expect(decodeHtmlEntities('&#x1F680;')).toBe('\u{1F680}');
+    expect(decodeHtmlEntities('&#x4E2D;')).toBe('\u4E2D');
+  });
+});
+
 describe('stripResourceLoadingHtml', () => {
   it('drops text inside svg and math rather than leaking it into the body', () => {
     // sanitize-html KEEPS a disallowed tag's text by default, which is right for `<span>` and

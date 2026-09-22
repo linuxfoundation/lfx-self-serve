@@ -14,6 +14,16 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
 
 /** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
 function isDecodableCodePoint(code: number): boolean {
+  // The SURROGATE range is excluded, not just the out-of-range values. `String.fromCodePoint`
+  // accepts 0xD800-0xDFFF without throwing and returns an unpaired surrogate, so `&#xD800;`
+  // decoded into a string that is not well-formed UTF-16. Downstream that either throws in an
+  // encoder or is substituted with U+FFFD, meaning the value that renders stops matching the
+  // value that was checked -- the same class as the lone-surrogate hole already closed in
+  // sanitizeDisplayText, reached through the entity decoder instead.
+  //
+  // A well-formed astral character is a single code point ABOVE 0xFFFF and never lands in this
+  // range, so emoji and CJK extensions decode exactly as before.
+  if (code >= 0xd800 && code <= 0xdfff) return false;
   return Number.isInteger(code) && code >= 0 && code <= 0x10ffff;
 }
 
@@ -98,10 +108,16 @@ export function sanitizeDisplayText(value: string): string {
   // `normalizeSponsors`' `name !== ''` check would admit it and the email would carry a sponsor
   // with an invisible name. The carve-out needs this floor, or it trades an over-strip for a
   // silently blank field.
-  // Whitespace does not count as real text here: `"\u200D \u200C"` survives the trim (the
-  // joiners are not whitespace, so they anchor the ends) and would otherwise read as a name made
-  // of one space. The test is for a character that actually renders.
-  return /[^\s\u200C\u200D]/u.test(cleaned) ? cleaned : '';
+  // An ALLOW-list of what counts as visible, not a denylist of invisible spellings. The earlier
+  // version named `\u200C` and `\u200D` explicitly, which left every other invisible-but-kept
+  // code point counting as content: a name of only U+00AD (soft hyphen) or U+180E passed the
+  // floor and rendered blank. Naming spellings cannot converge here -- the Unicode format
+  // category keeps growing -- so the test is inverted to "does anything here actually render".
+  //
+  // `\p{C}` covers format, control, surrogate, private-use and unassigned; `\p{Z}` covers every
+  // separator including the whitespace the trim already handled. Anything outside both is a
+  // character with a glyph, which is exactly the question being asked.
+  return /[^\p{C}\p{Z}]/u.test(cleaned) ? cleaned : '';
 }
 
 /**
