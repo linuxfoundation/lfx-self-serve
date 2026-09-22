@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import typography from '@tailwindcss/typography';
+// jiti loads this config through Node resolution, so the package export would read the
+// built `dist/` — a stale build silently yields `undefined` here. Read source instead.
 import {
   AVATAR_COLORS,
   BAND_CHIP_CLASS,
@@ -29,8 +31,6 @@ import {
   MENTORSHIP_PROGRAM_STATUS_BADGE_CLASSES,
   MENTORSHIP_TERM_ROW_STATUS_BADGE_CLASSES,
   ORG_MEETINGS_KPI_ICON_CLASS,
-  // jiti loads this config through Node resolution, so the package export would read the
-  // built `dist/` — a stale build silently yields `undefined` here. Read source instead.
 } from '@lfx-one/shared/src/constants/index.ts';
 import PrimeUI from 'tailwindcss-primeui';
 

@@ -115,6 +115,7 @@
     "autoprefixer": "^10.4.21",
     "eslint": "^9.39.1",
     "gray-matter": "^4.0.3",
+    "jiti": "^1.21.7",
     "jsdom": "^30.0.1",
     "pino-pretty": "^13.1.1",
     "playwright": "1.58.0",
