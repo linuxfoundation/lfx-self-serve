@@ -759,4 +759,16 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
+
+  it('does not reapply the committee preference when switching between unlocked types', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    component.form().get('show_meeting_attendees')?.setValue(false);
+    component.form().get('meeting_type')?.setValue('Maintainers');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
 });

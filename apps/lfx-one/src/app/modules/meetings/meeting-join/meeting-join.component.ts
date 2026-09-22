@@ -335,8 +335,18 @@ export class MeetingJoinComponent implements OnInit {
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
   // Host source for the organizer chip: registrants for upcoming, participants for past (the
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
-  // drawer resolve organizers from the same people.
-  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
+  // drawer resolve organizers from the same people. When attendee visibility is off the roster
+  // is truncated to the caller, so passing it here would hide Zoom co-hosts and undercount
+  // invitees — fall back to owner/created_by instead, matching dashboard cards.
+  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => {
+    if (this.isPastMeeting()) {
+      return this.pastMeetingParticipants();
+    }
+    if (!this.canViewGuestRoster()) {
+      return [];
+    }
+    return this.registrants();
+  });
   // Past meeting attendance stats (derived from participants)
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);

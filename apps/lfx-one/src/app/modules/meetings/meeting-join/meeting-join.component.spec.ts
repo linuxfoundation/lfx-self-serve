@@ -808,5 +808,25 @@ describe('MeetingJoinComponent', () => {
       const component = await createComponent();
       expect(component.canViewGuestRoster()).toBe(true);
     });
+
+    it('does not feed a truncated roster into the organizer chip when attendee visibility is off', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(buildRegistrants(1)));
+      const component = await createComponent();
+      expect(component.canViewGuestRoster()).toBe(false);
+      expect((component as unknown as { organizerChipHosts: () => MeetingRegistrant[] }).organizerChipHosts()).toEqual([]);
+    });
+
+    it('feeds the roster into the organizer chip when the guest list is visible', async () => {
+      const registrants = buildRegistrants(2);
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true }), project: buildProject() })
+      );
+      getMyMeetingRegistrants.mockReturnValue(of(registrants));
+      const component = await createComponent();
+      expect((component as unknown as { organizerChipHosts: () => MeetingRegistrant[] }).organizerChipHosts()).toEqual(registrants);
+    });
   });
 });

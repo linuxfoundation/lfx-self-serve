@@ -108,6 +108,14 @@ export class MeetingCommitteeManagerComponent {
   private readonly optionsRetryToken = signal(0);
 
   /**
+   * Last known board/restricted lock for the attendees toggle.
+   * @description `applyCommitteeAttendeePreference` must re-run when the lock lifts so a skipped
+   * committee preference is not dropped, but not when the organizer switches between unlocked
+   * types — that would turn the toggle back on after they explicitly turned it off.
+   */
+  private attendeeVisibilityLocked = false;
+
+  /**
    * Emission gate for `committeeMembersChange`.
    * @description Consumers reconcile their guest list against every emission, so an emission that
    * isn't a truthful picture of the selected groups' membership would queue saved guests for
@@ -208,10 +216,19 @@ export class MeetingCommitteeManagerComponent {
           if (!meetingTypeControl || !restrictedControl) {
             return EMPTY;
           }
-          return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges);
+          this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
+            map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
+          );
         })
       )
-      .subscribe(() => this.applyCommitteeAttendeePreference());
+      .subscribe((locked) => {
+        const wasLocked = this.attendeeVisibilityLocked;
+        this.attendeeVisibilityLocked = locked;
+        if (wasLocked && !locked) {
+          this.applyCommitteeAttendeePreference();
+        }
+      });
 
     // Subscribe to voting status changes
     this.committeeForm
@@ -406,8 +423,8 @@ export class MeetingCommitteeManagerComponent {
 
   /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
-   * unless board/restricted meetings lock the control off. Re-runs when the lock lifts so
-   * a previously skipped committee preference is not dropped.
+   * unless board/restricted meetings lock the control off. Re-runs only when the lock
+   * lifts so a previously skipped committee preference is not dropped.
    */
   private applyCommitteeAttendeePreference(): void {
     const ids = this.selectedCommitteeIds();
