@@ -6,11 +6,8 @@
  *
  * Every Org Lens empty state — page-level and section-level — renders from one of these entries
  * through `lfx-org-lens-empty-state`; no page or section may render an empty-state string from any
- * other source.
- *
- * The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5): that viewer's
- * switcher never loads a list, and the static cause-blind wording there must not become an
- * access-themed state that implies an administrator could help.
+ * other source — including the `/org/not-found` dead end, which has no exception now that Org Lens
+ * is always on.
  *
  * Product and design review this file. Wording rules: sentence-case headlines, no exclamation marks,
  * never "Oops" / "Forbidden" / "Unauthorized" / "error"; the reason never blames the caller.

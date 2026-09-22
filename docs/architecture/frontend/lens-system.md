@@ -188,7 +188,7 @@ Nothing re-writes an address behind a canonical-record fetch; `orgPathParamGuard
 
 ## Org Lens empty states
 
-Every Org Lens "nothing to show" — page-level and section-level — renders from one component, `<lfx-org-lens-empty-state>` (`apps/lfx-one/src/app/shared/components/org-lens-empty-state/`), driven by the copy registry `ORG_LENS_EMPTY_STATE_COPY` (`packages/shared/src/constants/org-lens-empty-state.constants.ts`; state names and action kinds in `packages/shared/src/interfaces/org-lens-empty-state.interface.ts`). Call sites choose a **state**, never a string; product and design review the registry file. The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5), which keeps its static cause-blind wording.
+Every Org Lens "nothing to show" — page-level and section-level — renders from one component, `<lfx-org-lens-empty-state>` (`apps/lfx-one/src/app/shared/components/org-lens-empty-state/`), driven by the copy registry `ORG_LENS_EMPTY_STATE_COPY` (`packages/shared/src/constants/org-lens-empty-state.constants.ts`; state names and action kinds in `packages/shared/src/interfaces/org-lens-empty-state.interface.ts`). Call sites choose a **state**, never a string; product and design review the registry file. There are no exceptions — the `/org/not-found` dead end renders from the registry too.
 
 **Page level** is decided by `OrgLensEmptyStateService.pageState` (`apps/lfx-one/src/app/shared/services/org-lens-empty-state.service.ts`), which mirrors the server read gate's precedence (spec 053 FR-016):
 
