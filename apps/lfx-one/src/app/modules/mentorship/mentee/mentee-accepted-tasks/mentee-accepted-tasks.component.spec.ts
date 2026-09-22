@@ -15,6 +15,7 @@ describe('MenteeAcceptedTasksComponent', () => {
   let fixture: ComponentFixture<MenteeAcceptedTasksComponent>;
   let component: MenteeAcceptedTasksComponent;
   let getMenteeTasks: ReturnType<typeof vi.fn>;
+  let clearMenteeCaches: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -23,7 +24,7 @@ describe('MenteeAcceptedTasksComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeAcceptedTasksComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeTasks } },
+        { provide: MentorshipService, useValue: { getMenteeTasks, clearMenteeCaches } },
         { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
       ],
     });
@@ -43,6 +44,7 @@ describe('MenteeAcceptedTasksComponent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearMenteeCaches = vi.fn();
   });
 
   it('renders task list with filter chips', async () => {
@@ -114,6 +116,7 @@ describe('MenteeAcceptedTasksComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(getMenteeTasks.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(clearMenteeCaches).toHaveBeenCalledOnce();
   });
 
   it('shows the error empty-state when the tasks fetch fails', async () => {

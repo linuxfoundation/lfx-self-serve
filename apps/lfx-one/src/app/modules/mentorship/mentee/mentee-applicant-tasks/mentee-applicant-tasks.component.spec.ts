@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED, MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT } from '@lfx-one/shared/constants';
+import { MentorshipMenteeOverviewApplicant } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of, throwError } from 'rxjs';
@@ -14,6 +15,7 @@ describe('MenteeApplicantTasksComponent', () => {
   let fixture: ComponentFixture<MenteeApplicantTasksComponent>;
   let component: MenteeApplicantTasksComponent;
   let getMenteeOverview: ReturnType<typeof vi.fn>;
+  let clearMenteeCaches: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -22,7 +24,7 @@ describe('MenteeApplicantTasksComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeApplicantTasksComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipService, useValue: { getMenteeOverview, clearMenteeCaches } },
         { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
       ],
     });
@@ -40,8 +42,24 @@ describe('MenteeApplicantTasksComponent', () => {
     await createComponent();
   };
 
+  /**
+   * A single-application applicant overview whose card carries no `tasks` list
+   * (the partial-payload shape the BFF permits). `total` drives the overview's
+   * precomputed `prerequisiteTasksTotal`, which the card header reflects.
+   */
+  const applicantOverviewWithoutTasks = (total: number): MentorshipMenteeOverviewApplicant => {
+    const overview = structuredClone(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
+    const [first] = overview.applications;
+    delete first.tasks;
+    first.prerequisiteTasksTotal = total;
+    first.prerequisiteTasksCompleted = total > 0 ? 1 : 0;
+    overview.applications = [first];
+    return overview;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+    clearMenteeCaches = vi.fn();
   });
 
   it('renders application cards with prerequisite tasks', async () => {
@@ -109,6 +127,28 @@ describe('MenteeApplicantTasksComponent', () => {
     expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
   });
 
+  it('shows a "details unavailable" message (not "empty") when a card reports tasks but omits the list', async () => {
+    // Partial payload: header says tasks exist (totalCount > 0) but the rows aren't included.
+    getMenteeOverview = vi.fn().mockReturnValue(of(applicantOverviewWithoutTasks(3)));
+    await createComponent();
+    const { id } = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0];
+    const pending = element().querySelector(`[data-testid="mentee-tasks-application-pending-${id}"]`);
+    expect(pending).toBeTruthy();
+    expect(pending?.textContent).toContain('available yet');
+    // Header and body must not contradict: the true-empty copy must NOT render on this card.
+    expect(element().querySelector('[data-testid^="mentee-tasks-application-empty-"]')).toBeNull();
+  });
+
+  it('shows the true-empty message when a card has no prerequisite tasks at all', async () => {
+    getMenteeOverview = vi.fn().mockReturnValue(of(applicantOverviewWithoutTasks(0)));
+    await createComponent();
+    const { id } = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications[0];
+    const empty = element().querySelector(`[data-testid="mentee-tasks-application-empty-${id}"]`);
+    expect(empty).toBeTruthy();
+    expect(empty?.textContent).toContain('No prerequisite tasks');
+    expect(element().querySelector('[data-testid^="mentee-tasks-application-pending-"]')).toBeNull();
+  });
+
   it('retries the overview fetch on retry click', async () => {
     await bootstrap();
     const callsBefore = getMenteeOverview.mock.calls.length;
@@ -117,5 +157,6 @@ describe('MenteeApplicantTasksComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(getMenteeOverview.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(clearMenteeCaches).toHaveBeenCalledOnce();
   });
 });
