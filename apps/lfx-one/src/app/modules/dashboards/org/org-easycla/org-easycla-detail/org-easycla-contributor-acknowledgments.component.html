@@ -20,7 +20,20 @@
   </header>
 
   <form [formGroup]="filterForm" (submit)="$event.preventDefault()" class="max-w-md" data-testid="org-easycla-acknowledgments-search">
-    <lfx-input-text [form]="filterForm" control="search" placeholder="Search contributors…" icon="fa-light fa-search" styleClass="w-full pr-7" />
+    <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
+         screen reader with an unnamed field.
+
+         `[id]` is bound rather than written as a plain attribute, for the reason the approval-list
+         search documents — a static `id` lands on the wrapper's host element as well as its native
+         input, so `for` resolves to the wrapper and labels nothing. -->
+    <label class="sr-only" for="org-easycla-acknowledgments-search-input">Search contributors</label>
+    <lfx-input-text
+      [form]="filterForm"
+      control="search"
+      [id]="'org-easycla-acknowledgments-search-input'"
+      placeholder="Search contributors…"
+      icon="fa-light fa-search"
+      styleClass="w-full pr-7" />
   </form>
 
   @if (loading()) {

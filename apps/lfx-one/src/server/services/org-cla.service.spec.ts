@@ -2520,6 +2520,25 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]).toMatchObject({ name: 'Ada Lovelace', signedOn: '2026-01-02T00:00:00Z' });
   });
 
+  it('prefers the DocuSign name when the profile name differs', async () => {
+    // The producer puts the profile name (or username) on `name` and the name on the DocuSign
+    // document on `userDocusignName`. The shared contract's `name` is the signing name, so a
+    // row that carries both must surface the DocuSign one.
+    stageAckRead(contributorPage({ list: [contributor({ name: 'ada', userDocusignName: 'Ada Lovelace' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
+  it('keeps the profile name when no DocuSign name was recorded', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: '   ' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
   it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
     stageAckRead(
       contributorPage({

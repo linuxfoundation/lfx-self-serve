@@ -149,6 +149,19 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     expect(byTestId(fixture, 'org-easycla-acknowledgments-search-empty')?.textContent).toContain('No acknowledgments match your search.');
   });
 
+  // The placeholder disappears as soon as anything is typed, so the label is the only thing
+  // naming this field. `[id]` is bound rather than a static attribute precisely so it reaches
+  // the native input and not the wrapper's host — and a label that names nothing looks
+  // identical in the markup to one that works.
+  it('names the search box with a label that resolves to its input', async () => {
+    const fixture = await render();
+    const label = fixture.nativeElement.querySelector('label[for="org-easycla-acknowledgments-search-input"]') as HTMLLabelElement | null;
+
+    expect(label?.textContent).toContain('Search contributors');
+    expect(fixture.nativeElement.querySelectorAll('#org-easycla-acknowledgments-search-input')).toHaveLength(1);
+    expect((fixture.nativeElement.querySelector('#org-easycla-acknowledgments-search-input') as HTMLElement).tagName).toBe('INPUT');
+  });
+
   /**
    * The identity column falls through: LF Login → GitHub username → GitLab username → email →
    * em-dash. A row with no LF Login but any downstream identifier must render, or an
