@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const PAST_MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, getEffectiveEmailMock } = vi.hoisted(() => ({
+const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParameterMock, getEffectiveEmailMock, getUsernameFromAuthMock } = vi.hoisted(() => ({
   meetingSvc: {
     getPastMeetingById: vi.fn(),
     getPastMeetingParticipants: vi.fn(),
@@ -17,6 +17,7 @@ const { meetingSvc, reconciliationSvc, addAccessToResourceMock, validateUidParam
   addAccessToResourceMock: vi.fn(),
   validateUidParameterMock: vi.fn(() => true),
   getEffectiveEmailMock: vi.fn(),
+  getUsernameFromAuthMock: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
@@ -29,10 +30,19 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isShowMeetingAttendeesLocked: vi.fn(
     (meetingType?: string | null, restricted?: boolean | null) => (meetingType ?? '').toLowerCase() === 'board' || restricted === true
   ),
+  isGuestRosterShared: vi.fn(
+    (showMeetingAttendees?: boolean | null, meetingType?: string | null, restricted?: boolean | null) =>
+      showMeetingAttendees === true && !((meetingType ?? '').toLowerCase() === 'board' || restricted === true)
+  ),
 }));
 
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: getEffectiveEmailMock,
+  getUsernameFromAuth: getUsernameFromAuthMock,
+  stripAuthPrefix: vi.fn((username: string) => {
+    const pipeIndex = username.indexOf('|');
+    return pipeIndex !== -1 ? username.substring(pipeIndex + 1) : username;
+  }),
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
@@ -223,5 +233,41 @@ describe('PastMeetingController.getPastMeetingParticipants — attendee visibili
 
     expect(addAccessToResourceMock).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([{ uid: 'p-self', email: 'user@example.com' }]);
+  });
+
+  // Historical participant rows aren't guaranteed to carry the address the caller signs in
+  // with — `isUserPastMeetingParticipant` matches on either identifier for the same reason.
+  it('finds the caller by username when the participant row carries no matching email', async () => {
+    const usernameRoster = [
+      { uid: 'p-self', username: 'user' },
+      { uid: 'p-other', email: 'other@example.com' },
+    ];
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: false }));
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue(usernameRoster);
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    getEffectiveEmailMock.mockReturnValue('work@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('auth0|user');
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'p-self', username: 'user' }]);
+  });
+
+  it('gives a username-only participant the full roster when attendee visibility is on', async () => {
+    const usernameRoster = [
+      { uid: 'p-self', username: 'user' },
+      { uid: 'p-other', email: 'other@example.com' },
+    ];
+    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ show_meeting_attendees: true }));
+    meetingSvc.getPastMeetingParticipants.mockResolvedValue(usernameRoster);
+    addAccessToResourceMock.mockResolvedValue({ organizer: false });
+    getEffectiveEmailMock.mockReturnValue(null);
+    getUsernameFromAuthMock.mockResolvedValue('user');
+    const res = buildRes();
+
+    await controller.getPastMeetingParticipants(buildReq(true), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith(usernameRoster);
   });
 });

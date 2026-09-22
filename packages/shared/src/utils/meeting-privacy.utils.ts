@@ -12,9 +12,31 @@ import { canJoinMeeting } from './meeting.utils';
  * meeting can still show its roster if the organizer opts in. The lock tracks the meeting's
  * current type and restricted flag on each write; changing `meeting_type` away from Board lifts
  * it. A Board meeting stays locked if the organizer only turns `restricted` off.
+ *
+ * The type comparison is case-insensitive on purpose: `meeting_type` reaches us from v1 through
+ * the ITX proxy, which does not normalize casing, so a stored `"board"` must lock the same as
+ * `"Board"`. Failing open on a casing difference would expose exactly the roster this guards.
  */
 export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | null | undefined): boolean {
   return meetingType?.toLowerCase() === MeetingType.BOARD.toLowerCase() || restricted === true;
+}
+
+/**
+ * Whether a meeting's roster may be shown to someone who is not its organizer.
+ * @description The stored flag alone is never enough: board and restricted meetings can never
+ * opt in, and rows written before the lock existed can still carry `show_meeting_attendees: true`.
+ * Every surface that widens a roster beyond the caller's own row — the tolerant `/registrants`
+ * listing, `/my-meeting-registrants`, `/meetings/:uid/rsvp`, `/past-meetings/:uid/participants`,
+ * and the join page's own gate — decides with this predicate so they cannot drift apart.
+ * Callers still have to establish that the viewer belongs to the meeting; this answers only
+ * whether the roster is shared at all.
+ */
+export function isGuestRosterShared(
+  showMeetingAttendees: boolean | null | undefined,
+  meetingType: string | null | undefined,
+  restricted: boolean | null | undefined
+): boolean {
+  return showMeetingAttendees === true && !isShowMeetingAttendeesLocked(meetingType, restricted);
 }
 
 /**

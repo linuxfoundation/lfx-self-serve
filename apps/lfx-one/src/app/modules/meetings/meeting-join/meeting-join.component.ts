@@ -71,10 +71,10 @@ import {
 } from '@lfx-one/shared';
 import {
   getUserTimezone,
+  isGuestRosterShared,
   isHostKeyVisible,
   isMeetingInviteResponsesEnabled,
   isPastMeetingCompositeId,
-  isShowMeetingAttendeesLocked,
   reconcileOptimisticPad,
 } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
@@ -341,8 +341,16 @@ export class MeetingJoinComponent implements OnInit {
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
   /**
-   * Organizers always see the roster. Invitees (and newly registered guests) only see it
-   * when the organizer turned Show attendees on and the meeting is not board or restricted.
+   * Organizers always see the roster. Everyone else sees it only when the organizer turned
+   * Show attendees on and the meeting is not board or restricted.
+   *
+   * The two page variants prove belonging differently. Upcoming meetings carry `invited`, set by
+   * the invite-status enrichment (plus `optimisticInvited` for a guest who just registered). Past
+   * meetings never carry `invited` — nothing on that fetch path sets it — so they gate on
+   * `pastMeetingFullAccess` instead, which the BFF already resolved from registrant, participant,
+   * and committee membership. `full_access` is the broader of the two (it is also true for any
+   * public past meeting), so this only decides whether to *ask*: the BFF still narrows
+   * `/past-meetings/:uid/participants` to the caller's own row when they were not a participant.
    */
   public readonly canViewGuestRoster = computed(() => {
     if (!this.authenticated()) {
@@ -352,10 +360,23 @@ export class MeetingJoinComponent implements OnInit {
     if (meeting?.organizer) {
       return true;
     }
-    if (isShowMeetingAttendeesLocked(meeting?.meeting_type, meeting?.restricted)) {
+    if (!isGuestRosterShared(meeting?.show_meeting_attendees, meeting?.meeting_type, meeting?.restricted)) {
       return false;
     }
-    return meeting?.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
+    if (this.isPastMeeting()) {
+      return this.pastMeetingFullAccess();
+    }
+    return !!meeting?.invited || this.optimisticInvited();
+  });
+  /**
+   * The placeholder control shown to a viewer who can see that a roster exists but is not theirs
+   * to open — an anonymous or not-yet-invited visitor to a meeting that shares its guest list.
+   * Board and restricted meetings are excluded: they can never share a roster, so a row still
+   * carrying a legacy `show_meeting_attendees: true` must not advertise one.
+   */
+  protected showGuestRosterTeaser = computed(() => {
+    const meeting = this.meeting();
+    return !this.canViewGuestRoster() && isGuestRosterShared(meeting?.show_meeting_attendees, meeting?.meeting_type, meeting?.restricted);
   });
   // Host source for the organizer chip: registrants for upcoming, participants for past (the
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
@@ -639,8 +660,15 @@ export class MeetingJoinComponent implements OnInit {
     this.showGuestForm.set(true);
   }
 
+  // The attendee list ships in this release, so this explains *who* it is shared with rather
+  // than promising a future feature — the viewer seeing this button is outside that audience.
   public onShowMembersPlaceholder(): void {
-    this.messageService.add({ severity: 'info', summary: 'Coming Soon', detail: 'Attendees list will be available soon.', life: 3000 });
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Show Members',
+      detail: 'This meeting shares its attendee list with invited guests. Register or sign in with your invited email to see it.',
+      life: 4000,
+    });
   }
 
   public onRsvpViewToggle(): void {

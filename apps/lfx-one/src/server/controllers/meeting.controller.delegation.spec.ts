@@ -7,21 +7,24 @@ const MEETING_UID = 'a0000000-0000-0000-0000-000000000001';
 const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
-const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(() => ({
-  meetingSvc: {
-    getMeetingRegistrants: vi.fn(),
-    getAuthorizedRegistrantsForImport: vi.fn(),
-    getAuthorizedCompleteRegistrants: vi.fn(),
-    getMeetingById: vi.fn(),
-    getMeetingHostKey: vi.fn(),
-    getMeetingRegistrantsByEmail: vi.fn(),
-    attachRsvpsToRegistrantList: vi.fn(),
-  },
-  getEffectiveEmailMock: vi.fn(),
-  generateM2MTokenMock: vi.fn(),
-  addInvitedStatusToMeetingMock: vi.fn(),
-  enrichMeetingsWithCreatedByMock: vi.fn(),
-}));
+const { meetingSvc, getEffectiveEmailMock, getUsernameFromAuthMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } =
+  vi.hoisted(() => ({
+    meetingSvc: {
+      getMeetingRegistrants: vi.fn(),
+      getAuthorizedRegistrantsForImport: vi.fn(),
+      getAuthorizedCompleteRegistrants: vi.fn(),
+      getMeetingById: vi.fn(),
+      getMeetingHostKey: vi.fn(),
+      getMeetingRegistrantsByEmail: vi.fn(),
+      getMeetingRsvps: vi.fn(),
+      attachRsvpsToRegistrantList: vi.fn(),
+    },
+    getEffectiveEmailMock: vi.fn(),
+    getUsernameFromAuthMock: vi.fn(),
+    generateM2MTokenMock: vi.fn(),
+    addInvitedStatusToMeetingMock: vi.fn(),
+    enrichMeetingsWithCreatedByMock: vi.fn(),
+  }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', async (importOriginal) => importOriginal());
@@ -38,12 +41,17 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isShowMeetingAttendeesLocked: vi.fn(
     (meetingType?: string | null, restricted?: boolean | null) => meetingType?.toLowerCase() === 'board' || restricted === true
   ),
+  isGuestRosterShared: vi.fn(
+    (showMeetingAttendees?: boolean | null, meetingType?: string | null, restricted?: boolean | null) =>
+      showMeetingAttendees === true && !(meetingType?.toLowerCase() === 'board' || restricted === true)
+  ),
 }));
 
 vi.mock('../utils/auth-helper', () => ({
   getEffectiveEmail: getEffectiveEmailMock,
   getEffectiveUsername: vi.fn(),
-  getUsernameFromAuth: vi.fn(),
+  getUsernameFromAuth: getUsernameFromAuthMock,
+  stripAuthPrefix: vi.fn((username: string) => username.replace(/^[^|]*\|/, '')),
 }));
 vi.mock('../utils/m2m-token.util', () => ({ generateM2MToken: generateM2MTokenMock }));
 vi.mock('../helpers/committee-v1-mapping.helper', () => ({ resolveCommitteeV2UidsToV1Ids: vi.fn() }));
@@ -482,5 +490,92 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // The enrichment's M2M identity travels in ApiRequestOptions.bearerToken, not on `req` (#1903),
     // so there is no swap to unwind — `req` still carries the caller's own token after the throw.
     expect(req.bearerToken).toBe(USER_TOKEN);
+  });
+});
+
+// GET /meetings/:uid/rsvp serves the same PII as the registrant listings — name, email,
+// username, plus who accepted or declined — so it honors the same visibility decision.
+describe('MeetingController.getMeetingRsvps — attendee visibility', () => {
+  let controller: any;
+  const OTHER_RSVP = { id: 'rsvp-2', email: 'other@example.com', username: 'other', response_type: 'accepted' };
+  const SELF_RSVP = { id: 'rsvp-1', email: 'user@example.com', username: 'user', response_type: 'accepted' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('user');
+    meetingSvc.getMeetingRsvps.mockResolvedValue([SELF_RSVP, OTHER_RSVP]);
+    controller = new MeetingController();
+  });
+
+  it('gives an organizer every RSVP', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, show_meeting_attendees: false }));
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP, OTHER_RSVP]);
+  });
+
+  it('narrows an invitee to their own RSVP when attendee visibility is off', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: false }));
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP]);
+  });
+
+  it('gives an invitee every RSVP when attendee visibility is on', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true }));
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP, OTHER_RSVP]);
+  });
+
+  it('keeps a board meeting private even when the stored flag is on', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true, meeting_type: 'Board' }));
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP]);
+  });
+
+  it('hands nothing to a caller who holds no RSVP of their own', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true }));
+    getEffectiveEmailMock.mockReturnValue('stranger@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('stranger');
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([]);
+  });
+
+  // A username-only session still has to find its own row — v1 RSVP records don't always carry
+  // the same address the caller signed in with.
+  it('matches the caller by username when the email does not line up', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: false }));
+    getEffectiveEmailMock.mockReturnValue('work@example.com');
+    getUsernameFromAuthMock.mockResolvedValue('auth0|user');
+    const res = buildRes();
+
+    await controller.getMeetingRsvps(buildReq(), res, vi.fn());
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP]);
+  });
+
+  it('fails closed to the caller row when the meeting lookup fails', async () => {
+    meetingSvc.getMeetingById.mockRejectedValue(new Error('upstream down'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRsvps(buildReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith([SELF_RSVP]);
+    expect(next).not.toHaveBeenCalled();
   });
 });

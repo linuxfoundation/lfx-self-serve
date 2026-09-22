@@ -15,6 +15,7 @@ import { syncShowMeetingAttendeesLock } from './form.utils';
 import {
   getMeetingPrivacyIcon,
   getMeetingPrivacyLabel,
+  isGuestRosterShared,
   isHostKeyVisible,
   isHostKeyVisibleForJoinWindow,
   isShowMeetingAttendeesLocked,
@@ -168,6 +169,24 @@ describe('isHostKeyVisibleForJoinWindow', () => {
   it('is false for null/undefined meetings', () => {
     expect(isHostKeyVisibleForJoinWindow(null)).toBe(false);
     expect(isHostKeyVisibleForJoinWindow(undefined)).toBe(false);
+  });
+});
+
+describe('isGuestRosterShared', () => {
+  it('shares the roster when the flag is on and the meeting is unlocked', () => {
+    expect(isGuestRosterShared(true, MeetingType.TECHNICAL, false)).toBe(true);
+  });
+
+  it('does not share the roster when the flag is off', () => {
+    expect(isGuestRosterShared(false, MeetingType.TECHNICAL, false)).toBe(false);
+    expect(isGuestRosterShared(undefined, MeetingType.TECHNICAL, false)).toBe(false);
+    expect(isGuestRosterShared(null, MeetingType.TECHNICAL, false)).toBe(false);
+  });
+
+  it('refuses a legacy stored-true flag on a board or restricted meeting', () => {
+    expect(isGuestRosterShared(true, MeetingType.BOARD, false)).toBe(false);
+    expect(isGuestRosterShared(true, MeetingType.TECHNICAL, true)).toBe(false);
+    expect(isGuestRosterShared(true, 'board', false)).toBe(false);
   });
 });
 

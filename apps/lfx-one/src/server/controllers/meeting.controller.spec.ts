@@ -60,12 +60,22 @@ vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, M
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
 // its own, so pulling it in directly doesn't drag the aliased barrel's graph along.
-vi.mock('@lfx-one/shared/utils', async () => ({
-  resolveMeetingOrganizer: vi.fn(() => null),
-  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
-  isShowMeetingAttendeesLocked: (meetingType?: string | null, restricted?: boolean | null) =>
-    (meetingType ?? '').toLowerCase() === 'board' || restricted === true,
-}));
+vi.mock('@lfx-one/shared/utils', async () => {
+  // Behavioral doubles, not the real predicates: importing meeting-privacy.utils here would pull
+  // meeting.utils and with it Angular, which a mock factory can't compile. isGuestRosterShared is
+  // derived from the lock double rather than restated, so the two can't contradict each other the
+  // way a second hand-rolled copy could. The predicates' own coverage is meeting-privacy.utils.spec.ts.
+  const isShowMeetingAttendeesLocked = (meetingType?: string | null, restricted?: boolean | null) =>
+    (meetingType ?? '').toLowerCase() === 'board' || restricted === true;
+
+  return {
+    resolveMeetingOrganizer: vi.fn(() => null),
+    truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+    isShowMeetingAttendeesLocked,
+    isGuestRosterShared: (showMeetingAttendees?: boolean | null, meetingType?: string | null, restricted?: boolean | null) =>
+      showMeetingAttendees === true && !isShowMeetingAttendeesLocked(meetingType, restricted),
+  };
+});
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 vi.mock('../helpers/meeting.helper', () => ({

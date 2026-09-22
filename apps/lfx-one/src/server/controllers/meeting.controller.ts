@@ -21,7 +21,7 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
-import { isShowMeetingAttendeesLocked, truncateToUtf16Units } from '@lfx-one/shared/utils';
+import { isGuestRosterShared, isShowMeetingAttendeesLocked, truncateToUtf16Units } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import {
@@ -46,7 +46,7 @@ import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
 import { UserService } from '../services/user.service';
-import { getEffectiveEmail } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -428,12 +428,15 @@ export class MeetingController {
       // listing — the one that may come back short — still honors `show_meeting_attendees` so
       // any authenticated caller who knows a meeting uid cannot scrape registrant PII.
       let registrants: MeetingRegistrant[];
+      // Held across both blocks so the enrichment below can reuse the tolerant branch's gate
+      // fetch instead of issuing a second identical `getMeetingById` — each one costs its own
+      // FGA access check plus the committee fan-out.
+      let meetingForGate: Meeting | null = null;
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
         registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
       } else {
-        let meetingForGate: Meeting | null = null;
         try {
           meetingForGate = await this.meetingService.getMeetingById(req, uid);
         } catch {
@@ -444,8 +447,7 @@ export class MeetingController {
         } else {
           const userEmail = getEffectiveEmail(req);
           const self = userEmail ? await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail) : [];
-          const flagOn =
-            meetingForGate?.show_meeting_attendees === true && !isShowMeetingAttendeesLocked(meetingForGate?.meeting_type, meetingForGate?.restricted);
+          const flagOn = isGuestRosterShared(meetingForGate?.show_meeting_attendees, meetingForGate?.meeting_type, meetingForGate?.restricted);
           if (flagOn && self.length > 0) {
             registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
           } else {
@@ -476,7 +478,7 @@ export class MeetingController {
             await this.meetingService.assertCommitteeAttributionAllowed(req, uid);
           }
 
-          const meeting = await this.meetingService.getMeetingById(req, uid);
+          const meeting = meetingForGate ?? (await this.meetingService.getMeetingById(req, uid));
           payload = await this.enrichCommitteeRegistrants(req, meeting, registrants);
         } catch (error) {
           logger.warning(req, 'get_meeting_registrants', 'Committee enrichment unavailable, returning unenriched registrants', {
@@ -598,17 +600,21 @@ export class MeetingController {
       // Step 4: Invitees only see the full roster when the organizer opted in. Organizers always
       // see everyone; everyone else gets only their own registrant row(s), with RSVP attached
       // when requested so the join-page contract is unchanged.
-      if (!meeting.organizer && (meeting.show_meeting_attendees !== true || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted))) {
+      if (!meeting.organizer && !isGuestRosterShared(meeting.show_meeting_attendees, meeting.meeting_type, meeting.restricted)) {
         let payload = userRegistrantCheck;
         if (includeRsvp && payload.length > 0) {
           payload = await this.meetingService.attachRsvpsToRegistrantList(req, uid, payload, occurrenceId, { bearerToken: m2mToken });
         }
+        // `show_meeting_attendees` and `locked` are logged separately because this branch serves
+        // two different root causes — flag off, or flag on but board/restricted — and anyone
+        // debugging a truncated roster from logs needs to tell them apart.
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           user_email: userEmail,
           is_registrant: true,
           is_organizer: false,
-          show_meeting_attendees: false,
+          show_meeting_attendees: meeting.show_meeting_attendees === true,
+          locked: isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted),
           registrant_count: payload.length,
         });
         res.json(payload);
@@ -1176,6 +1182,12 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/rsvp
+   *
+   * An RSVP row carries the same PII as a registrant row — name, email, username — plus who
+   * accepted or declined, so it honors the same gate as the tolerant `/registrants` listing.
+   * Organizers receive every RSVP. Everyone else receives the full set only when the roster is
+   * shared and they hold an RSVP themselves; otherwise the response is narrowed to their own
+   * row(s). A failed meeting lookup fails closed to that same caller-only view.
    */
   public async getMeetingRsvps(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -1194,16 +1206,38 @@ export class MeetingController {
         return;
       }
 
+      let meetingForGate: Meeting | null = null;
+      try {
+        meetingForGate = await this.meetingService.getMeetingById(req, uid);
+      } catch {
+        meetingForGate = null;
+      }
+
       // Get all RSVPs for the meeting
       const rsvps = await this.meetingService.getMeetingRsvps(req, uid);
 
+      let payload = rsvps;
+      if (!meetingForGate?.organizer) {
+        const userEmail = getEffectiveEmail(req)?.toLowerCase();
+        const username = stripAuthPrefix((await getUsernameFromAuth(req)) ?? '').toLowerCase();
+        const self = rsvps.filter(
+          (rsvp) => (!!userEmail && rsvp.email?.toLowerCase() === userEmail) || (!!username && stripAuthPrefix(rsvp.username ?? '').toLowerCase() === username)
+        );
+        const rosterShared = isGuestRosterShared(meetingForGate?.show_meeting_attendees, meetingForGate?.meeting_type, meetingForGate?.restricted);
+        payload = rosterShared && self.length > 0 ? rsvps : self;
+      }
+
       // Log success
       logger.success(req, 'get_meeting_rsvps', startTime, {
-        count: rsvps.length,
+        count: payload.length,
+        organizer: !!meetingForGate?.organizer,
+        show_meeting_attendees: meetingForGate?.show_meeting_attendees === true,
+        locked: isShowMeetingAttendeesLocked(meetingForGate?.meeting_type, meetingForGate?.restricted),
+        truncated: payload.length !== rsvps.length,
       });
 
       // Send response
-      res.json(rsvps);
+      res.json(payload);
     } catch (error) {
       next(error);
     }

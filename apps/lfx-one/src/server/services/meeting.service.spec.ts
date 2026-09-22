@@ -688,6 +688,20 @@ describe('MeetingService.getAuthorizedRegistrantsForImport', () => {
     await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
   });
 
+  it.each([
+    ['a board meeting', { meeting_type: 'Board' }],
+    ['a restricted meeting', { restricted: true }],
+  ])('rejects the import for %s even when the caller is an authorized writer', async (_label, lock) => {
+    committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
+    accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ ...meetingResponse('project-1'), ...lock });
+
+    await expect(service.getAuthorizedRegistrantsForImport(req, MEETING_UID, COMMITTEE_UID)).rejects.toMatchObject({ statusCode: 403 });
+    // The roster is never fetched: these meetings can never opt into visibility, so the committee
+    // route must not become a side door around the lock.
+    expect(proxyRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('passes through when the caller is a writer on a same-project committee', async () => {
     committeeSvc.getCommitteeById.mockResolvedValue({ uid: COMMITTEE_UID, project_uid: 'project-1' });
     accessCheckSvc.checkSingleAccess.mockResolvedValue(true);
