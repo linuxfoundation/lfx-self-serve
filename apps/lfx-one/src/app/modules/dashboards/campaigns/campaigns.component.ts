@@ -1143,7 +1143,7 @@ export class CampaignsComponent {
    * duplicate-predicate defect this PR exists to remove, so it gets the same fix: delete the
    * second place.
    */
-  protected readonly abTestPreheaderBForSend = computed<string>(() => this.abTestPreheaderB().trim());
+  protected readonly abTestPreheaderBForSend = computed<string>(() => (this.abTestPreheaderB() ?? '').trim());
 
   /**
    * What the preview shows for variant A: trimmed, so a whitespace-only value reads as absent.
@@ -2550,7 +2550,10 @@ export class CampaignsComponent {
       // mid-generation exactly as they can the subject. (The generator returning a preheader for
       // B is what stops B inheriting A's.)
       if (this.abTestForm.controls.preheaderB.value === clearedPreheaderB) {
-        this.abTestForm.controls.preheaderB.setValue(result.copy.preheader);
+        // `?? ''` because the wire type says `preheader: string` while the value comes from a
+        // MODEL: a response omitting the field satisfies the decoder and lands `undefined` in the
+        // control, and `abTestPreheaderBForSend` calls `.trim()` on it unguarded.
+        this.abTestForm.controls.preheaderB.setValue(result.copy.preheader ?? '');
       }
       this.abTestCopyState.set('idle');
     } catch {

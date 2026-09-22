@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { encodePathSegment } from '../helpers/url-validation';
 import { escapeHtml, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
@@ -565,7 +566,7 @@ export class CampaignServiceClient {
       const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `/projects/${encodeURIComponent(projectSlug)}/jobs/${encodeURIComponent(jobId)}`,
+        `/projects/${encodePathSegment(projectSlug)}/jobs/${encodePathSegment(jobId)}`,
         'GET'
       );
       return adaptJobPollResponse(response);
@@ -628,7 +629,7 @@ export class CampaignServiceClient {
     knownEtag: string | null = null,
     allowEtagFallback = false
   ): Promise<CampaignBriefPersistResult> {
-    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
     // Keyed on the brief's OWN identity, so a save looks for the row it is about to replace rather
     // than for whatever brief this event happens to have. Without the delivery type an email save
@@ -743,7 +744,7 @@ export class CampaignServiceClient {
     // Which send in an email series to open. Empty addresses the paid brief, which has no series.
     stage = ''
   ): Promise<CampaignBriefLoadResult> {
-    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
     const found = await this.findBrief(req, basePath, eventSlug, deliveryType, stage);
 
     if (found === null) {
@@ -824,7 +825,7 @@ export class CampaignServiceClient {
       return { enabled: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/email-copy`;
     try {
       // Fifth argument is `query`, sixth is `data`. The stage is a QUERY parameter upstream, so
       // it goes in the FIFTH -- putting it sixth would send it as a body, which upstream does not
@@ -959,7 +960,7 @@ export class CampaignServiceClient {
       return { enabled: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences/build`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences/build`;
     try {
       // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
       // fifth would serialise it into the query string and send no body.
@@ -1164,7 +1165,7 @@ export class CampaignServiceClient {
       };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns`;
     try {
       // `undefined` for the fifth argument, NOT the envelope: `proxyRequestWithResponse` takes
       // `query` fifth and `data` sixth. Passing the envelope fifth serialises it into the query
@@ -1265,9 +1266,9 @@ export class CampaignServiceClient {
     params: { projectSlug: string; briefId: string; campaignId: string; status: CampaignToggleStatus; etag: string }
   ): Promise<CampaignServiceCampaign> {
     const path =
-      `/projects/${encodeURIComponent(params.projectSlug)}` +
-      `/briefs/${encodeURIComponent(params.briefId)}` +
-      `/campaigns/${encodeURIComponent(params.campaignId)}/status`;
+      `/projects/${encodePathSegment(params.projectSlug)}` +
+      `/briefs/${encodePathSegment(params.briefId)}` +
+      `/campaigns/${encodePathSegment(params.campaignId)}/status`;
 
     // The upstream enum is lowercase ('active' | 'paused'); the shared client type is uppercase.
     // Converting here rather than at the caller keeps the wire spelling in the one file that owns
@@ -1332,7 +1333,7 @@ export class CampaignServiceClient {
       return { enabled: true, emails: [], error: 'A HubSpot template search requires the project it is scoped to.', possiblyTruncated: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/emails`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/emails`;
     try {
       // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
       // method, query, data)` — passing them sixth would send them as a body, which a GET
@@ -1451,7 +1452,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<BriefMetrics>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/metrics`,
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/metrics`,
       'GET',
       window ? { window } : undefined
     );
@@ -1489,7 +1490,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceKeywords>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/keywords`,
       'GET',
       window ? { window } : undefined
     );
@@ -1518,7 +1519,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaigns>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/campaigns`,
       'GET',
       { q: query }
     );
@@ -1551,7 +1552,7 @@ export class CampaignServiceClient {
     const created = await this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/campaigns`,
       'POST',
       undefined,
       { name }
@@ -1598,7 +1599,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/campaign-ref`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/campaign-ref`,
       'GET',
       { platform_campaign_id: platformCampaignID },
       undefined,
@@ -1641,7 +1642,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceKeywordActions>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns/${encodePathSegment(campaignId)}/keyword-actions`,
       'POST',
       undefined,
       { actions },
@@ -1668,7 +1669,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceAudience>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/audience`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audience`,
       'GET',
       window ? { window } : undefined
     );
@@ -1872,7 +1873,7 @@ export class CampaignServiceClient {
       updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `${basePath}/${encodeURIComponent(existing.brief.id)}`,
+        `${basePath}/${encodePathSegment(existing.brief.id)}`,
         'PUT',
         undefined,
         envelope,
@@ -1970,7 +1971,7 @@ export class CampaignServiceClient {
       const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `${basePath}/${encodeURIComponent(briefId)}/approve`,
+        `${basePath}/${encodePathSegment(briefId)}/approve`,
         'POST',
         undefined,
         undefined,
