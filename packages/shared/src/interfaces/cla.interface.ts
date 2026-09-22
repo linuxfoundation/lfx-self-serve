@@ -1124,6 +1124,24 @@ export interface OrgClaContributorAcknowledgmentList {
 }
 
 /**
+ * One rendered acknowledgment row. The producer's `signatureId` on `ack` is the stable per-ack key.
+ * `identity` is the display chosen for the LF Login / GitHub or GitLab ID column.
+ */
+export interface OrgClaAcknowledgmentRow {
+  ack: OrgClaContributorAcknowledgment;
+  name: string;
+  identity: {
+    display: string;
+    href: string | null;
+    ariaLabel: string;
+  };
+  cclaVersion: string;
+  signedOnLabel: string;
+  invalidated: boolean;
+  invalidatedTooltip: string;
+}
+
+/**
  * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
  *
  * The browser posts one of these, never a raw ACS string. The server interpolates the permission

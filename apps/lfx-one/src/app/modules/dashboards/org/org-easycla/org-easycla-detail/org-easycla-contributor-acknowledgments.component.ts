@@ -13,7 +13,7 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_HEADING,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
 } from '@lfx-one/shared/constants';
-import type { OrgClaContributorAcknowledgment, OrgClaContributorAcknowledgmentList, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { OrgClaAcknowledgmentRow, OrgClaContributorAcknowledgment, OrgClaContributorAcknowledgmentList, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -25,24 +25,6 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
-
-/**
- * One rendered acknowledgment row, with the identity split into Name + Login/ID per the M3
- * prototype. The producer's `signatureId` is preserved unchanged as the stable per-ack key.
- */
-interface AcknowledgmentRow {
-  ack: OrgClaContributorAcknowledgment;
-  name: string;
-  identity: {
-    display: string;
-    href: string | null;
-    ariaLabel: string;
-  };
-  cclaVersion: string;
-  signedOnLabel: string;
-  invalidated: boolean;
-  invalidatedTooltip: string;
-}
 
 const LOADING_ROWS = [1, 2, 3, 4] as const;
 
@@ -71,6 +53,11 @@ const LOADING_ROWS = [1, 2, 3, 4] as const;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaContributorAcknowledgmentsComponent {
+  private readonly accountContext = inject(AccountContextService);
+  private readonly claService = inject(OrgLensClaService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
+
   public readonly claGroup = input.required<OrgClaGroup>();
 
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
@@ -84,11 +71,6 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     search: new FormControl<string>('', { nonNullable: true }),
   });
 
-  private readonly accountContext = inject(AccountContextService);
-  private readonly claService = inject(OrgLensClaService);
-  private readonly messageService = inject(MessageService);
-  private readonly destroyRef = inject(DestroyRef);
-
   private readonly page = signal<OrgClaContributorAcknowledgmentList | null>(null);
   private readonly errorMessage = signal<string | null>(null);
   private readonly loadingMore = signal(false);
@@ -96,7 +78,6 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // The last-emitted search term, cached as a signal so `loadMore` can read it synchronously
   // alongside the fetch subscription.
   private readonly searchTerm = signal<string>('');
-
   protected readonly loading = signal(true);
 
   private readonly signatureId = computed(() => this.claGroup().id);
@@ -175,7 +156,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   // `page` value.
   protected readonly loadedList = computed(() => this.page() ?? this.listSignal());
 
-  protected readonly rows = computed<AcknowledgmentRow[]>(() => {
+  protected readonly rows = computed<OrgClaAcknowledgmentRow[]>(() => {
     const list = this.loadedList();
     if (!list) return [];
     return list.list.map((ack) => this.toRow(ack));
@@ -232,7 +213,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       });
   }
 
-  private toRow(ack: OrgClaContributorAcknowledgment): AcknowledgmentRow {
+  private toRow(ack: OrgClaContributorAcknowledgment): OrgClaAcknowledgmentRow {
     const invalidated = this.isInvalidated(ack);
     return {
       ack,
@@ -250,7 +231,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * LF Login → GitHub username → GitLab username → email → em-dash. GitHub / GitLab logins are
    * display only and never used as stable identifiers.
    */
-  private resolveIdentity(ack: OrgClaContributorAcknowledgment): AcknowledgmentRow['identity'] {
+  private resolveIdentity(ack: OrgClaContributorAcknowledgment): OrgClaAcknowledgmentRow['identity'] {
     if (ack.lfLogin) return { display: ack.lfLogin, href: null, ariaLabel: `LF Login ${ack.lfLogin}` };
     if (ack.githubUsername) {
       return {
