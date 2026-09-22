@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
-import { filter, skipWhile, take } from 'rxjs';
 
 /**
  * Spec 053 — the single page-level classifier for Org Lens empty states (FR-016 precedence).
@@ -42,23 +40,14 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
 
-  private readonly destroyRef = inject(DestroyRef);
-
   /**
-   * Phase 2 of `retry()` is in flight. `orgNavigation.loading` is one flag for every list fetch —
-   * bootstrap, switcher search, next page — so on its own it would mark Retry busy while the viewer
-   * merely types in the switcher; this narrows it to the list refresh Retry itself started. Cleared by
-   * an explicit per-retry subscription (see `retry()`), not by an effect writing back into a signal.
-   *
-   * Deliberate edge: if a switcher search supersedes Retry's own list fetch, `orgNavigation.loading`
-   * stays true until the search settles, so Retry reads busy for that search too. It self-heals when
-   * the search answers; pinning the marker to a fetch generation would need `OrgNavigationService` to
-   * expose one, which is not worth widening its API for a transient disabled button.
+   * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
+   * is one flag for every list fetch — bootstrap, switcher search, next page — so on its own it would
+   * mark Retry busy while the viewer merely types in the switcher. Matching the active generation
+   * narrows it to Retry's own fetch: a later search or reset bumps the generation and releases it, and
+   * there is no latch to clear, so nothing can leave Retry stuck busy.
    */
-  private readonly listRetryInFlight = signal(false);
-
-  /** List loading as a stream, created in the injection context so `retry()` can await its settling. */
-  private readonly listLoading$ = toObservable(this.orgNavigation.loading);
+  private readonly retryGeneration = signal<number | null>(null);
 
   /** Both one-shot bootstrap loads have answered; before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded());
@@ -111,7 +100,9 @@ export class OrgLensEmptyStateService {
    * only the list refresh Retry itself started, since `orgNavigation.loading()` also covers switcher
    * search and pagination.
    */
-  public readonly retrying: Signal<boolean> = computed(() => this.roleGrants.loading() || (this.listRetryInFlight() && this.orgNavigation.loading()));
+  public readonly retrying: Signal<boolean> = computed(
+    () => this.roleGrants.loading() || (this.orgNavigation.loading() && this.retryGeneration() === this.orgNavigation.generation())
+  );
 
   /**
    * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the
@@ -148,19 +139,7 @@ export class OrgLensEmptyStateService {
   public retry(): void {
     this.roleGrants.refresh(true).subscribe(() => {
       if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
-        this.listRetryInFlight.set(true);
-        this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
-        // Clear the marker once this refresh has been seen loading and then settled.
-        this.listLoading$
-          .pipe(
-            skipWhile((loading) => !loading),
-            // filter + take(1), not first(): first() throws EmptyError if teardown completes the source
-            // before the refresh settles; take(1) just completes.
-            filter((loading) => !loading),
-            take(1),
-            takeUntilDestroyed(this.destroyRef)
-          )
-          .subscribe(() => this.listRetryInFlight.set(false));
+        this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
       }
     });
   }

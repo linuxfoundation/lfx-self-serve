@@ -30,7 +30,7 @@ interface Harness {
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   refresh: Mock<(bypassCache?: boolean) => unknown>;
   grantsLoading: WritableSignal<boolean>;
-  refreshList: Mock<(uid?: string | null) => void>;
+  refreshList: Mock<(uid?: string | null) => number>;
   writerSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
   navigate: MockInstance<Router['navigate']>;
@@ -47,7 +47,7 @@ function setup(): Harness {
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const refresh: Mock<(bypassCache?: boolean) => unknown> = vi.fn(() => of(undefined));
   const grantsLoading = signal(false);
-  const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
+  const refreshList: Mock<(uid?: string | null) => number> = vi.fn(() => 1);
   const writerSet = signal(new Set<string>());
   const selectedAccount = signal<Account>({ accountId: '', accountName: '', membershipTier: '', logoUrl: null, uid: '', slug: null });
   const setAccount: Mock<(account: Account) => void> = vi.fn((account: Account) => selectedAccount.set(account));
@@ -61,7 +61,10 @@ function setup(): Harness {
       provideRouter([]),
       MessageService,
       OrgLensEmptyStateService,
-      { provide: OrgNavigationService, useValue: { items, loaded: listLoaded, loading: signal(false), upstreamFailed: listFailed, refreshList } },
+      {
+        provide: OrgNavigationService,
+        useValue: { items, loaded: listLoaded, loading: signal(false), generation: signal(0), upstreamFailed: listFailed, refreshList },
+      },
       { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
       {
         provide: OrgRoleGrantsService,

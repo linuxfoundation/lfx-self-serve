@@ -489,6 +489,22 @@ describe('OrgNavigationService default selection', () => {
       expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
     });
 
+    // The empty-state Retry keys its busy state on this: the generation returned is the one the
+    // started fetch carries, and a later reset moves past it.
+    it('returns the generation of the fetch it started, which a later reset supersedes', () => {
+      const started = service.refreshList(UID_B);
+      expect(service.generation()).toBe(started);
+
+      service.resetAndReload();
+      expect(service.generation()).toBeGreaterThan(started);
+
+      http
+        .match((req) => req.url === '/api/nav/org-items')
+        .forEach((req) => {
+          if (!req.cancelled) req.flush(page([item(UID_B, 'Beta')]));
+        });
+    });
+
     it('pins the current selection into the refreshed request like the bootstrap does', () => {
       service.refreshList(UID_B);
 

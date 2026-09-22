@@ -12,13 +12,13 @@ import {
   CURRENT_YEAR,
   DETAIL_LOSS_PROJECT,
   DETAIL_PROJECT,
+  MOCK_ACCOUNT_ID,
+  NO_VALUE,
   gotoOrgRoiPage,
   gotoOrgRoiProjectDetail,
-  MOCK_ACCOUNT_ID,
   mockProjectAnnual,
   mockProjectDetail,
-  NO_VALUE,
-  orgRoiProjectDetailUrl,
+  orgLensAddressPattern,
   stubOrgLensContext,
 } from './helpers/org-roi.helper';
 
@@ -200,7 +200,7 @@ test.describe('Org Lens ROI project detail — onward link', () => {
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
     const link = page.getByTestId('org-roi-project-detail-onward-link');
-    await expect(link).toHaveAttribute('href', `/org/projects/${DETAIL_PROJECT.slug}`);
+    await expect(link).toHaveAttribute('href', orgLensAddressPattern('projects', DETAIL_PROJECT.slug));
     await expect(page.getByTestId('org-roi-project-detail-onward-unavailable')).toHaveCount(0);
   });
 
@@ -286,7 +286,7 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
     await page.getByTestId('org-roi-projects-section-tab-table').click();
     await page.getByTestId(`org-roi-projects-table-link-prj-${DETAIL_PROJECT.slug}`).click();
 
-    await expect(page).toHaveURL(new RegExp(`${orgRoiProjectDetailUrl(DETAIL_PROJECT.slug)}$`));
+    await expect(page).toHaveURL(orgLensAddressPattern('roi', 'projects', DETAIL_PROJECT.slug));
     await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
   });
 
@@ -307,6 +307,6 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
     await expect(row).toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
 
     await row.click();
-    await expect(page).toHaveURL(new RegExp(`${orgRoiProjectDetailUrl(DETAIL_PROJECT.slug)}$`));
+    await expect(page).toHaveURL(orgLensAddressPattern('roi', 'projects', DETAIL_PROJECT.slug));
   });
 });

@@ -31,7 +31,10 @@ interface Harness {
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
-  refreshList: Mock<(uid?: string | null) => void>;
+  refreshList: Mock<(uid?: string | null) => number>;
+  listGeneration: WritableSignal<number>;
+  /** What the real first-page pipeline does on a fetch: bump the generation and raise `loading`. */
+  startListFetch: () => number;
 }
 
 function account(uid: string): Account {
@@ -52,7 +55,13 @@ function setup(): Harness {
   const grantsLoading = signal(false);
   const listLoaded = signal(false);
   const listLoading = signal(false);
-  const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
+  const listGeneration = signal(0);
+  const startListFetch = (): number => {
+    listGeneration.update((g) => g + 1);
+    listLoading.set(true);
+    return listGeneration();
+  };
+  const refreshList: Mock<(uid?: string | null) => number> = vi.fn(() => listGeneration());
 
   TestBed.configureTestingModule({
     providers: [
@@ -73,7 +82,7 @@ function setup(): Harness {
       },
       { provide: PersonaService, useValue: { personaLoaded } },
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
-      { provide: OrgNavigationService, useValue: { loaded: listLoaded, loading: listLoading, refreshList } },
+      { provide: OrgNavigationService, useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, refreshList } },
     ],
   });
 
@@ -93,6 +102,8 @@ function setup(): Harness {
     listLoading,
     grantsLoading,
     refreshList,
+    listGeneration,
+    startListFetch,
   };
 }
 
@@ -243,14 +254,14 @@ describe('OrgLensEmptyStateService.pageState', () => {
 
   // The Retry control binds to `retrying`; it must stay disabled through BOTH phases with no gap at
   // the handoff, or a second click can fire a concurrent list reload — driven through `retry()`
-  // itself, with the mocked list refresh flipping `loading` synchronously as the real one does.
+  // itself, with the mocked list refresh starting a fetch synchronously as the real one does.
   it('retrying stays true across the grants → list handoff of a real retry', () => {
     const grants = new Subject<void>();
     h.refresh.mockImplementation(() => {
       h.grantsLoading.set(true);
       return grants.asObservable();
     });
-    h.refreshList.mockImplementation(() => h.listLoading.set(true));
+    h.refreshList.mockImplementation(() => h.startListFetch());
     h.listLoaded.set(true);
 
     h.service.retry();
@@ -262,31 +273,39 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.retrying()).toBe(true);
 
     h.listLoading.set(false);
-    TestBed.tick();
     expect(h.service.retrying()).toBe(false);
   });
 
   // `orgNavigation.loading` is one flag for every list fetch; a switcher search must not mark Retry busy.
   it('retrying ignores list activity that no retry started', () => {
-    h.listLoading.set(true);
+    h.startListFetch();
 
     expect(h.service.retrying()).toBe(false);
   });
 
-  // The marker must clear once Retry's own list refresh settles; otherwise the next switcher search
-  // would re-arm the busy state (the regression the marker exists to prevent).
-  it('retrying stays false for list activity after a completed retry', () => {
-    h.refreshList.mockImplementation(() => h.listLoading.set(true));
+  // After Retry's own fetch settles, the next switcher search is a new generation — Retry stays idle.
+  it('retrying stays false for a list fetch after a completed retry', () => {
+    h.refreshList.mockImplementation(() => h.startListFetch());
     h.listLoaded.set(true);
 
     h.service.retry();
-    TestBed.tick();
     h.listLoading.set(false);
-    TestBed.tick();
     expect(h.service.retrying()).toBe(false);
 
-    h.listLoading.set(true);
-    TestBed.tick();
+    h.startListFetch();
+    expect(h.service.retrying()).toBe(false);
+  });
+
+  // A search that supersedes Retry's own fetch keeps `loading` true for the search; Retry is released
+  // at once rather than reading busy until the search settles.
+  it('releases Retry as soon as a switcher search supersedes its list fetch', () => {
+    h.refreshList.mockImplementation(() => h.startListFetch());
+    h.listLoaded.set(true);
+
+    h.service.retry();
+    expect(h.service.retrying()).toBe(true);
+
+    h.startListFetch();
     expect(h.service.retrying()).toBe(false);
   });
 

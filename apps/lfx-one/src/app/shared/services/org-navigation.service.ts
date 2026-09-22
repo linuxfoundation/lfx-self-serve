@@ -64,6 +64,8 @@ export class OrgNavigationService {
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
   public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
+  /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
+  public readonly generation: Signal<number> = this.state.generation.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -103,12 +105,16 @@ export class OrgNavigationService {
    * untouched, never forced either way — so the refreshed page (which supersedes the bootstrap's
    * request) is consumed under the bootstrap's semantics, exactly as the bootstrap's own page would
    * have been. The guarantee above is therefore "Retry adds no selection semantics of its own".
+   *
+   * Returns the generation of the fetch it started (bumped synchronously by the first-page pipeline),
+   * so a caller can tell its own fetch apart from a later search or reset.
    */
-  public refreshList(selectedUid?: string | null): void {
+  public refreshList(selectedUid?: string | null): number {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;
     }
     this.state.reload$.next();
+    return this.state.generation();
   }
 
   private createOrgListState(): OrgListState {
