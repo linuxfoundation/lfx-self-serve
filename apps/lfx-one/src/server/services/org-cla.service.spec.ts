@@ -2521,16 +2521,38 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
   });
 
-  it('falls through a blank name and a blank signed date to the populated fallback', async () => {
+  it('falls through a blank name and a blank signed date to the creation time, not the last modification', async () => {
+    // Invalidation refreshes signatureModified. Using it as Acknowledged On would show the
+    // invalidation instant for a row the producer recorded with no DocuSign date.
     stageAckRead(
       contributorPage({
-        list: [contributor({ name: '   ', userDocusignName: 'Ada Lovelace', userDocusignDateSigned: '  ', signatureModified: '2026-01-02T00:00:00Z' })],
+        list: [
+          contributor({
+            name: '   ',
+            userDocusignName: 'Ada Lovelace',
+            userDocusignDateSigned: '  ',
+            timestamp: '2026-01-02T00:00:00Z',
+            signatureModified: '2026-04-01T00:00:00Z',
+          }),
+        ],
       })
     );
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
     expect(list?.list[0]).toMatchObject({ name: 'Ada Lovelace', signedOn: '2026-01-02T00:00:00Z' });
+  });
+
+  it('leaves signedOn empty when neither the DocuSign date nor the creation time is present', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ userDocusignDateSigned: '  ', timestamp: '', signatureModified: '2026-04-01T00:00:00Z' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.signedOn).toBeUndefined();
   });
 
   it('prefers the DocuSign name when the profile name differs', async () => {

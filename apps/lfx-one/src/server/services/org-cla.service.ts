@@ -1453,8 +1453,9 @@ export interface ContributorAcknowledgmentQuery {
  * `userDocusignName` and puts the profile name (or, when that is empty, the username) on `name`,
  * so a row that has both can disagree. Prefer the DocuSign field and keep `name` as the fallback
  * for rows recorded before that field existed. `signedOn` prefers `userDocusignDateSigned` (a
- * signing timestamp) and falls back to `signatureModified` (last-modified, which is what the
- * producer's older audit surfaces report against). `cclaVersion` normalizes to a `v`-prefixed
+ * signing timestamp) and falls back to `timestamp` (the signature's creation time). It does not
+ * use `signatureModified`: an invalidation refreshes that field, so it would show the
+ * invalidation instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed
  * string; a value already prefixed with `v`/`V` is returned unchanged, an empty version stays
  * empty so the row renders an em-dash.
  */
@@ -1475,7 +1476,7 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     email: nonEmpty(row?.email),
     name: nonEmpty(row?.userDocusignName) ?? nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
-    signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.signatureModified),
+    signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),

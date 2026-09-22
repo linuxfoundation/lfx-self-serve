@@ -576,6 +576,7 @@ export interface EasyClaCorporateContributor {
   email?: string;
   /** The CCLA version the acknowledgment was recorded against ("v1", "v2", etc.). */
   signature_version?: string;
+  /** Signature creation time (`DateCreated`). The Acknowledged On fallback when DocuSign sent no date. */
   timestamp?: string;
   userDocusignName?: string;
   userDocusignDateSigned?: string;
