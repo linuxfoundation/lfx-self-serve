@@ -177,8 +177,10 @@ export class EngagementGroupAttendanceComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
             }),
             tap((response) => {
+              // An out-of-range page is not a settled read: the clamp fires a follow-up fetch, so
+              // `loading` stays set and `counts` stays null until the page that has rows arrives.
+              if (this.clampPage(response.totalRecords)) return;
               this.loading.set(false);
-              this.clampPage(response.totalRecords);
             })
           )
         )
@@ -202,11 +204,15 @@ export class EngagementGroupAttendanceComponent {
 
   /**
    * A `?groupPage=` past the end of the filtered set selects nothing while the totals join still
-   * reports the real count — an empty table under "34 groups". Land on the last page that has rows.
+   * reports the real count — an empty table under "34 groups". Land on the last page that has rows,
+   * and report the clamp so the caller can hold this read open for the page that replaces it.
    */
-  private clampPage(totalRecords: number): void {
+  private clampPage(totalRecords: number): boolean {
     const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
-    if (totalRecords > 0 && this.page() > lastPage) this.page.set(lastPage);
+    if (totalRecords === 0 || this.page() <= lastPage) return false;
+
+    this.page.set(lastPage);
+    return true;
   }
 
   private parseInitialGroupType(): HealthMetricsEngagementGroupTypeFilter {

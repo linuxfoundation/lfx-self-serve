@@ -46,9 +46,15 @@ describe('EngagementGroupAttendanceComponent', () => {
   async function render(
     payload: HealthMetricsEngagementGroupAttendance = response(),
     onCounts?: (counts: unknown) => void,
-    queryParams: Record<string, string> = {}
+    queryParams: Record<string, string> = {},
+    followUpPayload?: HealthMetricsEngagementGroupAttendance
   ): Promise<void> {
-    getEngagementGroupAttendance = vi.fn().mockReturnValue(of(payload));
+    // `payload` answers the first read; `followUpPayload` every read after it, so a clamp or filter
+    // change can resolve to a different page than the one that triggered it.
+    getEngagementGroupAttendance = vi
+      .fn()
+      .mockReturnValue(of(followUpPayload ?? payload))
+      .mockReturnValueOnce(of(payload));
 
     await TestBed.configureTestingModule({
       imports: [EngagementGroupAttendanceComponent],
@@ -268,6 +274,21 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
     // The re-read is already on the last page, so it must settle there rather than clamp again.
     expect(getEngagementGroupAttendance).toHaveBeenCalledTimes(2);
+  });
+
+  // A clamped read is not a settled read: non-null counts would let the container's deep link settle
+  // against the empty table the follow-up page is about to replace.
+  it('reports no counts until the clamped page arrives', async () => {
+    const emissions: unknown[] = [];
+    await render(
+      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      (counts) => emissions.push(counts),
+      { groupPage: '9' },
+      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } })
+    );
+
+    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+    expect(emissions.filter((counts) => counts !== null)).toEqual([{ groups: 34, dormantGroups: 3 }]);
   });
 
   it('writes the filter and page back to the URL, dropping each at its default', async () => {
