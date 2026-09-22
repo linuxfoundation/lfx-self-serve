@@ -5,6 +5,7 @@
 // re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
+import { sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 
@@ -2162,22 +2163,27 @@ export class CampaignController {
     //
     // Same runtime type check as `sourceEmailId` above, for the same reason: this route has no
     // body validator, so a non-string must take the "absent" exit rather than throw.
+    // SANITIZED here, not only in the component. The client strips resource-loading markup
+    // before staging, but this is a public API: a direct request never runs that code, so
+    // trusting it made the browser-side sanitizer the only guard on a value that reaches the
+    // recipient's mail client. Both HTML bodies go through `stripResourceLoadingHtml` and every
+    // display-text field through `sanitizeDisplayText`, at the boundary, once.
     const rawSubject = body.hubspotConfig?.subject;
-    const subject = typeof rawSubject === 'string' ? rawSubject.trim() : '';
+    const subject = sanitizeDisplayText(typeof rawSubject === 'string' ? rawSubject.trim() : '');
     const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = typeof rawBody === 'string' ? rawBody.trim() : '';
+    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody.trim() : '');
 
     // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
     // would stay dropped even after the AI generates one, and a staged draft would keep the
     // clone source's own preview_text widget on a real send.
     const rawPreheader = body.hubspotConfig?.preheader;
-    const preheader = typeof rawPreheader === 'string' ? rawPreheader.trim() : '';
+    const preheader = sanitizeDisplayText(typeof rawPreheader === 'string' ? rawPreheader.trim() : '');
 
     // Same allow-list gap as above, but for the CTA button: the frontend has always sent
     // buttonText/buttonUrl when the AI generated a CTA, but neither was named here, so the
     // button never reached campaign-service and no draft ever got a button widget.
     const rawButtonText = body.hubspotConfig?.buttonText;
-    const buttonText = typeof rawButtonText === 'string' ? rawButtonText.trim() : '';
+    const buttonText = sanitizeDisplayText(typeof rawButtonText === 'string' ? rawButtonText.trim() : '');
     const rawButtonUrl = body.hubspotConfig?.buttonUrl;
     const buttonUrl = canonicalHttpUrl(rawButtonUrl);
 
@@ -2186,11 +2192,11 @@ export class CampaignController {
     // on the Go side was always false regardless of what the toggle showed in the UI.
     const abTestEnabled = body.hubspotConfig?.abTestEnabled === true;
     const rawSubjectB = body.hubspotConfig?.subjectB;
-    const subjectB = typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '';
+    const subjectB = sanitizeDisplayText(typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '');
     const rawBodyB = body.hubspotConfig?.bodyHtmlB;
-    const bodyHtmlB = typeof rawBodyB === 'string' ? rawBodyB.trim() : '';
+    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB.trim() : '');
     const rawPreheaderB = body.hubspotConfig?.preheaderB;
-    const preheaderB = typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '';
+    const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
 
     // Same allow-list gap as above, but for the hero image and sponsor logos: campaign-service's
     // `hubspotConfig` (`internal/dispatch/hubspot.go`) has always accepted `heroImageUrl`,

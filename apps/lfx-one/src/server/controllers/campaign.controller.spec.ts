@@ -1271,6 +1271,50 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((sent['sponsors'] as { name: string }[])[0].name).toBe('S0');
   });
 
+  it('sanitizes both HTML bodies and every display field at the request boundary', async () => {
+    // This is a public API. The component sanitizes before staging, but a DIRECT request never
+    // runs that code -- so without this the browser-side sanitizer was the only guard on values
+    // that reach the recipient's mail client.
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>A</p><img src="https://evil.test/a.gif">',
+            subject: 'Subj\u202Eevil',
+            preheader: 'Pre\u202Eevil',
+            buttonText: 'Click\u202Eevil',
+            abTestEnabled: true,
+            subjectB: 'SubjB\u202Eevil',
+            bodyHtmlB: '<p>B</p><img src="https://evil.test/b.gif">',
+            preheaderB: 'PreB\u202Eevil',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const cfg = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, string>;
+    // Both bodies: the fetch is gone, the copy survives.
+    for (const key of ['bodyHtml', 'bodyHtmlB']) {
+      expect(cfg[key]).not.toContain('evil.test');
+      expect(cfg[key]).not.toContain('<img');
+    }
+    expect(cfg['bodyHtml']).toContain('A');
+    expect(cfg['bodyHtmlB']).toContain('B');
+    // Every display field, under the names the CONTROLLER emits: `preheader` is renamed to
+    // `previewText` on the wire (and `preheaderB` to `previewTextB`), so asserting the payload
+    // key rather than the request key is what makes this test about what actually ships.
+    // `buttonText` is absent here by design -- the allow-list drops it without a `buttonUrl`.
+    for (const key of ['subject', 'previewText', 'subjectB', 'previewTextB']) {
+      expect(cfg[key]).not.toContain('\u202E');
+      expect(cfg[key]).toContain('evil');
+    }
+  });
+
   it('sanitizes a sponsor name from a DIRECT request, not just the scrape path', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });
