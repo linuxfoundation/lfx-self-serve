@@ -1139,6 +1139,14 @@ export interface OrgClaAcknowledgmentRow {
   signedOnLabel: string;
   invalidated: boolean;
   invalidatedTooltip: string;
+  /**
+   * Whether this row can be invalidated at all, independent of who is asking.
+   *
+   * False for a row whose `signatureId` is empty. The list mapper drops a producer row without
+   * one, and an empty id would address the producer with an empty path segment.
+   */
+  invalidatable: boolean;
+  invalidatePending: boolean;
 }
 
 /**

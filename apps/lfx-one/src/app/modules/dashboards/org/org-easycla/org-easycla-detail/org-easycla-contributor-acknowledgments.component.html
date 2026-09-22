@@ -60,6 +60,9 @@
             <th class="px-3 py-2">{{ columnHeaders.cclaVersion }}</th>
             <th class="px-3 py-2">{{ columnHeaders.signedOn }}</th>
             <th class="px-3 py-2">{{ columnHeaders.state }}</th>
+            @if (canEdit()) {
+              <th class="px-3 py-2 text-right"><span class="sr-only">Actions</span></th>
+            }
           </tr>
         </thead>
         <tbody>
@@ -99,10 +102,28 @@
                     data-testid="org-easycla-acknowledgment-state-acknowledged" />
                 }
               </td>
+              @if (canEdit()) {
+                <td class="px-3 py-2 text-right">
+                  @if (!row.invalidated) {
+                    <lfx-button
+                      [label]="actionCopy.label"
+                      icon="fa-light fa-ban"
+                      severity="danger"
+                      [text]="true"
+                      size="small"
+                      [disabled]="!row.invalidatable || row.invalidatePending"
+                      [loading]="row.invalidatePending"
+                      [ariaLabel]="actionCopy.ariaLabel(row.identity.display)"
+                      [tooltip]="row.invalidatable ? undefined : actionCopy.unavailableTooltip"
+                      (onClick)="onInvalidate(row)"
+                      data-testid="org-easycla-acknowledgment-invalidate" />
+                  }
+                </td>
+              }
             </tr>
           } @empty {
             <tr>
-              <td colspan="5" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
+              <td [attr.colspan]="canEdit() ? 6 : 5" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
                 No acknowledgments match your search.
               </td>
             </tr>

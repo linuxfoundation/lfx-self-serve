@@ -1,0 +1,47 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (submit)="$event.preventDefault(); onConfirm()" class="flex flex-col gap-4" data-testid="org-easycla-invalidate-dialog">
+  <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation">
+    <ng-template #content>
+      <span data-testid="org-easycla-invalidate-dialog-warning">{{ copy.warning }}</span>
+    </ng-template>
+  </lfx-message>
+
+  <p class="text-sm text-gray-700" data-testid="org-easycla-invalidate-dialog-contributor">{{ contributor }}</p>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700" for="org-easycla-invalidate-reason">{{ copy.reasonLabel }}</label>
+    <lfx-select
+      [form]="form"
+      control="reason"
+      inputId="org-easycla-invalidate-reason"
+      [options]="reasonOptions"
+      [placeholder]="copy.reasonPlaceholder"
+      styleClass="w-full"
+      dataTest="org-easycla-invalidate-dialog-reason" />
+  </div>
+
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700" for="org-easycla-invalidate-note">{{ copy.noteLabel }}</label>
+    <lfx-textarea
+      [form]="form"
+      control="note"
+      inputId="org-easycla-invalidate-note"
+      [placeholder]="copy.notePlaceholder"
+      [maxlength]="noteMaxLength"
+      styleClass="w-full"
+      dataTest="org-easycla-invalidate-dialog-note" />
+  </div>
+
+  <div class="flex justify-end gap-2">
+    <lfx-button [label]="copy.cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-invalidate-dialog-cancel" />
+    <lfx-button
+      [label]="copy.confirm"
+      icon="fa-light fa-ban"
+      severity="danger"
+      [disabled]="!canConfirm()"
+      (onClick)="onConfirm()"
+      data-testid="org-easycla-invalidate-dialog-confirm" />
+  </div>
+</form>

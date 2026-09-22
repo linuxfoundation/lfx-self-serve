@@ -9,6 +9,8 @@ import type {
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgmentList,
   OrgClaGroupList,
+  OrgClaInvalidateAcknowledgmentRequest,
+  OrgClaInvalidateAcknowledgmentResult,
   OrgClaManager,
   OrgClaManagerAddRequest,
   OrgClaManagerList,
@@ -137,6 +139,26 @@ export class OrgLensClaService {
     if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
     if (options.nextKey) params = params.set('nextKey', options.nextKey);
     return this.http.get<OrgClaContributorAcknowledgmentList>(this.acknowledgmentsUrl(orgUid, signatureId), { params });
+  }
+
+  /**
+   * Invalidates one acknowledgment on this CCLA (#2807).
+   *
+   * Refused server-side while impersonating, before the org-lens grant check runs. The response is
+   * a receipt carrying only the acknowledgment id — the producer stamps the invalidation
+   * timestamp and actor and reports neither — so the caller refetches rather than deriving the
+   * row's new state from it.
+   */
+  public invalidateAcknowledgment(
+    orgUid: string,
+    signatureId: string,
+    acknowledgmentSignatureId: string,
+    request: OrgClaInvalidateAcknowledgmentRequest
+  ): Observable<OrgClaInvalidateAcknowledgmentResult> {
+    return this.http.post<OrgClaInvalidateAcknowledgmentResult>(
+      `${this.acknowledgmentsUrl(orgUid, signatureId)}/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+      request
+    );
   }
 
   private approvalListUrl(orgUid: string, signatureId: string): string {

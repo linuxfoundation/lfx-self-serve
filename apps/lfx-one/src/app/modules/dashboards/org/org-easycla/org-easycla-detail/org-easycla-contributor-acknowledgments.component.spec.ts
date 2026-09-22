@@ -3,6 +3,7 @@
 
 import '@angular/compiler';
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -10,7 +11,8 @@ import type { OrgClaContributorAcknowledgment, OrgClaContributorAcknowledgmentLi
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
-import { of, Subject } from 'rxjs';
+import { DialogService } from 'primeng/dynamicdialog';
+import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
@@ -20,7 +22,11 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const getContributorAcknowledgments = vi.fn();
+  const invalidateAcknowledgment = vi.fn();
   const addMessage = vi.fn();
+  /** Emits what the confirmation closed with: a request on confirm, `null` on dismiss. */
+  let dialogClosed: Subject<unknown>;
+  const openDialog = vi.fn();
 
   function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     return {
@@ -63,10 +69,16 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount } },
-        { provide: OrgLensClaService, useValue: { getContributorAcknowledgments } },
+        { provide: OrgLensClaService, useValue: { getContributorAcknowledgments, invalidateAcknowledgment } },
         { provide: MessageService, useValue: { add: addMessage } },
       ],
-    }).compileComponents();
+    })
+      // `DialogService` is provided by the component itself, so it has to be replaced at the
+      // component level — a root provider would be shadowed by the component's own.
+      .overrideComponent(OrgEasyclaContributorAcknowledgmentsComponent, {
+        set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] },
+      })
+      .compileComponents();
 
     const fixture = TestBed.createComponent(OrgEasyclaContributorAcknowledgmentsComponent);
     fixture.componentRef.setInput('claGroup', row);
@@ -105,6 +117,9 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     vi.resetAllMocks();
     selectedAccount.set(SELECTED_ACCOUNT);
     getContributorAcknowledgments.mockReturnValue(of(page([])));
+    invalidateAcknowledgment.mockReturnValue(of({ signatureId: 'ecla-1' }));
+    dialogClosed = new Subject<unknown>();
+    openDialog.mockReturnValue({ onClose: dialogClosed.asObservable(), close: vi.fn() });
   });
 
   /**
@@ -350,5 +365,149 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     expect(empty?.textContent).toContain('No contributor acknowledgments yet');
     // The table itself is not rendered when the panel is in the empty state.
     expect(byTestId(fixture, 'org-easycla-acknowledgments-table')).toBeNull();
+  });
+  /**
+   * Per-row invalidate (#2807).
+   *
+   * The write itself is gated server-side — impersonation, the Org Lens grant, the CLA-manager
+   * roster and the ownership verify all live behind the BFF. What the tab owns is narrower and
+   * is what these pin: who is offered the control, that nothing is sent without the confirmation,
+   * and what the list shows once the write returns.
+   */
+  describe('per-row invalidate', () => {
+    function invalidateButton(fixture: ComponentFixture<unknown>): HTMLButtonElement | null {
+      return fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+    }
+
+    it('offers the control on an acknowledged row when the caller may edit', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+
+      expect(invalidateButton(fixture)).toBeTruthy();
+    });
+
+    // `canEdit` is decided server-side from the CCLA's manager roster. An org viewer who is not on
+    // it would be refused by the BFF anyway; withholding the control is what stops them being
+    // offered an action that cannot succeed.
+    it('withholds the control when the server says the caller may not edit', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: false })));
+      const fixture = await render();
+
+      expect(invalidateButton(fixture)).toBeNull();
+    });
+
+    it('withholds the control on a row that is already invalidated', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', approved: false })], { canEdit: true })));
+      const fixture = await render();
+
+      expect(invalidateButton(fixture)).toBeNull();
+    });
+
+    /**
+     * A row with no usable id.
+     *
+     * The shared interface types `signatureId` as required and the BFF mapper drops a producer row
+     * without one — but the type is a claim about the contract, not a guarantee about the bytes.
+     * An empty id would be sent as an empty path segment and come back 400, so the control is
+     * disabled instead: there is no record id to act on, and saying so beats a failing request.
+     */
+    it('disables the control on a row whose signatureId is empty, rather than firing a request that 400s', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: '', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+
+      const button = invalidateButton(fixture);
+
+      expect(button).toBeTruthy();
+      expect(button?.disabled).toBe(true);
+
+      button?.click();
+      fixture.detectChanges();
+      await fixture.whenStable();
+
+      expect(openDialog).not.toHaveBeenCalled();
+      expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+    });
+
+    /**
+     * The confirmation is required, and dismissing it is not a quiet yes.
+     *
+     * The dialog closes with `null` on Cancel, on the mask, and on Escape. This is the reason the
+     * API call lives in the panel and not in the dialog: a dismissed dialog has nothing to undo.
+     */
+    it('sends no request when the confirmation is dismissed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      expect(openDialog).toHaveBeenCalledTimes(1);
+
+      dialogClosed.next(null);
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+    });
+
+    it('sends the confirmed reason and note to the server for that row', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'signed-in-error', note: 'duplicate signature' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(invalidateAcknowledgment).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', 'ecla-1', {
+        reason: 'signed-in-error',
+        note: 'duplicate signature',
+      });
+    });
+
+    /**
+     * Refetch, not optimistic removal.
+     *
+     * The producer stamps `invalidatedAt` and `invalidatedBy` on the signature and reports neither
+     * in its response, so the row's post-write state can only come from a re-read. Removing the
+     * row would also make a claim that is simply wrong — the acknowledgment stays on the record,
+     * invalidated, and that is what the CLA manager needs to see.
+     */
+    it('refetches the list after a successful invalidate rather than removing the row', async () => {
+      getContributorAcknowledgments
+        .mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })))
+        .mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace', approved: false })], { canEdit: true })));
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'compliance' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
+      // The row is still listed, now in its Invalidated state — not gone.
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Ada Lovelace']);
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+    });
+
+    it('does not refetch when the invalidate fails, and reports the server message', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' } }))
+      );
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'other' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore);
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'Only a CLA manager named on this CLA can invalidate acknowledgments' })
+      );
+    });
   });
 });

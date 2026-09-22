@@ -12,10 +12,20 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY,
   ORG_CLA_ACKNOWLEDGMENTS_HEADING,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
+  ORG_CLA_INVALIDATE_ACTION_COPY,
+  ORG_CLA_INVALIDATE_DIALOG_COPY,
+  ORG_CLA_INVALIDATE_RECEIPT_COPY,
 } from '@lfx-one/shared/constants';
-import type { OrgClaAcknowledgmentRow, OrgClaContributorAcknowledgment, OrgClaContributorAcknowledgmentList, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type {
+  OrgClaAcknowledgmentRow,
+  OrgClaContributorAcknowledgment,
+  OrgClaContributorAcknowledgmentList,
+  OrgClaGroup,
+  OrgClaInvalidateAcknowledgmentRequest,
+} from '@lfx-one/shared/interfaces';
 import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
 
@@ -25,6 +35,8 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+
+import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
 
 const LOADING_ROWS = [1, 2, 3, 4] as const;
 
@@ -44,19 +56,26 @@ const LOADING_ROWS = [1, 2, 3, 4] as const;
  * so filtering never silently misses matches on pages the browser has not fetched yet. Load-more
  * uses `nextKey` to append the next page to the current view.
  *
- * Per-row invalidate ships in the follow-on slice (#2807).
+ * A per-row Invalidate control opens a confirmation and, on confirm, refetches rather than
+ * removing the row — the producer stamps the invalidation on the signature, and the refetch is
+ * what renders the row in its Invalidated state with those stamps.
  */
 @Component({
   selector: 'lfx-org-easycla-contributor-acknowledgments',
   imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, ReactiveFormsModule, SkeletonModule, TagComponent],
   templateUrl: './org-easycla-contributor-acknowledgments.component.html',
+  // Scoped to this panel so the dialog it opens is torn down with the tab rather than outliving it.
+  providers: [DialogService],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class OrgEasyclaContributorAcknowledgmentsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly claService = inject(OrgLensClaService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  /** The open confirmation, held so it can be closed if the tab is torn down under it. */
+  private invalidateDialog: DynamicDialogRef | null = null;
 
   public readonly claGroup = input.required<OrgClaGroup>();
 
@@ -65,6 +84,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly columnHeaders = ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS;
   protected readonly stateLabels = ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS;
   protected readonly emDash = ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
+  protected readonly actionCopy = ORG_CLA_INVALIDATE_ACTION_COPY;
   protected readonly loadingRows = LOADING_ROWS;
 
   protected readonly filterForm = new FormGroup({
@@ -75,6 +95,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private readonly errorMessage = signal<string | null>(null);
   private readonly loadingMore = signal(false);
   private readonly fetchGeneration = signal(0);
+  private readonly pendingInvalidateIds = signal<ReadonlySet<string>>(new Set());
+  // Bumped after a successful invalidate to re-run the fetch cycle. A counter rather than a
+  // boolean so two invalidates in a row each produce a distinct tuple for `distinctUntilChanged`.
+  private readonly reloadTrigger = signal(0);
   // The last-emitted search term, cached as a signal so `loadMore` can read it synchronously
   // alongside the fetch subscription.
   private readonly searchTerm = signal<string>('');
@@ -102,6 +126,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    */
   private readonly orgUid$ = toObservable(this.orgUid);
   private readonly signatureId$ = toObservable(this.signatureId);
+  private readonly reload$ = toObservable(this.reloadTrigger);
   // `startWith` is placed AFTER `debounceTime` so the initial empty term fires synchronously —
   // otherwise the first fetch would wait a debounce window. Only user-driven `valueChanges` are
   // debounced.
@@ -114,8 +139,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   );
 
   private readonly listSignal = toSignal(
-    combineLatest([this.orgUid$, this.signatureId$, this.search$]).pipe(
-      distinctUntilChanged(([a1, b1, c1], [a2, b2, c2]) => a1 === a2 && b1 === b2 && c1 === c2),
+    combineLatest([this.orgUid$, this.signatureId$, this.search$, this.reload$]).pipe(
+      distinctUntilChanged(([a1, b1, c1, d1], [a2, b2, c2, d2]) => a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2),
       switchMap(([orgUid, signatureId, search]) => {
         this.fetchGeneration.update((generation) => generation + 1);
         // Load more is a separate request from this pipeline. A tuple change must drop its
@@ -159,8 +184,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly rows = computed<OrgClaAcknowledgmentRow[]>(() => {
     const list = this.loadedList();
     if (!list) return [];
-    return list.list.map((ack) => this.toRow(ack));
+    const pending = this.pendingInvalidateIds();
+    return list.list.map((ack) => this.toRow(ack, pending));
   });
+
+  /** Server-decided from the CCLA's manager roster. Never inferred client-side. */
+  protected readonly canEdit = computed(() => this.loadedList()?.canEdit === true);
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly totalCount = computed(() => this.loadedList()?.totalCount ?? 0);
@@ -170,6 +199,15 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   );
   protected readonly showErrorState = computed(() => !!this.errorMessage());
   protected readonly loadingMoreSignal = this.loadingMore.asReadonly();
+
+  constructor() {
+    // The dialog attaches to `document.body`, so it would outlive this panel if the CLA manager
+    // switched tabs with it open.
+    this.destroyRef.onDestroy(() => {
+      this.invalidateDialog?.close();
+      this.invalidateDialog = null;
+    });
+  }
 
   /** Fetch the next page from the producer and append its rows to the current list. */
   protected loadMore(): void {
@@ -213,8 +251,87 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       });
   }
 
-  private toRow(ack: OrgClaContributorAcknowledgment): OrgClaAcknowledgmentRow {
+  /**
+   * Opens the confirmation for one row. Nothing is sent until it closes with a request.
+   *
+   * The dialog is the consent moment, so dismissing it — Cancel, the mask, Escape — closes with
+   * `null` and no request is made. That is the whole reason the API call lives here and not in
+   * the dialog: a dismissed dialog cannot leave a write half-done.
+   */
+  protected onInvalidate(row: OrgClaAcknowledgmentRow): void {
+    if (!this.canEdit() || row.invalidated || !row.invalidatable || row.invalidatePending) return;
+
+    // Close any dialog already open, so a fast click on a second row leaves one modal rather than
+    // two competing for keyboard focus.
+    this.invalidateDialog?.close();
+    const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
+      header: ORG_CLA_INVALIDATE_DIALOG_COPY.header,
+      modal: true,
+      dismissableMask: true,
+      closable: true,
+      width: 'min(32rem, 100%)',
+      data: { contributor: row.identity.display },
+    });
+
+    // `open` is typed nullable because it declines under SSR, where there is no document to attach
+    // to. The control that calls this is browser-side, so there is nothing to subscribe to then.
+    if (!dialogRef) return;
+    this.invalidateDialog = dialogRef;
+    dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
+      if (this.invalidateDialog === dialogRef) this.invalidateDialog = null;
+      if (!request) return;
+      this.sendInvalidate(row, request);
+    });
+  }
+
+  /**
+   * Sends the write, then refetches — it does not remove the row.
+   *
+   * The producer stamps `invalidatedAt` and `invalidatedBy` on the signature and reports neither
+   * in its response, and the row's job afterwards is to show the Invalidated state *with* those
+   * stamps. An optimistic removal would show the contributor as gone, which is a different and
+   * wrong claim: the acknowledgment stays on the record, invalidated.
+   */
+  private sendInvalidate(row: OrgClaAcknowledgmentRow, request: OrgClaInvalidateAcknowledgmentRequest): void {
+    const signatureId = row.ack.signatureId;
+    this.trackPending(signatureId, true);
+    this.claService
+      .invalidateAcknowledgment(this.orgUid(), this.signatureId(), signatureId, request)
+      .pipe(
+        takeUntilDestroyed(this.destroyRef),
+        finalize(() => this.trackPending(signatureId, false))
+      )
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
+            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(row.identity.display),
+          });
+          this.reloadTrigger.update((value) => value + 1);
+        },
+        error: (error: unknown) => {
+          // The BFF's own sentence is preferred: it is the producer's account of why this write
+          // was refused, and the generic fallback would throw that away.
+          const detail =
+            error instanceof HttpErrorResponse && typeof error.error?.message === 'string' && error.error.message.trim().length > 0
+              ? error.error.message
+              : ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
+          this.messageService.add({ severity: 'error', summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary, detail });
+        },
+      });
+  }
+
+  private trackPending(signatureId: string, pending: boolean): void {
+    const next = new Set(this.pendingInvalidateIds());
+    if (pending) next.add(signatureId);
+    else next.delete(signatureId);
+    this.pendingInvalidateIds.set(next);
+  }
+
+  private toRow(ack: OrgClaContributorAcknowledgment, pending: ReadonlySet<string>): OrgClaAcknowledgmentRow {
     const invalidated = this.isInvalidated(ack);
+    const signatureId = ack.signatureId?.trim() ?? '';
     return {
       ack,
       name: ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
@@ -223,6 +340,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       invalidated,
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
+      invalidatable: signatureId.length > 0,
+      invalidatePending: signatureId.length > 0 && pending.has(signatureId),
     };
   }
 
