@@ -933,6 +933,15 @@ export class CampaignServiceClient {
       // so an absent value must stay absent rather than be replaced downstream.
       const ctaUrl = buttonSection?.url ?? '';
 
+      // REFUSED when sanitization emptied the body, rather than returned as a success with
+      // nothing in it. A generator response consisting only of resource-loading markup -- a
+      // tracking pixel and no copy -- strips to '', and an empty body reads downstream as
+      // "blank this field", so a staged draft would lose the body it was meant to set. An
+      // error the operator can retry is the honest answer; a silent blank is not.
+      if (body.trim() === '') {
+        logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
+        return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
+      }
       return {
         enabled: true,
         copy: { subject: copy.subject, preheader: copy.preheader, body, cta, ctaUrl },

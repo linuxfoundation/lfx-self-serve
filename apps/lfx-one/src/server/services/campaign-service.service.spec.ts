@@ -2519,6 +2519,25 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.body).toContain('Join us');
   });
 
+  it('refuses a generation whose body is EMPTY after sanitization', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        // Only resource-loading markup and no copy: this strips to ''.
+        sections: [{ type: 'rich_text', html: '<img src="https://evil.test/probe.png">' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Returning it as a SUCCESS with an empty body is the failure mode: downstream reads '' as
+    // "blank this field", so a staged draft would lose the body it was meant to set. An error
+    // the operator can retry is the honest answer.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
   it('strips a BIDI override from the URL-less button label rendered into body', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
