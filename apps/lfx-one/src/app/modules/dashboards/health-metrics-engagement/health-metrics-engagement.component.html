@@ -13,11 +13,8 @@
     class="flex min-w-0 flex-col gap-6 lg:h-[var(--engagement-panes-height)] lg:overflow-y-auto lg:pr-2"
     [style.--engagement-panes-height]="panesHeight()">
     @for (section of sections; track section.key) {
-      <section
-        [id]="sectionId(section.key)"
-        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5"
-        [attr.data-testid]="'engagement-section-' + section.key">
-        <div class="flex flex-col gap-1" [id]="sectionId(section.key) + '-heading'">
+      <section [id]="section.id" class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5" [attr.data-testid]="'engagement-section-' + section.key">
+        <div class="flex flex-col gap-1" [id]="section.headingId">
           <h2 class="text-base font-semibold text-gray-900">{{ section.heading }}</h2>
           <p class="text-[13px] text-gray-500">{{ section.description }}</p>
         </div>

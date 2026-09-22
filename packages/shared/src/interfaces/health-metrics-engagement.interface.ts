@@ -16,6 +16,9 @@ export type HealthMetricsEngagementGroupTypeFilter = (typeof HEALTH_METRICS_ENGA
 
 export type HealthMetricsTabKey = (typeof HEALTH_METRICS_TABS)[number]['key'];
 
+/** Attendance-bar tone: grey at zero, amber below the low threshold, blue otherwise. */
+export type HealthMetricsEngagementAttendanceTone = 'empty' | 'low' | 'ok';
+
 /** One entry in the Health Metrics tab bar. Only routable tabs navigate; the rest render disabled. */
 export interface HealthMetricsTab {
   key: HealthMetricsTabKey;
@@ -24,19 +27,16 @@ export interface HealthMetricsTab {
   route: string | null;
 }
 
-/** Static per-section chrome: heading, lede and footnote all ship verbatim from the design. */
-export interface HealthMetricsEngagementSection {
+/** A section with its DOM ids resolved once, so the template never calls a builder per render. */
+export interface HealthMetricsEngagementSectionView {
   key: HealthMetricsEngagementSectionKey;
-  /** Sub-nav label. */
   label: string;
-  /** `<h2>` text. */
   heading: string;
-  /** Lede paragraph under the heading. */
   description: string;
-  /** Footnote under the section body; empty when the design has none. */
   footnote: string;
-  /** Renders the footnote with a caution marker (design's ⚠ non-member data caveat). */
   footnoteCaution: boolean;
+  id: string;
+  headingId: string;
 }
 
 /** Sub-nav badge for one section: a count plus an optional qualifier note. */
@@ -88,6 +88,13 @@ export interface HealthMetricsEngagementGroupRow {
   /** ISO date of the group's last meeting, or `null` if it has never met. */
   lastMetDate: string | null;
   periods: HealthMetricsEngagementGroupPeriod[];
+}
+
+/** One table row with its selected-period numbers and sparkline series already resolved. */
+export interface HealthMetricsEngagementGroupRowView {
+  row: HealthMetricsEngagementGroupRow;
+  period: HealthMetricsEngagementGroupPeriod | null;
+  trend: (number | null)[];
 }
 
 /** Sub-nav badge inputs for `#committees`, aggregated over the whole filtered set, not the page. */

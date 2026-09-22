@@ -63,7 +63,14 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
     await promise;
 
     expect(next).not.toHaveBeenCalled();
-    expect(getGroupAttendance).toHaveBeenCalledWith({ foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 });
+    expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), {
+      foundationSlug: 'acme',
+      projectSlug: null,
+      groupType: 'all',
+      range: 'YTD',
+      page: 1,
+      size: 25,
+    });
     expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
   });
 
@@ -71,7 +78,7 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
     const { promise } = call({ foundationSlug: 'acme', projectSlug: 'acme-core', groupType: 'wg', range: 'COMPLETED_YEAR', page: '3', size: '50' });
     await promise;
 
-    expect(getGroupAttendance).toHaveBeenCalledWith({
+    expect(getGroupAttendance).toHaveBeenCalledWith(expect.anything(), {
       foundationSlug: 'acme',
       projectSlug: 'acme-core',
       groupType: 'wg',

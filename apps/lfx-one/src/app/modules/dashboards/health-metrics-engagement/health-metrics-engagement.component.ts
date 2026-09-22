@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, HostListener, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, HostListener, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX,
@@ -11,13 +11,18 @@ import {
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementSectionId, buildHealthMetricsEngagementSubNavItems, isHealthMetricsEngagementSectionKey } from '@lfx-one/shared/utils';
-import { filter } from 'rxjs';
+import { debounceTime, filter, Subject } from 'rxjs';
 
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
-import type { HealthMetricsEngagementGroupCounts, HealthMetricsEngagementSectionKey, HealthMetricsEngagementSubNavItem } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementSectionKey,
+  HealthMetricsEngagementSectionView,
+  HealthMetricsEngagementSubNavItem,
+} from '@lfx-one/shared/interfaces';
 
 /**
  * Engagement (Level 2) — six anchored sections inside their own scrolling pane, beside a sub-nav
@@ -37,7 +42,12 @@ export class HealthMetricsEngagementComponent {
 
   protected readonly panes = viewChild<ElementRef<HTMLElement>>('panes');
 
-  protected readonly sections = HEALTH_METRICS_ENGAGEMENT_SECTIONS;
+  // Ids resolved once here rather than per render — the template only reads fields.
+  protected readonly sections: HealthMetricsEngagementSectionView[] = HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => ({
+    ...section,
+    id: buildHealthMetricsEngagementSectionId(section.key),
+    headingId: `${buildHealthMetricsEngagementSectionId(section.key)}-heading`,
+  }));
   // `null` until measured client-side; the CSS variable then bounds the pane so only it scrolls.
   protected readonly panesHeight = signal<string | null>(null);
   protected readonly activeSection = signal<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
@@ -59,6 +69,7 @@ export class HealthMetricsEngagementComponent {
     })
   );
 
+  private readonly resize$ = new Subject<void>();
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
 
@@ -70,12 +81,20 @@ export class HealthMetricsEngagementComponent {
     });
     // The activation band hangs off the sticky header, which the gate measures after first paint —
     // rebuild the observer whenever that height settles rather than hard-coding a pixel offset.
-    effect(() => {
-      const offset = this.chrome.stickyTopPx();
-      if (!this.scrollSpyObserver) return;
-      // A taller header pushes the pane down, so the measured height moves with it.
+    toObservable(this.chrome.stickyTopPx)
+      .pipe(takeUntilDestroyed())
+      .subscribe((offset) => {
+        if (!this.scrollSpyObserver) return;
+        // A taller header pushes the pane down, so the measured height moves with it.
+        this.measurePanesHeight();
+        this.setupScrollSpy(offset);
+      });
+
+    // Resize fires per animation frame while dragging; rebuilding two observers each time is wasteful.
+    this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.measurePanesHeight();
-      this.setupScrollSpy(offset);
+      // The pane may have just gained or lost its scrollbar, which changes the spy's root.
+      this.setupScrollSpy();
     });
 
     // Router anchorScrolling already scrolls on navigation; re-settle after paint because async
@@ -85,13 +104,7 @@ export class HealthMetricsEngagementComponent {
 
   @HostListener('window:resize')
   protected onWindowResize(): void {
-    this.measurePanesHeight();
-    // The pane may have just gained or lost its scrollbar, which changes the spy's root.
-    this.setupScrollSpy();
-  }
-
-  protected sectionId(key: HealthMetricsEngagementSectionKey): string {
-    return buildHealthMetricsEngagementSectionId(key);
+    this.resize$.next();
   }
 
   protected scrollToSection(key: HealthMetricsEngagementSectionKey): void {

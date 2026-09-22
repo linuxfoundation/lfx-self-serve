@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -17,7 +17,7 @@ import {
 import { buildHealthMetricsEngagementGroupTrend, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { distinctUntilChanged, of, switchMap, tap } from 'rxjs';
+import { distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
 
 import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
 import { EngagementGroupAttendanceDrawerComponent } from '../engagement-group-attendance-drawer/engagement-group-attendance-drawer.component';
@@ -30,6 +30,7 @@ import type {
   HealthMetricsEngagementGroupCounts,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupRowView,
   HealthMetricsEngagementGroupTypeFilter,
 } from '@lfx-one/shared/interfaces';
 
@@ -80,25 +81,37 @@ export class EngagementGroupAttendanceComponent {
   protected readonly response: Signal<HealthMetricsEngagementGroupAttendance> = this.initResponse();
 
   protected readonly rows = computed(() => this.response().rows);
+  // Resolved here rather than per cell: the template only reads signals, and the period lookup and
+  // trend build run once per row per response instead of on every change-detection pass.
+  protected readonly rowViews = computed<HealthMetricsEngagementGroupRowView[]>(() => {
+    const range = this.chrome.selectedRange();
+    return this.rows().map((row) => ({
+      row,
+      period: selectHealthMetricsEngagementGroupPeriod(row, range),
+      trend: buildHealthMetricsEngagementGroupTrend(row),
+    }));
+  });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
   protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 
   public constructor() {
-    effect(() => this.countsChange.emit(this.counts()));
-    toObservable(this.query)
+    toObservable(this.counts)
       .pipe(takeUntilDestroyed())
-      .subscribe((query) => this.syncUrl(query));
-  }
+      .subscribe((counts) => this.countsChange.emit(counts));
 
-  /** The row's numbers for the selected period; the other three stay on the row for the sparkline. */
-  protected periodOf(row: HealthMetricsEngagementGroupRow): ReturnType<typeof selectHealthMetricsEngagementGroupPeriod> {
-    return selectHealthMetricsEngagementGroupPeriod(row, this.chrome.selectedRange());
-  }
-
-  protected trendOf(row: HealthMetricsEngagementGroupRow): (number | null)[] {
-    return buildHealthMetricsEngagementGroupTrend(row);
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.query)
+        .pipe(
+          // `skip(1)` drops the state just read out of the URL — navigating back to it would be a
+          // no-op write during hydration.
+          skip(1),
+          distinctUntilChanged((a, b) => a.groupType === b.groupType && a.page === b.page),
+          takeUntilDestroyed()
+        )
+        .subscribe((query) => this.syncUrl(query));
+    }
   }
 
   protected onFilterChange(key: string): void {

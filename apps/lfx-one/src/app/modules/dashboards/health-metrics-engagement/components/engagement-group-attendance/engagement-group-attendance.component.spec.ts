@@ -3,6 +3,7 @@
 
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { provideRouter } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -48,6 +49,8 @@ describe('EngagementGroupAttendanceComponent', () => {
       imports: [EngagementGroupAttendanceComponent],
       providers: [
         provideRouter([]),
+        // The drawer this table opens is a PrimeNG p-drawer, whose panel animation needs a provider.
+        provideNoopAnimations(),
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
         { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
@@ -111,6 +114,27 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(row.textContent).toContain('No meetings this period');
     expect(row.textContent).toContain('Dormant');
     expect(row.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
+  });
+
+  // lfx-table resolves the clicked row through `data-row-index`; without it the drawer is unreachable.
+  it('opens the drawer on the row the user clicked', async () => {
+    await render();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
+    expect(row.getAttribute('data-row-index')).toBe('0');
+    row.click();
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
+    expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
+  });
+
+  it('holds the count back while a read is in flight, so it never reads zero mid-fetch', async () => {
+    await render();
+    fixture.componentInstance['loading'].set(true);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {

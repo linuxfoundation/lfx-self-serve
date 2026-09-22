@@ -1,7 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { HealthMetricsEngagementGroupAttendance } from '../interfaces/health-metrics-engagement.interface';
+import type {
+  HealthMetricsEngagementAttendanceTone,
+  HealthMetricsEngagementGroupAttendance,
+  HealthMetricsEngagementGroupTypeFilter,
+} from '../interfaces/health-metrics-engagement.interface';
 
 /**
  * Health Metrics tab bar. Overview and Engagement are routable today; the remaining four render
@@ -90,10 +94,10 @@ export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK = 'Board & voting-memb
  * board / TSC-TAC / other-voting split — the design places governance detail in Members.
  */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS = [
-  { key: 'all', label: 'All types', trendLabel: 'All meetings' },
-  { key: 'gov', label: 'Governance', trendLabel: 'Governance' },
-  { key: 'sigtag', label: 'SIG / TAG', trendLabel: 'SIG / TAG' },
-  { key: 'wg', label: 'Working groups', trendLabel: 'Working groups' },
+  { key: 'all', label: 'All types' },
+  { key: 'gov', label: 'Governance' },
+  { key: 'sigtag', label: 'SIG / TAG' },
+  { key: 'wg', label: 'Working groups' },
 ] as const;
 
 /** Below this many meetings in the period, attendance reads "No data" rather than a percentage. */
@@ -121,10 +125,11 @@ export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
 
 /**
- * Which `GROUP_TYPE_LABEL` values fall into each filter cut. Derived from `COMMITTEE_CATEGORIES`;
- * verify against the view's distinct labels before the filter ships to users.
+ * Which `GROUP_TYPE_LABEL` values fall into each filter cut. `all` has no entry on purpose — it
+ * drops the predicate rather than listing every label. Derived from `COMMITTEE_CATEGORIES`, whose
+ * vocabulary is not yet confirmed against the view's distinct labels.
  */
-export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Record<string, readonly string[]> = {
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthMetricsEngagementGroupTypeFilter, readonly string[]>> = {
   gov: [
     'Board',
     'Technical Steering Committee',
@@ -135,7 +140,9 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Record<string, readonl
     'Code of Conduct',
     'Government Advisory Council',
   ],
-  sigtag: ['Special Interest Group'],
+  // `COMMITTEE_CATEGORIES` has no TAG entry, so the literal is listed speculatively — it matches
+  // nothing until the view confirms it, rather than silently folding TAGs into governance.
+  sigtag: ['Special Interest Group', 'Technical Advisory Group'],
   wg: ['Working Group'],
 };
 
@@ -147,6 +154,17 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEn
   rows: [],
   totalRecords: 0,
   counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 },
+};
+
+/** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
+export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_WIDTH_PX = 60;
+export const HEALTH_METRICS_ENGAGEMENT_SPARKLINE_HEIGHT_PX = 18;
+
+/** Attendance-bar fill per tone — grey at zero, amber below the threshold, blue otherwise. */
+export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetricsEngagementAttendanceTone, string> = {
+  empty: 'bg-gray-300',
+  low: 'bg-amber-500',
+  ok: 'bg-blue-500',
 };
 
 /** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */

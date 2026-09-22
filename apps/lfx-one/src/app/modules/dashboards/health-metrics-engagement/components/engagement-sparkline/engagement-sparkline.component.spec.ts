@@ -25,11 +25,20 @@ describe('EngagementSparklineComponent', () => {
     expect(path).toContain('L60.0 0.0');
   });
 
-  it('skips periods with no invited population rather than plotting them as zero', async () => {
+  it('breaks the line over a period with no invited population rather than plotting it as zero', async () => {
     const fixture = await render([0.5, null, 0.5]);
 
     const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
-    expect(path.split('L')).toHaveLength(2);
+    // Two move commands and no line between them — the gap stays visible instead of being bridged.
+    expect(path).toBe('M0.0 18.0 M60.0 18.0');
+  });
+
+  it('keeps each period in its own slot, so a gap does not slide later periods left', async () => {
+    const fixture = await render([null, 0.4, 0.8]);
+
+    const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
+    // The first plotted point sits at the second of three slots, not at x=0.
+    expect(path).toBe('M30.0 18.0 L60.0 0.0');
   });
 
   it('renders nothing but a placeholder below two points, which cannot express a direction', async () => {

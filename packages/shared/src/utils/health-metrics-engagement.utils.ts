@@ -11,6 +11,7 @@ import {
 
 import type { HealthMetricsRange } from '../interfaces/dashboard-metric.interface';
 import type {
+  HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementSectionKey,
@@ -47,7 +48,7 @@ export function formatHealthMetricsEngagementAttendance(fraction: number | null,
  * Three bar states, not the Overview's five classification codes: nobody showed up, showing up
  * badly, or fine. Blue is the design's interaction colour and is deliberately reused for "fine".
  */
-export function resolveHealthMetricsEngagementAttendanceTone(fraction: number | null): 'empty' | 'low' | 'ok' {
+export function resolveHealthMetricsEngagementAttendanceTone(fraction: number | null): HealthMetricsEngagementAttendanceTone {
   if (fraction === null || fraction === 0) {
     return 'empty';
   }

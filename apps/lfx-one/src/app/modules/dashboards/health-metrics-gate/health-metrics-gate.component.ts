@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, effect, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { HEALTH_METRICS_BASE_PATH, HEALTH_METRICS_OVERVIEW_ENABLED_FLAG, HEALTH_METRICS_TABS } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -72,8 +73,10 @@ export class HealthMetricsGateComponent {
   public constructor() {
     afterNextRender(() => this.hydrated.set(true));
     // The header only exists inside the enabled branch, so it appears a render after `hydrated`
-    // latches — an effect on the viewChild signal picks it up whenever that happens.
-    effect(() => this.observeHeaderHeight(this.pageHeader()?.nativeElement));
+    // latches — watching the viewChild signal picks it up whenever that happens.
+    toObservable(this.pageHeader)
+      .pipe(takeUntilDestroyed())
+      .subscribe((header) => this.observeHeaderHeight(header?.nativeElement));
   }
 
   protected setPeriod(period: HealthMetricsYearOption): void {

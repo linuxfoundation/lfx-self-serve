@@ -3281,7 +3281,7 @@ export class AnalyticsController {
         throw ServiceValidationError.forField('range', 'Group attendance has no data for this range', { operation: 'get_engagement_group_attendance' });
       }
 
-      const response = await this.healthMetricsEngagementService.getGroupAttendance({
+      const response = await this.healthMetricsEngagementService.getGroupAttendance(req, {
         foundationSlug,
         projectSlug: projectSlug || null,
         groupType: groupType as HealthMetricsEngagementGroupTypeFilter,

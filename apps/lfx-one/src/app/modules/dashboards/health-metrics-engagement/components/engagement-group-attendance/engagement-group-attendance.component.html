@@ -8,7 +8,13 @@
       [selectedFilter]="groupType()"
       (filterChange)="onFilterChange($event)"
       data-testid="engagement-group-attendance-filters" />
-    <span class="text-[13px] text-gray-500" data-testid="engagement-group-attendance-count">{{ countLabel() }}</span>
+    <span class="text-[13px] text-gray-500" data-testid="engagement-group-attendance-count">
+      @if (loading()) {
+        &mdash;
+      } @else {
+        {{ countLabel() }}
+      }
+    </span>
   </div>
 
   @if (!loading() && totalRecords() === 0) {
@@ -19,7 +25,7 @@
       data-testid="engagement-group-attendance-empty" />
   } @else {
     <lfx-table
-      [value]="rows()"
+      [value]="rowViews()"
       [loading]="loading()"
       [lazy]="true"
       [lazyLoadOnInit]="false"
@@ -32,7 +38,7 @@
       currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
       selectionMode="single"
       (onPage)="onTablePage($event)"
-      (onRowSelect)="onRowSelect($event.data)"
+      (onRowSelect)="onRowSelect($event.data.row)"
       data-testid="engagement-group-attendance-table">
       <ng-template #header>
         <tr>
@@ -45,9 +51,11 @@
         </tr>
       </ng-template>
 
-      <ng-template #body let-row>
-        @let period = periodOf(row);
-        <tr [attr.data-testid]="'engagement-group-attendance-row-' + row.committeeId">
+      <ng-template #body let-view let-rowIndex="rowIndex">
+        @let row = view.row;
+        @let period = view.period;
+        <!-- lfx-table resolves a row click through data-row-index; without it onRowSelect never fires. -->
+        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'engagement-group-attendance-row-' + row.committeeId">
           <td>
             <div class="flex flex-col gap-0.5">
               <span class="text-sm font-medium text-gray-900">{{ row.committeeName }}</span>
@@ -72,7 +80,7 @@
             <span class="text-sm text-gray-800">{{ row.lastMetDate ? (row.lastMetDate | date: 'MMM d, y') : '—' }}</span>
           </td>
           <td>
-            <lfx-engagement-sparkline [series]="trendOf(row)" [ariaLabel]="'Attendance history for ' + row.committeeName" />
+            <lfx-engagement-sparkline [series]="view.trend" [ariaLabel]="'Attendance history for ' + row.committeeName" />
           </td>
           <td class="w-[150px]">
             @if (period?.dormant) {

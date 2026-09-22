@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, input } from '@angular/core';
+import { HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE } from '@lfx-one/shared/constants';
 import { formatHealthMetricsEngagementAttendance, resolveHealthMetricsEngagementAttendanceTone } from '@lfx-one/shared/utils';
 
 /**
@@ -19,13 +20,12 @@ export class EngagementAttendanceBarComponent {
 
   protected readonly label = computed(() => formatHealthMetricsEngagementAttendance(this.attendancePct(), this.meetingsHeld()));
   protected readonly tone = computed(() => resolveHealthMetricsEngagementAttendanceTone(this.attendancePct()));
-  // A bar is only honest once the label is a percentage; "—" and "No data" render the track alone.
-  protected readonly widthPct = computed(() => (this.label().endsWith('%') ? Math.round((this.attendancePct() ?? 0) * 100) : 0));
-  protected readonly fillClass = computed(() => FILL_CLASS[this.tone()]);
+  // Mirrors the label's own rule rather than reading its text: below the confidence threshold a
+  // filled bar would read as a real measurement, and a copy change must not silently zero the bar.
+  protected readonly widthPct = computed(() => {
+    const share = this.attendancePct();
+    if (share === null || this.meetingsHeld() < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE) return 0;
+    return Math.round(Math.min(Math.max(share, 0), 1) * 100);
+  });
+  protected readonly fillClass = computed(() => HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS[this.tone()]);
 }
-
-const FILL_CLASS: Record<'empty' | 'low' | 'ok', string> = {
-  empty: 'bg-gray-300',
-  low: 'bg-amber-500',
-  ok: 'bg-blue-500',
-};

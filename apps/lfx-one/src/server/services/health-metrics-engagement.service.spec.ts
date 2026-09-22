@@ -25,11 +25,15 @@ import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT } from '@lfx-one/sha
 
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from './health-metrics-engagement.service';
 
+import type { Request } from 'express';
 import type { HealthMetricsEngagementGroupQuery } from '@lfx-one/shared/interfaces';
 
 function query(overrides: Partial<HealthMetricsEngagementGroupQuery> = {}): HealthMetricsEngagementGroupQuery {
   return { foundationSlug: 'acme', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25, ...overrides };
 }
+
+/** The logger only reads request metadata off this, so a bare cast is enough for the service call. */
+const req = {} as Request;
 
 /** One warehouse row, every period column populated so the four-period mapping is exercised. */
 function warehouseRow(overrides: Record<string, unknown> = {}) {
@@ -88,7 +92,7 @@ describe('HealthMetricsEngagementService', () => {
   });
 
   it('maps every period onto the row, oldest first, so the sparkline needs no second read', async () => {
-    const response = await service.getGroupAttendance(query());
+    const response = await service.getGroupAttendance(req, query());
 
     expect(response.rows).toHaveLength(1);
     expect(response.rows[0]?.committeeId).toBe('c-1');
@@ -101,13 +105,13 @@ describe('HealthMetricsEngagementService', () => {
   it('keeps a null attendance null rather than folding it into a real zero', async () => {
     execute.mockResolvedValue({ rows: [warehouseRow({ ATTENDANCE_PCT_YTD: null, INVITED_COUNT_YTD: 0, IS_DORMANT_YTD: true })] });
 
-    const response = await service.getGroupAttendance(query());
+    const response = await service.getGroupAttendance(req, query());
 
     expect(response.rows[0]?.periods[3]).toMatchObject({ attendancePct: null, dormant: true });
   });
 
   it('reads the window aggregates off the first row, so the counts cover the whole filtered set', async () => {
-    const response = await service.getGroupAttendance(query());
+    const response = await service.getGroupAttendance(req, query());
 
     expect(response.totalRecords).toBe(34);
     expect(response.counts).toEqual({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
@@ -116,13 +120,13 @@ describe('HealthMetricsEngagementService', () => {
   it('reports zeroed counts for an empty page instead of reading an absent first row', async () => {
     execute.mockResolvedValue({ rows: [] });
 
-    const response = await service.getGroupAttendance(query());
+    const response = await service.getGroupAttendance(req, query());
 
     expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
   });
 
   it('selects, ranks and aggregates on the requested period suffix', async () => {
-    await service.getGroupAttendance(query({ range: 'COMPLETED_YEAR_2' }));
+    await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_2' }));
 
     const sql = lastSql();
     expect(sql).toContain('ORDER BY sort_rank_prev_completed_year ASC NULLS LAST, committee_name ASC');
@@ -134,36 +138,36 @@ describe('HealthMetricsEngagementService', () => {
   });
 
   it('binds the low-attendance thresholds ahead of the foundation, and drops the project predicate in all-projects scope', async () => {
-    await service.getGroupAttendance(query());
+    await service.getGroupAttendance(req, query());
 
     expect(lastBinds()).toEqual([0.5, 3, 'acme']);
     expect(lastSql()).not.toContain('project_slug = ?');
   });
 
   it('binds a project slug and every type label of the selected cut', async () => {
-    await service.getGroupAttendance(query({ projectSlug: 'acme-core', groupType: 'wg' }));
+    await service.getGroupAttendance(req, query({ projectSlug: 'acme-core', groupType: 'wg' }));
 
     expect(lastBinds()).toEqual([0.5, 3, 'acme', 'acme-core', 'Working Group']);
     expect(lastSql()).toContain('AND project_slug = ? AND group_type_label IN (?)');
   });
 
   it('adds no type predicate for the all-types cut, which has no label list', async () => {
-    await service.getGroupAttendance(query({ groupType: 'all' }));
+    await service.getGroupAttendance(req, query({ groupType: 'all' }));
 
     expect(lastSql()).not.toContain('group_type_label IN');
   });
 
   it('interpolates page and size only after clamping them to a safe integer range', async () => {
-    await service.getGroupAttendance(query({ page: 3, size: 25 }));
+    await service.getGroupAttendance(req, query({ page: 3, size: 25 }));
     expect(lastSql()).toContain('LIMIT 25 OFFSET 50');
 
     // A hostile or malformed page/size can never reach the SQL — these are interpolated, not bound.
-    await service.getGroupAttendance(query({ page: Number.NaN, size: 5000 }));
+    await service.getGroupAttendance(req, query({ page: Number.NaN, size: 5000 }));
     expect(lastSql()).toContain('LIMIT 100 OFFSET 0');
   });
 
   it('returns the default response for a range the view has no columns for', async () => {
-    const response = await service.getGroupAttendance(query({ range: 'COMPLETED_YEAR_4' }));
+    const response = await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_4' }));
 
     expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
     expect(execute).not.toHaveBeenCalled();
@@ -173,7 +177,7 @@ describe('HealthMetricsEngagementService', () => {
     execute.mockRejectedValue(new Error('Object does not exist'));
     isMissingObjectError.mockReturnValue(true);
 
-    const response = await service.getGroupAttendance(query());
+    const response = await service.getGroupAttendance(req, query());
 
     expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
     expect(warning).toHaveBeenCalled();
@@ -182,7 +186,7 @@ describe('HealthMetricsEngagementService', () => {
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
-    await expect(service.getGroupAttendance(query())).rejects.toThrow('connection reset');
+    await expect(service.getGroupAttendance(req, query())).rejects.toThrow('connection reset');
     expect(warning).not.toHaveBeenCalled();
   });
 });

@@ -19,6 +19,7 @@ import type {
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
+import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
@@ -64,7 +65,7 @@ export class HealthMetricsEngagementService {
    * ascending attendance), so the product's ranking is applied in SQL and survives pagination —
    * sorting a single page client-side would rank only that page.
    */
-  public async getGroupAttendance(query: HealthMetricsEngagementGroupQuery): Promise<HealthMetricsEngagementGroupAttendance> {
+  public async getGroupAttendance(req: Request, query: HealthMetricsEngagementGroupQuery): Promise<HealthMetricsEngagementGroupAttendance> {
     const suffix = RANGE_COLUMN_SUFFIX[query.range];
     if (!suffix) {
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
@@ -115,7 +116,8 @@ export class HealthMetricsEngagementService {
       WHERE foundation_slug = ?
         ${projectPredicate}
         ${typePredicate}
-      ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC
+      -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
+      ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC, committee_id ASC
       LIMIT ${size} OFFSET ${offset}
     `;
 
@@ -125,19 +127,14 @@ export class HealthMetricsEngagementService {
     } catch (error) {
       // Also matches a missing GRANT, not just a missing view — `err` disambiguates the two.
       if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      logger.warning(
-        undefined,
-        'get_engagement_group_attendance',
-        'Group attendance query hit a missing-object/not-authorized error; returning default response',
-        {
-          foundation_slug: query.foundationSlug,
-          err: error,
-        }
-      );
+      logger.warning(req, 'get_engagement_group_attendance', 'Group attendance query hit a missing-object/not-authorized error; returning default response', {
+        foundation_slug: query.foundationSlug,
+        err: error,
+      });
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
     }
 
-    logger.debug(undefined, 'get_engagement_group_attendance', 'Fetched group attendance page', {
+    logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,
       project_slug: query.projectSlug,
       group_type: query.groupType,
