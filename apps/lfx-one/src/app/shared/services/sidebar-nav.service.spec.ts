@@ -12,7 +12,6 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
@@ -32,7 +31,6 @@ import { SidebarNavService } from './sidebar-nav.service';
 describe('SidebarNavService', () => {
   const activeLens = signal<Lens>('foundation');
   const mktgOsEnabled = signal(false);
-  const orgLensEnabled = signal(false);
   const orgEasyclaEnabled = signal(false);
   const orgRoiEnabled = signal(false);
   const orgSegment = signal<string | null>(null);
@@ -62,7 +60,6 @@ describe('SidebarNavService', () => {
     selectedProject.set(null);
     selectedFoundation.set(null);
     mktgOsEnabled.set(false);
-    orgLensEnabled.set(false);
     orgEasyclaEnabled.set(false);
     orgRoiEnabled.set(false);
     orgSegment.set(null);
@@ -85,7 +82,6 @@ describe('SidebarNavService', () => {
           useValue: {
             getBooleanFlag: vi.fn((key: string) => {
               if (key === MKTG_OS_AGENTS_ENABLED_FLAG) return mktgOsEnabled;
-              if (key === ORG_LENS_ENABLED_FLAG) return orgLensEnabled;
               if (key === ORG_LENS_CLA_M3_ENABLED_FLAG) return orgEasyclaEnabled;
               if (key === ORG_LENS_ROI_ENABLED_FLAG) return orgRoiEnabled;
               if (key === MENTORSHIP_ENABLED_FLAG) return mentorshipEnabled;
@@ -357,7 +353,6 @@ describe('SidebarNavService', () => {
 
   it('hides EasyCLA from the org lens while the M3 flag is off', () => {
     activeLens.set('org');
-    orgLensEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
 
@@ -367,7 +362,6 @@ describe('SidebarNavService', () => {
 
   it('puts EasyCLA between Code Contributions and Events inside Organization Engagement', () => {
     activeLens.set('org');
-    orgLensEnabled.set(true);
     orgEasyclaEnabled.set(true);
 
     const items = TestBed.inject(SidebarNavService).sidebarItems();
@@ -385,7 +379,6 @@ describe('SidebarNavService', () => {
 
   it('keeps ROI after Projects while EasyCLA stays in the section when both flags are on', () => {
     activeLens.set('org');
-    orgLensEnabled.set(true);
     orgEasyclaEnabled.set(true);
     orgRoiEnabled.set(true);
 
@@ -402,7 +395,6 @@ describe('SidebarNavService', () => {
   // agree on the org-scoped form or ROI/EasyCLA silently fall to the end of their section.
   it('addresses every Org Lens item to the selected organization and still places ROI and EasyCLA by their neighbours', () => {
     activeLens.set('org');
-    orgLensEnabled.set(true);
     orgEasyclaEnabled.set(true);
     orgRoiEnabled.set(true);
     orgSegment.set('acme-inc');

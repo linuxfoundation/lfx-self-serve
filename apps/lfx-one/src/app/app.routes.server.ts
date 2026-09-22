@@ -22,9 +22,9 @@ export const serverRoutes: ServerRoute[] = [
   // what the agreement view already did, because the page fetches nothing off-browser.
   //
   // A `RenderMode.Client` entry here is NOT a substitute. Declared that way, a direct visit to a
-  // group address lands on the Org Lens not-found page — `orgLensEnabledGuard`'s fail-closed
-  // redirect (`/org/not-found`, spec 050 US5), which is reached because `org-lens-enabled`
-  // resolves to nothing in the client shell. The reserved-word segment
+  // group address lands on the addressed org's overview instead of the page (`orgLensClaM3EnabledGuard`'s
+  // fail-closed redirect) — this address needs the server render so pasted, shared and returned-to
+  // URLs resolve. The reserved-word segment
   // this page replaced was client-rendered and did work, so the entry looks safe by analogy and
   // then breaks exactly the pasted, shared and returned-to URLs the group address exists for.
   //

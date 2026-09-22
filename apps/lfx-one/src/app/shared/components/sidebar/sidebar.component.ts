@@ -15,7 +15,6 @@ import {
   LENS_DEFAULT_ROUTES,
   MY_CLAS_ENABLED_FLAG,
   OPEN_PROFILE_BANNER_LINK_CLICKED,
-  ORG_LENS_ENABLED_FLAG,
   PERSONA_OPTIONS,
   PERSONA_PRIORITY,
 } from '@lfx-one/shared/constants';
@@ -85,16 +84,14 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
-  /** Parent lens hint for the org-selector slot; ANDed with the flag + grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
+  /** Parent lens hint for the org-selector slot; ANDed with the grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
   public readonly showOrgSelector = input<boolean>(false);
   public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
   public readonly selectorPanelOpen = model<boolean>(false);
 
-  /** Final org-selector visibility — `parent input ∧ flag ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
+  /** Final org-selector visibility — `parent input ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
   protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
-
-  private readonly orgLensFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
@@ -114,9 +111,9 @@ export class SidebarComponent {
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
-  // Browser-only hydration gate. The org lens is enabled by a browser-only LaunchDarkly flag, so the
-  // server render always clamps to the me lens and would emit a me-lens menu; hydrating that against a
-  // client-resolved org menu leaves stale me-lens nodes on screen. Holding the concrete menu back until
+  // Browser-only hydration gate. Org-lens menu items are still shaped by browser-only LaunchDarkly
+  // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one; hydrating
+  // one against the other leaves stale nodes on screen. Holding the concrete menu back until
   // afterNextRender means the server and the first client render both show the loading skeleton
   // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
   protected readonly hydrated = signal(false);
@@ -251,7 +248,6 @@ export class SidebarComponent {
   private initEffectiveShowOrgSelector(): Signal<boolean> {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
-      if (!this.orgLensFlag()) return false;
       // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
       // the selector visible for users on dev sandbox accounts that have a seeded org list but no
       // settings-doc grants in the upstream b2b_org_settings docs.

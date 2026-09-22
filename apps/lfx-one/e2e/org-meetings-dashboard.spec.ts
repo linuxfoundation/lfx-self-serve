@@ -149,9 +149,6 @@ async function gotoOrgMeetingsPage(page: Page): Promise<void> {
   await page.goto(ORG_MEETINGS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-  if (!page.url().includes('/org/meetings')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/meetings redirected away');
-  }
 }
 
 test.describe('Org Meetings insights (6a redesign)', () => {
@@ -368,9 +365,6 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_MEETINGS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/meetings')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/meetings redirected away');
-    }
 
     await expect(page.getByTestId('org-meetings-no-company-empty-state')).toBeVisible();
     await expect(page.getByTestId('org-meetings-kpi-cards')).toHaveCount(0);

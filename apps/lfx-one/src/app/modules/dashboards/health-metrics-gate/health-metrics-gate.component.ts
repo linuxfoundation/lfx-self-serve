@@ -24,7 +24,7 @@ import type { HealthMetricsTab, HealthMetricsYearOption } from '@lfx-one/shared/
  * `HealthMetricsComponent` mounts server-side, its data fetches run to completion there (SSR waits
  * for them before serializing), and the legacy page stays rendered on the client until the flag
  * resolves post-hydration — only then does the swap happen. A `CanMatchFn` awaiting flag
- * readiness (the `org-lens-enabled.guard.ts` pattern) would skip that duplicate legacy render, but
+ * readiness (the `org-lens-cla-m3-enabled.guard.ts` pattern) would skip that duplicate legacy render, but
  * it would hold the whole route's client-side render until the provider reports for the ~100% of
  * users the flag is still off for — a worse trade while this page is dark-launched to a small
  * cohort; remove this gate rather than ramping the flag to 100% through it.

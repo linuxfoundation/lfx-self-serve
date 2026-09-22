@@ -11,7 +11,7 @@ The LFX One UI adapts to **who the user is** (persona) and **what perspective th
 | **Project context** | `ProjectContextService`    | `ProjectContext \| null` (foundation- or project-scoped)                  |
 
 - A **lens** is a viewing perspective the user actively chooses (persisted in a cookie).
-- A **persona** is derived server-side from the user's committee memberships and governs which lenses they're allowed to use.
+- A **persona** is derived server-side from the user's committee memberships and, together with `writer` grants, governs which of the gated lenses (`foundation`, `project`) they're allowed to use — `me` and `org` are available to every authenticated user.
 - A **project context** is the scope inside a lens (e.g. which foundation or project is selected).
 
 ## Lens
@@ -22,17 +22,17 @@ The LFX One UI adapts to **who the user is** (persona) and **what perspective th
 type Lens = 'me' | 'foundation' | 'project' | 'org';
 
 class LensService {
-  activeLens: Signal<Lens>; // currently-active lens, clamped to persona-allowed set
-  availableLenses: Signal<LensOption[]>; // lenses the current persona can switch to
-  setLens(lens: Lens): void; // no-op if the lens isn't allowed for this persona
+  activeLens: Signal<Lens>; // currently-active lens, clamped to the allowed set
+  availableLenses: Signal<LensOption[]>; // lenses the user can switch to
+  setLens(lens: Lens): void; // no-op if the lens isn't allowed
 }
 ```
 
 Key behaviors:
 
-- `activeLens` is a **computed signal** — it reads the user's selected lens from a 30-day cookie and clamps it to the set allowed by their persona. If the persisted lens is disallowed, it falls back to `DEFAULT_LENS`.
+- `activeLens` is a **computed signal** — it reads the user's selected lens from a 30-day cookie and clamps it to their allowed set (`me` and `org` always; `foundation`/`project` by role or grant). If the persisted lens is disallowed, it falls back to `DEFAULT_LENS`.
 - `setLens()` rejects disallowed lenses silently (no throw), so unprivileged callers can't escalate scope.
-- `availableLenses` is driven by role-based access rules (`deriveAllowedLenses` in `packages/shared/src/utils/lens.utils.ts`): root writers see all four lenses; `foundation` is available when `hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant || isRootAuditor`; `project` is available when `hasProjectRole || isRootWriter || hasWriterProject`. `hasMarketingGrant` is true when the `marketing-ops-fga-enabled` flag is on and the user holds `marketing_auditor` or `campaign_manager` on any project — this grants foundation-lens access without a board/root role, scoped in practice to the Marketing Impact and Campaigns pages (see the [Route wiring](#route-wiring) guards below). A user can carry multiple grant sources and see the union of their lenses.
+- `availableLenses` is driven by role-based access rules (`deriveAllowedLenses` in `packages/shared/src/utils/lens.utils.ts`): `me` and `org` are available to every authenticated user; `foundation` is available when `hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant || isRootAuditor`; `project` is available when `hasProjectRole || isRootWriter || hasWriterProject` (a root writer holds both gated lenses, so still sees all four). `hasMarketingGrant` is true when the `marketing-ops-fga-enabled` flag is on and the user holds `marketing_auditor` or `campaign_manager` on any project — this grants foundation-lens access without a board/root role, scoped in practice to the Marketing Impact and Campaigns pages (see the [Route wiring](#route-wiring) guards below). A user can carry multiple grant sources and see the union of their lenses.
 
 ### Route wiring
 
@@ -188,7 +188,7 @@ Nothing re-writes an address behind a canonical-record fetch; `orgPathParamGuard
 
 ## Org Lens empty states
 
-Every Org Lens "nothing to show" — page-level and section-level — renders from one component, `<lfx-org-lens-empty-state>` (`apps/lfx-one/src/app/shared/components/org-lens-empty-state/`), driven by the copy registry `ORG_LENS_EMPTY_STATE_COPY` (`packages/shared/src/constants/org-lens-empty-state.constants.ts`; state names and action kinds in `packages/shared/src/interfaces/org-lens-empty-state.interface.ts`). Call sites choose a **state**, never a string; product and design review the registry file. The one exception is the Org-Lens-off dead end on `/org/not-found` (spec 050 US5), which keeps its static cause-blind wording.
+Every Org Lens "nothing to show" — page-level and section-level — renders from one component, `<lfx-org-lens-empty-state>` (`apps/lfx-one/src/app/shared/components/org-lens-empty-state/`), driven by the copy registry `ORG_LENS_EMPTY_STATE_COPY` (`packages/shared/src/constants/org-lens-empty-state.constants.ts`; state names and action kinds in `packages/shared/src/interfaces/org-lens-empty-state.interface.ts`). Call sites choose a **state**, never a string; product and design review the registry file. There are no exceptions — the `/org/not-found` dead end renders from the registry too.
 
 **Page level** is decided by `OrgLensEmptyStateService.pageState` (`apps/lfx-one/src/app/shared/services/org-lens-empty-state.service.ts`), which mirrors the server read gate's precedence (spec 053 FR-016):
 
