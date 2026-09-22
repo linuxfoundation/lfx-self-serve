@@ -22,8 +22,8 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
 describe('AccountContextService — address-adopted selection', () => {
   const UID_A = '0014100000MgaAAAAA';
   const UID_B = '0014100000MgbBBBBB';
-  const seedA: Account = { accountId: UID_A, accountName: 'Alpha', accountSlug: '', membershipTier: '', uid: UID_A };
-  const addressedB: Account = { accountId: UID_B, accountName: 'Bravo', accountSlug: '', membershipTier: '', uid: UID_B, slug: 'bravo-llc' };
+  const seedA: Account = { accountId: UID_A, accountName: 'Alpha', membershipTier: '', uid: UID_A };
+  const addressedB: Account = { accountId: UID_B, accountName: 'Bravo', membershipTier: '', uid: UID_B, slug: 'bravo-llc' };
 
   let cookies: Map<string, string>;
   let service: AccountContextService;
@@ -324,7 +324,6 @@ describe('AccountContextService — address-adopted selection', () => {
       const staleRow = {
         accountId: UID_B,
         accountName: 'Bravo (stale Snowflake name)',
-        accountSlug: 'bravo-llc',
         logoUrl: null,
         cdevOrgId: null,
         membershipTierDisplayName: 'Gold',

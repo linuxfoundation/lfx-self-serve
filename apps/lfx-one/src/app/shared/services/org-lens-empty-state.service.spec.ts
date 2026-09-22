@@ -35,7 +35,7 @@ interface Harness {
 }
 
 function account(uid: string): Account {
-  return { accountId: uid, accountName: uid, accountSlug: '', membershipTier: '', logoUrl: null, uid, slug: null };
+  return { accountId: uid, accountName: uid, membershipTier: '', logoUrl: null, uid, slug: null };
 }
 
 function setup(): Harness {

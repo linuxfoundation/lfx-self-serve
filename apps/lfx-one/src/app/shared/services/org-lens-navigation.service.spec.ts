@@ -16,8 +16,8 @@ import { OrgLensNavigationService } from './org-lens-navigation.service';
 // to the address on each kind of page, and what links are built while a selection exists or not.
 describe('OrgLensNavigationService', () => {
   const UID_A = '0014100000MgaAAAAA';
-  const acme: Account = { accountId: UID_A, accountName: 'Acme', accountSlug: '', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
-  const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const placeholder: Account = { accountId: '', accountName: '', membershipTier: '' };
 
   let selectedAccount: WritableSignal<Account>;
   /** Derived exactly as `AccountContextService` derives it (slug, else SFID; reserved names fall back). */

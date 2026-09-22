@@ -317,15 +317,13 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: hasAccess
-        ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }]
-        : [],
+      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }] : [])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: 'Gold' }] : [])
   );
 
   await page.route('**/api/orgs/me/role-grants', (route) =>
