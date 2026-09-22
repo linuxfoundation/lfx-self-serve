@@ -3,16 +3,18 @@
 
 import { Component, computed, inject, input, linkedSignal, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import {
   ORG_LENS_ROI_PROJECT_PICKER_DEFAULT_COUNT,
   ORG_LENS_ROI_PROJECT_SELECTION_VIEWS,
   ORG_LENS_ROI_PROJECT_VIEW_LABELS,
   ORG_LENS_ROI_PROJECT_VIEWS,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectOption, OrgLensRoiProjectRow, OrgLensRoiProjectView } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiMethod, OrgLensRoiProjectOption, OrgLensRoiProjectRow, OrgLensRoiProjectView, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
 
@@ -26,10 +28,11 @@ import { OrgRoiProjectsTableComponent } from '../org-roi-projects-table/org-roi-
 @Component({
   selector: 'lfx-org-roi-projects-section',
   imports: [
+    OrgLensEmptyStateComponent,
     OrgRoiProjectPickerComponent,
     OrgRoiProjectsBarComponent,
-    OrgRoiProjectsSankeyComponent,
     OrgRoiProjectsBubbleComponent,
+    OrgRoiProjectsSankeyComponent,
     OrgRoiProjectsTableComponent,
     SkeletonModule,
   ],
@@ -47,8 +50,10 @@ export class OrgRoiProjectsSectionComponent {
   protected readonly view = signal<OrgLensRoiProjectView>('bar');
 
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  protected readonly forbidden = signal(false);
+  /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the rows in hand, below. */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  /** Bumped by Retry; part of the request key so the same organization and method re-issue the read. */
+  private readonly attempt = signal(0);
 
   /**
    * The rows alone, not the whole response — nothing here reads the envelope's `method`, and
@@ -57,6 +62,14 @@ export class OrgRoiProjectsSectionComponent {
   protected readonly projectRows: Signal<OrgLensRoiProjectRow[]> = this.initProjectRows();
 
   protected readonly hasRows: Signal<boolean> = computed(() => this.projectRows().length > 0);
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  /** The shared state to render instead of the views, or `null` while there are projects to show. */
+  protected readonly emptyState = computed(() => {
+    const outcome = this.loadOutcome();
+    return sectionEmptyState(outcome === 'records' && !this.hasRows() ? 'empty' : outcome);
+  });
 
   /** Already ranked by return: the payload arrives ordered that way and nothing re-sorts it here. */
   protected readonly options: Signal<OrgLensRoiProjectOption[]> = computed(() =>
@@ -121,23 +134,26 @@ export class OrgRoiProjectsSectionComponent {
     this.selectionOverride.set(projectIds);
   }
 
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
+
   private initProjectRows(): Signal<OrgLensRoiProjectRow[]> {
-    // A typed pair rather than a delimited string, so nothing has to be parsed back out or cast.
+    // A typed record rather than a delimited string, so nothing has to be parsed back out or cast.
     //
     // The dedup the string gave for free has to be restored explicitly: the selected-account object
-    // is rewritten in place, so this recomputes on changes that leave both fields identical, and a
+    // is rewritten in place, so this recomputes on changes that leave every field identical, and a
     // fresh object reference would re-emit and refetch each time.
-    const request$ = toObservable(computed(() => ({ orgUid: this.accountContext.selectedAccount()?.accountId ?? '', method: this.method() }))).pipe(
-      distinctUntilChanged((previous, next) => previous.orgUid === next.orgUid && previous.method === next.method)
-    );
+    const request$ = toObservable(
+      computed(() => ({ orgUid: this.accountContext.selectedAccount()?.accountId ?? '', method: this.method(), attempt: this.attempt() }))
+    ).pipe(distinctUntilChanged((previous, next) => previous.orgUid === next.orgUid && previous.method === next.method && previous.attempt === next.attempt));
 
     return toSignal(
       request$.pipe(
         filter(({ orgUid }) => !!orgUid),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
         }),
         switchMap(({ orgUid, method }) =>
           this.roiService.getProjects(orgUid, method).pipe(
@@ -146,9 +162,7 @@ export class OrgRoiProjectsSectionComponent {
             catchError((error: unknown) => {
               console.error('Failed to load ROI projects section', error);
               this.loading.set(false);
-              // Only a 403 may show the no-access message; a 503 must not.
-              if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
-              else this.failed.set(true);
+              this.loadOutcome.set(classifySectionError(error));
               return of([] as OrgLensRoiProjectRow[]);
             })
           )

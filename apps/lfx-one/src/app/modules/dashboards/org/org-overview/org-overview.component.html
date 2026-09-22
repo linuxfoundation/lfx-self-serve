@@ -6,8 +6,9 @@
   data-testid="org-overview-page"
   [attr.data-loaded]="loaded()"
   [attr.data-empty]="isEmpty()"
-  [attr.data-no-access]="hasNoOrgAccess()">
-  @if (!hasNoOrgAccess()) {
+  [attr.data-no-access]="hasPageState()"
+  [attr.data-page-state]="pageState()">
+  @if (!hasPageState()) {
     <header class="flex flex-col gap-1 md:flex-row md:items-center md:gap-3" data-testid="org-overview-header">
       <h1 class="font-display font-light text-2xl" data-testid="org-overview-title">{{ companyName() }} Overview</h1>
       @if (tierLabel(); as tier) {
@@ -16,19 +17,13 @@
     </header>
   }
 
-  @if (hasNoOrgAccess()) {
-    <section
-      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
-      data-testid="org-overview-no-access-state">
-      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
-      </div>
-      <h2 class="text-base font-semibold text-gray-900" data-testid="org-overview-no-access-title">Organization Lens is not available</h2>
-      <p class="max-w-md text-sm text-gray-600" data-testid="org-overview-no-access-description">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
-        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-overview-no-access-contact-support">contact us</button>.
-      </p>
-    </section>
+  @if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-overview-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!loaded()) {
     <!-- Pre-settled state — render lightweight skeletons so the page doesn't flash the empty-state during the race
          between the org-selector boot fetches and the first valid selectedAccount. -->

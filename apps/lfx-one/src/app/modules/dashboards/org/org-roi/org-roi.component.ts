@@ -4,18 +4,20 @@
 import { afterNextRender, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ORG_LENS_ROI_DEFAULT_METHOD } from '@lfx-one/shared/constants';
-import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiCoverage, OrgLensRoiMethod, OrgLensRoiSummary, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 
 import { OrgRoiAnnualTrendComponent } from './components/org-roi-annual-trend/org-roi-annual-trend.component';
 import { OrgRoiAssumptionsDrawerComponent } from './components/org-roi-assumptions-drawer/org-roi-assumptions-drawer.component';
@@ -55,7 +57,7 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
     OrgRoiAssumptionsDrawerComponent,
     OrgRoiEmptyStateComponent,
     EmptyStateComponent,
-    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
     SkeletonModule,
   ],
   templateUrl: './org-roi.component.html',
@@ -67,19 +69,30 @@ export class OrgRoiComponent {
   private readonly personaService = inject(PersonaService);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly method = signal<OrgLensRoiMethod>(ORG_LENS_ROI_DEFAULT_METHOD);
   protected readonly drawerVisible = signal(false);
   protected readonly portfolioLoading = signal(true);
-  protected readonly portfolioFailed = signal(false);
-  protected readonly portfolioForbidden = signal(false);
+  /**
+   * Spec 053 (FR-014/FR-015) — how the last portfolio request ended. `denied` (403 `FORBIDDEN`) and
+   * `unverifiable` (503 `ROLE_GRANTS_UNAVAILABLE`) are told apart by the refusal's stated code, so an
+   * access check that could not run never reads as a permissions message.
+   */
+  protected readonly portfolioOutcome = signal<OrgLensSectionOutcome>('records');
+  /** The section state the portfolio refusal renders, or null while it has records. */
+  protected readonly portfolioEmptyState = computed(() => sectionEmptyState(this.portfolioOutcome()));
+  protected readonly portfolioEmptyTestId = computed(() => (this.portfolioOutcome() === 'denied' ? 'org-roi-forbidden' : 'org-roi-error'));
+  /** Bumped by Retry so the request key changes without an org or method change. */
+  private readonly portfolioAttempt = signal(0);
 
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   protected readonly hasCompany: Signal<boolean> = computed(
@@ -103,13 +116,7 @@ export class OrgRoiComponent {
    */
   protected readonly canChooseMethod: Signal<boolean> = computed(
     () =>
-      this.loaded() &&
-      !this.hasNoOrgAccess() &&
-      this.hasCompany() &&
-      this.hasAnalyticsId() &&
-      !this.portfolioLoading() &&
-      !this.portfolioForbidden() &&
-      !this.portfolioFailed()
+      this.loaded() && !this.hasPageState() && this.hasCompany() && this.hasAnalyticsId() && !this.portfolioLoading() && this.portfolioOutcome() === 'records'
   );
 
   /**
@@ -144,11 +151,10 @@ export class OrgRoiComponent {
   protected readonly showsFigures: Signal<boolean> = computed(
     () =>
       this.loaded() &&
-      !this.hasNoOrgAccess() &&
+      !this.hasPageState() &&
       this.hasCompany() &&
       this.hasAnalyticsId() &&
-      !this.portfolioForbidden() &&
-      !this.portfolioFailed() &&
+      this.portfolioOutcome() === 'records' &&
       this.summaryMatchesSelectedOrg() &&
       this.hasRoiData()
   );
@@ -175,19 +181,23 @@ export class OrgRoiComponent {
     this.persistMethod(method);
   }
 
+  /** Retry action of the portfolio refusal: re-issue the same request without a reload. */
+  public retryPortfolio(): void {
+    this.portfolioAttempt.update((attempt) => attempt + 1);
+  }
+
   private initPortfolio(): Signal<{ summary: OrgLensRoiSummary; coverage: OrgLensRoiCoverage }> {
     const defaultValue = { summary: EMPTY_SUMMARY, coverage: EMPTY_COVERAGE };
     // Keyed by string, not the account object: that object is rewritten in place and would retrigger the fetch.
-    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}`));
+    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}|${this.portfolioAttempt()}`));
 
     return toSignal(
       requestKey$.pipe(
-        map((key) => key.split('|') as [string, OrgLensRoiMethod]),
+        map((key) => key.split('|') as [string, OrgLensRoiMethod, string]),
         filter(([orgUid]) => !!orgUid),
         tap(() => {
           this.portfolioLoading.set(true);
-          this.portfolioFailed.set(false);
-          this.portfolioForbidden.set(false);
+          this.portfolioOutcome.set('records');
         }),
         switchMap(([orgUid, method]) =>
           combineLatest({
@@ -198,9 +208,7 @@ export class OrgRoiComponent {
             catchError((error: unknown) => {
               console.error('Failed to load ROI portfolio summary', error);
               this.portfolioLoading.set(false);
-              // Only a 403 may show the no-access message; a 503 must not.
-              if ((error as { status?: number })?.status === 403) this.portfolioForbidden.set(true);
-              else this.portfolioFailed.set(true);
+              this.portfolioOutcome.set(classifySectionError(error));
               return of(defaultValue);
             })
           )
