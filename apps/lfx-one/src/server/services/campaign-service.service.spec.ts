@@ -2563,6 +2563,12 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     ['wrapped in a div', '<div><img src="https://evil.test/probe.png"></div>'],
     ['a lone line break', '<p><br></p>'],
     ['a non-breaking space', '<p>&nbsp;</p>'],
+    // Invisible Unicode: `stripHtml` removes tags and JS-whitespace, not format characters, so
+    // each of these read as non-empty until the guard asked by Unicode category instead.
+    ['a zero-width space', '<p>\u200B</p>'],
+    ['a soft hyphen', '<p>\u00AD</p>'],
+    ['a word joiner', '<p>\u2060</p>'],
+    ['a BIDI mark', '<p>\u200E</p>'],
   ])('refuses a body that is visually empty: %s', async (_label, html) => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', sections: [{ type: 'rich_text', html }] }));
 

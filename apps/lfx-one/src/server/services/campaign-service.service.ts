@@ -3,7 +3,7 @@
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
-import { escapeHtml, sanitizeDisplayText, stripHtml, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml, hasVisibleText, sanitizeDisplayText, stripHtml, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -939,11 +939,12 @@ export class CampaignServiceClient {
       // reads downstream as "blank this field", so a staged draft would lose the body it was
       // meant to set. An error the operator can retry is the honest answer; a silent blank is not.
       //
-      // Judged on the TEXT, not the string length. `<p><img src=...></p>` sanitizes to `<p></p>`
-      // -- non-empty as a string, empty to a reader -- so a `body.trim() === ''` check passed it
-      // and shipped an empty paragraph. `stripHtml` also collapses `<br>` and `&nbsp;`, which
-      // are the other ways a body can be structurally present and visually absent.
-      if (stripHtml(body).trim() === '') {
+      // Judged with the SHARED predicate, not a fourth bespoke check. This question has been
+      // answered three different ways in this file's history -- `!== ''`, `.trim() === ''`, and
+      // `stripHtml(...).trim() === ''` -- and each one passed a value the previous caught: an
+      // empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
+      // `hasVisibleText` asks it by Unicode category, so there is one definition to keep right.
+      if (!hasVisibleText(stripHtml(body))) {
         logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
         return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
       }

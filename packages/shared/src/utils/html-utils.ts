@@ -13,6 +13,25 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
 };
 
 /** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
+/**
+ * Whether a string contains anything a reader would actually SEE.
+ *
+ * The one predicate for "is this visually empty", because the question has now been asked in
+ * three places and answered three different ways: a `!== ''` string check, a `.trim() === ''`
+ * check, and a `stripHtml(...).trim()` check. Each passed a value the previous one caught --
+ * an empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
+ *
+ * `\p{C}` is Other (control, format, surrogate, private-use, unassigned) and `\p{Z}` is
+ * Separator, so anything outside both is a character with a glyph. Asking by CATEGORY is what
+ * makes this stable: a format character added to Unicode later needs no change here.
+ *
+ * @param value - Text, already stripped of markup if the caller has markup
+ * @returns true when at least one character renders
+ */
+export function hasVisibleText(value: string): boolean {
+  return /[^\p{C}\p{Z}]/u.test(value);
+}
+
 function isDecodableCodePoint(code: number): boolean {
   // The SURROGATE range is excluded, not just the out-of-range values. `String.fromCodePoint`
   // accepts 0xD800-0xDFFF without throwing and returns an unpaired surrogate, so `&#xD800;`
@@ -100,7 +119,7 @@ export function sanitizeDisplayText(value: string): string {
   // `\p{C}` covers format, control, surrogate, private-use and unassigned; `\p{Z}` covers every
   // separator including the whitespace the trim already handled. Anything outside both is a
   // character with a glyph, which is exactly the question being asked.
-  return /[^\p{C}\p{Z}]/u.test(cleaned) ? cleaned : '';
+  return hasVisibleText(cleaned) ? cleaned : '';
 }
 
 /**
