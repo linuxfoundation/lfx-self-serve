@@ -3,7 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, input, output } from '@angular/core';
-import { HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE } from '@lfx-one/shared/constants';
 
 import type { HealthMetricsEngagementSectionKey, HealthMetricsEngagementSubNavItem } from '@lfx-one/shared/interfaces';
 
@@ -24,5 +24,5 @@ export class EngagementSubNavComponent {
 
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
 
-  protected readonly crossLink = HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK;
+  protected readonly crossReferenceNote = HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE;
 }

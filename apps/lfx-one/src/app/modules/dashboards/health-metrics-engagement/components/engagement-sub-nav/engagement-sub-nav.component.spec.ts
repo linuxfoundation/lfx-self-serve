@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE } from '@lfx-one/shared/constants';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { EngagementSubNavComponent } from './engagement-sub-nav.component';
@@ -28,10 +28,10 @@ describe('EngagementSubNavComponent', () => {
     fixture.detectChanges();
   });
 
-  it('renders one button per item plus the Members cross-link', () => {
-    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-sub-nav-"]:not([data-testid$="cross-link"])')).toHaveLength(3);
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-link"]').textContent.trim()).toBe(
-      HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK
+  it('renders one button per item plus the Members cross-reference note', () => {
+    expect(fixture.nativeElement.querySelectorAll('[data-testid^="engagement-sub-nav-"]:not([data-testid$="cross-reference-note"])')).toHaveLength(3);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-cross-reference-note"]').textContent.trim()).toBe(
+      HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE
     );
   });
 

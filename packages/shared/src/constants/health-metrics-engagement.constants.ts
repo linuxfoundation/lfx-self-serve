@@ -85,8 +85,8 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
 ] as const;
 
-/** Static note under the sub-nav items; plain text until the Members tab exists to link to. */
-export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK = 'Board & voting-member attendance is reported per member in Members';
+/** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
+export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_REFERENCE_NOTE = 'Board & voting-member attendance is reported per member in Members';
 
 /**
  * Group-type cuts shared by the group-attendance and attendance-trend segments. `sigtag` matches a
