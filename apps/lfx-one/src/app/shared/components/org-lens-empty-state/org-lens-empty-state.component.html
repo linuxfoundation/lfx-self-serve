@@ -7,7 +7,7 @@
   </lfx-card>
 } @else {
   <section
-    class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+    class="flex flex-col items-center justify-center gap-5 rounded-lg border border-solid border-[#E2E8F0] bg-white px-6 py-12 text-center md:py-14"
     [attr.data-testid]="testId() + '-state'"
     [attr.data-state]="state()">
     <ng-container [ngTemplateOutlet]="content" />
@@ -16,20 +16,16 @@
 
 <ng-template #content>
   <div
-    class="mx-auto flex max-w-lg flex-col items-center gap-3 text-center"
+    class="mx-auto flex w-full max-w-[28rem] flex-col items-center gap-5 text-center"
     [attr.data-testid]="withCard() ? testId() + '-state' : null"
     [attr.data-state]="withCard() ? state() : null">
-    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-      <i [class]="copy().icon + ' text-2xl'" aria-hidden="true"></i>
+    <div class="flex h-14 w-14 items-center justify-center rounded-full bg-[#ECF4FF] text-[#009AFF]">
+      <i [class]="copy().icon + ' text-[32px]'" aria-hidden="true"></i>
     </div>
 
-    <h2 class="text-base font-semibold text-gray-900" [attr.data-testid]="testId() + '-title'">{{ headline() }}</h2>
+    <h2 class="font-display text-lg font-bold text-[#0F172A] md:text-xl" [attr.data-testid]="testId() + '-title'">{{ headline() }}</h2>
 
-    @if (productLine(); as line) {
-      <p class="text-sm text-gray-600" [attr.data-testid]="testId() + '-product-line'">{{ line }}</p>
-    }
-
-    <p class="text-sm text-gray-600" [attr.data-testid]="testId() + '-description'">{{ reason() }}</p>
+    <p class="text-sm text-[#475569]" [attr.data-testid]="testId() + '-description'">{{ reason() }}</p>
 
     @if (!orgListIsPrimary()) {
       <ng-container [ngTemplateOutlet]="orgListTpl" />
@@ -39,16 +35,29 @@
       @if (action.action === 'org-list') {
         <!-- FR-008: the caller's own organizations ARE the primary control — each row is the way out. -->
         @if (orgList().length > 0) {
-          <p class="mt-1 text-sm font-medium text-gray-900" [attr.data-testid]="testId() + '-primary'">{{ action.label }}</p>
+          <p class="text-sm font-medium text-[#0F172A]" [attr.data-testid]="testId() + '-primary'">{{ action.label }}</p>
           <ng-container [ngTemplateOutlet]="orgListTpl" />
         }
       } @else if (action.action === 'contact-support') {
-        <lfx-button [label]="action.label" severity="primary" size="small" lfxOpenIntercom [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
+        <lfx-button
+          [label]="action.label"
+          icon="fa-light fa-life-ring"
+          severity="primary"
+          size="small"
+          lfxOpenIntercom
+          [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
       } @else if (action.route) {
-        <lfx-button [label]="action.label" severity="primary" size="small" [routerLink]="action.route" [attr.data-testid]="testId() + '-primary'"></lfx-button>
+        <lfx-button
+          [label]="action.label"
+          icon="fa-light fa-arrow-right"
+          severity="primary"
+          size="small"
+          [routerLink]="action.route"
+          [attr.data-testid]="testId() + '-primary'"></lfx-button>
       } @else if (action.href) {
         <lfx-button
           [label]="action.label"
+          icon="fa-light fa-arrow-up-right-from-square"
           severity="primary"
           size="small"
           [href]="action.href"
@@ -68,9 +77,9 @@
       } @else if (action.action === 'reset-filters') {
         <lfx-button
           [label]="action.label"
+          icon="fa-light fa-filter-circle-xmark"
           severity="primary"
           size="small"
-          [outlined]="true"
           (onClick)="onAction(action)"
           [attr.data-testid]="testId() + '-reset-filters'"></lfx-button>
       }
@@ -78,7 +87,7 @@
 
     @if (secondary(); as action) {
       @if (action.action === 'contact-support') {
-        <button type="button" lfxOpenIntercom class="text-sm font-medium text-gray-700 underline" [attr.data-testid]="testId() + '-contact-support'">
+        <button type="button" lfxOpenIntercom class="text-[13px] font-medium text-[#64748B] underline" [attr.data-testid]="testId() + '-contact-support'">
           {{ action.label }}
         </button>
       } @else if (action.href) {
@@ -86,7 +95,7 @@
           [href]="action.href"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-sm font-medium text-gray-700 underline"
+          class="text-[13px] font-medium text-[#64748B] underline"
           [attr.data-testid]="testId() + '-secondary'"
           >{{ action.label }}</a
         >

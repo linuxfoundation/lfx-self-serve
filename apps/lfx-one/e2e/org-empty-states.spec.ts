@@ -161,7 +161,6 @@ function overviewState(page: Page) {
     root: page.getByTestId('org-overview-no-access-state'),
     title: page.getByTestId('org-overview-no-access-title'),
     description: page.getByTestId('org-overview-no-access-description'),
-    productLine: page.getByTestId('org-overview-no-access-product-line'),
     primary: page.getByTestId('org-overview-no-access-primary'),
     retry: page.getByTestId('org-overview-no-access-retry'),
     contactSupport: page.getByTestId('org-overview-no-access-contact-support'),
@@ -272,9 +271,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(state.root).toHaveAttribute('data-state', 'no-organization');
       await expect(state.title).toHaveText('No organization linked to your account');
-      // FR-002: a first-time visitor learns what Organization Lens is.
-      await expect(state.productLine).toBeVisible();
-      await expect(state.productLine).toContainText('Organization Lens shows how a company is involved in open source');
+      // FR-002: a first-time visitor learns what Organization Lens is — the product sentence opens the paragraph.
+      await expect(state.description).toContainText('Organization Lens shows how a company shows up in open source');
       // Primary: Add an affiliation → the in-app profile attributions page (SC-004 destination).
       await expect(state.primary).toBeVisible();
       await expect(state.primary).toContainText('Add an affiliation');
