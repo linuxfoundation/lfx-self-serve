@@ -5148,7 +5148,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
   });
 
-  it('sanitizes variant B for the PREVIEW and the STAGED value alike', () => {
+  it('sanitizes variant B for the preview', () => {
     selectEmail();
     internals().abTestForm.controls.enabled.setValue(true);
     internals().abTestForm.controls.subjectB.setValue('B subject');
@@ -5157,6 +5157,15 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     // Sanitizing only the preview is WORSE than sanitizing neither: the pixel vanishes from the
     // one view that could catch it while still shipping in the sent email.
+    //
+    // The name says PREVIEW only, deliberately. An earlier version claimed "and the STAGED value
+    // alike" while asserting `ForSend() === Preview()` -- a tautology, since ForSend is defined
+    // as `() => Preview()`, so it could not fail. That assertion was removed in 2a09b23 and the
+    // name was left behind, promising coverage this body does not provide.
+    //
+    // The staged value is covered where it can actually fail: the controller test
+    // 'sanitizes both HTML bodies and every display field at the request boundary' asserts the
+    // emitted payload, which is what ships.
     const preview = internals().abTestBodyHtmlBPreview();
     expect(preview).not.toContain('<img');
     expect(preview).toContain('Hi');
