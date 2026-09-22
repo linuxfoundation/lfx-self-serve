@@ -491,6 +491,37 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
     });
 
+    it('keeps Load-more rows on screen after a successful invalidate', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      getContributorAcknowledgments
+        .mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true })))
+        .mockReturnValueOnce(
+          of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper', approved: false })], { totalCount: 2, nextKey: null, canEdit: true }))
+        );
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({ reason: 'compliance' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Ada Lovelace', 'Grace Hopper']);
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+      expect(invalidateAcknowledgment).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', 'ecla-2', { reason: 'compliance' });
+    });
+
     it('does not refetch when the invalidate fails, and reports the server message', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();

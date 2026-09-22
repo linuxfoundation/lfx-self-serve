@@ -27,7 +27,7 @@ import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, skip, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, expand, finalize, of, reduce, skip, startWith, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -94,6 +94,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private readonly errorMessage = signal<string | null>(null);
   private readonly loadingMore = signal(false);
   private readonly fetchGeneration = signal(0);
+  private pagesLoaded = 1;
   private readonly pendingInvalidateIds = signal<ReadonlySet<string>>(new Set());
   // Bumped after a successful invalidate to re-run the fetch cycle. A counter rather than a
   // boolean so two invalidates in a row each produce a distinct tuple for `distinctUntilChanged`.
@@ -142,6 +143,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       distinctUntilChanged(([a1, b1, c1, d1], [a2, b2, c2, d2]) => a1 === a2 && b1 === b2 && c1 === c2 && d1 === d2),
       switchMap(([orgUid, signatureId, search]) => {
         this.fetchGeneration.update((generation) => generation + 1);
+        this.pagesLoaded = 1;
         // Load more is a separate request from this pipeline. A tuple change must drop its
         // in-flight flag here: waiting for that request's finalize leaves the new page's
         // Load more disabled, and a request that never returns leaves it disabled for good.
@@ -245,6 +247,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       .subscribe({
         next: (next) => {
           if (this.fetchGeneration() !== generation) return;
+          this.pagesLoaded += 1;
           const merged: OrgClaContributorAcknowledgmentList = {
             ...next,
             signatureId: list.signatureId,
@@ -330,7 +333,15 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
             summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
             detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
           });
-          if (!this.destroyed) this.reloadTrigger.update((value) => value + 1);
+          if (this.destroyed) return;
+          if (this.pagesLoaded > 1) {
+            const generation = this.fetchGeneration();
+            const search = (this.searchTerm() ?? '').trim();
+            this.markInvalidatedInPlace(signatureId);
+            this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+            return;
+          }
+          this.reloadTrigger.update((value) => value + 1);
         },
         error: (error: unknown) => {
           this.messageService.add({
@@ -340,6 +351,52 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           });
         },
       });
+  }
+
+  private markInvalidatedInPlace(signatureId: string): void {
+    const list = this.page() ?? this.listSignal();
+    if (!list) return;
+    this.page.set({
+      ...list,
+      list: list.list.map((ack) => (ack.signatureId === signatureId ? { ...ack, approved: false } : ack)),
+    });
+  }
+
+  private refreshLoadedSpan(orgUid: string, claSignatureId: string, search: string, pages: number, generation: number): void {
+    let remaining = pages;
+    this.claService
+      .getContributorAcknowledgments(orgUid, claSignatureId, { search })
+      .pipe(
+        expand((list) => {
+          remaining -= 1;
+          if (remaining <= 0 || !list.nextKey || this.destroyed || this.fetchGeneration() !== generation) return EMPTY;
+          return this.claService.getContributorAcknowledgments(orgUid, claSignatureId, { search, nextKey: list.nextKey });
+        }),
+        reduce((acc, list) => this.mergeAcknowledgmentPage(acc, list), null as OrgClaContributorAcknowledgmentList | null),
+        catchError(() => of(null)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((merged) => {
+        if (!merged || this.destroyed || this.fetchGeneration() !== generation) return;
+        this.pagesLoaded = pages;
+        this.page.set(merged);
+      });
+  }
+
+  private mergeAcknowledgmentPage(
+    acc: OrgClaContributorAcknowledgmentList | null,
+    list: OrgClaContributorAcknowledgmentList
+  ): OrgClaContributorAcknowledgmentList {
+    if (!acc) return list;
+    return {
+      ...list,
+      signatureId: acc.signatureId,
+      list: [...acc.list, ...list.list],
+      resultCount: acc.list.length + list.list.length,
+      totalCount: list.totalCount,
+      canEdit: list.canEdit,
+      nextKey: list.nextKey,
+    };
   }
 
   /**
