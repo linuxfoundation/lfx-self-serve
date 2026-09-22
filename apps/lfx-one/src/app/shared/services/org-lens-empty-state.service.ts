@@ -9,7 +9,7 @@ import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
-import { first, skipWhile } from 'rxjs';
+import { filter, skipWhile, take } from 'rxjs';
 
 /**
  * Spec 053 — the single page-level classifier for Org Lens empty states (FR-016 precedence).
@@ -154,7 +154,10 @@ export class OrgLensEmptyStateService {
         this.listLoading$
           .pipe(
             skipWhile((loading) => !loading),
-            first((loading) => !loading),
+            // filter + take(1), not first(): first() throws EmptyError if teardown completes the source
+            // before the refresh settles; take(1) just completes.
+            filter((loading) => !loading),
+            take(1),
             takeUntilDestroyed(this.destroyRef)
           )
           .subscribe(() => this.listRetryInFlight.set(false));
