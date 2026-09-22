@@ -805,6 +805,23 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 
+  it('does not reapply a preference belonging to a committee dropped while locked', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    // The committee that carried the preference is gone before the lock lifts, so the unlock
+    // has to read the current selection rather than replay what an earlier one asked for.
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
   it('keeps an explicit opt-out that predates the lock, rather than reapplying on unlock', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);

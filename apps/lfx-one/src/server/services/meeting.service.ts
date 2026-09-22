@@ -541,7 +541,7 @@ export class MeetingService {
     };
 
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into roster visibility.
+    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
     if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
       createPayload.show_meeting_attendees = false;
     }
@@ -613,7 +613,7 @@ export class MeetingService {
     const meetingType = meetingData.meeting_type ?? existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
-    // to opt a board/restricted meeting into roster visibility.
+    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
     if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
       updatePayload.show_meeting_attendees = false;
     }

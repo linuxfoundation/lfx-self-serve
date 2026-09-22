@@ -467,7 +467,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
-  show_meeting_attendees?: boolean; // Share the guest list with the meeting's guests: meeting page, ICS ATTENDEE list, and every BFF roster endpoint (registrants, my-meeting-registrants, rsvp, past-meeting participants)
+  show_meeting_attendees?: boolean; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -498,7 +498,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
-  show_meeting_attendees?: boolean | null; // Share the guest list with the meeting's guests: meeting page, ICS ATTENDEE list, and every BFF roster endpoint (registrants, my-meeting-registrants, rsvp, past-meeting participants)
+  show_meeting_attendees?: boolean | null; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join

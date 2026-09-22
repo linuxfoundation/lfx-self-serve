@@ -1629,6 +1629,18 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     expect(payload.show_meeting_attendees).toBe(false);
   });
 
+  it('still locks a board meeting when the update explicitly clears restricted', async () => {
+    // `restricted: false` is meaningful, not absent, so the resolution has to be nullish —
+    // a truthiness fallback would read the stored `true` here and pass for the wrong reason.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, restricted: false });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
   it('forwards true when the meeting is unlocked', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});

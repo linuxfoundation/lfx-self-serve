@@ -43,8 +43,16 @@ describe('isShowMeetingAttendeesLocked', () => {
 
   it('locks a restricted meeting whose flag arrived as a string', () => {
     // Nothing coerces this field between v1 and here, so a stringified boolean must not
-    // fail open on the one branch that is meant to be strictest.
+    // fail open on the one branch that is meant to be strictest. The same casing and
+    // whitespace variance that meeting_type has to absorb applies here too.
     expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'true')).toBe(true);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'True')).toBe(true);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, ' TRUE ')).toBe(true);
+  });
+
+  it('does not treat other strings as restricted', () => {
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, 'false')).toBe(false);
+    expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, '')).toBe(false);
   });
 
   it('is unlocked for unrestricted non-board meetings', () => {

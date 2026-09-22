@@ -20,7 +20,8 @@ import { canJoinMeeting } from './meeting.utils';
  * those differences would expose exactly the roster this guards.
  */
 export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | string | null | undefined): boolean {
-  if (restricted === true || restricted === 'true') {
+  const restrictedValue = typeof restricted === 'string' ? restricted.trim().toLowerCase() === 'true' : restricted === true;
+  if (restrictedValue) {
     return true;
   }
   return meetingType?.trim().toLowerCase() === MeetingType.BOARD.toLowerCase();
