@@ -4,7 +4,6 @@
 import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
-  ApiRequestOptions,
   CreateVoteRequest,
   CreateVoteResponseRequest,
   EnableVoteResponse,
@@ -35,13 +34,19 @@ import { ProjectService } from './project.service';
  */
 export class VoteService {
   /**
-   * Enable-PUT retry grid for the FGA replication gap (GH-1637): bounded at 3 attempts, 600 ms
-   * apart — paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell
-   * apart); the happy path pays nothing. Attempt counts and fixed sleeps alone can't bound
-   * wall-clock time (a slow 403 returns as late as the request timeout), so the loop runs under
-   * the shared `enableEndToEndMaxDurationMs` deadline.
+   * Enable-PUT retry cadence for the FGA replication gap (GH-1637): 600 ms between attempts,
+   * paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell apart);
+   * the happy path pays nothing. The loop has no attempt cap — attempt counts alone can't bound
+   * wall-clock time (a slow 403 returns as late as the request timeout), so the shared
+   * `enableEndToEndMaxDurationMs` deadline is the only bound. On the create+open path this grid
+   * is the readiness mechanism itself (GH-2729 pivot): a pre-enable read probe was tried and
+   * abandoned — a check fired before fga-sync's tuple write caches `false` for the cluster's
+   * OpenFGA check-query TTL (10 s on dev) and every retry inside the TTL reads that cached
+   * denial back, so the probe manufactured the very denial that defeated it (2/2 drafts in live
+   * verification, 2026-09-21). Only the enable's own retries — graced past the tuple write by
+   * `fgaTuplePropagationGraceMs` and bounded past the cache TTL by the deadline — open the vote
+   * on this cluster.
    */
-  private static readonly enableMaxAttempts = 3;
   private static readonly enableRetryDelayMs = 600;
 
   /**
@@ -61,34 +66,47 @@ export class VoteService {
    * End-to-end wall-clock cap for one `enableVote` call's retry grid (GH-1637) — attempt 1 is
    * exempt (see `enableFirstAttemptMaxDurationMs`); the deadline established before the loop
    * bounds retries only: every retry PUT receives only the remaining budget as its request
-   * timeout, and each backoff sleep is truncated to the deadline. Kept at 11.7 s (the pre-GH-2730
-   * poll-window-plus-backoff sum) as a harmless upper bound: without it, three slow 403 denials
-   * at the API client's 30 s default could take ~90 s to surface. A backoff that would leave less
-   * than `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is rethrown with
-   * the exhaustion warning instead, since a sub-floor attempt would abort as a 408 and mask the
+   * timeout, and each backoff sleep is truncated to the deadline. Sized at 13 s to span the dev
+   * cluster's 10 s OpenFGA check-query cache TTL (GH-2729 pivot): if attempt 1 lands before
+   * fga-sync's tuple write despite the grace, its denial is cached for the TTL and only a
+   * post-expiry retry recomputes — one issued at ~10.2 s still gets ~2.8 s, enough for the
+   * synchronous ITX enable chain (~1.4–2.7 s observed). A genuine denial pays the same grid and
+   * surfaces at ~12 s. Without a cap, slow 403 denials at the API client's 30 s default could
+   * take minutes to surface. A backoff that would leave less than
+   * `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is rethrown with the
+   * exhaustion warning instead, since a sub-floor attempt would abort as a 408 and mask the
    * denial the loop actually saw. (GH-2730 removed the post-PUT index poll, so the method returns
    * right after the PUT succeeds.)
    */
-  private static readonly enableEndToEndMaxDurationMs = 11700;
+  private static readonly enableEndToEndMaxDurationMs = 13000;
 
   /**
-   * Vote poll budget (GH-1637), shared by create/delete at one 300 ms cadence — create probes the
-   * FGA-gated resource GET on this same grid rather than the index, because FGA tuple readiness
-   * (not index visibility) is the precondition for the enable PUT that follows create+open
-   * (GH-2729); the index-specific notes below apply to delete only — GH-2730 removed enable's
-   * post-PUT index poll (enable returns right after the PUT succeeds). The cap is wall-clock, not
-   * attempt-count: `maxDurationMs` includes request duration (attempt counts alone can't bound
-   * wall-clock time — each query takes as long as its request, up to the API client's timeout),
-   * and each poll query receives only the remaining budget as its request timeout, so an
-   * in-flight request can't overshoot the deadline. Create and delete cap at 8 s — inside the
-   * pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time). The
-   * attempt counts are only iteration upper bounds for fast queries; the deadline binds first
-   * once queries slow. Nothing that confirmed before falls back now, while the happy path
+   * Grace before the fused create+open path's first enable PUT (GH-2729 pivot): fga-sync writes
+   * the vote's OpenFGA tuple ~1.5 s after the create POST returns (observed 1.1–1.7 s in live
+   * verification, 2026-09-21). A check fired before the tuple lands caches `false` for the
+   * cluster's OpenFGA check-query TTL (10 s on dev) and every later check inside the TTL reads
+   * that cached denial — the probe-based predecessor of this flow failed 2/2 that way. The 2 s
+   * grace keeps attempt 1 fresh in the common case; the 13 s retry deadline then spans the TTL
+   * so a too-early first check still recovers once its cache entry expires. Standalone enables
+   * (edit flow) skip the grace: their vote's tuples were written at create time, long past.
+   */
+  private static readonly fgaTuplePropagationGraceMs = 2000;
+
+  /**
+   * Vote poll budget (GH-1637) for the delete index poll, at one 300 ms cadence. Create no
+   * longer polls anything: the GH-2729 FGA-readiness GET probe was removed (a pre-tuple check
+   * poisons OpenFGA's check-query cache against itself — see `enableRetryDelayMs`), and GH-2730
+   * removed enable's post-PUT index poll (enable returns right after the PUT succeeds). The cap
+   * is wall-clock, not attempt-count: `maxDurationMs` includes request duration (attempt counts
+   * alone can't bound wall-clock time — each query takes as long as its request, up to the API
+   * client's timeout), and each poll query receives only the remaining budget as its request
+   * timeout, so an in-flight request can't overshoot the deadline. Delete caps at 8 s — inside
+   * the pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time).
+   * The attempt count is only an iteration upper bound for fast queries; the deadline binds
+   * first once queries slow. Nothing that confirmed before falls back now, while the happy path
    * resolves on the first few attempts (convergence typically lands in <2 s). Worst-case fan-out
-   * is 27 requests per vote write for the probe alone, or 31 for a fused create+open (1 POST +
-   * 27 probes + 3 enable PUTs) — bounded by these budgets, the blanket `apiRateLimiter`, and the
-   * per-user `voteWriteRateLimiter` (GH-2729 review m-10); paid only while convergence lags. The
-   * delete index poll filters on `data.vote_uid` — never
+   * is 27 requests per delete — bounded by these budgets and the blanket `apiRateLimiter`; paid
+   * only while convergence lags. The delete index poll filters on `data.vote_uid` — never
    * `tags`: vote documents are indexed without a vote-uid tag, so `tags` can never match a vote
    * by uid. A `tags` regression makes delete (predicate `resources.length === 0`) resolve
    * instantly without confirming removal.
@@ -104,9 +122,10 @@ export class VoteService {
    * arrives, so an exact 15 s could still abort a response completing just under the upstream
    * limit (PR #2797 review); beyond that margin a slower create can never return successfully
    * end-to-end, so the API client's 30 s default would only outwait the server's own ceiling.
-   * Worst-case fused create+open hold = 16 s create + 8 s probe + 16 s enable attempt-1 ≈ 40 s,
-   * under the 60 s ingress-nginx default; the three budgets stay independent by design —
-   * documenting the sum is the fix.
+   * Worst-case fused create+open hold = 16 s create + 2 s grace + 16 s enable attempt-1 ≈ 34 s
+   * (a hung attempt-1 ends the grid via its non-retryable 408; a fast-denied attempt-1 instead
+   * leaves retries the 13 s deadline, ≈ 31 s), under the 60 s ingress-nginx default; the budgets
+   * stay independent by design — documenting the sum is the fix.
    */
   private static readonly createVoteRequestTimeoutMs = 16000;
 
@@ -175,25 +194,14 @@ export class VoteService {
   /**
    * Fetches a single vote by UID. `includeProject` enriches the payload with the vote's project fields
    * (slug/name/is_foundation) so clients can reconcile project context from the vote itself.
-   * `requestOptions` forwards per-request `ApiRequestOptions` (e.g. a poll loop's `timeoutMs`) to the
-   * upstream GET.
    */
-  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean; requestOptions?: ApiRequestOptions } = {}): Promise<Vote> {
-    const { includeProject = false, requestOptions } = options;
+  public async getVoteById(req: Request, voteUid: string, options: { includeProject?: boolean } = {}): Promise<Vote> {
+    const { includeProject = false } = options;
     logger.debug(req, 'get_vote_by_id', 'Fetching vote by ID', {
       vote_uid: voteUid,
     });
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(
-      req,
-      'LFX_V2_SERVICE',
-      `/votes/${this.encodeVoteUid(voteUid)}`,
-      'GET',
-      undefined,
-      undefined,
-      undefined,
-      requestOptions
-    );
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${this.encodeVoteUid(voteUid)}`, 'GET');
 
     if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
@@ -221,13 +229,18 @@ export class VoteService {
   }
 
   /**
-   * Creates a new vote/poll. With `options.open` (GH-2731) the vote is also opened in the same
-   * call: the enable PUT runs inline once the FGA-readiness probe resolves — or exhausts without
-   * a standing 403, since only a confirmed-unready probe skips the enable — and the returned vote
-   * carries `status: 'active'`; if the enable fails or is skipped, the created vote is returned
-   * in its real (disabled) status — the draft exists and can be opened later from the list. A
-   * probe anomaly (5xx etc.) rethrows on this fused path but never fails a plain create. Worst-case
-   * fused create+open hold is ~40 s (16 s create + 8 s probe + 16 s enable attempt-1 — the three
+   * Creates a new vote/poll and returns the POST response as-is — nothing downstream consumes
+   * more than its `uid`, and list freshness is the list's own refetch (the pre-GH-1637 index
+   * poll never delivered that guarantee anyway: its broken `tags:` predicate exhausted 100% of
+   * the time). No readiness poll follows the create (GH-2729 pivot): on clusters where OpenFGA
+   * caches check results (dev TTL 10 s), a pre-tuple read probe caches `false` and defeats every
+   * retry inside the TTL — the probe manufactured the denial it measured. With `options.open`
+   * (GH-2731) the vote is also opened in the same call: after a short FGA-propagation grace
+   * (fga-sync's tuple write lags the create POST by ~1.5 s), the enable PUT runs inline on its
+   * 403-retry grid — graced past the tuple write, bounded past the cache TTL — and the returned
+   * vote carries `status: 'active'`; if the enable fails, the created vote is returned in its
+   * real (disabled) status — the draft exists and can be opened later from the list. Worst-case
+   * fused create+open hold is ~34 s (16 s create + 2 s grace + 16 s enable attempt-1 — the
    * budgets are independent by design), under the 60 s ingress-nginx default.
    */
   public async createVote(req: Request, voteData: CreateVoteRequest, options: { open?: boolean } = {}): Promise<Vote> {
@@ -241,121 +254,31 @@ export class VoteService {
       timeoutMs: VoteService.createVoteRequestTimeoutMs,
     });
 
-    // After creating, poll the FGA-gated resource GET until the vote's OpenFGA tuple has
-    // replicated: tuple readiness (not index visibility) is the precondition for the enable PUT
-    // that follows create+open, and the GET 403s at the gateway until the tuple lands (GH-2729).
-    // FGA-tuple readiness ≠ index visibility: a just-created vote can still be briefly absent
-    // from index-backed lists (indexer convergence lag, typically <2 s). Accepted (GH-2729 review
-    // m-3): the pre-GH-1637 index poll never delivered the intended existence guarantee anyway —
-    // its broken `tags:` predicate exhausted 100% of the time and always fell back to the POST
-    // response.
-    const voteUid = newVote.uid;
-    let fetchedVote: Vote | undefined;
-    // Captured inside the probe so an anomalous mid-poll failure (5xx, transport) can be rethrown
-    // on the fused create+open path after pollEndpoint returns: the helper's contract deliberately
-    // converts any pollFn throw into `false`, which would otherwise mask a backend outage as
-    // ordinary "not yet fetchable" exhaustion. Request timeouts (408) are NOT captured — a 408
-    // here is a BFF-raised transport timeout on the read side, deliberately treated as
-    // non-anomalous regardless of when it lands (the vote exists; only the readiness confirmation
-    // failed), so it keeps the graceful fallback below.
-    let probeError: unknown;
-    // The last upstream status the probe observed (403 = tuple not replicated yet, 404 = DynamoDB
-    // read lag) — the enable gate below keys on it: only a standing 403 confirms the enable
-    // precondition is unmet. A locally raised 408 is never recorded here (it says nothing about
-    // upstream state).
-    let lastProbeStatus: number | undefined;
-
-    // The probe shares the voteIndexPoll* fine grid — see those constants for the budget rationale.
-    const resolved = await pollEndpoint({
-      req,
-      operation: 'create_vote',
-      pollFn: async ({ remainingMs }) => {
-        try {
-          fetchedVote = await this.getVoteById(req, voteUid, { requestOptions: { timeoutMs: remainingMs } });
-          return true;
-        } catch (error) {
-          // A 403 means the tuple has not replicated yet — keep polling. A post-create 404 is
-          // indistinguishable from DynamoDB read lag (ITX's GetItem is eventually consistent —
-          // pkg/database/dynamo.go), so it keeps polling too rather than forfeiting the rest of
-          // the budget to a transient miss. Anything else (5xx) is anomalous once the POST has
-          // succeeded: rethrow so polling stops immediately. Note `getVoteById`'s own
-          // ResourceNotFoundError (the 200-with-empty-body anomaly) extends BaseApiError, not
-          // MicroserviceError — it still rethrows here; that is deliberate.
-          if (error instanceof MicroserviceError && (error.statusCode === 403 || error.statusCode === 404)) {
-            lastProbeStatus = error.statusCode;
-            return false;
-          }
-          if (!(error instanceof MicroserviceError && error.statusCode === 408)) {
-            probeError = error;
-          }
-          throw error;
-        }
-      },
-      maxRetries: VoteService.voteIndexPollMaxAttempts,
-      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
-      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
-      metadata: { vote_uid: voteUid },
-    });
-
-    let createdVote = newVote;
-    if (resolved && fetchedVote) {
-      createdVote = fetchedVote;
-    } else if (probeError === undefined) {
-      // (Skipped when the probe failed anomalously — the helper already logged that on the
-      // warning channel, and "not yet fetchable" would misdescribe it.)
-      logger.warning(req, 'create_vote', 'Vote not yet fetchable after create, returning POST response', { vote_uid: voteUid });
-    }
-
     if (!open) {
-      // A probe anomaly never fails a plain create: the POST already succeeded, so the caller
-      // gets its vote — only the fused path (which enables next) rethrows the captured anomaly.
-      return createdVote;
+      return newVote;
     }
 
-    // An anomalous probe failure (5xx etc.) on the fused create+open path surfaces as itself —
-    // never as the benign fallback, and never into an enable attempt on a vote whose readiness
-    // was never confirmed (pollEndpoint swallowed the throw by contract; rethrow it here).
-    if (probeError !== undefined) {
-      throw probeError;
-    }
+    // open=true (GH-2731): grace past fga-sync's tuple write so attempt 1's FGA check computes
+    // fresh instead of caching a pre-tuple `false` that every retry inside the 10 s TTL would
+    // read back (GH-2729 pivot), then run the bounded enable loop — its 13 s deadline spans that
+    // TTL, so even a too-early first attempt recovers once the cache entry expires.
+    await new Promise((resolve) => setTimeout(resolve, VoteService.fgaTuplePropagationGraceMs));
 
-    // Gate the enable on WHY the probe ended (GH-2729): only a standing 403 confirms the FGA
-    // tuple has not replicated — enabling then can only 403-retry against the same unconfirmed
-    // precondition, so return the created draft for the frontend's recoverable warning path. The
-    // warning keeps the denied-and-exhausted pattern distinguishable for security monitoring (a
-    // genuine denial and slow replication are indistinguishable here — the same framing as
-    // enableVoteWithRetry's logExhaustedForbidden, once per call, not per attempt). A 404- or
-    // timeout-flavored exhaustion says nothing about tuple readiness, so the bounded enable loop
-    // still runs — its 403-retry grid covers a tuple landing mid-loop.
-    if (!resolved && lastProbeStatus === 403) {
-      logger.warning(
-        req,
-        'create_vote',
-        'FGA-readiness probe denied through budget exhaustion, returning the created draft without enabling — a genuine denial and slow replication are indistinguishable',
-        { vote_uid: voteUid }
-      );
-      return createdVote;
-    }
-
-    // open=true (GH-2731): the probe resolved at FGA-tuple readiness — the enable PUT's
-    // precondition — so the inline enable should succeed on the first attempt; the bounded
-    // 403-retry loop covers the residual race (probe resolution → PUT in flight) and the case
-    // where the probe exhausted without an observed 403 (read lag / timeouts — see the gate above).
     try {
-      await this.enableVoteWithRetry(req, voteUid);
+      await this.enableVoteWithRetry(req, newVote.uid);
     } catch (error) {
       // Partial failure: the vote exists as a draft — return it in its real status (HTTP 201)
       // rather than synthesizing an error for a create that succeeded; the frontend branches on
       // vote.status to show the recoverable "created as draft" warning. (A 403-exhaustion already
       // logged its distinguishable warning inside the loop.)
       logger.warning(req, 'create_vote', 'Vote created but enable failed, returning the created vote in its current status', {
-        vote_uid: voteUid,
+        vote_uid: newVote.uid,
         error: error instanceof Error ? error.message : 'Unknown error',
       });
-      return createdVote;
+      return newVote;
     }
 
-    return { ...createdVote, status: PollStatus.ACTIVE };
+    return { ...newVote, status: PollStatus.ACTIVE };
   }
 
   /**
@@ -659,19 +582,22 @@ export class VoteService {
 
   /**
    * The enable PUT with its bounded 403-retry loop (GH-1637), extracted so `createVote`'s
-   * open=true path runs the identical loop inline (GH-2731). Resolves once the PUT succeeds;
-   * rethrows the observed error on exhaustion or non-retryable failure.
+   * open=true path runs the identical loop inline (GH-2731). On the fused path this grid is the
+   * readiness mechanism itself — no read probe precedes it (GH-2729 pivot). Resolves once the
+   * PUT succeeds; rethrows the observed error on exhaustion or non-retryable failure.
    */
   private async enableVoteWithRetry(req: Request, voteUid: string): Promise<void> {
     // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
     // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags the create POST —
     // the voting service is observed to publish the indexer message before the fga-sync one
-    // (verified in lfx-v2-voting-service). The create poll resolving at FGA-readiness (GH-2729)
-    // closes that gap on the create+open path; this loop remains as the bounded safety net for
-    // the residual race (poll resolution → PUT in flight) and for callers enabling a vote they
-    // did not just create. A genuine permission denial gets the same bounded retry and then
-    // surfaces unchanged — the BFF cannot distinguish it from the gap.
-    // One wall-clock deadline covers the retry grid, so the documented 11.7 s cap holds even
+    // (verified in lfx-v2-voting-service). On the create+open path the caller slept
+    // `fgaTuplePropagationGraceMs` first, so attempt 1 usually lands after the tuple write; the
+    // 13 s deadline then spans OpenFGA's 10 s check-query cache TTL, so even a too-early first
+    // attempt (its denial cached for the TTL) recovers on a post-expiry retry. The loop is also
+    // the bounded safety net for callers enabling a vote they did not just create. A genuine
+    // permission denial gets the same bounded retry and then surfaces unchanged — the BFF cannot
+    // distinguish it from the gap.
+    // One wall-clock deadline covers the retry grid, so the documented 13 s cap holds even
     // when a 403 is slow to return — attempt 1 is exempt (fixed 16 s slow-success budget, see
     // `enableFirstAttemptMaxDurationMs`); every retry PUT gets only the remaining budget as its
     // request timeout and each backoff sleep is truncated to the deadline.
@@ -689,7 +615,10 @@ export class VoteService {
         { vote_uid: voteUid, attempts }
       );
 
-    for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
+    // No attempt cap: the wall-clock deadline (plus the budget-floor checks below) is the bound —
+    // an attempt count can't size a slow-denial grid, and the 13 s deadline must be reachable on
+    // fast denials too (a 600 ms-cadence grid needs ~20 attempts to span the check-cache TTL).
+    for (let attempt = 1; ; attempt++) {
       try {
         await this.microserviceProxy.proxyRequestWithResponse<Vote>(
           req,
@@ -724,7 +653,7 @@ export class VoteService {
         }
         const retryableForbidden = error instanceof MicroserviceError && error.statusCode === 403;
         const budgetLeftMs = deadline - Date.now();
-        if (!retryableForbidden || attempt === VoteService.enableMaxAttempts || budgetLeftMs <= 0) {
+        if (!retryableForbidden || budgetLeftMs <= 0) {
           if (retryableForbidden) {
             logExhaustedForbidden(attempt);
           }
