@@ -231,8 +231,10 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
     await stubOrgLensContext(page, { projectDetailStatus: 403 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toBeVisible();
-    await expect(page.getByTestId('org-roi-project-detail-error')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-project-detail-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-no-access');
+    await expect(state).toContainText('You do not have access to this organization');
     await expect(page.getByTestId('org-roi-project-detail-not-found')).toHaveCount(0);
   });
 
@@ -240,8 +242,12 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
     await stubOrgLensContext(page, { projectDetailStatus: 503 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
-    await expect(page.getByTestId('org-roi-project-detail-error')).toBeVisible();
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-project-detail-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-load');
+    await expect(state).toContainText('This section could not be loaded');
+    await expect(state).not.toContainText('You do not have access');
+    await expect(page.getByTestId('org-roi-project-detail-empty-retry')).toBeVisible();
   });
 
   test('leaks no ROI figure in any response on the refused path', async ({ page }) => {
@@ -260,7 +266,7 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
 
     await stubOrgLensContext(page, { projectDetailStatus: 403 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toBeVisible();
+    await expect(page.getByTestId('org-roi-project-detail-empty-state')).toHaveAttribute('data-state', 'section-no-access');
 
     const settled = await Promise.all(bodies);
     expect(settled.length).toBeGreaterThan(0);

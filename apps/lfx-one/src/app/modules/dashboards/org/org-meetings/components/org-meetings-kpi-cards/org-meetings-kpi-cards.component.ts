@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
-import { ORG_MEETINGS_KPI_ICON_CLASS } from '@lfx-one/shared/constants';
-import type { OrgMeetingsKpiSummary, OrgMeetingsSupportedTimeRange, StatCardItem } from '@lfx-one/shared/interfaces';
+import { ORG_MEETINGS_DEFAULT_TIME_RANGE, ORG_MEETINGS_KPI_ICON_CLASS, ORG_MEETINGS_TIME_RANGE_LABELS } from '@lfx-one/shared/constants';
+import type { OrgLensSectionOutcome, OrgMeetingsKpiSummary, OrgMeetingsSupportedTimeRange, StatCardItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMeetingsService } from '@services/org-lens-meetings.service';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
@@ -29,7 +31,7 @@ const EMPTY_SUMMARY: OrgMeetingsKpiSummary = {
 
 @Component({
   selector: 'lfx-org-meetings-kpi-cards',
-  imports: [StatCardGridComponent, SkeletonModule],
+  imports: [OrgLensEmptyStateComponent, StatCardGridComponent, SkeletonModule],
   templateUrl: './org-meetings-kpi-cards.component.html',
 })
 export class OrgMeetingsKpiCardsComponent {
@@ -40,35 +42,58 @@ export class OrgMeetingsKpiCardsComponent {
   // Public fields from inputs
   public readonly timeRange = input.required<OrgMeetingsSupportedTimeRange>();
 
+  /** Spec 053 FR-013 — the page owns the time-range filter, so "Reset filters" is delegated to it. */
+  public readonly resetFilters = output<void>();
+
   // Configuration
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  // A 403 means the caller holds no Org Lens grant on this org. The org selector admits
-  // persona-seeded organizations that carry no such grant, so this is reachable by simply
-  // picking one -- and "couldn't be loaded" would misdescribe it as a transient failure.
-  protected readonly forbidden = signal(false);
+  /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the totals in hand, below. */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  /** Bumped by Retry; part of the request key so the same organization and window re-issue the read. */
+  private readonly attempt = signal(0);
 
   // Complex computed
   private readonly summary: Signal<OrgMeetingsKpiSummary> = this.initSummary();
   protected readonly cards: Signal<StatCardItem[]> = this.initCards();
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+  /** "the past 90 days" — reads naturally after "recorded for". */
+  protected readonly periodLabel: Signal<string> = computed(() => `the ${ORG_MEETINGS_TIME_RANGE_LABELS[this.timeRange()].toLowerCase()}`);
+  /** Only a window the viewer changed can be reset; on the default the state renders reason-only. */
+  protected readonly filterActive: Signal<boolean> = computed(() => this.timeRange() !== ORG_MEETINGS_DEFAULT_TIME_RANGE);
+
+  /** A strip of four zeros says nothing happened in this window; any non-zero total is worth showing. */
+  private readonly hasActivity: Signal<boolean> = computed(() => {
+    const { employeesActive, meetingsAttended, projectsSupported, foundationsSupported } = this.summary();
+    return employeesActive + meetingsAttended + projectsSupported + foundationsSupported > 0;
+  });
+
+  /** The shared state to render instead of the cards, or `null` while there is activity to show. */
+  protected readonly emptyState = computed(() => {
+    const outcome = this.loadOutcome();
+    return sectionEmptyState(outcome === 'records' && !this.hasActivity() ? 'empty' : outcome);
+  });
+
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
 
   // Private initializers
   private initSummary(): Signal<OrgMeetingsKpiSummary> {
     // A string key, not an object: `selectedAccount` is rewritten in place by Snowflake enrichment
     // and the canonical-record patch, and a fresh object with identical contents would dirty the
     // computed and retrigger the fetch, flashing the loading state for no new data.
-    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.timeRange()}`));
+    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.timeRange()}|${this.attempt()}`));
 
     return toSignal(
       requestKey$.pipe(
-        map((key) => key.split('|') as [string, OrgMeetingsSupportedTimeRange]),
+        map((key) => key.split('|') as [string, OrgMeetingsSupportedTimeRange, string]),
         // A cookie-restored account stub can carry a uid with the accountId still pending; fetching
         // then would query the wrong org, so wait for the analytics id to arrive.
         filter(([orgUid]) => !!orgUid),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
         }),
         switchMap(([orgUid, range]) =>
           this.meetingsService.getKpiSummary(orgUid, range).pipe(
@@ -76,8 +101,7 @@ export class OrgMeetingsKpiCardsComponent {
             catchError((error: unknown) => {
               console.error('Failed to load meeting KPI summary', error);
               this.loading.set(false);
-              if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
-              else this.failed.set(true);
+              this.loadOutcome.set(classifySectionError(error));
               return of(EMPTY_SUMMARY);
             })
           )

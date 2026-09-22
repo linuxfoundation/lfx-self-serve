@@ -6,13 +6,14 @@ import { ORG_MEETINGS_DEFAULT_TIME_RANGE, ORG_MEETINGS_TIME_RANGES } from '@lfx-
 import type { OrgMeetingsSupportedTimeRange, OrgMeetingsTimeRange } from '@lfx-one/shared/interfaces';
 import { isSupportedOrgMeetingsTimeRange } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 
 import { OrgMeetingsInfluenceComponent } from './components/org-meetings-influence/org-meetings-influence.component';
 import { OrgMeetingsKpiCardsComponent } from './components/org-meetings-kpi-cards/org-meetings-kpi-cards.component';
@@ -35,7 +36,7 @@ import { OrgMeetingsTimeRangeComponent } from './components/org-meetings-time-ra
     OrgMeetingsSpendBreakdownComponent,
     OrgMeetingsInfluenceComponent,
     EmptyStateComponent,
-    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
     SkeletonModule,
   ],
   templateUrl: './org-meetings.component.html',
@@ -45,6 +46,7 @@ export class OrgMeetingsComponent {
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Simple WritableSignals
   // The dropdown's model spans all nine ranges; only the seven the warehouse is built for are
@@ -55,22 +57,22 @@ export class OrgMeetingsComponent {
   protected readonly unsupportedTimeRanges: OrgMeetingsTimeRange[] = ORG_MEETINGS_TIME_RANGES.filter((range) => !isSupportedOrgMeetingsTimeRange(range));
 
   // Complex computed
-  // True once role grants + personas have settled and the caller genuinely has no org access —
-  // mirrors org-overview/org-projects' `hasNoOrgAccess`. Reused below so a direct writer/auditor
-  // with no persona-seeded organizations (who never triggers the nav fetch) isn't stuck waiting
-  // on `orgNavigationService.loaded()` forever.
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
+  // `no-organization`), or null when the page renders (FR-016). Reused below so a caller with no
+  // persona-seeded organizations (who never triggers the nav fetch) isn't stuck waiting on
+  // `orgNavigationService.loaded()` forever.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  // True once every fetch that can populate `selectedAccount` has settled — either the caller
-  // has no org access (short-circuits without waiting on nav), or role grants + personas +
+  // True once every fetch that can populate `selectedAccount` has settled — either a page-level
+  // state replaces the page (short-circuits without waiting on nav), or role grants + personas +
   // org-navigation's default-org selection have all returned. Without waiting on org-navigation
   // too, a direct writer/auditor whose persona response has no organizations could see a one-tick
   // flash of the no-company empty state before `/api/nav/org-items` populates `selectedAccount`.
   // Mirrors org-projects.component.ts's `orgContextLoaded` gate.
   protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   // Either identifier counts as "selected": a fresh persona seed can have `uid` but an empty
@@ -95,4 +97,9 @@ export class OrgMeetingsComponent {
     const range = this.timeRange();
     return isSupportedOrgMeetingsTimeRange(range) ? range : ORG_MEETINGS_DEFAULT_TIME_RANGE;
   });
+
+  /** FR-013 — a section's "Reset filters" puts the shared time range back to the default window. */
+  protected resetTimeRange(): void {
+    this.timeRange.set(ORG_MEETINGS_DEFAULT_TIME_RANGE);
+  }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { signal } from '@angular/core';
+import { signal, WritableSignal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -27,9 +27,23 @@ describe('AccountContextService — address-adopted selection', () => {
 
   let cookies: Map<string, string>;
   let service: AccountContextService;
+  let grants: {
+    writerSet: WritableSignal<Set<string>>;
+    auditorSet: WritableSignal<Set<string>>;
+    inheritedWriterSet: WritableSignal<Set<string>>;
+    inheritedAuditorSet: WritableSignal<Set<string>>;
+    isStaff: WritableSignal<boolean>;
+  };
 
   beforeEach(() => {
     cookies = new Map();
+    grants = {
+      writerSet: signal(new Set<string>()),
+      auditorSet: signal(new Set<string>()),
+      inheritedWriterSet: signal(new Set<string>()),
+      inheritedAuditorSet: signal(new Set<string>()),
+      isStaff: signal(false),
+    };
     TestBed.configureTestingModule({
       providers: [
         {
@@ -43,7 +57,7 @@ describe('AccountContextService — address-adopted selection', () => {
         { provide: CookieRegistryService, useValue: { registerCookie: vi.fn() } },
         { provide: AnalyticsService, useValue: { getOrgLensAccountContext: vi.fn().mockReturnValue(of([])) } },
         { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn().mockReturnValue(signal(false)) } },
-        { provide: OrgRoleGrantsService, useValue: { writerSet: signal(new Set()), auditorSet: signal(new Set()), isStaff: signal(false) } },
+        { provide: OrgRoleGrantsService, useValue: grants },
         { provide: HttpClient, useValue: { get: vi.fn().mockReturnValue(of(null)) } },
       ],
     });
@@ -188,6 +202,35 @@ describe('AccountContextService — address-adopted selection', () => {
   // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
   // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
   // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
+  // LFXV2-3029: an inherited (roll-up) grant is a held organization — the switcher lists those rows,
+  // so it must be enabled for a caller holding nothing else, or their list never starts (spec 053).
+  describe('hasOrgSelectorAccess', () => {
+    it('is false with no grants, no seeded organizations and no LF-team entitlement', () => {
+      expect(service.hasOrgSelectorAccess()).toBe(false);
+    });
+
+    it('is true for an inherited writer grant alone', () => {
+      grants.inheritedWriterSet.set(new Set([UID_A]));
+
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for an inherited auditor grant alone', () => {
+      grants.inheritedAuditorSet.set(new Set([UID_A]));
+
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+
+    it('is true for a direct grant or the LF-team entitlement', () => {
+      grants.auditorSet.set(new Set([UID_A]));
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+
+      grants.auditorSet.set(new Set());
+      grants.isStaff.set(true);
+      expect(service.hasOrgSelectorAccess()).toBe(true);
+    });
+  });
+
   describe('pinSelection', () => {
     it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
       service.setAccount(addressedB);

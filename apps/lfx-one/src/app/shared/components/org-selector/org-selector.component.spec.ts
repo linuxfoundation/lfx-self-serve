@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -72,6 +73,8 @@ describe('OrgSelectorComponent.selectItem', () => {
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
+        // Spec 053: the FR-010 list-incomplete notice reads this service; a stub keeps the spec off HttpClient.
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retry: vi.fn() } },
       ],
     }).compileComponents();
 

@@ -278,28 +278,37 @@ test.describe('Org Meetings insights (6a redesign)', () => {
     await expect(page.getByTestId('org-meetings-time-range-label')).toHaveText('Past 90 days');
   });
 
-  test('shows a per-section error state when the endpoints fail', async ({ page }) => {
+  test('shows a per-section "could not be verified" state when the access check is unavailable', async ({ page }) => {
     await stubOrgLensContext(page);
     await page.route('**/api/orgs/*/lens/meetings/**', (route) =>
       route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ code: 'ROLE_GRANTS_UNAVAILABLE' }) })
     );
     await gotoOrgMeetingsPage(page);
 
-    await expect(page.getByTestId('org-meetings-kpi-cards-error')).toBeVisible();
-    await expect(page.getByTestId('org-meetings-spend-breakdown-error')).toBeVisible();
-    await expect(page.getByTestId('org-meetings-influence-error')).toBeVisible();
+    for (const section of ['org-meetings-kpi-cards', 'org-meetings-spend-breakdown', 'org-meetings-influence']) {
+      const state = page.getByTestId(`${section}-empty-state`);
+      await expect(state).toBeVisible();
+      // FR-015: an unavailable check is never presented as a loss of access.
+      await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
+      await expect(state).toContainText('Access could not be verified');
+      await expect(state).not.toContainText('You do not have access');
+      await expect(page.getByTestId(`${section}-empty-retry`)).toBeVisible();
+    }
   });
 
   test('explains an empty influence table rather than leaving it blank', async ({ page }) => {
     await stubOrgLensContext(page, { influence: [] });
     await gotoOrgMeetingsPage(page);
 
-    const empty = page.getByTestId('org-meetings-influence-empty');
+    const empty = page.getByTestId('org-meetings-influence-empty-state');
     await expect(empty).toBeVisible();
-    await expect(empty).toContainText('published Ecosystem Influence Score');
+    await expect(empty).toHaveAttribute('data-state', 'section-empty');
+    await expect(empty).toContainText('No influence scores in this period');
     // Narrow windows make this state common, so the copy has to name the window too — otherwise it
     // reads as "your organization has no project influence at all".
     await expect(empty).toContainText('past 365 days');
+    // The score-availability note stays beside the empty state, not only beside the table.
+    await expect(page.getByTestId('org-meetings-influence-coverage-note')).toContainText('published Ecosystem Influence Score');
   });
 
   test('renders a breakdown whose nine percentages sum to exactly 100', async ({ page }) => {

@@ -401,9 +401,9 @@ test.describe('Org and foundation pages — single main landmark (GH-2220)', () 
 
 // S15 — no-access disclosure: a user whose role-grants settle empty (no direct
 // writer/auditor grant) AND who has no persona-seeded accounts must land on a
-// definitive "Organization Lens is not available" state on /org/overview — never an
-// endless loading skeleton. Stubs mirror S9 (the visibility gate's two inputs) so the
-// assertion is hermetic to the bootstrap user's real grants.
+// definitive no-organization state ("No organization linked to your account", spec 053
+// registry) on /org/overview — never an endless loading skeleton. Stubs mirror S9 (the
+// visibility gate's two inputs) so the assertion is hermetic to the bootstrap user's real grants.
 test.describe('Org Selector — /org/overview no-access state (S15)', () => {
   test('S15: empty role-grants + no persona-seeds renders the no-access state, not the skeleton', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -453,7 +453,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
     await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);

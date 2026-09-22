@@ -1,0 +1,114 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (withCard()) {
+  <lfx-card>
+    <ng-container [ngTemplateOutlet]="content" />
+  </lfx-card>
+} @else {
+  <section
+    class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
+    [attr.data-testid]="testId() + '-state'"
+    [attr.data-state]="state()">
+    <ng-container [ngTemplateOutlet]="content" />
+  </section>
+}
+
+<ng-template #content>
+  <div
+    class="mx-auto flex max-w-lg flex-col items-center gap-3 text-center"
+    [attr.data-testid]="withCard() ? testId() + '-state' : null"
+    [attr.data-state]="withCard() ? state() : null">
+    <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
+      <i [class]="copy().icon + ' text-2xl'" aria-hidden="true"></i>
+    </div>
+
+    <h2 class="text-base font-semibold text-gray-900" [attr.data-testid]="testId() + '-title'">{{ headline() }}</h2>
+
+    @if (productLine(); as line) {
+      <p class="text-sm text-gray-600" [attr.data-testid]="testId() + '-product-line'">{{ line }}</p>
+    }
+
+    <p class="text-sm text-gray-600" [attr.data-testid]="testId() + '-description'">{{ reason() }}</p>
+
+    @if (!orgListIsPrimary()) {
+      <ng-container [ngTemplateOutlet]="orgListTpl" />
+    }
+
+    @if (primary(); as action) {
+      @if (action.action === 'org-list') {
+        <!-- FR-008: the caller's own organizations ARE the primary control — each row is the way out. -->
+        @if (orgList().length > 0) {
+          <p class="mt-1 text-sm font-medium text-gray-900" [attr.data-testid]="testId() + '-primary'">{{ action.label }}</p>
+          <ng-container [ngTemplateOutlet]="orgListTpl" />
+        }
+      } @else if (action.action === 'contact-support') {
+        <lfx-button [label]="action.label" severity="primary" size="small" lfxOpenIntercom [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
+      } @else if (action.route) {
+        <lfx-button [label]="action.label" severity="primary" size="small" [routerLink]="action.route" [attr.data-testid]="testId() + '-primary'"></lfx-button>
+      } @else if (action.href) {
+        <lfx-button
+          [label]="action.label"
+          severity="primary"
+          size="small"
+          [href]="action.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          [attr.data-testid]="testId() + '-primary'"></lfx-button>
+      } @else if (action.action === 'retry') {
+        <lfx-button
+          [label]="action.label"
+          icon="fa-light fa-rotate-right"
+          severity="primary"
+          size="small"
+          [loading]="retrying()"
+          [disabled]="retrying()"
+          (onClick)="onAction(action)"
+          [attr.data-testid]="testId() + '-retry'"></lfx-button>
+      } @else if (action.action === 'reset-filters') {
+        <lfx-button
+          [label]="action.label"
+          severity="primary"
+          size="small"
+          [outlined]="true"
+          (onClick)="onAction(action)"
+          [attr.data-testid]="testId() + '-reset-filters'"></lfx-button>
+      }
+    }
+
+    @if (secondary(); as action) {
+      @if (action.action === 'contact-support') {
+        <button type="button" lfxOpenIntercom class="text-sm font-medium text-gray-700 underline" [attr.data-testid]="testId() + '-contact-support'">
+          {{ action.label }}
+        </button>
+      } @else if (action.href) {
+        <a
+          [href]="action.href"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-sm font-medium text-gray-700 underline"
+          [attr.data-testid]="testId() + '-secondary'"
+          >{{ action.label }}</a
+        >
+      }
+    }
+  </div>
+</ng-template>
+
+<ng-template #orgListTpl>
+  @if (orgList().length > 0) {
+    <ul class="flex w-full flex-col gap-1" [attr.data-testid]="testId() + '-org-list'">
+      @for (org of orgList(); track org.uid) {
+        <li>
+          <button
+            type="button"
+            class="w-full rounded-md border border-gray-200 px-3 py-2 text-left text-sm font-medium text-gray-900 hover:bg-gray-50"
+            [attr.data-testid]="testId() + '-org-' + org.uid"
+            (click)="orgSelected.emit(org.uid)">
+            {{ org.name }}
+          </button>
+        </li>
+      }
+    </ul>
+  }
+</ng-template>
