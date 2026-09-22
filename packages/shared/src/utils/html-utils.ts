@@ -38,7 +38,7 @@ function isDecodableCodePoint(code: number): boolean {
  *
  * Shared because BOTH paths that produce a sponsor name feed the same sink (a HubSpot image
  * module's `alt` in a sent email): the scrape path, which decodes entities and so can resurrect
- * `<script>`, and the direct-request path, where the value is caller-supplied. Sanitising only
+ * `<script>`, and the direct-request path, where the value is caller-supplied. Sanitizing only
  * the first left the second open -- the partial-fix shape this belongs in one place to prevent.
  */
 export function sanitizeDisplayText(value: string): string {

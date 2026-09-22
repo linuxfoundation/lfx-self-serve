@@ -458,7 +458,7 @@ export function isPrivateHost(hostname: string): boolean {
   // dash-notation IPv6, NAT64 and 6to4 translation, and blanket-loopback wildcard domains. All
   // one address wearing a different spelling, which is why the tail below fails CLOSED rather
   // than returning false for anything it does not recognise -- and why the fixes for them are
-  // structural (normalise, expand, decode every reading) instead of one pattern per spelling.
+  // structural (normalize, expand, decode every reading) instead of one pattern per spelling.
   // Trailing dots trimmed by INDEX rather than a regex: `/\.+$/` on caller-controlled input is
   // polynomial-time backtracking (CodeQL flags it), and this input is exactly that.
   const lowered = hostname.toLowerCase();
@@ -722,7 +722,7 @@ export function isPrivateHost(hostname: string): boolean {
     // private quad is still found wherever it sits, and an all-hex expanded address is not
     // reinterpreted.
     // Zero-padding is stripped (`0169` -> `169`): a resolver reads them the same, so leaving
-    // them un-normalised let `0169-0254-0169-0254-...` past the window test entirely.
+    // them un-normalized let `0169-0254-0169-0254-...` past the window test entirely.
     // Scanned PER LABEL. The window's meaning depends on how many groups its own label has --
     // `0-0-0-0.nip.io` IS the address, while the identical window inside an 8-group IPv6 label
     // is interior padding -- and splitting the whole host loses that, because the dots merge

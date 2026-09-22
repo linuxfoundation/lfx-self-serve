@@ -87,10 +87,10 @@ function sponsorFallbackName(resolved: string): string {
   } catch {
     return 'Sponsor';
   }
-  // Sanitised for the same reason the `alt` path is, and the percent-decode above is exactly
+  // Sanitized for the same reason the `alt` path is, and the percent-decode above is exactly
   // what makes it necessary: `%E2%80%AE` is a BIDI override, so a filename could carry the same
   // display spoof into the sponsor name that decoding an entity-encoded `alt` could. Decoding
-  // without re-sanitising trades one bug for another -- the mistake this file already documents
+  // without re-sanitizing trades one bug for another -- the mistake this file already documents
   // one line up, repeated here the moment a second decode was introduced.
   const base = pathname.split('/').pop() ?? '';
   const cleaned = sanitizeDisplayText(decodeSafely(base))
@@ -124,7 +124,7 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
     // Decoded, then STRIPPED of anything that decoding could have resurrected. `alt` is captured
     // from the same entity-encoded attribute as the URL, so "Acme &amp; Co" shipped literally --
     // but decoding alone turns `&lt;script&gt;` back into live markup in a value that reaches a
-    // sent email as an attribute. Decoding without re-sanitising trades a cosmetic bug for an
+    // sent email as an attribute. Decoding without re-sanitizing trades a cosmetic bug for an
     // injection one.
     const alt = sanitizeDisplayText(decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ''));
     // A page rarely marks sponsor logos with a dedicated attribute, so a nearby heading or

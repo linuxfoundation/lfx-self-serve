@@ -841,7 +841,7 @@ describe('CampaignsComponent brief persistence', () => {
      * A superseded save still created a row, and the next save of that event must be able to
      * name it.
      *
-     * Saves are serialised, so a second Proceed while the first is in flight queues behind it.
+     * Saves are serialized, so a second Proceed while the first is in flight queues behind it.
      * When the record sat AFTER the generation check, the first response — discarded for display
      * because the user had moved on — never filed its id, so the queued save captured null, found
      * the row the first one had just created, and was deterministically refused as
@@ -1784,7 +1784,7 @@ describe('CampaignsComponent brief persistence', () => {
   /**
    * Two saves queued: the flag must stay true across the seam between them.
    *
-   * Saves serialise on `persistChain` and each appends its own clear. With a boolean, both
+   * Saves serialize on `persistChain` and each appends its own clear. With a boolean, both
    * `set(true)` calls ran synchronously at enqueue time while A's clear landed between A finishing
    * and B starting — so the flag went false with a save still pending, and Create re-enabled in
    * exactly the window the guard exists to close. Counting is what closes it.
@@ -2282,10 +2282,10 @@ describe('CampaignsComponent — email delivery channel', () => {
 
     /**
      * The CTA destination check compares the generated URL against the brief's, with the
-     * trailing slash normalised away -- because a model that copies the URL and adds or drops
+     * trailing slash normalized away -- because a model that copies the URL and adds or drops
      * one still addresses the same page, and refusing that would silently drop the button.
      *
-     * The normalisation must apply to the PATHNAME ONLY. Stripping it from the whole serialized
+     * The normalization must apply to the PATHNAME ONLY. Stripping it from the whole serialized
      * URL also mutates the query and fragment, where a trailing slash is part of the VALUE
      * rather than a path separator -- so a generated `?token=abc/` compared equal to the brief's
      * `?token=abc` and a different destination was accepted.
