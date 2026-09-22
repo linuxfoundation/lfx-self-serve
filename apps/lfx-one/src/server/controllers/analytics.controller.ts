@@ -3304,6 +3304,49 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/engagement-meeting-participation
+   * The Health Metrics Engagement "Meeting participation" roll-up and its meeting-type table.
+   */
+  public async getEngagementMeetingParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_meeting_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_engagement_meeting_participation');
+      // The view carries no columns for the oldest range, so it is rejected rather than quietly
+      // resolving to a different year.
+      if (!isSupportedEngagementRange(range)) {
+        throw ServiceValidationError.forField('range', 'Meeting participation has no data for this range', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getMeetingParticipation(req, { foundationSlug, range });
+
+      logger.success(req, 'get_engagement_meeting_participation', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */

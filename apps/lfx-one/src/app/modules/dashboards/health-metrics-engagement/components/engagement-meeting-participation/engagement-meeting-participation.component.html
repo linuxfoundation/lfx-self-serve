@@ -1,0 +1,129 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="engagement-meeting-participation">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <lfx-filter-pills
+      [options]="modeOptions"
+      [selectedFilter]="mode()"
+      (filterChange)="onModeChange($event)"
+      data-testid="engagement-meeting-participation-modes" />
+    <span class="text-[13px] text-gray-500" data-testid="engagement-meeting-participation-count">
+      @if (loading() || loadFailed()) {
+        &mdash;
+      } @else {
+        {{ meetingsLabel() }}
+      }
+    </span>
+  </div>
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Meeting participation unavailable"
+      subtitle="We could not load meeting participation for this foundation. Refresh the page to try again."
+      data-testid="engagement-meeting-participation-error" />
+  } @else if (loading()) {
+    <div class="h-32 animate-pulse rounded-lg bg-gray-50" data-testid="engagement-meeting-participation-loading" aria-hidden="true"></div>
+  } @else if (!totalPeriod()) {
+    <lfx-empty-state
+      icon="fa-light fa-calendar-days"
+      title="No meeting participation yet"
+      subtitle="This foundation has no meetings recorded for the selected period."
+      data-testid="engagement-meeting-participation-empty" />
+  } @else {
+    <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
+      <div class="flex flex-col gap-1" data-testid="engagement-meeting-participation-hero">
+        <span class="text-3xl font-semibold tabular-nums text-gray-900">{{ heroValue() }}</span>
+        <span class="text-[13px] text-gray-500">{{ heroLabel() }}</span>
+        <span
+          class="text-[12px] tabular-nums"
+          [class.text-emerald-600]="heroDeltaDirection() === 'up'"
+          [class.text-red-600]="heroDeltaDirection() === 'down'"
+          [class.text-gray-400]="heroDeltaDirection() === 'neutral'"
+          data-testid="engagement-meeting-participation-delta">
+          {{ heroDelta() }} vs prior period
+        </span>
+      </div>
+
+      <dl class="flex flex-col gap-2 md:w-1/2">
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-[13px] text-gray-500">{{ secondaryLabel() }}</dt>
+          <dd class="text-sm tabular-nums text-gray-900">{{ secondaryValue() }}</dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-[13px] text-gray-500">Active groups</dt>
+          <dd>
+            <button
+              type="button"
+              class="text-sm tabular-nums text-blue-600 hover:underline"
+              (click)="onSectionLink('committees')"
+              data-testid="engagement-meeting-participation-active-groups">
+              {{ totalPeriod()?.activeGroups ?? 0 }} / {{ totalGroups() }}
+            </button>
+          </dd>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <dt class="text-[13px] text-gray-500">Never attended</dt>
+          <dd>
+            <button
+              type="button"
+              class="text-sm tabular-nums text-blue-600 hover:underline"
+              (click)="onSectionLink('reps')"
+              data-testid="engagement-meeting-participation-never-attended">
+              {{ totalPeriod()?.neverAttended ?? 0 }}
+            </button>
+          </dd>
+        </div>
+      </dl>
+    </div>
+
+    @if (lowConfidence()) {
+      <p class="rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-700" data-testid="engagement-meeting-participation-low-confidence">
+        <i class="fa-light fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+        Too few meetings in this period to report an attendance rate with confidence.
+      </p>
+    }
+
+    @if (rowViews().length) {
+      <lfx-table [value]="rowViews()" [paginator]="false" data-testid="engagement-meeting-participation-table">
+        <ng-template #header>
+          <tr>
+            <th scope="col"><span class="text-xs font-medium text-gray-500">Meeting type</span></th>
+            <th scope="col">
+              <span class="text-xs font-medium text-gray-500">{{ attendanceMode() ? 'Meetings' : 'Meetings held' }}</span>
+            </th>
+            @if (attendanceMode()) {
+              <th scope="col" class="w-[170px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
+            }
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-view>
+          @let row = view.row;
+          @let period = view.period;
+          <tr [attr.data-testid]="'engagement-meeting-participation-row-' + row.label">
+            <td>
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm font-medium text-gray-900">{{ row.label }}</span>
+                @if (row.governance) {
+                  <!-- Plain text, not a link: the Members tab has no route until its own story lands. -->
+                  <span class="text-[12px] text-gray-500">governance · detail in Members →</span>
+                }
+              </div>
+            </td>
+            <td>
+              <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? 0 }}</span>
+            </td>
+            <!-- Meetings mode drops this column rather than repeating the count beside itself. -->
+            @if (attendanceMode()) {
+              <td class="w-[170px]">
+                <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
+              </td>
+            }
+          </tr>
+        </ng-template>
+      </lfx-table>
+    }
+  }
+</div>

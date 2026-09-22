@@ -4,6 +4,10 @@
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
@@ -11,6 +15,10 @@ import type {
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementParticipationPeriod,
+  HealthMetricsEngagementParticipationQuery,
+  HealthMetricsEngagementParticipationRow,
   HealthMetricsRange,
   SnowflakeQueryResult,
 } from '@lfx-one/shared/interfaces';
@@ -25,6 +33,7 @@ import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
+const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 
 /**
  * Column suffix per period. The view carries no `COMPLETED_YEAR_4` columns, so that range is
@@ -35,6 +44,17 @@ const RANGE_COLUMN_SUFFIX: Partial<Record<HealthMetricsRange, string>> = {
   COMPLETED_YEAR: 'last_completed_year',
   COMPLETED_YEAR_2: 'prev_completed_year',
   COMPLETED_YEAR_3: '3rd_last_completed_year',
+};
+
+/**
+ * The period each range is compared against. Every delta is derived from these columns rather than
+ * the view's own `*_CHANGE_*` columns: those exist only for YTD, and deriving keeps the delta in
+ * the same unit as the value it came from. `COMPLETED_YEAR_3` has no prior period in the view.
+ */
+const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<HealthMetricsRange, string>> = {
+  YTD: 'prev_ytd',
+  COMPLETED_YEAR: 'prev_completed_year',
+  COMPLETED_YEAR_2: '3rd_last_completed_year',
 };
 
 /** True when this service can serve the range — the controller uses it to validate before binding. */
@@ -52,6 +72,21 @@ interface GroupAttendanceRow {
   TOTAL_RECORDS: number | null;
   DORMANT_GROUPS: number | null;
   IS_PAGE_ROW: boolean | null;
+  [periodColumn: string]: unknown;
+}
+
+/** Identifies one read for the shared error path: what was queried, and how it is reported. */
+interface ReadContext {
+  view: string;
+  operation: string;
+  clientMessage: string;
+}
+
+interface MeetingParticipationRow {
+  MEETING_TYPE_LEVEL: string | null;
+  MEETING_TYPE_GROUP: string | null;
+  MEETING_TYPE_LABEL: string | null;
+  TOTAL_GROUPS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -141,7 +176,11 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
     `;
 
-    const result = await this.executeGroupAttendance(req, sql, binds);
+    const result = await this.executeRead<GroupAttendanceRow>(req, sql, binds, {
+      view: GROUP_ATTENDANCE_VIEW,
+      operation: 'get_engagement_group_attendance',
+      clientMessage: 'Group attendance is unavailable right now.',
+    });
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,
@@ -166,6 +205,57 @@ export class HealthMetricsEngagementService {
   }
 
   /**
+   * The hero's roll-up and the meeting-type table in one read. The view carries both as rows of the
+   * same shape, distinguished by `meeting_type_level`, so splitting them client-side costs nothing
+   * and a second round trip would only re-read the same grain.
+   */
+  public async getMeetingParticipation(req: Request, query: HealthMetricsEngagementParticipationQuery): Promise<HealthMetricsEngagementMeetingParticipation> {
+    if (!RANGE_COLUMN_SUFFIX[query.range]) {
+      return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT;
+    }
+
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range] as string)).join(',\n        ');
+    const levels = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS;
+
+    // The project selector is visual-only today, so every read is the all-projects roll-up row the
+    // view denormalizes — summing the per-project rows would double-count shared meetings.
+    const sql = `
+      SELECT
+        meeting_type_level,
+        meeting_type_group,
+        meeting_type_label,
+        total_groups_count,
+        ${periodColumns},
+        attendance_pct_prev_ytd,
+        meetings_held_count_prev_ytd
+      FROM ${MEETING_PARTICIPATION_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND meeting_type_level IN (${levels.map(() => '?').join(', ')})
+    `;
+
+    const result = await this.executeRead<MeetingParticipationRow>(req, sql, [query.foundationSlug, ...levels], {
+      view: MEETING_PARTICIPATION_VIEW,
+      operation: 'get_engagement_meeting_participation',
+      clientMessage: 'Meeting participation is unavailable right now.',
+    });
+
+    logger.debug(req, 'get_engagement_meeting_participation', 'Fetched meeting participation', {
+      foundation_slug: query.foundationSlug,
+      range: query.range,
+      row_count: result.rows.length,
+    });
+
+    const total = result.rows.find((row) => row.MEETING_TYPE_LEVEL === 'all');
+    const groups = result.rows.filter((row) => row.MEETING_TYPE_LEVEL === 'group');
+
+    return {
+      total: total ? mapParticipationRow(total) : null,
+      rows: groups.map(mapParticipationRow).sort((a, b) => participationOrder(a.group) - participationOrder(b.group)),
+    };
+  }
+
+  /**
    * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
    * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
    * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
@@ -174,18 +264,18 @@ export class HealthMetricsEngagementService {
    * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
    * `code` and `service` are dropped for the same reason.
    */
-  private async executeGroupAttendance(req: Request, sql: string, binds: Bind[]): Promise<SnowflakeQueryResult<GroupAttendanceRow>> {
+  private async executeRead<T>(req: Request, sql: string, binds: Bind[], context: ReadContext): Promise<SnowflakeQueryResult<T>> {
     const startTime = Date.now();
     try {
-      return await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
+      return await this.snowflakeService.execute<T>(sql, binds, { expectMissingObject: true });
     } catch (error) {
       // The breaker treats this as expected and logs it at `warning`, but the same message covers a
       // revoked GRANT — an access-control event that has to be alertable on its own.
       if (SnowflakeService.isMissingObjectError(error)) {
         // Its own operation key: logging under the controller's would delete that entry from the
         // request's operation stack, leaving `apiErrorHandler` to invent a path-derived one.
-        logger.error(req, 'get_engagement_group_attendance_missing_object', startTime, error, {
-          snowflake_expected_missing_object: GROUP_ATTENDANCE_VIEW,
+        logger.error(req, `${context.operation}_missing_object`, startTime, error, {
+          snowflake_expected_missing_object: context.view,
         });
       }
 
@@ -193,7 +283,7 @@ export class HealthMetricsEngagementService {
 
       throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
         operation: error.operation,
-        clientMessage: 'Group attendance is unavailable right now.',
+        clientMessage: context.clientMessage,
         originalError: error,
       });
     }
@@ -230,6 +320,60 @@ function mapGroupPeriod(row: GroupAttendanceRow, range: HealthMetricsRange): Hea
     attendancePct: attendance === null || attendance === undefined ? null : Number(attendance),
     dormant: row[`IS_DORMANT_${suffix}`] === true,
   };
+}
+
+function participationSelectList(suffix: string): string {
+  return ['meetings_held_count', 'invited_count', 'attended_count', 'attendance_pct', 'active_groups_count', 'never_attended_count']
+    .map((column) => `${column}_${suffix}`)
+    .join(', ');
+}
+
+function mapParticipationRow(row: MeetingParticipationRow): HealthMetricsEngagementParticipationRow {
+  const group = row.MEETING_TYPE_GROUP;
+
+  return {
+    level: row.MEETING_TYPE_LEVEL === 'all' ? 'all' : 'group',
+    group,
+    label: row.MEETING_TYPE_LABEL ?? group ?? '',
+    totalGroups: Number(row.TOTAL_GROUPS_COUNT ?? 0),
+    governance: group !== null && HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS.includes(group),
+    periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapParticipationPeriod(row, range)),
+  };
+}
+
+function mapParticipationPeriod(row: MeetingParticipationRow, range: HealthMetricsRange): HealthMetricsEngagementParticipationPeriod {
+  const suffix = (RANGE_COLUMN_SUFFIX[range] as string).toUpperCase();
+  const priorSuffix = RANGE_PRIOR_COLUMN_SUFFIX[range]?.toUpperCase();
+  const attendance = toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]);
+  const meetingsHeld = Number(row[`MEETINGS_HELD_COUNT_${suffix}`] ?? 0);
+  const priorAttendance = priorSuffix ? toNullableNumber(row[`ATTENDANCE_PCT_${priorSuffix}`]) : null;
+  const priorMeetings = priorSuffix ? toNullableNumber(row[`MEETINGS_HELD_COUNT_${priorSuffix}`]) : null;
+
+  return {
+    range,
+    meetingsHeld,
+    invitedCount: Number(row[`INVITED_COUNT_${suffix}`] ?? 0),
+    attendedCount: Number(row[`ATTENDED_COUNT_${suffix}`] ?? 0),
+    // A null share means nobody was invited at all, which renders as an em dash — keep it distinct
+    // from a real 0%.
+    attendancePct: attendance,
+    activeGroups: Number(row[`ACTIVE_GROUPS_COUNT_${suffix}`] ?? 0),
+    neverAttended: Number(row[`NEVER_ATTENDED_COUNT_${suffix}`] ?? 0),
+    // Derived rather than read from the view's `*_CHANGE_*` columns: those cover YTD only, and
+    // deriving keeps each delta in the same unit as the value it came from.
+    attendanceChangePp: attendance === null || priorAttendance === null ? null : attendance - priorAttendance,
+    meetingsChangePct: priorMeetings === null || priorMeetings === 0 ? null : (meetingsHeld - priorMeetings) / priorMeetings,
+  };
+}
+
+/** Unknown groups sort after every known one rather than being dropped from the table. */
+function participationOrder(group: string | null): number {
+  const index = group === null ? -1 : HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER.indexOf(group);
+  return index === -1 ? HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER.length : index;
+}
+
+function toNullableNumber(value: unknown): number | null {
+  return value === null || value === undefined ? null : Number(value);
 }
 
 function toIsoDate(value: Date | string | null): string | null {

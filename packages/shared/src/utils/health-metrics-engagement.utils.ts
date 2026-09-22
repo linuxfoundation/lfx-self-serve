@@ -14,6 +14,8 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementParticipationPeriod,
+  HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
@@ -102,4 +104,44 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     count: totals[section.key],
     note: totals[section.key] === null ? '' : (notes[section.key] ?? ''),
   }));
+}
+
+/**
+ * The participation row's numbers for one period. Same fallback as the group table: the view
+ * carries four periods, so an unsupported range reads the most recent one rather than blanking.
+ */
+export function selectHealthMetricsEngagementParticipationPeriod(
+  row: HealthMetricsEngagementParticipationRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementParticipationPeriod | null {
+  return row.periods.find((period) => period.range === range) ?? row.periods[row.periods.length - 1] ?? null;
+}
+
+/** Which way a delta moved. `null` and exactly zero are both "no movement to report". */
+export function resolveHealthMetricsEngagementDeltaDirection(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || value === 0) {
+    return 'neutral';
+  }
+
+  return value > 0 ? 'up' : 'down';
+}
+
+/** A point change on an attendance share: `+3.2pp`. Not a percent — the share itself is one. */
+export function formatHealthMetricsEngagementPpDelta(pointChange: number | null): string {
+  if (pointChange === null) {
+    return '—';
+  }
+
+  const points = pointChange * 100;
+  return `${points >= 0 ? '+' : '−'}${Math.abs(points).toFixed(1)}pp`;
+}
+
+/** A fractional change in a count, rendered as a percent: `+12.0%`. */
+export function formatHealthMetricsEngagementPctDelta(fractionChange: number | null): string {
+  if (fractionChange === null) {
+    return '—';
+  }
+
+  const percent = fractionChange * 100;
+  return `${percent >= 0 ? '+' : '−'}${Math.abs(percent).toFixed(1)}%`;
 }

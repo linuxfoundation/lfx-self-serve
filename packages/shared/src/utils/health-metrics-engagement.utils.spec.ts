@@ -9,18 +9,28 @@ import { describe, expect, it } from 'vitest';
 
 import {
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
-import { HealthMetricsEngagementGroupRow, HealthMetricsEngagementSubNavCounts } from '../interfaces/health-metrics-engagement.interface';
+import {
+  HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementSubNavCounts,
+} from '../interfaces/health-metrics-engagement.interface';
 import {
   buildHealthMetricsEngagementGroupTrend,
   buildHealthMetricsEngagementSectionId,
   buildHealthMetricsEngagementSubNavItems,
   formatHealthMetricsEngagementAttendance,
+  formatHealthMetricsEngagementPctDelta,
+  formatHealthMetricsEngagementPpDelta,
   isHealthMetricsEngagementSectionKey,
   resolveHealthMetricsEngagementAttendanceTone,
+  resolveHealthMetricsEngagementDeltaDirection,
   selectHealthMetricsEngagementGroupPeriod,
+  selectHealthMetricsEngagementParticipationPeriod,
 } from './health-metrics-engagement.utils';
 
 function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): HealthMetricsEngagementSubNavCounts {
@@ -173,5 +183,111 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
     periods[3] = { ...periods[3], meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 };
 
     expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  });
+});
+
+describe('group-type filter cuts', () => {
+  // The view buckets committee categories itself, so a cut that lists a category instead of a label
+  // matches nothing and silently empties the table — the bug this assertion exists to catch.
+  it('maps every cut onto labels the view actually emits', () => {
+    for (const labels of Object.values(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS)) {
+      for (const label of labels) {
+        expect(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES).toContain(label);
+      }
+    }
+  });
+
+  it('leaves the all-types cut without a predicate', () => {
+    expect(HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS).not.toHaveProperty('all');
+  });
+});
+
+describe('participation period selection and delta formatting', () => {
+  const participationRow: HealthMetricsEngagementParticipationRow = {
+    level: 'group',
+    group: 'Board',
+    label: 'Board',
+    totalGroups: 8,
+    governance: true,
+    periods: [
+      {
+        range: 'COMPLETED_YEAR_3',
+        meetingsHeld: 9,
+        invitedCount: 90,
+        attendedCount: 72,
+        attendancePct: 0.8,
+        activeGroups: 6,
+        neverAttended: 2,
+        attendanceChangePp: null,
+        meetingsChangePct: null,
+      },
+      {
+        range: 'COMPLETED_YEAR_2',
+        meetingsHeld: 10,
+        invitedCount: 100,
+        attendedCount: 83,
+        attendancePct: 0.83,
+        activeGroups: 7,
+        neverAttended: 1,
+        attendanceChangePp: 0.03,
+        meetingsChangePct: 0.111,
+      },
+      {
+        range: 'COMPLETED_YEAR',
+        meetingsHeld: 12,
+        invitedCount: 120,
+        attendedCount: 96,
+        attendancePct: 0.8,
+        activeGroups: 7,
+        neverAttended: 1,
+        attendanceChangePp: -0.03,
+        meetingsChangePct: 0.2,
+      },
+      {
+        range: 'YTD',
+        meetingsHeld: 7,
+        invitedCount: 70,
+        attendedCount: 60,
+        attendancePct: 0.857,
+        activeGroups: 8,
+        neverAttended: 0,
+        attendanceChangePp: 0.057,
+        meetingsChangePct: -0.4167,
+      },
+    ],
+  };
+
+  it('returns the requested period', () => {
+    expect(selectHealthMetricsEngagementParticipationPeriod(participationRow, 'COMPLETED_YEAR')?.meetingsHeld).toBe(12);
+  });
+
+  it('falls back to the most recent period for a range the view has no columns for', () => {
+    expect(selectHealthMetricsEngagementParticipationPeriod(participationRow, 'COMPLETED_YEAR_4')?.range).toBe('YTD');
+  });
+
+  it('returns null rather than throwing when a row carries no periods at all', () => {
+    expect(selectHealthMetricsEngagementParticipationPeriod({ ...participationRow, periods: [] }, 'YTD')).toBeNull();
+  });
+
+  // An unmeasured delta and a measured no-change both read as "no movement", so neither is coloured.
+  it.each([
+    [null, 'neutral'],
+    [0, 'neutral'],
+    [0.01, 'up'],
+    [-0.01, 'down'],
+  ])('resolves %s as %s', (value, expected) => {
+    expect(resolveHealthMetricsEngagementDeltaDirection(value as number | null)).toBe(expected);
+  });
+
+  it('renders a point change on a share as pp, never as a percent', () => {
+    expect(formatHealthMetricsEngagementPpDelta(0.032)).toBe('+3.2pp');
+    expect(formatHealthMetricsEngagementPpDelta(-0.032)).toBe('−3.2pp');
+    expect(formatHealthMetricsEngagementPpDelta(null)).toBe('—');
+  });
+
+  it('renders a fractional change in a count as a percent', () => {
+    expect(formatHealthMetricsEngagementPctDelta(0.12)).toBe('+12.0%');
+    expect(formatHealthMetricsEngagementPctDelta(-0.12)).toBe('−12.0%');
+    expect(formatHealthMetricsEngagementPctDelta(null)).toBe('—');
   });
 });
