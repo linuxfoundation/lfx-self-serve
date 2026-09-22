@@ -60,8 +60,11 @@ export class EngagementGroupAttendanceComponent {
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
 
-  /** Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page. */
-  public readonly countsChange = output<HealthMetricsEngagementGroupCounts>();
+  /**
+   * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
+   * `null` while a read is in flight, which renders no badge rather than a believable zero.
+   */
+  public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
 
   protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({
     id: filter.key,
@@ -99,7 +102,7 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly counts = computed(() => this.response().counts);
+  protected readonly counts = computed(() => (this.loading() ? null : this.response().counts));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 

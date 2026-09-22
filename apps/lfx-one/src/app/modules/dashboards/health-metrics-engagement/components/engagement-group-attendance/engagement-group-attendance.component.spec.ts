@@ -84,11 +84,18 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   // The counts cover the whole filtered set, so they must come from the response, not the page rows.
-  it('emits the whole-set counts for the sub-nav badges', async () => {
+  it('emits the whole-set counts for the sub-nav badges, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 } }), (counts) => emitted.push(counts));
 
     expect(emitted.at(-1)).toEqual({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+
+    fixture.componentInstance['loading'].set(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The default response's zeroes would otherwise render as a believable "0 groups" badge.
+    expect(emitted.at(-1)).toBeNull();
   });
 
   it('re-reads from page 1 when the type filter changes, because the rank is per-cut', async () => {

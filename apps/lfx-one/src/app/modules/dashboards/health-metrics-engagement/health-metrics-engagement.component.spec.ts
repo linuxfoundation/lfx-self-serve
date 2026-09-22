@@ -19,7 +19,7 @@ import type { HealthMetricsEngagementGroupCounts } from '@lfx-one/shared/interfa
 // and the real one would drag in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
-  public readonly countsChange = output<HealthMetricsEngagementGroupCounts>();
+  public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
 }
 
 // Captures every observer the component builds so a test can fire entries at it directly; the real
