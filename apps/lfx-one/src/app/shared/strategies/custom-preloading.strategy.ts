@@ -6,6 +6,8 @@ import { PreloadingStrategy, Route } from '@angular/router';
 import { Observable, of, timer } from 'rxjs';
 import { mergeMap } from 'rxjs';
 
+import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
+
 /**
  * Network Information API types for enhanced browser compatibility
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Network_Information_API
@@ -39,6 +41,11 @@ export class CustomPreloadingStrategy implements PreloadingStrategy {
   }
 
   public preload(route: Route, load: () => Observable<any>): Observable<any> {
+    // Invite landing is a one-shot accept/error page — do not spend bandwidth on meetings/committees/… (GH-2290).
+    if (isBrowserInviteLandingPath()) {
+      return of(null);
+    }
+
     if (route.data && route.data['preload']) {
       // Use cached connection info or safe defaults
       const connectionInfo = this.connectionInfo || { effectiveType: null, saveData: false };

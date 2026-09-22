@@ -23,6 +23,8 @@ import { PlausibleService } from './shared/services/plausible.service';
 import { ProjectContextService } from './shared/services/project-context.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
+import { isBrowserInviteLandingPath } from './shared/utils/invite-landing.util';
+import { identifiedIntercomBootOptions } from './shared/utils/intercom-boot.util';
 
 const ACCESS_DENIED_MESSAGES: Record<string, string> = {
   meetings: "You don't have permission to schedule meetings for this project.",
@@ -106,11 +108,12 @@ export class AppComponent {
       }
     });
 
-    // Initialize Segment tracking
-    this.segmentService.initialize();
+    const onInviteLanding = isBrowserInviteLandingPath();
 
-    // Initialize Plausible analytics
-    this.plausibleService.initialize();
+    if (!onInviteLanding) {
+      this.segmentService.initialize();
+      this.plausibleService.initialize();
+    }
 
     const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as {
       auth: AuthContext;
@@ -144,35 +147,39 @@ export class AppComponent {
       this.userService.canImpersonate.set(Boolean(this.auth?.canImpersonate));
 
       const isImpersonating = Boolean(this.auth?.impersonating);
-      this.segmentService.setImpersonating(isImpersonating);
-      this.plausibleService.setImpersonating(isImpersonating);
       this.dataDogRumService.setImpersonating(isImpersonating);
       this.userService.impersonating.set(isImpersonating);
       this.userService.impersonator.set(isImpersonating ? (this.auth.impersonator ?? null) : null);
 
-      this.segmentService.identifyUser(this.auth.user);
-
       const authedUser = this.auth.user;
 
-      // Initialize feature flags with user context
-      this.featureFlagService.initialize(authedUser).catch((error) => {
-        console.error('Failed to initialize feature flags:', error);
-      });
-
-      if (!isImpersonating) {
-        this.bootIntercom(authedUser);
+      if (!onInviteLanding) {
+        this.segmentService.setImpersonating(isImpersonating);
+        this.plausibleService.setImpersonating(isImpersonating);
+        this.segmentService.identifyUser(authedUser);
+        this.featureFlagService.initialize(authedUser).catch((error) => {
+          console.error('Failed to initialize feature flags:', error);
+        });
       }
 
-      // Set DataDog RUM user context for session tracking
-      this.dataDogRumService.setUser(this.auth.user);
+      // Never while impersonating: buildImpersonationIdentityOverride rewrites the identity
+      // claims for the target but leaves `http://lfx.dev/claims/intercom` as the operator's own
+      // JWT, so an identified boot would send the operator's JWT with the target's PII. On the
+      // invite landing the identity is staged without booting, so first paint stays off Intercom
+      // while the error page's "Contact support" still opens as the signed-in user (GH-2290).
+      if (!isImpersonating) {
+        this.prepareIntercom(authedUser, !onInviteLanding);
+      }
+
+      this.dataDogRumService.setUser(authedUser);
     }
 
     this.initAccessDeniedToast();
     this.initProjectQueryParamSync();
   }
 
-  // Fails closed: missing JWT or App ID skips boot.
-  private bootIntercom(user: User): void {
+  // Fails closed: missing JWT or App ID stages no identity and skips the boot.
+  private prepareIntercom(user: User, bootNow: boolean): void {
     // Browser-only: avoid per-request warn spam during SSR when claim is absent.
     if (typeof window === 'undefined') {
       return;
@@ -187,7 +194,8 @@ export class AppComponent {
       return;
     }
 
-    if (!intercomJwt || !userId) {
+    const bootOptions = identifiedIntercomBootOptions(user, intercomAppId);
+    if (!bootOptions) {
       console.warn('Intercom boot skipped: App ID present but missing identity', {
         hasJwt: !!intercomJwt,
         hasUserId: !!userId,
@@ -195,20 +203,22 @@ export class AppComponent {
       return;
     }
 
+    // Staged before the boot decision so an on-demand open still identifies the user on routes
+    // that skip the startup boot.
+    this.intercomService.setIdentity(bootOptions);
+
+    if (!bootNow) {
+      return;
+    }
+
     console.info('Intercom: dispatching boot', {
-      hasJwt: !!intercomJwt,
-      hasUserId: !!userId,
+      hasJwt: true,
+      hasUserId: true,
       hasName: !!user.name,
       hasEmail: !!user.email,
     });
 
-    this.intercomService.boot({
-      app_id: intercomAppId,
-      intercom_user_jwt: intercomJwt,
-      user_id: userId,
-      name: user.name,
-      email: user.email,
-    });
+    this.intercomService.boot(bootOptions);
   }
 
   // Detects _notice query param placed by writerGuard on denial and shows the "Access

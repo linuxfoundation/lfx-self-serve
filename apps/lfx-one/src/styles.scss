@@ -1,8 +1,8 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-/* Google Fonts - Must be at the very top */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&family=Roboto+Slab:wght@100..900&display=swap');
+/* Google Fonts are linked from index.html (preconnect + stylesheet) so they start
+   in parallel with this file instead of waiting on a CSS @import (GH-2290). */
 
 @layer tailwind-base, primeng, tailwind-utilities;
 

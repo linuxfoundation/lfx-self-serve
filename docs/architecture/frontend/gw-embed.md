@@ -92,7 +92,7 @@ Two rules about that fragment, both learned the hard way:
 - **Never put `window.location.href` into a URL handed onward.** Both `startSignIn`'s return URL and the embed context's `signIn.returnUrl` strip the hash, because a fragment on a query parameter survives into a third party's access logs.
 - **Clearing sooner does not solve the app-init capture, and does solve the mid-flight one.** These are two different windows and they need different fixes.
 
-  Datadog RUM reads `window.location.href` at app init, _before_ the outlet runs at all. No amount of clearing inside `adoptAuthFragment` can beat that, which is why it is handled by redacting in RUM's `beforeSend` (`redactAuthFragment`).
+  Datadog RUM reads `window.location.href` at app init, _before_ the outlet runs at all. No amount of clearing inside `adoptAuthFragment` can beat that, which is why it is handled by redacting in RUM's `beforeSend` (`redactAuthFragment`). The same hook also redacts the invite-accept `token` query param (`redactInviteToken`) so `/invite?token=…` does not leak that credential into `view.url`.
 
   The second window is inside `adoptAuthFragment` itself, and it was real. The fragment used to be cleared on each exit path _after_ the identity lookup, leaving live tokens in the address bar for the whole round trip — up to `GW_EMBED_ADOPTION_TIMEOUT_MS`. Anything reading the page URL during it captures a credential, and `AppComponent` boots Intercom, which records the current URL when its asynchronously loaded widget processes the boot call. So the fragment is now cleared as soon as the nonce is consumed and before the first `await`; everything the function still needs was already read off the hash string, and `URLSearchParams` holds a copy rather than a live view.
 
