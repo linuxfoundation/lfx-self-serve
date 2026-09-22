@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgRolePersona } from '../interfaces';
+import { ORG_ROLE_AUTHORITY_ORDER } from '../constants';
+import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
 
 /** Filter-grammar safety allowlist for usernames — accepts every char OIDC username/nickname claims actually use AND excludes the query-service separators `:` and `,`. Not a strict OIDC-claim format check. */
 const FILTER_SAFE_USERNAME = /^[A-Za-z0-9._+\-@|]+$/;
@@ -31,28 +32,6 @@ const ORG_MEMBERSHIP_STATUS_ACTIVE = 'active';
 export function isActiveStatus(status: string | null | undefined): boolean {
   return status?.trim().toLowerCase() === ORG_MEMBERSHIP_STATUS_ACTIVE;
 }
-
-/** The four grant sets a viewer holds on organizations, direct and roll-up-derived, as `OrgRoleGrantsService` publishes them. */
-export interface OrgRoleGrantSets {
-  writerSet: ReadonlySet<string>;
-  inheritedWriterSet: ReadonlySet<string>;
-  auditorSet: ReadonlySet<string>;
-  inheritedAuditorSet: ReadonlySet<string>;
-}
-
-/**
- * LFXV2-3029 — authority-first precedence over a viewer's grants on one organization: direct
- * writer, inherited writer, direct auditor, inherited auditor. The one ordering both the selector's
- * persona badge and the default-organization ranking read, so the two cannot drift. The BFF's four
- * arrays are already disjoint per this precedence, so at most one entry matches a given uid — the
- * order is defense-in-depth there, load-bearing when the same list is ranked into bands.
- */
-export const ORG_ROLE_AUTHORITY_ORDER: readonly (readonly [OrgRolePersona, keyof OrgRoleGrantSets])[] = [
-  ['direct-writer', 'writerSet'],
-  ['inherited-writer', 'inheritedWriterSet'],
-  ['direct-auditor', 'auditorSet'],
-  ['inherited-auditor', 'inheritedAuditorSet'],
-];
 
 /** The highest-authority persona the viewer holds on `uid`, or null with no grant at all. */
 export function resolveOrgRolePersona(uid: string, grants: OrgRoleGrantSets): OrgRolePersona | null {

@@ -3,7 +3,8 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isActiveStatus, ORG_ROLE_AUTHORITY_ORDER, resolveOrgRolePersona } from './org-selector.utils';
+import { ORG_ROLE_AUTHORITY_ORDER } from '../constants';
+import { isActiveStatus, resolveOrgRolePersona } from './org-selector.utils';
 
 describe('isActiveStatus', () => {
   it.each(['Active', 'active', ' ACTIVE ', 'aCtIvE'])('reads %j as active whatever the casing or padding', (status) => {

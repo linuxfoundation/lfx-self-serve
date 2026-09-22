@@ -5,9 +5,9 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { computed, DestroyRef, inject, Injectable, Injector, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
-import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { LENS_DEFAULT_ROUTES, ORG_ROLE_AUTHORITY_ORDER, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
-import { isActiveStatus, ORG_ROLE_AUTHORITY_ORDER } from '@lfx-one/shared/utils';
+import { isActiveStatus } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import {
   catchError,
