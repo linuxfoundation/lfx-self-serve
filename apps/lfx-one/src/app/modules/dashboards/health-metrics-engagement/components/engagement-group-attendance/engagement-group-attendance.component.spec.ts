@@ -289,6 +289,10 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
     expect(emissions.filter((counts) => counts !== null)).toEqual([{ groups: 34, dormantGroups: 3 }]);
+    // The clamped page is the first settled render, so "34 groups" never sits over an empty table.
+    expect(fixture.componentInstance['loading']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
   });
 
   it('writes the filter and page back to the URL, dropping each at its default', async () => {

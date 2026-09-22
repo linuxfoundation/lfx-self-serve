@@ -156,7 +156,11 @@ describe('HealthMetricsEngagementService', () => {
     await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_2' }));
 
     const sql = lastSql();
-    expect(sql).toContain('ORDER BY sort_rank_prev_completed_year ASC NULLS LAST, committee_name ASC');
+    // The whole tie-breaker chain, and NULLS LAST on every key: the session default ordering would
+    // otherwise let a pooled connection drift a null row between pages.
+    expect(sql).toContain(
+      'ORDER BY sort_rank_prev_completed_year ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST'
+    );
     expect(sql).toContain('SUM(CASE WHEN is_dormant_prev_completed_year THEN 1 ELSE 0 END) AS dormant_groups');
     // Totals come from an aggregate over the scoped set joined onto the page, never a window over it.
     expect(sql).toContain('LEFT JOIN page ON TRUE');

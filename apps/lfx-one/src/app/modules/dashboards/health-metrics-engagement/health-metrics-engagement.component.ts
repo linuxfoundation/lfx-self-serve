@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX,
   HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX,
   HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS,
+  HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementSectionId, buildHealthMetricsEngagementSubNavItems, isHealthMetricsEngagementSectionKey } from '@lfx-one/shared/utils';
@@ -131,7 +132,13 @@ export class HealthMetricsEngagementComponent {
    */
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
-    if (!counts) return;
+    if (!counts) {
+      // A follow-up read (a page clamp, a filter change) reopened this section, so the deadline
+      // restarts against that read rather than against the fragment that armed it.
+      const pending = this.pendingSection();
+      if (pending) this.armPendingSection(pending);
+      return;
+    }
 
     afterNextRender(
       () => {
@@ -143,7 +150,7 @@ export class HealthMetricsEngagementComponent {
         if (!!container !== this.spyRootIsPane || this.areaScrolls(container) !== this.spyAreaScrolls) this.setupScrollSpy();
         this.settlePendingSection();
         // Consumed: a still-pending key would scroll the pane back to the anchor on every re-emission.
-        this.pendingSection.set(null);
+        this.clearPendingSection();
       },
       { injector: this.injector }
     );
@@ -151,7 +158,7 @@ export class HealthMetricsEngagementComponent {
 
   /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */
   protected onSectionPicked(key: HealthMetricsEngagementSectionKey): void {
-    this.pendingSection.set(null);
+    this.clearPendingSection();
     this.scrollToSection(key);
   }
 
@@ -191,7 +198,13 @@ export class HealthMetricsEngagementComponent {
   private observeReaderIntent(): void {
     if (!isPlatformBrowser(this.platformId)) return;
 
-    const onIntent = () => this.pendingSection.set(null);
+    // Only a key that scrolls counts: this page's own rows bind `keydown.enter` / `keydown.space`
+    // and every keystroke in the app shell bubbles to the window, so an unfiltered handler would
+    // drop the deep link on a Tab press.
+    const onIntent = (event: Event) => {
+      if (event.type === 'keydown' && !this.isScrollKey(event as KeyboardEvent)) return;
+      this.clearPendingSection();
+    };
     // Bound to the window rather than the pane: keyboard scrolling with the body focused never
     // dispatches to the pane at all. A scrollbar drag reaches neither, which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
@@ -208,6 +221,20 @@ export class HealthMetricsEngagementComponent {
 
     clearTimeout(this.pendingSectionTimer);
     this.pendingSectionTimer = setTimeout(() => this.pendingSection.set(null), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
+  }
+
+  /** Nulls the key and its deadline together, so a live timer always implies an armed key. */
+  private clearPendingSection(): void {
+    this.pendingSection.set(null);
+    clearTimeout(this.pendingSectionTimer);
+  }
+
+  /** A keystroke in an editable element is typing, not scrolling, whatever key it carries. */
+  private isScrollKey(event: KeyboardEvent): boolean {
+    const target = event.target as HTMLElement | null;
+    if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return false;
+
+    return HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS.includes(event.key);
   }
 
   /** Replays the deep link. Runs only until the section data settles and clears the pending key. */

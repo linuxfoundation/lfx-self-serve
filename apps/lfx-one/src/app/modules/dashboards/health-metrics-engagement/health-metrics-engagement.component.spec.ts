@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output } from '@angular/core';
+import { Component, output, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -91,12 +91,16 @@ describe('HealthMetricsEngagementComponent', () => {
    * `initialFragment` is seeded before creation because that is when the real `ActivatedRoute`
    * replays it — the deep-link path only exists on that first emission.
    */
-  async function setup(initialFragment: string | null = null): Promise<void> {
+  async function setup(initialFragment: string | null = null, platformId?: string): Promise<void> {
     fragment = new BehaviorSubject<string | null>(initialFragment);
 
     await TestBed.configureTestingModule({
       imports: [HealthMetricsEngagementComponent],
-      providers: [HealthMetricsChromeService, { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } }],
+      providers: [
+        HealthMetricsChromeService,
+        { provide: ActivatedRoute, useValue: { fragment: fragment.asObservable() } },
+        ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
+      ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, { set: { imports: [EngagementSubNavComponent, GroupAttendanceStubComponent] } })
       .compileComponents();
@@ -345,7 +349,8 @@ describe('HealthMetricsEngagementComponent', () => {
 
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
-    headingOf('participation').dispatchEvent(new Event(type, { bubbles: true }));
+    const intent = type === 'keydown' ? new KeyboardEvent(type, { key: 'PageDown', bubbles: true }) : new Event(type, { bubbles: true });
+    headingOf('participation').dispatchEvent(intent);
 
     stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
     fixture.detectChanges();
@@ -353,6 +358,71 @@ describe('HealthMetricsEngagementComponent', () => {
 
     // A read that fails and later succeeds would otherwise drag the pane back to the linked anchor.
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  // The rows bind `keydown.enter` / `keydown.space` and every keystroke in the shell bubbles to the
+  // window, so an unfiltered handler would drop the deep link on a Tab press.
+  it('keeps a pending deep link through a keystroke that does not scroll', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    headingOf('participation').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // Fake timers cover only the arm-and-wait: `whenStable` below needs the real scheduler.
+  it('lets a pending deep link expire rather than scrolling into a read that never settles', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fragment.next('reps');
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS + 1);
+    vi.useRealTimers();
+
+    scrollIntoView.mockClear();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('restarts the deadline on the next fragment rather than letting the first one fire', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    fragment.next('reps');
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS - 1000);
+    fragment.next('orgs');
+    // Past the first fragment's deadline, well inside the second's.
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+
+    scrollIntoView.mockClear();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  it('schedules no expiry timer on the server, where the deep link is never replayed', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    await setup('reps', 'server');
+
+    // A pending Node timer would hold the SSR render open for the whole TTL.
+    expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
   });
 
   it('does not hold a fragment that arrives after the section data has settled', async () => {

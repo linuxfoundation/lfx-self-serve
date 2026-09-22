@@ -365,7 +365,7 @@ In changed `.ts` files:
 In changed `.ts` files:
 
 - Silent `catchError` — `catchError(() => of([]))` or `catchError(() => EMPTY)` without any logging before the fallback. Every `catchError` should log via `logger` or `console.error` at minimum. (See also section 13 — GET requests use `catchError(() => of(defaultValue))`; that pattern still requires logging.)
-- Duplicate/layered error handling — when a service method already has `catchError` returning a default (e.g. `of([])`), a component-level `catchError` on the same stream is unreachable dead code. Handle errors in one place. A component-level `catchError` is **not** dead code when the service logs and rethrows (the section 13 "measured fact" case): it is the only place the failed state can be recorded, and it should set that state rather than returning the default silently.
+- Duplicate/layered error handling — when a service method already has `catchError` returning a default (e.g. `of([])`), a component-level `catchError` on the same stream is unreachable dead code. Handle errors in one place. A component-level `catchError` is **not** dead code when the service logs and rethrows (the section 13 "measured fact" case): it is the only place the failed state can be recorded, and it should set that state rather than returning the default silently; it need not log again when the service already logged before rethrowing, so the silent-`catchError` rule above does not apply to it.
 - Inconsistent fallback values — mixing `EMPTY` and `of([])` in the same service. Pick one pattern.
 - Removed error logging — check `git diff` for removed `console.error` or `logger.error` calls that weren't replaced.
 

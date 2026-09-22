@@ -122,17 +122,19 @@ export class HealthMetricsEngagementService {
           -- committee_id cannot serve: it is nullable, so a null-id group would be dropped silently.
           TRUE AS is_page_row
         FROM scoped
-        -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
-        -- Both are nullable, and NULLS LAST pins their placement: the session's DEFAULT_NULL_ORDERING
-        -- would otherwise let a pooled connection drift a null-named group between pages.
-        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST
+        -- The trailing keys narrow the tie so paging rarely repeats or skips a same-named group.
+        -- None of them is guaranteed unique — committee_id is nullable — so identical rows under a
+        -- null id still tie; a hard guarantee needs a non-null row key on the view itself.
+        -- Every key is nullable, and NULLS LAST pins their placement: the session's
+        -- DEFAULT_NULL_ORDERING would otherwise let a pooled connection drift a null between pages.
+        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST, project_slug ASC NULLS LAST, group_type_label ASC NULLS LAST
         LIMIT ${size} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST
+      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
     `;
 
     // `expectMissingObject` still rejects — it only keeps a missing view or absent GRANT out of the

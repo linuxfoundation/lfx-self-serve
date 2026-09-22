@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SNOWFLAKE_CONFIG } from './snowflake.constant';
+
 import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupAttendance,
@@ -174,11 +176,15 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
 /** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
 export const HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX = 24;
 
-/**
- * How long a deep link's section key stays armed for its post-data re-scroll. Long enough for the
- * section reads to settle, short enough that a failed read cannot scroll the reader away later.
- */
-export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 4000;
-
 /** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
 export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
+
+/**
+ * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
+ * The server's own budget for one read is the query timeout plus the wait for a pooled connection,
+ * so anything shorter expires on a slow-but-healthy read — a cold warehouse or a contended pool.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = SNOWFLAKE_CONFIG.DEFAULT_QUERY_TIMEOUT + SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT;
+
+/** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
+export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
