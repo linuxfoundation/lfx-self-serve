@@ -78,5 +78,5 @@
   </div>
 
   <lfx-mentorship-mentee-profile-edit-drawer />
-  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" [demographics]="page()?.profile?.demographics" />
+  <lfx-mentorship-mentee-demographics-edit-drawer [visible]="demographicsOpen()" (visibleChange)="demographicsOpen.set($event)" />
 </div>

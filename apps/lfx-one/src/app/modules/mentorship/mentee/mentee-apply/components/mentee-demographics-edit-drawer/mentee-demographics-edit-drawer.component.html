@@ -4,13 +4,22 @@
 <p-drawer
   [visible]="visible()"
   (visibleChange)="onVisibleChange($event)"
+  (onShow)="onDrawerShow()"
+  [pt]="drawerPt()"
   position="right"
   [modal]="true"
   styleClass="lg:w-[620px] md:w-[70%] sm:w-[90%] w-full"
   data-testid="mentorship-mentee-demographics-edit-drawer">
   <ng-template #header>
     <div class="flex flex-col gap-2">
-      <h2 class="text-lg font-semibold text-gray-900 pr-8" data-testid="mentorship-mentee-demographics-edit-drawer-header">{{ title }}</h2>
+      <h2
+        #titleRef
+        id="mentorship-mentee-demographics-edit-drawer-title"
+        tabindex="-1"
+        class="text-lg font-semibold text-gray-900 pr-8"
+        data-testid="mentorship-mentee-demographics-edit-drawer-header">
+        {{ title }}
+      </h2>
       <p class="text-sm text-gray-600">{{ intro }}</p>
     </div>
   </ng-template>

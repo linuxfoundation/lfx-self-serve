@@ -306,14 +306,18 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
   return errors;
 }
 
+function trimmedParam(params: { get(name: string): string | null }, name: string): string {
+  return params.get(name)?.trim() ?? '';
+}
+
 /**
  * Both apply-link ids, or `null` when either query param is missing or blank.
  * Callers that navigate back to `/mentorship/mentee/apply` use this so a partial
  * link is not treated as a complete return target.
  */
 export function mentorshipMenteeApplyIds(params: { get(name: string): string | null }): MentorshipMenteeApplyIds | null {
-  const programId = params.get('programId')?.trim() ?? '';
-  const programTermId = params.get('programTermId')?.trim() ?? '';
+  const programId = trimmedParam(params, 'programId');
+  const programTermId = trimmedParam(params, 'programTermId');
   if (!programId || !programTermId) return null;
   return { programId, programTermId };
 }
@@ -324,8 +328,8 @@ export function mentorshipMenteeApplyIds(params: { get(name: string): string | n
  * the address bar even when only one of them arrived.
  */
 export function mentorshipMenteeApplyQueryParams(params: { get(name: string): string | null }): Partial<MentorshipMenteeApplyIds> {
-  const programId = params.get('programId')?.trim() ?? '';
-  const programTermId = params.get('programTermId')?.trim() ?? '';
+  const programId = trimmedParam(params, 'programId');
+  const programTermId = trimmedParam(params, 'programTermId');
   const queryParams: Partial<MentorshipMenteeApplyIds> = {};
   if (programId) queryParams.programId = programId;
   if (programTermId) queryParams.programTermId = programTermId;

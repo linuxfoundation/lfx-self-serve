@@ -10,7 +10,6 @@ import {
   MENTORSHIP_MENTEE_AGE_ELIGIBLE_LABEL,
   MENTORSHIP_MENTEE_APPLY_BEFORE_INTRO,
   MENTORSHIP_MENTEE_APPLY_BEFORE_TITLE,
-  MENTORSHIP_MENTEE_APPLY_CONFIRMATION_COUNT,
   MENTORSHIP_MENTEE_APPLY_PUBLICITY_NOTE,
   MENTORSHIP_MENTEE_NO_DUPLICATE_PROFILE_LABEL,
   MENTORSHIP_MENTEE_WORK_AUTHORIZED_LABEL,
@@ -55,6 +54,6 @@ export class MenteeBeforeYouApplyComponent {
   readonly remaining = computed(() => {
     const value = this.formSnapshot();
     const checks = [value.ageEligible, value.workAuthorized, value.noDuplicateProfile, value.complianceAccepted, value.termsAccepted];
-    return MENTORSHIP_MENTEE_APPLY_CONFIRMATION_COUNT - checks.filter(Boolean).length;
+    return checks.length - checks.filter(Boolean).length;
   });
 }

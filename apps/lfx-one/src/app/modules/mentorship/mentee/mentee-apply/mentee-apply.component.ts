@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, model, signal, Signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -61,6 +62,9 @@ import { MenteeDemographicsEditDrawerComponent } from './components/mentee-demog
 })
 export class MenteeApplyComponent {
   private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly location = inject(Location);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly mentorshipService = inject(MentorshipService);
   private readonly profileDrawer = inject(MenteeProfileEditDrawerService);
   private readonly comingSoon = inject(MentorshipComingSoonService);
@@ -82,7 +86,8 @@ export class MenteeApplyComponent {
   protected readonly hasLoaded = signal(false);
   protected readonly missingParams = signal(false);
   protected readonly loadError = signal<string | null>(null);
-  protected readonly demographicsOpen = model(false);
+  protected readonly demographicsOpen = signal(false);
+  protected readonly profileCreated = signal(this.readProfileCreated());
 
   private readonly reload = signal(0);
   private readonly queryParamMap = toSignal(this.route.queryParamMap, { initialValue: this.route.snapshot.queryParamMap });
@@ -90,7 +95,6 @@ export class MenteeApplyComponent {
   private readonly pageState: Signal<{ target: MentorshipMenteeApplyTarget; profile: MentorshipMenteeProfileResponse } | null> = this.initPage();
 
   protected readonly page = computed(() => this.pageState());
-  protected readonly profileCreated = computed(() => history.state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] ?? false);
   protected readonly remaining = computed(() => this.beforeYouApply()?.remaining() ?? MENTORSHIP_MENTEE_APPLY_CONFIRMATION_COUNT);
 
   protected onEditProfile(): void {
@@ -112,6 +116,13 @@ export class MenteeApplyComponent {
   protected onSubmit(): void {
     if (this.remaining() > 0 && !this.profileCreated()) return;
     this.comingSoon.notify(this.submitLabel);
+  }
+
+  /** Router `state` from the register redirect (#1509), read once at construction — see `menteeApplyGuard`'s equivalent check. SSR has neither a navigation nor a browser `history`, so it falls back to `false`. */
+  private readProfileCreated(): boolean {
+    if (!isPlatformBrowser(this.platformId)) return false;
+    const state = this.router.getCurrentNavigation()?.extras.state ?? (this.location.getState() as Record<string, unknown> | null);
+    return state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] === true;
   }
 
   private initPage(): Signal<{ target: MentorshipMenteeApplyTarget; profile: MentorshipMenteeProfileResponse } | null> {

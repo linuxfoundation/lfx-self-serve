@@ -9,6 +9,7 @@ import {
   MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_INTRO,
   MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_OPTIONAL,
   MENTORSHIP_MENTEE_APPLY_DEMOGRAPHIC_FIELDS,
+  MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
   MENTORSHIP_MENTEE_DEMOGRAPHICS_TITLE,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
 } from '@lfx-one/shared/constants';
@@ -54,7 +55,7 @@ function demographicAnswerLabel(
   value: string | undefined
 ): string {
   const token = value?.trim() ?? '';
-  if (!token || token === 'preferNotToSay') return MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EMPTY;
+  if (!token || token === MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY) return MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EMPTY;
   const row = MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS.find((item) => item.answerControl === answerControl);
   return row?.options.find((option) => option.value === token)?.text ?? MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EMPTY;
 }
