@@ -149,7 +149,7 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthM
 /** Rows per page in the Group attendance table. */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
 
-/** Returned when the Snowflake view is missing or unauthorized — the section renders empty, never errors. */
+/** Returned for a period the view carries no columns for; a failed read propagates rather than reading as zero. */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
   rows: [],
   totalRecords: 0,

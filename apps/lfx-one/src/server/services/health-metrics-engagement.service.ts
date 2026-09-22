@@ -131,21 +131,10 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST
     `;
 
-    let result;
-    try {
-      result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
-    } catch (error) {
-      // A missing view or GRANT is logged as the operational fault it is, then propagated like any
-      // other failure: the section's empty state asserts this foundation has no matching groups, so
-      // answering an unavailable view with the zero-filled default would state that as measured fact.
-      if (SnowflakeService.isMissingObjectError(error)) {
-        logger.warning(req, 'get_engagement_group_attendance', 'Group attendance query hit a missing-object/not-authorized error', {
-          foundation_slug: query.foundationSlug,
-          err: error,
-        });
-      }
-      throw error;
-    }
+    // No `expectMissingObject`: that flag exists so a caller can degrade gracefully, and this one
+    // rethrows — a missing view or GRANT is a real fault that belongs in error telemetry and the
+    // circuit breaker, because the empty state would assert this foundation has no matching groups.
+    const result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds);
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,

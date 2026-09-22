@@ -189,13 +189,15 @@ describe('HealthMetricsEngagementService', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('logs and propagates a missing or unauthorized view rather than reporting no groups', async () => {
+  it('propagates a missing or unauthorized view rather than reporting no groups', async () => {
     execute.mockRejectedValue(new Error('Object does not exist'));
     isMissingObjectError.mockReturnValue(true);
 
-    // The zero-filled default renders the same empty state as a foundation that genuinely has none.
+    // Not tolerated as a schema rollout: the zero-filled default renders the same empty state as a
+    // foundation that genuinely has none, and the read is not opted into `expectMissingObject`.
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('Object does not exist');
-    expect(warning).toHaveBeenCalled();
+    expect(execute.mock.calls[0][2]).toBeUndefined();
+    expect(warning).not.toHaveBeenCalled();
   });
 
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
