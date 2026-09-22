@@ -522,6 +522,83 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(invalidateAcknowledgment).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', 'ecla-2', { reason: 'compliance' });
     });
 
+    it('drops a Load-more response that arrives after the invalidate refresh starts', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 3, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 3, nextKey: 'cursor-3', canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const latePage = new Subject<OrgClaContributorAcknowledgmentList>();
+      getContributorAcknowledgments.mockReturnValueOnce(latePage.asObservable());
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+
+      getContributorAcknowledgments
+        .mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 3, nextKey: 'cursor-2', canEdit: true })))
+        .mockReturnValueOnce(
+          of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper', approved: false })], { totalCount: 3, nextKey: 'cursor-3', canEdit: true }))
+        );
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({ reason: 'compliance' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      latePage.next(
+        page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper', approved: true }), ack({ signatureId: 'ecla-3', name: 'Katherine Johnson' })], {
+          totalCount: 3,
+          nextKey: null,
+          canEdit: true,
+        })
+      );
+      latePage.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Ada Lovelace', 'Grace Hopper']);
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+    });
+
+    it('does not paint the previous agreement when its invalidate returns after a switch', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-2', name: 'Grace Hopper' })], { totalCount: 2, nextKey: null, canEdit: true }))
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      const pending = new Subject<{ signatureId: string }>();
+      invalidateAcknowledgment.mockReturnValueOnce(pending.asObservable());
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({ reason: 'compliance' });
+      await fixture.whenStable();
+
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-9', name: 'Margaret Hamilton' })])));
+      fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      pending.next({ signatureId: 'ecla-2' });
+      pending.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Margaret Hamilton']);
+    });
+
     it('does not refetch when the invalidate fails, and reports the server message', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();

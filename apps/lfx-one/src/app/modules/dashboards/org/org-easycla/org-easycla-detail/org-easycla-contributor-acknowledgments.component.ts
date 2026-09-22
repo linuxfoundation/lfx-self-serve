@@ -334,8 +334,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
             detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
           });
           if (this.destroyed) return;
+          if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
           if (this.pagesLoaded > 1) {
-            const generation = this.fetchGeneration();
+            const generation = this.fetchGeneration() + 1;
+            this.fetchGeneration.set(generation);
+            this.loadingMore.set(true);
             const search = (this.searchTerm() ?? '').trim();
             this.markInvalidatedInPlace(signatureId);
             this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
@@ -373,11 +376,24 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           return this.claService.getContributorAcknowledgments(orgUid, claSignatureId, { search, nextKey: list.nextKey });
         }),
         reduce((acc, list) => this.mergeAcknowledgmentPage(acc, list), null as OrgClaContributorAcknowledgmentList | null),
-        catchError(() => of(null)),
+        catchError(() => {
+          if (!this.destroyed && this.fetchGeneration() === generation && orgUid === this.orgUid() && claSignatureId === this.signatureId()) {
+            this.messageService.add({
+              severity: 'warn',
+              summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
+              detail: 'The acknowledgment was invalidated, but the list could not be refreshed.',
+            });
+          }
+          return of(null);
+        }),
+        finalize(() => {
+          if (!this.destroyed && this.fetchGeneration() === generation) this.loadingMore.set(false);
+        }),
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe((merged) => {
         if (!merged || this.destroyed || this.fetchGeneration() !== generation) return;
+        if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
         this.pagesLoaded = pages;
         this.page.set(merged);
       });
