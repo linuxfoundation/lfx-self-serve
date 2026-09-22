@@ -44,7 +44,9 @@
               @for (task of app.tasks; track task.id) {
                 <lfx-mentee-task-row [task]="task" [form]="applicantForm()" paddingClass="py-3" />
               } @empty {
-                <p class="py-3 text-sm text-gray-500" [attr.data-testid]="'mentee-tasks-application-empty-' + app.id">No prerequisite tasks for this application yet.</p>
+                <p class="py-3 text-sm text-gray-500" [attr.data-testid]="'mentee-tasks-application-empty-' + app.id">
+                  No prerequisite tasks for this application yet.
+                </p>
               }
             </div>
           </div>
