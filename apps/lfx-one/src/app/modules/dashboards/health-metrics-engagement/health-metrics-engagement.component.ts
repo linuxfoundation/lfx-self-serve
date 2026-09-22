@@ -6,6 +6,7 @@ import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, I
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import {
+  HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
   HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX,
   HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX,
   HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS,
@@ -75,6 +76,11 @@ export class HealthMetricsEngagementComponent {
   // Held until the sections exist, then again until the async section data settles: a deep link
   // scrolls twice because the group table changes the anchor offsets under the first scroll.
   private readonly pendingSection = signal<HealthMetricsEngagementSectionKey | null>(null);
+  /**
+   * The data sections that have not reported yet. Whichever settles first must not release the
+   * pending key: the other one reflowing afterwards would move the anchor out from under it.
+   */
+  private readonly unsettledSections = new Set<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS);
   private readonly resize$ = new Subject<void>();
   private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   /** Set while the reader-intent listeners are registered; nulled by the removal it performs. */
@@ -123,56 +129,33 @@ export class HealthMetricsEngagementComponent {
     // Router `anchorScrolling` cannot serve these links: the fragment is the bare section key while
     // the DOM id carries the `sec-eng-` prefix.
     this.route.fragment.pipe(filter(isHealthMetricsEngagementSectionKey), takeUntilDestroyed()).subscribe((key) => {
-      // Only a link arriving before the section data settles needs the second scroll. Once counts
-      // are in, the anchors are stable and a held key would yank the pane back on the next filter change.
-      if (this.groupCounts() === null) this.armPendingSection(key);
+      // Only a link arriving before the data settles needs the second scroll; once every section
+      // has reported, the anchors are stable and a held key would yank the pane back.
+      if (this.unsettledSections.size > 0) this.armPendingSection(key);
       this.scrollToSection(key);
     });
   }
 
-  /**
-   * A section reporting its totals also changes the pane's height, so a deep link that was waiting
-   * on that data gets its second and final scroll here — deferred a paint, because the rows those
-   * totals describe have not been laid out yet at the moment of this emission.
-   */
+  /** Group attendance reports its totals for the sub-nav badges and settles the section with them. */
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
     if (!counts) {
-      // The section emits `null` as each read starts, so a follow-up read — a page clamp, a filter
-      // change — restarts the deadline against that read rather than the fragment that armed it.
+      // `null` starts a read, so a follow-up one restarts the deadline against itself rather than
+      // the fragment, and puts the section back among those the pending key waits on.
       const pending = this.pendingSection();
-      if (pending) this.armPendingSection(pending);
+      if (!pending) return;
+
+      this.unsettledSections.add('committees');
+      this.armPendingSection(pending);
       return;
     }
 
-    afterNextRender(
-      () => {
-        this.measurePanesHeight();
-        // The area may only now overflow, and whether it does decides if the end sentinel is
-        // observed at all — the first pass ran against five short placeholder sections. Counts
-        // re-emit on every filter and page change, so nothing is rebuilt unless that decision moved.
-        const container = this.scrollingPane();
-        if (!!container !== this.spyRootIsPane || this.areaScrolls(container) !== this.spyAreaScrolls) this.setupScrollSpy();
-        this.settlePendingSection();
-        // Consumed: a still-pending key would scroll the pane back to the anchor on every re-emission.
-        this.clearPendingSection();
-      },
-      { injector: this.injector }
-    );
+    this.onSectionSettled('committees');
   }
 
-  /**
-   * Participation sits above every other section, so its read landing moves each anchor below it.
-   * The pending key is left armed — group attendance owns clearing it, and may still be loading.
-   */
+  /** Participation sits above every other section, so its read landing moves each anchor below it. */
   protected onParticipationSettled(): void {
-    afterNextRender(
-      () => {
-        this.measurePanesHeight();
-        this.settlePendingSection();
-      },
-      { injector: this.injector }
-    );
+    this.onSectionSettled('participation');
   }
 
   /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */
@@ -237,6 +220,33 @@ export class HealthMetricsEngagementComponent {
       for (const event of events) window.removeEventListener(event, onIntent);
       this.removeIntentListeners = null;
     };
+  }
+
+  /**
+   * A read landing changes the pane's height, so a waiting deep link re-scrolls here, a paint later
+   * than the emission. The key is released only once every data section has settled.
+   */
+  private onSectionSettled(key: HealthMetricsEngagementSectionKey): void {
+    this.unsettledSections.delete(key);
+    afterNextRender(
+      () => {
+        this.measurePanesHeight();
+        this.rebuildScrollSpyIfRootMoved();
+        this.settlePendingSection();
+        // A still-pending key would scroll the pane back to the anchor on every later re-emission.
+        if (this.unsettledSections.size === 0) this.clearPendingSection();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * Whether the area overflows decides if the end sentinel is observed at all, and a read can flip
+   * it. Sections re-emit constantly, so nothing is rebuilt unless that decision moved.
+   */
+  private rebuildScrollSpyIfRootMoved(): void {
+    const container = this.scrollingPane();
+    if (!!container !== this.spyRootIsPane || this.areaScrolls(container) !== this.spyAreaScrolls) this.setupScrollSpy();
   }
 
   /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */

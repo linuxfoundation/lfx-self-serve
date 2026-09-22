@@ -522,6 +522,26 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
 
+  // The reverse order is the regression: releasing the key on the first section to report left
+  // participation's own reflow — which moves every anchor below it — unanswered.
+  it('re-anchors a pending deep link when participation settles last', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
   it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');
@@ -582,12 +602,13 @@ describe('HealthMetricsEngagementComponent', () => {
 
   // The handlers sit on three of the browser's hottest event streams, so a settled read has to
   // give them back rather than leave them running for the rest of the page's life.
-  it('unregisters the reader-intent listeners once the read settles', async () => {
+  it('unregisters the reader-intent listeners once every section has settled', async () => {
     const removeEventListener = vi.spyOn(window, 'removeEventListener');
     fragment.next('reps');
     fixture.detectChanges();
 
     stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    participationChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -630,8 +651,9 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
   });
 
-  it('does not hold a fragment that arrives after the section data has settled', async () => {
+  it('does not hold a fragment that arrives after every section has settled', async () => {
     stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    participationChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 

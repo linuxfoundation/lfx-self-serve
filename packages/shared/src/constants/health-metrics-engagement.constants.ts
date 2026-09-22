@@ -180,6 +180,12 @@ export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
  */
 export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
+/**
+ * Sections whose read can still change the pane's height, so a deep link is released only once
+ * every one of them has settled. Sections added in PRs 3-4 on #2802 belong here as they land.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees'] as const;
+
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
 
