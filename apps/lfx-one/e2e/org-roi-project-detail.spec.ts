@@ -244,8 +244,9 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
 
     const state = page.getByTestId('org-roi-project-detail-empty-state');
     await expect(state).toBeVisible();
-    await expect(state).toHaveAttribute('data-state', 'section-could-not-load');
-    await expect(state).toContainText('This section could not be loaded');
+    // The gate's 503 states it could not check (`ROLE_GRANTS_UNAVAILABLE`) — could-not-verify, with Retry.
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
+    await expect(state).toContainText('Access could not be verified');
     await expect(state).not.toContainText('You do not have access');
     await expect(page.getByTestId('org-roi-project-detail-empty-retry')).toBeVisible();
   });
