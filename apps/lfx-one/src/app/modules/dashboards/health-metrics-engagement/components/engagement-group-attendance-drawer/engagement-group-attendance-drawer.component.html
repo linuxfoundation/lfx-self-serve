@@ -20,7 +20,7 @@
         </div>
         <div class="flex items-center justify-between gap-4">
           <dt class="text-gray-500">Last met</dt>
-          <dd class="text-gray-900">{{ group.lastMetDate ? (group.lastMetDate | date: 'MMM d, y') : 'Never' }}</dd>
+          <dd class="text-gray-900">{{ lastMetLabel() }}</dd>
         </div>
       </dl>
 

@@ -60,6 +60,15 @@ describe('EngagementGroupAttendanceDrawerComponent', () => {
     expect(fixture.componentInstance['periods']()[0]?.label).toBe('COMPLETED_YEAR_4');
   });
 
+  // Same UTC-anchored parse as the table: a `DatePipe` render would drift a day west of UTC.
+  it('renders the last-met date on its own calendar day, and "Never" without one', async () => {
+    const fixture = await render(groupRow());
+    expect(fixture.componentInstance['lastMetLabel']()).toBe('Aug 14, 2026');
+
+    fixture.componentRef.setInput('row', groupRow({ lastMetDate: null }));
+    expect(fixture.componentInstance['lastMetLabel']()).toBe('Never');
+  });
+
   it('renders no body and no periods without a selected row', async () => {
     const fixture = await render(null);
 

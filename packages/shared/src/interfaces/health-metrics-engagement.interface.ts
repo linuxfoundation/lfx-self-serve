@@ -95,6 +95,8 @@ export interface HealthMetricsEngagementGroupRowView {
   row: HealthMetricsEngagementGroupRow;
   period: HealthMetricsEngagementGroupPeriod | null;
   trend: (number | null)[];
+  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
+  lastMetLabel: string;
 }
 
 /** Sub-nav badge inputs for `#committees`, aggregated over the whole filtered set, not the page. */

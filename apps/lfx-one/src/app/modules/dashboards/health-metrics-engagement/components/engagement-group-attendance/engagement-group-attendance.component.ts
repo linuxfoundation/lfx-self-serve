@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -14,7 +14,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
 } from '@lfx-one/shared/constants';
-import { buildHealthMetricsEngagementGroupTrend, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
+import { buildHealthMetricsEngagementGroupTrend, formatIsoDateLabel, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
@@ -41,7 +41,6 @@ import type {
 @Component({
   selector: 'lfx-engagement-group-attendance',
   imports: [
-    DatePipe,
     EmptyStateComponent,
     FilterPillsComponent,
     TableComponent,
@@ -99,6 +98,7 @@ export class EngagementGroupAttendanceComponent {
       row,
       period: selectHealthMetricsEngagementGroupPeriod(row, range),
       trend: buildHealthMetricsEngagementGroupTrend(row),
+      lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : '—',
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);

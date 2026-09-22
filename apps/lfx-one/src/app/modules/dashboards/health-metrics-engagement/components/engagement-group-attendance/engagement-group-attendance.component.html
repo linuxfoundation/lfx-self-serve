@@ -84,7 +84,7 @@
             <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? 0 }}</span>
           </td>
           <td>
-            <span class="text-sm text-gray-800">{{ row.lastMetDate ? (row.lastMetDate | date: 'MMM d, y') : '—' }}</span>
+            <span class="text-sm text-gray-800">{{ view.lastMetLabel }}</span>
           </td>
           <td>
             <lfx-engagement-sparkline [series]="view.trend" [ariaLabel]="'Attendance history for ' + row.committeeName" />

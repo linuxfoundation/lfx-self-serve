@@ -124,6 +124,15 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
   });
 
+  // A `DatePipe` render of the date-only value reads a day early west of UTC, so the label is
+  // precomputed against a UTC-anchored parse instead.
+  it('renders the last-met date on its own calendar day, and an em dash when a group never met', async () => {
+    await render(response({ rows: [groupRow(), groupRow({ committeeId: 'c-3', lastMetDate: null })] }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]').textContent).toContain('Aug 14, 2026');
+    expect(fixture.componentInstance['rowViews']()[1]?.lastMetLabel).toBe('\u2014');
+  });
+
   it('shows the Dormant badge instead of a bar, since a group that never met has no rate to draw', async () => {
     const dormant = groupRow({
       committeeId: 'c-2',
