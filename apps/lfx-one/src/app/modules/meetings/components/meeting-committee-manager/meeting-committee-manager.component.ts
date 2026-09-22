@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -116,12 +116,23 @@ export class MeetingCommitteeManagerComponent {
   private attendeeVisibilityLocked = false;
 
   /**
-   * Whether a committee's attendee preference was skipped because the lock was on.
-   * @description The unlock can only re-apply a preference it actually withheld. Re-applying on
-   * every unlock would also overwrite a deliberate opt-out, since the lock forces the control to
-   * `false` and the value alone cannot say whether the organizer or the lock put it there.
+   * Whether the organizer themselves turned attendee visibility off.
+   * @description The unlock path cannot read this off the control: the lock writes `false` too,
+   * so the value alone cannot say whether the organizer or the lock put it there. Tracking the
+   * organizer's own edits separately lets the unlock restore a committee preference (the case
+   * the falling edge exists for) while leaving a deliberate opt-out alone.
+   *
+   * Every lock-driven write passes `{ emitEvent: false }`, so an emission on that control is
+   * either the organizer or this component's own write, and {@link applyingCommitteePreference}
+   * distinguishes those two.
    */
-  private attendeePreferenceDeferred = false;
+  private attendeeOptedOutByUser = false;
+
+  /** Guards {@link attendeeOptedOutByUser} against this component's own writes. */
+  private applyingCommitteePreference = false;
+
+  /** Explicit, because the opt-out watcher is re-subscribed from inside a `switchMap`. */
+  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * Emission gate for `committeeMembersChange`.
@@ -224,6 +235,7 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          this.watchAttendeeOptOut(form);
           return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
             map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
           );
@@ -233,7 +245,7 @@ export class MeetingCommitteeManagerComponent {
       .subscribe((locked) => {
         const wasLocked = this.attendeeVisibilityLocked;
         this.attendeeVisibilityLocked = locked;
-        if (wasLocked && !locked && this.attendeePreferenceDeferred) {
+        if (wasLocked && !locked && !this.attendeeOptedOutByUser) {
           this.applyCommitteeAttendeePreference();
         }
       });
@@ -430,10 +442,27 @@ export class MeetingCommitteeManagerComponent {
   }
 
   /**
+   * Tracks the organizer's own edits to the attendees toggle for the lifetime of the given form.
+   * @description Re-subscribed whenever the form input changes, since the control instance goes
+   * with it. Lock-driven writes are silent (`{ emitEvent: false }`) and this component's own
+   * write is flagged, so anything reaching here is the organizer.
+   */
+  private watchAttendeeOptOut(form: FormGroup): void {
+    form
+      .get('show_meeting_attendees')
+      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((value) => {
+        if (!this.applyingCommitteePreference) {
+          this.attendeeOptedOutByUser = value === false;
+        }
+      });
+  }
+
+  /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
-   * unless board/restricted meetings lock the control off. A preference withheld by the lock is
-   * recorded and applied once the lock lifts; an unlock with nothing withheld leaves the control
-   * alone, so an organizer who turned the toggle off before switching meeting types keeps it off.
+   * unless board/restricted meetings lock the control off. The unlock path re-runs this so a
+   * preference the lock withheld — or one the lock overwrote — is restored, but it is skipped
+   * entirely when the organizer turned the toggle off themselves.
    */
   private applyCommitteeAttendeePreference(): void {
     const ids = this.selectedCommitteeIds();
@@ -443,11 +472,11 @@ export class MeetingCommitteeManagerComponent {
       return;
     }
     if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
-      this.attendeePreferenceDeferred = true;
       return;
     }
-    this.attendeePreferenceDeferred = false;
+    this.applyingCommitteePreference = true;
     attendeesControl.setValue(true);
+    this.applyingCommitteePreference = false;
   }
 
   private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {

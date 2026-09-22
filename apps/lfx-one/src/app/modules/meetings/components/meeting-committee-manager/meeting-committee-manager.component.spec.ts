@@ -789,6 +789,22 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
+  it('restores a committee preference the lock overwrote, when the organizer never touched it', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    // The lock forces the control off; the organizer has expressed no preference of their own,
+    // so the round trip must leave the committee's preference where it was.
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('keeps an explicit opt-out that predates the lock, rather than reapplying on unlock', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
