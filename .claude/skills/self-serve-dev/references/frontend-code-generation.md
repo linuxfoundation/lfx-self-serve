@@ -263,7 +263,11 @@ export class MyService {
 
 - `@Injectable({ providedIn: 'root' })` — always tree-shakeable
 - `inject(HttpClient)` — never constructor-based DI
-- GET: `catchError(() => of(default))` for graceful degradation
+- GET: `catchError(() => of(default))` for graceful degradation — **except when the default would
+  read as a measured fact**. A zero-filled or empty default that the UI presents as a real count
+  (an "0 dormant groups" badge, an empty-state that means "this foundation has none") must log and
+  rethrow instead, so the component can render a distinct failed state rather than a believable
+  zero. See `docs/reviews/frontend-checklist.md` § 13.
 - POST/PUT/DELETE: `take(1)` and let errors propagate
 - Interfaces from `@lfx-one/shared/interfaces` — never define locally
 - API paths are relative: `/api/<resource>`

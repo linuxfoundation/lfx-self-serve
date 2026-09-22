@@ -1,0 +1,9 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-center gap-2" data-testid="engagement-attendance-bar">
+  <div class="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-gray-100">
+    <div class="h-full rounded-full" [class]="fillClass()" [style.width.%]="widthPct()"></div>
+  </div>
+  <span class="w-14 shrink-0 text-right text-[13px] tabular-nums text-gray-700" data-testid="engagement-attendance-bar-label">{{ label() }}</span>
+</div>

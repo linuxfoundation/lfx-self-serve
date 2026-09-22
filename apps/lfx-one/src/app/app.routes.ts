@@ -247,6 +247,22 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         canActivate: [dashboardAccessGuard, projectQueryParamGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics-gate/health-metrics-gate.component').then((m) => m.HealthMetricsGateComponent),
+        // No `redirectTo` on the empty child — `/foundation/health-metrics` must keep its exact URL,
+        // since with the flag off the gate renders the legacy page and never mounts an outlet at all.
+        children: [
+          {
+            path: '',
+            pathMatch: 'full',
+            loadComponent: () =>
+              import('./modules/dashboards/health-metrics-overview/health-metrics-overview.component').then((m) => m.HealthMetricsOverviewComponent),
+          },
+          {
+            path: 'engagement',
+            title: 'Health Metrics — Engagement',
+            loadComponent: () =>
+              import('./modules/dashboards/health-metrics-engagement/health-metrics-engagement.component').then((m) => m.HealthMetricsEngagementComponent),
+          },
+        ],
       },
       // Foundation Lens — Campaign Impact page (ED + LF Staff always; marketing_auditor when marketing-ops-fga-enabled is on — LF Staff still see only the Social Listening tab)
       {
