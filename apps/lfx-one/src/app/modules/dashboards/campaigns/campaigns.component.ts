@@ -1177,6 +1177,15 @@ export class CampaignsComponent {
    */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB()));
 
+  /**
+   * What STAGING sends for variant B -- the same sanitized string the preview renders.
+   *
+   * A named signal rather than an inline call at the snapshot, so a test can assert the two
+   * agree. Sanitizing only the preview was worse than sanitizing neither: the pixel vanished
+   * from the one view that could have caught it and still shipped.
+   */
+  protected readonly abTestBodyHtmlBForSend = computed<string>(() => this.abTestBodyHtmlBPreview());
+
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
 
@@ -1196,7 +1205,10 @@ export class CampaignsComponent {
     // TRIMMED, because buildHubSpotConfig trims before applying the same gate: a whitespace-only
     // subject passes a raw !== '' check here and is then dropped server-side, which is the
     // preview/draft drift this predicate exists to remove.
-    () => this.abTestSubjectB().trim() !== '' && this.abTestBodyHtmlB().trim() !== ''
+    // The SANITIZED body, because that is what ships. A body consisting only of a tracking pixel
+    // sanitizes to '', so gating on the raw value would call it stageable and then send an empty
+    // variant -- the same preview/draft drift this predicate exists to remove, one layer down.
+    () => this.abTestSubjectB().trim() !== '' && this.abTestBodyHtmlBPreview().trim() !== ''
   );
 
   /**
@@ -2626,7 +2638,11 @@ export class CampaignsComponent {
     const abTestDiscardAtSnapshot = this.abTestDiscardGeneration;
     const abTestSubjectB = this.abTestSubjectB();
     const abTestPreheaderB = this.abTestPreheaderBForSend();
-    const abTestBodyHtmlB = this.abTestBodyHtmlB();
+    // The SANITIZED value, the same one the preview renders. Sanitizing only the preview was
+    // worse than sanitizing neither: a tracking pixel pasted into the B textarea vanished from
+    // the operator's preview while still shipping in the sent email, so the one person who could
+    // have spotted it was the only one who could not see it.
+    const abTestBodyHtmlB = this.abTestBodyHtmlBForSend();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.

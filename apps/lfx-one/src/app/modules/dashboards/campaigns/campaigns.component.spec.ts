@@ -1885,6 +1885,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestEnabled: Signal<boolean>;
     abTestSubjectB: Signal<string>;
     abTestBodyHtmlB: Signal<string>;
+    abTestBodyHtmlBPreview: Signal<string>;
+    abTestBodyHtmlBForSend: Signal<string>;
     abTestPreheaderBForSend: Signal<string>;
     abTestPreheaderBPreview: Signal<string>;
     emailPreheaderPreview: Signal<string>;
@@ -5144,6 +5146,38 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailStaging()).toBe('error');
       expect(internals().emailStagingMessage()).toBe('platform campaign creation failed');
     });
+  });
+
+  it('sanitizes variant B for the PREVIEW and the STAGED value alike', () => {
+    selectEmail();
+    internals().abTestForm.controls.enabled.setValue(true);
+    internals().abTestForm.controls.subjectB.setValue('B subject');
+    internals().abTestForm.controls.bodyHtmlB.setValue('<p>Hi</p><img src="https://evil.example/p.gif">');
+    fixture.detectChanges();
+
+    // Sanitizing only the preview is WORSE than sanitizing neither: the pixel vanishes from the
+    // one view that could catch it while still shipping in the sent email.
+    const preview = internals().abTestBodyHtmlBPreview();
+    expect(preview).not.toContain('<img');
+    expect(preview).toContain('Hi');
+
+    // And the STAGED value must be that same sanitized string. Asserting only the preview is what
+    // let the one-sided version through: the pixel disappeared from the operator's view while
+    // still going out in the email.
+    expect(internals().abTestBodyHtmlBForSend()).toBe(preview);
+  });
+
+  it('refuses to stage a variant B body that is only a tracking pixel', () => {
+    selectEmail();
+    internals().abTestForm.controls.enabled.setValue(true);
+    internals().abTestForm.controls.subjectB.setValue('B subject');
+    // Non-empty raw, EMPTY once sanitized. Gating on the raw value called this stageable and
+    // then shipped an empty variant.
+    internals().abTestForm.controls.bodyHtmlB.setValue('<img src="https://evil.example/p.gif">');
+    fixture.detectChanges();
+
+    expect(internals().abTestBodyHtmlBPreview().trim()).toBe('');
+    expect(internals().abTestIsStageable()).toBe(false);
   });
 });
 
