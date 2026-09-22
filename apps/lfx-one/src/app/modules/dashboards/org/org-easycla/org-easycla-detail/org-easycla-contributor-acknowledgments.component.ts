@@ -214,6 +214,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           this.page.set(merged);
         },
         error: () => {
+          if (this.fetchGeneration() !== generation) return;
           this.messageService.add({
             severity: 'error',
             summary: 'Load more failed',
