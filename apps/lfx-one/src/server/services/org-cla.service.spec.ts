@@ -1079,7 +1079,8 @@ describe('OrgClaService.requestCorporateSignature', () => {
       signUrl: 'https://docusign.example.org/session/1',
       signatureId: 'signature-uuid-1',
     });
-    expect(gatewayFetch.mock.calls[0][2].body.cla_group_id).toBe(claGroupId);
+    const body = gatewayFetch.mock.calls[0][2].body as { cla_group_id: string };
+    expect(body.cla_group_id).toBe(claGroupId);
   });
 
   it('does not hand back the signing address when the CLA Group does not match', async () => {

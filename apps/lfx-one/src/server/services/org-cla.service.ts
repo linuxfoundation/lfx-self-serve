@@ -544,6 +544,7 @@ export class OrgClaService {
     // would treat as unaffirmed — so the mail path leaves those keys off the object entirely.
     // `return_url` is the same omit: the producer documents it as self-sign only, and still
     // writes a supplied value onto a mailed signature.
+    // Forward the accepted UUID spelling: linuxfoundation/easycla#5219 normalizes it before comparison.
     let body: EasyClaSelfServeCorporateSignatureInput;
     if (request.sendAsEmail) {
       body = {
@@ -679,8 +680,13 @@ export class OrgClaService {
       });
     }
 
-    // The producer binds `cla_group_id` before creating the envelope (#2679). Retain the echo
-    // check as defense in depth and during consumer-first rollout to an older producer.
+    // Deploy this consumer before linuxfoundation/easycla#5219: older producers ignore the
+    // requested `cla_group_id`, so the response echo remains their only chosen-group check.
+    // The upgraded producer independently resolves the project's signing group and rejects
+    // mismatches before creating an envelope; this check then catches inconsistent responses,
+    // not the project/group binding itself.
+    // Refusing here can leave an envelope already created or emailed upstream, but must not
+    // hand the browser a signing session for the wrong agreement.
     // Compared canonically, never as raw strings. The request boundary accepts the hyphenated and
     // unhyphenated spellings in either case, because the producer does, and the producer answers in
     // its own canonical one — so a request that spelled the id differently would fail a raw
