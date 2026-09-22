@@ -626,20 +626,22 @@ describe('isPrivateHost', () => {
     expect(elapsed).toBeLessThan(25);
   });
 
-  it('judges a reading exactly at the bound, pinning the +1 in the formula', () => {
-    // The scan starts at `length - (8 + 1)`. Nothing pinned that `+1`, so an off-by-one would
-    // narrow the window to 8 and silently stop judging the outermost reading -- a bypass, not a
-    // slowdown, and no existing test would have failed.
+  it('judges a private reading however much affix precedes it', () => {
+    // What the bound actually guarantees, stated as something a test can fail on. The previous
+    // version of this test claimed to pin the `+1` in `length - (MAX_IPV6_GROUPS + 1)`; it could
+    // not, because that slot was unreachable -- an affixed label's private reading is a SUFFIX of
+    // it, so the same scan finds it either way. The `+1` has been removed rather than pinned.
     //
-    // `a-fd00--1` is exactly that reading: one affix segment plus the address's own three
-    // (`fd00`, ``, `1`). It must still be refused, and `a-b-fd00--1` -- one segment further out
-    // than the documented single affix split -- is the control that shows the window is a window
-    // rather than unbounded.
+    // These are the readings the 8-group window must still reach, one per affix depth.
+    expect(isPrivateHost('fd00--1.sslip.io')).toBe(true);
     expect(isPrivateHost('a-fd00--1.sslip.io')).toBe(true);
-    expect(isPrivateHost('a-b-fd00--1.sslip.io')).toBe(true);
-    // And a public address at the same shape must stay allowed, so "refuse everything long"
-    // cannot pass this.
+    expect(isPrivateHost('a-b-c-d-e-f-fd00--1.sslip.io')).toBe(true);
+    // A fully-expanded 8-group loopback, which uses every slot in the window.
+    expect(isPrivateHost('0-0-0-0-0-0-0-1.sslip.io')).toBe(true);
+    // And the negative half: a public address at the same shapes stays allowed, so narrowing the
+    // window to refuse everything long cannot pass this.
     expect(isPrivateHost('a-b-2001-4860-4860--8888.sslip.io')).toBe(false);
+    expect(isPrivateHost('release-10-0-0-5.example.com')).toBe(false);
   });
 });
 

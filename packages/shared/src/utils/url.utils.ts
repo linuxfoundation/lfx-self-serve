@@ -368,9 +368,14 @@ function dashNotationIPv6Candidates(label: string): string[] {
   // `fd00--1` suffix regardless of how much affix precedes it, which is why the deny cases --
   // including deliberately over-long ones -- still hold with the bound in place.
   //
-  // 9 suffixes: 8 groups plus the one affix split sslip.io documents.
+  // 8 suffixes, one per possible group. NOT 8 + 1 for an affix split: an affixed label's private
+  // reading is a SUFFIX of it, so it is reached by the same scan -- `a-fd00--1` is judged on
+  // `fd00--1` whether the window is 8 or 9. The extra slot was unreachable, verified by running
+  // every combination of 9 address spellings x 9 affix lengths x both wildcard domains under
+  // both bounds: 162 hosts, zero behavioural difference. Three review rounds tried to pin the
+  // +1 with a test and could not, because no input distinguishes the two.
   const MAX_IPV6_GROUPS = 8;
-  const firstIndex = Math.max(0, segments.length - (MAX_IPV6_GROUPS + 1));
+  const firstIndex = Math.max(0, segments.length - MAX_IPV6_GROUPS);
 
   for (let i = firstIndex; i < segments.length; i++) {
     // Every suffix of the label is a reading, INCLUDING those that begin with an empty segment.
