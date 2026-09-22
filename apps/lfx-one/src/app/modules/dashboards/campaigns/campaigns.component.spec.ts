@@ -5160,7 +5160,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     //
     // The name says PREVIEW only, deliberately. An earlier version claimed "and the STAGED value
     // alike" while asserting `ForSend() === Preview()` -- a tautology, since ForSend is defined
-    // as `() => Preview()`, so it could not fail. That assertion was removed in 2a09b23 and the
+    // as `() => Preview()`, so it could not fail. That assertion was removed and the
     // name was left behind, promising coverage this body does not provide.
     //
     // The staged value is covered where it can actually fail: the controller test

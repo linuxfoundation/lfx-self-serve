@@ -1285,6 +1285,9 @@ describe('CampaignController.createCampaign cutover', () => {
             subject: 'Subj\u202Eevil',
             preheader: 'Pre\u202Eevil',
             buttonText: 'Click\u202Eevil',
+            // A buttonUrl is required for buttonText to survive the allow-list -- without it the
+            // pair is dropped and the field could never be observed.
+            buttonUrl: 'https://events.linuxfoundation.org/register/',
             abTestEnabled: true,
             subjectB: 'SubjB\u202Eevil',
             bodyHtmlB: '<p>B</p><img src="https://evil.test/b.gif">',
@@ -1309,7 +1312,7 @@ describe('CampaignController.createCampaign cutover', () => {
     // `previewText` on the wire (and `preheaderB` to `previewTextB`), so asserting the payload
     // key rather than the request key is what makes this test about what actually ships.
     // `buttonText` is absent here by design -- the allow-list drops it without a `buttonUrl`.
-    for (const key of ['subject', 'previewText', 'subjectB', 'previewTextB']) {
+    for (const key of ['subject', 'previewText', 'subjectB', 'previewTextB', 'buttonText']) {
       expect(cfg[key]).not.toContain('\u202E');
       expect(cfg[key]).toContain('evil');
     }

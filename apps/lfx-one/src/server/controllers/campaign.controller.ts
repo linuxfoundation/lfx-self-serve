@@ -2171,7 +2171,7 @@ export class CampaignController {
     const rawSubject = body.hubspotConfig?.subject;
     const subject = sanitizeDisplayText(typeof rawSubject === 'string' ? rawSubject.trim() : '');
     const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody.trim() : '');
+    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '').trim();
 
     // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
     // would stay dropped even after the AI generates one, and a staged draft would keep the
@@ -2194,7 +2194,7 @@ export class CampaignController {
     const rawSubjectB = body.hubspotConfig?.subjectB;
     const subjectB = sanitizeDisplayText(typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '');
     const rawBodyB = body.hubspotConfig?.bodyHtmlB;
-    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB.trim() : '');
+    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '').trim();
     const rawPreheaderB = body.hubspotConfig?.preheaderB;
     const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
 

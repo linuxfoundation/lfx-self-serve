@@ -1184,7 +1184,7 @@ export class CampaignsComponent {
    * staged body has ONE clearly-named read site instead of a transform buried in a 40-line
    * payload builder. (An earlier version of this line claimed the name existed so a test could
    * assert it matches the preview; that test was tautological -- this is defined as the preview
-   * -- and was removed in 2a09b23.)
+   * -- and was removed when this signal was introduced.)
    *
    * Sanitizing only the preview was worse than sanitizing neither: the pixel vanished from the
    * one view that could have caught it and still shipped.

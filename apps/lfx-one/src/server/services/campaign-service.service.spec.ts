@@ -2519,6 +2519,26 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.body).toContain('Join us');
   });
 
+  it('sanitizes the subject and preheader, not only the CTA', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'Save\u202Eyour seat',
+        preheader: 'Join\u202Eus',
+        sections: [{ type: 'rich_text', html: '<p>Body</p>' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Same sink as `cta`: model-authored display text rendered in a sent email. A BIDI override
+    // in a subject line renders as something other than what it contains, and the subject is the
+    // first thing a recipient reads.
+    expect(result.copy?.subject).not.toContain('\u202E');
+    expect(result.copy?.subject).toContain('your seat');
+    expect(result.copy?.preheader).not.toContain('\u202E');
+    expect(result.copy?.preheader).toContain('us');
+  });
+
   it('refuses a generation whose body is EMPTY after sanitization', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({

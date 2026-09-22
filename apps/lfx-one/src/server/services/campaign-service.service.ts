@@ -944,7 +944,16 @@ export class CampaignServiceClient {
       }
       return {
         enabled: true,
-        copy: { subject: copy.subject, preheader: copy.preheader, body, cta, ctaUrl },
+        copy: {
+          // Sanitized for the same reason `cta` is, and they reach the same sink: model-authored
+          // display text rendered in a sent email. A BIDI override in a subject line renders as
+          // something other than what it contains.
+          subject: sanitizeDisplayText(copy.subject ?? ''),
+          preheader: sanitizeDisplayText(copy.preheader ?? ''),
+          body,
+          cta,
+          ctaUrl,
+        },
       };
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
