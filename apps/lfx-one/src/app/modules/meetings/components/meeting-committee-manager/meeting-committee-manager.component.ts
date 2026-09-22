@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -21,7 +21,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, EMPTY, filter, forkJoin, map, merge, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, forkJoin, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -116,23 +116,23 @@ export class MeetingCommitteeManagerComponent {
   private attendeeVisibilityLocked = false;
 
   /**
-   * Whether the organizer themselves turned attendee visibility off.
-   * @description The unlock path cannot read this off the control: the lock writes `false` too,
-   * so the value alone cannot say whether the organizer or the lock put it there. Tracking the
-   * organizer's own edits separately lets the unlock restore a committee preference (the case
-   * the falling edge exists for) while leaving a deliberate opt-out alone.
+   * Whether the attendees toggle is currently holding a committee's preference rather than a
+   * value of the organizer's own.
+   * @description The unlock may only put back what this component itself applied or was stopped
+   * from applying. Reading the control instead cannot work: the lock writes `false` too, and a
+   * saved `false` an organizer chose on an earlier visit looks exactly like one the lock just
+   * wrote — restoring on that reading would silently re-share a roster they had turned off.
    *
-   * Every lock-driven write passes `{ emitEvent: false }`, so an emission on that control is
-   * either the organizer or this component's own write, and {@link applyingCommitteePreference}
+   * Set when a committee preference is applied or withheld by the lock; cleared as soon as the
+   * organizer edits the toggle or the selection stops carrying the preference. Lock-driven
+   * writes are silent (`{ emitEvent: false }`), so an emission on that control is either the
+   * organizer or this component's own write, and {@link applyingCommitteePreference}
    * distinguishes those two.
    */
-  private attendeeOptedOutByUser = false;
+  private committeeOwnsAttendeeToggle = false;
 
-  /** Guards {@link attendeeOptedOutByUser} against this component's own writes. */
+  /** Guards {@link committeeOwnsAttendeeToggle} against this component's own writes. */
   private applyingCommitteePreference = false;
-
-  /** Explicit, because the opt-out watcher is re-subscribed from inside a `switchMap`. */
-  private readonly destroyRef = inject(DestroyRef);
 
   /**
    * Emission gate for `committeeMembersChange`.
@@ -235,9 +235,11 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
-          this.watchAttendeeOptOut(form);
-          return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
-            map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
+          return merge(
+            merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
+              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
+            ),
+            this.watchAttendeeEdits(form)
           );
         }),
         takeUntilDestroyed()
@@ -245,7 +247,7 @@ export class MeetingCommitteeManagerComponent {
       .subscribe((locked) => {
         const wasLocked = this.attendeeVisibilityLocked;
         this.attendeeVisibilityLocked = locked;
-        if (wasLocked && !locked && !this.attendeeOptedOutByUser) {
+        if (wasLocked && !locked && this.committeeOwnsAttendeeToggle) {
           this.applyCommitteeAttendeePreference();
         }
       });
@@ -442,41 +444,52 @@ export class MeetingCommitteeManagerComponent {
   }
 
   /**
-   * Tracks the organizer's own edits to the attendees toggle for the lifetime of the given form.
-   * @description Re-subscribed whenever the form input changes, since the control instance goes
-   * with it. Lock-driven writes are silent (`{ emitEvent: false }`) and this component's own
-   * write is flagged, so anything reaching here is the organizer.
+   * Watches the organizer's own edits to the attendees toggle, handing ownership of the value
+   * back to them.
+   * @description Returned as part of the lock stream rather than subscribed on the side, so the
+   * `switchMap` tears it down when the form input is replaced; a side subscription would
+   * outlive its control and accumulate one per form. It contributes no lock readings of its own
+   * — the edits are the point, the emissions are not.
    */
-  private watchAttendeeOptOut(form: FormGroup): void {
-    form
-      .get('show_meeting_attendees')
-      ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe((value) => {
+  private watchAttendeeEdits(form: FormGroup): Observable<boolean> {
+    const attendeesControl = form.get('show_meeting_attendees');
+    if (!attendeesControl) {
+      return EMPTY;
+    }
+    return attendeesControl.valueChanges.pipe(
+      tap(() => {
         if (!this.applyingCommitteePreference) {
-          this.attendeeOptedOutByUser = value === false;
+          this.committeeOwnsAttendeeToggle = false;
         }
-      });
+      }),
+      switchMap(() => EMPTY)
+    );
   }
 
   /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
-   * unless board/restricted meetings lock the control off. The unlock path re-runs this so a
-   * preference the lock withheld — or one the lock overwrote — is restored, but it is skipped
-   * entirely when the organizer turned the toggle off themselves.
+   * unless board/restricted meetings lock the control off.
+   * @description Also maintains {@link committeeOwnsAttendeeToggle}: a preference applied or
+   * withheld here is one the unlock may put back, and a selection that no longer carries a
+   * preference leaves nothing to put back. The unlock calls this again rather than replaying a
+   * remembered value, so it always acts on the committees selected at that moment.
    */
   private applyCommitteeAttendeePreference(): void {
     const ids = this.selectedCommitteeIds();
     const hasShowMeetingAttendees = this.committeeOptions().some((committee) => ids.includes(committee.uid) && committee.show_meeting_attendees === true);
     const attendeesControl = this.form().get('show_meeting_attendees');
     if (!hasShowMeetingAttendees || !attendeesControl) {
+      this.committeeOwnsAttendeeToggle = false;
       return;
     }
     if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
+      this.committeeOwnsAttendeeToggle = true;
       return;
     }
     this.applyingCommitteePreference = true;
     attendeesControl.setValue(true);
     this.applyingCommitteePreference = false;
+    this.committeeOwnsAttendeeToggle = true;
   }
 
   private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {

@@ -822,6 +822,50 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
+  it('leaves a saved opt-out alone when the lock round-trips', async () => {
+    // Editing a meeting whose organizer turned the toggle off on an earlier visit: the form
+    // hydrates `false` with the preferring committee already selected, and nothing in this
+    // session applied that value. An unlock must not read it as a preference to restore.
+    const { component, fixture } = await mount([{ uid: VISIBLE_BOARD.uid } as MeetingCommittee], {}, [VISIBLE_BOARD], 'project-1', true);
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('stops watching the previous form when a new one is supplied', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    const abandoned = component.form();
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput(
+      'form',
+      new FormGroup({
+        visibility: new FormControl('private'),
+        committees: new FormControl([]),
+        show_meeting_attendees: new FormControl(false),
+        meeting_type: new FormControl('Technical'),
+        restricted: new FormControl(false),
+      })
+    );
+    await fixture.whenStable();
+
+    // An edit on the discarded form must not reach the ownership tracking of the live one —
+    // the committee still carries its preference, so the unlock below has to apply it.
+    abandoned.get('show_meeting_attendees')?.setValue(false);
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('keeps an explicit opt-out that predates the lock, rather than reapplying on unlock', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
