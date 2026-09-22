@@ -553,6 +553,8 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
 
     expect(lastSql()).toContain('ORDER BY LEAST(');
     expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
+    // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
+    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
   });
 
   it('truncates to the cap and says so out loud when the scope overruns it', async () => {

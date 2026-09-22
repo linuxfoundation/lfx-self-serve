@@ -306,7 +306,7 @@ export class HealthMetricsEngagementService {
       FROM ${ORG_PARTICIPATION_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
-      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST
+      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
