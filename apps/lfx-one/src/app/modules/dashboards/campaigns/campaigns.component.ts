@@ -48,7 +48,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl, normalizeSponsors } from '@lfx-one/shared/utils';
+import { canonicalHttpUrl, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1161,6 +1161,21 @@ export class CampaignsComponent {
   protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
     initialValue: this.abTestForm.controls.bodyHtmlB.value,
   });
+
+  /**
+   * Variant B's body with resource-loading markup removed, for the PREVIEW only.
+   *
+   * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
+   * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
+   * deliberately KEEPS `<img src="https://…">`, so pasting image or tracking-pixel markup into
+   * the B textarea made the operator's browser issue that request while merely previewing.
+   *
+   * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
+   * runtime, so there is no `<img>` in the template source to find.
+   *
+   * Staging uses this same normalised value, so the preview and the draft cannot disagree.
+   */
+  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB()));
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
