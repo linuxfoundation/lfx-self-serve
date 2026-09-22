@@ -6,6 +6,7 @@ import '@angular/compiler';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import type { OrgClaInvalidationReason } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -46,9 +47,8 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
   }
 
   /** Reaches the reason control directly; the picker itself is PrimeNG's and is not under test. */
-  function chooseReason(fixture: ComponentFixture<OrgEasyclaInvalidateAcknowledgmentDialogComponent>, reason: string): void {
-    const form = (fixture.componentInstance as unknown as { form: { controls: Record<string, { setValue: (v: unknown) => void }> } }).form;
-    form.controls['reason'].setValue(reason);
+  function chooseReason(fixture: ComponentFixture<OrgEasyclaInvalidateAcknowledgmentDialogComponent>, reason: OrgClaInvalidationReason): void {
+    fixture.componentInstance.form.controls.reason.setValue(reason);
     fixture.detectChanges();
   }
 
@@ -74,8 +74,7 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
   it('closes with the chosen reason and the trimmed note', async () => {
     const fixture = await render();
     chooseReason(fixture, 'should-be-corporate');
-    const form = (fixture.componentInstance as unknown as { form: { controls: Record<string, { setValue: (v: unknown) => void }> } }).form;
-    form.controls['note'].setValue('  moved to the corporate agreement  ');
+    fixture.componentInstance.form.controls.note.setValue('  moved to the corporate agreement  ');
     fixture.detectChanges();
 
     confirmButton(fixture)?.click();
@@ -102,6 +101,14 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     (fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-cancel"] button') as HTMLButtonElement).click();
 
     expect(close).toHaveBeenCalledWith(null);
+  });
+
+  it('exposes the reason control as required', async () => {
+    const fixture = await render();
+
+    const reason = fixture.nativeElement.querySelector('#org-easycla-invalidate-reason');
+
+    expect(reason?.getAttribute('aria-required')).toBe('true');
   });
 
   it('caps the note at the length the producer accepts', async () => {

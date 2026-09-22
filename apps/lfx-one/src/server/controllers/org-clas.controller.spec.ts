@@ -1138,9 +1138,12 @@ describe('OrgClasController — CLA manager path parameters', () => {
 describe('OrgClasController.invalidateAcknowledgment', () => {
   const ORG = '0014100000Te2ovAAB';
 
+  const SIGNATURE_ID = '11111111-1111-4111-8111-111111111111';
+  const ACK_ID = '22222222-2222-4222-8222-222222222222';
+
   function invalidateReq(body: unknown = {}, params: Record<string, string> = {}): any {
     return {
-      params: { orgUid: ORG, signatureId: 'signature-uuid-1', acknowledgmentSignatureId: 'ecla-sig-1', ...params },
+      params: { orgUid: ORG, signatureId: SIGNATURE_ID, acknowledgmentSignatureId: ACK_ID, ...params },
       query: {},
       body,
     };
@@ -1171,6 +1174,16 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
     expect(invalidateAcknowledgment).not.toHaveBeenCalled();
   });
 
+  it('rejects an acknowledgment id that is not a signature uuid', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({}, { acknowledgmentSignatureId: 'not-a-uuid' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
   /**
    * The reason is a four-value enum on the producer's contract. Refusing an unknown value here
    * rather than forwarding it means the CLA manager gets copy the tab can render, instead of the
@@ -1190,7 +1203,7 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
       invalidateAcknowledgment.mockClear();
       await new OrgClasController().invalidateAcknowledgment(invalidateReq({ reason }), buildRes(), vi.fn());
 
-      expect(invalidateAcknowledgment).toHaveBeenCalledWith(expect.anything(), ORG, 'signature-uuid-1', 'ecla-sig-1', { reason });
+      expect(invalidateAcknowledgment).toHaveBeenCalledWith(expect.anything(), ORG, SIGNATURE_ID, ACK_ID, { reason });
     }
   });
 

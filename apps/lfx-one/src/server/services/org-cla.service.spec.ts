@@ -109,7 +109,7 @@ function upstreamList(...entries: EasyClaCompanyClaGroup[]): EasyClaCompanyClaGr
   return { companySFID: ORG_UID, resultCount: entries.length, list: entries };
 }
 
-function req(overrides: Partial<Request> = {}): Request {
+function req(overrides: Partial<Request> & { bearerToken?: string } = {}): Request {
   return overrides as unknown as Request;
 }
 
@@ -2449,12 +2449,10 @@ describe('OrgClaService.getContributorAcknowledgments — the upstream call', ()
     isImpersonating.mockReturnValue(true);
     stageAckRead();
 
-    await new OrgClaService().getContributorAcknowledgments(
-      req({ bearerToken: 'target-user-token' } as unknown as Partial<Request>),
-      ORG_UID,
-      'signature-uuid-1',
-      { search: '', pageSize: 50 }
-    );
+    await new OrgClaService().getContributorAcknowledgments(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', {
+      search: '',
+      pageSize: 50,
+    });
 
     expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-user-token' }));
   });
@@ -2896,13 +2894,7 @@ describe('OrgClaService.invalidateAcknowledgment — the producer call', () => {
     isImpersonating.mockReturnValue(true);
     stageInvalidate();
 
-    await new OrgClaService().invalidateAcknowledgment(
-      req({ bearerToken: 'target-user-token' } as unknown as Partial<Request>),
-      ORG_UID,
-      'signature-uuid-1',
-      'ecla-sig-1',
-      {}
-    );
+    await new OrgClaService().invalidateAcknowledgment(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
 
     expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.not.objectContaining({ bearerToken: expect.anything() }));
   });

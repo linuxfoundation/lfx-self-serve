@@ -564,23 +564,11 @@ export class OrgClasController {
     const startTime = logger.startOperation(req, 'invalidate_org_cla_acknowledgment');
 
     try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'invalidate_org_cla_acknowledgment' });
-      }
-
-      const orgUid = req.params['orgUid'];
-      assertOrgUid(orgUid, 'invalidate_org_cla_acknowledgment');
-
-      const signatureId = (req.params['signatureId'] ?? '').trim();
-      if (!signatureId) {
-        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
-          operation: 'invalidate_org_cla_acknowledgment',
-        });
-      }
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'invalidate_org_cla_acknowledgment');
 
       const acknowledgmentSignatureId = (req.params['acknowledgmentSignatureId'] ?? '').trim();
-      if (!acknowledgmentSignatureId) {
-        throw ServiceValidationError.forField('acknowledgmentSignatureId', 'acknowledgmentSignatureId path parameter is required', {
+      if (!CLA_GROUP_ID_PATTERN.test(acknowledgmentSignatureId)) {
+        throw ServiceValidationError.forField('acknowledgmentSignatureId', 'A valid acknowledgmentSignatureId path parameter is required', {
           operation: 'invalidate_org_cla_acknowledgment',
         });
       }

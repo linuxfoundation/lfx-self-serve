@@ -27,7 +27,7 @@ import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, skip, startWith, switchMap, take, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, skip, startWith, switchMap, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -38,8 +38,6 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
-
-const LOADING_ROWS = [1, 2, 3, 4] as const;
 
 /**
  * The Contributor Acknowledgments tab of the CLA Group detail page (#1986, #2806).
@@ -86,7 +84,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly stateLabels = ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS;
   protected readonly emDash = ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
   protected readonly actionCopy = ORG_CLA_INVALIDATE_ACTION_COPY;
-  protected readonly loadingRows = LOADING_ROWS;
+  protected readonly loadingRows = [1, 2, 3, 4] as const;
 
   protected readonly filterForm = new FormGroup({
     search: new FormControl<string>('', { nonNullable: true }),
@@ -321,10 +319,6 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     this.claService
       .invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request)
       .pipe(
-        // `take(1)`, not `takeUntilDestroyed`: leaving the tab destroys this panel and would
-        // cancel the in-flight PUT. The sibling send-by-email write uses the same shape so the
-        // request survives overlay teardown.
-        take(1),
         finalize(() => {
           if (!this.destroyed) this.trackPending(signatureId, false);
         })

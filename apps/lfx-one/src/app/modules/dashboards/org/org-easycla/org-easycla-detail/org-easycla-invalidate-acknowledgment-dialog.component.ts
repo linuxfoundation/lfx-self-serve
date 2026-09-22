@@ -48,7 +48,7 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
     value: reason,
   }));
 
-  protected readonly form = new FormGroup({
+  public readonly form = new FormGroup({
     reason: new FormControl<OrgClaInvalidationReason | null>(null, { validators: [Validators.required] }),
     note: new FormControl<string>('', { nonNullable: true, validators: [Validators.maxLength(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)] }),
   });
