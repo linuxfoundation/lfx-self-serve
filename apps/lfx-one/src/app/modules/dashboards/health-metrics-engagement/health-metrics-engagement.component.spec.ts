@@ -77,6 +77,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
   }
 
+  function stubChild(): GroupAttendanceStubComponent {
+    return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+  }
+
   function activeKey(): string | null {
     return fixture.nativeElement.querySelector('[aria-current="true"]')?.getAttribute('data-testid')?.replace('engagement-sub-nav-', '') ?? null;
   }
@@ -272,6 +276,59 @@ describe('HealthMetricsEngagementComponent', () => {
 
     // Otherwise the sentinel intersects from first paint and pins the rail to the last section.
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
+  });
+
+  it('re-runs the deep-link scroll only once the group table has painted', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+
+    // Scrolling in the emitting turn would read the offsets from before the rows were laid out.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('observes the end sentinel once the group table makes the area scroll', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    // Five of the six sections are short placeholders, so the first pass can find nothing to scroll.
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+    await setup();
+
+    expect(FakeIntersectionObserver.instances).toHaveLength(1);
+
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const sentinel = fixture.nativeElement.querySelector('[data-testid="engagement-scroll-end-sentinel"]');
+    expect(endObserver().observed).toEqual([sentinel]);
+  });
+
+  it('drops a pending deep link once the user picks a section themselves', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]').click();
+    fixture.detectChanges();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The deep link resolving late would otherwise drag the pane back off the section just picked.
+    expect(activeKey()).toBe('nonmem');
   });
 
   it('disconnects both observers on destroy', () => {

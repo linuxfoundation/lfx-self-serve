@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, PLATFORM_ID, signal, viewChild } from '@angular/core';
+import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, PLATFORM_ID, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import {
@@ -39,6 +39,7 @@ export class HealthMetricsEngagementComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly injector = inject(Injector);
 
   protected readonly panes = viewChild<ElementRef<HTMLElement>>('panes');
 
@@ -113,16 +114,32 @@ export class HealthMetricsEngagementComponent {
 
   /**
    * A section reporting its totals also changes the pane's height, so a deep link that was waiting
-   * on that data gets its second and final scroll here.
+   * on that data gets its second and final scroll here — deferred a paint, because the rows those
+   * totals describe have not been laid out yet at the moment of this emission.
    */
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
     if (!counts) return;
 
-    this.settlePendingSection();
-    // Consumed: counts re-emit on every filter and page change, and a still-pending key would
-    // scroll the pane back to the anchor each time.
+    afterNextRender(
+      () => {
+        this.measurePanesHeight();
+        // The area may only now overflow, and whether it does decides if the end sentinel is
+        // observed at all — the first pass ran against five short placeholder sections.
+        this.setupScrollSpy();
+        this.settlePendingSection();
+        // Consumed: counts re-emit on every filter and page change, and a still-pending key would
+        // scroll the pane back to the anchor each time.
+        this.pendingSection.set(null);
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */
+  protected onSectionPicked(key: HealthMetricsEngagementSectionKey): void {
     this.pendingSection.set(null);
+    this.scrollToSection(key);
   }
 
   protected scrollToSection(key: HealthMetricsEngagementSectionKey): void {

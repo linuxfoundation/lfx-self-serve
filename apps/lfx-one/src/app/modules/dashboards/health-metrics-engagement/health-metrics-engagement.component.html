@@ -3,7 +3,7 @@
 
 <!-- The design's `l2Shell`: a fixed sub-nav beside a single stacked column of anchored sections. -->
 <div class="flex flex-col gap-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8" data-testid="health-metrics-engagement-page">
-  <lfx-engagement-sub-nav [items]="subNavItems()" [activeKey]="activeSection()" [topPx]="chrome.stickyTopPx()" (sectionPicked)="scrollToSection($event)" />
+  <lfx-engagement-sub-nav [items]="subNavItems()" [activeKey]="activeSection()" [topPx]="chrome.stickyTopPx()" (sectionPicked)="onSectionPicked($event)" />
 
   <!-- The design's `.panes`: the only thing that scrolls. Its height is measured off the viewport so
        the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
