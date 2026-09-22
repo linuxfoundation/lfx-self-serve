@@ -6,6 +6,7 @@ import type {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 
@@ -183,10 +184,10 @@ export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
- * every one of them has settled. A section from PRs 3-4 on #2802 joins this list only once its
+ * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
  * component emits `reading`/`settled` and the container binds both.
  */
-export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees', 'orgs'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
@@ -241,4 +242,45 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] =
 export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
   total: null,
   rows: [],
+};
+
+/**
+ * Debounce on the org search box. The filter runs over the whole loaded scope, so a keystroke is
+ * more expensive than a typical typeahead and deserves the same pause as the other local filters.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS = 200;
+
+/** Client-side page size for the org table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read, an order of magnitude above the largest foundation's org count.
+ * It bounds a payload the client sorts and searches in memory; hitting it is logged, not silent.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP = 5000;
+
+/** The org table's cut. "No activity" is the view's own `IS_LAPSED_180D`, not a client-side date sum. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'lapsed', label: 'No activity in 180 days' },
+] as const;
+
+/**
+ * A foundation the view holds no organizations for — a measured empty scope, which is why the
+ * counts are zero rather than null. The server never returns it for a failed read; that error
+ * propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: { orgs: 0, lapsedOrgs: 0 },
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: null,
 };

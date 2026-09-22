@@ -18,11 +18,13 @@ import { debounceTime, filter, Subject } from 'rxjs';
 
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
+import { EngagementOrgParticipationComponent } from './components/engagement-org-participation/engagement-org-participation.component';
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
   HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementSectionKey,
   HealthMetricsEngagementSectionView,
   HealthMetricsEngagementSubNavItem,
@@ -35,7 +37,7 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-engagement',
-  imports: [EngagementGroupAttendanceComponent, EngagementMeetingParticipationComponent, EngagementSubNavComponent],
+  imports: [EngagementGroupAttendanceComponent, EngagementMeetingParticipationComponent, EngagementOrgParticipationComponent, EngagementSubNavComponent],
   templateUrl: './health-metrics-engagement.component.html',
 })
 export class HealthMetricsEngagementComponent {
@@ -58,15 +60,16 @@ export class HealthMetricsEngagementComponent {
   protected readonly activeSection = signal<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
 
   // `null` until that section reports, which renders no badge rather than a misleading zero. The
-  // badge-bearing sections other than `committees` land in PRs 3-4 on #2802.
+  // remaining badge-bearing sections land in the follow-up PRs on #2802.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
+  protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({
       groups: this.groupCounts()?.groups ?? null,
       dormantGroups: this.groupCounts()?.dormantGroups ?? 0,
-      orgs: null,
-      lapsedOrgs: 0,
+      orgs: this.orgCounts()?.orgs ?? null,
+      lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
       reps: null,
       neverAttendedReps: 0,
       nonMemberOrgs: null,
@@ -159,6 +162,21 @@ export class HealthMetricsEngagementComponent {
   /** A filter, page or period change re-reads the table, which reflows the pane all over again. */
   protected onGroupReading(): void {
     this.onSectionReading('committees');
+  }
+
+  /** Organization participation reports the foundation-wide org and lapsed counts for its badge. */
+  protected onOrgCounts(counts: HealthMetricsEngagementOrgCounts | null): void {
+    this.orgCounts.set(counts);
+  }
+
+  /** The org table is the longest section, so its rows landing move every anchor below them. */
+  protected onOrgSettled(): void {
+    this.onSectionSettled('orgs');
+  }
+
+  /** A foundation change re-reads the table, which reflows the pane all over again. */
+  protected onOrgReading(): void {
+    this.onSectionReading('orgs');
   }
 
   /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */
