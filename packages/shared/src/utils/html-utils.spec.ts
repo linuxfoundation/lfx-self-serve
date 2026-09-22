@@ -252,6 +252,37 @@ describe('invisible-only values and surrogate entities', () => {
     }
   });
 
+  it('strips invisible characters from the MIDDLE of a value, not just whole-value', () => {
+    // The gap the earlier tests missed: they only asserted that an invisible-ONLY value came
+    // back empty, which a whole-value emptiness check satisfies without removing anything. A
+    // soft hyphen inside `Acme\u00ADCorp` survived into recipient-visible sponsor text.
+    //
+    // Enumerated by CATEGORY rather than by the code points that happened to be reported --
+    // naming them individually is what made this filter wrong four rounds running.
+    for (const [label, input] of [
+      ['soft hyphen', 'Acme\u00ADCorp'],
+      ['Mongolian vowel separator', 'Acme\u180ECorp'],
+      ['word joiner', 'Acme\u2060Corp'],
+      ['BOM', 'Acme\uFEFFCorp'],
+      ['zero-width space', 'Acme\u200BCorp'],
+      ['BIDI override', 'Acme\u202ECorp'],
+      ['LRM', 'Acme\u200ECorp'],
+      ['ALM', 'Acme\u061CCorp'],
+    ] as const) {
+      expect(sanitizeDisplayText(input), label).toBe('AcmeCorp');
+    }
+  });
+
+  it('keeps the orthographic joiners mid-value, and an ordinary space', () => {
+    // The negative half. ZWJ/ZWNJ are required orthography in Devanagari, Telugu, Bengali,
+    // Arabic and Persian -- a category-wide strip would delete them and corrupt real names,
+    // which is the over-strip this carve-out exists to prevent.
+    expect(sanitizeDisplayText('Acme\u200DCorp')).toBe('Acme\u200DCorp');
+    expect(sanitizeDisplayText('Acme\u200CCorp')).toBe('Acme\u200CCorp');
+    expect(sanitizeDisplayText('नमस्\u200Dते')).toBe('नमस्\u200Dते');
+    expect(sanitizeDisplayText('Acme Corp')).toBe('Acme Corp');
+  });
+
   it('keeps every value that actually renders', () => {
     // The negative half. Without it, "strip all format characters" passes the test above and
     // deletes real sponsor names -- the over-strip this floor exists to avoid.

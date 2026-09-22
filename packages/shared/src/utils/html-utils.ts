@@ -58,45 +58,27 @@ export function sanitizeDisplayText(value: string): string {
   const cleaned = [...value]
     .filter((ch) => {
       const code = ch.codePointAt(0) ?? 0;
-      // C0 controls and DEL.
-      if (code < 0x20 || code === 0x7f) return false;
-      // C1 controls (U+0080-U+009F): invisible, and some legacy decoders map them to punctuation.
-      if (code >= 0x80 && code <= 0x9f) return false;
-      // Lone surrogates. Iterating with [...value] yields an UNPAIRED surrogate as its own
-      // element -- a well-formed pair is already a single code point above 0xFFFF and never
-      // reaches here. They are not characters, and encoders downstream either throw on them or
-      // substitute U+FFFD, so the value that renders is not the value that was checked.
-      if (code >= 0xd800 && code <= 0xdfff) return false;
-      // BIDI overrides and embeddings. U+202E alone visually REVERSES the text after it, so a
-      // sponsor name can render as something other than what it contains -- a spoof that
-      // survives any check that only looks at ASCII. U+2066-U+2069 are the isolate forms.
-      if (code >= 0x202a && code <= 0x202e) return false;
-      if (code >= 0x2066 && code <= 0x2069) return false;
-      // ZERO WIDTH SPACE only. U+200C (ZWNJ) and U+200D (ZWJ) are KEPT: they are required
-      // orthography in Devanagari, Telugu, Bengali, Arabic and Persian, where they select
-      // conjunct or joined forms -- stripping them corrupts real sponsor names. `नमस्‍ते` and
-      // `అమ్‌మ` came back altered, which is the same over-stripping that once turned `O'Reilly`
-      // into `OReilly`, and that this function's own doc warns against.
+      // ORTHOGRAPHY, kept deliberately. U+200C (ZWNJ) and U+200D (ZWJ) select conjunct and
+      // joined forms in Devanagari, Telugu, Bengali, Arabic and Persian; stripping them corrupts
+      // correctly-spelled names. Safe for the threat this function stops: a joiner cannot
+      // REORDER text the way a BIDI override can -- it renders two adjacent glyphs as one, which
+      // is legibility rather than spoofing.
+      if (code === 0x200c || code === 0x200d) return true;
+
+      // Everything else invisible goes, BY CATEGORY rather than by name.
       //
-      // Keeping them is safe for the threat this function exists to stop: a joiner cannot
-      // REORDER text the way a BIDI override can. It can only render two adjacent glyphs as one,
-      // which is a legibility question rather than a spoof -- and the alternative is refusing to
-      // display a correctly-spelled name in five writing systems.
-      if (code === 0x200b) return false;
-      // LRM/RLM/ALM are directional MARKS, not joiners: they alter how the surrounding run is
-      // laid out, which is the same class as the overrides denied above. U+061C (ARABIC LETTER
-      // MARK) belongs with them and was missed -- it is invisible and directional, so it does
-      // the spoofing job of LRM in Arabic-script text.
-      if (code === 0x200e || code === 0x200f || code === 0x061c) return false;
-      // WORD JOINER and BOM: invisible, and neither is orthography in any script.
-      if (code === 0x2060 || code === 0xfeff) return false;
-      // `<` and `>` only. Quotes, apostrophes and backticks are ordinary punctuation in real
-      // names -- stripping them turned `O'Reilly` into `OReilly`, which is the over-stripping
-      // this function's own doc warns against. They were never the risk: every consumer escapes
-      // structurally rather than by interpolation -- Angular `[alt]` is a property binding, and
-      // the Go side JSON-encodes the field -- so a quote cannot break out of either context.
-      // Angle brackets stay dropped because the value is decoded first, and decoding is what can
-      // turn `&lt;script&gt;` back into markup.
+      // `\p{C}` is Other: control (C0/C1/DEL), format (BIDI overrides and isolates, LRM/RLM/ALM,
+      // ZWSP, word joiner, BOM, soft hyphen, U+180E), surrogate, private-use and unassigned.
+      // `\p{Z}` is Separator, which the trim already handled for the ends but not the middle.
+      //
+      // Naming code points individually is what made this filter wrong four times: each round
+      // found a spelling the list had not enumerated -- U+061C, then lone surrogates, then
+      // U+00AD and U+180E surviving mid-value. The category cannot be outrun, and a format
+      // character added to Unicode later needs no change here.
+      //
+      // A space is a legitimate separator inside a name, so it is the one Z that survives.
+      if (ch !== ' ' && /[\p{C}\p{Z}]/u.test(ch)) return false;
+
       return ch !== '<' && ch !== '>';
     })
     .join('')
