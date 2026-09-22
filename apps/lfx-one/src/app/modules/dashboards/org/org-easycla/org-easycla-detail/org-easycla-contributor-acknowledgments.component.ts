@@ -35,6 +35,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 
 import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
 
@@ -287,7 +288,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       dismissableMask: true,
       closable: true,
       width: 'min(32rem, 100%)',
-      data: { contributor: row.identity.display },
+      data: { contributor: this.contributorLabel(row) },
     });
 
     // `open` is typed nullable because it declines under SSR, where there is no document to attach
@@ -333,7 +334,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           this.messageService.add({
             severity: 'success',
             summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
-            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(row.identity.display),
+            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
           });
           if (!this.destroyed) this.reloadTrigger.update((value) => value + 1);
         },
@@ -348,17 +349,33 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   }
 
   /**
-   * The BFF serialises its own sentence on `error` (`BaseApiError.toResponse`) and some replies
-   * put it on `message`. Either is preferred over the generic fallback.
+   * Impersonation is named on its own. Every other refusal goes through `serverAuthoredMessage`,
+   * which keeps a sentence the BFF wrote and drops status-derived 5xx copy such as
+   * "Internal server error".
    */
   private invalidateFailureDetail(error: unknown): string {
-    if (!(error instanceof HttpErrorResponse)) return ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
-    if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
+    if (error instanceof HttpErrorResponse && error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
       return 'This change is not available while impersonating a user.';
     }
-    const envelope = error.error as { error?: unknown; message?: unknown } | null;
-    const message = [envelope?.error, envelope?.message].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-    return message?.trim() || ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
+    return serverAuthoredMessage(error, ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail);
+  }
+
+  /**
+   * Who the confirmation, the toast, and the button name.
+   *
+   * Identity first, because that is the column the manager matched the row on. A row that has
+   * only a DocuSign or profile name would otherwise be "—" in all three places.
+   */
+  private contributorLabel(row: OrgClaAcknowledgmentRow): string {
+    return this.labelFor(row.identity.display, row.name);
+  }
+
+  private labelFor(identity: string, name: string): string {
+    const identityLabel = identity.trim();
+    const nameLabel = name.trim();
+    if (identityLabel && identityLabel !== ORG_CLA_ACKNOWLEDGMENTS_EM_DASH) return identityLabel;
+    if (nameLabel && nameLabel !== ORG_CLA_ACKNOWLEDGMENTS_EM_DASH) return nameLabel;
+    return 'this contributor';
   }
 
   private trackPending(signatureId: string, pending: boolean): void {
@@ -372,9 +389,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     const invalidated = this.isInvalidated(ack);
     const signatureId = ack.signatureId?.trim() ?? '';
     const identity = this.resolveIdentity(ack);
+    const name = ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
     return {
       ack,
-      name: ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
+      name,
       identity,
       cclaVersion: ack.cclaVersion?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
@@ -382,7 +400,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
-      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(identity.display),
+      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(this.labelFor(identity.display, name)),
     };
   }
 

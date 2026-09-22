@@ -525,6 +525,32 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'The note may be at most 2048 characters' }));
     });
 
+    it('keeps the generic failure copy when the envelope is only a status-derived 5xx sentence', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 500, error: { error: 'Internal server error', code: 'INTERNAL_ERROR' } }))
+      );
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'other' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: "We couldn't invalidate this acknowledgment. Try again in a moment." })
+      );
+    });
+
+    it('names the contributor by their profile name when the identity column is empty', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ data: { contributor: 'Ada Lovelace' } }));
+    });
+
     it('names impersonation when the BFF refuses the write as read-only', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();
