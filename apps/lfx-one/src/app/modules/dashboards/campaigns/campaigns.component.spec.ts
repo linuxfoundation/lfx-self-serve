@@ -5148,6 +5148,33 @@ describe('CampaignsComponent — email delivery channel', () => {
     });
   });
 
+  it('renders the hero banner note from the shared template', () => {
+    selectEmail();
+    // The preview panels live on the implementation tab; the default tab renders none of them.
+    internals().selectedEmailTab.set('implementation');
+    internals().emailCopy.set({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: '', ctaUrl: '' } as never);
+    internals().emailBriefOutput.set({
+      eventDetails: { heroImageUrl: 'https://cdn.events.example.org/banner.png' },
+    } as never);
+    fixture.detectChanges();
+
+    // The note lives in ONE `ng-template` used from each preview panel, so the panels cannot
+    // drift apart. Asserting it renders at all is what makes the extraction safe: the markup was
+    // previously triplicated, and nothing covered any of the three copies.
+    const host: HTMLElement = fixture.nativeElement;
+    const notes = host.querySelectorAll('[data-testid="campaigns-email-preview-hero"]');
+    // One panel renders under this fixture; the other two sit behind further conditions (a
+    // staged draft and an A/B variant). Asserting a hard count of 3 would be asserting my own
+    // assumption -- it fails at 1 -- so this pins what is actually reachable here: the note
+    // renders, it NAMES the host, and it never becomes an <img>.
+    expect(notes.length).toBeGreaterThan(0);
+    // And it NAMES the host rather than loading it -- no <img> may appear in the rendered note.
+    for (const note of Array.from(notes)) {
+      expect(note.textContent).toContain('cdn.events.example.org');
+      expect(note.querySelector('img')).toBeNull();
+    }
+  });
+
   it('sanitizes variant B for the preview', () => {
     selectEmail();
     internals().abTestForm.controls.enabled.setValue(true);

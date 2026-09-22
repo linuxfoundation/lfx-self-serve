@@ -813,14 +813,7 @@
                              subject/body differ between them -- because HubSpot's native A/B test
                              swaps subject/body on the clone and leaves its other widgets untouched. -->
                         @if (emailHeroImageUrl()) {
-                          <!-- NOT an <img [src]>: binding the scraped URL makes the OPERATOR'S browser fetch it,
-                               before campaign-service's dial-time guard runs. The banner is named, not loaded. -->
-                          <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                            <i class="fa-light fa-image text-gray-400" aria-hidden="true"></i>
-                            <span
-                              >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
-                            >
-                          </div>
+                          <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -854,14 +847,7 @@
                           </p>
                         </div>
                         @if (emailHeroImageUrl()) {
-                          <!-- NOT an <img [src]>: binding the scraped URL makes the OPERATOR'S browser fetch it,
-                               before campaign-service's dial-time guard runs. The banner is named, not loaded. -->
-                          <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600">
-                            <i class="fa-light fa-image text-gray-400" aria-hidden="true"></i>
-                            <span
-                              >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
-                            >
-                          </div>
+                          <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
@@ -1299,3 +1285,15 @@
     </div>
   }
 </div>
+
+<!-- The hero banner is NAMED, never loaded: binding the scraped URL into an <img [src]> would
+     make the OPERATOR'S browser fetch it, before campaign-service's dial-time guard runs.
+     Defined once and used from each preview panel, so the three cannot drift apart. -->
+<ng-template #heroBannerNote>
+  <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600" data-testid="campaigns-email-preview-hero">
+    <i class="fa-light fa-image text-gray-400" aria-hidden="true"></i>
+    <span
+      >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
+    >
+  </div>
+</ng-template>

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -71,6 +71,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
 @Component({
   selector: 'lfx-campaigns',
   imports: [
+    NgTemplateOutlet,
     DecimalPipe,
     MetricPercentPipe,
     MetricLowPercentPipe,
