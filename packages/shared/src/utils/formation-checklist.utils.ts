@@ -68,9 +68,9 @@ export function deriveFormationReadinessSummary(items: Pick<FormationItem, 'stat
 }
 
 /**
- * "N of M sub-items done" — the one wording both sub-item segment bars announce (the row's
- * disclosure bar and `lfx-formation-sub-item-list`'s), so a screen reader hears the same sentence
- * for the same tally wherever it meets it (#2774).
+ * "N of M sub-items done" — the checklist row's sub-items disclosure trigger text (#2818). Before
+ * the progress ring replaced the segment bars it was those bars' shared accessible name (#2774);
+ * now it is the one visible place the row states the tally, so it says what the count means.
  */
 export function formatFormationSubItemsDoneLabel(summary: Pick<FormationReadinessSummary, 'totalItems' | 'counts'>): string {
   return `${summary.counts.done} of ${summary.totalItems} sub-items done`;

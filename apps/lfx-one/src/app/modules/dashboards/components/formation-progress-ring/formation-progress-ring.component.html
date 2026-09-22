@@ -1,0 +1,26 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Decorative (aria-hidden): the count beside it is the accessible content. Both circles stroke
+     with currentColor so Tailwind text-color classes drive them. -->
+<svg [ngClass]="sizeClass()" viewBox="0 0 20 20" aria-hidden="true" focusable="false" data-testid="formation-progress-ring">
+  <!-- gray-300, not the segment bars' gray-200: at the sm size (w-3.5, about 12px at the app's 14px root)
+       an empty ring has to stay visible on white. -->
+  <circle cx="10" cy="10" r="8" fill="none" stroke="currentColor" stroke-width="2.5" class="text-gray-300" />
+  @if (showFill()) {
+    <!-- pathLength="100" makes the dash array a plain percentage; the rotate starts the arc at 12 o'clock. -->
+    <circle
+      cx="10"
+      cy="10"
+      r="8"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2.5"
+      stroke-linecap="round"
+      pathLength="100"
+      transform="rotate(-90 10 10)"
+      [attr.stroke-dasharray]="dashArray()"
+      class="text-emerald-600"
+      data-testid="formation-progress-ring-fill" />
+  }
+</svg>
