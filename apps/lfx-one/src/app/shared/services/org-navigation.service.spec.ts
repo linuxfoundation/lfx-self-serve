@@ -248,19 +248,36 @@ describe('OrgNavigationService default selection', () => {
 
     // While the default waits, an address adoption (path guard, EasyCLA return) or a user pick can
     // land. The deferred default must not overwrite it — or clear its pin.
-    it('does not overwrite a selection made while it waited for grants', async () => {
+    it('does not overwrite a selection the viewer picked while it waited for grants', async () => {
       grantsLoaded.set(false);
       bootstrapWith(list());
       expect(setAccount).not.toHaveBeenCalled();
 
+      // A plain pick: not address-pinned, only the uid changed.
       selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
-      isAdoptedFromAddress.mockReturnValue(true);
       writerSet.set(new Set([PARENT]));
       grantsLoaded.set(true);
       await settle();
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(pinSelection).not.toHaveBeenCalled();
+      expect(selectedAccount().uid).toBe(UID_B);
+    });
+
+    it('does not overwrite a selection that became address-pinned while it waited, even with the same uid', async () => {
+      // Deferred for an unlisted selection (would re-default); the path guard then adopts that very
+      // organization from an address before grants settle.
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).not.toHaveBeenCalled();
+
+      isAdoptedFromAddress.mockReturnValue(true);
+      writerSet.set(new Set([PARENT]));
+      grantsLoaded.set(true);
+      await settle();
+
+      expect(setAccount).not.toHaveBeenCalled();
       expect(selectedAccount().uid).toBe(UID_B);
     });
 

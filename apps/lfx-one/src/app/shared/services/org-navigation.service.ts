@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
 import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
-import { isActiveStatus } from '@lfx-one/shared/utils';
+import { isActiveStatus, ORG_ROLE_AUTHORITY_ORDER } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import {
   catchError,
@@ -379,17 +379,23 @@ export class OrgNavigationService {
    * The list
    * is alphabetical and carries inherited rows beside direct ones, so a bare `/org/overview` for an
    * admin whose only direct grant is the parent organization used to land on an expired, non-member
-   * subsidiary that sorted first. The default ranks rows **authority-first**, the same order
-   * `OrgSelectorComponent.resolvePersona` uses (LFXV2-3029): direct writer → inherited writer →
-   * direct auditor → inherited auditor → no grant (a staff viewer's catalogue). Within the winning
+   * subsidiary that sorted first. The default ranks rows **authority-first**, reading the one shared
+   * order the selector's persona badge also reads (`ORG_ROLE_AUTHORITY_ORDER`, LFXV2-3029): direct
+   * writer → inherited writer → direct auditor → inherited auditor → no grant (a staff viewer's
+   * catalogue). Within the winning
    * band the viewer's own assigned rows come before discovered ones, an active member before other
    * members before non-members, and ties keep the list's own order. A grant set that never loaded
    * (error) leaves every band empty and the membership/list-order rules decide.
    */
   private defaultOrgFrom(items: OrgItem[]): OrgItem {
     const grants = this.orgRoleGrantsService;
-    const bands = [grants.writerSet(), grants.inheritedWriterSet(), grants.auditorSet(), grants.inheritedAuditorSet()];
-    const winning = bands.map((set) => items.filter((item) => set.has(item.uid))).find((band) => band.length > 0) ?? items;
+    const sets = {
+      writerSet: grants.writerSet(),
+      inheritedWriterSet: grants.inheritedWriterSet(),
+      auditorSet: grants.auditorSet(),
+      inheritedAuditorSet: grants.inheritedAuditorSet(),
+    };
+    const winning = ORG_ROLE_AUTHORITY_ORDER.map(([, set]) => items.filter((item) => sets[set].has(item.uid))).find((band) => band.length > 0) ?? items;
     const assigned = winning.filter((item) => item.isAssigned !== false);
     const band = assigned.length > 0 ? assigned : winning;
     return band.find((item) => item.isMember && isActiveStatus(item.status)) ?? band.find((item) => item.isMember) ?? band[0];
