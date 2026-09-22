@@ -14,6 +14,9 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementOrgFilter,
+  HealthMetricsEngagementOrgPeriod,
+  HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
@@ -137,6 +140,43 @@ export function formatHealthMetricsEngagementPpDelta(pointChange: number | null)
 /** A fractional change in a count, rendered as a percent: `+12.0%`. */
 export function formatHealthMetricsEngagementPctDelta(fractionChange: number | null): string {
   return formatDelta(fractionChange, '%');
+}
+
+/**
+ * The org row's numbers for one period. Same four-period fallback as the group and participation
+ * tables.
+ */
+export function selectHealthMetricsEngagementOrgPeriod(row: HealthMetricsEngagementOrgRow, range: HealthMetricsRange): HealthMetricsEngagementOrgPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** Mean reps at one decimal. `null` is "attended nothing this period", which is an em dash, not `0`. */
+export function formatHealthMetricsEngagementAvgReps(avgReps: number | null): string {
+  return avgReps === null ? '—' : avgReps.toFixed(1);
+}
+
+/**
+ * The org table's client-side cut: the lapsed segment, then the search box, then the selected
+ * period's own ranking. Ranking is per period, so the pill re-sorts rather than re-reads.
+ */
+export function filterHealthMetricsEngagementOrgRows(
+  rows: readonly HealthMetricsEngagementOrgRow[],
+  filter: HealthMetricsEngagementOrgFilter,
+  search: string,
+  range: HealthMetricsRange
+): HealthMetricsEngagementOrgRow[] {
+  const term = search.trim().toLowerCase();
+  const matched = rows.filter((row) => {
+    if (filter === 'lapsed' && !row.lapsed) return false;
+    return term === '' || row.accountName.toLowerCase().includes(term);
+  });
+
+  // A row the view left unranked sorts last rather than ahead of every ranked org.
+  return matched.sort((a, b) => {
+    const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+    const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+    return rankA === rankB ? a.accountName.localeCompare(b.accountName) : rankA - rankB;
+  });
 }
 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */

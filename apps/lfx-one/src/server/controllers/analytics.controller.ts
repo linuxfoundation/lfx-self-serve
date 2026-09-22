@@ -3347,6 +3347,39 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-org-participation` — every organization, every period, one read.
+   * No `range` param: the period pill projects the loaded rows client-side.
+   */
+  public async getEngagementOrgParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_org_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_org_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_org_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getOrgParticipation(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_org_participation', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */

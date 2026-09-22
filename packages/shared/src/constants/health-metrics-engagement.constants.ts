@@ -6,6 +6,7 @@ import type {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 
@@ -186,7 +187,7 @@ export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
  * every one of them has settled. A section from PRs 3-4 on #2802 joins this list only once its
  * component emits `reading`/`settled` and the container binds both.
  */
-export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees', 'orgs'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
@@ -241,4 +242,23 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] =
 export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
   total: null,
   rows: [],
+};
+
+/** Client-side page size for the org table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
+
+/** The org table's cut. "No activity" is the view's own `IS_LAPSED_180D`, not a client-side date sum. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'lapsed', label: 'No activity in 180 days' },
+] as const;
+
+/**
+ * The empty Organization participation shape — pre-hydration, no foundation selected, and the
+ * client's post-error placeholder. The server never returns it for a failed read; that error
+ * propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: { orgs: 0, lapsedOrgs: 0 },
 };

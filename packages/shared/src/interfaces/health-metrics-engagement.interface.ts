@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
@@ -178,4 +179,66 @@ export interface HealthMetricsEngagementParticipationQuery {
 export interface HealthMetricsEngagementParticipationRowView {
   row: HealthMetricsEngagementParticipationRow;
   period: HealthMetricsEngagementParticipationPeriod | null;
+}
+
+/** Which cut of the org table is showing: everyone, or only orgs lapsed past the dormancy window. */
+export type HealthMetricsEngagementOrgFilter = (typeof HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS)[number]['key'];
+
+/** One organization's numbers for a single period. Every period ships on every row, so the period
+ * pill re-projects client-side and costs no request. */
+export interface HealthMetricsEngagementOrgPeriod {
+  range: HealthMetricsRange;
+  /** Meetings held across the scope in this period — the "No data" threshold reads this. */
+  meetingsHeld: number;
+  /** Meetings that concerned this org at all (invited or attended) — the attendance denominator. */
+  meetingsTotal: number;
+  invitedCount: number;
+  attendedCount: number;
+  /** 0-1 share of the org's meetings it turned up to; `null` when no meeting concerned it. */
+  attendancePct: number | null;
+  /** Mean representatives per attended meeting; `null` when it attended none. */
+  avgReps: number | null;
+  /** The view's `SORT_RANK_<period>`, best-first. Per period, so the pill re-sorts the loaded rows. */
+  sortRank: number | null;
+}
+
+/** A row of the Organization participation table. */
+export interface HealthMetricsEngagementOrgRow {
+  accountId: string;
+  accountName: string;
+  /** The view's own tier string, rendered as-is — it reads `Non-Member` on real rows. */
+  membershipTier: string;
+  isMember: boolean;
+  /** All-time, not per period: ISO date the org was last seen in any meeting. */
+  lastEngagedDate: string | null;
+  daysSinceLastEngaged: number | null;
+  /** The view's `IS_LAPSED_180D`, so no date comparison happens client-side. */
+  lapsed: boolean;
+  periods: HealthMetricsEngagementOrgPeriod[];
+}
+
+/** One org table row with its selected-period numbers and date label already resolved. */
+export interface HealthMetricsEngagementOrgRowView {
+  row: HealthMetricsEngagementOrgRow;
+  period: HealthMetricsEngagementOrgPeriod | null;
+  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
+  lastEngagedLabel: string;
+}
+
+/** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
+export interface HealthMetricsEngagementOrgCounts {
+  orgs: number;
+  lapsedOrgs: number;
+}
+
+/** `GET /api/analytics/engagement-org-participation` — every org, every period, one read. */
+export interface HealthMetricsEngagementOrgParticipation {
+  rows: HealthMetricsEngagementOrgRow[];
+  counts: HealthMetricsEngagementOrgCounts;
+}
+
+/** Wire query for `GET /api/analytics/engagement-org-participation`. Search, the lapsed cut and the
+ * period all resolve client-side, so none of them reaches the wire. */
+export interface HealthMetricsEngagementOrgQuery {
+  foundationSlug: string;
 }

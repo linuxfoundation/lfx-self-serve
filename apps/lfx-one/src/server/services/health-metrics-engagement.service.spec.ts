@@ -22,7 +22,11 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
 
-import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT, HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+} from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
 
@@ -446,6 +450,110 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('HealthMetricsEngagementService.getOrgParticipation', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** One warehouse row: the caption counts and the lapsed flag carry no period suffix. */
+  function orgWarehouseRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ACCOUNT_ID: 'a-1',
+      ACCOUNT_NAME: 'Acme Motors',
+      MEMBERSHIP_TIER: 'Platinum',
+      IS_MEMBER: true,
+      LAST_ENGAGED_DATE: new Date('2026-08-14T00:00:00.000Z'),
+      DAYS_SINCE_LAST_ENGAGED: 39,
+      IS_LAPSED_180D: false,
+      SCOPE_ORGS_COUNT: 136,
+      SCOPE_LAPSED_ORGS_COUNT: 54,
+      SCOPE_MEETINGS_HELD_COUNT_YTD: 30,
+      MEETINGS_ORG_TOTAL_COUNT_YTD: 27,
+      MEETINGS_INVITED_COUNT_YTD: 27,
+      MEETINGS_ATTENDED_COUNT_YTD: 21,
+      ATTENDANCE_PCT_YTD: 0.78,
+      AVG_REPS_PER_MEETING_YTD: 1.75,
+      SORT_RANK_YTD: 1,
+      SCOPE_MEETINGS_HELD_COUNT_LAST_COMPLETED_YEAR: 30,
+      MEETINGS_ORG_TOTAL_COUNT_LAST_COMPLETED_YEAR: 26,
+      MEETINGS_INVITED_COUNT_LAST_COMPLETED_YEAR: 26,
+      MEETINGS_ATTENDED_COUNT_LAST_COMPLETED_YEAR: 20,
+      ATTENDANCE_PCT_LAST_COMPLETED_YEAR: 0.77,
+      AVG_REPS_PER_MEETING_LAST_COMPLETED_YEAR: 1.6,
+      SORT_RANK_LAST_COMPLETED_YEAR: 2,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [orgWarehouseRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    loggerError.mockReset();
+  });
+
+  // Search, the lapsed cut and the period pill all project these rows, so one read serves them all.
+  it('reads every period in one pass, scoped to the all-projects rows', async () => {
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(lastSql()).toContain('is_all_projects = TRUE');
+    expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsTotal: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank: 1 });
+  });
+
+  it('keeps the view tier as-is, because this view is not member-only', async () => {
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ MEMBERSHIP_TIER: 'Non-Member', IS_MEMBER: false })] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]).toMatchObject({ membershipTier: 'Non-Member', isMember: false });
+  });
+
+  // A `COUNT(*)` here would only ever match the row count, which is the same number by accident.
+  it('reads the denormalized caption counts off a row rather than counting the rows', async () => {
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('COUNT(');
+    expect(response.counts).toEqual({ orgs: 136, lapsedOrgs: 54 });
+  });
+
+  it('keeps an unmeasured rate and rank null rather than folding them into a real zero', async () => {
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ ATTENDANCE_PCT_YTD: null, AVG_REPS_PER_MEETING_YTD: null, SORT_RANK_YTD: null })] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ attendancePct: null, avgReps: null, sortRank: null });
+  });
+
+  it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getOrgParticipation(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Organization participation is unavailable right now.');
+  });
+
+  it('rethrows any other Snowflake failure', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getOrgParticipation(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
   });
 });
 

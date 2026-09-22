@@ -26,8 +26,10 @@
             (settled)="onParticipationSettled()" />
         } @else if (section.key === 'committees') {
           <lfx-engagement-group-attendance (countsChange)="onGroupCounts($event)" (reading)="onGroupReading()" (settled)="onGroupSettled()" />
+        } @else if (section.key === 'orgs') {
+          <lfx-engagement-org-participation (countsChange)="onOrgCounts($event)" (reading)="onOrgReading()" (settled)="onOrgSettled()" />
         } @else {
-          <!-- The remaining four sections' Snowflake reads, tables and controls land in the
+          <!-- The remaining three sections' Snowflake reads, tables and controls land in the
                follow-up PRs on #2802. -->
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }

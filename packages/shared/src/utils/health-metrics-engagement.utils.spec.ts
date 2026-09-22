@@ -16,6 +16,7 @@ import {
 } from '../constants/health-metrics-engagement.constants';
 import {
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSubNavCounts,
 } from '../interfaces/health-metrics-engagement.interface';
@@ -23,7 +24,9 @@ import {
   buildHealthMetricsEngagementGroupTrend,
   buildHealthMetricsEngagementSectionId,
   buildHealthMetricsEngagementSubNavItems,
+  filterHealthMetricsEngagementOrgRows,
   formatHealthMetricsEngagementAttendance,
+  formatHealthMetricsEngagementAvgReps,
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   isHealthMetricsEngagementSectionKey,
@@ -299,5 +302,69 @@ describe('participation period selection and delta formatting', () => {
     expect(resolveHealthMetricsEngagementDeltaDirection(-0.0004)).toBe('neutral');
     // One decimal is still movement.
     expect(resolveHealthMetricsEngagementDeltaDirection(-0.0006)).toBe('down');
+  });
+});
+
+describe('organization participation rules', () => {
+  function orgRow(name: string, sortRank: number | null, overrides: Partial<HealthMetricsEngagementOrgRow> = {}): HealthMetricsEngagementOrgRow {
+    return {
+      accountId: name.toLowerCase(),
+      accountName: name,
+      membershipTier: 'Silver',
+      isMember: true,
+      lastEngagedDate: '2026-08-14',
+      daysSinceLastEngaged: 39,
+      lapsed: false,
+      periods: [
+        { range: 'YTD', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank },
+        {
+          range: 'COMPLETED_YEAR',
+          meetingsHeld: 30,
+          meetingsTotal: 27,
+          invitedCount: 27,
+          attendedCount: 9,
+          attendancePct: 0.33,
+          avgReps: 1.1,
+          sortRank: sortRank === null ? null : 10 - sortRank,
+        },
+      ],
+      ...overrides,
+    };
+  }
+
+  // `null` is "attended nothing this period", which is not the same as averaging zero reps.
+  it('renders mean representatives at one decimal, and an em dash when the org attended nothing', () => {
+    expect(formatHealthMetricsEngagementAvgReps(1.75)).toBe('1.8');
+    expect(formatHealthMetricsEngagementAvgReps(2)).toBe('2.0');
+    expect(formatHealthMetricsEngagementAvgReps(null)).toBe('—');
+  });
+
+  it('ranks by the selected period, so the period pill re-sorts rather than re-reads', () => {
+    const rows = [orgRow('Acme Motors', 4), orgRow('Vendor Corp', 1)];
+
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'all', '', 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'all', '', 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
+  });
+
+  // An unranked row is not the best row — sorting it first would put a blank at the top of the table.
+  it('sorts an unranked organization last, and breaks a rank tie by name', () => {
+    const rows = [orgRow('Unranked Co', null), orgRow('Zeta Labs', 2), orgRow('Alpha Works', 2)];
+
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'all', '', 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
+  });
+
+  it('narrows to the view flag on the lapsed cut, and matches the search case-insensitively', () => {
+    const rows = [orgRow('Acme Motors', 1), orgRow('Vendor Corp', 2, { lapsed: true })];
+
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'lapsed', '', 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp']);
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'all', '  ACME ', 'YTD').map((row) => row.accountName)).toEqual(['Acme Motors']);
+    expect(filterHealthMetricsEngagementOrgRows(rows, 'all', 'motors', 'YTD').map((row) => row.accountName)).toEqual(['Acme Motors']);
+  });
+
+  it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
+    const rows = [orgRow('Zeta Labs', 5), orgRow('Alpha Works', 1)];
+    filterHealthMetricsEngagementOrgRows(rows, 'all', '', 'YTD');
+
+    expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
   });
 });

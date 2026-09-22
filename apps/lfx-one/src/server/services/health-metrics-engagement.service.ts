@@ -5,6 +5,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
@@ -16,6 +17,11 @@ import type {
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementOrgCounts,
+  HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementOrgPeriod,
+  HealthMetricsEngagementOrgQuery,
+  HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRow,
@@ -33,6 +39,7 @@ import type { Bind } from 'snowflake-sdk';
 
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
+const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 
 /** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
@@ -82,6 +89,19 @@ interface ReadContext {
   view: string;
   operation: string;
   clientMessage: string;
+}
+
+interface OrgParticipationRow {
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_TIER: string | null;
+  IS_MEMBER: boolean | null;
+  LAST_ENGAGED_DATE: Date | string | null;
+  DAYS_SINCE_LAST_ENGAGED: number | null;
+  IS_LAPSED_180D: boolean | null;
+  SCOPE_ORGS_COUNT: number | null;
+  SCOPE_LAPSED_ORGS_COUNT: number | null;
+  [periodColumn: string]: unknown;
 }
 
 interface MeetingParticipationRow {
@@ -259,6 +279,53 @@ export class HealthMetricsEngagementService {
   }
 
   /**
+   * Every organization in one read, with all four periods on each row: search, the lapsed cut and
+   * the period pill all resolve client-side, so none of them costs a request.
+   */
+  public async getOrgParticipation(req: Request, query: HealthMetricsEngagementOrgQuery): Promise<HealthMetricsEngagementOrgParticipation> {
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => orgSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+
+    // The caption counts are denormalized onto every row and cover the whole scope, so they are
+    // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    const sql = `
+      SELECT
+        account_id,
+        account_name,
+        membership_tier,
+        is_member,
+        last_engaged_date,
+        days_since_last_engaged,
+        is_lapsed_180d,
+        scope_orgs_count,
+        scope_lapsed_orgs_count,
+        ${periodColumns}
+      FROM ${ORG_PARTICIPATION_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+      ORDER BY account_name ASC NULLS LAST
+    `;
+
+    const result = await this.executeRead<OrgParticipationRow>(req, sql, [query.foundationSlug], {
+      view: ORG_PARTICIPATION_VIEW,
+      operation: 'get_engagement_org_participation',
+      clientMessage: 'Organization participation is unavailable right now.',
+    });
+
+    logger.debug(req, 'get_engagement_org_participation', 'Fetched organization participation', {
+      foundation_slug: query.foundationSlug,
+      row_count: result.rows.length,
+    });
+
+    const first = result.rows[0];
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT;
+
+    return {
+      rows: result.rows.map(mapOrgRow),
+      counts: mapOrgCounts(first),
+    };
+  }
+
+  /**
    * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
    * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
    * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
@@ -322,6 +389,60 @@ function mapGroupPeriod(row: GroupAttendanceRow, range: SupportedEngagementRange
     // distinct from a real 0%.
     attendancePct: attendance === null || attendance === undefined ? null : Number(attendance),
     dormant: row[`IS_DORMANT_${suffix}`] === true,
+  };
+}
+
+function orgSelectList(suffix: string): string {
+  return [
+    'scope_meetings_held_count',
+    'meetings_org_total_count',
+    'meetings_invited_count',
+    'meetings_attended_count',
+    'attendance_pct',
+    'avg_reps_per_meeting',
+    'sort_rank',
+  ]
+    .map((column) => `${column}_${suffix}`)
+    .join(', ');
+}
+
+function mapOrgRow(row: OrgParticipationRow): HealthMetricsEngagementOrgRow {
+  return {
+    accountId: row.ACCOUNT_ID ?? '',
+    accountName: row.ACCOUNT_NAME ?? '',
+    // Rendered as the view reports it: this view is not member-only, so `Non-Member` is a real tier
+    // here and filtering it out would desync the caption's own denormalized org count.
+    membershipTier: row.MEMBERSHIP_TIER ?? '',
+    isMember: row.IS_MEMBER === true,
+    lastEngagedDate: toIsoDate(row.LAST_ENGAGED_DATE),
+    daysSinceLastEngaged: toNullableNumber(row.DAYS_SINCE_LAST_ENGAGED),
+    lapsed: row.IS_LAPSED_180D === true,
+    periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapOrgPeriod(row, range)),
+  };
+}
+
+function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementOrgPeriod {
+  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+
+  return {
+    range,
+    meetingsHeld: Number(row[`SCOPE_MEETINGS_HELD_COUNT_${suffix}`] ?? 0),
+    meetingsTotal: Number(row[`MEETINGS_ORG_TOTAL_COUNT_${suffix}`] ?? 0),
+    invitedCount: Number(row[`MEETINGS_INVITED_COUNT_${suffix}`] ?? 0),
+    attendedCount: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
+    // Null means no meeting concerned this org at all, which renders as an em dash — keep it
+    // distinct from a real 0%.
+    attendancePct: toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]),
+    avgReps: toNullableNumber(row[`AVG_REPS_PER_MEETING_${suffix}`]),
+    sortRank: toNullableNumber(row[`SORT_RANK_${suffix}`]),
+  };
+}
+
+/** Both counts are period-agnostic and identical on every row, so any row answers for the scope. */
+function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCounts {
+  return {
+    orgs: Number(row.SCOPE_ORGS_COUNT ?? 0),
+    lapsedOrgs: Number(row.SCOPE_LAPSED_ORGS_COUNT ?? 0),
   };
 }
 
