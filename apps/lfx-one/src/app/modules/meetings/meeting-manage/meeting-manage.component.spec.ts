@@ -13,7 +13,7 @@ import { ProjectService } from '@services/project.service';
 import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, of, throwError } from 'rxjs';
+import { BehaviorSubject, NEVER, of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MeetingManageComponent } from './meeting-manage.component';
@@ -430,6 +430,52 @@ describe('MeetingManageComponent', () => {
       component.form().get('meeting_type')?.setValue(MeetingType.BOARD);
       await TestBed.inject(ApplicationRef).whenStable();
       expect(component.prepareMeetingData().show_meeting_attendees).toBe(false);
+    });
+  });
+  /**
+   * Covers what this page hands the group picker as the organizer's saved sharing decision.
+   * @description The picker cannot work this out for itself — it mounts on `meetingId()` against a
+   * form that is still empty and unlocked — so the whole guarantee rests on this computed being
+   * wired to the meeting rather than to the form.
+   */
+  describe('saved attendee visibility passed to the group picker', () => {
+    const meetingWith = (overrides: Partial<Meeting>) =>
+      ({
+        ...unenrichedMeeting(),
+        meeting_type: MeetingType.TECHNICAL,
+        restricted: false,
+        ...overrides,
+      }) as Meeting;
+
+    const resolveFor = async (meeting: Meeting | null) => {
+      getMeetingDetail.mockReturnValue(meeting ? of(meeting) : NEVER);
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      return fixture.componentInstance.savedAttendeeVisibility();
+    };
+
+    it('reports no decision while the meeting is still loading', async () => {
+      expect(await resolveFor(null)).toBeNull();
+    });
+
+    it('reports no decision for a board meeting carrying a stale opt-in', async () => {
+      // The legacy `true` predates the lock and hydration shows the toggle off, so switching the
+      // meeting to an unlocked type must not resurrect it.
+      expect(await resolveFor(meetingWith({ meeting_type: MeetingType.BOARD, show_meeting_attendees: true }))).toBeNull();
+    });
+
+    it('reports no decision for a restricted meeting', async () => {
+      expect(await resolveFor(meetingWith({ restricted: true, show_meeting_attendees: true }))).toBeNull();
+    });
+
+    it('reports an opt-out for a meeting whose flag the API omitted', async () => {
+      // Omission is how a stored-off meeting arrives — reading it as undecided would let a group
+      // default turn sharing back on behind the organizer.
+      expect(await resolveFor(meetingWith({ show_meeting_attendees: undefined }))).toBe(false);
+    });
+
+    it('reports the saved opt-in of an unlocked meeting', async () => {
+      expect(await resolveFor(meetingWith({ show_meeting_attendees: true }))).toBe(true);
     });
   });
 });
