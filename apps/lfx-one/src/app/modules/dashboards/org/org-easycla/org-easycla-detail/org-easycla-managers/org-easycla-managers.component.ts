@@ -3,9 +3,15 @@
 
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, OnInit, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
-import { ORG_CLA_MANAGER_REFUSAL_COPY, ORG_CLA_MANAGER_REFUSALS, ORG_CLA_MANAGER_REMOVE_COPY, ORG_CLA_MANAGERS_COPY } from '@lfx-one/shared/constants';
+import {
+  ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
+  ORG_CLA_MANAGER_REFUSAL_COPY,
+  ORG_CLA_MANAGER_REFUSALS,
+  ORG_CLA_MANAGER_REMOVE_COPY,
+  ORG_CLA_MANAGERS_COPY,
+} from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaManager, OrgClaManagerAddRequest, OrgClaManagerRefusal, OrgClaManagerRow } from '@lfx-one/shared/interfaces';
-import { buildMeetingOrganizerMailto, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
+import { buildMeetingOrganizerMailto, formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -188,6 +194,7 @@ export class OrgEasyclaManagersComponent implements OnInit {
       return {
         manager,
         displayName,
+        addedOnLabel: manager.addedOn ? formatClaSignedOnInstant(manager.addedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
         removeLabel: `Remove ${displayName} as CLA Manager`,
         mailtoHref: buildMeetingOrganizerMailto({ email: manager.email }),
       };

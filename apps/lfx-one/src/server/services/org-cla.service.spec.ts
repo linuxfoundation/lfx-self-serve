@@ -2044,10 +2044,12 @@ describe('OrgClaService.getManagers', () => {
     expect(manager).not.toHaveProperty('addedOn');
   });
 
-  it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
-    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
+  it('fails rather than compose an empty project segment when the row names no project at all', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })));
 
-    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toThrow(/missing its project id/);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
   });
 
   it('reads an empty list array as an agreement with no managers', async () => {
@@ -2073,7 +2075,7 @@ describe('OrgClaService.getManagers', () => {
     expect(gatewayFetch).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/project/a09410000182dD3AAI/cla-managers',
       expect.objectContaining({ operation: 'org_cla_list_managers' })
     );
   });

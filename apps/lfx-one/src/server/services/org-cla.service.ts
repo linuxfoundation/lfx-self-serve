@@ -270,8 +270,8 @@ function upstreamTrimmedString(value: unknown): string {
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = upstreamTrimmedString(entry.name);
   const email = upstreamTrimmedString(entry.email);
-  // Only the events-backed add time. `approved_on` is signature creation time, not manager add time.
-  // The Org Lens managers tab does not surface `addedOn` until upstream populates `added_on`.
+  // Only the events-backed add time from the authenticated project list. `approved_on` is signature
+  // creation time, not manager add time — ignore it for display.
   const addedOn = upstreamTrimmedString(entry.added_on);
   const lfUsername = upstreamTrimmedString(entry.lf_username);
 
@@ -301,9 +301,9 @@ function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
 }
 
 /**
- * The write endpoints key on the project, and an empty id would compose `…/project//cla-manager` —
- * a path the caller cannot tell from a well-formed one. Only the write paths require it: listing
- * managers keys on the CLA group alone, so an agreement covering no project still lists.
+ * Manager read and write endpoints key on the project; an empty id would compose `…/project//…` —
+ * a path the caller cannot tell from a well-formed one. The authenticated project list is what
+ * supplies events-backed `added_on`; the public CLA-group list does not.
  */
 function requireProjectSfid(target: ManagerTarget, operation: string): string {
   if (!target.projectSfid) {
@@ -936,9 +936,11 @@ export class OrgClaService {
       return { signatureId, managers: [] };
     }
 
+    const projectSfid = requireProjectSfid(target, 'org_cla_list_managers');
+
     const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
       req,
-      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
       {
         operation: 'org_cla_list_managers',
         service: SERVICE,

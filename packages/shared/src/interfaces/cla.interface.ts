@@ -1176,6 +1176,7 @@ export interface OrgClaManagerList {
 export interface OrgClaManagerRow {
   manager: OrgClaManager;
   displayName: string;
+  addedOnLabel: string;
   removeLabel: string;
   mailtoHref: string | null;
 }
