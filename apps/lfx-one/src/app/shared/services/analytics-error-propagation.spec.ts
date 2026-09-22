@@ -40,6 +40,13 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     { name: 'getMemberRetention', url: '/api/analytics/member-retention', call: () => service.getMemberRetention('aaif') },
     { name: 'getEngagedCommunity', url: '/api/analytics/engaged-community', call: () => service.getEngagedCommunity('aaif') },
     { name: 'getWebActivitiesSummary', url: '/api/analytics/web-activities-summary', call: () => service.getWebActivitiesSummary('aaif', undefined, 'last-6') },
+    {
+      name: 'getEngagementGroupAttendance',
+      url: '/api/analytics/engagement-group-attendance',
+      // Its empty state claims the foundation has no matching groups, so a zero-filled response
+      // reads as measured absence.
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {
