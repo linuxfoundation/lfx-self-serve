@@ -939,18 +939,39 @@ export class OrgClaService {
 
     const projectSfid = requireProjectSfid(target, 'org_cla_list_managers');
 
-    const upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
-      {
-        operation: 'org_cla_list_managers',
-        service: SERVICE,
-        errorMessage: 'Failed to fetch CLA managers',
-        errorCode: 'UPSTREAM_ERROR',
-        redactResponseBody: true,
-        bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+    const managerListFetchOptions = {
+      service: SERVICE,
+      errorMessage: 'Failed to fetch CLA managers',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+    } as const;
+
+    let upstream: EasyClaCompanyClaManagerList | null;
+    try {
+      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
+        { ...managerListFetchOptions, operation: 'org_cla_list_managers' }
+      );
+    } catch (error) {
+      if (!(error instanceof MicroserviceError) || error.statusCode !== 403) {
+        throw error;
       }
-    );
+
+      logger.warning(req, 'org_cla_list_managers', 'project-scoped manager list refused; falling back to CLA-group list', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        company_id: target.companyId,
+        project_sfid: projectSfid,
+      });
+
+      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`,
+        { ...managerListFetchOptions, operation: 'org_cla_list_managers_cla_group_fallback' }
+      );
+    }
 
     if (!upstream || !Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch CLA managers: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
