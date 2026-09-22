@@ -75,6 +75,8 @@ export class HealthMetricsEngagementComponent {
   private readonly resize$ = new Subject<void>();
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
+  // The shape the live observers were built for, so content changes that do not move it cost nothing.
+  private spyShape?: string;
 
   public constructor() {
     this.destroyRef.onDestroy(() => this.teardownScrollSpy());
@@ -82,6 +84,7 @@ export class HealthMetricsEngagementComponent {
       this.measurePanesHeight();
       this.setupScrollSpy();
       this.observeWindowResize();
+      this.observePaneIntent();
       // `route.fragment` has already emitted by now, before the section ids existed, so the deep
       // link is replayed here rather than scrolling against an empty document.
       this.settlePendingSection();
@@ -125,11 +128,11 @@ export class HealthMetricsEngagementComponent {
       () => {
         this.measurePanesHeight();
         // The area may only now overflow, and whether it does decides if the end sentinel is
-        // observed at all — the first pass ran against five short placeholder sections.
-        this.setupScrollSpy();
+        // observed at all — the first pass ran against five short placeholder sections. Counts
+        // re-emit on every filter and page change, so nothing is rebuilt unless that decision moved.
+        if (this.currentSpyShape() !== this.spyShape) this.setupScrollSpy();
         this.settlePendingSection();
-        // Consumed: counts re-emit on every filter and page change, and a still-pending key would
-        // scroll the pane back to the anchor each time.
+        // Consumed: a still-pending key would scroll the pane back to the anchor on every re-emission.
         this.pendingSection.set(null);
       },
       { injector: this.injector }
@@ -169,6 +172,22 @@ export class HealthMetricsEngagementComponent {
     const onResize = () => this.resize$.next();
     window.addEventListener('resize', onResize, { passive: true });
     this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
+  }
+
+  /**
+   * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
+   * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
+   */
+  private observePaneIntent(): void {
+    const pane = this.panes()?.nativeElement;
+    if (!isPlatformBrowser(this.platformId) || !pane) return;
+
+    const onIntent = () => this.pendingSection.set(null);
+    const events = ['wheel', 'touchmove', 'keydown'];
+    for (const event of events) pane.addEventListener(event, onIntent, { passive: true });
+    this.destroyRef.onDestroy(() => {
+      for (const event of events) pane.removeEventListener(event, onIntent);
+    });
   }
 
   /** Replays the deep link. Runs only until the section data settles and clears the pending key. */
@@ -248,6 +267,7 @@ export class HealthMetricsEngagementComponent {
     );
     keyByHeading.forEach((_, heading) => observer.observe(heading));
     this.scrollSpyObserver = observer;
+    this.spyShape = this.currentSpyShape();
 
     // The last section is short enough that its heading never reaches the activation band, so an
     // invisible end sentinel snaps to it. Guarding on the heading's position instead would be dead
@@ -268,10 +288,18 @@ export class HealthMetricsEngagementComponent {
     this.scrollEndObserver = endObserver;
   }
 
+  /** The two facts the observers are built from — the scroll root, and whether the end sentinel is reachable. */
+  private currentSpyShape(): string {
+    const container = this.scrollingPane();
+
+    return `${container ? 'pane' : 'page'}:${this.areaScrolls(container)}`;
+  }
+
   private teardownScrollSpy(): void {
     this.scrollSpyObserver?.disconnect();
     this.scrollEndObserver?.disconnect();
     this.scrollSpyObserver = undefined;
     this.scrollEndObserver = undefined;
+    this.spyShape = undefined;
   }
 }

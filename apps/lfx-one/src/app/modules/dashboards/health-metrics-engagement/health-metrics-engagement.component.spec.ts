@@ -331,6 +331,25 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(activeKey()).toBe('nonmem');
   });
 
+  it('drops a pending deep link once the reader scrolls the pane themselves', async () => {
+    fixture.destroy();
+    TestBed.resetTestingModule();
+    FakeIntersectionObserver.instances = [];
+    await setup('reps');
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-engagement-page"]').lastElementChild as HTMLElement;
+    panes.dispatchEvent(new Event('wheel'));
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // A read that fails and later succeeds would otherwise drag the pane back to the linked anchor.
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
   it('disconnects both observers on destroy', () => {
     const heading = spyObserver();
     const end = FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
