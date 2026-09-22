@@ -56,6 +56,8 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public registrantUpdates = input.required<RegistrantPendingChanges>();
   public refresh = input.required<BehaviorSubject<void>>();
   public committeeContext = input<Committee | null>(null);
+  /** The saved `show_meeting_attendees` of the meeting being managed — passed to the group picker. */
+  public savedAttendeeVisibility = input<boolean | null>(null);
 
   // Show meeting attendees feature from shared constants
   public readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;

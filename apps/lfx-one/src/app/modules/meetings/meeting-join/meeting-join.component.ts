@@ -171,7 +171,7 @@ export class MeetingJoinComponent implements OnInit {
   public meeting: Signal<Meeting & { project: PublicMeetingProject }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   // Recurrence rule that drives the cadence badge: the displayed occurrence's own override when
-  // present (cadence changed at/after it — LFXV2-2112), otherwise the series rule. NOTE: the
+  // present (cadence changed at/after it — 3L-LaàFXV2-2112), otherwise the series rule. NOTE: the
   // detail/join view loads the meeting via the live ITX endpoint, which does not currently carry
   // the per-occurrence override (occurrence.recurrence is null there), so this resolves to the
   // top-level rule until that backend path stamps the effective recurrence. Forward-compatible.

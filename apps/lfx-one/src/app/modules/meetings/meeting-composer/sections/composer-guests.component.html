@@ -42,6 +42,7 @@
   <lfx-meeting-committee-manager
     [selectedCommittees]="selectedCommittees()"
     [form]="form()"
+    [savedAttendeeVisibility]="formService.meeting()?.show_meeting_attendees ?? null"
     [committeeContext]="formService.committeeContext()"
     [contextLoading]="formService.committeeContextLoading()"
     [contextFailed]="formService.committeeContextFailed()"

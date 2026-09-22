@@ -51,6 +51,16 @@ export class MeetingCommitteeManagerComponent {
   public readonly contextLoading = input<boolean>(false);
   /** Whether the caller's {@link committeeContext} lookup failed, so the scoping group is missing. */
   public readonly contextFailed = input<boolean>(false);
+  /**
+   * The saved `show_meeting_attendees` of the meeting being edited, or `null` when creating one.
+   * @description The organizer's standing decision cannot be read off the form: a create that has
+   * never been touched and an existing meeting the organizer turned off both present as `false`.
+   * Only the caller knows which it is, so it says. Without it, a group default silently turns
+   * attendee sharing back on for a meeting that was deliberately saved with it off — the control
+   * emits nothing at hydration that this component could see, because both callers mount it only
+   * after the load has settled.
+   */
+  public readonly savedAttendeeVisibility = input<boolean | null>(null);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -116,6 +126,15 @@ export class MeetingCommitteeManagerComponent {
   private attendeeVisibilityLocked = false;
 
   /**
+   * Whether the lock was already on when this form arrived.
+   * @description Qualifies a saved `true`. Rows written before the board/restricted rule existed
+   * still carry one, and hydration shows the toggle off for them — restoring that value when the
+   * organizer later switches the meeting to an unlocked type would re-share a guest list they
+   * were last shown as not shared. A saved `false` needs no such qualification.
+   */
+  private attendeeLockedOnLoad = false;
+
+  /**
    * Whether the attendees toggle is currently holding a committee's preference rather than a
    * value of the organizer's own.
    * @description The unlock may only put back what this component itself applied or was stopped
@@ -126,21 +145,20 @@ export class MeetingCommitteeManagerComponent {
    * Set when a committee preference is applied or withheld by the lock; cleared as soon as the
    * organizer edits the toggle or the selection stops carrying the preference. Lock-driven
    * writes are silent (`{ emitEvent: false }`), so an emission on that control is either the
-   * organizer or this component's own write, and {@link applyingCommitteePreference}
+   * organizer or this component's own write, and {@link applyingAttendeeWrite}
    * distinguishes those two.
    */
   private committeeOwnsAttendeeToggle = false;
 
   /**
-   * Whether the organizer turned attendee visibility off themselves.
-   * @description Blocks every path that would turn it back on, not only the unlock: picking or
-   * swapping a committee that carries the preference must not silently undo a choice the
-   * organizer made on this meeting. Cleared if they turn it back on.
+   * The organizer's own edit to the toggle in this session, or `null` if they have not made one.
+   * @description Read through {@link organizerAttendeeChoice}, which falls back to the saved value
+   * so an edit session starts from the decision the meeting already carries.
    */
-  private organizerOptedOut = false;
+  private sessionAttendeeChoice: boolean | null = null;
 
-  /** Guards the two flags above against this component's own writes. */
-  private applyingCommitteePreference = false;
+  /** Guards the flags above against this component's own writes. */
+  private applyingAttendeeWrite = false;
 
   /**
    * Emission gate for `committeeMembersChange`.
@@ -243,6 +261,7 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          this.attendeeLockedOnLoad = this.attendeeVisibilityLocked;
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
               map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
@@ -255,7 +274,15 @@ export class MeetingCommitteeManagerComponent {
       .subscribe((locked) => {
         const wasLocked = this.attendeeVisibilityLocked;
         this.attendeeVisibilityLocked = locked;
-        if (wasLocked && !locked && this.committeeOwnsAttendeeToggle) {
+        if (!wasLocked || locked) {
+          return;
+        }
+        // The organizer's own value outranks a committee's: the lock wrote `false` over it
+        // silently, so putting it back is undoing the lock, not making a choice for them.
+        if (this.restoreOrganizerAttendeeChoice()) {
+          return;
+        }
+        if (this.committeeOwnsAttendeeToggle) {
           this.applyCommitteeAttendeePreference();
         }
       });
@@ -466,13 +493,51 @@ export class MeetingCommitteeManagerComponent {
     }
     return attendeesControl.valueChanges.pipe(
       tap((value) => {
-        if (!this.applyingCommitteePreference) {
+        if (!this.applyingAttendeeWrite) {
           this.committeeOwnsAttendeeToggle = false;
-          this.organizerOptedOut = value === false;
+          this.sessionAttendeeChoice = value === true;
         }
       }),
       ignoreElements()
     );
+  }
+
+  /**
+   * The organizer's standing decision for this meeting, or `null` if they have not made one.
+   * @description Their edit in this session if there is one, otherwise what the meeting was saved
+   * with. A saved `true` on a meeting that arrived locked is not read as a decision — see
+   * {@link attendeeLockedOnLoad}.
+   */
+  private organizerAttendeeChoice(): boolean | null {
+    if (this.sessionAttendeeChoice !== null) {
+      return this.sessionAttendeeChoice;
+    }
+    const saved = this.savedAttendeeVisibility();
+    if (saved === null || (saved && this.attendeeLockedOnLoad)) {
+      return null;
+    }
+    return saved;
+  }
+
+  /** Puts back an organizer's own `true` that the lock overwrote. Reports whether it applied. */
+  private restoreOrganizerAttendeeChoice(): boolean {
+    if (this.organizerAttendeeChoice() !== true) {
+      return false;
+    }
+    this.setAttendeeVisibility(true);
+    this.committeeOwnsAttendeeToggle = false;
+    return true;
+  }
+
+  /** Writes the toggle without the write being mistaken for an organizer edit. */
+  private setAttendeeVisibility(value: boolean): void {
+    const control = this.form().get('show_meeting_attendees');
+    if (!control || control.value === value) {
+      return;
+    }
+    this.applyingAttendeeWrite = true;
+    control.setValue(value);
+    this.applyingAttendeeWrite = false;
   }
 
   /**
@@ -487,7 +552,7 @@ export class MeetingCommitteeManagerComponent {
    * so it always acts on the committees selected at that moment.
    */
   private applyCommitteeAttendeePreference(): void {
-    if (this.organizerOptedOut) {
+    if (this.organizerAttendeeChoice() === false) {
       return;
     }
 
@@ -502,9 +567,7 @@ export class MeetingCommitteeManagerComponent {
       this.committeeOwnsAttendeeToggle = true;
       return;
     }
-    this.applyingCommitteePreference = true;
-    attendeesControl.setValue(true);
-    this.applyingCommitteePreference = false;
+    this.setAttendeeVisibility(true);
     this.committeeOwnsAttendeeToggle = true;
   }
 
