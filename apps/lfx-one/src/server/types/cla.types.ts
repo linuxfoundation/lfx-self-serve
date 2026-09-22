@@ -513,10 +513,9 @@ export interface EasyClaSignatureApprovalLists {
 
 /**
  * One entry of a company CLA manager list (`#/definitions/company-cla-manager`), snake_case as the
- * CLA service sends it. Org Lens BFF reads
- * `GET /v4/company/{companyID}/project/{projectSFID}/cla-managers` (authenticated; events-backed
- * `added_on`). The CLA-group list (`…/cla-group/{claGroupID}/cla-managers`) is a separate,
- * unauthenticated route and is not used for the managers tab.
+ * CLA service sends it. Org Lens BFF prefers
+ * `GET /v4/company/{companyID}/project/{projectSFID}/cla-managers` and falls back to
+ * `…/cla-group/{claGroupID}/cla-managers` on upstream 403.
  */
 export interface EasyClaCompanyClaManager {
   lf_username?: string;

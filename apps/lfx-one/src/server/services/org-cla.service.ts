@@ -302,9 +302,8 @@ function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
 }
 
 /**
- * Manager read and write endpoints key on the project; an empty id would compose `…/project//…` —
- * a path the caller cannot tell from a well-formed one. The authenticated project list is what
- * supplies events-backed `added_on`; the public CLA-group list does not.
+ * Writes and the primary manager read require a project SFID; an empty id would compose
+ * `…/project//…`. `getManagers` falls back to the CLA-group list on upstream 403.
  */
 function requireProjectSfid(target: ManagerTarget, operation: string): string {
   if (!target.projectSfid) {
