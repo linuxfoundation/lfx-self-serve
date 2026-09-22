@@ -1052,8 +1052,8 @@ export interface OrgClaApprovalEntriesDialogData {
 // Contributor Acknowledgments (#1986)
 //
 // The Organization Lens Contributor Acknowledgments tab lists the ECLA signatures the producer
-// holds under one CCLA (company × CLA Group), with a per-row invalidate (invalidate write ships
-// in the follow-on slice). Two invariants shape the contract:
+// holds under one CCLA (company × CLA Group), with a per-row invalidate. Two invariants shape the
+// contract:
 //
 //   1. **Never drop a row for a missing LF Login.** The identity fallback chain below is what lets
 //      the column always render a visible value.
@@ -1139,6 +1139,50 @@ export interface OrgClaAcknowledgmentRow {
   signedOnLabel: string;
   invalidated: boolean;
   invalidatedTooltip: string;
+}
+
+/**
+ * Reasons a CLA manager can pick when invalidating an acknowledgment (#1986, #2807).
+ *
+ * The producer accepts these four enum values; the free-text note is separate. The tuple order
+ * is the UI order the picker presents them in.
+ */
+export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
+
+export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[number];
+
+/**
+ * Body posted to the BFF invalidate endpoint.
+ *
+ * Both fields are optional at the contract level — the producer accepts an empty body — but the
+ * UI dialog requires a reason before it lets the caller confirm. `note` is trimmed and length-
+ * capped at the server; anything past the cap is refused as 400, not truncated.
+ */
+export interface OrgClaInvalidateAcknowledgmentRequest {
+  reason?: OrgClaInvalidationReason;
+  note?: string;
+}
+
+/**
+ * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ */
+export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
+
+/**
+ * What the BFF returns once the producer has invalidated the acknowledgment.
+ *
+ * A receipt, not a row. The producer's own response echoes an identity triple — CLA Group id,
+ * internal company id, EasyCLA user id — and none of the three crosses to the browser: the same
+ * boundary the list mapper holds, where the row deliberately does not carry the ids the write
+ * paths are addressed by. What is left is the per-ack signature id the browser already supplied,
+ * which is enough to correlate the receipt with the row that was acted on.
+ *
+ * The producer stamps `invalidatedAt` / `invalidatedBy` and reports neither here, so the new row
+ * state cannot be derived from this. The tab refetches instead.
+ */
+export interface OrgClaInvalidateAcknowledgmentResult {
+  /** The per-ack signature id that was invalidated. */
+  signatureId: string;
 }
 
 /**
