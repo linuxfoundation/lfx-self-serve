@@ -98,7 +98,7 @@ export class PlanningTabComponent implements OnInit {
    * for both surfaces, and `emailStage` below is what names which send it is asking about.
    *
    * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
-   * additive — an omitted binding keeps exactly today's behaviour.
+   * additive — an omitted binding keeps exactly today's behavior.
    */
   public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
 
@@ -185,7 +185,7 @@ export class PlanningTabComponent implements OnInit {
    *
    * `frontend-checklist.md` 14.1 makes the `lfx-input-text` wrapper mandatory for changed form
    * controls, and the wrapper takes a FormGroup plus a control name -- `ngModel` is not supported.
-   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behaviour
+   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behavior
    * by hand, which is the duplication the rule exists to stop.
    *
    * `countryCode` is here for a reason the others are not: it became editable when the fallback
@@ -1396,7 +1396,7 @@ export class PlanningTabComponent implements OnInit {
       dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
       city: (this.emailEditForm.controls.city.value ?? '').trim(),
       // Upper-cased: `countryNameFor` looks the code up case-sensitively after its own
-      // normalisation, and an operator typing "ke" should not silently produce no country.
+      // normalization, and an operator typing "ke" should not silently produce no country.
       countryCode: (this.emailEditForm.controls.countryCode.value ?? '').trim().toUpperCase(),
       audience: (this.emailEditForm.controls.audience.value ?? '').trim(),
       registrationUrl: (this.emailEditForm.controls.registrationUrl.value ?? '').trim(),
@@ -2243,7 +2243,7 @@ export class PlanningTabComponent implements OnInit {
  * `{{ details.dates }}` prints the string "undefined" rather than nothing. It also reached
  * `setValue()` on the edit form, putting "undefined" in an input the user then has to clear.
  *
- * Normalising HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
+ * Normalizing HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
  * belongs wherever the value is DISPLAYED, and there are several such places (the email card, the
  * paid card, the read view, the edit form), so a per-site fix is one grep away from missing the
  * next one. One conversion at the boundary makes the declared type true for every reader.

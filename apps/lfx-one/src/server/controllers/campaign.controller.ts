@@ -789,7 +789,7 @@ export class CampaignController {
     // (linuxfoundation/lfx-self-serve#2214).
     //
     // An earlier revision also narrowed an explicit typo to paid, reasoning that failing closed
-    // toward the pre-existing behaviour could not expose a brief that was hidden before. True, and
+    // toward the pre-existing behavior could not expose a brief that was hidden before. True, and
     // beside the point: `?delivery_type=emial` then returns the PAID brief under a 200, which is a
     // confident answer to a question the caller did not ask. Upstream's `find-brief` restricts this
     // param to `paid-marketing | email`, so honouring a third value was never the contract — and
@@ -1193,7 +1193,7 @@ export class CampaignController {
         const payload = await this.campaignServiceClient.searchHubSpotCampaigns(req, projectSlug, eventName);
         const result = toUtmLookupResult(payload, eventName, clientUnderstandsTokenlessFound);
         // `matches` is upstream's raw fuzzy count; `found` is whether one candidate was
-        // CONFIDENT enough to auto-apply -- an exact normalised match, alone in that, from a
+        // CONFIDENT enough to auto-apply -- an exact normalized match, alone in that, from a
         // result set proven complete.
         //
         // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version

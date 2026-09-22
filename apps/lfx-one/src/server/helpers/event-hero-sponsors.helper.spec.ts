@@ -167,7 +167,7 @@ describe('extractHeroAndSponsors — SSRF', () => {
     ['rfc1918 172.16', 'http://172.16.0.9/hero.png'],
     ['ipv6 loopback', 'http://[::1]/hero.png'],
     // The same address in another spelling. A pattern match on the raw host misses these, which
-    // is why the host is normalised before it is judged.
+    // is why the host is normalized before it is judged.
     ['ipv4-mapped metadata', 'http://[::ffff:169.254.169.254]/latest/meta-data'],
     ['ipv4-mapped metadata, expanded', 'http://[0:0:0:0:0:ffff:169.254.169.254]/latest/meta-data'],
     ['ipv6 link-local', 'http://[fe80::1]/hero.png'],
@@ -253,10 +253,10 @@ describe('extractHeroAndSponsors — URL canonicalization', () => {
     }
   });
   /**
-   * The percent-decode that keeps the name readable is also what makes sanitising it necessary:
+   * The percent-decode that keeps the name readable is also what makes sanitizing it necessary:
    * `%E2%80%AE` is a RIGHT-TO-LEFT OVERRIDE, so a crafted filename can render as something other
    * than what it contains -- the same display spoof `sanitizeDisplayText` was added to stop on
-   * the `alt` path, arriving through the filename instead. Decoding without re-sanitising trades
+   * the `alt` path, arriving through the filename instead. Decoding without re-sanitizing trades
    * one bug for another.
    */
   it('sanitises the fallback name it decodes, not just the alt text', () => {

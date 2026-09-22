@@ -412,7 +412,7 @@ export class CampaignServiceClient {
    * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
    * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
    * GETs plus the delays is ~92s of a session's save queue blocked before the original failure
-   * even surfaces — and these saves are serialised, so the next Proceed waits behind it.
+   * even surfaces — and these saves are serialized, so the next Proceed waits behind it.
    */
   private readonly reconcileReadAttempts = 3;
   private readonly reconcileReadDelayMs = 1000;
@@ -526,7 +526,7 @@ export class CampaignServiceClient {
    * being replaced returns for an unknown job — and the poller has an arm for it
    * (`campaign.service.ts` renders "Lost connection to the campaign creation process"). A
    * flagged cutover whose two sides disagree on a reachable outcome is not a cutover; it is a
-   * second behaviour hidden behind an environment variable, and the difference would surface
+   * second behavior hidden behind an environment variable, and the difference would surface
    * only for the expired-job case nobody exercises before shipping.
    *
    * ONLY campaign-service's OWN 404, and the distinction matters most during the cutover this
@@ -662,7 +662,7 @@ export class CampaignServiceClient {
     //      because nothing loaded one, the slugs match perfectly, and the save still replaces
     //      a brief whose contents the caller never read.
     //
-    // Route 2 is why normalising the two slug derivations is not the fix: it would close route
+    // Route 2 is why normalizing the two slug derivations is not the fix: it would close route
     // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
     // "the user is editing the brief they are looking at" from "a fresh session happens to
     // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
@@ -905,7 +905,7 @@ export class CampaignServiceClient {
           // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
           // break out of the markup; it does nothing to a BIDI override or a zero-width
           // character, which need no markup to render the label as something it is not. This is
-          // the SAME generator-supplied `section.text` that rides on `cta`, so sanitising only
+          // the SAME generator-supplied `section.text` that rides on `cta`, so sanitizing only
           // that field left the identical value unsanitised one branch away.
           if (section.type === 'button')
             return `<div class="lfx-block lfx-button"><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
@@ -926,7 +926,7 @@ export class CampaignServiceClient {
       // model-generated display text rendered in a sent email. A BIDI override in a button label
       // renders as something other than what it contains, and nothing else on the CTA path --
       // not `emailCtaLabel` in the component, not `rawButtonText.trim()` in the controller --
-      // sanitises it. Doing it HERE, where the value is produced, covers every consumer rather
+      // sanitizes it. Doing it HERE, where the value is produced, covers every consumer rather
       // than the one path in front of me.
       const cta = sanitizeDisplayText(buttonSection?.text ?? '');
       // The generator OMITS `url` when registration is not the right destination for the stage,
@@ -963,7 +963,7 @@ export class CampaignServiceClient {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences/build`;
     try {
       // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
-      // fifth would serialise it into the query string and send no body.
+      // fifth would serialize it into the query string and send no body.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
@@ -1168,7 +1168,7 @@ export class CampaignServiceClient {
     const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns`;
     try {
       // `undefined` for the fifth argument, NOT the envelope: `proxyRequestWithResponse` takes
-      // `query` fifth and `data` sixth. Passing the envelope fifth serialises it into the query
+      // `query` fifth and `data` sixth. Passing the envelope fifth serializes it into the query
       // string and sends NO body, which campaign-service rejects — every create would fail
       // before a job existed. `saveBrief` above has the same shape; keep the two aligned.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(
@@ -2107,8 +2107,8 @@ export class CampaignServiceClient {
  * ours — stranding the user, which this reconciliation exists to prevent.
  *
  * That reasoning was wrong, and checkably so: the columns are `JSONB`
- * (`000002_create_brief_campaign_tables.up.sql`), which normalises key order and strips
- * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialised text — is
+ * (`000002_create_brief_campaign_tables.up.sql`), which normalizes key order and strips
+ * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialized text — is
  * therefore stable across the round trip, and the hazard I kept citing does not exist.
  *
  * It matters because the first-class columns alone do not discriminate: two briefs for the same
@@ -2211,7 +2211,7 @@ function readEtag(response: ApiResponse<unknown>): string | null {
  * the user never filled in. Catching it here lets the caller say what actually went wrong.
  *
  * Trimming DETECTS an empty slug; it deliberately does not rewrite the value sent upstream. The
- * slug is the lookup key for every later find, so normalising it here and not in whatever writes
+ * slug is the lookup key for every later find, so normalizing it here and not in whatever writes
  * the next one would make the two disagree.
  */
 export function deriveEventSlug(brief: CampaignBriefOutput): string | null {

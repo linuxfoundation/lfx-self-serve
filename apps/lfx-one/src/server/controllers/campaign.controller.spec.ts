@@ -491,7 +491,7 @@ describe('CampaignController.loadBrief', () => {
   });
 
   // The unrecognised-stage case is asserted above, as a REJECTION. An earlier revision of this
-  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behaviour
+  // suite pinned the opposite -- that a bad stage silently became `''` -- which is the behavior
   // the fix removed: with `delivery_type` still `email`, `''` is not the paid slot but the real
   // and different key `(email, '')`, so the caller was answered about a brief nobody asked for.
   // The two assertions cannot both stand, so that test is gone rather than left contradicting.
@@ -515,7 +515,7 @@ describe('CampaignController.loadBrief', () => {
 
   it('refuses an explicitly unrecognised delivery_type instead of returning the paid brief', async () => {
     // An earlier revision narrowed a typo to paid, reasoning that failing closed toward the
-    // pre-existing behaviour could not expose a brief that was hidden before. True, and beside the
+    // pre-existing behavior could not expose a brief that was hidden before. True, and beside the
     // point: `?delivery_type=emial` then answered 200 with the PAID brief — a confident answer to a
     // question the caller never asked. Upstream restricts this param to two values, so a third was
     // never the contract, and `stage` already rejects rather than narrows.
@@ -1114,7 +1114,7 @@ describe('CampaignController.createCampaign cutover', () => {
 
     const sent = envelopeFor(createCampaigns)['microsoftConfig'] as Record<string, unknown>;
     // Forwarded UNCHANGED — upstream canonicalises, so rewriting it here would be a second
-    // normalisation that could only drift.
+    // normalization that could only drift.
     expect((sent['keywords'] as { matchType: string }[])[0].matchType).toBe(matchType);
   });
 
@@ -1216,7 +1216,7 @@ describe('CampaignController.createCampaign cutover', () => {
     // `hasPlatformConfig` then refuses the whole create in campaign-service.service (see its
     // `unconfigured` guard) rather than dispatching a zero-value config. That refusal is asserted
     // where it lives — the legacy fall-through is deliberately NOT asserted here, because these
-    // cases run with the cutover dark, where reaching the legacy path is correct behaviour.
+    // cases run with the cutover dark, where reaching the legacy path is correct behavior.
     expect(envelopeFor(createCampaigns)).not.toHaveProperty('microsoftConfig');
   });
 
@@ -1291,7 +1291,7 @@ describe('CampaignController.createCampaign cutover', () => {
       next
     );
 
-    // A direct campaign-manager request bypasses the scrape path entirely, so sanitising only
+    // A direct campaign-manager request bypasses the scrape path entirely, so sanitizing only
     // there left this sink open -- the name lands in a HubSpot image module's alt attribute in
     // a sent email.
     const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
@@ -1393,7 +1393,7 @@ describe('CampaignController.createCampaign cutover', () => {
     // surface: campaign-service FETCHES heroImageUrl server-side and re-hosts the bytes as a
     // publicly readable file, which makes an unguarded host a read-back channel out of the
     // cluster. The trailing-dot case is not decoration — `new URL('http://localhost./x').hostname`
-    // keeps the dot, which evaded the check until the host is normalised.
+    // keeps the dot, which evaded the check until the host is normalized.
     const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
     expect(sent['heroImageUrl']).toBeUndefined();
   });
@@ -2151,7 +2151,7 @@ describe('CampaignController.updateCampaignStatus', () => {
   // The assertion whose absence let a real defect through: the client was called without
   // assignment, so the etag it fetched died one frame later. The service spec asserts the CLIENT's
   // return value and this spec mocks the whole client, so nothing observed the seam between them —
-  // reverting the client fix broke a test while leaving production behaviour identical.
+  // reverting the client fix broke a test while leaving production behavior identical.
   it("propagates the row's fresh etag so a follow-up toggle has a valid If-Match", async () => {
     toggleCampaignStatus.mockResolvedValue({ id: UUID, status: 'paused', version: 7, etag: '7' });
 

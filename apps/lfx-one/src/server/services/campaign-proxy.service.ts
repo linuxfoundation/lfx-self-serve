@@ -276,7 +276,7 @@ async function hubspotSearchCampaign(eventName: string): Promise<HubSpotUtmResul
   // And the SAME confidence bar the mapper path applies. Refusing ties alone still auto-applied a
   // lone WEAK match -- a single campaign sharing one long word with the event name scored 1 and
   // won by default, writing its UTM into the brief's links unattended. The mapper requires an
-  // exact normalised match before `found: true`; two paths behind one flag must not disagree
+  // exact normalized match before `found: true`; two paths behind one flag must not disagree
   // about what counts as a match, or flipping the flag silently changes which campaign a brief
   // attributes to (dealako, #2079).
   const confident = isConfidentMatch(best.name, eventName);
@@ -1213,7 +1213,7 @@ function normalizeProse(prose: string): string {
  * A raw event page is mostly not prose. One measured example was 512,384 bytes with the first
  * mention of "Tokyo" at byte 31,204 -- so a fixed slice of the head returned navigation and inline
  * CSS and the extraction reported no date, no venue, nothing. Removing the markup that carries
- * rendering and behaviour rather than facts dropped the same page to 44,829 bytes and moved
+ * rendering and behavior rather than facts dropped the same page to 44,829 bytes and moved
  * "Tokyo" to byte 1,396.
  *
  * The work is done by `scanExtractable`, in one pass. It returns the page's prose and its JSON-LD
@@ -1724,7 +1724,7 @@ export class CampaignProxyService {
 
     // Same rejection as the generate path. Lower stakes here — an unrecognised value falls to the
     // paid branch and refines, which is what this endpoint did before the field existed — but a
-    // caller who misspells the type should be told, not quietly given the other behaviour.
+    // caller who misspells the type should be told, not quietly given the other behavior.
     if (body.deliveryType !== undefined && !SUPPORTED_DELIVERY_TYPES.has(body.deliveryType)) {
       yield { type: 'error', data: `Unsupported deliveryType. Supported: ${[...SUPPORTED_DELIVERY_TYPES].join(', ')}.` };
       return;
@@ -2762,7 +2762,7 @@ function buildCampaignName(body: CampaignCreateRequest, campaignType: string): s
 /**
  * The tracking URL a dispatched ad points at.
  *
- * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behaviour here a
+ * EXPORTED so the utm_campaign omission can be pinned directly. It is the one behavior here a
  * caller cannot observe through the create path without a live dispatch, and it decides whether
  * a link is honestly untagged or carries a token HubSpot never issued.
  */
@@ -2778,7 +2778,7 @@ export function buildFinalUrl(body: CampaignCreateRequest, platform = 'search'):
   });
   // utm_campaign is OMITTED when HubSpot issued no token, rather than falling back to the event
   // slug. `hsToken || slug` fabricated a plausible-looking token HubSpot never minted, which is
-  // the exact behaviour this cutover removes from the lookup path -- reinstated one layer down,
+  // the exact behavior this cutover removes from the lookup path -- reinstated one layer down,
   // where it is harder to see. A fabricated token is indistinguishable from a real one and sends
   // the traffic to a campaign HubSpot cannot report on; an ABSENT parameter is visibly absent,
   // and every downstream analytics tool treats it as untagged rather than mis-tagged.

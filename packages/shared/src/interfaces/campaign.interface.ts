@@ -1348,7 +1348,7 @@ export interface CampaignPlatformResult {
 }
 
 /**
- * What a finished creation job left behind, normalised across both sources.
+ * What a finished creation job left behind, normalized across both sources.
  *
  * `campaigns` is populated by the vendor-direct path and `platformResults` by the
  * campaign-service path — never both. Neither is a guarantee of content: the vendor-direct path

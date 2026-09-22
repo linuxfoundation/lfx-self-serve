@@ -66,7 +66,7 @@ describe('CampaignsComponent brief persistence', () => {
    * `onRestoreSavedBrief` is protected; the spec drives it as the Planning tab's output would.
    *
    * OMITTING `etag` means the validator-less restore, so the tests written before LFXV2-3204
-   * keep asserting exactly the behaviour they were written for. Tests about the carried
+   * keep asserting exactly the behavior they were written for. Tests about the carried
    * validator pass one explicitly. It is a rest parameter rather than a defaulted one — see
    * the note in the body for why that distinction is load-bearing.
    */
@@ -539,7 +539,7 @@ describe('CampaignsComponent brief persistence', () => {
     });
 
     it('surfaces a concurrent edit as stale-brief, then lets the next Proceed overwrite', async () => {
-      // The full chosen behaviour end to end: one honest refusal, then the existing
+      // The full chosen behavior end to end: one honest refusal, then the existing
       // proceed-again path. Both halves matter — a fix that produced the 412 but stranded the
       // user would break a shipped flow, and a fix that kept proceeding silently would not be a
       // fix at all.
@@ -1843,7 +1843,7 @@ describe('CampaignsComponent — email delivery channel', () => {
   // Reuses the real `CampaignTabOption` and `WritableSignal` rather than hand-rolled shapes, so
   // a retype on the component is at least a type error here instead of a silently-passing test
   // against a shape that no longer exists. The cast still cannot catch a RENAME — that is the
-  // cost of reaching protected members, and the reason the assertions below stay behavioural.
+  // cost of reaching protected members, and the reason the assertions below stay behavioral.
   interface Internals {
     /** The rows the picker draws, after type ranking and the render cap. */
     emailTemplatesRendered: Signal<{ id: string }[]>;
@@ -5602,7 +5602,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
      *
      * `EVENT_TERM_GENERIC` is a vocabulary, so a generic word nobody has added yet -- `developer`
      * -- still scores the double weight and clears the threshold alone. This test pins the
-     * CURRENT behaviour rather than asserting it is correct: the honest statement of the limit is
+     * CURRENT behavior rather than asserting it is correct: the honest statement of the limit is
      * that the deny-list closes words someone has noticed, and the next un-noticed one is a fresh
      * false positive.
      *
@@ -6203,7 +6203,7 @@ describe('CampaignsComponent — HubSpot template picker', () => {
       // The DECISIVE term is what the accent handling has to preserve, and it is what the banner
       // reports. `münchen` is a CITY token now -- it ranks but never justifies a suggestion, so
       // it is deliberately absent from the reasons shown. Asserting it here would pin the old
-      // behaviour where a city could be presented as a reason.
+      // behavior where a city could be presented as a reason.
       expect(picker().emailTemplateSuggestionTerms()).toContain('kubecon');
     });
 
@@ -7152,7 +7152,7 @@ describe('CampaignsComponent — HubSpot template picker correctness', () => {
   });
 
   /**
-   * WCAG 1.4.1: the selected row must not be distinguished by colour alone.
+   * WCAG 1.4.1: the selected row must not be distinguished by color alone.
    *
    * Asserts the RENDERED opacity class on the check icon rather than the presence of the `<i>`,
    * because the icon is always in the DOM — an existence check passes against a row that renders

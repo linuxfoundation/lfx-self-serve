@@ -311,7 +311,7 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('DNS resolution returned no addresses');
   }
   for (const addr of allAddresses) {
-    // isPrivateHost normalises the IPv4-mapped form itself, so there is no strip to do here --
+    // isPrivateHost normalizes the IPv4-mapped form itself, so there is no strip to do here --
     // and judging a hand-stripped copy alongside it would be a second encoding of the same rule
     // this file already delegates to the shared judge.
     if (isPrivateHost(addr)) {

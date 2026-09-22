@@ -185,7 +185,7 @@ export class CampaignsComponent {
   /**
    * How many saves are enqueued or running. Backs `briefSaveInFlight`.
    *
-   * Saves are serialised on `persistChain`, so more than one can be outstanding: each appends its
+   * Saves are serialized on `persistChain`, so more than one can be outstanding: each appends its
    * own clear, and with two queued the first one's clear lands between A finishing and B starting.
    * Counting is what keeps the signal true across that seam.
    */
@@ -374,7 +374,7 @@ export class CampaignsComponent {
    * write and before `onProceedToImplementation`, so a reset triggered here is undone by both.
    * That works, and it is why NO TEST FAILS when this flag is ignored: the ordering rescues it.
    *
-   * The flag is kept anyway, as defence rather than behaviour. Moving the adopt below either of
+   * The flag is kept anyway, as defence rather than behavior. Moving the adopt below either of
    * those statements — a reasonable-looking edit — would silently strand the restored brief, and
    * the previous comment asserting "the subscription sees no change" was simply false. This makes
    * the intent explicit at the point that decides it instead of leaving it implicit in line
@@ -522,11 +522,11 @@ export class CampaignsComponent {
   private ownershipGeneration = 0;
 
   /**
-   * The tail of this session's save queue — see `persistBrief` for why saves are serialised.
+   * The tail of this session's save queue — see `persistBrief` for why saves are serialized.
    *
    * A plain promise rather than an RxJS operator because the queue must OUTLIVE the component:
    * `concatMap` under `takeUntilDestroyed` would abort a save in flight when the user navigates
-   * away, which is exactly the behaviour `persistBrief` documents it must not have.
+   * away, which is exactly the behavior `persistBrief` documents it must not have.
    */
   private persistChain: Promise<void> = Promise.resolve();
 
@@ -659,7 +659,7 @@ export class CampaignsComponent {
    * on the Implementation entry paths — the create path needs the answer BEFORE any campaign
    * exists, so it cannot wait for the first. `null` therefore means "unanswered or failed", not
    * "never asked". The tab treats it as "withhold the control but preserve the draft", which is
-   * the correct behaviour for an unanswered question;
+   * the correct behavior for an unanswered question;
    * the server-side predicate reports `true` whenever the legacy creator still owns creation, so
    * the common case is not a silently missing control.
    */
@@ -1173,7 +1173,7 @@ export class CampaignsComponent {
    * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
    * runtime, so there is no `<img>` in the template source to find.
    *
-   * Staging uses this same normalised value, so the preview and the draft cannot disagree.
+   * Staging uses this same normalized value, so the preview and the draft cannot disagree.
    */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB()));
 
@@ -1254,7 +1254,7 @@ export class CampaignsComponent {
   /** Sponsors whose logo survives the same validation the controller applies, capped alike. */
   protected readonly emailSponsors = computed<CampaignEventSponsor[]>(() => {
     if (!this.emailBodyIsStageable()) return [];
-    // The SAME normaliser the controller uses. These two pipelines were duplicated verbatim and
+    // The SAME normalizer the controller uses. These two pipelines were duplicated verbatim and
     // drifted repeatedly -- blank names, the name cap, the sanitizer -- each drift showing the
     // operator a sponsor the sent draft omits, or the reverse.
     return normalizeSponsors(this.emailBriefOutput()?.eventDetails?.sponsors);
@@ -1397,7 +1397,7 @@ export class CampaignsComponent {
     // brief never contained. Checking only that the URL is public-looking is not enough: a
     // hallucinated `https://evil.example.com/phish` passes that check.
     //
-    // Compared with the trailing slash normalised away on the PATHNAME ONLY. `canonicalHttpUrl`
+    // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
     // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
     // and I wrongly said otherwise when adding this check. A model copying the URL and adding or
     // dropping a slash addresses the SAME page, so refusing it would silently drop the button
@@ -1407,7 +1407,7 @@ export class CampaignsComponent {
     // Stripping it from the whole serialized URL was the over-correction in the other
     // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
     // EQUAL to the brief's `?token=abc` and a different destination passed. Only the path may
-    // be normalised; `search` and `hash` must match exactly, because a trailing slash there is
+    // be normalized; `search` and `hash` must match exactly, because a trailing slash there is
     // part of the value rather than a path separator.
     const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
     const sameTarget = (url: string): string => {
@@ -2397,7 +2397,7 @@ export class CampaignsComponent {
     // clears `selectedEmailTemplateId`/`selectedEmailTemplateRow`, and the template is the
     // operator's own choice: the block above has just re-derived a suggestion for the new type, and
     // wiping it here would undo that and discard a hand-picked template too. Four existing specs
-    // pin exactly that behaviour.
+    // pin exactly that behavior.
     //
     // The generation counters are bumped for the same reason the helper bumps them: clearing a
     // signal cannot reach a request already on the wire, and an audience response landing after
@@ -3063,7 +3063,7 @@ export class CampaignsComponent {
       //
       // A 412 from the recorded ETag is a speed bump, not a wall: the conflict handler promotes
       // the session to explicit overwrite permission, so the user is told someone else got there
-      // first and the next Proceed saves their version over it. That is the chosen behaviour —
+      // first and the next Proceed saves their version over it. That is the chosen behavior —
       // one honest refusal, then the existing proceed-again path.
       // Bumped for THIS key only. A single session counter would make a restore of event A
       // invalidate a queued save of event B, discarding an id B's own predecessor save created
@@ -4170,7 +4170,7 @@ export class CampaignsComponent {
     // The KEY is captured here — it identifies the brief the user hit Proceed on, and reading it
     // later would key this save by whatever is on screen when the queue reaches it.
     //
-    // The LOOKUP is deliberately not. Saves are serialised, so this one may sit behind another
+    // The LOOKUP is deliberately not. Saves are serialized, so this one may sit behind another
     // save of the same event; resolving ownership now would capture null while the predecessor is
     // still in flight, and the queued request would then find the row that predecessor created
     // and be refused as unowned — telling a user their own brief belongs to someone else. It is

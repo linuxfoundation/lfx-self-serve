@@ -174,7 +174,7 @@ describe('isPrivateHost', () => {
     ['a prefixed dash wildcard host', 'x.10-0-0-1.sslip.io'],
     // These two were never enumerated. They are caught because the host is NORMALIZED before
     // scanning -- `-` treated as a separator, leading zeros stripped -- rather than because
-    // someone listed the spelling. That is the point of normalising instead of matching.
+    // someone listed the spelling. That is the point of normalizing instead of matching.
     ['a mixed dot-dash spelling', '169.254-169.254.nip.io'],
     ['a zero-padded spelling', '0169-0254-0169-0254.nip.io'],
     ['a dash host with a suffix label', '169-254-169-254.x.nip.io'],
@@ -363,7 +363,7 @@ describe('isPrivateHost', () => {
   // check, while a resolver treats the two as the same absolute name.
   // Pins the STRIPPING specifically, independent of the `..` guard. Both currently catch
   // `localhost..`, so a single-dot strip still passes the block-list cases above -- verified by
-  // mutation. Asserting the normalised form is what makes the strip itself load-bearing, so
+  // mutation. Asserting the normalized form is what makes the strip itself load-bearing, so
   // removing either protection fails something.
   it.each([
     ['one dot', 'cdn.example.com.'],
@@ -448,11 +448,11 @@ describe('isPrivateHost', () => {
    * The SAME address in compressed and fully-expanded form must get the same verdict.
    *
    * `isCompatHex` ended with `addr.startsWith('::')`, a test on the RAW string, which defeated
-   * the `expandIPv6` normalisation performed three lines above it: the fully-expanded metadata
+   * the `expandIPv6` normalization performed three lines above it: the fully-expanded metadata
    * endpoint `0:0:0:0:0:0:a9fe:a9fe` satisfied every other condition and was then refused by a
    * text test it cannot pass, while `::a9fe:a9fe` -- the identical address -- was blocked.
    *
-   * Normalise before matching is the rule this file's docstring states; the raw-string clause
+   * Normalize before matching is the rule this file's docstring states; the raw-string clause
    * was the one place that broke it.
    */
   it.each([
@@ -583,10 +583,10 @@ describe('isPrivateHost', () => {
    * The DOTTED IPv4-mapped form, which is what a DNS resolver hands back.
    *
    * `url-validation.ts` dropped its hand-written `::ffff:` strip and now judges the resolver's
-   * address directly, on the strength of isPrivateHost normalising this form itself. That is a
+   * address directly, on the strength of isPrivateHost normalizing this form itself. That is a
    * property another module depends on, so it is pinned here rather than left implicit -- the
    * hex spellings above do not cover it, and a public dotted case alone would not catch a
-   * regression that stopped normalising.
+   * regression that stopped normalizing.
    */
   it.each([
     ['loopback', '::ffff:127.0.0.1'],

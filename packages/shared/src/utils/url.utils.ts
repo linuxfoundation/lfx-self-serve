@@ -416,7 +416,7 @@ function decodeDashIPv6(label: string): string {
  * (`URL` already folds decimal and octal IPv4 into dotted-quad, so those arrive normalized.)
  *
  * WHAT THIS DOES:
- *   - normalises the host (trailing root dots removed, IPv6 compression expanded) before judging;
+ *   - normalizes the host (trailing root dots removed, IPv6 compression expanded) before judging;
  *   - decodes translated encodings that carry an IPv4 destination (IPv4-mapped, IPv4-compatible,
  *     RFC 2765 translated, NAT64 64:ff9b::/96, 6to4 2002::/16);
  *   - denies literal private, loopback, link-local, site-local and CGNAT ranges, IPv4 multicast

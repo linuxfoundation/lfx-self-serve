@@ -266,7 +266,7 @@ describe('deriveEventSlug', () => {
   });
 
   // Trimming DETECTS emptiness; it must not rewrite the value. The slug is the lookup key for
-  // every later find, so normalising here and not wherever the next one is written would make
+  // every later find, so normalizing here and not wherever the next one is written would make
   // the two disagree about which brief belongs to this event.
   it('returns a padded slug unchanged rather than normalising the lookup key', () => {
     expect(deriveEventSlug(briefWithSlug(' kubecon-eu-2026 '))).toBe(' kubecon-eu-2026 ');
@@ -802,7 +802,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
     // client's own 30s default. Counting only the sleeps -- as an earlier revision's "~2s"
     // claim did -- understated the worst case by an order of magnitude: three hung GETs plus
-    // delays is ~92s of a serialised save queue blocked before the original failure surfaces.
+    // delays is ~92s of a serialized save queue blocked before the original failure surfaces.
     //
     // A read that overruns the budget must therefore stop the loop rather than be followed by
     // two more. This one takes longer than reconcileReadBudgetMs; exactly one reconciliation
@@ -900,7 +900,7 @@ describe('CampaignServiceClient.saveBrief', () => {
   });
 
   it('adopts a row whose blobs differ only in key order', async () => {
-    // JSONB normalises key order on storage, which is why the comparison is STRUCTURAL rather
+    // JSONB normalizes key order on storage, which is why the comparison is STRUCTURAL rather
     // than textual — and why my earlier objection to comparing the blobs at all was wrong. A row
     // that really is ours must still be recognised when the keys come back reordered.
     proxyRequestWithResponse
@@ -1119,7 +1119,7 @@ describe('fromBriefResponse', () => {
       ...original,
       deliveryType: 'paid-marketing',
       emailStage: undefined,
-      // The reader normalises the scraped fields even when the brief carried none, so a restored
+      // The reader normalizes the scraped fields even when the brief carried none, so a restored
       // brief always has them in hand. Asserted rather than relaxed to `objectContaining`: an
       // exact match is what catches the next field that the write path spreads and the read path
       // forgets, which is the defect this whole pair exists to prevent.
@@ -1510,7 +1510,7 @@ describe('CampaignServiceClient.loadBrief', () => {
   // a paid caller keeps restoring its existing briefs untouched, and an email caller sees that no
   // email brief exists yet rather than adopting a paid one it cannot use.
   //
-  // The behaviour is deliberate; the historical justification it once carried was false. Pre-field
+  // The behavior is deliberate; the historical justification it once carried was false. Pre-field
   // EMAIL briefs exist too — the email flow persisted them before the field did — and after the
   // backfill they carry this same paid/empty identity and cannot be told apart. Tracked in
   // linuxfoundation/lfx-self-serve#2214; this expectation is unaffected either way.
@@ -1685,7 +1685,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
   it('sends the envelope as the request BODY, not as query parameters', async () => {
     // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
-    // fifth serialises it into the query string and sends no body, which campaign-service
+    // fifth serializes it into the query string and sends no body, which campaign-service
     // rejects — every create would fail before a job existed.
     bothFlagsOn();
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
@@ -2465,7 +2465,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     // reach it. That part is unchanged.
     expect(result.copy?.body).toBe('<p>Hello</p>');
 
-    // The label IS sanitised now, and the original reasoning here -- "neither sink is an HTML
+    // The label IS sanitized now, and the original reasoning here -- "neither sink is an HTML
     // sink, so carry it unmodified" -- was right about XSS and wrong about the threat that
     // matters for display text. Angular interpolation and the controller's `buttonText` both
     // escape markup, so `<script>` could never execute; but a BIDI override needs no markup and
@@ -2474,7 +2474,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     //
     // So the angle brackets go too -- not because they are dangerous here, but because a button
     // label is short human text ("Register now") where they have no legitimate use, and keeping
-    // the shared sanitiser whole is worth more than preserving them on one path.
+    // the shared sanitizer whole is worth more than preserving them on one path.
     expect(result.copy?.cta).toBe('scriptalert(1)/script');
     expect(result.copy?.cta).not.toContain('<');
   });
@@ -2528,7 +2528,7 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
           { type: 'rich_text', html: '<p>Hello</p>' },
           // No url: the documented CFP / Feedback / See-You-There case, where the label is kept
           // INLINE in body rather than riding on cta. It is the same generator-supplied text, so
-          // sanitising only `cta` left this branch open -- escapeHtml encodes markup and does
+          // sanitizing only `cta` left this branch open -- escapeHtml encodes markup and does
           // nothing to a BIDI override.
           { type: 'button', text: 'Submit \u202Elasoporp ruoy\u202C now' },
         ],
