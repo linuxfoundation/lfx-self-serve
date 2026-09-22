@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
+
 import { NAV_SEARCH_DEBOUNCE_MS } from './lens.constants';
 
 /** Debounce for org-selector typeahead — kept in lockstep with the project-selector. */
@@ -35,3 +37,18 @@ export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
 
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
+
+/**
+ * LFXV2-3029 — authority-first precedence over a viewer's grants on one organization: direct
+ * writer, inherited writer, direct auditor, inherited auditor. The one ordering both the selector's
+ * persona badge (`resolveOrgRolePersona`) and the default-organization ranking read, so the two
+ * cannot drift. The BFF's four arrays are already disjoint per this precedence, so at most one entry
+ * matches a given uid — the order is defense-in-depth there, load-bearing when a list is ranked
+ * into bands.
+ */
+export const ORG_ROLE_AUTHORITY_ORDER: readonly (readonly [OrgRolePersona, keyof OrgRoleGrantSets])[] = [
+  ['direct-writer', 'writerSet'],
+  ['inherited-writer', 'inheritedWriterSet'],
+  ['direct-auditor', 'auditorSet'],
+  ['inherited-auditor', 'inheritedAuditorSet'],
+];
