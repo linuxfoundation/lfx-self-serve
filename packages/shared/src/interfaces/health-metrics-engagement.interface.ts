@@ -3,6 +3,7 @@
 
 import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
@@ -121,4 +122,60 @@ export interface HealthMetricsEngagementGroupQuery {
   /** 1-based. */
   page: number;
   size: number;
+}
+
+/** Which measure the participation segment shows: the attendance share or the raw meeting volume. */
+export type HealthMetricsEngagementParticipationMode = (typeof HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES)[number]['key'];
+
+/**
+ * A participation row's level in the view's own hierarchy. `all` is the foundation-wide roll-up the
+ * hero reads; `group` is one meeting-type group. The finer `committee_type` level is not read yet.
+ */
+export type HealthMetricsEngagementParticipationLevel = 'all' | 'group';
+
+/** One participation row's numbers for a single period. Every period ships on every row. */
+export interface HealthMetricsEngagementParticipationPeriod {
+  range: HealthMetricsRange;
+  meetingsHeld: number;
+  invitedCount: number;
+  attendedCount: number;
+  /** 0-1 share of invited seats filled; `null` means no invited population at all. */
+  attendancePct: number | null;
+  activeGroups: number;
+  neverAttended: number;
+  /** Point change vs the previous comparable period; `null` when the view holds no prior period. */
+  attendanceChangePp: number | null;
+  /** Fractional change in meetings held vs the previous period; `null` when there is no prior. */
+  meetingsChangePct: number | null;
+}
+
+/** The roll-up row or one meeting-type row of the Meeting participation section. */
+export interface HealthMetricsEngagementParticipationRow {
+  level: HealthMetricsEngagementParticipationLevel;
+  /** The view's `MEETING_TYPE_GROUP`; `null` on the roll-up row. */
+  group: string | null;
+  label: string;
+  totalGroups: number;
+  /** True for the rows whose detail belongs to the Members tab rather than this page. */
+  governance: boolean;
+  periods: HealthMetricsEngagementParticipationPeriod[];
+}
+
+/** `GET /api/analytics/engagement-meeting-participation` — the hero's roll-up plus the type table. */
+export interface HealthMetricsEngagementMeetingParticipation {
+  /** `null` when the foundation has no roll-up row, which renders the section's empty state. */
+  total: HealthMetricsEngagementParticipationRow | null;
+  rows: HealthMetricsEngagementParticipationRow[];
+}
+
+/** Wire query for `GET /api/analytics/engagement-meeting-participation`. */
+export interface HealthMetricsEngagementParticipationQuery {
+  foundationSlug: string;
+  range: HealthMetricsRange;
+}
+
+/** One participation table row with its selected-period numbers resolved. */
+export interface HealthMetricsEngagementParticipationRowView {
+  row: HealthMetricsEngagementParticipationRow;
+  period: HealthMetricsEngagementParticipationPeriod | null;
 }

@@ -13,13 +13,20 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsEngagementComponent } from './health-metrics-engagement.component';
 
-import type { HealthMetricsEngagementGroupCounts } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsEngagementGroupCounts, HealthMetricsEngagementSectionKey } from '@lfx-one/shared/interfaces';
 
 // Stands in for the real Group attendance section, matched by selector — this spec covers the shell,
 // and the real one would drag in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+}
+
+// Same stand-in for Meeting participation: the shell only reacts to its two outputs.
+@Component({ selector: 'lfx-engagement-meeting-participation', template: '' })
+class MeetingParticipationStubComponent {
+  public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
+  public readonly settled = output<void>();
 }
 
 // Captures every observer the component builds so a test can fire entries at it directly; the real
@@ -79,6 +86,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
   }
 
+  function participationChild(): MeetingParticipationStubComponent {
+    return fixture.debugElement.query(By.directive(MeetingParticipationStubComponent)).componentInstance as MeetingParticipationStubComponent;
+  }
+
   function stubChild(): GroupAttendanceStubComponent {
     return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
   }
@@ -102,7 +113,9 @@ describe('HealthMetricsEngagementComponent', () => {
         ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
       ],
     })
-      .overrideComponent(HealthMetricsEngagementComponent, { set: { imports: [EngagementSubNavComponent, GroupAttendanceStubComponent] } })
+      .overrideComponent(HealthMetricsEngagementComponent, {
+        set: { imports: [EngagementSubNavComponent, GroupAttendanceStubComponent, MeetingParticipationStubComponent] },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsEngagementComponent);
@@ -482,6 +495,45 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView.mockClear();
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // Participation sits above every anchor below it, so its read landing moves them — but group
+  // attendance, still loading, owns clearing the key.
+  it('re-anchors a pending deep link when participation settles, and leaves it armed', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    participationChild().sectionPicked.emit('committees');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(activeKey()).toBe('committees');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
     stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
     fixture.detectChanges();
     await fixture.whenStable();
