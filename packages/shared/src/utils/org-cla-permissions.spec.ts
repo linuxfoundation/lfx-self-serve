@@ -10,11 +10,13 @@ const COMPANY = '0014100000Te2ovAAB';
 const PROJECT = 'a09410000182dD2AAI';
 
 describe('isOrgClaPermissionAction', () => {
-  it('accepts the two typed actions and nothing else', () => {
+  it('accepts the typed actions and nothing else', () => {
     expect(isOrgClaPermissionAction('sign')).toBe(true);
     expect(isOrgClaPermissionAction('approval-list-update')).toBe(true);
+    expect(isOrgClaPermissionAction('cla-manager-delete')).toBe(true);
     expect(isOrgClaPermissionAction('cla-signatory')).toBe(false);
     expect(isOrgClaPermissionAction('self_serve_request_corporate_signature:create')).toBe(false);
+    expect(isOrgClaPermissionAction('cla_manager_delete:remove')).toBe(false);
   });
 });
 
@@ -84,6 +86,12 @@ describe('buildOrgClaAcsPermission', () => {
   it('interpolates the approval-list update string the corporate console already uses', () => {
     expect(buildOrgClaAcsPermission({ action: 'approval-list-update', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
       `signature_approval_list:update:project|organization:${PROJECT}|${COMPANY}`
+    );
+  });
+
+  it('interpolates the manager-delete string the gateway already enforces', () => {
+    expect(buildOrgClaAcsPermission({ action: 'cla-manager-delete', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
+      `cla_manager_delete:remove:project|organization:${PROJECT}|${COMPANY}`
     );
   });
 });
