@@ -238,6 +238,43 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   });
 
   /**
+   * Invalidated is `approved: false`, or any invalidation stamp even when `approved` stays true.
+   * Legacy rows carry the stamps with `approved: true`, and the stamps decide the visible state.
+   */
+  describe('the Invalidated state', () => {
+    it('renders Invalidated when the producer says the row is not approved', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ approved: false })])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated'))).toBe('Invalidated');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged')).toBeNull();
+    });
+
+    it('renders Invalidated, with the stamp tooltip, when approved stays true but a stamp is present', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page([
+            ack({
+              approved: true,
+              invalidatedAt: '2026-03-11T09:20:00Z',
+              invalidatedBy: 'cla-manager',
+              invalidationReason: 'left the company',
+            }),
+          ])
+        )
+      );
+      const fixture = await render();
+
+      const tag = byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated');
+      const label = tag?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '';
+      expect(textIn(tag)).toBe('Invalidated');
+      expect(label).toContain('by cla-manager');
+      expect(label).toContain('Reason: left the company');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged')).toBeNull();
+    });
+  });
+
+  /**
    * The CCLA version column renders the producer's `signature_version` verbatim (already
    * normalized to a `v`-prefixed string by the mapper). An empty version renders as an em-dash.
    */

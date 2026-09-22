@@ -1401,7 +1401,10 @@ export class OrgClaService {
       });
     }
 
-    if (upstream.list && !Array.isArray(upstream.list)) {
+    // A missing, null, or non-array list is a malformed body, not an empty page. Truthiness would
+    // let those through, and the mapper would render them as "no acknowledgments yet". An empty
+    // array is the real empty page and passes this check. Same rule as the organization-list read.
+    if (!Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch the contributor acknowledgments: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: SERVICE,

@@ -2596,6 +2596,27 @@ describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () 
 });
 
 describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
+  it.each([
+    ['null', null],
+    ['omitted', undefined],
+    ['an empty string', ''],
+  ])('rejects a contributor page whose list is %s rather than showing an empty agreement', async (_label, list) => {
+    stageAckRead({ ...contributorPage(), list } as EasyClaCorporateContributorList);
+
+    await expect(new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('keeps an empty array as an empty page', async () => {
+    stageAckRead(contributorPage({ list: [], resultCount: 0, totalCount: 0 }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toEqual([]);
+  });
+
   // The shared interface types `signatureId` as required; a producer row without one cannot be
   // invalidated and, if two absent-id rows were kept, they would collide on Angular's `@for`
   // tracking key and throw NG0955, killing the whole tab.
