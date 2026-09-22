@@ -189,13 +189,12 @@ describe('HealthMetricsEngagementService', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('degrades to an empty section when the view is missing or unauthorized', async () => {
+  it('logs and propagates a missing or unauthorized view rather than reporting no groups', async () => {
     execute.mockRejectedValue(new Error('Object does not exist'));
     isMissingObjectError.mockReturnValue(true);
 
-    const response = await service.getGroupAttendance(req, query());
-
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    // The zero-filled default renders the same empty state as a foundation that genuinely has none.
+    await expect(service.getGroupAttendance(req, query())).rejects.toThrow('Object does not exist');
     expect(warning).toHaveBeenCalled();
   });
 

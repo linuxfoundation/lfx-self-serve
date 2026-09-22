@@ -135,13 +135,16 @@ export class HealthMetricsEngagementService {
     try {
       result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
     } catch (error) {
-      // Also matches a missing GRANT, not just a missing view — `err` disambiguates the two.
-      if (!SnowflakeService.isMissingObjectError(error)) throw error;
-      logger.warning(req, 'get_engagement_group_attendance', 'Group attendance query hit a missing-object/not-authorized error; returning default response', {
-        foundation_slug: query.foundationSlug,
-        err: error,
-      });
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
+      // A missing view or GRANT is logged as the operational fault it is, then propagated like any
+      // other failure: the section's empty state asserts this foundation has no matching groups, so
+      // answering an unavailable view with the zero-filled default would state that as measured fact.
+      if (SnowflakeService.isMissingObjectError(error)) {
+        logger.warning(req, 'get_engagement_group_attendance', 'Group attendance query hit a missing-object/not-authorized error', {
+          foundation_slug: query.foundationSlug,
+          err: error,
+        });
+      }
+      throw error;
     }
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
