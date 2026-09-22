@@ -2044,10 +2044,16 @@ describe('OrgClaService.getManagers', () => {
     expect(manager).not.toHaveProperty('addedOn');
   });
 
-  it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
+  it('reads through the CLA-group list when the org-list row names no project at all', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
 
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
   });
 
   it('reads an empty list array as an agreement with no managers', async () => {
@@ -2073,8 +2079,39 @@ describe('OrgClaService.getManagers', () => {
     expect(gatewayFetch).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/project/a09410000182dD3AAI/cla-managers',
       expect.objectContaining({ operation: 'org_cla_list_managers' })
+    );
+  });
+
+  it('does not fall back to the CLA-group list when the project-scoped read fails with a non-403', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Server Error', 500, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }));
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 500 });
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('/cla-group/'),
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
+  });
+
+  it('falls back to the CLA-group list when the project-scoped read is forbidden', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }))
+      .mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
     );
   });
 

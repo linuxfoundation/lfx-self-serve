@@ -512,8 +512,10 @@ export interface EasyClaSignatureApprovalLists {
 }
 
 /**
- * One entry of `GET /v4/company/{companyID}/cla-group/{claGroupID}/cla-managers`
- * (`#/definitions/company-cla-manager`), snake_case as the CLA service sends it.
+ * One entry of a company CLA manager list (`#/definitions/company-cla-manager`), snake_case as the
+ * CLA service sends it. Org Lens BFF prefers
+ * `GET /v4/company/{companyID}/project/{projectSFID}/cla-managers` and falls back to
+ * `…/cla-group/{claGroupID}/cla-managers` on upstream 403.
  */
 export interface EasyClaCompanyClaManager {
   lf_username?: string;
