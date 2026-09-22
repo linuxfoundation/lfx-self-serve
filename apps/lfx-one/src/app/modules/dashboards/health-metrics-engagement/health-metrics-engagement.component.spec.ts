@@ -60,6 +60,8 @@ class FakeIntersectionObserver implements IntersectionObserver {
 }
 
 describe('HealthMetricsEngagementComponent', () => {
+  // Both are patched onto objects this suite does not own, so they are restored after every test.
+  const originalScrollIntoView = Element.prototype.scrollIntoView;
   let fixture: ComponentFixture<HealthMetricsEngagementComponent>;
   let chrome: HealthMetricsChromeService;
   let fragment: BehaviorSubject<string | null>;
@@ -123,6 +125,8 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.unstubAllGlobals();
     // The getElementById spies below would otherwise survive into the next TestBed render.
     vi.restoreAllMocks();
+    delete (document.documentElement as unknown as { scrollHeight?: number }).scrollHeight;
+    Element.prototype.scrollIntoView = originalScrollIntoView;
   });
 
   it('renders every section with a stable anchor id and its design copy', () => {
@@ -331,7 +335,9 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(activeKey()).toBe('nonmem');
   });
 
-  it('drops a pending deep link once the reader scrolls the pane themselves', async () => {
+  // Bound on the window, so each one must still land when it is dispatched deep inside the pane —
+  // which is where a reader's wheel, touch or keypress actually originates.
+  it.each(['wheel', 'touchmove', 'keydown'])('drops a pending deep link on a reader %s inside the pane', async (type) => {
     fixture.destroy();
     TestBed.resetTestingModule();
     FakeIntersectionObserver.instances = [];
@@ -339,8 +345,7 @@ describe('HealthMetricsEngagementComponent', () => {
 
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
-    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-engagement-page"]').lastElementChild as HTMLElement;
-    panes.dispatchEvent(new Event('wheel'));
+    headingOf('participation').dispatchEvent(new Event(type, { bubbles: true }));
 
     stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
     fixture.detectChanges();
@@ -348,6 +353,26 @@ describe('HealthMetricsEngagementComponent', () => {
 
     // A read that fails and later succeeds would otherwise drag the pane back to the linked anchor.
     expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  it('does not hold a fragment that arrives after the section data has settled', async () => {
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    stubChild().countsChange.emit({ groups: 12, dormantGroups: 1 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // The anchors are stable by now, so the next filter change must not re-scroll to the fragment.
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
   it('disconnects both observers on destroy', () => {

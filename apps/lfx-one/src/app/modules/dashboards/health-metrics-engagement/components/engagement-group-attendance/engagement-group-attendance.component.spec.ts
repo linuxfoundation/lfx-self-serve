@@ -107,7 +107,8 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   it('re-reads from page 1 when the type filter changes, because the rank is per-cut', async () => {
-    await render();
+    // `totalRecords` has to cover page 3, or the out-of-range clamp resets the page for us.
+    await render(response({ totalRecords: 80 }));
     getEngagementGroupAttendance.mockClear();
 
     fixture.componentInstance['page'].set(3);
@@ -119,7 +120,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   it('re-reads from page 1 when the period changes, since the page came from the wider scope', async () => {
-    await render();
+    await render(response({ totalRecords: 80 }));
     fixture.componentInstance['page'].set(3);
     fixture.detectChanges();
     await fixture.whenStable();
@@ -179,6 +180,18 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
   });
 
+  it('opens the drawer on Space and swallows the keypress, so the pane does not page down under it', async () => {
+    await render();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
+    const event = new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true });
+    row.dispatchEvent(event);
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it('holds the count back while a read is in flight, so it never reads zero mid-fetch', async () => {
     await render();
     fixture.componentInstance['loading'].set(true);
@@ -235,7 +248,7 @@ describe('EngagementGroupAttendanceComponent', () => {
 
   // The URL is the only carrier of table state across a reload or a shared link.
   it('starts on the page and filter the URL carries', async () => {
-    await render(response(), undefined, { groupType: 'wg', groupPage: '3' });
+    await render(response({ totalRecords: 80 }), undefined, { groupType: 'wg', groupPage: '3' });
 
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 3 }));
   });
@@ -246,8 +259,19 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'all', page: 1 }));
   });
 
+  // The totals join still reports the real count for a page past the end, so leaving the page alone
+  // would render an empty table under "34 groups".
+  it('lands on the last page holding rows when the URL page is past the end', async () => {
+    await render(response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }), undefined, { groupPage: '9' });
+
+    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(1, expect.objectContaining({ page: 9 }));
+    expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
+    // The re-read is already on the last page, so it must settle there rather than clamp again.
+    expect(getEngagementGroupAttendance).toHaveBeenCalledTimes(2);
+  });
+
   it('writes the filter and page back to the URL, dropping each at its default', async () => {
-    await render(response(), undefined, { groupType: 'wg', groupPage: '3' });
+    await render(response({ totalRecords: 200 }), undefined, { groupType: 'wg', groupPage: '3' });
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
 
     fixture.componentInstance['onTablePage']({ first: 75, rows: 25 });

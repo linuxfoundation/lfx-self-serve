@@ -176,7 +176,10 @@ export class EngagementGroupAttendanceComponent {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
             }),
-            tap(() => this.loading.set(false))
+            tap((response) => {
+              this.loading.set(false);
+              this.clampPage(response.totalRecords);
+            })
           )
         )
       ),
@@ -195,6 +198,15 @@ export class EngagementGroupAttendanceComponent {
       preserveFragment: true,
       replaceUrl: true,
     });
+  }
+
+  /**
+   * A `?groupPage=` past the end of the filtered set selects nothing while the totals join still
+   * reports the real count — an empty table under "34 groups". Land on the last page that has rows.
+   */
+  private clampPage(totalRecords: number): void {
+    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    if (totalRecords > 0 && this.page() > lastPage) this.page.set(lastPage);
   }
 
   private parseInitialGroupType(): HealthMetricsEngagementGroupTypeFilter {

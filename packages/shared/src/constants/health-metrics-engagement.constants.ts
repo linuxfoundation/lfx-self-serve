@@ -174,5 +174,11 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
 /** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
 export const HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX = 24;
 
+/**
+ * How long a deep link's section key stays armed for its post-data re-scroll. Long enough for the
+ * section reads to settle, short enough that a failed read cannot scroll the reader away later.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 4000;
+
 /** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
 export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;

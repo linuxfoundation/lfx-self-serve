@@ -8,6 +8,7 @@ import { ActivatedRoute } from '@angular/router';
 import {
   HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX,
   HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX,
+  HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementSectionId, buildHealthMetricsEngagementSubNavItems, isHealthMetricsEngagementSectionKey } from '@lfx-one/shared/utils';
@@ -73,18 +74,24 @@ export class HealthMetricsEngagementComponent {
   // scrolls twice because the group table changes the anchor offsets under the first scroll.
   private readonly pendingSection = signal<HealthMetricsEngagementSectionKey | null>(null);
   private readonly resize$ = new Subject<void>();
+  private pendingSectionTimer?: ReturnType<typeof setTimeout>;
   private scrollSpyObserver?: IntersectionObserver;
   private scrollEndObserver?: IntersectionObserver;
-  // The shape the live observers were built for, so content changes that do not move it cost nothing.
-  private spyShape?: string;
+  // Two of the observers' inputs, so a content change that moves neither costs nothing. The sticky
+  // offset is a third, rebuilt from its own subscription rather than compared here.
+  private spyRootIsPane?: boolean;
+  private spyAreaScrolls?: boolean;
 
   public constructor() {
-    this.destroyRef.onDestroy(() => this.teardownScrollSpy());
+    this.destroyRef.onDestroy(() => {
+      this.teardownScrollSpy();
+      clearTimeout(this.pendingSectionTimer);
+    });
     afterNextRender(() => {
       this.measurePanesHeight();
       this.setupScrollSpy();
       this.observeWindowResize();
-      this.observePaneIntent();
+      this.observeReaderIntent();
       // `route.fragment` has already emitted by now, before the section ids existed, so the deep
       // link is replayed here rather than scrolling against an empty document.
       this.settlePendingSection();
@@ -110,7 +117,9 @@ export class HealthMetricsEngagementComponent {
     // Router `anchorScrolling` cannot serve these links: the fragment is the bare section key while
     // the DOM id carries the `sec-eng-` prefix.
     this.route.fragment.pipe(filter(isHealthMetricsEngagementSectionKey), takeUntilDestroyed()).subscribe((key) => {
-      this.pendingSection.set(key);
+      // Only a link arriving before the section data settles needs the second scroll. Once counts
+      // are in, the anchors are stable and a held key would yank the pane back on the next filter change.
+      if (this.groupCounts() === null) this.armPendingSection(key);
       this.scrollToSection(key);
     });
   }
@@ -130,7 +139,8 @@ export class HealthMetricsEngagementComponent {
         // The area may only now overflow, and whether it does decides if the end sentinel is
         // observed at all — the first pass ran against five short placeholder sections. Counts
         // re-emit on every filter and page change, so nothing is rebuilt unless that decision moved.
-        if (this.currentSpyShape() !== this.spyShape) this.setupScrollSpy();
+        const container = this.scrollingPane();
+        if (!!container !== this.spyRootIsPane || this.areaScrolls(container) !== this.spyAreaScrolls) this.setupScrollSpy();
         this.settlePendingSection();
         // Consumed: a still-pending key would scroll the pane back to the anchor on every re-emission.
         this.pendingSection.set(null);
@@ -178,16 +188,26 @@ export class HealthMetricsEngagementComponent {
    * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
    * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
    */
-  private observePaneIntent(): void {
-    const pane = this.panes()?.nativeElement;
-    if (!isPlatformBrowser(this.platformId) || !pane) return;
+  private observeReaderIntent(): void {
+    if (!isPlatformBrowser(this.platformId)) return;
 
     const onIntent = () => this.pendingSection.set(null);
+    // Bound to the window rather than the pane: keyboard scrolling with the body focused never
+    // dispatches to the pane at all. A scrollbar drag reaches neither, which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
-    for (const event of events) pane.addEventListener(event, onIntent, { passive: true });
+    for (const event of events) window.addEventListener(event, onIntent, { passive: true });
     this.destroyRef.onDestroy(() => {
-      for (const event of events) pane.removeEventListener(event, onIntent);
+      for (const event of events) window.removeEventListener(event, onIntent);
     });
+  }
+
+  /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */
+  private armPendingSection(key: HealthMetricsEngagementSectionKey): void {
+    this.pendingSection.set(key);
+    if (!isPlatformBrowser(this.platformId)) return;
+
+    clearTimeout(this.pendingSectionTimer);
+    this.pendingSectionTimer = setTimeout(() => this.pendingSection.set(null), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
   }
 
   /** Replays the deep link. Runs only until the section data settles and clears the pending key. */
@@ -228,7 +248,7 @@ export class HealthMetricsEngagementComponent {
    * the pane; below `lg` the page scrolls instead, and a page that fits needs no sentinel.
    */
   private areaScrolls(container: HTMLElement | null): boolean {
-    return container ? true : document.documentElement.scrollHeight > window.innerHeight + 1;
+    return !!container || document.documentElement.scrollHeight > window.innerHeight + 1;
   }
 
   /**
@@ -267,7 +287,8 @@ export class HealthMetricsEngagementComponent {
     );
     keyByHeading.forEach((_, heading) => observer.observe(heading));
     this.scrollSpyObserver = observer;
-    this.spyShape = this.currentSpyShape();
+    this.spyRootIsPane = !!container;
+    this.spyAreaScrolls = this.areaScrolls(container);
 
     // The last section is short enough that its heading never reaches the activation band, so an
     // invisible end sentinel snaps to it. Guarding on the heading's position instead would be dead
@@ -288,18 +309,12 @@ export class HealthMetricsEngagementComponent {
     this.scrollEndObserver = endObserver;
   }
 
-  /** The two facts the observers are built from — the scroll root, and whether the end sentinel is reachable. */
-  private currentSpyShape(): string {
-    const container = this.scrollingPane();
-
-    return `${container ? 'pane' : 'page'}:${this.areaScrolls(container)}`;
-  }
-
   private teardownScrollSpy(): void {
     this.scrollSpyObserver?.disconnect();
     this.scrollEndObserver?.disconnect();
     this.scrollSpyObserver = undefined;
     this.scrollEndObserver = undefined;
-    this.spyShape = undefined;
+    this.spyRootIsPane = undefined;
+    this.spyAreaScrolls = undefined;
   }
 }
