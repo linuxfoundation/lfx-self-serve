@@ -16,6 +16,7 @@ import { buildHealthMetricsEngagementSectionId, buildHealthMetricsEngagementSubN
 import { debounceTime, filter, Subject } from 'rxjs';
 
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
+import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
@@ -33,7 +34,7 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-engagement',
-  imports: [EngagementGroupAttendanceComponent, EngagementSubNavComponent],
+  imports: [EngagementGroupAttendanceComponent, EngagementMeetingParticipationComponent, EngagementSubNavComponent],
   templateUrl: './health-metrics-engagement.component.html',
 })
 export class HealthMetricsEngagementComponent {
@@ -55,8 +56,8 @@ export class HealthMetricsEngagementComponent {
   protected readonly panesHeight = signal<string | null>(null);
   protected readonly activeSection = signal<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
 
-  // `null` until that section reports, which renders no badge rather than a misleading zero. Only
-  // `committees` has a data path in PR 1; the rest land in PRs 2-4 on #2802.
+  // `null` until that section reports, which renders no badge rather than a misleading zero. The
+  // badge-bearing sections other than `committees` land in PRs 3-4 on #2802.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
@@ -155,6 +156,20 @@ export class HealthMetricsEngagementComponent {
         this.settlePendingSection();
         // Consumed: a still-pending key would scroll the pane back to the anchor on every re-emission.
         this.clearPendingSection();
+      },
+      { injector: this.injector }
+    );
+  }
+
+  /**
+   * Participation sits above every other section, so its read landing moves each anchor below it.
+   * The pending key is left armed — group attendance owns clearing it, and may still be loading.
+   */
+  protected onParticipationSettled(): void {
+    afterNextRender(
+      () => {
+        this.measurePanesHeight();
+        this.settlePendingSection();
       },
       { injector: this.injector }
     );

@@ -22,7 +22,7 @@ vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
 
-import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT, HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
 
@@ -185,7 +185,8 @@ describe('HealthMetricsEngagementService', () => {
   it('binds a project slug and every type label of the selected cut', async () => {
     await service.getGroupAttendance(req, query({ projectSlug: 'acme-core', groupType: 'wg' }));
 
-    expect(lastBinds()).toEqual(['acme', 'acme-core', 'Working Group']);
+    // 'Working groups' is the label the view emits; the cut binds that, not the committee category.
+    expect(lastBinds()).toEqual(['acme', 'acme-core', 'Working groups']);
     expect(lastSql()).toContain('AND project_slug = ? AND group_type_label IN (?)');
   });
 
@@ -278,6 +279,173 @@ describe('HealthMetricsEngagementService', () => {
 
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('connection reset');
     expect(warning).not.toHaveBeenCalled();
+  });
+});
+
+describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** The roll-up row the hero reads, plus the prior-period columns every delta is derived from. */
+  function participationRow(overrides: Record<string, unknown> = {}) {
+    return {
+      MEETING_TYPE_LEVEL: 'all',
+      MEETING_TYPE_GROUP: null,
+      MEETING_TYPE_LABEL: 'All meetings',
+      TOTAL_GROUPS_COUNT: 8,
+      MEETINGS_HELD_COUNT_YTD: 12,
+      INVITED_COUNT_YTD: 120,
+      ATTENDED_COUNT_YTD: 84,
+      ATTENDANCE_PCT_YTD: 0.7,
+      ACTIVE_GROUPS_COUNT_YTD: 6,
+      NEVER_ATTENDED_COUNT_YTD: 3,
+      MEETINGS_HELD_COUNT_LAST_COMPLETED_YEAR: 20,
+      INVITED_COUNT_LAST_COMPLETED_YEAR: 200,
+      ATTENDED_COUNT_LAST_COMPLETED_YEAR: 130,
+      ATTENDANCE_PCT_LAST_COMPLETED_YEAR: 0.65,
+      ACTIVE_GROUPS_COUNT_LAST_COMPLETED_YEAR: 7,
+      NEVER_ATTENDED_COUNT_LAST_COMPLETED_YEAR: 2,
+      MEETINGS_HELD_COUNT_PREV_COMPLETED_YEAR: 16,
+      ATTENDANCE_PCT_PREV_COMPLETED_YEAR: 0.6,
+      MEETINGS_HELD_COUNT_3RD_LAST_COMPLETED_YEAR: 14,
+      ATTENDANCE_PCT_3RD_LAST_COMPLETED_YEAR: 0.55,
+      MEETINGS_HELD_COUNT_PREV_YTD: 10,
+      ATTENDANCE_PCT_PREV_YTD: 0.66,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    warning.mockReset();
+    loggerError.mockReset();
+  });
+
+  it('reads the all-projects roll-up and the group rows in a single query', async () => {
+    execute.mockResolvedValue({ rows: [participationRow()] });
+
+    await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(execute).toHaveBeenCalledTimes(1);
+    expect(lastSql()).toContain('is_all_projects = TRUE');
+    expect(lastSql()).toContain('meeting_type_level IN (?, ?)');
+    expect(execute.mock.calls[0]?.[1]).toEqual(['acme', 'all', 'group']);
+  });
+
+  // The mapper reads its columns by name off the row, so a column missing from the SELECT reads
+  // `undefined` and maps to a silent zero rather than failing — this is what catches that.
+  it('selects every column the period mapper reads, for all four periods and their priors', () => {
+    const suffixes = ['ytd', 'last_completed_year', 'prev_completed_year', '3rd_last_completed_year'];
+    const columns = ['meetings_held_count', 'invited_count', 'attended_count', 'attendance_pct', 'active_groups_count', 'never_attended_count'];
+    execute.mockResolvedValue({ rows: [participationRow()] });
+
+    return service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' }).then(() => {
+      const sql = lastSql();
+
+      for (const suffix of suffixes) {
+        for (const column of columns) {
+          expect(sql).toContain(`${column}_${suffix}`);
+        }
+      }
+      // YTD's prior is the only one that is not itself a selected period.
+      expect(sql).toContain('attendance_pct_prev_ytd');
+      expect(sql).toContain('meetings_held_count_prev_ytd');
+    });
+  });
+
+  // Derived from the prior-period value columns, not the view's own `*_CHANGE_*` columns: those
+  // exist for YTD only and are not in the same unit as the 0-1 shares beside them.
+  it('derives each delta from the matching prior period', async () => {
+    execute.mockResolvedValue({ rows: [participationRow()] });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+    const periods = response.total?.periods ?? [];
+
+    expect(periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
+    // YTD 0.70 against prev-YTD 0.66, and 12 meetings against 10.
+    expect(periods[3]?.attendanceChangePp).toBeCloseTo(0.04, 10);
+    expect(periods[3]?.meetingsChangePct).toBeCloseTo(0.2, 10);
+    // The oldest period has no prior in the view, so it reports no movement rather than a zero.
+    expect(periods[0]).toMatchObject({ attendanceChangePp: null, meetingsChangePct: null });
+  });
+
+  it('splits the roll-up from the type rows and orders the types for display', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        participationRow({ MEETING_TYPE_LEVEL: 'group', MEETING_TYPE_GROUP: 'Marketing', MEETING_TYPE_LABEL: 'Marketing' }),
+        participationRow({ MEETING_TYPE_LEVEL: 'group', MEETING_TYPE_GROUP: 'Board', MEETING_TYPE_LABEL: 'Board' }),
+        participationRow(),
+      ],
+    });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response.total?.level).toBe('all');
+    expect(response.rows.map((row) => row.label)).toEqual(['Board', 'Marketing']);
+    // Only the board's detail belongs to the Members tab today.
+    expect(response.rows.map((row) => row.governance)).toEqual([true, false]);
+  });
+
+  it('sorts an unknown group after every known one rather than dropping it', async () => {
+    execute.mockResolvedValue({
+      rows: [
+        participationRow({ MEETING_TYPE_LEVEL: 'group', MEETING_TYPE_GROUP: 'Ambassadors', MEETING_TYPE_LABEL: 'Ambassadors' }),
+        participationRow({ MEETING_TYPE_LEVEL: 'group', MEETING_TYPE_GROUP: 'Board', MEETING_TYPE_LABEL: 'Board' }),
+      ],
+    });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response.rows.map((row) => row.label)).toEqual(['Board', 'Ambassadors']);
+  });
+
+  it('keeps a null attendance null rather than folding it into a real zero', async () => {
+    execute.mockResolvedValue({ rows: [participationRow({ ATTENDANCE_PCT_YTD: null })] });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response.total?.periods[3]).toMatchObject({ attendancePct: null, attendanceChangePp: null });
+  });
+
+  it('returns the empty shape for a range the view carries no columns for', async () => {
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  it('reports a null total when the foundation has no roll-up row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service
+      .getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' })
+      .catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Meeting participation is unavailable right now.');
+    expect(loggerError).toHaveBeenCalledWith(req, 'get_engagement_meeting_participation_missing_object', expect.any(Number), expect.any(Error), {
+      snowflake_expected_missing_object: 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION',
+    });
+  });
+
+  it('rethrows any other Snowflake failure', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' })).rejects.toThrow('connection reset');
   });
 });
 

@@ -19,11 +19,13 @@
           <p class="text-[13px] text-gray-500">{{ section.description }}</p>
         </div>
 
-        @if (section.key === 'committees') {
+        @if (section.key === 'participation') {
+          <lfx-engagement-meeting-participation (sectionPicked)="onSectionPicked($event)" (settled)="onParticipationSettled()" />
+        } @else if (section.key === 'committees') {
           <lfx-engagement-group-attendance (countsChange)="onGroupCounts($event)" />
         } @else {
-          <!-- PR 1 ships the shell plus Group attendance; the other five sections' Snowflake reads,
-               tables and controls land in the follow-up PRs on #2802. -->
+          <!-- The remaining four sections' Snowflake reads, tables and controls land in the
+               follow-up PRs on #2802. -->
           <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
         }
 

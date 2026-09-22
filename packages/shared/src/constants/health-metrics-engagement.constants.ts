@@ -5,6 +5,7 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
+  HealthMetricsEngagementMeetingParticipation,
 } from '../interfaces/health-metrics-engagement.interface';
 
 /**
@@ -125,25 +126,20 @@ export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
 
 /**
+ * The four labels `ENGAGEMENT_GROUP_ATTENDANCE.GROUP_TYPE_LABEL` actually emits. The view buckets
+ * committee categories itself, so a cut matches one label rather than a category list.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES: readonly string[] = ['Governance', 'Other', 'SIG / TAG', 'Working groups'];
+
+/**
  * Which `GROUP_TYPE_LABEL` values fall into each filter cut. `all` has no entry on purpose — it
- * drops the predicate rather than listing every label. Derived from `COMMITTEE_CATEGORIES`, whose
- * vocabulary is not yet confirmed against the view's distinct labels.
+ * drops the predicate rather than listing every label. The design gives `Other` no cut of its own,
+ * so the three cuts deliberately do not sum to the all-types count.
  */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthMetricsEngagementGroupTypeFilter, readonly string[]>> = {
-  gov: [
-    'Board',
-    'Technical Steering Committee',
-    'Technical Oversight Committee',
-    'Technical Advisory Committee',
-    'Finance Committee',
-    'Legal Committee',
-    'Code of Conduct',
-    'Government Advisory Council',
-  ],
-  // `COMMITTEE_CATEGORIES` has no TAG entry, so the literal is listed speculatively — it matches
-  // nothing until the view confirms it, rather than silently folding TAGs into governance.
-  sigtag: ['Special Interest Group', 'Technical Advisory Group'],
-  wg: ['Working Group'],
+  gov: ['Governance'],
+  sigtag: ['SIG / TAG'],
+  wg: ['Working groups'],
 };
 
 /** Rows per page in the Group attendance table. */
@@ -186,3 +182,55 @@ export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
+
+/** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [
+  { key: 'attendance', label: 'Attendance' },
+  { key: 'meetings', label: 'Meetings held' },
+] as const;
+
+/**
+ * The six values `ENGAGEMENT_MEETING_PARTICIPATION.MEETING_TYPE_GROUP` actually emits at the
+ * `group` level, pinned so the order and governance lists below cannot drift off the view.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_VALUES: readonly string[] = [
+  'Board',
+  'Maintainers',
+  'Marketing',
+  'Other',
+  'Technical',
+  'Working Group',
+];
+
+/**
+ * Display order for the participation table's `MEETING_TYPE_GROUP` rows — governance first, the
+ * catch-all last. A group the view adds later is unknown here and sorts to the end rather than
+ * being dropped.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER: readonly string[] = [
+  'Board',
+  'Technical',
+  'Working Group',
+  'Maintainers',
+  'Marketing',
+  'Other',
+];
+
+/**
+ * Groups whose detail belongs to the Members tab, which reports them per member against dues.
+ * Only the board qualifies today; widening this is one entry, not a code change.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS: readonly string[] = ['Board'];
+
+/** The view's own level values. The finer `committee_type` level is not read by this section. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] = ['all', 'group'];
+
+/**
+ * The empty Meeting participation shape — pre-hydration, no foundation selected, and the client's
+ * post-error placeholder. A `null` total renders the section's empty state, which is why the
+ * server never returns this for a failed read; that error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
+  total: null,
+  rows: [],
+};
