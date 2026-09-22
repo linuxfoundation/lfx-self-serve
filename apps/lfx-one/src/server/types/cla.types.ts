@@ -372,6 +372,8 @@ export interface EasyClaSignedDocument {
 export interface EasyClaSelfServeCorporateSignatureInput {
   project_sfid: string;
   company_sfid: string;
+  /** Selected agreement, validated upstream before creating a signing envelope (#2679). */
+  cla_group_id: string;
   /**
    * Absolute https URL. EasyCLA stores it and later redirects to it verbatim. Self-sign only —
    * the producer documents this as valid only when `send_as_email` is false, and still writes a

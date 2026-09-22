@@ -549,6 +549,7 @@ export class OrgClaService {
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
+        cla_group_id: request.claGroupId,
         send_as_email: true,
         authority_name: request.authorityName,
         authority_email: request.authorityEmail,
@@ -575,6 +576,7 @@ export class OrgClaService {
       body = {
         project_sfid: request.projectSfid,
         company_sfid: orgUid,
+        cla_group_id: request.claGroupId,
         return_url: isServerFeatureEnabled(ServerFeatureFlag.OrgEasyclaReturnInPath)
           ? claReturnUrl(req, orgEasyclaReturnPath(orgUid, request.claGroupId), { [ORG_EASYCLA_RETURN_SIGNED_PARAM]: ORG_EASYCLA_RETURN_SIGNED_VALUE })
           : claReturnUrl(req, legacyOrgEasyclaReturnPath(request.claGroupId), {
@@ -677,17 +679,8 @@ export class OrgClaService {
       });
     }
 
-    // The agreement is requested by project, not by CLA Group: the upstream input takes
-    // `project_sfid` and has no field for a CLA Group, so the group the signatory chose cannot be
-    // bound to the request. It comes back on the response, and that echo is the only place the two
-    // can be compared. Without this check a project whose CLA Group mapping moved between the
-    // search and the confirmation — or a client that posted a mismatched pair — hands the signatory
-    // a session for an agreement they did not choose, and nothing anywhere would say so.
-    //
-    // This necessarily refuses after the envelope exists, leaving one abandoned upstream. That is
-    // the cheaper of the two outcomes by a wide margin: the alternative is a corporate agreement
-    // signed against the wrong CLA Group, which is a legal instrument that cannot be withdrawn by
-    // this application. Binding the group in the request instead needs an upstream field.
+    // The producer binds `cla_group_id` before creating the envelope (#2679). Retain the echo
+    // check as defense in depth and during consumer-first rollout to an older producer.
     // Compared canonically, never as raw strings. The request boundary accepts the hyphenated and
     // unhyphenated spellings in either case, because the producer does, and the producer answers in
     // its own canonical one — so a request that spelled the id differently would fail a raw
