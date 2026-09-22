@@ -3234,6 +3234,33 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().canStageEmail()).toBe(true);
     });
 
+    it('refuses to stage while copy is still generating', () => {
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      fixture.detectChanges();
+      // Starts from a genuine true, so the assertions below cannot pass on some other gate.
+      expect(internals().canStageEmail()).toBe(true);
+
+      // `onStageEmailSend` reads `emailCopy()` unconditionally, and a regeneration clears it
+      // only when the response LANDS. Staging mid-generation therefore sends the PREVIOUS copy
+      // while the operator watches new copy being written -- a draft that reads as plausible and
+      // is simply the wrong content.
+      internals().emailCopyState.set('generating');
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+
+      internals().emailCopyState.set('idle');
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(true);
+
+      // Variant B has its own in-flight state and the same sink.
+      internals().abTestCopyState.set('generating');
+      fixture.detectChanges();
+      expect(internals().canStageEmail()).toBe(false);
+    });
+
     it('refuses to stage on an audience that is not BUILT', () => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

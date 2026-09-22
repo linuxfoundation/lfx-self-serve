@@ -1452,7 +1452,14 @@ export class CampaignsComponent {
       // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
       // on existence alone would re-admit the exact refusal this guard exists to prevent.
       this.emailAudience()?.status === 'built' &&
-      this.emailStaging() !== 'staging'
+      this.emailStaging() !== 'staging' &&
+      // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
+      // unconditionally, and a regeneration clears it only when the response lands -- so staging
+      // during one sends the PREVIOUS copy while the operator watches new copy being written.
+      // That draft reads as plausible and is simply the wrong content, which is the failure mode
+      // this panel keeps having to close.
+      this.emailCopyState() !== 'generating' &&
+      this.abTestCopyState() !== 'generating'
   );
 
   /**
