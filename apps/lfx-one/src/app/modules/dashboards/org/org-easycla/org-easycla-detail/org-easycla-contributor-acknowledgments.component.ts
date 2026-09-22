@@ -137,6 +137,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       distinctUntilChanged(([a1, b1, c1], [a2, b2, c2]) => a1 === a2 && b1 === b2 && c1 === c2),
       switchMap(([orgUid, signatureId, search]) => {
         this.fetchGeneration.update((generation) => generation + 1);
+        // Load more is a separate request from this pipeline. A tuple change must drop its
+        // in-flight flag here: waiting for that request's finalize leaves the new page's
+        // Load more disabled, and a request that never returns leaves it disabled for good.
+        this.loadingMore.set(false);
         this.errorMessage.set(null);
         // Reset pagination each fetch cycle — Load-more merges into `page`, and this reset is
         // what makes a new search term start from the first page rather than the previous one.
@@ -197,7 +201,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       .getContributorAcknowledgments(this.orgUid(), this.signatureId(), { search, nextKey: list.nextKey })
       .pipe(
         takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.loadingMore.set(false))
+        finalize(() => {
+          // A newer fetch already cleared this flag and may have started its own Load more.
+          // Clearing again here would re-enable that newer request's button while it is still in flight.
+          if (this.fetchGeneration() === generation) this.loadingMore.set(false);
+        })
       )
       .subscribe({
         next: (next) => {

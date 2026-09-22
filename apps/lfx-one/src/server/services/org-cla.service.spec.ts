@@ -2396,7 +2396,7 @@ function contributorPage(overrides: Partial<EasyClaCorporateContributorList> = {
 
 /**
  * Stages the two upstream calls one acknowledgments read makes: the organization's list (used to
- * resolve `(claGroupId, companyId, projectSfid)` and derive `canEdit`), then the contributors page.
+ * resolve `(claGroupId, companyId)` and derive `canEdit`), then the contributors page.
  */
 function stageAckRead(page: EasyClaCorporateContributorList = contributorPage(), entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
   gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce(page);
@@ -2412,6 +2412,19 @@ describe('OrgClaService.getContributorAcknowledgments — the upstream call', ()
     expect(url).toContain(`/v4/company/external/${ORG_UID}/cla-group/cla-group-uuid-1/corporate-contributors`);
     expect(url).toContain('companyID=company-uuid-1');
     expect(url).not.toContain('/company/external/company-uuid-1/');
+  });
+
+  it('lists acknowledgments when the agreement covers neither a project nor a foundation', async () => {
+    // The contributors URL does not take a project id. A held row with neither a project nor a
+    // foundation Salesforce id is still addressable here; only the approval-list paths 502.
+    stageAckRead(contributorPage(), [upstreamEntry({ projects: [], foundationSFID: '' })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain('/corporate-contributors');
+    expect(url).not.toContain('/signatures/project/');
   });
 
   it('carries the search term and page size to the producer as query parameters', async () => {

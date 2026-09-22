@@ -868,6 +868,8 @@ export class OrgClaService {
       return { outcome: 'forbidden' };
     }
 
+    this.requireApprovalListProject(context, 'org_cla_update_approval_list');
+
     const body = buildApprovalListUpdateBody(update);
 
     const result = await gatewayFetch<EasyClaSignatureApprovalLists>(
@@ -1238,14 +1240,17 @@ export class OrgClaService {
     // not drawn as a covered project. That skip is correct for the chips. A foundation-level
     // group therefore arrives with no project SFID and a present `foundationSFID`. The producer's
     // `GetClaGroupIDForProject` already falls back to a foundation lookup, so that id is a valid
-    // path segment — refusing it 502s a real signed CCLA before the approval-list API is called.
+    // path segment for the approval-list endpoints, which require it via `requireApprovalListProject`.
+    // The acknowledgments read does not: its URL is company Salesforce id, CLA Group id, and the
+    // company id query, so a held agreement with neither project nor foundation still lists.
     const projectSfid = entry.projects?.find((project) => !!project.projectSFID?.trim())?.projectSFID?.trim() || entry.foundationSFID?.trim() || '';
 
-    if (!claGroupId || !companyId || !projectSfid) {
+    if (!claGroupId || !companyId) {
       // Not a 404: the agreement exists and the caller may see it. The row simply cannot be
-      // addressed on the approval-list endpoints, which is an upstream data problem rather than
-      // anything the caller can fix by asking differently.
-      throw new MicroserviceError('Failed to resolve the approval list: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      // addressed, which is an upstream data problem rather than anything the caller can fix
+      // by asking differently. A missing project id is not this failure — only the approval-list
+      // paths need one.
+      throw new MicroserviceError('Failed to resolve the agreement: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: SERVICE,
       });
@@ -1291,6 +1296,16 @@ export class OrgClaService {
     return entry.claManagers.some((manager) => manager?.lfUsername?.trim().toLowerCase() === username);
   }
 
+  private requireApprovalListProject(context: ApprovalContext, operation: string): void {
+    if (context.projectSfid) return;
+    // Not a 404: the agreement exists. The approval-list URL is keyed on a project (or foundation)
+    // Salesforce id, and a row with neither cannot be addressed there.
+    throw new MicroserviceError('Failed to resolve the approval list: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
+      operation,
+      service: SERVICE,
+    });
+  }
+
   /**
    * Reads the approval list of an agreement whose context is already resolved.
    *
@@ -1299,6 +1314,7 @@ export class OrgClaService {
    * agreement list to arrive at ids it already has.
    */
   private async readApprovalList(req: Request, context: ApprovalContext, operation: string): Promise<OrgClaApprovalList> {
+    this.requireApprovalListProject(context, operation);
     const signature = await this.fetchCorporateSignature(req, context, operation);
 
     return {

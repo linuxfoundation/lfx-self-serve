@@ -10,7 +10,7 @@ import type { OrgClaContributorAcknowledgment, OrgClaContributorAcknowledgmentLi
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { MessageService } from 'primeng/api';
-import { of } from 'rxjs';
+import { of, Subject } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
@@ -132,6 +132,28 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Ada Lovelace', 'Grace Hopper']);
     // The producer's nextKey came back null on page 2, so Load-more retires.
     expect(byTestId(fixture, 'org-easycla-acknowledgments-load-more')).toBeNull();
+  });
+
+  it('re-enables Load more when a new search starts while the previous page request is still in flight', async () => {
+    const pending = new Subject<OrgClaContributorAcknowledgmentList>();
+    getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { nextKey: 'cursor-2' })));
+    const fixture = await render();
+
+    getContributorAcknowledgments.mockReturnValueOnce(pending.asObservable());
+    click(fixture, 'org-easycla-acknowledgments-load-more');
+    const spinning = fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgments-load-more"] button') as HTMLButtonElement;
+    expect(spinning.disabled).toBe(true);
+
+    getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-9', name: 'Grace Hopper' })], { nextKey: 'cursor-9' })));
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('grace');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    const ready = fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgments-load-more"] button') as HTMLButtonElement;
+    expect(ready.disabled).toBe(false);
+    expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Grace Hopper']);
   });
 
   it('shows the no-match row when a search returns nothing, not the empty-agreement copy', async () => {
