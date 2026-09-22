@@ -69,6 +69,29 @@ describe('EngagementGroupAttendanceDrawerComponent', () => {
     expect(fixture.componentInstance['lastMetLabel']()).toBe('Never');
   });
 
+  // `p-drawer` is an unnamed `complementary` landmark without these, and never moves focus in.
+  it('announces as a dialog named by the group, and moves focus to its title', async () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const fixture = await render(groupRow());
+    const panel = document.querySelector('[role="dialog"]');
+    const title = document.getElementById('engagement-group-drawer-title');
+
+    expect(panel?.getAttribute('aria-modal')).toBe('true');
+    expect(panel?.getAttribute('aria-labelledby')).toBe('engagement-group-drawer-title');
+    expect(title?.textContent?.trim()).toBe('Technical Steering Committee');
+    expect(document.activeElement).toBe(title);
+
+    // PrimeNG emits `onHide` only for its own Escape/mask close, so a programmatic close has to
+    // restore focus too.
+    fixture.componentRef.setInput('visible', false);
+    await fixture.whenStable();
+    expect(document.activeElement).toBe(trigger);
+    trigger.remove();
+  });
+
   it('renders no body and no periods without a selected row', async () => {
     const fixture = await render(null);
 

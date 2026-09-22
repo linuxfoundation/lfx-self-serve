@@ -1,10 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-drawer [(visible)]="visible" position="right" [modal]="true" styleClass="xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full">
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [pt]="drawerPt"
+  (onShow)="onDrawerShow()"
+  styleClass="xl:w-[34%] lg:w-[45%] md:w-[60%] sm:w-[85%] w-full">
   <ng-template #header>
     <div class="flex flex-col gap-0.5" data-testid="engagement-group-drawer-header">
-      <span class="text-base font-semibold text-gray-900">{{ row()?.committeeName ?? 'Group' }}</span>
+      <!-- The `aria-labelledby` target and where focus lands on open; `tabindex="-1"` keeps it out
+           of the Tab order. -->
+      <h2 #titleRef id="engagement-group-drawer-title" tabindex="-1" class="text-base font-semibold text-gray-900 focus:outline-none">
+        {{ row()?.committeeName ?? 'Group' }}
+      </h2>
       @if (row()?.groupTypeLabel) {
         <span class="text-[12px] text-gray-500">{{ row()?.groupTypeLabel }}</span>
       }
