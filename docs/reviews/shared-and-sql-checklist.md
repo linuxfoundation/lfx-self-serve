@@ -152,6 +152,34 @@ if (isMeetingInterface(response.data)) {
 
 If the upstream shape truly differs, create a mapping function with explicit types.
 
+#### 5a. Shared spec fixtures use typed builders, not `as`-cast literals (SHOULD FIX)
+
+Since #2709, `packages/shared/**/*.spec.ts` is type-checked via `packages/shared/tsconfig.spec.json` (wired into `yarn check-types`). A required field added to a shared interface now fails the spec's type-check rather than silently desyncing every fixture. Preserve that guarantee: fixtures should be produced by typed builder functions with placeholder defaults for every required field, not by `as Type` / `as unknown as Type` casts on partial object literals.
+
+**Violation:**
+
+```typescript
+// Partial cast opts out of the drift check — a new required field on Meeting compiles fine here.
+const m = { id: 'm1', recurrence: null } as unknown as Meeting;
+
+// Even a plain `as Type` on a literal permits any assignable shape and defeats interface-drift.
+const occ = { occurrence_id: '1', start_time: '…', duration: 60 } as MeetingOccurrence;
+```
+
+**Fix:**
+
+```typescript
+// Canonical builder with all required-field defaults; tests set only what they assert on.
+function meeting(overrides: Partial<Meeting> = {}): Meeting {
+  return { id: '', created_at: '', /* … every required field … */ ...overrides };
+}
+const m = meeting({ id: 'm1', recurrence: null });
+```
+
+**Builder shape rule:** spread `...overrides` at the end but do not additionally guard fields with `?? default` — `Partial<T>` allows `{ field: undefined }`, and a trailing spread with `undefined` will wipe the guarded default. The default preceding `...overrides` is the guard for the **field-absent** case (a required field the interface just gained is missing from the return literal and TS reports `TS2322` on the return); it is **not** a guard against a caller passing `{ field: undefined }` explicitly, because the workspace does not enable `exactOptionalPropertyTypes` and the trailing spread will still wipe the default at runtime. Drop `??` computations — they add cost without adding a guard.
+
+If a test needs to model runtime data that intentionally violates the interface (e.g. exercising a defensive truthy check on a required field), use `// @ts-expect-error` on a targeted `delete` rather than casting the whole fixture. The `@ts-expect-error` fails if the interface later relaxes to match, keeping the test self-documenting.
+
 ---
 
 ### 6. TypeScript conventions (NIT)

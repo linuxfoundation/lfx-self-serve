@@ -1,0 +1,17 @@
+// TypeScript configuration for type-checking spec files in @lfx-one/shared.
+//
+// The base tsconfig.json excludes spec files because `tsc` (the emit build) must not
+// compile them into dist. The vitest runs are transpile-only (esbuild), and
+// apps/lfx-one/tsconfig.spec.json only covers apps/lfx-one/src, so without this
+// config, shared spec fixtures are type-checked by nothing — a required field added to
+// a shared interface silently desyncs every fixture typed against it (see #2709 for the
+// PR review where this was caught by hand). Wire this file into check-types so the emit
+// build stays clean and specs still fail loudly when interfaces drift.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules"]
+}

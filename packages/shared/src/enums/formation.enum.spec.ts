@@ -2,21 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 // Structural invariants for the canonical formation types (GH-2163): the three seeded-template
-// vocabularies are exhaustive against their expected member sets, and a minimal template literal
-// round-trips the shape #1959's real seeded template must produce.
-//
-// "Sub-items nest one level only" (`FormationTemplateSubItem` has no `sub_items` of its own) is a
-// type-only invariant with no runtime trace, so it isn't asserted here: this package's `test`
-// script is a plain `vitest run` (esbuild transpile, no type-checking) and its `check-types`
-// script (`tsc --noEmit`) excludes `*.spec.ts` — neither gate command would actually catch a
-// violation, so a `@ts-expect-error` here would look enforced without being enforced. The
-// interface's own doc comment is this invariant's only guard.
+// vocabularies are exhaustive against their expected member sets, a minimal template literal
+// round-trips the shape #1959's real seeded template must produce, and — since #2709 —
+// `FormationTemplateSubItem`'s "one nesting level only" invariant is asserted here at type-level
+// because this package's spec files are now type-checked via `packages/shared/tsconfig.spec.json`.
+// (Vitest itself is still transpile-only, so a bare type-level violation would slip past `yarn test`;
+// what makes the @ts-expect-error below enforced is the tsc pass wired into `yarn check-types`.)
 
 import { describe, expect, it } from 'vitest';
 
 import { FORMATION_SUB_STAGE_LABELS } from '../constants/formation.constants';
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from './formation.enum';
-import type { Formation, FormationItem, FormationTemplate } from '../interfaces/formation.interface';
+import type { Formation, FormationItem, FormationTemplate, FormationTemplateSubItem } from '../interfaces/formation.interface';
 
 describe('FormationTemplateSectionKey', () => {
   it('is exhaustive against the two-section seeded template taxonomy', () => {
@@ -122,15 +119,14 @@ describe('FormationTemplate shape', () => {
 });
 
 describe('Formation shape', () => {
-  // These two derivation-input fields (#1957, GH-2163 §1) replace the removed `entity_type`
-  // field. `satisfies` alone can't gate their presence or nullability — this package's `test`
-  // script (vitest, esbuild transpile) doesn't type-check, and `check-types` (tsc --noEmit)
-  // excludes `*.spec.ts` — so the round-trip below is the only thing that actually gates
-  // `parent_uid: null` surviving JSON transport as `null` rather than being dropped the way
-  // `undefined` would be. It does NOT and cannot gate that `entity_type` stays removed from the
-  // type — these are plain object literals, not re-checked against `Formation` at runtime, so a
-  // literal that never wrote `entity_type` proves nothing about whether the interface still has
-  // it. That removal is enforced only by `yarn check-types`/`yarn build` over the non-spec sources.
+  // These two derivation-input fields (#1957, GH-2163 §1) replace the removed `entity_type` field.
+  // Since #2709 `check-types` now type-checks this file via `packages/shared/tsconfig.spec.json`,
+  // so `satisfies Formation` on the literal below does gate presence, nullability, and the
+  // continued absence of `entity_type` from the interface at compile time — a required field added
+  // to `Formation` fails this test with `TS2322` on the literal. What `satisfies` still cannot do
+  // is prove JSON transport preserves `parent_uid: null` (JSON.stringify drops `undefined` but
+  // keeps `null` — a subtle serialization difference the interface's type can't encode), so the
+  // round-trip assertion below remains the gate for that specific claim.
   it('round-trips is_foundation and a null parent_uid (top-level project) through JSON', () => {
     const formation = {
       uid: 'formation-test',
@@ -219,11 +215,26 @@ describe('FormationItem shape', () => {
       available_actions: [],
       created_at: '2026-09-08T00:00:00.000Z',
       updated_at: '2026-09-08T00:00:00.000Z',
+      version: 1,
     } satisfies FormationItem;
 
     const roundTripped = JSON.parse(JSON.stringify(item)) as FormationItem;
 
     expect(roundTripped).toHaveProperty('project_uid');
     expect(roundTripped.project_uid).toBe('project-test');
+  });
+});
+
+describe('FormationTemplateSubItem shape', () => {
+  it('nests one level only — sub-items must not themselves carry sub_items', () => {
+    // Type-only invariant with no runtime trace, enforced by the tsc pass in `yarn check-types`
+    // (see #2709; `packages/shared/tsconfig.spec.json`). If `FormationTemplateSubItem` gains a
+    // `sub_items` property, the `@ts-expect-error` below will fail with "Unused directive" and
+    // this test stops compiling — the exact drift-catch this file is here for. The `expect()`
+    // gives the `it()` a runtime observable so the whole block registers with Vitest.
+    const subItem: FormationTemplateSubItem = { key: 'sub', title: 'Sub-step', owner_team: FormationOwnerTeam.IT };
+    // @ts-expect-error — FormationTemplateSubItem must not carry a sub_items field of its own
+    const nested = subItem.sub_items;
+    expect(nested).toBeUndefined();
   });
 });

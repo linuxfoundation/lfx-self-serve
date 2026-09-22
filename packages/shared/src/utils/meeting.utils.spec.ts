@@ -78,56 +78,122 @@ import {
 } from './meeting.utils';
 
 /**
- * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
- * so only those plus an identifying `uid` are set; the rest is cast to satisfy the interface.
+ * Canonical Meeting fixture defaults. Every required field on the `Meeting` interface is set with a
+ * placeholder value so tests supply only the overrides they assert on; a required field added to
+ * `Meeting` fails these tests at compile time rather than silently defaulting to `undefined`
+ * (the whole point of typing spec fixtures — see #2709 and `tsconfig.spec.json`).
  */
-function pastMeeting(partial: { uid: string; scheduled_start_time?: string; start_time?: string }): PastMeeting {
+function meeting(overrides: Partial<Meeting> = {}): Meeting {
   return {
-    uid: partial.uid,
-    scheduled_start_time: partial.scheduled_start_time as string,
-    start_time: partial.start_time as string,
-  } as PastMeeting;
+    id: '',
+    created_at: '',
+    modified_at: '',
+    project_uid: '',
+    start_time: '',
+    duration: 0,
+    timezone: '',
+    title: '',
+    description: '',
+    recurrence: null,
+    committees: [],
+    meeting_type: null,
+    visibility: null,
+    restricted: null,
+    recording_enabled: null,
+    transcript_enabled: null,
+    youtube_upload_enabled: null,
+    artifact_visibility: null,
+    cancel_on_committee_removal: null,
+    organizers: [],
+    password: null,
+    invited: false,
+    occurrences: [],
+    ...overrides,
+  };
 }
 
-const uids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.uid);
+/**
+ * Canonical PastMeeting fixture defaults, extending {@link meeting} with `PastMeeting`'s additional
+ * required fields (`scheduled_start_time`, `scheduled_end_time`, `meeting_id`, `occurrence_id`,
+ * `platform_meeting_id`, `sessions`).
+ */
+function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
+  return {
+    ...meeting(),
+    scheduled_start_time: '',
+    scheduled_end_time: '',
+    meeting_id: '',
+    occurrence_id: '',
+    platform_meeting_id: '',
+    sessions: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Canonical MeetingOccurrence fixture defaults. Every required field is set with a placeholder so
+ * tests supply only what they assert on, and a required field added to `MeetingOccurrence` fails
+ * these tests at compile time rather than being silently absorbed by `as MeetingOccurrence` on an
+ * incomplete object literal.
+ */
+function occurrence(overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence {
+  return {
+    occurrence_id: '',
+    start_time: '',
+    duration: 0,
+    ...overrides,
+  };
+}
+
+const ids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.id);
 
 describe('sortPastMeetingsDescending', () => {
   it('orders past meetings most-recent-first by scheduled_start_time', () => {
     const input = [
-      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
-      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
-      pastMeeting({ uid: 'middle', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'middle', scheduled_start_time: '2026-02-01T10:00:00Z' }),
     ];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['newest', 'middle', 'oldest']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['newest', 'middle', 'oldest']);
   });
 
   it('falls back to start_time when scheduled_start_time is absent', () => {
-    const input = [pastMeeting({ uid: 'a', start_time: '2026-01-01T10:00:00Z' }), pastMeeting({ uid: 'b', start_time: '2026-05-01T10:00:00Z' })];
+    // `PastMeeting.scheduled_start_time` is typed as required, but `sortPastMeetingsDescending`
+    // defensively handles a missing field via `a.scheduled_start_time ?? a.start_time`. Deleting
+    // the field on the canonical fixture is what exercises that fallback branch — a canonical
+    // default of an empty string would be truthy for `??` and silently miss the fallback.
+    const withoutScheduled = (partial: { id: string; start_time: string }): PastMeeting => {
+      const fixture = pastMeeting(partial);
+      // @ts-expect-error — intentionally clearing a required field to exercise the ?? fallback
+      delete fixture.scheduled_start_time;
+      return fixture;
+    };
+    const input = [withoutScheduled({ id: 'a', start_time: '2026-01-01T10:00:00Z' }), withoutScheduled({ id: 'b', start_time: '2026-05-01T10:00:00Z' })];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['b', 'a']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['b', 'a']);
   });
 
   it('prefers scheduled_start_time over start_time when both are present', () => {
     const input = [
       // start_time would sort this first, but scheduled_start_time (the authoritative field) is older
-      pastMeeting({ uid: 'scheduled-older', scheduled_start_time: '2026-01-01T10:00:00Z', start_time: '2026-09-01T10:00:00Z' }),
-      pastMeeting({ uid: 'scheduled-newer', scheduled_start_time: '2026-06-01T10:00:00Z', start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'scheduled-older', scheduled_start_time: '2026-01-01T10:00:00Z', start_time: '2026-09-01T10:00:00Z' }),
+      pastMeeting({ id: 'scheduled-newer', scheduled_start_time: '2026-06-01T10:00:00Z', start_time: '2026-02-01T10:00:00Z' }),
     ];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['scheduled-newer', 'scheduled-older']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['scheduled-newer', 'scheduled-older']);
   });
 
   it('does not mutate the input array', () => {
     const input = [
-      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
-      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
     ];
-    const originalOrder = uids(input);
+    const originalOrder = ids(input);
 
     sortPastMeetingsDescending(input);
 
-    expect(uids(input)).toEqual(originalOrder);
+    expect(ids(input)).toEqual(originalOrder);
   });
 
   it('returns an empty array unchanged', () => {
@@ -138,31 +204,31 @@ describe('sortPastMeetingsDescending', () => {
     // Mirrors the dashboard scan: a name-cursor page may arrive with meetings more recent than
     // ones already loaded, so the merged accumulator must be re-sorted to stay most-recent-first.
     const page1 = [
-      pastMeeting({ uid: 'p1-feb', scheduled_start_time: '2026-02-01T10:00:00Z' }),
-      pastMeeting({ uid: 'p1-jan', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'p1-feb', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'p1-jan', scheduled_start_time: '2026-01-01T10:00:00Z' }),
     ];
     const page2 = [
-      pastMeeting({ uid: 'p2-may', scheduled_start_time: '2026-05-01T10:00:00Z' }),
-      pastMeeting({ uid: 'p2-mar', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'p2-may', scheduled_start_time: '2026-05-01T10:00:00Z' }),
+      pastMeeting({ id: 'p2-mar', scheduled_start_time: '2026-03-01T10:00:00Z' }),
     ];
 
     const merged = sortPastMeetingsDescending([...page1, ...page2]);
 
-    expect(uids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
+    expect(ids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
   });
 });
 
 describe('resolveRsvpOccurrenceId', () => {
-  const recurringMeeting = {
+  const recurringMeeting = meeting({
     recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
     occurrences: [
       { occurrence_id: '1785247200', start_time: '2026-07-28T14:00:00Z', duration: 60 },
       { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 },
     ],
     cancelled_occurrences: [],
-  } as Meeting;
+  });
 
-  const nonRecurringMeeting = { recurrence: null, occurrences: [] } as unknown as Meeting;
+  const nonRecurringMeeting = meeting({ recurrence: null, occurrences: [] });
 
   it('returns undefined for non-recurring meetings', () => {
     expect(resolveRsvpOccurrenceId(nonRecurringMeeting, { occurrenceId: '1785247200' })).toBeUndefined();
@@ -175,7 +241,7 @@ describe('resolveRsvpOccurrenceId', () => {
   it('prefers an explicit occurrence object', () => {
     expect(
       resolveRsvpOccurrenceId(recurringMeeting, {
-        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+        occurrence: occurrence({ occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 }),
       })
     ).toBe('1785852000');
   });
@@ -184,7 +250,7 @@ describe('resolveRsvpOccurrenceId', () => {
     expect(
       resolveRsvpOccurrenceId(recurringMeeting, {
         occurrenceId: '',
-        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+        occurrence: occurrence({ occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 }),
       })
     ).toBe('1785852000');
   });
@@ -196,7 +262,7 @@ describe('resolveRsvpOccurrenceId', () => {
       const firstStart = new Date('2026-01-20T14:00:00.000Z');
       const secondStart = new Date('2026-01-27T14:00:00.000Z');
       const firstOccurrenceId = String(Math.floor(firstStart.getTime() / 1000));
-      const meeting = {
+      const fixture = meeting({
         recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
         occurrences: [
           { occurrence_id: firstOccurrenceId, start_time: firstStart.toISOString(), duration: 60 },
@@ -207,9 +273,9 @@ describe('resolveRsvpOccurrenceId', () => {
           },
         ],
         cancelled_occurrences: [],
-      } as Meeting;
+      });
 
-      expect(resolveRsvpOccurrenceId(meeting)).toBe(firstOccurrenceId);
+      expect(resolveRsvpOccurrenceId(fixture)).toBe(firstOccurrenceId);
     } finally {
       vi.useRealTimers();
     }
@@ -222,18 +288,18 @@ describe('resolveOccurrenceRecurrence', () => {
   // Per-occurrence override stamped after an all_following cadence change: quarterly on the 1st Thursday.
   const quarterly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 3, monthly_week: 1, monthly_week_day: 5 };
 
-  const occurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
-    ({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence }) as MeetingOccurrence;
+  const withRecurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
+    occurrence({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence });
 
   const meeting = (recurrence: MeetingRecurrence | null): Pick<Meeting, 'recurrence'> => ({ recurrence });
 
   it('prefers the occurrence-level recurrence override when present', () => {
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly))).toBe(quarterly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(quarterly))).toBe(quarterly);
   });
 
   it('falls back to the top-level recurrence when the occurrence has none', () => {
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(null))).toBe(monthly);
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(undefined))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(null))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(undefined))).toBe(monthly);
   });
 
   it('falls back to the top-level recurrence when no occurrence is supplied', () => {
@@ -242,7 +308,7 @@ describe('resolveOccurrenceRecurrence', () => {
   });
 
   it('is null-safe when neither the occurrence nor the meeting carries a recurrence', () => {
-    expect(resolveOccurrenceRecurrence(meeting(null), occurrence(null))).toBeNull();
+    expect(resolveOccurrenceRecurrence(meeting(null), withRecurrence(null))).toBeNull();
     expect(resolveOccurrenceRecurrence(meeting(null), null)).toBeNull();
   });
 
@@ -250,7 +316,7 @@ describe('resolveOccurrenceRecurrence', () => {
     // Mirrors the pipe: the resolved recurrence is fed to buildRecurrenceSummary after the
     // monthly/day-of-week shape is applied. The override (repeat_interval=3) must win over the
     // stale top-level monthly rule so the label reads "Quarterly", not "Monthly".
-    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly));
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(quarterly));
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Quarterly on the 1st Thursday');
@@ -258,7 +324,7 @@ describe('resolveOccurrenceRecurrence', () => {
 
   it('end-to-end label: with no occurrence override the same surfaces still render the stale top-level "Monthly on the 1st Thursday"', () => {
     // Documents current behaviour: without an override the label falls back to the series rule.
-    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(null));
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(null));
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
@@ -309,15 +375,15 @@ describe('convertRecurrenceToPattern', () => {
 });
 
 describe('selectCommitteeCadenceMeeting', () => {
-  const recurring = { uid: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } } as Meeting;
-  const oneOff = { uid: 'm2', recurrence: null } as Meeting;
+  const recurring = meeting({ id: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
+  const oneOff = meeting({ id: 'm2', recurrence: null });
 
   it('returns null for an empty list', () => {
     expect(selectCommitteeCadenceMeeting([])).toBeNull();
   });
 
   it('returns the first meeting when none are recurring', () => {
-    const oneOff2 = { uid: 'm3', recurrence: null } as Meeting;
+    const oneOff2 = meeting({ id: 'm3', recurrence: null });
     expect(selectCommitteeCadenceMeeting([oneOff, oneOff2])).toBe(oneOff);
   });
 
@@ -330,7 +396,15 @@ describe('selectCommitteeCadenceMeeting', () => {
   });
 
   it('treats a meeting with recurrence entirely absent the same as an explicit null (truthy check, not a strict null check)', () => {
-    const noRecurrenceField = { uid: 'm4' } as Meeting;
+    // `Meeting.recurrence` is required in the type (`MeetingRecurrence | null`), but the runtime
+    // predicate is a truthy check (`!!m.recurrence`) — so a payload where the key is missing
+    // entirely (a JSON quirk, a hand-authored fixture, an out-of-band pipeline) takes the same
+    // non-recurring branch as an explicit `null`. Deleting the key on a real fixture is what
+    // proves that equivalence; a stricter interface change to `recurrence?:` would just move the
+    // guarantee into the type without changing the runtime behavior under test here.
+    const noRecurrenceField = meeting({ id: 'm4' });
+    // @ts-expect-error — intentionally deleting a required field to exercise the truthy check
+    delete noRecurrenceField.recurrence;
     expect(selectCommitteeCadenceMeeting([noRecurrenceField, recurring])).toBe(recurring);
   });
 });
@@ -1052,18 +1126,18 @@ describe('isVoteCalendarEventPast', () => {
 });
 
 describe('isMeetingOccurrenceCancelled', () => {
-  const occurrence = { occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' } as MeetingOccurrence;
+  const activeOccurrence = occurrence({ occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' });
 
   it('returns true when occurrence status is cancel', () => {
-    expect(isMeetingOccurrenceCancelled({ ...occurrence, status: 'cancel' }, [])).toBe(true);
+    expect(isMeetingOccurrenceCancelled({ ...activeOccurrence, status: 'cancel' }, [])).toBe(true);
   });
 
   it('returns true when occurrence id is in cancelled_occurrences', () => {
-    expect(isMeetingOccurrenceCancelled(occurrence, ['123'])).toBe(true);
+    expect(isMeetingOccurrenceCancelled(activeOccurrence, ['123'])).toBe(true);
   });
 
   it('returns false for active occurrences with no cancelled ids', () => {
-    expect(isMeetingOccurrenceCancelled(occurrence, ['999'])).toBe(false);
+    expect(isMeetingOccurrenceCancelled(activeOccurrence, ['999'])).toBe(false);
   });
 });
 
