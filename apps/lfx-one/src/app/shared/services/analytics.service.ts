@@ -1103,7 +1103,12 @@ export class AnalyticsService {
 
     // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
     // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
-    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params });
+    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-group-attendance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
   }
 
   /**

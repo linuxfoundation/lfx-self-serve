@@ -272,7 +272,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 
 - Services use `@Injectable({ providedIn: 'root' })`
 - Use `inject(HttpClient)` for HTTP — never constructor injection
-- GET requests use `catchError(() => of(defaultValue))` to prevent error propagation
+- GET requests use `catchError(() => of(defaultValue))` to prevent error propagation — **except when the default response would read as measured fact.** A GET whose empty/zero-filled default is indistinguishable in the UI from a real "nothing here" answer must log and rethrow (`catchError((error) => { console.error(...); return throwError(() => error); })`) so the consumer can render a failure state instead of asserting an absence. See `apps/lfx-one/src/app/shared/services/analytics-error-propagation.spec.ts`, which pins that contract.
 - POST/PUT/DELETE use `take(1)` for one-shot subscriptions
 - **Every `HttpClient` call targets a real `/api/...` endpoint** that exists in the backend routes — no mock data, placeholder URLs, or fabricated paths. API paths are relative (`/api/...`); the proxy handles routing.
 - **Snowflake metric definitions belong in `lf-dbt`.** LFX One server services own retrieval and may use parameterized filters, sorting, pagination, and the narrow display-scope roll-up allowed by the canonical rule. Do not define metrics with `CASE`, arithmetic, or transformations in embedded SQL. Full rule: [shared-and-sql-checklist §10](./shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix).
