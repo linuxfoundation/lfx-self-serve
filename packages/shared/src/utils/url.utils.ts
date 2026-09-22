@@ -263,11 +263,13 @@ export function isProfileHubPath(url: string): boolean {
 /**
  * Whether a URL is the LFID invite landing (`/invite`) or its public error page
  * (`/invite/error`). Those routes are a spinner/error shell, not the product, so
- * bootstrap skips LaunchDarkly wait, Intercom, analytics, persona/profile refetch,
- * and feature-module preload (GH-2290). Matching is exact on the route-segment
+ * bootstrap skips LaunchDarkly (no client; flags stay at code defaults), Intercom,
+ * Segment/Plausible, persona/profile refetch, and feature-module preload (GH-2290).
+ * DataDog RUM still runs; invite `token` query params are redacted before send.
+ * Matching is exact on the route-segment
  * boundary after stripping query/fragment and a trailing slash, so `/invite/error-extra`
  * and `/invites` do not qualify.
- * @param url - A router URL or `window.location.pathname` (may include `?query` / `#fragment`)
+ * @param url - A root-relative path such as `window.location.pathname` (may include `?query` / `#fragment`)
  * @returns true when the path is `/invite` or `/invite/error`
  */
 export function isInviteLandingPath(url: string): boolean {

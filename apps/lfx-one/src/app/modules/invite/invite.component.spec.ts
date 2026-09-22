@@ -7,10 +7,15 @@ import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/route
 import { InvitationAcceptFlowService } from '@services/invitation-accept-flow.service';
 import { InviteService } from '@services/invite.service';
 import { UserService } from '@services/user.service';
-import { of } from 'rxjs';
-import { describe, expect, it } from 'vitest';
+import { EMPTY, of } from 'rxjs';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { InviteComponent } from './invite.component';
+
+function futureInviteToken(): string {
+  const encode = (value: object): string => btoa(JSON.stringify(value)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  return `${encode({ alg: 'none' })}.${encode({ exp: Math.floor(Date.now() / 1000) + 3600 })}.sig`;
+}
 
 describe('InviteComponent', () => {
   function createFixture(): ComponentFixture<InviteComponent> {
@@ -46,5 +51,63 @@ describe('InviteComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="invite-home-link"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="mobile-menu-toggle"]')).toBeNull();
+  });
+});
+
+describe('InviteComponent — browser dismiss reloads home', () => {
+  const originalLocation = Object.getOwnPropertyDescriptor(window, 'location');
+  let locationHref = '';
+
+  afterEach(() => {
+    if (originalLocation) {
+      Object.defineProperty(window, 'location', originalLocation);
+    }
+  });
+
+  it('assigns window.location.href to / when the org dialog is dismissed without accepting', () => {
+    locationHref = '';
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...window.location,
+        get href() {
+          return locationHref;
+        },
+        set href(value: string) {
+          locationHref = value;
+        },
+      },
+    });
+
+    TestBed.configureTestingModule({
+      imports: [InviteComponent],
+      providers: [
+        provideRouter([]),
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        {
+          provide: InviteService,
+          useValue: {
+            acceptInvite: () =>
+              of({
+                return_url: '/groups',
+                pending_committee_invite: {
+                  committee_uid: 'committee-1',
+                  invite_uid: 'invite-1',
+                  committee_name: 'TAC',
+                  organization: null,
+                },
+              }),
+          },
+        },
+        { provide: InvitationAcceptFlowService, useValue: { accept: () => EMPTY } },
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({ token: futureInviteToken() }) } } },
+        { provide: UserService, useValue: { authenticated: signal(false) } },
+      ],
+    });
+
+    const fixture = TestBed.createComponent(InviteComponent);
+    fixture.detectChanges();
+
+    expect(locationHref).toBe('/');
   });
 });

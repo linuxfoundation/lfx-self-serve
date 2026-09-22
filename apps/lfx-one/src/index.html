@@ -9,9 +9,9 @@
     <base href="/" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" type="image/x-icon" href="favicon.ico" />
-    <!-- DNS/TLS before the stylesheet and kit requests. Google Fonts used to be a CSS
-         @import, which could not start until styles.css downloaded and parsed (GH-2290). -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <!-- DNS/TLS before the kit request and font files. Production inlines the Google Fonts
+         CSS into index.html (Angular fonts.inline, default true), so a preconnect to
+         fonts.googleapis.com would be unused there; fonts.gstatic.com still serves the files. -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://kit.fontawesome.com" crossorigin />
     <link

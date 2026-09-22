@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal, WritableSignal } from '@angular/core';
+import { REQUEST_CONTEXT, TransferState, signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -44,6 +46,33 @@ describe('AppComponent — meetings v2 flag', () => {
   let segmentInitialize: ReturnType<typeof vi.fn>;
   let plausibleInitialize: ReturnType<typeof vi.fn>;
   let featureFlagInitialize: ReturnType<typeof vi.fn>;
+  let segmentIdentifyUser: ReturnType<typeof vi.fn>;
+  let segmentSetImpersonating: ReturnType<typeof vi.fn>;
+  let plausibleSetImpersonating: ReturnType<typeof vi.fn>;
+  let dataDogSetUser: ReturnType<typeof vi.fn>;
+  let intercomBoot: ReturnType<typeof vi.fn>;
+
+  const authedUser: User = {
+    sid: 'sid',
+    'https://sso.linuxfoundation.org/claims/username': 'alice',
+    'http://lfx.dev/claims/intercom': 'intercom-jwt',
+    given_name: 'Alice',
+    family_name: 'Example',
+    nickname: 'alice',
+    name: 'Alice Example',
+    picture: '',
+    updated_at: '',
+    email: 'alice@example.com',
+    email_verified: true,
+    sub: 'auth0|alice',
+  };
+
+  const authedContext: AuthContext = {
+    authenticated: true,
+    user: authedUser,
+    persona: null,
+    organizations: [],
+  };
 
   /** The two protected reads under test, surfaced the way the template sees them. */
   const flagState = (fixture: ComponentFixture<AppComponent>): { enabled: boolean; prefetch: boolean } => {
@@ -55,7 +84,7 @@ describe('AppComponent — meetings v2 flag', () => {
   const hostMounted = (fixture: ComponentFixture<AppComponent>): boolean =>
     (fixture.componentInstance as unknown as { composerHostMounted: () => boolean }).composerHostMounted();
 
-  async function mount(): Promise<ComponentFixture<AppComponent>> {
+  async function mount(options?: { auth?: AuthContext }): Promise<ComponentFixture<AppComponent>> {
     TestBed.configureTestingModule({
       providers: [
         provideRouter([]),
@@ -73,18 +102,23 @@ describe('AppComponent — meetings v2 flag', () => {
             impersonator: signal(null),
           },
         },
-        { provide: SegmentService, useValue: { initialize: segmentInitialize, setImpersonating: vi.fn(), identifyUser: vi.fn() } },
-        { provide: PlausibleService, useValue: { initialize: plausibleInitialize, setImpersonating: vi.fn() } },
-        { provide: DataDogRumService, useValue: { setImpersonating: vi.fn(), setUser: vi.fn() } },
+        { provide: SegmentService, useValue: { initialize: segmentInitialize, setImpersonating: segmentSetImpersonating, identifyUser: segmentIdentifyUser } },
+        { provide: PlausibleService, useValue: { initialize: plausibleInitialize, setImpersonating: plausibleSetImpersonating } },
+        { provide: DataDogRumService, useValue: { setImpersonating: vi.fn(), setUser: dataDogSetUser } },
         { provide: AccountContextService, useValue: { initializeUserOrganizations: vi.fn() } },
-        { provide: IntercomService, useValue: { boot: vi.fn() } },
+        { provide: IntercomService, useValue: { boot: intercomBoot } },
         { provide: MessageService, useValue: { add: vi.fn() } },
+        ...(options?.auth ? [{ provide: REQUEST_CONTEXT, useValue: { auth: options.auth } }] : []),
       ],
     });
     // Empty template: see the suite comment — the root's markup is a toast, a router outlet and the
     // deferred host, none of which this suite asserts.
     TestBed.overrideComponent(AppComponent, { set: { template: '', imports: [], providers: [] } });
     await TestBed.compileComponents();
+
+    if (options?.auth) {
+      TestBed.inject(TransferState).set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+    }
 
     const fixture = TestBed.createComponent(AppComponent);
     await fixture.whenStable();
@@ -99,6 +133,11 @@ describe('AppComponent — meetings v2 flag', () => {
     segmentInitialize = vi.fn();
     plausibleInitialize = vi.fn();
     featureFlagInitialize = vi.fn(() => Promise.resolve());
+    segmentIdentifyUser = vi.fn();
+    segmentSetImpersonating = vi.fn();
+    plausibleSetImpersonating = vi.fn();
+    dataDogSetUser = vi.fn();
+    intercomBoot = vi.fn();
   });
 
   it('reads the flag off, so the host is left out of the tree', async () => {
@@ -216,9 +255,32 @@ describe('AppComponent — meetings v2 flag', () => {
     }
   });
 
+  it('skips feature flags, Segment identify, and Intercom boot on authenticated /invite (GH-2290)', async () => {
+    window.history.pushState({}, '', '/invite');
+    try {
+      await mount({ auth: authedContext });
+      expect(featureFlagInitialize).not.toHaveBeenCalled();
+      expect(segmentIdentifyUser).not.toHaveBeenCalled();
+      expect(segmentSetImpersonating).not.toHaveBeenCalled();
+      expect(plausibleSetImpersonating).not.toHaveBeenCalled();
+      expect(intercomBoot).not.toHaveBeenCalled();
+      expect(dataDogSetUser).toHaveBeenCalledWith(authedUser);
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('initializes Segment and Plausible on a product route', async () => {
     await mount();
     expect(segmentInitialize).toHaveBeenCalledTimes(1);
     expect(plausibleInitialize).toHaveBeenCalledTimes(1);
+  });
+
+  it('identifies Segment, initializes flags, and boots Intercom on an authenticated product route', async () => {
+    await mount({ auth: authedContext });
+    expect(segmentIdentifyUser).toHaveBeenCalledWith(authedUser);
+    expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
+    expect(intercomBoot).toHaveBeenCalled();
+    expect(dataDogSetUser).toHaveBeenCalledWith(authedUser);
   });
 });

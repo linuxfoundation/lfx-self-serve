@@ -35,6 +35,13 @@ async function initializeOpenFeature(): Promise<void> {
     return;
   }
 
+  // Invite landing is a spinner/error shell whose every exit is a full document load, so a
+  // warm LaunchDarkly client cannot survive to the next page. Skip construction entirely
+  // (GH-2290) — getBooleanFlag already falls back to code defaults when uninitialized.
+  if (isInviteLandingPath(window.location.pathname)) {
+    return;
+  }
+
   try {
     const provider = new LaunchDarklyClientProvider(clientId, {
       // Shares FEATURE_FLAG_READY_TIMEOUT_MS with FeatureFlagService.waitForReady() (GH-1351
@@ -45,18 +52,7 @@ async function initializeOpenFeature(): Promise<void> {
       logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
     });
 
-    const ready = OpenFeature.setProviderAndWait(provider);
-    // Invite landing is a spinner/error shell — do not block hydration on LaunchDarkly (GH-2290).
-    // Init still runs in the background so a later full-page navigation has a warm provider.
-    if (isInviteLandingPath(window.location.pathname)) {
-      void ready.catch((error) => {
-        console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
-        dataDogRumService.addError(error instanceof Error ? error : new Error(String(error)), { source: 'initializeOpenFeature' });
-      });
-      return;
-    }
-
-    await ready;
+    await OpenFeature.setProviderAndWait(provider);
   } catch (error) {
     console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
     // App continues without feature flags — but the provider never reaches READY, so every

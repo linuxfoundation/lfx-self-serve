@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, TransferState } from '@angular/core';
+import { Component, signal, TransferState } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DEFAULT_RUNTIME_CONFIG, RUNTIME_CONFIG_KEY } from '@app/shared/providers/runtime-config.provider';
+import { User } from '@lfx-one/shared/interfaces';
 import { IntercomService } from '@services/intercom.service';
+import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -29,6 +31,22 @@ describe('OpenIntercomDirective', () => {
   let transferState: TransferState;
   let add: ReturnType<typeof vi.fn>;
   let openMessenger: ReturnType<typeof vi.fn>;
+  let userSignal: ReturnType<typeof signal<User | null>>;
+
+  const identifiedUser: User = {
+    sid: 'sid',
+    'https://sso.linuxfoundation.org/claims/username': 'alice',
+    'http://lfx.dev/claims/intercom': 'intercom-jwt',
+    given_name: 'Alice',
+    family_name: 'Example',
+    nickname: 'alice',
+    name: 'Alice Example',
+    picture: '',
+    updated_at: '',
+    email: 'alice@example.com',
+    email_verified: true,
+    sub: 'auth0|alice',
+  };
 
   const supportLink = (): HTMLAnchorElement => {
     const el = fixture.nativeElement.querySelector('[lfxOpenIntercom]');
@@ -39,12 +57,14 @@ describe('OpenIntercomDirective', () => {
   beforeEach(async () => {
     add = vi.fn();
     openMessenger = vi.fn();
+    userSignal = signal<User | null>(null);
 
     await TestBed.configureTestingModule({
       imports: [TestHostComponent],
       providers: [
         { provide: MessageService, useValue: { add } },
         { provide: IntercomService, useValue: { openMessenger } },
+        { provide: UserService, useValue: { user: userSignal } },
       ],
     }).compileComponents();
 
@@ -68,6 +88,25 @@ describe('OpenIntercomDirective', () => {
 
     expect(openMessenger).toHaveBeenCalledWith('test-app-id', expect.any(Function));
     expect(add).not.toHaveBeenCalled();
+  });
+
+  it('boots Intercom with the signed-in identity when UserService has a user (GH-2290)', () => {
+    userSignal.set(identifiedUser);
+    transferState.set(RUNTIME_CONFIG_KEY, { ...DEFAULT_RUNTIME_CONFIG, intercomAppId: 'test-app-id' });
+
+    supportLink().click();
+
+    expect(openMessenger).toHaveBeenCalledWith(
+      'test-app-id',
+      expect.any(Function),
+      expect.objectContaining({
+        app_id: 'test-app-id',
+        user_id: 'alice',
+        name: 'Alice Example',
+        email: 'alice@example.com',
+        intercom_user_jwt: 'intercom-jwt',
+      })
+    );
   });
 
   it('shows the unavailable toast when the widget script fails to load after the click', () => {

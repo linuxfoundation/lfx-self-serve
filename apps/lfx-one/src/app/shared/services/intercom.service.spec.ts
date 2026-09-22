@@ -51,6 +51,14 @@ describe('IntercomService', () => {
     expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
   });
 
+  it('should boot with identified options when they are passed (GH-2290)', () => {
+    const identified = { app_id: 'test-app-id', user_id: 'alice', name: 'Alice Example', email: 'alice@example.com' };
+
+    service.openMessenger('test-app-id', undefined, identified);
+
+    expect(queuedCommands()).toEqual([['boot', identified], ['show']]);
+  });
+
   it('should not boot a second time when Intercom is already booted', () => {
     const bootSpy = vi.spyOn(service, 'boot');
 

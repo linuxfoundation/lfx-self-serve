@@ -100,6 +100,10 @@ The `CustomPreloadingStrategy` implements smart preloading based on:
 @Injectable({ providedIn: 'root' })
 export class CustomPreloadingStrategy implements PreloadingStrategy {
   public preload(route: Route, load: () => Observable<any>): Observable<any> {
+    if (isBrowserInviteLandingPath()) {
+      return of(null);
+    }
+
     if (route.data && route.data['preload']) {
       // Network-aware loading
       const connection = (navigator as any).connection;

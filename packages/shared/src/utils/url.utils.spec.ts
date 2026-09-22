@@ -104,6 +104,11 @@ describe('isInviteLandingPath', () => {
     expect(isInviteLandingPath('/')).toBe(false);
     expect(isInviteLandingPath('/meetings')).toBe(false);
   });
+
+  it('does not match an empty string or an absolute URL (callers pass pathname)', () => {
+    expect(isInviteLandingPath('')).toBe(false);
+    expect(isInviteLandingPath('https://lfx.example.com/invite')).toBe(false);
+  });
 });
 
 describe('isRelativeInAppPath', () => {
