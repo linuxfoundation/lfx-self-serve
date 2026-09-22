@@ -96,7 +96,8 @@ describe('EngagementMeetingParticipationComponent', () => {
   async function render(
     payload: HealthMetricsEngagementMeetingParticipation = response(),
     queryParams: Record<string, string> = {},
-    onSection?: (key: unknown) => void
+    onSection?: (key: unknown) => void,
+    lifecycle?: string[]
   ): Promise<void> {
     getEngagementMeetingParticipation = vi.fn().mockReturnValue(of(payload));
 
@@ -115,6 +116,11 @@ describe('EngagementMeetingParticipationComponent', () => {
 
     fixture = TestBed.createComponent(EngagementMeetingParticipationComponent);
     if (onSection) fixture.componentInstance.sectionPicked.subscribe(onSection);
+    // Subscribed before the first change detection, so the initial read's own pair is recorded.
+    if (lifecycle) {
+      fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
+      fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -197,27 +203,19 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(picked).toEqual(['committees', 'reps']);
   });
 
-  it('reports that the read settled, so the container can re-anchor a deep link above it', async () => {
-    const settled = vi.fn();
-    getEngagementMeetingParticipation = vi.fn().mockReturnValue(of(response()));
-    await TestBed.configureTestingModule({
-      imports: [EngagementMeetingParticipationComponent],
-      providers: [
-        provideRouter([]),
-        provideNoopAnimations(),
-        HealthMetricsChromeService,
-        { provide: AnalyticsService, useValue: { getEngagementMeetingParticipation } },
-        { provide: ProjectContextService, useValue: { selectedFoundation } },
-        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
-      ],
-    }).compileComponents();
+  // The container holds a deep link until every section settles and re-holds it on the next
+  // `reading`, so both halves have to fire — and pair up — for each read.
+  it('brackets every read with reading then settled, so the container can re-anchor above it', async () => {
+    const lifecycle: string[] = [];
+    await render(response(), {}, undefined, lifecycle);
 
-    fixture = TestBed.createComponent(EngagementMeetingParticipationComponent);
-    fixture.componentInstance.settled.subscribe(settled);
+    expect(lifecycle).toEqual(['reading', 'settled']);
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
     fixture.detectChanges();
     await fixture.whenStable();
 
-    expect(settled).toHaveBeenCalled();
+    expect(lifecycle).toEqual(['reading', 'settled', 'reading', 'settled']);
   });
 
   // A failed read must not render the copy that asserts the foundation has never met.

@@ -59,6 +59,8 @@ export class EngagementMeetingParticipationComponent {
   public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
+  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  public readonly reading = output<void>();
 
   protected readonly modeOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES.map((mode) => ({
     id: mode.key,
@@ -167,6 +169,7 @@ export class EngagementMeetingParticipationComponent {
         tap(() => {
           this.loading.set(true);
           this.loadFailed.set(false);
+          this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.

@@ -6,6 +6,7 @@ import type {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 
 /**
@@ -179,6 +180,13 @@ export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
  * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
  */
 export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
+
+/**
+ * Sections whose read can still change the pane's height, so a deep link is released only once
+ * every one of them has settled. A section from PRs 3-4 on #2802 joins this list only once its
+ * component emits `reading`/`settled` and the container binds both.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
