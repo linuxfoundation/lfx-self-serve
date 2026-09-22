@@ -23,3 +23,9 @@ export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
  * Short TTL for the vote-detail cache — lets the writerGuard probe and VoteManageComponent's refetch share one request. Mirrors COMMITTEE_DETAIL_CACHE_TTL_MS.
  */
 export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;
+
+/**
+ * TTL for the recently-opened-vote carrier (GH-2730): how long after a successful enable the votes
+ * list merges the known-open status over stale index rows while the search index catches up.
+ */
+export const RECENTLY_OPENED_VOTE_TTL_MS = 30 * 1000;

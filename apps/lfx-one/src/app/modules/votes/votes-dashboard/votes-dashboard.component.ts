@@ -265,7 +265,7 @@ export class VotesDashboardComponent {
     return toSignal(
       combineLatest([project$, filters$, this.fetch$, lens$]).pipe(
         tap(() => this.loading.set(true)),
-        switchMap(([project, , , lens]) => {
+        switchMap(([project, filterState, , lens]) => {
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);
@@ -279,6 +279,12 @@ export class VotesDashboardComponent {
           return this.fetchVotePage(project.uid, rows, pageIndex, searchName || undefined, queryFilters.length ? queryFilters : undefined).pipe(
             tap(() => this.loading.set(false)),
             map((response: PaginatedResponse<Vote>) => response.data),
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale
+            // index rows. Skipped under a server-side `status:` filter — the filtered response can't
+            // contain the just-opened row (Active tab: absent until convergence) and mustn't re-badge
+            // it (Draft tab: an Active-badged row would violate the filter while `totalRecords` still
+            // counts it as draft); the default All tab (`status: null`) keeps the merge.
+            map((votes) => (filterState.status ? votes : this.voteService.mergeRecentlyOpenedVotes(votes))),
             catchError(() => {
               this.loading.set(false);
               return of([]);

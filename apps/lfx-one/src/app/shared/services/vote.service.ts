@@ -3,11 +3,13 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { INVITATION_NOT_FOUND, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { INVITATION_NOT_FOUND, RECENTLY_OPENED_VOTE_TTL_MS, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { PollStatus } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
   CreateVoteResponseRequest,
+  EnableVoteResponse,
   MyVoteResponse,
   PaginatedResponse,
   QueryServiceCountResponse,
@@ -26,6 +28,7 @@ export class VoteService {
 
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
+  private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
 
   public getVotes(params?: HttpParams): Observable<PaginatedResponse<Vote>> {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(
@@ -145,8 +148,11 @@ export class VoteService {
     return request$;
   }
 
-  public createVote(voteData: CreateVoteRequest): Observable<Vote> {
-    return this.http.post<Vote>('/api/votes', voteData).pipe(take(1));
+  public createVote(voteData: CreateVoteRequest, options?: { open?: boolean }): Observable<Vote> {
+    // ?open=true fuses create+open into one BFF operation (GH-2731); the response carries the vote
+    // in its real status ('active' only when the inline enable succeeded) — callers branch on it.
+    const params = options?.open ? new HttpParams().set('open', 'true') : undefined;
+    return this.http.post<Vote>('/api/votes', voteData, { params }).pipe(take(1));
   }
 
   public updateVote(voteUid: string, voteData: UpdateVoteRequest): Observable<Vote> {
@@ -167,11 +173,75 @@ export class VoteService {
     return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }
 
-  public enableVote(voteUid: string): Observable<Vote> {
-    return this.http.put<Vote>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
+  public enableVote(voteUid: string): Observable<EnableVoteResponse> {
+    return this.http.put<EnableVoteResponse>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
+  }
+
+  /**
+   * Records a just-opened vote (GH-2730) so the votes list can merge the known-open status over
+   * stale index rows while the search index catches up — the BFF enable endpoint returns
+   * immediately after the PUT instead of waiting on index visibility.
+   */
+  public markVoteOpened(voteUid: string): void {
+    this.recentlyOpenedVotes.update((opened) => new Map(opened).set(voteUid, Date.now()));
+  }
+
+  /**
+   * Returns the live recently-opened map (uid → epoch-ms marked at), pruning entries older than
+   * RECENTLY_OPENED_VOTE_TTL_MS. Display-only: the fetched server value wins once the index converges.
+   */
+  public getLiveRecentlyOpenedVotes(): Map<string, number> {
+    const now = Date.now();
+    const current = this.recentlyOpenedVotes();
+    const live = new Map<string, number>();
+    for (const [uid, markedAt] of current) {
+      if (now - markedAt < RECENTLY_OPENED_VOTE_TTL_MS) {
+        live.set(uid, markedAt);
+      }
+    }
+    if (live.size !== current.size) {
+      this.recentlyOpenedVotes.set(live);
+    }
+    return live;
+  }
+
+  /** Evicts a carried uid once a fetched row already shows it open — the server value has converged. */
+  public evictRecentlyOpenedVote(voteUid: string): void {
+    this.recentlyOpenedVotes.update((opened) => {
+      if (!opened.has(voteUid)) return opened;
+      const next = new Map(opened);
+      next.delete(voteUid);
+      return next;
+    });
+  }
+
+  /**
+   * Merges the recently-opened carrier over a fetched votes page (GH-2730): only rows still
+   * showing a carried vote as `disabled` get the known-open status substituted; rows that came
+   * back with any other status have converged — the server's value wins and the entry is evicted
+   * (a just-opened vote can end early inside the TTL via ITX's `EndPollIfAllResponded`, so
+   * non-disabled ≠ active). Self-healing — once the index catches up, the fetched value flows
+   * through unchanged and the carrier empties.
+   */
+  public mergeRecentlyOpenedVotes(votes: Vote[]): Vote[] {
+    const recentlyOpened = this.getLiveRecentlyOpenedVotes();
+    if (recentlyOpened.size === 0) {
+      return votes;
+    }
+
+    return votes.map((vote) => {
+      if (!recentlyOpened.has(vote.uid)) {
+        return vote;
+      }
+      if (vote.status !== PollStatus.DISABLED) {
+        this.evictRecentlyOpenedVote(vote.uid);
+        return vote;
+      }
+      return { ...vote, status: PollStatus.ACTIVE };
+    });
   }
 
   public createVoteResponse(payload: CreateVoteResponseRequest): Observable<void> {
