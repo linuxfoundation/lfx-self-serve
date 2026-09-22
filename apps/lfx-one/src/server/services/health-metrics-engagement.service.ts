@@ -47,6 +47,7 @@ interface GroupAttendanceRow {
   LAST_MET_DATE: Date | string | null;
   TOTAL_RECORDS: number | null;
   DORMANT_GROUPS: number | null;
+  IS_PAGE_ROW: boolean | null;
   [periodColumn: string]: unknown;
 }
 
@@ -116,7 +117,10 @@ export class HealthMetricsEngagementService {
           last_met_date,
           group_type_label,
           ${periodColumns},
-          sort_rank_${suffix} AS sort_rank
+          sort_rank_${suffix} AS sort_rank,
+          -- Distinguishes a real page row from the totals-only row the LEFT JOIN keeps below.
+          -- committee_id cannot serve: it is nullable, so a null-id group would be dropped silently.
+          TRUE AS is_page_row
         FROM scoped
         -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
         -- Both are nullable, and NULLS LAST pins their placement: the session's DEFAULT_NULL_ORDERING
@@ -131,10 +135,10 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST
     `;
 
-    // No `expectMissingObject`: that flag exists so a caller can degrade gracefully, and this one
-    // rethrows — a missing view or GRANT is a real fault that belongs in error telemetry and the
-    // circuit breaker, because the empty state would assert this foundation has no matching groups.
-    const result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds);
+    // `expectMissingObject` still rejects — it only keeps a missing view or absent GRANT out of the
+    // shared circuit breaker, which five of these reads would otherwise open for every other
+    // Snowflake dashboard. The 500 reaches `apiErrorHandler`, so the fault is still error telemetry.
+    const result = await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,
@@ -146,7 +150,7 @@ export class HealthMetricsEngagementService {
 
     const first = result.rows[0];
     // A page past the end still returns one row — the totals, with every page column null.
-    const pageRows = result.rows.filter((row) => row.COMMITTEE_ID !== null && row.COMMITTEE_ID !== undefined);
+    const pageRows = result.rows.filter((row) => row.IS_PAGE_ROW === true);
 
     return {
       rows: pageRows.map(mapGroupRow),

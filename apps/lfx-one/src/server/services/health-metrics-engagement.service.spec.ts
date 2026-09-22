@@ -46,6 +46,7 @@ function warehouseRow(overrides: Record<string, unknown> = {}) {
     LAST_MET_DATE: new Date('2026-08-14T00:00:00.000Z'),
     TOTAL_RECORDS: 34,
     DORMANT_GROUPS: 3,
+    IS_PAGE_ROW: true,
     MEETINGS_COUNT_3RD_LAST_COMPLETED_YEAR: 10,
     INVITED_COUNT_3RD_LAST_COMPLETED_YEAR: 100,
     ATTENDED_COUNT_3RD_LAST_COMPLETED_YEAR: 54,
@@ -139,6 +140,18 @@ describe('HealthMetricsEngagementService', () => {
     expect(response.counts).toEqual({ groups: 34, dormantGroups: 3 });
   });
 
+  // The totals-filler row is identified by the marker column, so a group whose committee_id is null
+  // stays on the page instead of being dropped while still counting toward totalRecords.
+  it('keeps a page row whose committee id is null', async () => {
+    execute.mockResolvedValue({ rows: [warehouseRow({ COMMITTEE_ID: null })] });
+
+    const response = await service.getGroupAttendance(req, query());
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.rows[0]?.committeeId).toBe('');
+    expect(response.totalRecords).toBe(34);
+  });
+
   it('selects, ranks and aggregates on the requested period suffix', async () => {
     await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_2' }));
 
@@ -147,6 +160,7 @@ describe('HealthMetricsEngagementService', () => {
     expect(sql).toContain('SUM(CASE WHEN is_dormant_prev_completed_year THEN 1 ELSE 0 END) AS dormant_groups');
     // Totals come from an aggregate over the scoped set joined onto the page, never a window over it.
     expect(sql).toContain('LEFT JOIN page ON TRUE');
+    expect(sql).toContain('TRUE AS is_page_row');
     expect(sql).not.toContain('OVER()');
     // Every period's columns ship regardless of the selected one — the sparkline spans all four.
     expect(sql).toContain('attendance_pct_ytd');
@@ -193,10 +207,10 @@ describe('HealthMetricsEngagementService', () => {
     execute.mockRejectedValue(new Error('Object does not exist'));
     isMissingObjectError.mockReturnValue(true);
 
-    // Not tolerated as a schema rollout: the zero-filled default renders the same empty state as a
-    // foundation that genuinely has none, and the read is not opted into `expectMissingObject`.
+    // `expectMissingObject` keeps the fault out of the shared circuit breaker without defaulting:
+    // the zero-filled response would render the same empty state as a foundation that has none.
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('Object does not exist');
-    expect(execute.mock.calls[0][2]).toBeUndefined();
+    expect(execute.mock.calls[0][2]).toEqual({ expectMissingObject: true });
     expect(warning).not.toHaveBeenCalled();
   });
 

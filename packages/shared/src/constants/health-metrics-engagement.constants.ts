@@ -149,7 +149,11 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthM
 /** Rows per page in the Group attendance table. */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
 
-/** Returned for a period the view carries no columns for; a failed read propagates rather than reading as zero. */
+/**
+ * The empty Group attendance shape — a period the view carries no columns for, the pre-hydration
+ * render, and the client's post-error placeholder behind `loadFailed`. The server never returns it
+ * for a failed read; that error propagates.
+ */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
   rows: [],
   totalRecords: 0,
