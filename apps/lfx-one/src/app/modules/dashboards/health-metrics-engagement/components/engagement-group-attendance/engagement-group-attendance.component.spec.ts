@@ -103,6 +103,20 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 1 }));
   });
 
+  it('re-reads from page 1 when the period changes, since the page came from the wider scope', async () => {
+    await render();
+    fixture.componentInstance['page'].set(3);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    getEngagementGroupAttendance.mockClear();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ range: 'COMPLETED_YEAR', page: 1 }));
+  });
+
   it('shows the Dormant badge instead of a bar, since a group that never met has no rate to draw', async () => {
     const dormant = groupRow({
       committeeId: 'c-2',

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe, isPlatformBrowser } from '@angular/common';
-import { Component, computed, inject, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -71,7 +71,14 @@ export class EngagementGroupAttendanceComponent {
   private readonly initialParams = this.route.snapshot.queryParamMap;
 
   protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(this.parseInitialGroupType());
-  protected readonly page = signal<number>(this.parseInitialPage());
+  /**
+   * Every scope change restarts paging. The period and foundation come from the page header, which
+   * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
+   */
+  protected readonly page = linkedSignal<string, number>({
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+  });
   protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
   protected readonly loading = signal<boolean>(true);
   protected readonly selectedRow = signal<HealthMetricsEngagementGroupRow | null>(null);
@@ -116,7 +123,6 @@ export class EngagementGroupAttendanceComponent {
 
   protected onFilterChange(key: string): void {
     this.groupType.set(this.toGroupType(key));
-    this.page.set(1);
   }
 
   protected onTablePage(event: { first?: number; rows?: number }): void {
