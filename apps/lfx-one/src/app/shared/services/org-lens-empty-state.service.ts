@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, effect, inject, Injectable, Signal, signal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 import { PersonaService } from './persona.service';
+import { first, skipWhile } from 'rxjs';
 
 /**
  * Spec 053 — the single page-level classifier for Org Lens empty states (FR-016 precedence).
@@ -40,19 +42,23 @@ export class OrgLensEmptyStateService {
   private readonly persona = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
 
+  private readonly destroyRef = inject(DestroyRef);
+
   /**
    * Phase 2 of `retry()` is in flight. `orgNavigation.loading` is one flag for every list fetch —
    * bootstrap, switcher search, next page — so on its own it would mark Retry busy while the viewer
-   * merely types in the switcher; this narrows it to the list refresh Retry itself started.
+   * merely types in the switcher; this narrows it to the list refresh Retry itself started. Cleared by
+   * an explicit per-retry subscription (see `retry()`), not by an effect writing back into a signal.
+   *
+   * Deliberate edge: if a switcher search supersedes Retry's own list fetch, `orgNavigation.loading`
+   * stays true until the search settles, so Retry reads busy for that search too. It self-heals when
+   * the search answers; pinning the marker to a fetch generation would need `OrgNavigationService` to
+   * expose one, which is not worth widening its API for a transient disabled button.
    */
   private readonly listRetryInFlight = signal(false);
 
-  /** Clears the phase-2 marker once the list fetch Retry started has settled (loading fell back to false). */
-  private readonly settleListRetry = effect(() => {
-    if (this.listRetryInFlight() && !this.orgNavigation.loading()) {
-      this.listRetryInFlight.set(false);
-    }
-  });
+  /** List loading as a stream, created in the injection context so `retry()` can await its settling. */
+  private readonly listLoading$ = toObservable(this.orgNavigation.loading);
 
   /** Both one-shot bootstrap loads have answered; before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded());
@@ -101,7 +107,9 @@ export class OrgLensEmptyStateService {
 
   /**
    * The shared Retry is in flight — bind to the state's `retrying` so the control cannot be re-fired.
-   * Covers both phases of `retry()`: the role-grants refresh and the org-list refresh it chains.
+   * Covers both phases of `retry()`: the role-grants refresh and the org-list refresh it chains — but
+   * only the list refresh Retry itself started, since `orgNavigation.loading()` also covers switcher
+   * search and pagination.
    */
   public readonly retrying: Signal<boolean> = computed(() => this.roleGrants.loading() || (this.listRetryInFlight() && this.orgNavigation.loading()));
 
@@ -142,6 +150,14 @@ export class OrgLensEmptyStateService {
       if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
         this.listRetryInFlight.set(true);
         this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid());
+        // Clear the marker once this refresh has been seen loading and then settled.
+        this.listLoading$
+          .pipe(
+            skipWhile((loading) => !loading),
+            first((loading) => !loading),
+            takeUntilDestroyed(this.destroyRef)
+          )
+          .subscribe(() => this.listRetryInFlight.set(false));
       }
     });
   }

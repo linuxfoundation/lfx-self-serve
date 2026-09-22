@@ -289,12 +289,16 @@ interface StubOptions {
 }
 
 /**
- * Error body the real BFF answers with: the Org Lens read gate refuses with `code: 'FORBIDDEN'` on a 403,
- * and the section classifier decides denial from that code, never from the status alone (spec 053
- * FR-015) — a bare 403 is a load failure. Other statuses carry no gate code.
+ * Mirrors the one field the section classifier reads — the BFF's top-level error `code` — for the
+ * refusals the Org Lens read gate raises: 403 `FORBIDDEN` (no access) and 503 `ROLE_GRANTS_UNAVAILABLE`
+ * (could not check). Other statuses carry no code and classify as a load failure (spec 053 FR-015).
+ * `message` is filler; the real envelope's text key is `error`.
  */
+const GATE_REFUSAL_CODES: Readonly<Record<number, string>> = { 403: 'FORBIDDEN', 503: 'ROLE_GRANTS_UNAVAILABLE' };
+
 function stubbedError(status: number): { message: string; code?: string } {
-  return status === 403 ? { message: 'stubbed', code: 'FORBIDDEN' } : { message: 'stubbed' };
+  const code = GATE_REFUSAL_CODES[status];
+  return code ? { message: 'stubbed', code } : { message: 'stubbed' };
 }
 
 export async function stubOrgLensContext(page: Page, options: StubOptions = {}): Promise<void> {

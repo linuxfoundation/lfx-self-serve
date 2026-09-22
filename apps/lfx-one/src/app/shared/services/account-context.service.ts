@@ -111,8 +111,8 @@ export class AccountContextService {
   /**
    * Whether the caller may see the org-selector / Org Lens surfaces: a direct or inherited (roll-up,
    * LFXV2-3029) writer or auditor grant, at least one persona-seeded account, or the LF-team grant.
-   * Single source of truth shared by the sidebar selector visibility gate and the page-level
-   * empty-state classifier so the two cannot drift apart. Inherited grants count: the switcher lists
+   * Single source of truth for every gate that asks whether the caller holds any organization, so
+   * those gates cannot drift apart. Inherited grants count: the switcher lists
    * those rows, and a caller holding nothing else must still be able to start the list (spec 053).
    *
    * Staff qualify on the grant alone, with no accounts of their own. That is the whole

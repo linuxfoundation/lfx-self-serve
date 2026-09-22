@@ -154,8 +154,13 @@ describe('OrgLensEmptyStateComponent', () => {
   it('opens the reason with the product sentence only on no-organization and no-access', () => {
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
-    expect(byTestId(render('could-not-load'), 'description')?.textContent).not.toContain('Organization Lens shows');
-    expect(byTestId(render('section-could-not-load'), 'description')?.textContent).not.toContain('Organization Lens shows');
+    const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => name !== 'no-organization' && name !== 'no-access');
+    expect(others).toHaveLength(8);
+    for (const name of others) {
+      const fixture = render(name, { orgList: ORG_LIST, filterActive: true });
+      expect(byTestId(fixture, 'description')?.textContent, name).not.toContain('Organization Lens shows');
+      fixture.destroy();
+    }
   });
 
   it('emits retry and resetFilters from their controls', () => {

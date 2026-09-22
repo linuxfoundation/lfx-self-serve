@@ -30,7 +30,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
   'no-organization': {
     headline: 'No organization linked to your account',
     reason:
-      'Organization Lens shows how a company shows up in open source — its projects, its people, and its membership footprint. Your account is not linked to an organization yet, so there is nothing to show here. Add your organization as an affiliation in your LFX profile. Once it is verified, it will appear here.',
+      "Organization Lens shows how a company shows up in open source — its projects, its people, and its membership footprint. Your account isn't linked to an organization yet. Add one as an affiliation and it appears here once verified.",
     icon: 'fa-light fa-building',
     primary: { label: 'Add an affiliation', route: ORG_LENS_PROFILE_ATTRIBUTIONS_ROUTE },
     secondary: { label: 'Already added one? Contact support', action: 'contact-support' },
@@ -38,7 +38,7 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
   'no-access': {
     headline: 'You do not have access to this organization',
     reason:
-      "Organization Lens shows a company's open source footprint — contributions, projects, people, and membership activity. Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation. Contact your administrators and they can grant you access. If you are not sure who they are, your OSPO is a good place to start.",
+      "Organization Lens shows a company's open source footprint — contributions, projects, people, and membership activity. Access is granted by the organization's own Organization Lens administrators, not by the Linux Foundation. If you're not sure who yours are, your OSPO is a good place to start.",
     icon: 'fa-light fa-lock',
     primary: { label: 'Contact support', action: 'contact-support' },
     secondary: { label: 'See public activity in LFX Insights', href: LINKS_CONFIG.INSIGHTS.BASE },
@@ -99,6 +99,10 @@ export const ORG_LENS_EMPTY_STATE_COPY: Record<OrgLensEmptyStateName, OrgLensEmp
 
 /** Headline of the switcher notice shown when the caller's list is a lower bound (FR-010). */
 export const ORG_LENS_LIST_INCOMPLETE_NOTICE = 'Some of your organizations may be missing from this list. Retry to reload.';
+
+/** Labels of the switcher notice's Retry control: idle, and while the shared Retry is in flight (FR-010). */
+export const ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL = 'Retry';
+export const ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL = 'Retrying…';
 
 /**
  * Refusal codes the Org Lens read gate answers when it could not check access (503) — a section that
