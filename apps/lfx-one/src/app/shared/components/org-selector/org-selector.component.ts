@@ -255,7 +255,6 @@ export class OrgSelectorComponent {
       // Slug and tier are org-specific — never carry over the previously selected org's values.
       // Snowflake enrichment (refreshFromSnowflake) and canonical-record reconciliation populate
       // them when authoritative data arrives; empty defaults match PLACEHOLDER_ACCOUNT semantics.
-      accountSlug: '',
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,

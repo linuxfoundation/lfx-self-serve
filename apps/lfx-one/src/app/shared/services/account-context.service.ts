@@ -18,7 +18,6 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
 const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
   accountName: '',
-  accountSlug: '',
   membershipTier: '',
 };
 
@@ -399,7 +398,6 @@ export class AccountContextService {
     return {
       accountId: row.accountId,
       accountName: row.accountName,
-      accountSlug: row.accountSlug ?? '',
       logoUrl: row.logoUrl ?? undefined,
       cdevOrgId: row.cdevOrgId ?? undefined,
       membershipTier: row.membershipTierDisplayName ?? '',

@@ -44,7 +44,6 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: 'Red Hat LLC',
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -62,7 +61,6 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
         {
           accountId: MOCK_ACCOUNT_ID,
           accountName: 'Red Hat LLC',
-          accountSlug: 'red-hat-llc',
           membershipTier: 'Gold',
         },
       ]),

@@ -218,10 +218,9 @@ export class OrgGroupsComponent {
     }
     const header = [this.committeeLabel.singular, 'Foundation', 'Type', 'Our Seats', `${this.committeeLabel.singular} UID`];
     const body = rows.map((g) => [g.name, g.projectLabel, BEHAVIORAL_CLASS_CONFIG[g.cls].label, g.org_seat_count, g.uid]);
-    // accountSlug is normalized to '' (not null/undefined) during org-switch/enrichment windows
-    // (see account-context.service.ts's PLACEHOLDER_ACCOUNT and toAccount()) — `||`, not `??`, so
-    // that empty string also falls back rather than producing a bare "org-lens-groups--<date>.csv".
-    const slug = this.accountContext.selectedAccount().accountSlug || 'org';
+    // The same `/org/{segment}/…` segment the page's own address uses (slug, else SFID); null only
+    // for the placeholder selection, which falls back rather than producing "org-lens-groups--<date>.csv".
+    const slug = this.accountContext.selectedUrlSegment() ?? 'org';
     downloadCsv(`org-lens-groups-${slug}-${localDateStamp()}.csv`, [header, ...body]);
   }
 

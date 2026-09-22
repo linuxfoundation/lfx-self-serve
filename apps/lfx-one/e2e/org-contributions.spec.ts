@@ -145,7 +145,6 @@ async function stubOrgContext(page: Page): Promise<void> {
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: 'Red Hat LLC',
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -163,7 +162,6 @@ async function stubOrgContext(page: Page): Promise<void> {
         {
           accountId: MOCK_ACCOUNT_ID,
           accountName: 'Red Hat LLC',
-          accountSlug: 'red-hat-llc',
           logoUrl: null,
           cdevOrgId: null,
           cdevOrgName: null,

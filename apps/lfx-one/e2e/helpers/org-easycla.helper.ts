@@ -31,7 +31,6 @@ export const PAGE_LOAD_TIMEOUT = 30_000;
 
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 export const MOCK_ACCOUNT_NAME = 'Acme Motors';
-export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
@@ -99,12 +98,12 @@ export async function stubAccountContext(page: Page): Promise<void> {
     personas: ['contributor'],
     personaProjects: {},
     projects: [],
-    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
     isRootWriter: false,
   });
 
   await fulfillJson(page, '**/api/analytics/org-lens-account-context*', [
-    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: 'Gold' },
+    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: 'Gold' },
   ]);
 
   await fulfillJson(page, '**/api/orgs/me/role-grants', {

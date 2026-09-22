@@ -485,7 +485,6 @@ export class OrgNavigationService {
     return {
       accountId: item.accountId ?? '',
       accountName: item.name,
-      accountSlug: '',
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,

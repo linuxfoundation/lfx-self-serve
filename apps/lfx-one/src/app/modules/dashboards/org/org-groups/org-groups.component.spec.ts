@@ -32,6 +32,7 @@ interface Rendered {
   fixture: ComponentFixture<OrgGroupsComponent>;
   navigate: ReturnType<typeof vi.fn>;
   selectedAccount: WritableSignal<Account>;
+  selectedUrlSegment: WritableSignal<string | null>;
 }
 
 // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
@@ -64,7 +65,8 @@ function personDrawerStub() {
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, accountSlug: 'acme', membershipTier: '', uid: 'org-uid-1' });
+  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, membershipTier: '', uid: 'org-uid-1' });
+  const selectedUrlSegment = signal<string | null>('acme');
 
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
@@ -73,7 +75,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       {
         provide: AccountContextService,
         // Spec 050 US2: in-app links carry the selected organization's URL segment.
-        useValue: { selectedAccount, selectedUrlSegment: signal('acme'), hasOrgSelectorAccess: signal(true) },
+        useValue: { selectedAccount, selectedUrlSegment, hasOrgSelectorAccess: signal(true) },
       },
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
@@ -105,7 +107,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
   const fixture = TestBed.createComponent(OrgGroupsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, selectedAccount };
+  return { fixture, navigate, selectedAccount, selectedUrlSegment };
 }
 
 function emptyGroupsResponse(): OrgLensGroupsResponse {
@@ -499,7 +501,7 @@ describe('OrgGroupsComponent', () => {
 
     // clearFilters() resets the form synchronously, but filteredGroups reads the debounced filterValues
     // signal, so this needs the same real-time flush as a direct user edit.
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2' });
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
@@ -514,7 +516,7 @@ describe('OrgGroupsComponent', () => {
     await clickSeatHoldersTrigger(fixture, 'g1');
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
 
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2' });
     await flushFilterChange(fixture);
 
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
@@ -1210,13 +1212,12 @@ describe('OrgGroupsComponent — CSV export', () => {
     }
   });
 
-  it('falls back to the default slug when accountSlug is the empty-string placeholder (not just null/undefined)', async () => {
-    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+  it('falls back to the default slug when no URL segment is known (placeholder selection)', async () => {
+    const { fixture, selectedUrlSegment } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
-    // Mirrors AccountContextService's PLACEHOLDER_ACCOUNT / toAccount(), which normalize a missing
-    // Snowflake slug to '' rather than null/undefined during org-switch/enrichment windows —
-    // `?? 'org'` would miss this and produce a bare "org-lens-groups--<date>.csv".
-    selectedAccount.update((account) => ({ ...account, accountSlug: '' }));
+    // selectedUrlSegment() is null only for the placeholder selection (no slug, no SFID) — the CSV
+    // filename falls back rather than producing a bare "org-lens-groups--<date>.csv".
+    selectedUrlSegment.set(null);
 
     const { filename } = await captureExportedCsv(fixture);
 

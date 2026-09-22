@@ -20,7 +20,6 @@ export type MembershipTierClass =
 export interface OrgLensAccountContextResponse {
   accountId: string;
   accountName: string;
-  accountSlug: string | null;
   logoUrl: string | null;
   cdevOrgId: string | null;
   cdevOrgName: string | null;

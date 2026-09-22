@@ -35,7 +35,7 @@ describe('OrgNavigationService default selection', () => {
     ...extra,
   });
   const page = (items: OrgItem[]): OrgItemsResponse => ({ items, next_page_token: null, upstream_failed: false });
-  const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
+  const placeholder: Account = { accountId: '', accountName: '', membershipTier: '' };
 
   let selectedAccount: WritableSignal<Account>;
   let isAdoptedFromAddress: ReturnType<typeof vi.fn>;

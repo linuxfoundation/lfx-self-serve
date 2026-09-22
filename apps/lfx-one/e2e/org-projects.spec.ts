@@ -145,7 +145,6 @@ async function stubOrgContext(
               {
                 accountId: TEST_ACCOUNT_ID,
                 accountName: 'Red Hat LLC',
-                accountSlug: 'red-hat-llc',
                 membershipTier: '',
                 uid: TEST_ORG_UID,
               },
