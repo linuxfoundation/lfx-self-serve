@@ -340,6 +340,23 @@ export class MeetingJoinComponent implements OnInit {
   public additionalRegistrantsCount = computed(() => this.optimisticAdditional());
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
+  /**
+   * Organizers always see the roster. Invitees (and newly registered guests) only see it
+   * when the organizer turned Show attendees on and the meeting is not board or restricted.
+   */
+  public readonly canViewGuestRoster = computed(() => {
+    if (!this.authenticated()) {
+      return false;
+    }
+    const meeting = this.meeting();
+    if (meeting?.organizer) {
+      return true;
+    }
+    if (isShowMeetingAttendeesLocked(meeting?.meeting_type, meeting?.restricted)) {
+      return false;
+    }
+    return meeting?.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
+  });
   // Host source for the organizer chip: registrants for upcoming, participants for past (the
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
   // drawer resolve organizers from the same people. When attendee visibility is off the roster
@@ -582,24 +599,6 @@ export class MeetingJoinComponent implements OnInit {
       });
     }
   }
-
-  /**
-   * Organizers always see the roster. Invitees (and newly registered guests) only see it
-   * when the organizer turned Show attendees on and the meeting is not board or restricted.
-   */
-  public readonly canViewGuestRoster = computed(() => {
-    if (!this.authenticated()) {
-      return false;
-    }
-    const meeting = this.meeting();
-    if (meeting?.organizer) {
-      return true;
-    }
-    if (isShowMeetingAttendeesLocked(meeting?.meeting_type, meeting?.restricted)) {
-      return false;
-    }
-    return meeting?.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
-  });
 
   public onRegistrantsToggle(): void {
     if (!this.canViewGuestRoster()) {
