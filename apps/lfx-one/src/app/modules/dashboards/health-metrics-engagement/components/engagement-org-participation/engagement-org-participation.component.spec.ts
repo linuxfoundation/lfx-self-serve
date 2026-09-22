@@ -108,8 +108,8 @@ describe('EngagementOrgParticipationComponent', () => {
   it('names the search box for assistive tech', async () => {
     await render();
 
-    const label: HTMLLabelElement = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
-    expect(label.textContent?.trim()).toBe('Search organization');
+    const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
+    expect(label?.textContent?.trim()).toBe('Search organization');
     expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
   });
 
@@ -255,7 +255,11 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
     expect(emitted).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
-    // An unresolved foundation is not a measured empty scope — no read happened to call it empty.
+    // An unresolved foundation is not a measured empty scope — no read happened to call it empty,
+    // so the table holds its loading state rather than the section rendering empty or errored.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-table"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-error"]')).toBeNull();
+    expect(fixture.componentInstance['loading']()).toBe(true);
   });
 });

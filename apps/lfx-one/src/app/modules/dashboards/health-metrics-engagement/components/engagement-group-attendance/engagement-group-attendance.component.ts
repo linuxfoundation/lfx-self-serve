@@ -186,8 +186,8 @@ export class EngagementGroupAttendanceComponent {
                 this.syncUrl(this.query());
                 return;
               }
-              // An unresolved foundation is not a measured empty scope: the skeleton stays up so the
-              // table cannot caption a read that never happened as "no rows".
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up, as
+              // on the Overview, so the table cannot caption an unread scope as "no rows".
               this.loading.set(!query.foundationSlug);
               // No foundation means no read happened, so the default's zeroes are not a measured count.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
