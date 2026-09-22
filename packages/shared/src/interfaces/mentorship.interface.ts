@@ -715,6 +715,47 @@ export interface MentorshipMenteeApplicationTask {
 }
 
 /**
+ * Display-ready task row for the mentee tasks UI (applicant + accepted phases).
+ *
+ * Built by `buildMentorshipMenteeTaskView` and consumed by the shared
+ * `MenteeTaskRowComponent`, so the template reads flat fields instead of
+ * recomputing presentation logic in bindings.
+ */
+export interface MentorshipMenteeTaskView {
+  id: string;
+  title: string;
+  description: string;
+  status: MentorshipMenteeTaskStatus;
+  /** `true` when the task is in a submitted/complete state. */
+  submitted: boolean;
+  inProgress: boolean;
+  /** Tailwind badge classes for the status pill. */
+  statusClass: string;
+  /** A submission file already exists (renders View/Download). */
+  hasUploadedFile: boolean;
+  /** An upload is required but no file exists yet (renders Upload). */
+  needsUpload: boolean;
+  fileUrl: string | null;
+  /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
+  dueDate: string | null;
+  /** Pre-formatted submitted-date label, or `null`. */
+  submittedLabel: string | null;
+}
+
+/** Display-ready application card for the applicant phase of the mentee tasks tab. */
+export interface MentorshipMenteeApplicationView {
+  id: string;
+  programName: string;
+  projectName: string;
+  termName: string;
+  statusLabel: string;
+  statusBadgeClass: string;
+  submittedCount: number;
+  totalCount: number;
+  tasks: MentorshipMenteeTaskView[];
+}
+
+/**
  * Mentee's own profile fields on `/mentorship/mentee/profile`.
  *
  * BFF mapping from `user_profiles` (`profile_type = mentee`) — do not invent columns:

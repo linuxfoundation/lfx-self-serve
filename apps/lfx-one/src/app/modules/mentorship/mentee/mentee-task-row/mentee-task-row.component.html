@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3 md:flex-row md:items-center md:gap-4" [ngClass]="paddingClass()" [attr.data-testid]="'mentee-tasks-task-row-' + task().id">
+  <!-- Check icon -->
+  <div class="flex items-center gap-3">
+    @if (task().submitted) {
+      <i class="fa-solid fa-circle-check text-lg text-emerald-500" aria-hidden="true"></i>
+    } @else if (task().inProgress) {
+      <i class="fa-light fa-clock text-lg text-blue-500" aria-hidden="true"></i>
+    } @else {
+      <i class="fa-light fa-circle text-lg text-gray-300" aria-hidden="true"></i>
+    }
+    <!-- Task name + description -->
+    <div class="flex flex-col gap-0.5">
+      <span class="text-sm font-medium text-gray-900">{{ task().title }}</span>
+      <span class="text-xs text-gray-500">{{ task().description }}</span>
+    </div>
+  </div>
+
+  <!-- Spacer -->
+  <div class="flex-1"></div>
+
+  <!-- File actions -->
+  <div class="flex items-center gap-2">
+    @if (task().hasUploadedFile) {
+      @if (task().fileUrl; as fileUrl) {
+        <button
+          type="button"
+          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          [attr.data-testid]="'mentee-tasks-view-file-' + task().id"
+          [attr.aria-label]="'View submission for ' + task().title"
+          (click)="onViewFile(fileUrl)">
+          <i class="fa-light fa-eye text-sm" aria-hidden="true"></i>
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center rounded p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-700"
+          [attr.data-testid]="'mentee-tasks-download-file-' + task().id"
+          [attr.aria-label]="'Download submission for ' + task().title"
+          (click)="onDownloadFile(fileUrl)">
+          <i class="fa-light fa-arrow-down-to-bracket text-sm" aria-hidden="true"></i>
+        </button>
+      }
+    } @else if (task().needsUpload) {
+      <button
+        type="button"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 shadow-sm hover:bg-gray-50"
+        [attr.data-testid]="'mentee-tasks-upload-' + task().id"
+        [attr.aria-label]="'Upload submission for ' + task().title"
+        (click)="onUpload()">
+        <i class="fa-light fa-arrow-up-from-bracket text-xs" aria-hidden="true"></i>
+        Upload
+      </button>
+    }
+  </div>
+
+  <!-- Status dropdown -->
+  <div class="shrink-0">
+    <lfx-select
+      [form]="form()"
+      [control]="task().id"
+      [options]="taskStatusOptions"
+      optionLabel="label"
+      optionValue="value"
+      size="small"
+      variant="filled"
+      [ariaLabel]="'Status of ' + task().title"
+      [styleClass]="'mentee-task-status-dropdown ' + task().statusClass"
+      [dataTest]="'mentee-tasks-status-dropdown-' + task().id"
+      (onChange)="onStatusChange()" />
+  </div>
+
+  <!-- Date — min-w-[90px] reserves room so the date column stays right-aligned when text is short -->
+  <div class="shrink-0 text-right text-xs text-gray-500 min-w-[90px]">
+    @if (task().submitted && task().submittedLabel) {
+      Submitted {{ task().submittedLabel | date: 'MMM d, yyyy' }}
+    } @else if (task().dueDate) {
+      Due {{ task().dueDate | date: 'MMM d, yyyy' : 'UTC' }}
+    }
+  </div>
+</div>

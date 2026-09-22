@@ -1,0 +1,53 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!loaded()) {
+  <lfx-route-loading />
+} @else if (error(); as errorMessage) {
+  <lfx-empty-state
+    icon="fa-light fa-triangle-exclamation"
+    [title]="errorMessage"
+    subtitle="Check your connection and try again."
+    ctaLabel="Retry"
+    ctaIcon="fa-light fa-rotate-right"
+    data-testid="mentee-tasks-accepted-error"
+    (ctaClick)="retry()" />
+} @else {
+  <div class="flex flex-col gap-5" data-testid="mentee-tasks-accepted">
+    <!-- Filter bar -->
+    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+      <!-- Filter chips -->
+      <div class="flex flex-wrap items-center gap-2" data-testid="mentee-tasks-filter-chips">
+        @for (opt of filterOptions; track opt.label) {
+          <button
+            type="button"
+            class="rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
+            [ngClass]="
+              activeFilter() === opt.value ? 'border-primary-600 bg-primary-600 text-white' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            "
+            [attr.aria-pressed]="activeFilter() === opt.value"
+            [attr.data-testid]="'mentee-tasks-filter-' + (opt.value ?? 'all')"
+            (click)="onFilterChange(opt.value)">
+            {{ opt.label }}
+          </button>
+        }
+      </div>
+
+      <!-- Submitted summary -->
+      <p class="text-sm text-gray-500" data-testid="mentee-tasks-submitted-summary">
+        {{ submittedSummary() }}
+      </p>
+    </div>
+
+    <!-- Task list -->
+    <div class="rounded-xl border border-gray-200 bg-white">
+      <div class="flex flex-col divide-y divide-gray-100">
+        @for (task of filteredTaskViews(); track task.id) {
+          <lfx-mentee-task-row [task]="task" [form]="acceptedForm()" paddingClass="px-6 py-4" />
+        } @empty {
+          <div class="px-6 py-12 text-center text-sm text-gray-500">No tasks match the selected filter.</div>
+        }
+      </div>
+    </div>
+  </div>
+}

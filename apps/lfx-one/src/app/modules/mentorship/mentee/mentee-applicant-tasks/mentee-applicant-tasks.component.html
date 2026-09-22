@@ -1,0 +1,59 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (!loaded()) {
+  <lfx-route-loading />
+} @else if (error(); as errorMessage) {
+  <lfx-empty-state
+    icon="fa-light fa-triangle-exclamation"
+    [title]="errorMessage"
+    subtitle="Check your connection and try again."
+    ctaLabel="Retry"
+    ctaIcon="fa-light fa-rotate-right"
+    data-testid="mentee-tasks-error"
+    (ctaClick)="retry()" />
+} @else if (applications(); as apps) {
+  <div class="flex flex-col gap-8" data-testid="mentee-tasks-applicant">
+    @for (app of apps; track app.id; let idx = $index) {
+      <div class="flex flex-col gap-4">
+        <!-- Application header label -->
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Application {{ idx + 1 }} of {{ apps.length }}</p>
+
+        <!-- Application card -->
+        <div class="rounded-xl border border-gray-200 bg-white" [attr.data-testid]="'mentee-tasks-application-card-' + app.id">
+          <!-- Card header -->
+          <div class="flex flex-col gap-1 border-b border-gray-100 px-6 py-4 bg-gray-50">
+            <div class="flex items-center gap-3">
+              <h3 class="text-base font-semibold text-gray-900">{{ app.programName }}</h3>
+              <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium" [ngClass]="app.statusBadgeClass">
+                {{ app.statusLabel }}
+              </span>
+            </div>
+            <p class="text-sm text-gray-500">
+              {{ app.projectName }} &middot; {{ app.termName }} &middot; {{ app.submittedCount }} of {{ app.totalCount }} submitted
+            </p>
+          </div>
+
+          <!-- Prerequisite tasks -->
+          <div class="px-6 py-4">
+            <p class="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              {{ prerequisiteLabel }}
+            </p>
+            <hr class="mb-3 border-gray-100" />
+            <div class="flex flex-col divide-y divide-gray-100">
+              @for (task of app.tasks; track task.id) {
+                <lfx-mentee-task-row [task]="task" [form]="applicantForm()" paddingClass="py-3" />
+              }
+            </div>
+          </div>
+        </div>
+      </div>
+    } @empty {
+      <lfx-empty-state
+        icon="fa-light fa-clipboard-list"
+        title="No application tasks yet"
+        subtitle="Your prerequisite tasks will appear here once you apply to a program."
+        data-testid="mentee-tasks-applicant-empty" />
+    }
+  </div>
+}

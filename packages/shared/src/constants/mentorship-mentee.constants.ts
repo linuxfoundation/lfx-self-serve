@@ -284,12 +284,17 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_CLASSES: Record<MentorshipMenteeTaskS
   complete: 'bg-emerald-100 !text-emerald-700',
 };
 
-/** Dropdown options for the task status selector (both phases). */
-export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTaskStatus; label: string }[] = [
-  { value: 'pending', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'submitted', label: 'Submitted' },
-];
+/**
+ * Selectable task statuses in the dropdown (both phases) — the single source of
+ * truth for which statuses a mentee can pick. `incomplete` / `complete` are
+ * backend aliases that collapse onto these three.
+ */
+export const MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES: readonly MentorshipMenteeTaskStatus[] = ['pending', 'in_progress', 'submitted'];
+
+/** Dropdown options for the task status selector (both phases). Labels derived from the label map so edits propagate. */
+export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTaskStatus; label: string }[] = MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES.map(
+  (value) => ({ value, label: MENTORSHIP_MENTEE_TASK_STATUS_LABELS[value] })
+);
 
 /**
  * Filter chip options on the accepted-phase My Tasks tab. `null` value = show all.

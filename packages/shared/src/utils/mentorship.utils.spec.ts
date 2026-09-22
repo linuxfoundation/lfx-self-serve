@@ -4,13 +4,22 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
+  MOCK_MENTORSHIP_MENTEE_TASKS,
+} from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
+  buildMentorshipMenteeApplicationViews,
+  buildMentorshipMenteeTaskView,
+  buildMentorshipMenteeTaskViews,
   buildMentorshipProgramDetail,
+  countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
+  normalizeMentorshipMenteeTaskStatus,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
@@ -889,5 +898,106 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     ] as const) {
       expect(errors).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('normalizeMentorshipMenteeTaskStatus', () => {
+  it('collapses the backend aliases to dropdown values', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('incomplete')).toBe('pending');
+    expect(normalizeMentorshipMenteeTaskStatus('complete')).toBe('submitted');
+  });
+
+  it('passes selectable statuses through unchanged', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('pending')).toBe('pending');
+    expect(normalizeMentorshipMenteeTaskStatus('in_progress')).toBe('in_progress');
+    expect(normalizeMentorshipMenteeTaskStatus('submitted')).toBe('submitted');
+  });
+});
+
+describe('countSubmittedMentorshipMenteeTasks', () => {
+  it('counts only submitted and complete tasks', () => {
+    const count = countSubmittedMentorshipMenteeTasks([
+      { status: 'submitted' },
+      { status: 'complete' },
+      { status: 'pending' },
+      { status: 'in_progress' },
+      { status: 'incomplete' },
+    ]);
+    expect(count).toBe(2);
+  });
+
+  it('returns 0 for an empty list', () => {
+    expect(countSubmittedMentorshipMenteeTasks([])).toBe(0);
+  });
+});
+
+describe('buildMentorshipMenteeTaskView', () => {
+  it('flags a submitted task with an uploaded file', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't1',
+      title: 'Submit resume',
+      description: 'Upload your resume',
+      status: 'submitted',
+      submitFile: 'https://files.example.com/r.pdf',
+      fileUrl: 'https://files.example.com/r.pdf',
+      submittedLabel: 'Sep 12, 2026',
+    });
+    expect(view.submitted).toBe(true);
+    expect(view.inProgress).toBe(false);
+    expect(view.hasUploadedFile).toBe(true);
+    expect(view.needsUpload).toBe(false);
+    expect(view.fileUrl).toBe('https://files.example.com/r.pdf');
+    expect(view.submittedLabel).toBe('Sep 12, 2026');
+    expect(view.statusClass).not.toBe('');
+  });
+
+  it('flags a task that still needs an upload', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't2',
+      title: 'Coding challenge',
+      description: 'Complete the challenge',
+      status: 'in_progress',
+      submitFile: 'required',
+      dueDate: '2026-09-30T00:00:00Z',
+    });
+    expect(view.inProgress).toBe(true);
+    expect(view.submitted).toBe(false);
+    expect(view.hasUploadedFile).toBe(false);
+    expect(view.needsUpload).toBe(true);
+    expect(view.fileUrl).toBeNull();
+    expect(view.dueDate).toBe('2026-09-30T00:00:00Z');
+    expect(view.submittedLabel).toBeNull();
+  });
+
+  it('treats a task with no submission requirement as neither uploaded nor pending upload', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't3',
+      title: 'Read the guide',
+      description: 'No file needed',
+      status: 'pending',
+      submitFile: null,
+    });
+    expect(view.hasUploadedFile).toBe(false);
+    expect(view.needsUpload).toBe(false);
+  });
+});
+
+describe('buildMentorshipMenteeApplicationViews', () => {
+  it('maps applications into display-ready cards with task rows', () => {
+    const views = buildMentorshipMenteeApplicationViews(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications);
+    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications.length);
+    const [first] = views;
+    expect(first.programName).toBeTruthy();
+    expect(first.statusLabel).toBeTruthy();
+    expect(first.totalCount).toBeGreaterThan(0);
+    expect(first.submittedCount).toBeLessThanOrEqual(first.totalCount);
+  });
+});
+
+describe('buildMentorshipMenteeTaskViews', () => {
+  it('maps every accepted task into a view', () => {
+    const views = buildMentorshipMenteeTaskViews(MOCK_MENTORSHIP_MENTEE_TASKS.data);
+    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+    expect(views.every((v) => typeof v.statusClass === 'string')).toBe(true);
   });
 });
