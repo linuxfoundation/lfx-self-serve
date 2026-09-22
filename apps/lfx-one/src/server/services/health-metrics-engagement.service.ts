@@ -182,7 +182,9 @@ export class HealthMetricsEngagementService {
       // The breaker treats this as expected and logs it at `warning`, but the same message covers a
       // revoked GRANT — an access-control event that has to be alertable on its own.
       if (SnowflakeService.isMissingObjectError(error)) {
-        logger.error(req, 'get_engagement_group_attendance', startTime, error, {
+        // Its own operation key: logging under the controller's would delete that entry from the
+        // request's operation stack, leaving `apiErrorHandler` to invent a path-derived one.
+        logger.error(req, 'get_engagement_group_attendance_missing_object', startTime, error, {
           snowflake_expected_missing_object: GROUP_ATTENDANCE_VIEW,
         });
       }

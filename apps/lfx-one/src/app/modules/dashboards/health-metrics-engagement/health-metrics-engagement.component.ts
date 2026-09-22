@@ -89,7 +89,8 @@ export class HealthMetricsEngagementComponent {
     this.destroyRef.onDestroy(() => {
       this.teardownScrollSpy();
       clearTimeout(this.pendingSectionTimer);
-      // Registered here rather than per arm: a hook per registration would pile up over the page's life.
+      // The destroy hook lives here, not in `observeReaderIntent`: the listeners register per arm,
+      // and one hook per arm would pile up over the page's life.
       this.removeIntentListeners?.();
     });
     afterNextRender(() => {
@@ -246,13 +247,14 @@ export class HealthMetricsEngagementComponent {
 
   /**
    * True only for a key that scrolls the document, pressed outside a control that consumes it —
-   * typing in an editable element, or Space activating a button, moves nothing.
+   * typing in an editable element, or Space activating a button, moves nothing. Every other scroll
+   * key still counts on a focused button: activating a filter is exactly when a reader scrolls on.
    */
   private isScrollIntent(event: KeyboardEvent): boolean {
     const target = event.target as HTMLElement | null;
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return false;
     // A native button swallows Space without marking the event defaultPrevented.
-    if (target?.closest?.('button, [role="button"]')) return false;
+    if (event.key === ' ' && target?.closest?.('button, [role="button"]')) return false;
 
     return HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS.includes(event.key);
   }

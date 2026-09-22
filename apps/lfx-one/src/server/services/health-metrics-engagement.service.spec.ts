@@ -3,11 +3,11 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { execute, isMissingObjectError, warning, errorLog } = vi.hoisted(() => ({
+const { execute, isMissingObjectError, warning, loggerError } = vi.hoisted(() => ({
   execute: vi.fn(),
   isMissingObjectError: vi.fn(() => false),
   warning: vi.fn(),
-  errorLog: vi.fn(),
+  loggerError: vi.fn(),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -19,7 +19,7 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: errorLog, debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
 
 import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT } from '@lfx-one/shared/constants';
@@ -92,7 +92,7 @@ describe('HealthMetricsEngagementService', () => {
     isMissingObjectError.mockReset();
     isMissingObjectError.mockReturnValue(false);
     warning.mockReset();
-    errorLog.mockReset();
+    loggerError.mockReset();
   });
 
   it('maps every period onto the row, oldest first, so the sparkline needs no second read', async () => {
@@ -225,9 +225,11 @@ describe('HealthMetricsEngagementService', () => {
   // The SDK names the fully-qualified view in its message, and the handler sends a bare
   // `BaseApiError`'s message to the client.
   it('keeps the warehouse object name out of the client response', async () => {
+    // Thrown the way `SnowflakeService` throws it: a provider name and a vendor code to drop.
     execute.mockRejectedValue(
-      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'INTERNAL_ERROR', {
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
+        service: 'snowflake',
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -250,7 +252,8 @@ describe('HealthMetricsEngagementService', () => {
     isMissingObjectError.mockReturnValue(true);
 
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('not authorized');
-    expect(errorLog).toHaveBeenCalledWith(req, 'get_engagement_group_attendance', expect.any(Number), expect.any(Error), {
+    // Its own operation key, so the controller's entry survives for `apiErrorHandler`.
+    expect(loggerError).toHaveBeenCalledWith(req, 'get_engagement_group_attendance_missing_object', expect.any(Number), expect.any(Error), {
       snowflake_expected_missing_object: 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE',
     });
   });
@@ -259,7 +262,7 @@ describe('HealthMetricsEngagementService', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getGroupAttendance(req, query())).rejects.toThrow('connection reset');
-    expect(errorLog).not.toHaveBeenCalled();
+    expect(loggerError).not.toHaveBeenCalled();
   });
 
   it('leaves an error that already carries a client message alone', async () => {

@@ -489,6 +489,45 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
+  // Only Space is swallowed by a button. Activating a filter is exactly when a reader scrolls on,
+  // so every other scroll key still counts with that button focused.
+  it('drops a pending deep link on a PageDown pressed with a button focused', async () => {
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    const target = document.createElement('button');
+    document.body.appendChild(target);
+    target.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
+    target.remove();
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
+  });
+
+  // Every read restarts the deadline, and each restart arms again. Without the guard in
+  // `observeReaderIntent` those arms would stack a fresh handler on each stream every time.
+  it('registers the reader-intent listeners once across repeated arms', async () => {
+    const addEventListener = vi.spyOn(window, 'addEventListener');
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    // Two further reads starting, each re-arming the key already pending.
+    stubChild().countsChange.emit(null);
+    fixture.detectChanges();
+    stubChild().countsChange.emit(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    for (const type of ['wheel', 'touchmove', 'keydown']) {
+      expect(addEventListener.mock.calls.filter(([registered]) => registered === type)).toHaveLength(1);
+    }
+  });
+
   // The handlers sit on three of the browser's hottest event streams, so a settled read has to
   // give them back rather than leave them running for the rest of the page's life.
   it('unregisters the reader-intent listeners once the read settles', async () => {

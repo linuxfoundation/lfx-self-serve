@@ -61,8 +61,9 @@ export class EngagementGroupAttendanceComponent {
 
   /**
    * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
-   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected —
-   * which renders no badge rather than a believable zero and tells the container a read is underway.
+   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected — and
+   * renders no badge rather than a believable zero. The container restarts its deep-link deadline on
+   * each one, since the only `null` it can act on arrives as a read begins.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
 
