@@ -324,7 +324,44 @@ describe('stripResourceLoadingHtml', () => {
     ['an iframe', '<iframe src="https://evil.test/x">i</iframe>t'],
     ['an svg image', '<svg><image href="https://evil.test/x"/></svg>t'],
   ])('removes every fetch path in %s', (_label, input) => {
-    expect(stripResourceLoadingHtml(input)).not.toContain('evil.test');
+    const out = stripResourceLoadingHtml(input);
+    // The URL is gone...
+    expect(out).not.toContain('evil.test');
+    // ...and so is every attribute that could carry one. `not.toContain` alone passed for a
+    // blanket strip, which is the failure this pair exists to separate: four of the bugs found
+    // in the hand-rolled versions deleted ordinary copy while removing the URL.
+    expect(out).not.toMatch(/\b(src|srcset|background|poster|style)\s*=/i);
+    // The surrounding copy SURVIVES. Every fixture above ends in a bare `t`.
+    expect(out).toContain('t');
+  });
+
+  it('keeps a relative href and drops the shapes that only look like one', () => {
+    // Relative is KEPT deliberately -- an earlier hand-rolled version refused it and silently
+    // broke ordinary in-site links in generated copy.
+    expect(stripResourceLoadingHtml('<a href="/about">x</a>')).toBe('<a href="/about">x</a>');
+    expect(stripResourceLoadingHtml('<a href="https://ok.example/p">x</a>')).toBe('<a href="https://ok.example/p">x</a>');
+    // `//host` is protocol-relative, not a path: it resolves to a remote origin.
+    expect(stripResourceLoadingHtml('<a href="//evil.test/x">x</a>')).toBe('<a>x</a>');
+    expect(stripResourceLoadingHtml('<a href="javascript:alert(1)">x</a>')).toBe('<a>x</a>');
+    expect(stripResourceLoadingHtml('<a href="data:text/html,x">x</a>')).toBe('<a>x</a>');
+  });
+
+  it('drops the content of every nonTextTags entry, and only those', () => {
+    // The three entries added this round plus the pre-existing ones, so a future edit that drops
+    // one from the list fails here rather than silently leaking its text into the sent body.
+    // `embed` is deliberately absent: it is a VOID element, so htmlparser2 emits `+embed -embed`
+    // and the following text is a SIBLING rather than its content -- `nonTextTags` has nothing to
+    // suppress. Verified against the tokenizer, and the surviving text is inert: a `<script>` or
+    // `<img>` written inside an `<embed>` is still dropped by the allow-list, exactly as it is
+    // inside a `<section>`. Listing it here would assert behaviour the parser cannot produce.
+    for (const tag of ['script', 'style', 'iframe', 'object', 'noscript', 'textarea', 'title', 'svg', 'math']) {
+      expect(stripResourceLoadingHtml(`<p>a</p><${tag}>SECRET</${tag}><p>b</p>`)).not.toContain('SECRET');
+    }
+    // The embed case, stated as what it actually is rather than omitted.
+    expect(stripResourceLoadingHtml('<embed><script>alert(1)</script></embed>')).toBe('');
+    expect(stripResourceLoadingHtml('<embed><img src="https://evil.test/x"></embed>')).toBe('');
+    // And the negative half: a disallowed tag NOT on that list keeps its words.
+    expect(stripResourceLoadingHtml('<p>a</p><section>KEEP</section><p>b</p>')).toContain('KEEP');
   });
 
   // The copy is the point of the preview: this must not become a blanket strip.

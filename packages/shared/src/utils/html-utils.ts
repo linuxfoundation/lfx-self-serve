@@ -83,8 +83,6 @@ export function sanitizeDisplayText(value: string): string {
       // which is a legibility question rather than a spoof -- and the alternative is refusing to
       // display a correctly-spelled name in five writing systems.
       if (code === 0x200b) return false;
-      // LRM/RLM are directional MARKS, not joiners: they alter how the surrounding run is laid
-      // out, which is the same class as the overrides denied above.
       // LRM/RLM/ALM are directional MARKS, not joiners: they alter how the surrounding run is
       // laid out, which is the same class as the overrides denied above. U+061C (ARABIC LETTER
       // MARK) belongs with them and was missed -- it is invisible and directional, so it does
@@ -349,8 +347,15 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     ],
     // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
     allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
-    // An `href` may only name an absolute http(s) destination; anything else is dropped.
+    // An `href` may name an http(s) destination or a RELATIVE path; `javascript:`, `data:` and
+    // protocol-relative `//host` are dropped. Relative is kept deliberately: an earlier
+    // hand-rolled version refused it, which silently broke ordinary in-site links in generated
+    // copy. `allowProtocolRelative: false` is what stops `//evil.com` masquerading as one.
     allowedSchemes: ['http', 'https'],
+    // ONLY `href`, narrowing sanitize-html's default (href, src, cite, action). That is safe
+    // here because `allowedAttributes` above permits no other URL-bearing attribute -- src and
+    // friends are already gone. Adding one to `allowedAttributes` without adding it here would
+    // leave it scheme-unchecked, so the two lists have to move together.
     allowedSchemesAppliedToAttributes: ['href'],
     allowProtocolRelative: false,
     // Content is DROPPED for these, not just the tag. Everywhere else a disallowed tag's TEXT
@@ -359,7 +364,7 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     //
     //   script, style              code
     //   iframe, object, embed      an embedded document's fallback, not this email's copy
-    //   noscript, textarea         alternate//form content the preview never renders
+    //   noscript, textarea         alternate or form content the preview never renders
     //   title                      document metadata that would otherwise appear mid-body
     //   svg, math                  glyph and markup internals -- `<svg><text>LEAK</text></svg>`
     //                              put LEAK into the body recipients receive, with no element
