@@ -54,8 +54,15 @@
       <ng-template #body let-view let-rowIndex="rowIndex">
         @let row = view.row;
         @let period = view.period;
-        <!-- lfx-table resolves a row click through data-row-index; without it onRowSelect never fires. -->
-        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'engagement-group-attendance-row-' + row.committeeId">
+        <!-- lfx-table resolves a row click through data-row-index; without it onRowSelect never fires.
+             Keys are bound on the row itself — role="button" would make the host click handler skip it. -->
+        <tr
+          [attr.data-row-index]="rowIndex"
+          [attr.data-testid]="'engagement-group-attendance-row-' + row.committeeId"
+          tabindex="0"
+          [attr.aria-label]="'Open attendance detail for ' + row.committeeName"
+          (keydown.enter)="onRowSelect(row)"
+          (keydown.space)="onRowSelect(row); $event.preventDefault()">
           <td>
             <div class="flex flex-col gap-0.5">
               <span class="text-sm font-medium text-gray-900">{{ row.committeeName }}</span>

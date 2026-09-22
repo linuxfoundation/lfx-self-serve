@@ -150,6 +150,18 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
   });
 
+  it('opens the drawer from the keyboard, so the detail is not mouse-only', async () => {
+    await render();
+
+    const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]');
+    expect(row.getAttribute('tabindex')).toBe('0');
+    row.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['drawerVisible']()).toBe(true);
+    expect(fixture.componentInstance['selectedRow']()?.committeeId).toBe('c-1');
+  });
+
   it('holds the count back while a read is in flight, so it never reads zero mid-fetch', async () => {
     await render();
     fixture.componentInstance['loading'].set(true);
