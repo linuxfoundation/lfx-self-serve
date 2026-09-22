@@ -44,9 +44,16 @@
               @for (task of app.tasks; track task.id) {
                 <lfx-mentee-task-row [task]="task" [form]="applicantForm()" paddingClass="py-3" />
               } @empty {
-                <p class="py-3 text-sm text-gray-500" [attr.data-testid]="'mentee-tasks-application-empty-' + app.id">
-                  No prerequisite tasks for this application yet.
-                </p>
+                @if (app.totalCount > 0) {
+                  <!-- Overview reports tasks (see header count) but this payload has no rows: don't imply zero. -->
+                  <p class="py-3 text-sm text-gray-500" [attr.data-testid]="'mentee-tasks-application-pending-' + app.id">
+                    Prerequisite task details aren’t available yet.
+                  </p>
+                } @else {
+                  <p class="py-3 text-sm text-gray-500" [attr.data-testid]="'mentee-tasks-application-empty-' + app.id">
+                    No prerequisite tasks for this application yet.
+                  </p>
+                }
               }
             </div>
           </div>

@@ -717,7 +717,11 @@ export interface MentorshipMenteeApplicationTask {
   fileUrl?: string;
   /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`). */
   dueDate: string;
-  /** ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`), rendered via `DatePipe` with `'UTC'` like `dueDate`. Present when status is `'submitted'`. */
+  /**
+   * ISO 8601 UTC date string (`YYYY-MM-DDT00:00:00Z`), rendered via `DatePipe` with `'UTC'` like `dueDate`.
+   * Present when status is `'submitted'`. NOTE: this is a raw instant — unlike
+   * `MentorshipMenteeApplicationHistoryEntry.submittedOn`, which is a BFF pre-formatted display string.
+   */
   submittedOn?: string;
 }
 
@@ -745,8 +749,11 @@ export interface MentorshipMenteeTaskView {
   fileUrl: string | null;
   /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'`. */
   dueDate: string | null;
-  /** ISO 8601 UTC date string, or `null`. Rendered via `DatePipe` with `'UTC'` (same contract as `dueDate`). */
-  submittedLabel: string | null;
+  /**
+   * ISO 8601 UTC date string, or `null`. Named for its value (like `dueDate`/`submittedDate`),
+   * not "label" — the template formats it via `DatePipe` with `'UTC'` (same contract as `dueDate`).
+   */
+  submittedDate: string | null;
 }
 
 /** Display-ready application card for the applicant phase of the mentee tasks tab. */
@@ -802,7 +809,11 @@ export interface MentorshipMenteeApplicationHistoryEntry {
   id: string;
   programName: string;
   termName: string;
-  /** BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed. */
+  /**
+   * BFF pre-formatted display string (e.g. `'Jun 28, 2026'`). Rendered verbatim — no `DatePipe` needed.
+   * NOTE: differs from `MentorshipMenteeApplicationTask.submittedOn`, which is a raw ISO UTC instant
+   * formatted client-side. Application History is display-only, so the BFF formats it.
+   */
   submittedOn: string;
   status: MentorshipMenteeApplicationHistoryStatus;
 }

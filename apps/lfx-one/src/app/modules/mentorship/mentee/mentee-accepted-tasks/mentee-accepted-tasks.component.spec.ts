@@ -3,6 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { MOCK_MENTORSHIP_MENTEE_TASKS } from '@lfx-one/shared/constants';
+import { MentorshipMenteeTasksResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of, throwError } from 'rxjs';
@@ -139,11 +140,27 @@ describe('MenteeAcceptedTasksComponent', () => {
     expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
   });
 
-  it('shows the empty-filter message when there are no tasks', async () => {
+  it('shows the empty-all message (not the filter message) when the mentee has no tasks at all', async () => {
     getMenteeTasks = vi.fn().mockReturnValue(of({ data: [], total: 0 }));
     await createComponent();
     expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted-empty-all"]')).toBeTruthy();
+    expect(element().textContent).toContain('No tasks assigned yet.');
+    expect(element().textContent).not.toContain('No tasks match the selected filter.');
+  });
+
+  it('shows the empty-filter message when tasks exist but none match the active filter', async () => {
+    const pendingOnly: MentorshipMenteeTasksResponse = {
+      data: [{ id: 'only_pending', title: 'Pending only', description: 'x', status: 'pending', submitFile: null }],
+      total: 1,
+    };
+    getMenteeTasks = vi.fn().mockReturnValue(of(pendingOnly));
+    await createComponent();
+    component['onFilterChange']('submitted');
+    fixture.detectChanges();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted-empty-filter"]')).toBeTruthy();
     expect(element().textContent).toContain('No tasks match the selected filter.');
+    expect(element().textContent).not.toContain('No tasks assigned yet.');
   });
 
   it('filters via real chip clicks, including the in-progress chip', async () => {

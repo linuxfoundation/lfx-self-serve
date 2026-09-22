@@ -944,14 +944,14 @@ describe('buildMentorshipMenteeTaskView', () => {
       status: 'submitted',
       submitFile: 'https://files.example.com/r.pdf',
       fileUrl: 'https://files.example.com/r.pdf',
-      submittedLabel: 'Sep 12, 2026',
+      submittedDate: '2026-09-12T00:00:00Z',
     });
     expect(view.submitted).toBe(true);
     expect(view.inProgress).toBe(false);
     expect(view.hasUploadedFile).toBe(true);
     expect(view.needsUpload).toBe(false);
     expect(view.fileUrl).toBe('https://files.example.com/r.pdf');
-    expect(view.submittedLabel).toBe('Sep 12, 2026');
+    expect(view.submittedDate).toBe('2026-09-12T00:00:00Z');
     expect(view.statusClass).not.toBe('');
   });
 
@@ -970,7 +970,7 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.needsUpload).toBe(true);
     expect(view.fileUrl).toBeNull();
     expect(view.dueDate).toBe('2026-09-30T00:00:00Z');
-    expect(view.submittedLabel).toBeNull();
+    expect(view.submittedDate).toBeNull();
   });
 
   it('treats a task with no submission requirement as neither uploaded nor pending upload', () => {

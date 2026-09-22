@@ -45,7 +45,11 @@
         @for (task of filteredTaskViews(); track task.id) {
           <lfx-mentee-task-row [task]="task" [form]="acceptedForm()" paddingClass="px-6 py-4" />
         } @empty {
-          <div class="px-6 py-12 text-center text-sm text-gray-500">No tasks match the selected filter.</div>
+          @if (hasAnyTasks()) {
+            <div class="px-6 py-12 text-center text-sm text-gray-500" data-testid="mentee-tasks-accepted-empty-filter">No tasks match the selected filter.</div>
+          } @else {
+            <div class="px-6 py-12 text-center text-sm text-gray-500" data-testid="mentee-tasks-accepted-empty-all">No tasks assigned yet.</div>
+          }
         }
       </div>
     </div>

@@ -744,8 +744,11 @@ export function mentorshipPersonInitials(name: string): string {
  * Normalise a task status to a status-dropdown value. The dropdown only offers
  * `pending` / `in_progress` / `submitted`, so the two backend aliases collapse:
  * `incomplete` → `pending` and `complete` → `submitted` (both display the same).
- * Any unrecognised value defaults to `pending` so the dropdown and badge always
- * resolve to a known option rather than rendering blank/unstyled.
+ *
+ * The parameter is typed to the status union, so the `default` branch is a
+ * runtime guard for values that reach here without compile-time checking — an
+ * unvalidated BFF payload or a cast — mapping them to `pending` rather than
+ * letting an unknown status render blank/unstyled.
  */
 export function normalizeMentorshipMenteeTaskStatus(status: MentorshipMenteeTaskStatus): MentorshipMenteeTaskStatus {
   switch (status) {
@@ -781,7 +784,7 @@ export function buildMentorshipMenteeTaskView(input: {
   submitFile: string | null;
   fileUrl?: string;
   dueDate?: string;
-  submittedLabel?: string;
+  submittedDate?: string;
 }): MentorshipMenteeTaskView {
   // Normalise once so an unrecognised runtime status resolves to a real option
   // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
@@ -801,12 +804,12 @@ export function buildMentorshipMenteeTaskView(input: {
     status,
     submitted,
     inProgress: status === 'in_progress',
-    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status] ?? '',
+    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
     hasUploadedFile,
     needsUpload: input.submitFile === 'required' && !input.fileUrl,
     fileUrl: input.fileUrl ?? submitFileUrl,
     dueDate: input.dueDate ?? null,
-    submittedLabel: input.submittedLabel ?? null,
+    submittedDate: input.submittedDate ?? null,
   };
 }
 
@@ -832,7 +835,7 @@ export function buildMentorshipMenteeApplicationViews(applications: MentorshipMe
         submitFile: task.submitFile,
         fileUrl: task.fileUrl,
         dueDate: task.dueDate,
-        submittedLabel: task.submittedOn,
+        submittedDate: task.submittedOn,
       })
     ),
   }));
@@ -849,7 +852,7 @@ export function buildMentorshipMenteeTaskViews(tasks: MentorshipMenteeTask[]): M
       submitFile: task.submitFile,
       fileUrl: task.fileUrl,
       dueDate: task.dueDate,
-      submittedLabel: task.submittedDate,
+      submittedDate: task.submittedDate,
     })
   );
 }

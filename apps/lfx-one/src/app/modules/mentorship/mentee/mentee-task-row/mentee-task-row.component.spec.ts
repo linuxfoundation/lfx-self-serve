@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { formatDate } from '@angular/common';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormControl, FormGroup } from '@angular/forms';
 import { MentorshipMenteeTaskView } from '@lfx-one/shared/interfaces';
@@ -44,7 +45,7 @@ describe('MenteeTaskRowComponent', () => {
       status: 'submitted',
       submitFile: 'https://files.example.com/a.pdf',
       fileUrl: 'https://files.example.com/a.pdf',
-      submittedLabel: '2026-09-12T00:00:00Z',
+      submittedDate: '2026-09-12T00:00:00Z',
     });
 
   const uploadNeededTask = (): MentorshipMenteeTaskView =>
@@ -104,10 +105,18 @@ describe('MenteeTaskRowComponent', () => {
     expect(element().querySelector('[data-testid="mentee-tasks-view-file-row_upload"]')).toBeNull();
   });
 
-  it('renders a submitted-date label for a submitted task', async () => {
+  it('renders the submitted date pinned to UTC (the UTC calendar day, not the local one)', async () => {
     await buildRow(uploadedTask());
     const text = element().textContent ?? '';
-    expect(text).toContain('Submitted');
-    expect(text).toContain('Sep 12, 2026');
+    // uploadedTask()'s submittedDate is a UTC-midnight instant (2026-09-12T00:00:00Z).
+    const utcDay = formatDate('2026-09-12T00:00:00Z', 'MMM d, yyyy', 'en-US', 'UTC');
+    const behindUtcDay = formatDate('2026-09-12T00:00:00Z', 'MMM d, yyyy', 'en-US', '-1000');
+    expect(utcDay).toBe('Sep 12, 2026');
+    // The instant is timezone-sensitive: a zone behind UTC formats the previous day.
+    expect(behindUtcDay).toBe('Sep 11, 2026');
+    // The row must render the UTC day (proves the `: 'UTC'` DatePipe arg is present);
+    // dropping it would surface the previous day for viewers west of UTC.
+    expect(text).toContain('Submitted on ' + utcDay);
+    expect(text).not.toContain(behindUtcDay);
   });
 });

@@ -50,6 +50,8 @@ export class MenteeAcceptedTasksComponent {
   /** View models built once per task-list change; filtering reuses these object identities. */
   private readonly taskViews = this.initTaskViews();
   protected readonly filteredTaskViews = this.initFilteredTaskViews();
+  /** True when the mentee has any tasks at all — distinguishes empty-all from an empty filter result. */
+  protected readonly hasAnyTasks = computed(() => this.taskViews().length > 0);
   protected readonly submittedSummary = this.initSubmittedSummary();
   protected readonly acceptedForm = this.initAcceptedForm();
 
@@ -98,10 +100,9 @@ export class MenteeAcceptedTasksComponent {
     return computed(() => {
       const views = this.taskViews();
       const active = this.activeFilter();
-      if (active === null) return views;
-      if (active === 'pending') return views.filter((v) => v.status === 'pending' || v.status === 'incomplete');
-      if (active === 'submitted') return views.filter((v) => v.status === 'submitted' || v.status === 'complete');
-      return views.filter((v) => v.status === active);
+      // View statuses are already normalised (pending | in_progress | submitted),
+      // so a direct equality match covers every filter chip — no alias branches needed.
+      return active === null ? views : views.filter((v) => v.status === active);
     });
   }
 

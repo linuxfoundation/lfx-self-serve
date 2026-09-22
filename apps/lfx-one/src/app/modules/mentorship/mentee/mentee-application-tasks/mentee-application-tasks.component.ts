@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, PLATFORM_ID, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
+import { bindLfxDocumentTitle } from '@shared/utils/document-title.util';
 import { MentorshipMenteePhase } from '@lfx-one/shared/interfaces';
 import { filter } from 'rxjs';
 
@@ -52,9 +53,10 @@ export class MenteeApplicationTasksComponent {
 
   public constructor() {
     this.initEmptyPhaseRedirect();
+    this.initDocumentTitle();
   }
 
-  // ---- 4. Private initializers ----------------------------------------------
+  // ---- 3. Private initializers ----------------------------------------------
 
   /**
    * The tasks route has no place in the empty phase (no tab exists), so bounce
@@ -72,5 +74,15 @@ export class MenteeApplicationTasksComponent {
       .subscribe(() => {
         void this.router.navigate(['/mentorship/mentee/overview']);
       });
+  }
+
+  /**
+   * The static route title ("My Application Tasks") fits the applicant phase, but the
+   * accepted phase renders as "My Tasks" — keep the browser tab title in sync with the
+   * resolved phase. Bound through the shared helper so both keep the standard "· LFX"
+   * suffix from `LfxTitleStrategy` (a raw `Title.setTitle` would drop the brand).
+   */
+  private initDocumentTitle(): void {
+    bindLfxDocumentTitle(computed(() => (this.phase() === 'accepted' ? 'My Tasks' : 'My Application Tasks')));
   }
 }

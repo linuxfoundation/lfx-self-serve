@@ -50,7 +50,8 @@ describe('MenteeApplicantTasksComponent', () => {
     expect(cards.length).toBe(3);
     const text = element().textContent ?? '';
     expect(text).toContain('Apicurio Registry');
-    expect(text).toContain('PREREQUISITE TASKS');
+    // Label is natural-case in the DOM (CSS `uppercase` only affects display, not textContent).
+    expect(text).toContain('Prerequisite Tasks');
   });
 
   it('renders task rows inside each application card', async () => {

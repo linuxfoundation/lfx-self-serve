@@ -484,9 +484,12 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
       { id: 'mentor_1', name: 'Test Mentor A' },
       { id: 'mentor_2', name: 'Test Mentor B' },
     ],
+    // Mirror the OPEN tasks in MOCK_MENTEE_TASKS so Overview "Up Next" and the My Tasks
+    // tab never disagree — a submitted task (e.g. "Benchmark 1M points per minute") must
+    // not appear here while it reads as Submitted on the tasks tab.
     upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18T00:00:00Z' },
-      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25T00:00:00Z' },
+      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'pending', dueDate: '2026-09-18T00:00:00Z' },
+      { id: 'unt_2', name: 'Backpressure design note', status: 'in-progress', dueDate: '2026-09-12T00:00:00Z' },
       { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02T00:00:00Z' },
     ],
   },
