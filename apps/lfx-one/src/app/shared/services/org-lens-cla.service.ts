@@ -7,6 +7,7 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
+  OrgClaContributorAcknowledgmentList,
   OrgClaGroupList,
   OrgClaManager,
   OrgClaManagerAddRequest,
@@ -18,6 +19,7 @@ import type {
   OrgClaSignResponse,
   PdfUrlResponse,
 } from '@lfx-one/shared/interfaces';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { Observable, catchError, map, of } from 'rxjs';
 
 /**
@@ -117,11 +119,35 @@ export class OrgLensClaService {
     return this.http.delete<void>(`${this.managersUrl(orgUid, signatureId)}/${encodeURIComponent(lfUsername)}`);
   }
 
+  /**
+   * Paginated contributor acknowledgments (ECLA signatures) for one CCLA (#1986).
+   *
+   * The `search` term is forwarded to the server as a query parameter and applied by the producer
+   * — filtering is not scoped to the rows already loaded. `nextKey`-driven Load-more fetches the
+   * next page. `pageSize` is clamped server-side, so passing an out-of-range value is a hint the
+   * server rewrites rather than an error the client has to handle.
+   */
+  public getContributorAcknowledgments(
+    orgUid: string,
+    signatureId: string,
+    options: { search?: string; pageSize?: number; nextKey?: string | null } = {}
+  ): Observable<OrgClaContributorAcknowledgmentList> {
+    let params = strictHttpParams();
+    if (options.search) params = params.set('search', options.search);
+    if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
+    if (options.nextKey) params = params.set('nextKey', options.nextKey);
+    return this.http.get<OrgClaContributorAcknowledgmentList>(this.acknowledgmentsUrl(orgUid, signatureId), { params });
+  }
+
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
   }
 
   private managersUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/managers`;
+  }
+
+  private acknowledgmentsUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/acknowledgments`;
   }
 }

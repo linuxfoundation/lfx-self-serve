@@ -52,6 +52,13 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/pdf-url', requireOrgLensAccess
 router.get('/:orgUid/lens/cla-groups/:claGroupId/ccla-preview', requireOrgLensAccess, (req, res, next) => orgClasController.getCclaPreview(req, res, next));
 router.get('/:orgUid/lens/cla-groups/:signatureId/approval-list', requireOrgLensAccess, (req, res, next) => orgClasController.getApprovalList(req, res, next));
 
+// Contributor Acknowledgments (#1986). Read is an org-lens grant only, matching every other read
+// on this router; the impersonated token is forwarded upstream so a support engineer sees what
+// the target sees.
+router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLensAccess, (req, res, next) =>
+  orgClasController.getContributorAcknowledgments(req, res, next)
+);
+
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
 // The reads above forward the impersonated identity to upstream deliberately; a write must not.
 // Changing an approval list revokes acknowledgements and emails the affected contributors, and

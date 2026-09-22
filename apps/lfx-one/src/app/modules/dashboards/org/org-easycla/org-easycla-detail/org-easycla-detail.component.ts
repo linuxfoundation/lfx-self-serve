@@ -90,6 +90,7 @@ import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
+import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
 
 @Component({
@@ -101,6 +102,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     MessageComponent,
     OpenIntercomDirective,
     OrgEasyclaApprovalListComponent,
+    OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
     SkeletonModule,
     TagComponent,

@@ -18,6 +18,7 @@ const {
   getManagers,
   addManager,
   removeManager,
+  getContributorAcknowledgments,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -30,6 +31,7 @@ const {
   getManagers: vi.fn(),
   addManager: vi.fn(),
   removeManager: vi.fn(),
+  getContributorAcknowledgments: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -45,6 +47,7 @@ vi.mock('../services/org-cla.service', () => ({
     public getManagers = getManagers;
     public addManager = addManager;
     public removeManager = removeManager;
+    public getContributorAcknowledgments = getContributorAcknowledgments;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -647,6 +650,112 @@ describe('OrgClasController.getApprovalList', () => {
     await new OrgClasController().getApprovalList(approvalReq(), res, vi.fn());
 
     expect(res.json).toHaveBeenCalledWith(list);
+  });
+});
+
+/**
+ * Contributor Acknowledgments read (#1986). The route guard is asserted in the router spec; this
+ * layer's job is to translate query parameters correctly, clamp the page size before it reaches
+ * the producer, and answer 404 for a signature this organization does not hold.
+ */
+function ackReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function ackList(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getContributorAcknowledgments', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('forwards the trimmed search term to the service so filtering is server-side, not client-side', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const req = ackReq({ search: '  ahmed  ' });
+
+    await new OrgClasController().getContributorAcknowledgments(req, buildRes(), vi.fn());
+
+    // A search that only lived on the browser would filter the already-loaded page and silently
+    // miss every match on the pages that follow.
+    expect(getContributorAcknowledgments).toHaveBeenCalledWith(req, ORG_UID, 'signature-uuid-1', expect.objectContaining({ search: 'ahmed' }));
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: 'cursor-xyz' })
+    );
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: undefined })
+    );
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getContributorAcknowledgments.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries every listed contributor's identity attributes and a per-caller `canEdit`
+  // flag, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 });
 
