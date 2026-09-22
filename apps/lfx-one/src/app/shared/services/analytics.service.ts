@@ -81,12 +81,15 @@ import {
   RevenueImpactResponse,
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
+  HealthMetricsEngagementGroupAttendance,
+  HealthMetricsEngagementGroupQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
@@ -1080,6 +1083,31 @@ export class AnalyticsService {
       params['range'] = range;
     }
     return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(catchError(() => of(HEALTH_METRICS_NPS_DEFAULT_SUMMARY)));
+  }
+
+  /**
+   * Get one page of the Health Metrics Engagement "Group attendance" table
+   * @param query - Foundation, project scope, group-type cut, period and page
+   * @returns Observable of the page, already ranked dormant-first by the server
+   */
+  public getEngagementGroupAttendance(query: HealthMetricsEngagementGroupQuery): Observable<HealthMetricsEngagementGroupAttendance> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      groupType: query.groupType,
+      range: query.range,
+      page: String(query.page),
+      size: String(query.size),
+    };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
+
+    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-group-attendance failed', { query, error });
+        return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+      })
+    );
   }
 
   /**

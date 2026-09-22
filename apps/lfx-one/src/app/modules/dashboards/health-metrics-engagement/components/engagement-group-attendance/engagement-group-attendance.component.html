@@ -1,0 +1,90 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="engagement-group-attendance">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <lfx-filter-pills
+      [options]="typeFilters"
+      [selectedFilter]="groupType()"
+      (filterChange)="onFilterChange($event)"
+      data-testid="engagement-group-attendance-filters" />
+    <span class="text-[13px] text-gray-500" data-testid="engagement-group-attendance-count">{{ countLabel() }}</span>
+  </div>
+
+  @if (!loading() && totalRecords() === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-users"
+      title="No groups of this type"
+      subtitle="This foundation has no groups matching the selected filter."
+      data-testid="engagement-group-attendance-empty" />
+  } @else {
+    <lfx-table
+      [value]="rows()"
+      [loading]="loading()"
+      [lazy]="true"
+      [lazyLoadOnInit]="false"
+      [paginator]="totalRecords() > size()"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      selectionMode="single"
+      (onPage)="onTablePage($event)"
+      (onRowSelect)="onRowSelect($event.data)"
+      data-testid="engagement-group-attendance-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Group</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Type</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Meetings</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Last met</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Trend</span></th>
+          <th scope="col" class="w-[150px]"><span class="text-xs font-medium text-gray-500">Attendance</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-row>
+        @let period = periodOf(row);
+        <tr [attr.data-testid]="'engagement-group-attendance-row-' + row.committeeId">
+          <td>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-900">{{ row.committeeName }}</span>
+              @if (period?.dormant) {
+                <span class="text-[12px] text-amber-600">No meetings this period</span>
+              } @else if (row.projectName) {
+                <span class="text-[12px] text-gray-500">{{ row.projectName }}</span>
+              }
+            </div>
+          </td>
+          <td>
+            @if (row.groupTypeLabel) {
+              <lfx-tag [value]="row.groupTypeLabel" severity="secondary" [rounded]="true" />
+            } @else {
+              <span class="text-sm text-gray-400">—</span>
+            }
+          </td>
+          <td>
+            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? 0 }}</span>
+          </td>
+          <td>
+            <span class="text-sm text-gray-800">{{ row.lastMetDate ? (row.lastMetDate | date: 'MMM d, y') : '—' }}</span>
+          </td>
+          <td>
+            <lfx-engagement-sparkline [series]="trendOf(row)" [ariaLabel]="'Attendance history for ' + row.committeeName" />
+          </td>
+          <td class="w-[150px]">
+            @if (period?.dormant) {
+              <lfx-tag value="Dormant" severity="warn" [rounded]="true" />
+            } @else {
+              <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+
+  <lfx-engagement-group-attendance-drawer [(visible)]="drawerVisible" [row]="selectedRow()" />
+</div>
