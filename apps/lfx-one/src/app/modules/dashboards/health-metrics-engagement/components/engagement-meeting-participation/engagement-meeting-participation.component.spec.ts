@@ -239,12 +239,14 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).not.toBeNull();
   });
 
-  it('reads nothing while no foundation is selected', async () => {
+  // An unresolved foundation is not a foundation with no meetings, and the two must not look alike.
+  it('holds the skeleton while no foundation is selected, rather than captioning an unread scope', async () => {
     selectedFoundation.set(null);
     await render();
 
     expect(getEngagementMeetingParticipation).not.toHaveBeenCalled();
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-loading"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-meeting-participation-empty"]')).toBeNull();
   });
 
   // The URL is the only carrier of the mode across a reload or a shared link.

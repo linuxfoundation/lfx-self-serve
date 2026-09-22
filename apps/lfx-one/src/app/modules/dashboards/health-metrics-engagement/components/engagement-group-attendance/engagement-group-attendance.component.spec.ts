@@ -258,6 +258,8 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).not.toHaveBeenCalled();
     expect(emitted.every((counts) => counts === null)).toBe(true);
+    // An unresolved foundation is not a foundation with no groups matching the filter.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
   });
 
   // The URL is the only carrier of table state across a reload or a shared link.

@@ -185,7 +185,9 @@ export class EngagementMeetingParticipationComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
             }),
             tap(() => {
-              this.loading.set(false);
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up so the
+              // table cannot caption a read that never happened as "no rows".
+              this.loading.set(!query.foundationSlug);
               this.settled.emit();
             })
           )

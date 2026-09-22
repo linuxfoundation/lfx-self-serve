@@ -104,6 +104,15 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(row.textContent).toContain('Aug 14, 2026');
   });
 
+  // The placeholder and the icon give the box no accessible name, so the label has to.
+  it('names the search box for assistive tech', async () => {
+    await render();
+
+    const label: HTMLLabelElement = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
+    expect(label.textContent?.trim()).toBe('Search organization');
+    expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
+  });
+
   // The period pill projects the loaded rows, so switching it must not cost another request.
   it('re-projects the loaded rows when the period changes, without re-reading', async () => {
     await render();
@@ -246,5 +255,7 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
     expect(emitted).toEqual([null, null]);
     expect(lifecycle).toEqual(['reading', 'settled']);
+    // An unresolved foundation is not a measured empty scope — no read happened to call it empty.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
   });
 });

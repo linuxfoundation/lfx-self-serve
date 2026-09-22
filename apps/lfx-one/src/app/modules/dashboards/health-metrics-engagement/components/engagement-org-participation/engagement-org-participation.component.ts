@@ -188,7 +188,9 @@ export class EngagementOrgParticipationComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
             }),
             tap((response) => {
-              this.loading.set(false);
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up so the
+              // table cannot caption a read that never happened as "no rows".
+              this.loading.set(!query.foundationSlug);
               // No foundation means no read happened, so there is no measured count to report.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Emitted separately from the counts: a failed or foundation-less read reports no
