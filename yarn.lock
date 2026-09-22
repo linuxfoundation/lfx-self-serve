@@ -13985,7 +13985,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"jiti@npm:^1.20.0, jiti@npm:^1.21.6":
+"jiti@npm:^1.20.0, jiti@npm:^1.21.6, jiti@npm:^1.21.7":
   version: 1.21.7
   resolution: "jiti@npm:1.21.7"
   bin:
@@ -14511,6 +14511,7 @@ __metadata:
     gray-matter: "npm:^4.0.3"
     html-to-image: "npm:^1.11.13"
     ioredis: "npm:^5.11.1"
+    jiti: "npm:^1.21.7"
     jose: "npm:^2.0.7"
     jsdom: "npm:^30.0.1"
     launchdarkly-js-client-sdk: "npm:^3.9.0"
