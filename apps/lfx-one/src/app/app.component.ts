@@ -160,9 +160,15 @@ export class AppComponent {
         this.featureFlagService.initialize(authedUser).catch((error) => {
           console.error('Failed to initialize feature flags:', error);
         });
-        if (!isImpersonating) {
-          this.bootIntercom(authedUser);
-        }
+      }
+
+      // Never while impersonating: buildImpersonationIdentityOverride rewrites the identity
+      // claims for the target but leaves `http://lfx.dev/claims/intercom` as the operator's own
+      // JWT, so an identified boot would send the operator's JWT with the target's PII. On the
+      // invite landing the identity is staged without booting, so first paint stays off Intercom
+      // while the error page's "Contact support" still opens as the signed-in user (GH-2290).
+      if (!isImpersonating) {
+        this.prepareIntercom(authedUser, !onInviteLanding);
       }
 
       this.dataDogRumService.setUser(authedUser);
@@ -172,8 +178,8 @@ export class AppComponent {
     this.initProjectQueryParamSync();
   }
 
-  // Fails closed: missing JWT or App ID skips boot.
-  private bootIntercom(user: User): void {
+  // Fails closed: missing JWT or App ID stages no identity and skips the boot.
+  private prepareIntercom(user: User, bootNow: boolean): void {
     // Browser-only: avoid per-request warn spam during SSR when claim is absent.
     if (typeof window === 'undefined') {
       return;
@@ -194,6 +200,14 @@ export class AppComponent {
         hasJwt: !!intercomJwt,
         hasUserId: !!userId,
       });
+      return;
+    }
+
+    // Staged before the boot decision so an on-demand open still identifies the user on routes
+    // that skip the startup boot.
+    this.intercomService.setIdentity(bootOptions);
+
+    if (!bootNow) {
       return;
     }
 

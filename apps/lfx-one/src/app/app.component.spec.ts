@@ -51,6 +51,7 @@ describe('AppComponent — meetings v2 flag', () => {
   let plausibleSetImpersonating: ReturnType<typeof vi.fn>;
   let dataDogSetUser: ReturnType<typeof vi.fn>;
   let intercomBoot: ReturnType<typeof vi.fn>;
+  let intercomSetIdentity: ReturnType<typeof vi.fn>;
 
   const authedUser: User = {
     sid: 'sid',
@@ -106,7 +107,7 @@ describe('AppComponent — meetings v2 flag', () => {
         { provide: PlausibleService, useValue: { initialize: plausibleInitialize, setImpersonating: plausibleSetImpersonating } },
         { provide: DataDogRumService, useValue: { setImpersonating: vi.fn(), setUser: dataDogSetUser } },
         { provide: AccountContextService, useValue: { initializeUserOrganizations: vi.fn() } },
-        { provide: IntercomService, useValue: { boot: intercomBoot } },
+        { provide: IntercomService, useValue: { boot: intercomBoot, setIdentity: intercomSetIdentity } },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ...(options?.auth ? [{ provide: REQUEST_CONTEXT, useValue: { auth: options.auth } }] : []),
       ],
@@ -138,6 +139,7 @@ describe('AppComponent — meetings v2 flag', () => {
     plausibleSetImpersonating = vi.fn();
     dataDogSetUser = vi.fn();
     intercomBoot = vi.fn();
+    intercomSetIdentity = vi.fn();
   });
 
   it('reads the flag off, so the host is left out of the tree', async () => {
@@ -270,6 +272,48 @@ describe('AppComponent — meetings v2 flag', () => {
     }
   });
 
+  it('stages the Intercom identity without booting on authenticated /invite (GH-2290)', async () => {
+    window.history.pushState({}, '', '/invite');
+    try {
+      await mount({ auth: authedContext });
+      // Staged, not booted: first paint stays off the widget, but "Contact support" on
+      // /invite/error still opens as the signed-in user.
+      expect(intercomBoot).not.toHaveBeenCalled();
+      expect(intercomSetIdentity).toHaveBeenCalledWith(
+        expect.objectContaining({
+          app_id: 'test-app-id',
+          user_id: 'alice',
+          name: 'Alice Example',
+          email: 'alice@example.com',
+          intercom_user_jwt: 'intercom-jwt',
+        })
+      );
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
+  it('stages no Intercom identity while impersonating, so support boots anonymously', async () => {
+    // buildImpersonationIdentityOverride leaves `http://lfx.dev/claims/intercom` as the operator's
+    // own JWT, so identifying from the overridden user would send that JWT with the target's PII.
+    await mount({ auth: { ...authedContext, impersonating: true } });
+
+    expect(intercomSetIdentity).not.toHaveBeenCalled();
+    expect(intercomBoot).not.toHaveBeenCalled();
+  });
+
+  it('stages no Intercom identity while impersonating on /invite either', async () => {
+    window.history.pushState({}, '', '/invite');
+    try {
+      await mount({ auth: { ...authedContext, impersonating: true } });
+
+      expect(intercomSetIdentity).not.toHaveBeenCalled();
+      expect(intercomBoot).not.toHaveBeenCalled();
+    } finally {
+      window.history.pushState({}, '', '/');
+    }
+  });
+
   it('initializes Segment and Plausible on a product route', async () => {
     await mount();
     expect(segmentInitialize).toHaveBeenCalledTimes(1);
@@ -281,6 +325,7 @@ describe('AppComponent — meetings v2 flag', () => {
     expect(segmentIdentifyUser).toHaveBeenCalledWith(authedUser);
     expect(featureFlagInitialize).toHaveBeenCalledWith(authedUser);
     expect(intercomBoot).toHaveBeenCalled();
+    expect(intercomSetIdentity).toHaveBeenCalled();
     expect(dataDogSetUser).toHaveBeenCalledWith(authedUser);
   });
 });

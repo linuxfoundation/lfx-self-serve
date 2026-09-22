@@ -51,12 +51,22 @@ describe('IntercomService', () => {
     expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
   });
 
-  it('should boot with identified options when they are passed (GH-2290)', () => {
+  it('should boot with the staged identity when one was recorded (GH-2290)', () => {
     const identified = { app_id: 'test-app-id', user_id: 'alice', name: 'Alice Example', email: 'alice@example.com' };
+    service.setIdentity(identified);
 
-    service.openMessenger('test-app-id', undefined, identified);
+    service.openMessenger('test-app-id');
 
     expect(queuedCommands()).toEqual([['boot', identified], ['show']]);
+  });
+
+  it('should drop the staged identity on shutdown so the next boot is not the previous user', () => {
+    service.setIdentity({ app_id: 'test-app-id', user_id: 'alice', name: 'Alice Example', email: 'alice@example.com' });
+
+    service.shutdown();
+    service.openMessenger('test-app-id');
+
+    expect(queuedCommands()).toEqual([['boot', { app_id: 'test-app-id' }], ['show']]);
   });
 
   it('should not boot a second time when Intercom is already booted', () => {

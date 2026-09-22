@@ -14,6 +14,10 @@
          fonts.googleapis.com would be unused there; fonts.gstatic.com still serves the files. -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link rel="preconnect" href="https://kit.fontawesome.com" crossorigin />
+    <!-- Kept a plain stylesheet link on purpose: Angular's fonts.inline replaces it with the
+         fetched CSS at build time, so production serves no render-blocking request here and a
+         preload/onload swap would only add a swap-in flash. Only unoptimized builds (dev/local)
+         fetch it at runtime. -->
     <link
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&family=Roboto+Slab:wght@100..900&display=swap" />

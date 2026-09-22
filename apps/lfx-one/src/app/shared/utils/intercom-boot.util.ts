@@ -5,8 +5,12 @@ import { IntercomBootOptions, User } from '@lfx-one/shared/interfaces';
 
 /**
  * Identified Intercom boot options for a signed-in user, or null when the JWT / user id is missing.
- * Shared by AppComponent's startup boot and OpenIntercomDirective's on-demand boot so a skipped
- * startup (invite landing, impersonation) can still open support as the signed-in user (GH-2290).
+ * Only AppComponent calls this — it stages the result on IntercomService so the invite landing,
+ * which skips the startup boot, can still open support as the signed-in user (GH-2290).
+ *
+ * Never call it with an impersonated `user`: the impersonation override rewrites the identity
+ * claims for the target but leaves `http://lfx.dev/claims/intercom` as the operator's own JWT, so
+ * the result would pair the operator's JWT with the target's PII.
  */
 export function identifiedIntercomBootOptions(user: User, appId: string): IntercomBootOptions | null {
   const intercomJwt = user['http://lfx.dev/claims/intercom'];
