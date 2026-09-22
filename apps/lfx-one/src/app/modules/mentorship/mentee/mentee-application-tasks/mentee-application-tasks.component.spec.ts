@@ -2,8 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT, MOCK_MENTORSHIP_MENTEE_TASKS } from '@lfx-one/shared/constants';
-import { MentorshipMenteeOverviewApplicant, MentorshipMenteePhase, MentorshipMenteeTasksResponse } from '@lfx-one/shared/interfaces';
+import {
+  MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
+  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
+  MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY,
+  MOCK_MENTORSHIP_MENTEE_TASKS,
+} from '@lfx-one/shared/constants';
+import { MentorshipMenteeOverviewResponse, MentorshipMenteePhase, MentorshipMenteeTasksResponse } from '@lfx-one/shared/interfaces';
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { of, throwError } from 'rxjs';
@@ -20,15 +25,14 @@ describe('MenteeApplicationTasksComponent', () => {
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
-  const bootstrap = async (
-    phase: MentorshipMenteePhase,
-    overviewData: MentorshipMenteeOverviewApplicant = MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
-    tasksData: MentorshipMenteeTasksResponse = MOCK_MENTORSHIP_MENTEE_TASKS
-  ): Promise<void> => {
-    getMenteeOverview = vi.fn().mockReturnValue(of(overviewData));
-    getMenteeTasks = vi.fn().mockReturnValue(of(tasksData));
-    comingSoonNotify = vi.fn();
+  /** The overview response the component fetches to resolve its phase. */
+  const overviewForPhase = (phase: MentorshipMenteePhase): MentorshipMenteeOverviewResponse => {
+    if (phase === 'accepted') return MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED;
+    if (phase === 'empty') return MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY;
+    return MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT;
+  };
 
+  const createComponent = async (): Promise<void> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeApplicationTasksComponent],
@@ -41,14 +45,43 @@ describe('MenteeApplicationTasksComponent', () => {
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(MenteeApplicationTasksComponent);
     component = fixture.componentInstance;
-    component.phase.set(phase);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   };
 
+  /**
+   * Boot the component with a fetched overview that resolves the given phase —
+   * mirrors a deep-link / refresh where the component learns its phase itself.
+   */
+  const bootstrap = async (
+    phase: MentorshipMenteePhase,
+    overview: MentorshipMenteeOverviewResponse = overviewForPhase(phase),
+    tasksData: MentorshipMenteeTasksResponse = MOCK_MENTORSHIP_MENTEE_TASKS
+  ): Promise<void> => {
+    getMenteeOverview = vi.fn().mockReturnValue(of(overview));
+    getMenteeTasks = vi.fn().mockReturnValue(of(tasksData));
+    comingSoonNotify = vi.fn();
+    await createComponent();
+  };
+
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // ---- Phase resolution -----------------------------------------------------
+
+  it('resolves the accepted phase from its own overview fetch on a direct visit', async () => {
+    // No shell hint is set (deep-link / refresh) — the fetched overview drives the phase.
+    await bootstrap('accepted');
+    expect(component['resolvedPhase']()).toBe('accepted');
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
+  });
+
+  it('resolves the applicant phase from its own overview fetch on a direct visit', async () => {
+    await bootstrap('applicant');
+    expect(component['resolvedPhase']()).toBe('applicant');
+    expect(element().querySelector('[data-testid="mentee-tasks-applicant"]')).toBeTruthy();
   });
 
   // ---- Applicant phase ------------------------------------------------------
@@ -104,7 +137,7 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('fires Coming Soon toast on status change', async () => {
     await bootstrap('applicant');
-    component['onStatusChange']('task_1');
+    component['onStatusChange']('task_1', 'pending');
     expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
   });
 
@@ -119,30 +152,16 @@ describe('MenteeApplicationTasksComponent', () => {
     getMenteeTasks = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_TASKS));
     comingSoonNotify = vi.fn();
 
-    TestBed.resetTestingModule();
-    TestBed.configureTestingModule({
-      imports: [MenteeApplicationTasksComponent],
-      providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview, getMenteeTasks } },
-        { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
-      ],
-    });
+    await createComponent();
 
-    await TestBed.compileComponents();
-    fixture = TestBed.createComponent(MenteeApplicationTasksComponent);
-    component = fixture.componentInstance;
-    component.phase.set('applicant');
-    fixture.detectChanges();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(component['applicantError']()).toBeTruthy();
+    expect(component['overviewError']()).toBeTruthy();
+    expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
   });
 
-  it('retries applicant data on retry click', async () => {
+  it('retries the overview fetch on retry click', async () => {
     await bootstrap('applicant');
     const callsBefore = getMenteeOverview.mock.calls.length;
-    component['retryApplicant']();
+    component['retry']();
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -214,8 +233,21 @@ describe('MenteeApplicationTasksComponent', () => {
 
   it('fires Coming Soon toast on status change in accepted phase', async () => {
     await bootstrap('accepted');
-    component['onStatusChange']('mt_1');
+    component['onStatusChange']('mt_1', 'pending');
     expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
+  });
+
+  it('reverts the status dropdown to the original status after a change attempt', async () => {
+    await bootstrap('accepted');
+    const target = MOCK_MENTORSHIP_MENTEE_TASKS.data[0];
+    const form = component['acceptedForm']();
+    // Simulate the user picking a different value in the dropdown.
+    form.controls[target.id].setValue('in_progress');
+
+    component['onStatusChange'](target.id, target.status);
+
+    const expected = component['normaliseForDropdown'](target.status);
+    expect(form.controls[target.id].value).toBe(expected);
   });
 
   it('shows upload button for accepted tasks needing upload', async () => {
@@ -237,7 +269,7 @@ describe('MenteeApplicationTasksComponent', () => {
   // ---- Empty phase ----------------------------------------------------------
 
   it('renders empty state for empty phase', async () => {
-    await bootstrap('empty' as MentorshipMenteePhase);
+    await bootstrap('empty');
     const emptyState = element().querySelector('[data-testid="mentee-tasks-empty"]');
     expect(emptyState).toBeTruthy();
   });

@@ -291,12 +291,15 @@ export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTas
   { value: 'submitted', label: 'Submitted' },
 ];
 
-/** Filter chip options on the accepted-phase My Tasks tab. `null` value = show all. */
+/**
+ * Filter chip options on the accepted-phase My Tasks tab. `null` value = show all.
+ * Derived from `MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS` (the single source of truth
+ * for selectable statuses) plus a leading "All" chip, so new status options
+ * propagate here automatically.
+ */
 export const MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS: { value: MentorshipMenteeTaskStatus | null; label: string }[] = [
   { value: null, label: 'All' },
-  { value: 'pending', label: 'To Do' },
-  { value: 'in_progress', label: 'In Progress' },
-  { value: 'submitted', label: 'Submitted' },
+  ...MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
 ];
 
 export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'PREREQUISITE TASKS';
