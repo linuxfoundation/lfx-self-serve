@@ -68,11 +68,12 @@ export function selectHealthMetricsEngagementGroupPeriod(
 }
 
 /**
- * Sparkline series, oldest → current. Periods with no invited population stay `null` so the chart
- * breaks the line instead of drawing a dip to zero.
+ * Sparkline series, oldest → current. A period stays `null` when it had no invited population or
+ * too few meetings to rate, matching `formatHealthMetricsEngagementAttendance` — the chart breaks
+ * the line rather than plotting a point the table itself refuses to state.
  */
 export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagementGroupRow): (number | null)[] {
-  return row.periods.map((period) => period.attendancePct);
+  return row.periods.map((period) => (period.meetingsHeld < HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE ? null : period.attendancePct));
 }
 
 /**

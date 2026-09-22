@@ -166,4 +166,12 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
   it('builds the sparkline oldest to current, keeping a null period null', () => {
     expect(buildHealthMetricsEngagementGroupTrend(row)).toEqual([0.54, null, 0.59, 0.62]);
   });
+
+  // The table reads "No data" below the floor, so plotting the same period would contradict it.
+  it('nulls a period with too few meetings to rate', () => {
+    const periods = [...row.periods];
+    periods[3] = { ...periods[3], meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 };
+
+    expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  });
 });
