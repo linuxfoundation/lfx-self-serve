@@ -14,13 +14,17 @@ import {
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type {
-  OrgClaApprovalCriteriaKind,
-  OrgClaApprovalEntryInput,
-  OrgClaApprovalListUpdate,
-  OrgClaManagerAddRequest,
-  OrgClaPermissionCheckRequest,
-  OrgClaSignRequest,
+import {
+  ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
+  ORG_CLA_INVALIDATION_REASONS,
+  type OrgClaApprovalCriteriaKind,
+  type OrgClaApprovalEntryInput,
+  type OrgClaApprovalListUpdate,
+  type OrgClaInvalidateAcknowledgmentRequest,
+  type OrgClaInvalidationReason,
+  type OrgClaManagerAddRequest,
+  type OrgClaPermissionCheckRequest,
+  type OrgClaSignRequest,
 } from '@lfx-one/shared/interfaces';
 import {
   hasOrgClaManagerAddErrors,
@@ -43,6 +47,12 @@ import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
 const APPROVAL_CRITERIA_KINDS = new Set<string>(ORG_CLA_APPROVAL_CRITERIA.map((option) => option.kind));
+
+const INVALIDATION_REASONS = new Set<string>(ORG_CLA_INVALIDATION_REASONS);
+
+function isOrgClaInvalidationReason(value: unknown): value is OrgClaInvalidationReason {
+  return typeof value === 'string' && INVALIDATION_REASONS.has(value);
+}
 
 /**
  * Parses one side of the approval-list delta out of an untrusted body.
@@ -539,6 +549,107 @@ export class OrgClasController {
         has_next: !!list.nextKey,
       });
       res.json(list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments/:acknowledgmentSignatureId/invalidate
+  //
+  // Invalidates one acknowledgment. The route blocks impersonation ahead of the grant check, so
+  // there is no impersonation branch here. `reason` and `note` are both optional — the producer
+  // accepts an empty body — but a reason it does not define, or a note past its cap, is refused
+  // here rather than forwarded for the producer to reject with wording the tab cannot show.
+  public async invalidateAcknowledgment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'invalidate_org_cla_acknowledgment');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'invalidate_org_cla_acknowledgment' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'invalidate_org_cla_acknowledgment');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
+          operation: 'invalidate_org_cla_acknowledgment',
+        });
+      }
+
+      const acknowledgmentSignatureId = (req.params['acknowledgmentSignatureId'] ?? '').trim();
+      if (!acknowledgmentSignatureId) {
+        throw ServiceValidationError.forField('acknowledgmentSignatureId', 'acknowledgmentSignatureId path parameter is required', {
+          operation: 'invalidate_org_cla_acknowledgment',
+        });
+      }
+
+      // Same shape as the approval-list write's rejections: `{ message }` the tab shows verbatim,
+      // and the operation is closed as it answers so a refused write does not log a start that
+      // never finishes.
+      const reject = (message: string, reason: string): void => {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, rejected: reason });
+        res.status(400).json({ message });
+      };
+
+      const body = req.body as { reason?: unknown; note?: unknown } | undefined;
+
+      if (body?.reason !== undefined && !isOrgClaInvalidationReason(body.reason)) {
+        reject('Choose one of the offered reasons for invalidating this acknowledgment', 'invalid_reason');
+        return;
+      }
+
+      // Refused, not truncated. A note silently cut at the cap is recorded on a legal audit trail
+      // as something the CLA manager did not write.
+      if (body?.note !== undefined && typeof body.note !== 'string') {
+        reject('The note must be text', 'invalid_note');
+        return;
+      }
+      if (typeof body?.note === 'string' && body.note.trim().length > ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH) {
+        reject(`The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters`, 'note_too_long');
+        return;
+      }
+
+      const input: OrgClaInvalidateAcknowledgmentRequest = {
+        ...(isOrgClaInvalidationReason(body?.reason) ? { reason: body.reason } : {}),
+        ...(typeof body?.note === 'string' ? { note: body.note } : {}),
+      };
+
+      const result = await this.orgClaService.invalidateAcknowledgment(req, orgUid, signatureId, acknowledgmentSignatureId, input);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (result.outcome === 'not-found') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          found: false,
+        });
+        res.status(404).json({ message: 'Acknowledgment not found' });
+        return;
+      }
+
+      if (result.outcome === 'not-signed') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so it has no acknowledgments to invalidate' });
+        return;
+      }
+
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' });
+        return;
+      }
+
+      logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        // The reason is one of four fixed enum values, so it carries no contributor detail. The
+        // note is free text a CLA manager typed and stays out of the log entirely.
+        reason: input.reason ?? 'none',
+      });
+      res.json(result.result);
     } catch (error) {
       next(error);
     }
