@@ -235,7 +235,7 @@ export class PlanningTabComponent implements OnInit {
    * share that namespace.
    *
    * Keyed `foundation|event`, and NOT cleared on a foundation switch. Both halves are load-
-   * bearing, and I got each of them wrong once:
+   * bearing, and each was wrong in an earlier revision:
    *
    *   - keyed by EVENT ALONE, a create under portal A withheld Create for that event name under
    *     every other portal, above a false "Created in HubSpot" status. The re-check reads the new
@@ -356,7 +356,7 @@ export class PlanningTabComponent implements OnInit {
    * HubSpot reporting more matches than it returned AND the cases where completeness is simply
    * unknown — an absent `total`, or one that contradicts the rows. All fail CLOSED.
    *
-   * I renamed this to `hsHubSpotTruncated` once, on the belief that `capped` meant truncation on
+   * An earlier revision renamed this to `hsHubSpotTruncated`, on the belief that `capped` meant truncation on
    * the wire. It does not, and the rename made the signal name assert more than the response
    * establishes. Reverted; the status line it feeds must not claim truncation either.
    *

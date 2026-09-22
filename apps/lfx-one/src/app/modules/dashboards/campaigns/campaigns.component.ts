@@ -1399,7 +1399,7 @@ export class CampaignsComponent {
     //
     // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
     // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
-    // and I wrongly said otherwise when adding this check. A model copying the URL and adding or
+    // and an earlier version of this comment said otherwise. A model copying the URL and adding or
     // dropping a slash addresses the SAME page, so refusing it would silently drop the button
     // for a generation that followed its instructions -- the over-denial this PR keeps having
     // to guard against.
@@ -2350,7 +2350,7 @@ export class CampaignsComponent {
     // Cancelled HERE rather than only in the stage-change branch below: a type change mapping to
     // the SAME stage never reaches that branch. See `cancelStagingPoll` for why the bump alone
     // is not enough.
-    // Only an IN-FLIGHT poll. Making this unconditional when I consolidated the helper also
+    // Only an IN-FLIGHT poll. Making this unconditional when the helper was consolidated also
     // wiped a TERMINAL banner: after a successful stage, changing type erased "Draft created"
     // -- the operator's confirmation that the send they just made exists. A finished stage has
     // nothing to abandon, so there is nothing to cancel.
@@ -4152,7 +4152,7 @@ export class CampaignsComponent {
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
     // NOT incremented — a save does not discard what the page owns. Captured so the response can
-    // tell "nothing was discarded while I was in flight" from "a sibling save queued behind me".
+    // tell "nothing was discarded during this request" from "a sibling save queued behind it".
     const ownershipAtSend = this.ownershipGeneration;
     // Read now, not when the chain reaches this link: the foundation selected when the user hit
     // Proceed is the one the brief belongs to. A switch while the save is queued bumps the

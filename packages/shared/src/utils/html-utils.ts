@@ -308,7 +308,7 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * eleven defects across them: `<image>`, `<input type=image>`, unquoted `background=`/`style=`,
  * spliced tags, a `dropContent` tag whose attribute merely ended in `/`, a mismatched close
  * tag, and twice a bug that DELETED ordinary copy (a raw `<` truncating the body, entities
- * double-escaped). None of those exist in a real parser, and each fix I wrote created the next
+ * double-escaped). None of those exist in a real parser, and each fix created the next
  * finding. Tag and attribute allow-lists still express the policy; the parsing is no longer ours.
  */
 export function stripResourceLoadingHtml(html: string | null | undefined): string {

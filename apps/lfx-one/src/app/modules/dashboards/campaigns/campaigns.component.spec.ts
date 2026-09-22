@@ -3011,14 +3011,14 @@ describe('CampaignsComponent — email delivery channel', () => {
      * A reset landing during the CREATE await must stop the poll and the state writes.
      *
      * LIMITATION, same as the sibling test below: this pins the OUTCOME, not the guard. Removing
-     * the post-create `isCurrent()` check leaves it green -- I instrumented the branch and
+     * the post-create `isCurrent()` check leaves it green -- instrumenting the branch showed
      * `isCurrent()` reads `true` throughout, because the reset lands before the generation is
      * captured rather than inside the await. Producing a reset that lands strictly BETWEEN the
      * capture and the create's resolution needs a seam this harness does not have.
      *
      * The guard is kept because the window is real in the browser: the request cannot be recalled
      * once sent, but the poll and the state writes after it can be, and those are what an
-     * operator sees. I would rather label the test than report coverage I could not demonstrate.
+     * operator sees. Labelling the test is better than reporting coverage it does not demonstrate.
      */
     it('abandons the staging result when the brief resets during the create', async () => {
       selectEmail();
@@ -5165,6 +5165,29 @@ describe('CampaignsComponent — email delivery channel', () => {
     // let the one-sided version through: the pixel disappeared from the operator's view while
     // still going out in the email.
     expect(internals().abTestBodyHtmlBForSend()).toBe(preview);
+  });
+
+  it('names the hero image host, and falls back to empty for an unusable url', () => {
+    selectEmail();
+    // `emailHeroImageUrl` is gated on `emailBodyIsStageable`, so the copy has to be present --
+    // the hero is only named when it will actually be staged.
+    internals().emailCopy.set({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: '', ctaUrl: '' } as never);
+    internals().emailBriefOutput.set({
+      eventDetails: { heroImageUrl: 'https://cdn.events.example.org/banner.png' },
+    } as never);
+    fixture.detectChanges();
+    expect(internals().emailHeroImageHost()).toBe('cdn.events.example.org');
+
+    // The catch branch, which is REACHED rather than defensive: `new URL('')` throws, and a
+    // brief with no usable heroImageUrl is the ordinary case. Untested, this could return
+    // `undefined` and the preview would read "Event banner from undefined".
+    internals().emailBriefOutput.set({ eventDetails: { heroImageUrl: '' } } as never);
+    fixture.detectChanges();
+    expect(internals().emailHeroImageHost()).toBe('');
+
+    internals().emailBriefOutput.set({ eventDetails: { heroImageUrl: 'not a url' } } as never);
+    fixture.detectChanges();
+    expect(internals().emailHeroImageHost()).toBe('');
   });
 
   it('refuses to stage a variant B body that is only a tracking pixel', () => {
