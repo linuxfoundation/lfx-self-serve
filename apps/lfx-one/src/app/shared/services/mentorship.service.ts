@@ -27,7 +27,7 @@ import {
   MentorshipProgramsResponse,
   MentorshipProgramStatus,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, Observable, of, shareReplay, take, throwError } from 'rxjs';
 
 /**
  * Talks to the LFX One BFF's `/api/mentorship/*` endpoints.
@@ -40,6 +40,19 @@ import { catchError, Observable, of, take, throwError } from 'rxjs';
 @Injectable({ providedIn: 'root' })
 export class MentorshipService {
   private readonly http = inject(HttpClient);
+
+  /**
+   * Session cache for the mentee overview/tasks reads. The Overview and the
+   * "My Application Tasks" / "My Tasks" tabs read the same unparameterized
+   * payload, so without this a plain overview↔tasks tab switch re-fetched the
+   * whole response every time. `shareReplay({ refCount: false })` keeps the
+   * first successful response and replays it to later subscribers; a failure
+   * clears the slot so the next read (e.g. a retry) fetches fresh. Phase-scoped
+   * overview reads (the dev phase switcher) bypass the cache. Add explicit
+   * invalidation here once real write endpoints land.
+   */
+  private menteeOverview$: Observable<MentorshipMenteeOverviewResponse> | null = null;
+  private menteeTasks$: Observable<MentorshipMenteeTasksResponse> | null = null;
 
   public getPrograms(params?: { search?: string; status?: MentorshipProgramStatus; offset?: number; limit?: number }): Observable<MentorshipProgramsResponse> {
     let httpParams = new HttpParams();
@@ -114,15 +127,31 @@ export class MentorshipService {
   }
 
   public getMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
-    let params = new HttpParams();
-    if (phase) params = params.set('phase', phase);
-    return this.http
-      .get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params })
-      .pipe(catchError(this.rethrowError('getMenteeOverview')));
+    // Phase-scoped reads (dev phase switcher) are one-off and must never be cached.
+    if (phase) return this.fetchMenteeOverview(phase);
+    if (!this.menteeOverview$) {
+      this.menteeOverview$ = this.fetchMenteeOverview().pipe(
+        catchError((err: unknown) => {
+          this.menteeOverview$ = null; // don't cache failures — the next read retries
+          return throwError(() => err);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.menteeOverview$;
   }
 
   public getMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
-    return this.http.get<MentorshipMenteeTasksResponse>('/api/mentorship/mentee/tasks').pipe(catchError(this.rethrowError('getMenteeTasks')));
+    if (!this.menteeTasks$) {
+      this.menteeTasks$ = this.fetchMenteeTasks().pipe(
+        catchError((err: unknown) => {
+          this.menteeTasks$ = null; // don't cache failures — the next read retries
+          return throwError(() => err);
+        }),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.menteeTasks$;
   }
 
   public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {
@@ -138,6 +167,18 @@ export class MentorshipService {
         return throwError(() => err);
       })
     );
+  }
+
+  private fetchMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {
+    let params = new HttpParams();
+    if (phase) params = params.set('phase', phase);
+    return this.http
+      .get<MentorshipMenteeOverviewResponse>('/api/mentorship/mentee/overview', { params })
+      .pipe(catchError(this.rethrowError('getMenteeOverview')));
+  }
+
+  private fetchMenteeTasks(): Observable<MentorshipMenteeTasksResponse> {
+    return this.http.get<MentorshipMenteeTasksResponse>('/api/mentorship/mentee/tasks').pipe(catchError(this.rethrowError('getMenteeTasks')));
   }
 
   /**
