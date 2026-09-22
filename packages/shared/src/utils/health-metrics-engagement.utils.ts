@@ -76,15 +76,12 @@ export function buildHealthMetricsEngagementGroupTrend(row: HealthMetricsEngagem
 }
 
 /**
- * Sub-nav badges per the design's `counts()`. Each half of a note is dropped at zero, and a section
- * whose total has not resolved renders no badge at all.
+ * Sub-nav badges per the design's `counts()`. A note is dropped at zero, and a section whose total
+ * has not resolved renders no badge at all.
  */
 export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEngagementSubNavCounts): HealthMetricsEngagementSubNavItem[] {
   const notes: Partial<Record<HealthMetricsEngagementSectionKey, string>> = {
-    committees: joinEngagementNoteParts([
-      counts.dormantGroups > 0 ? `${counts.dormantGroups} dormant` : '',
-      counts.lowAttendanceGroups > 0 ? `${counts.lowAttendanceGroups} below 50%` : '',
-    ]),
+    committees: counts.dormantGroups > 0 ? `${counts.dormantGroups} dormant` : '',
     orgs: counts.lapsedOrgs > 0 ? `${counts.lapsedOrgs} inactive ${HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS} days` : '',
     reps: counts.neverAttendedReps > 0 ? `${counts.neverAttendedReps} never attended` : '',
   };
@@ -104,8 +101,4 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     count: totals[section.key],
     note: totals[section.key] === null ? '' : (notes[section.key] ?? ''),
   }));
-}
-
-function joinEngagementNoteParts(parts: string[]): string {
-  return parts.filter(Boolean).join(' · ');
 }

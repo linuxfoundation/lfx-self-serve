@@ -147,12 +147,12 @@ describe('HealthMetricsEngagementComponent', () => {
   it('badges Group attendance from the counts that section reports', () => {
     const child = fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
 
-    child.countsChange.emit({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+    child.countsChange.emit({ groups: 34, dormantGroups: 3 });
     fixture.detectChanges();
 
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     expect(item.textContent).toContain('34');
-    expect(item.textContent).toContain('3 dormant · 5 below 50%');
+    expect(item.textContent).toContain('3 dormant');
   });
 
   it('bounds the scrolling pane to what is left of the viewport, so only it scrolls', () => {

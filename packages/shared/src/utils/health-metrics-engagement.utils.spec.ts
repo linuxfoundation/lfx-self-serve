@@ -27,7 +27,6 @@ function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): H
   return {
     groups: 12,
     dormantGroups: 0,
-    lowAttendanceGroups: 0,
     orgs: 40,
     lapsedOrgs: 0,
     reps: 88,
@@ -104,12 +103,9 @@ describe('buildHealthMetricsEngagementSubNavItems', () => {
     expect(items.find((item) => item.key === 'trend')?.count).toBeNull();
   });
 
-  it('joins both halves of the group note, and drops either half at zero', () => {
-    const both = buildHealthMetricsEngagementSubNavItems(counts({ dormantGroups: 2, lowAttendanceGroups: 5 }));
-    expect(both.find((item) => item.key === 'committees')?.note).toBe('2 dormant · 5 below 50%');
-
-    const dormantOnly = buildHealthMetricsEngagementSubNavItems(counts({ dormantGroups: 2 }));
-    expect(dormantOnly.find((item) => item.key === 'committees')?.note).toBe('2 dormant');
+  it('spells the dormant-group note, and drops it at zero', () => {
+    const dormant = buildHealthMetricsEngagementSubNavItems(counts({ dormantGroups: 2 }));
+    expect(dormant.find((item) => item.key === 'committees')?.note).toBe('2 dormant');
 
     const neither = buildHealthMetricsEngagementSubNavItems(counts());
     expect(neither.find((item) => item.key === 'committees')?.note).toBe('');

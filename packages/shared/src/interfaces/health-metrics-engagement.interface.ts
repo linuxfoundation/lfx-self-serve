@@ -45,7 +45,7 @@ export interface HealthMetricsEngagementSubNavItem {
   label: string;
   /** `null` for sections the design gives no badge (`participation`, `trend`). */
   count: number | null;
-  /** e.g. `3 dormant · 5 below 50%`; empty when nothing qualifies. */
+  /** e.g. `3 dormant`; empty when nothing qualifies. */
   note: string;
 }
 
@@ -56,7 +56,6 @@ export interface HealthMetricsEngagementSubNavItem {
 export interface HealthMetricsEngagementSubNavCounts {
   groups: number | null;
   dormantGroups: number;
-  lowAttendanceGroups: number;
   orgs: number | null;
   lapsedOrgs: number;
   reps: number | null;
@@ -103,7 +102,6 @@ export interface HealthMetricsEngagementGroupRowView {
 export interface HealthMetricsEngagementGroupCounts {
   groups: number;
   dormantGroups: number;
-  lowAttendanceGroups: number;
 }
 
 /** One page of Group attendance, already sorted dormant-first by the view's `SORT_RANK_<period>`. */

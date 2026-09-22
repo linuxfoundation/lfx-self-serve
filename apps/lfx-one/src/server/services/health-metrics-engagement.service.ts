@@ -4,8 +4,6 @@
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
-  HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
-  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
 } from '@lfx-one/shared/constants';
 import type {
@@ -49,7 +47,6 @@ interface GroupAttendanceRow {
   LAST_MET_DATE: Date | string | null;
   TOTAL_RECORDS: number | null;
   DORMANT_GROUPS: number | null;
-  LOW_ATTENDANCE_GROUPS: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -71,7 +68,6 @@ export class HealthMetricsEngagementService {
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
     }
 
-    // Scope binds come first because the scoped CTE below is the first `?` in the statement.
     const binds: Bind[] = [query.foundationSlug];
 
     let projectPredicate = '';
@@ -88,8 +84,6 @@ export class HealthMetricsEngagementService {
       typePredicate = `AND group_type_label IN (${typeLabels.map(() => '?').join(', ')})`;
       binds.push(...typeLabels);
     }
-
-    binds.push(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD, HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE);
 
     const size = clampInteger(query.size, 1, 100, 25);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
@@ -109,16 +103,8 @@ export class HealthMetricsEngagementService {
       totals AS (
         SELECT
           COUNT(*) AS total_records,
-          SUM(CASE WHEN is_dormant_${suffix} THEN 1 ELSE 0 END) AS dormant_groups,
-          SUM(
-            CASE
-              WHEN NOT COALESCE(is_dormant_${suffix}, FALSE)
-                AND attendance_pct_${suffix} IS NOT NULL
-                AND attendance_pct_${suffix} < ?
-                AND COALESCE(meetings_count_${suffix}, 0) >= ?
-              THEN 1 ELSE 0
-            END
-          ) AS low_attendance_groups
+          -- The view's own dormancy flag. Any further metric definition belongs in dbt, not here.
+          SUM(CASE WHEN is_dormant_${suffix} THEN 1 ELSE 0 END) AS dormant_groups
         FROM scoped
       ),
       page AS (
@@ -174,7 +160,6 @@ export class HealthMetricsEngagementService {
       counts: {
         groups: Number(first?.TOTAL_RECORDS ?? 0),
         dormantGroups: Number(first?.DORMANT_GROUPS ?? 0),
-        lowAttendanceGroups: Number(first?.LOW_ATTENDANCE_GROUPS ?? 0),
       },
     };
   }

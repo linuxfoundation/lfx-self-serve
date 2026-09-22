@@ -11,7 +11,7 @@ import type { HealthMetricsEngagementSubNavItem } from '@lfx-one/shared/interfac
 
 const ITEMS: HealthMetricsEngagementSubNavItem[] = [
   { key: 'participation', label: 'Meeting participation', count: null, note: '' },
-  { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant · 5 below 50%' },
+  { key: 'committees', label: 'Group attendance', count: 12, note: '2 dormant' },
   { key: 'orgs', label: 'Organization participation', count: 40, note: '' },
 ];
 
@@ -38,7 +38,7 @@ describe('EngagementSubNavComponent', () => {
   it('shows a count and note only where the item carries them', () => {
     const committees = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     expect(committees.textContent).toContain('12');
-    expect(committees.textContent).toContain('2 dormant · 5 below 50%');
+    expect(committees.textContent).toContain('2 dormant');
 
     // A null count is an unresolved total, not a zero — the badge is omitted entirely.
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-participation"]').textContent).not.toContain('0');

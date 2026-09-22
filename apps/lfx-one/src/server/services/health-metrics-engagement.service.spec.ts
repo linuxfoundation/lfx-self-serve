@@ -46,7 +46,6 @@ function warehouseRow(overrides: Record<string, unknown> = {}) {
     LAST_MET_DATE: new Date('2026-08-14T00:00:00.000Z'),
     TOTAL_RECORDS: 34,
     DORMANT_GROUPS: 3,
-    LOW_ATTENDANCE_GROUPS: 5,
     MEETINGS_COUNT_3RD_LAST_COMPLETED_YEAR: 10,
     INVITED_COUNT_3RD_LAST_COMPLETED_YEAR: 100,
     ATTENDED_COUNT_3RD_LAST_COMPLETED_YEAR: 54,
@@ -114,7 +113,7 @@ describe('HealthMetricsEngagementService', () => {
     const response = await service.getGroupAttendance(req, query());
 
     expect(response.totalRecords).toBe(34);
-    expect(response.counts).toEqual({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+    expect(response.counts).toEqual({ groups: 34, dormantGroups: 3 });
   });
 
   it('reports zeroed counts for an empty page instead of reading an absent first row', async () => {
@@ -129,7 +128,7 @@ describe('HealthMetricsEngagementService', () => {
   // reports the real totals instead of collapsing the section into its empty state.
   it('keeps the totals for a page past the end of the filtered set', async () => {
     const totalsOnly = Object.fromEntries(
-      Object.entries(warehouseRow()).map(([column, value]) => [column, ['TOTAL_RECORDS', 'DORMANT_GROUPS', 'LOW_ATTENDANCE_GROUPS'].includes(column) ? value : null])
+      Object.entries(warehouseRow()).map(([column, value]) => [column, ['TOTAL_RECORDS', 'DORMANT_GROUPS'].includes(column) ? value : null])
     );
     execute.mockResolvedValue({ rows: [totalsOnly] });
 
@@ -137,7 +136,7 @@ describe('HealthMetricsEngagementService', () => {
 
     expect(response.rows).toEqual([]);
     expect(response.totalRecords).toBe(34);
-    expect(response.counts).toEqual({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+    expect(response.counts).toEqual({ groups: 34, dormantGroups: 3 });
   });
 
   it('selects, ranks and aggregates on the requested period suffix', async () => {
@@ -149,24 +148,22 @@ describe('HealthMetricsEngagementService', () => {
     // Totals come from an aggregate over the scoped set joined onto the page, never a window over it.
     expect(sql).toContain('LEFT JOIN page ON TRUE');
     expect(sql).not.toContain('OVER()');
-    expect(sql).toContain('attendance_pct_prev_completed_year <');
     // Every period's columns ship regardless of the selected one — the sparkline spans all four.
     expect(sql).toContain('attendance_pct_ytd');
     expect(sql).toContain('attendance_pct_3rd_last_completed_year');
   });
 
-  it('binds the scope ahead of the low-attendance thresholds, and drops the project predicate in all-projects scope', async () => {
+  it('binds only the scope, and drops the project predicate in all-projects scope', async () => {
     await service.getGroupAttendance(req, query());
 
-    // Bind order follows the statement: the scoped CTE's predicates, then the totals thresholds.
-    expect(lastBinds()).toEqual(['acme', 0.5, 3]);
+    expect(lastBinds()).toEqual(['acme']);
     expect(lastSql()).not.toContain('project_slug = ?');
   });
 
   it('binds a project slug and every type label of the selected cut', async () => {
     await service.getGroupAttendance(req, query({ projectSlug: 'acme-core', groupType: 'wg' }));
 
-    expect(lastBinds()).toEqual(['acme', 'acme-core', 'Working Group', 0.5, 3]);
+    expect(lastBinds()).toEqual(['acme', 'acme-core', 'Working Group']);
     expect(lastSql()).toContain('AND project_slug = ? AND group_type_label IN (?)');
   });
 

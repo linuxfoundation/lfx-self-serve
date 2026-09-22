@@ -35,7 +35,7 @@ function groupRow(overrides: Partial<HealthMetricsEngagementGroupRow> = {}): Hea
 }
 
 function response(overrides: Partial<HealthMetricsEngagementGroupAttendance> = {}): HealthMetricsEngagementGroupAttendance {
-  return { rows: [groupRow()], totalRecords: 1, counts: { groups: 1, dormantGroups: 0, lowAttendanceGroups: 0 }, ...overrides };
+  return { rows: [groupRow()], totalRecords: 1, counts: { groups: 1, dormantGroups: 0 }, ...overrides };
 }
 
 describe('EngagementGroupAttendanceComponent', () => {
@@ -86,9 +86,9 @@ describe('EngagementGroupAttendanceComponent', () => {
   // The counts cover the whole filtered set, so they must come from the response, not the page rows.
   it('emits the whole-set counts for the sub-nav badges, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
-    await render(response({ counts: { groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 } }), (counts) => emitted.push(counts));
+    await render(response({ counts: { groups: 34, dormantGroups: 3 } }), (counts) => emitted.push(counts));
 
-    expect(emitted.at(-1)).toEqual({ groups: 34, dormantGroups: 3, lowAttendanceGroups: 5 });
+    expect(emitted.at(-1)).toEqual({ groups: 34, dormantGroups: 3 });
 
     fixture.componentInstance['loading'].set(true);
     fixture.detectChanges();
@@ -138,7 +138,7 @@ describe('EngagementGroupAttendanceComponent', () => {
       committeeId: 'c-2',
       periods: [{ range: 'YTD', meetingsHeld: 0, invitedCount: 0, attendedCount: 0, attendancePct: null, dormant: true }],
     });
-    await render(response({ rows: [dormant], counts: { groups: 1, dormantGroups: 1, lowAttendanceGroups: 0 } }));
+    await render(response({ rows: [dormant], counts: { groups: 1, dormantGroups: 1 } }));
 
     const row = fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-2"]');
     expect(row.textContent).toContain('No meetings this period');
@@ -180,7 +180,7 @@ describe('EngagementGroupAttendanceComponent', () => {
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
-    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 } }));
+    await render(response({ rows: [], totalRecords: 0, counts: { groups: 0, dormantGroups: 0 } }));
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).not.toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).toBeNull();

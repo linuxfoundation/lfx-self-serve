@@ -153,7 +153,7 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
   rows: [],
   totalRecords: 0,
-  counts: { groups: 0, dormantGroups: 0, lowAttendanceGroups: 0 },
+  counts: { groups: 0, dormantGroups: 0 },
 };
 
 /** Inline sparkline viewBox, in px — a 60px trend cell is the design's column width. */
