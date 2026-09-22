@@ -119,14 +119,16 @@ export class HealthMetricsEngagementService {
           sort_rank_${suffix} AS sort_rank
         FROM scoped
         -- committee_id breaks the remaining tie so paging cannot repeat or skip same-named groups.
-        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC, committee_id ASC
+        -- Both are nullable, and NULLS LAST pins their placement: the session's DEFAULT_NULL_ORDERING
+        -- would otherwise let a pooled connection drift a null-named group between pages.
+        ORDER BY sort_rank_${suffix} ASC NULLS LAST, committee_name ASC NULLS LAST, committee_id ASC NULLS LAST
         LIMIT ${size} OFFSET ${offset}
       )
       -- ON TRUE keeps the single totals row when the page selected nothing.
       SELECT totals.*, page.*
       FROM totals
       LEFT JOIN page ON TRUE
-      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC, page.committee_id ASC
+      ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST
     `;
 
     let result;
