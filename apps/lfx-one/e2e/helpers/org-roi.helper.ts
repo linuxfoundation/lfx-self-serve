@@ -252,14 +252,15 @@ export function orgRoiProjectDetailUrl(slug: string): string {
 }
 
 /**
- * An Org Lens address for `page/...rest`, legacy (`/org/{page}`) or org-addressed (`/org/{segment}/{page}`).
- * Spec 050 rewrites a legacy address to the selected organization's form once the selection is written
- * or confirmed, so whether a link or URL carries the segment depends on when the default selection
- * lands, not on the feature under test. Assert the destination, not the addressing mode.
+ * The fixture organization's Org Lens address for `path`, legacy (`/org/{path}`) or org-addressed
+ * (`/org/{MOCK_ACCOUNT_ID}/{path}`). Spec 050 rewrites a legacy address to the selected organization's
+ * form once the default selection lands, so which of the two a link or URL carries depends on that
+ * timing, not on the feature under test. Only those two forms match — never another organization's
+ * address and never a different page.
  */
 export function orgLensAddressPattern(...path: string[]): RegExp {
-  const escaped = path.map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('/');
-  return new RegExp(`/org/(?:[^/]+/)?${escaped}$`);
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`/org/(?:${escape(MOCK_ACCOUNT_ID)}/)?${path.map(escape).join('/')}$`);
 }
 
 /**

@@ -33,6 +33,8 @@ interface Harness {
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
   listGeneration: WritableSignal<number>;
+  /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
+  landFirstPage: () => void;
   /** What the real first-page pipeline does on a fetch: bump the generation and raise `loading`. */
   startListFetch: () => number;
 }
@@ -61,6 +63,11 @@ function setup(): Harness {
     listLoading.set(true);
     return listGeneration();
   };
+  const firstPageLanded = signal(0);
+  const landFirstPage = (): void => {
+    firstPageLanded.set(listGeneration());
+    listLoading.set(false);
+  };
   const refreshList: Mock<(uid?: string | null) => number> = vi.fn(() => listGeneration());
 
   TestBed.configureTestingModule({
@@ -82,7 +89,10 @@ function setup(): Harness {
       },
       { provide: PersonaService, useValue: { personaLoaded } },
       { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, getStoredUid: () => 'cookie-uid' } },
-      { provide: OrgNavigationService, useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, refreshList } },
+      {
+        provide: OrgNavigationService,
+        useValue: { loaded: listLoaded, loading: listLoading, generation: listGeneration, firstPageLandedGeneration: firstPageLanded, refreshList },
+      },
     ],
   });
 
@@ -104,6 +114,7 @@ function setup(): Harness {
     refreshList,
     listGeneration,
     startListFetch,
+    landFirstPage,
   };
 }
 
@@ -272,7 +283,7 @@ describe('OrgLensEmptyStateService.pageState', () => {
     // Handoff: grants settled, list fetch started inside the callback — no dip to false.
     expect(h.service.retrying()).toBe(true);
 
-    h.listLoading.set(false);
+    h.landFirstPage();
     expect(h.service.retrying()).toBe(false);
   });
 
@@ -283,14 +294,26 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.retrying()).toBe(false);
   });
 
-  // After Retry's own fetch settles, the next switcher search is a new generation — Retry stays idle.
-  it('retrying stays false for a list fetch after a completed retry', () => {
+  // After Retry's own first page lands, a scroll reuses the generation (next pages never bump it) and
+  // raises `loading` again — that is the viewer paging, not Retry, so Retry stays idle.
+  it('retrying stays false while the viewer pages the list after a completed retry', () => {
     h.refreshList.mockImplementation(() => h.startListFetch());
     h.listLoaded.set(true);
 
     h.service.retry();
-    h.listLoading.set(false);
+    h.landFirstPage();
     expect(h.service.retrying()).toBe(false);
+
+    h.listLoading.set(true);
+    expect(h.service.retrying()).toBe(false);
+  });
+
+  it('retrying stays false for a new list fetch after a completed retry', () => {
+    h.refreshList.mockImplementation(() => h.startListFetch());
+    h.listLoaded.set(true);
+
+    h.service.retry();
+    h.landFirstPage();
 
     h.startListFetch();
     expect(h.service.retrying()).toBe(false);

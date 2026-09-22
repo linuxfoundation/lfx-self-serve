@@ -44,8 +44,8 @@ export class OrgLensEmptyStateService {
    * Generation of the list fetch the last `retry()` started, or `null` before any. `orgNavigation.loading`
    * is one flag for every list fetch — bootstrap, switcher search, next page — so on its own it would
    * mark Retry busy while the viewer merely types in the switcher. Matching the active generation
-   * narrows it to Retry's own fetch: a later search or reset bumps the generation and releases it, and
-   * there is no latch to clear, so nothing can leave Retry stuck busy.
+   * narrows it to Retry's own first page: a later search or reset bumps the generation and releases it,
+   * a scroll after that page landed does not re-arm it, and there is no latch to clear.
    */
   private readonly retryGeneration = signal<number | null>(null);
 
@@ -100,9 +100,16 @@ export class OrgLensEmptyStateService {
    * only the list refresh Retry itself started, since `orgNavigation.loading()` also covers switcher
    * search and pagination.
    */
-  public readonly retrying: Signal<boolean> = computed(
-    () => this.roleGrants.loading() || (this.orgNavigation.loading() && this.retryGeneration() === this.orgNavigation.generation())
-  );
+  public readonly retrying: Signal<boolean> = computed(() => {
+    if (this.roleGrants.loading()) {
+      return true;
+    }
+    const retryGeneration = this.retryGeneration();
+    // Busy only while Retry's own first page is the active fetch and has not landed: a later search
+    // or reset moves the generation on, and scrolling after it landed reuses the generation but not
+    // the first page.
+    return retryGeneration !== null && retryGeneration === this.orgNavigation.generation() && this.orgNavigation.firstPageLandedGeneration() < retryGeneration;
+  });
 
   /**
    * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the

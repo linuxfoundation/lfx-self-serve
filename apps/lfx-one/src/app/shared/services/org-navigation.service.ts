@@ -56,6 +56,8 @@ export class OrgNavigationService {
   /** The one default still waiting for the grant set to settle (`whenGrantsSettled`); cleared when it fires, when a later default supersedes it, or when `resetAndReload` starts a new page. */
   private pendingDefaultSelectionSub: Subscription | null = null;
 
+  private readonly firstPageLandedGenerationInternal = signal<number>(0);
+
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
 
@@ -66,6 +68,12 @@ export class OrgNavigationService {
   public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
   /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
   public readonly generation: Signal<number> = this.state.generation.asReadonly();
+  /**
+   * Generation of the last first page that landed (success or the empty page a failed reset emits).
+   * Next-page fetches reuse the active generation, so `loading` alone cannot tell "the first page is
+   * still in flight" from "the viewer is scrolling"; this can.
+   */
+  public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -203,6 +211,9 @@ export class OrgNavigationService {
           nextPageToken.set(page.nextPageToken);
           upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
+          if (page.reset) {
+            this.firstPageLandedGenerationInternal.set(generation());
+          }
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }

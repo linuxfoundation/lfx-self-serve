@@ -63,7 +63,15 @@ function setup(): Harness {
       OrgLensEmptyStateService,
       {
         provide: OrgNavigationService,
-        useValue: { items, loaded: listLoaded, loading: signal(false), generation: signal(0), upstreamFailed: listFailed, refreshList },
+        useValue: {
+          items,
+          loaded: listLoaded,
+          loading: signal(false),
+          generation: signal(0),
+          firstPageLandedGeneration: signal(0),
+          upstreamFailed: listFailed,
+          refreshList,
+        },
       },
       { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg } },
       {

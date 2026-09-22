@@ -491,6 +491,19 @@ describe('OrgNavigationService default selection', () => {
 
     // The empty-state Retry keys its busy state on this: the generation returned is the one the
     // started fetch carries, and a later reset moves past it.
+    it('records a first page landing but not a next page', () => {
+      const started = service.refreshList(UID_B);
+      expect(service.firstPageLandedGeneration()).toBeLessThan(started);
+
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush({ items: [item(UID_B, 'Beta')], next_page_token: 'next', upstream_failed: false });
+      expect(service.firstPageLandedGeneration()).toBe(started);
+
+      service.loadNextPage();
+      expect(service.generation()).toBe(started);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush(page([item(UID_A, 'Acme')]));
+      expect(service.firstPageLandedGeneration()).toBe(started);
+    });
+
     it('returns the generation of the fetch it started, which a later reset supersedes', () => {
       const started = service.refreshList(UID_B);
       expect(service.generation()).toBe(started);
