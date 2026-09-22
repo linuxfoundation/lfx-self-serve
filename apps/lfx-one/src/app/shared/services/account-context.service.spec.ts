@@ -4,7 +4,7 @@
 import { HttpClient } from '@angular/common/http';
 import { signal } from '@angular/core';
 import { TestBed } from '@angular/core/testing';
-import { Account, OrgCanonicalRecord } from '@lfx-one/shared/interfaces';
+import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { of } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -183,5 +183,128 @@ describe('AccountContextService — address-adopted selection', () => {
 
     service.initializeUserOrganizations([]);
     expect(service.selectedAccount().uid).toBeUndefined();
+  });
+
+  // lfx-self-serve#2570 (prod): the org-items default (or the guard's already-selected shortcut) pins
+  // the current selection in place. A persona refresh with no seeds — what a grant-only staff viewer
+  // gets — then leaves it alone instead of resetting an addressed page to the placeholder mid-render.
+  describe('pinSelection', () => {
+    it('keeps the current selection through an empty re-seed, without rebuilding it', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+
+      expect(service.isAddressedSelection()).toBe(true);
+      service.initializeUserOrganizations([]);
+      expect(service.selectedAccount()).toEqual(addressedB);
+    });
+
+    it('keeps the current selection through a re-seed that does not list it', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+
+      service.initializeUserOrganizations([seedA]);
+      expect(service.selectedAccount()).toEqual(addressedB);
+      expect(service.availableAccounts()).toEqual([seedA]);
+    });
+
+    it('does nothing on the placeholder, so seeding still selects normally', () => {
+      service.pinSelection('default');
+      expect(service.isAddressedSelection()).toBe(false);
+
+      service.initializeUserOrganizations([seedA]);
+      expect(service.selectedAccount()).toEqual(seedA);
+    });
+
+    it('is released when the user switches, like an adopted selection', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.setAccount(seedA);
+
+      expect(service.isAddressedSelection()).toBe(false);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    // The two kinds: only an address pin is honoured by an org-items reload (`isAdoptedFromAddress`);
+    // both hold against the persona re-seed (`isAddressedSelection`).
+    it('a default pin is not an address pin', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+
+      expect(service.isAddressedSelection()).toBe(true);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    it('an address pin from the guard shortcut counts like a resolver adoption', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('address');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('adoptFromAddress is an address pin', () => {
+      service.adoptFromAddress(addressedB);
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('a later default pin does not downgrade an address pin on the same organization', () => {
+      service.adoptFromAddress(addressedB);
+      service.pinSelection('default');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    // Deliberate (lfx-self-serve#2793): the default write produces `/org/A/…`, whose guard shortcut
+    // pins 'address'. Keeping the default kind there would let a later org-items reload re-default
+    // the selection to B while the address still names A — spec 050's silent substitution.
+    it('the guard shortcut upgrades a default pin to an address pin, so an addressed page cannot drift', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('default');
+      service.pinSelection('address');
+
+      expect(service.isAdoptedFromAddress()).toBe(true);
+    });
+
+    it('clearAccount releases both kinds', () => {
+      service.setAccount(addressedB);
+      service.pinSelection('address');
+      service.clearAccount();
+
+      expect(service.isAddressedSelection()).toBe(false);
+      expect(service.isAdoptedFromAddress()).toBe(false);
+    });
+
+    // The "not a setAccount" half of the contract (ahmedomosanya on lfx-self-serve#2793): the guard
+    // shortcut pins on every child navigation, so a pin that rebuilt the selection from the live
+    // Snowflake row would revert a canonical-record rename each time. Seeded so the rebuild would
+    // actually differ — the other cases run with no live rows, where `setAccount` is an identity.
+    it('does not rebuild the selection from the live row, so a canonical-record rename survives the pin', async () => {
+      const staleRow = {
+        accountId: UID_B,
+        accountName: 'Bravo (stale Snowflake name)',
+        accountSlug: 'bravo-llc',
+        logoUrl: null,
+        cdevOrgId: null,
+        membershipTierDisplayName: 'Gold',
+      } as unknown as OrgLensAccountContextResponse;
+      (TestBed.inject(AnalyticsService) as unknown as { getOrgLensAccountContext: ReturnType<typeof vi.fn> }).getOrgLensAccountContext.mockReturnValue(
+        of([staleRow])
+      );
+      (TestBed.inject(FeatureFlagService) as unknown as { getBooleanFlag: ReturnType<typeof vi.fn> }).getBooleanFlag.mockReturnValue(signal(true));
+      service.initializeUserOrganizations([{ ...addressedB, accountName: 'Bravo' }]);
+      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
+
+      const http = TestBed.inject(HttpClient) as unknown as { get: ReturnType<typeof vi.fn> };
+      http.get.mockReturnValue(of({ uid: UID_B, accountId: UID_B, name: 'Bravo Holdings', slug: 'bravo-llc' } as OrgCanonicalRecord));
+      await service.refreshCanonicalRecord(service.selectedAccount());
+      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
+
+      service.pinSelection('address');
+      expect(service.isAdoptedFromAddress()).toBe(true);
+      expect(service.selectedAccount().accountName).toBe('Bravo Holdings');
+
+      // The rebuild the pin must not do — proves the seeding above makes the difference observable.
+      service.setAccount(service.selectedAccount());
+      expect(service.selectedAccount().accountName).toBe('Bravo (stale Snowflake name)');
+    });
   });
 });

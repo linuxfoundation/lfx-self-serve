@@ -19,9 +19,10 @@ import type { TablePageEvent } from 'primeng/table';
 import { debounceTime, tap } from 'rxjs';
 
 /**
- * Me-lens "My Formations" page (#2753) — one row per formation the caller has at least one
- * checklist item assigned to (see `MyFormationSummary`'s doc comment for why that, not a direct
- * grant, is the definition). Replaces the capped "My formations" dashboard card (GH-1956, GH-2331)
+ * Me-lens "My Formations" page (#2753) — one row per live formation the caller is invited to (a
+ * direct project grant, #2795) or has at least one checklist item assigned on (see
+ * `MyFormationSummary`'s doc comment). An invited-only row shows "—" under "Your items" until
+ * something is assigned. Replaces the capped "My formations" dashboard card (GH-1956, GH-2331)
  * with the layout every other "My …" page in the My Engagement group uses: header, an `lfx-card`
  * with stage tabs and a search box, and an `lfx-table`. Reachable from the sidebar while
  * `formation-enabled` is on; the route's `formationMeEnabledGuard` owns the flag gate, so nothing
@@ -72,8 +73,10 @@ export class MyFormationsComponent {
   /**
    * `'unavailable'` always; `'partial'` only when it left nothing to show. A partial read that still
    * carries rows renders them (the better failure mode than hiding all of them), but a partial read
-   * with none must not be mistaken for the genuine "No formations yet" — the caller has assigned
-   * items, the aggregate query just failed to describe their formations, so Retry is the honest offer.
+   * with none must not be mistaken for the genuine "No formations yet" — either the caller has
+   * assigned items and the aggregate query failed to describe their formations, or the direct-grant
+   * read failed and the caller may be invited somewhere the BFF could not see (#2795). Either way
+   * Retry is the honest offer.
    */
   protected readonly hasError: Signal<boolean> = computed(() => {
     if (this.loading()) return false;

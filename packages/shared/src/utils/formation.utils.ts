@@ -10,6 +10,7 @@ import {
   UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE,
 } from '../constants/formation.constants';
 import type { TagSeverity } from '../interfaces/components.interface';
+import type { FormationActionHrefTargets } from '../interfaces/formation-checklist.interface';
 import type {
   Formation,
   FormationActivity,
@@ -24,6 +25,7 @@ import type {
   FormationSubStage,
 } from '../interfaces/formation.interface';
 import { formatTag } from './string.utils';
+import { isRelativeInAppPath, isValidUrl } from './url.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
 const FORMATION_LIFECYCLE_VALUES: ReadonlySet<string> = new Set<FormationLifecycle>(['live', 'completed', 'frozen']);
@@ -258,4 +260,17 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
  */
 export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: FormationKnownAvailableAction): boolean {
   return item.available_actions.some((entry) => entry.action === action);
+}
+
+/**
+ * Splits an API-sourced `action_href` into the one binding it may safely take (see
+ * `FormationItem.action_href`'s doc comment): a same-origin relative path goes to `internal` (bind
+ * `[routerLink]`); an absolute value must pass `isValidUrl` to reach `external` (bind `[href]` +
+ * `target="_blank"`). Both `null` means no safe destination. Shared by the checklist row's action
+ * button and the item drawer's Links section (#2801) so the two can never validate differently.
+ */
+export function resolveFormationActionHref(href: string | null | undefined): FormationActionHrefTargets {
+  if (!href) return { external: null, internal: null };
+  if (isRelativeInAppPath(href)) return { external: null, internal: href };
+  return { external: isValidUrl(href) ? href : null, internal: null };
 }
