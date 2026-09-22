@@ -73,8 +73,8 @@ export class HealthMetricsEngagementComponent {
     })
   );
 
-  // Held until the sections exist, then again until the async section data settles: a deep link
-  // scrolls twice because the group table changes the anchor offsets under the first scroll.
+  // Held until the sections exist, then again until every async section has settled: a deep link
+  // re-scrolls once per read that lands, because each one moves the anchors below it.
   private readonly pendingSection = signal<HealthMetricsEngagementSectionKey | null>(null);
   /**
    * The data sections that have not reported yet. Whichever settles first must not release the
@@ -136,26 +136,29 @@ export class HealthMetricsEngagementComponent {
     });
   }
 
-  /** Group attendance reports its totals for the sub-nav badges and settles the section with them. */
+  /** Group attendance reports its totals for the sub-nav badges; settling is a separate signal. */
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
-    if (!counts) {
-      // `null` starts a read, so a follow-up one restarts the deadline against itself rather than
-      // the fragment, and puts the section back among those the pending key waits on.
-      const pending = this.pendingSection();
-      if (!pending) return;
-
-      this.unsettledSections.add('committees');
-      this.armPendingSection(pending);
-      return;
-    }
-
-    this.onSectionSettled('committees');
   }
 
   /** Participation sits above every other section, so its read landing moves each anchor below it. */
   protected onParticipationSettled(): void {
     this.onSectionSettled('participation');
+  }
+
+  /** Its next read is about to reflow the pane again, so the section stops counting as settled. */
+  protected onParticipationReading(): void {
+    this.onSectionReading('participation');
+  }
+
+  /** The group table is the tallest section, so its rows landing move every anchor below them. */
+  protected onGroupSettled(): void {
+    this.onSectionSettled('committees');
+  }
+
+  /** A filter, page or period change re-reads the table, which reflows the pane all over again. */
+  protected onGroupReading(): void {
+    this.onSectionReading('committees');
   }
 
   /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */
@@ -223,6 +226,17 @@ export class HealthMetricsEngagementComponent {
   }
 
   /**
+   * A starting read puts the section back among those a deep link waits on, and restarts the
+   * deadline against that read rather than leaving it to expire on the fragment that armed it.
+   */
+  private onSectionReading(key: HealthMetricsEngagementSectionKey): void {
+    this.unsettledSections.add(key);
+
+    const pending = this.pendingSection();
+    if (pending) this.armPendingSection(pending);
+  }
+
+  /**
    * A read landing changes the pane's height, so a waiting deep link re-scrolls here, a paint later
    * than the emission. The key is released only once every data section has settled.
    */
@@ -284,7 +298,7 @@ export class HealthMetricsEngagementComponent {
     return HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS.includes(event.key);
   }
 
-  /** Replays the deep link. Runs only until the section data settles and clears the pending key. */
+  /** Replays the deep link. Runs on every settle until the last one releases the pending key. */
   private settlePendingSection(): void {
     const key = this.pendingSection();
     if (!key) return;
