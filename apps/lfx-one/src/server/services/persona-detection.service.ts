@@ -197,14 +197,14 @@ export class PersonaDetectionService {
   }
 
   /**
-   * Whether the caller is a member of `team:lf-staff`. **Staff-only by decision (spec 044 /
-   * DR-002) — do not widen to `LF_TEAM_IDS`.** Its consumers sit outside Org Lens and gate
+   * Whether the caller is a member of `team:lf-staff`. Its consumers sit outside Org Lens and gate
    * privileged surfaces: `require-dashboard-access.middleware.ts`,
    * `require-executive-director.middleware.ts`, and the `allowLfStaff` bypass in
-   * `require-marketing-access.middleware.ts`. Contractor parity was
-   * ratified for Org Lens *read* access only, which flows through `OrgRoleGrantsService`
-   * (`LF_TEAM_IDS` affordance) and the authorizer-backed `assertOrgLensRead` gate — never through
-   * this check. Request-cached; fails closed to `false`.
+   * `require-marketing-access.middleware.ts`. Distinct from the Org Lens affordance in
+   * `OrgRoleGrantsService` (`LF_TEAM_IDS`), which is also staff-only since the contractor
+   * rollback but is a separate list with separate consumers — widening either does not widen the
+   * other. Neither is a read gate; that is the authorizer-backed `assertOrgLensRead`.
+   * Request-cached; fails closed to `false`.
    */
   public async checkLFStaff(req: Request): Promise<boolean> {
     const cached = this.lfStaffRequestCache.get(req);
