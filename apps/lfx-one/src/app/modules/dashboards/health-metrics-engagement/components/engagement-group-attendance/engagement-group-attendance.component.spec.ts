@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -43,7 +43,11 @@ describe('EngagementGroupAttendanceComponent', () => {
   let getEngagementGroupAttendance: ReturnType<typeof vi.fn>;
   let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
-  async function render(payload: HealthMetricsEngagementGroupAttendance = response(), onCounts?: (counts: unknown) => void): Promise<void> {
+  async function render(
+    payload: HealthMetricsEngagementGroupAttendance = response(),
+    onCounts?: (counts: unknown) => void,
+    queryParams: Record<string, string> = {}
+  ): Promise<void> {
     getEngagementGroupAttendance = vi.fn().mockReturnValue(of(payload));
 
     await TestBed.configureTestingModule({
@@ -55,6 +59,8 @@ describe('EngagementGroupAttendanceComponent', () => {
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
+        // The component reads its initial filter and page off the URL, and writes them back.
+        { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(queryParams) } } },
       ],
     }).compileComponents();
 
@@ -225,6 +231,40 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).not.toHaveBeenCalled();
     expect(emitted.every((counts) => counts === null)).toBe(true);
+  });
+
+  // The URL is the only carrier of table state across a reload or a shared link.
+  it('starts on the page and filter the URL carries', async () => {
+    await render(response(), undefined, { groupType: 'wg', groupPage: '3' });
+
+    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'wg', page: 3 }));
+  });
+
+  it('falls back to the defaults for URL values it cannot honour', async () => {
+    await render(response(), undefined, { groupType: 'board', groupPage: '-2' });
+
+    expect(getEngagementGroupAttendance).toHaveBeenCalledWith(expect.objectContaining({ groupType: 'all', page: 1 }));
+  });
+
+  it('writes the filter and page back to the URL, dropping each at its default', async () => {
+    await render(response(), undefined, { groupType: 'wg', groupPage: '3' });
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+
+    fixture.componentInstance['onTablePage']({ first: 75, rows: 25 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(
+      [],
+      expect.objectContaining({ queryParams: { groupType: 'wg', groupPage: 4 }, preserveFragment: true, replaceUrl: true })
+    );
+
+    // A default is written as null so it leaves the URL rather than pinning a redundant param.
+    fixture.componentInstance['onFilterChange']('all');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(navigate).toHaveBeenLastCalledWith([], expect.objectContaining({ queryParams: { groupType: null, groupPage: null } }));
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
