@@ -12,6 +12,7 @@ import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/
 import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
 import {
   fromMeetingApiVotingStatuses,
+  isShowMeetingAttendeesLocked,
   meetingSelectionHasVotingFilter,
   sanitizeMeetingCommittees,
   sanitizeMeetingCommitteeUids,
@@ -20,7 +21,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, forkJoin, map, merge, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -190,19 +191,27 @@ export class MeetingCommitteeManagerComponent {
 
         // Clear voting statuses if no voting committees selected. Reads the same signal the roster
         // filter does, so a missing option list cannot clear a filter the filter itself still honours.
-        const committees = this.committeeOptions();
         if (!this.hasVotingEnabledCommittee()) {
           this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
 
-        // If any selected committee has show_meeting_attendees enabled, toggle it on for the meeting
-        const hasShowMeetingAttendees = committees.some((c) => ids.includes(c.uid) && c.show_meeting_attendees === true);
-        const attendeesControl = this.form().get('show_meeting_attendees');
-        if (hasShowMeetingAttendees && attendeesControl?.enabled) {
-          attendeesControl.setValue(true);
-        }
+        this.applyCommitteeAttendeePreference();
       });
+
+    toObservable(this.form)
+      .pipe(
+        takeUntilDestroyed(),
+        switchMap((form) => {
+          const meetingTypeControl = form.get('meeting_type');
+          const restrictedControl = form.get('restricted');
+          if (!meetingTypeControl || !restrictedControl) {
+            return EMPTY;
+          }
+          return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges);
+        })
+      )
+      .subscribe(() => this.applyCommitteeAttendeePreference());
 
     // Subscribe to voting status changes
     this.committeeForm
@@ -393,6 +402,24 @@ export class MeetingCommitteeManagerComponent {
       this.selectedVotingStatuses.set([]);
     }
     this.updateParentForm(ids, options);
+  }
+
+  /**
+   * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
+   * unless board/restricted meetings lock the control off. Re-runs when the lock lifts so
+   * a previously skipped committee preference is not dropped.
+   */
+  private applyCommitteeAttendeePreference(): void {
+    const ids = this.selectedCommitteeIds();
+    const hasShowMeetingAttendees = this.committeeOptions().some((committee) => ids.includes(committee.uid) && committee.show_meeting_attendees === true);
+    const attendeesControl = this.form().get('show_meeting_attendees');
+    if (!hasShowMeetingAttendees || !attendeesControl) {
+      return;
+    }
+    if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
+      return;
+    }
+    attendeesControl.setValue(true);
   }
 
   private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {

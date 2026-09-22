@@ -3,6 +3,8 @@
 
 import { AbstractControl, FormArray, FormGroup } from '@angular/forms';
 
+import { isShowMeetingAttendeesLocked } from './meeting-privacy.utils';
+
 /**
  * Generates a temporary ID for entities that need unique identifiers before API assignment
  */
@@ -51,4 +53,31 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
     const control = form.get(key);
     control?.updateValueAndValidity({ onlySelf, emitEvent });
   });
+}
+
+/**
+ * Locks attendee visibility off for board and restricted meetings.
+ * @description Forces `show_meeting_attendees` to false and disables the control when
+ * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Shared by the
+ * composer and manage forms so the two surfaces cannot drift.
+ */
+export function syncShowMeetingAttendeesLock(form: FormGroup): void {
+  const control = form.get('show_meeting_attendees');
+  if (!control) {
+    return;
+  }
+
+  if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
+    if (control.value !== false) {
+      control.setValue(false, { emitEvent: false });
+    }
+    if (control.enabled) {
+      control.disable({ emitEvent: false });
+    }
+    return;
+  }
+
+  if (control.disabled) {
+    control.enable({ emitEvent: false });
+  }
 }

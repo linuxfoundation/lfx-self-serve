@@ -92,7 +92,7 @@
                 }
 
                 <!-- View Guests Button -->
-                @if (authenticated() && (meeting().organizer || meeting().invited)) {
+                @if (canViewGuestRoster()) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"

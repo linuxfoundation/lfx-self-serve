@@ -7,8 +7,10 @@ import { canJoinMeeting } from './meeting.utils';
 
 /**
  * Whether organizers can turn on attendee visibility.
- * @description Board and restricted (closed) meetings keep the roster private: the toggle is
- * locked off so guests do not appear on the meeting page or in calendar invites.
+ * @description Locks the toggle for `meeting_type === Board` or `restricted === true` (invite-only).
+ * `visibility === private` is a separate axis and is not locked here — a private unrestricted
+ * meeting can still show its roster if the organizer opts in. Board meetings stay locked even
+ * when an organizer later turns `restricted` off.
  */
 export function isShowMeetingAttendeesLocked(meetingType: string | null | undefined, restricted: boolean | null | undefined): boolean {
   return meetingType === MeetingType.BOARD || restricted === true;

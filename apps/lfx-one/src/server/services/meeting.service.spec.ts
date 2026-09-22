@@ -16,8 +16,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
+  proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
   accessCheckSvc: { checkSingleAccess: vi.fn(), checkSingleAccessStrict: vi.fn() },
 }));
@@ -35,6 +36,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
     return meaningful.length === 0;
   }),
+  isShowMeetingAttendeesLocked: vi.fn((meetingType?: string | null, restricted?: boolean | null) => meetingType === 'Board' || restricted === true),
   mapITXResponseToMeetingRsvp: vi.fn(),
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
@@ -47,6 +49,7 @@ vi.mock('@lfx-one/shared/utils', () => ({
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('./access-check.service', () => ({
@@ -74,6 +77,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -1574,5 +1578,56 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
     await service.updatePastMeetingParticipant(req, 'pm/1', 'p 1', {} as never);
 
     expect(pathOf()).toBe('/itx/past_meetings/pm%2F1/participants/p%201');
+  });
+});
+
+describe('MeetingService.updateMeeting attendee visibility lock', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequestWithResponse.mockReset();
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    service = new MeetingService();
+  });
+
+  const baseUpdate = {
+    project_uid: 'project-1',
+    start_time: '2026-01-01T00:00:00Z',
+    duration: 30,
+    timezone: 'UTC',
+    title: 'Test',
+    description: '',
+    show_meeting_attendees: true,
+  };
+
+  it('forces show_meeting_attendees off for board meetings', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Board' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('forces show_meeting_attendees off when the stored meeting is restricted', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('forwards true when the meeting is unlocked', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Technical', restricted: false });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
   });
 });

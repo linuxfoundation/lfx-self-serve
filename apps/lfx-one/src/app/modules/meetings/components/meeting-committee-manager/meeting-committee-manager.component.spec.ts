@@ -65,6 +65,8 @@ async function mount(
       visibility: new FormControl('private'),
       committees: new FormControl(seedParentCommittees ? saved : []),
       show_meeting_attendees: new FormControl(false),
+      meeting_type: new FormControl('Technical'),
+      restricted: new FormControl(false),
     })
   );
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
@@ -724,5 +726,37 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     expect(component.hasVotingEnabledCommittee()).toBe(false);
     expect(component.selectedVotingStatuses()).toEqual([]);
     expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — attendee visibility default', () => {
+  const VISIBLE_BOARD = { ...BOARD, show_meeting_attendees: true } as Committee;
+
+  it('turns the meeting toggle on when a selected committee has attendee visibility enabled', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not enable a locked meeting toggle from a committee preference', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.form().get('show_meeting_attendees')?.disable();
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('reapplies the committee preference when the lock lifts', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
   });
 });

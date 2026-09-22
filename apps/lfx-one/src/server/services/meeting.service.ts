@@ -45,6 +45,7 @@ import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
   isUnresolvableParticipantName,
+  isShowMeetingAttendeesLocked,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
@@ -539,6 +540,10 @@ export class MeetingService {
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
+    if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
+      createPayload.show_meeting_attendees = false;
+    }
+
     const sanitizedPayload = logger.sanitize({ createPayload });
     logger.debug(req, 'create_meeting', 'Creating meeting payload', sanitizedPayload);
 
@@ -602,6 +607,12 @@ export class MeetingService {
       organizers: Array.from(organizersSet),
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
+
+    const meetingType = meetingData.meeting_type ?? existingMeeting.meeting_type;
+    const restricted = meetingData.restricted ?? existingMeeting.restricted;
+    if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
+      updatePayload.show_meeting_attendees = false;
+    }
 
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);

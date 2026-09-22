@@ -57,11 +57,11 @@ import {
   generateTempId,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
-  isShowMeetingAttendeesLocked,
   mapRecurrenceToFormValue,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
+  syncShowMeetingAttendeesLock,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -1194,37 +1194,8 @@ export class MeetingComposerFormService {
     const restrictedControl = form.get('restricted');
     const attendeesTypeControl = form.get('meeting_type');
     if (restrictedControl && attendeesTypeControl) {
-      this.syncShowMeetingAttendeesLock(form);
-      this.formSubscriptions.add(
-        merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => this.syncShowMeetingAttendeesLock(form))
-      );
-    }
-  }
-
-  /**
-   * Locks attendee visibility off for board and restricted meetings.
-   * @description The ICS and meeting-page roster both honor this flag; board/closed
-   * meetings keep guests private, so the control is forced off rather than left
-   * as a no-op toggle.
-   */
-  private syncShowMeetingAttendeesLock(form: FormGroup): void {
-    const control = form.get('show_meeting_attendees');
-    if (!control) {
-      return;
-    }
-
-    if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
-      if (control.value !== false) {
-        control.setValue(false, { emitEvent: false });
-      }
-      if (control.enabled) {
-        control.disable({ emitEvent: false });
-      }
-      return;
-    }
-
-    if (control.disabled) {
-      control.enable({ emitEvent: false });
+      syncShowMeetingAttendeesLock(form);
+      this.formSubscriptions.add(merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form)));
     }
   }
 
@@ -1691,7 +1662,7 @@ export class MeetingComposerFormService {
 
     this.populateExistingLinks();
     this.updateFormValidator();
-    this.syncShowMeetingAttendeesLock(form);
+    syncShowMeetingAttendeesLock(form);
   }
 
   private populateRecurrenceGroup(meeting: Meeting, isCustomRecurrence: boolean): void {

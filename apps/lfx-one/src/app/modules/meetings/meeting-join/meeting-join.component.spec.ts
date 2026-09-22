@@ -783,4 +783,30 @@ describe('MeetingJoinComponent', () => {
       expect(TestBed.inject(Router).navigate).not.toHaveBeenCalledWith(['/meetings/not-found']);
     });
   });
+
+  describe('guest roster visibility', () => {
+    it('lets organizers view the roster even when show_meeting_attendees is off', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: true, invited: false, show_meeting_attendees: false }), project: buildProject() })
+      );
+      const component = await createComponent();
+      expect(component.canViewGuestRoster()).toBe(true);
+    });
+
+    it('hides the roster from invitees when show_meeting_attendees is off', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: false }), project: buildProject() })
+      );
+      const component = await createComponent();
+      expect(component.canViewGuestRoster()).toBe(false);
+    });
+
+    it('shows the roster to invitees when show_meeting_attendees is on', async () => {
+      getPublicMeeting.mockReturnValue(
+        of({ meeting: buildMeeting({ organizer: false, invited: true, show_meeting_attendees: true }), project: buildProject() })
+      );
+      const component = await createComponent();
+      expect(component.canViewGuestRoster()).toBe(true);
+    });
+  });
 });

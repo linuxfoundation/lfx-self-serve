@@ -888,6 +888,19 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
     expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
   });
+
+  it('locks attendee visibility when switching to Board in edit mode without flipping restricted', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
+    service.form().patchValue({ meeting_type: MeetingType.TECHNICAL, restricted: false });
+    service.form().get('show_meeting_attendees')?.enable();
+    service.form().get('show_meeting_attendees')?.setValue(true);
+
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+
+    expect(service.form().get('restricted')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
 });
 /**
  * Covers the reconciliation pass the Guests section runs whenever the group multi-select emits.

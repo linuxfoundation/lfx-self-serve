@@ -566,9 +566,24 @@ export class MeetingJoinComponent implements OnInit {
     }
   }
 
+  /**
+   * Organizers always see the roster. Invitees (and newly registered guests) only see it
+   * when the organizer turned Show attendees on.
+   */
+  public canViewGuestRoster(): boolean {
+    if (!this.authenticated()) {
+      return false;
+    }
+    const meeting = this.meeting();
+    if (meeting.organizer) {
+      return true;
+    }
+    return meeting.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
+  }
+
   public onRegistrantsToggle(): void {
     const meeting = this.meeting();
-    if (!meeting.organizer && !meeting.invited && !this.optimisticInvited()) {
+    if (!this.canViewGuestRoster()) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Show Members is not enabled',

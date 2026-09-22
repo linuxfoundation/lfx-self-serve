@@ -482,8 +482,9 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/my-meeting-registrants
-   * Retrieves registrants for a meeting with access control based on show_meeting_attendees setting
-   * Only returns registrants if the authenticated user is a registrant of the meeting
+   * Retrieves registrants for a meeting. Organizers always receive the full roster.
+   * Invitees receive the full roster only when `show_meeting_attendees` is true; otherwise
+   * they receive only their own registrant row.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -568,6 +569,21 @@ export class MeetingController {
           registrant_count: 0,
         });
         res.json([]);
+        return;
+      }
+
+      // Invitees only see the full roster when the organizer opted in. Organizers always
+      // see everyone; everyone else gets only their own registrant row(s).
+      if (!meeting.organizer && meeting.show_meeting_attendees !== true) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_id: uid,
+          user_email: userEmail,
+          is_registrant: true,
+          is_organizer: false,
+          show_meeting_attendees: false,
+          registrant_count: userRegistrantCheck.length,
+        });
+        res.json(userRegistrantCheck);
         return;
       }
 

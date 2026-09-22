@@ -547,7 +547,8 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     key: 'show_meeting_attendees',
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
-    description: 'Display who attended or is attending committee meetings',
+    description:
+      "Let guests see who else is invited, both on the meeting page and in their calendar app. Also turns on the per-meeting Show attendees option for this committee's meetings.",
     color: lfxColors.blue[500],
   },
 ];

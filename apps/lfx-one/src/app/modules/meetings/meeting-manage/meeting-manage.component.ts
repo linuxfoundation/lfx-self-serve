@@ -52,11 +52,11 @@ import {
   getEntityCommands,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
-  isShowMeetingAttendeesLocked,
   mapRecurrenceToFormValue,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
+  syncShowMeetingAttendeesLock,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
@@ -290,9 +290,13 @@ export class MeetingManageComponent {
         }
       });
 
-    merge(this.form().get('meeting_type')!.valueChanges, this.form().get('restricted')!.valueChanges)
-      .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => this.syncShowMeetingAttendeesLock());
+    const meetingTypeControl = this.form().get('meeting_type');
+    const restrictedControl = this.form().get('restricted');
+    if (meetingTypeControl && restrictedControl) {
+      merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges)
+        .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
+        .subscribe(() => syncShowMeetingAttendeesLock(this.form()));
+    }
 
     // Separate subscription for meeting data changes - populates form only once
     toObservable(this.meeting)
@@ -1153,35 +1157,7 @@ export class MeetingManageComponent {
 
     // Update the form validator to use edit mode validator with original start time
     this.updateFormValidator();
-    this.syncShowMeetingAttendeesLock();
-  }
-
-  /**
-   * Locks attendee visibility off for board and restricted meetings.
-   * @description The ICS and meeting-page roster both honor this flag; board/closed
-   * meetings keep guests private, so the control is forced off rather than left
-   * as a no-op toggle.
-   */
-  private syncShowMeetingAttendeesLock(): void {
-    const form = this.form();
-    const control = form.get('show_meeting_attendees');
-    if (!control) {
-      return;
-    }
-
-    if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
-      if (control.value !== false) {
-        control.setValue(false, { emitEvent: false });
-      }
-      if (control.enabled) {
-        control.disable({ emitEvent: false });
-      }
-      return;
-    }
-
-    if (control.disabled) {
-      control.enable({ emitEvent: false });
-    }
+    syncShowMeetingAttendeesLock(this.form());
   }
 
   private populateExistingLinks(): void {

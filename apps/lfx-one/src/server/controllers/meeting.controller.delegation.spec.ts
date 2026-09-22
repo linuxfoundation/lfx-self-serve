@@ -326,6 +326,33 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('returns only the caller row when an invitee requests the roster with attendee visibility off', async () => {
+    const self = { uid: 'reg-self', email: 'user@example.com' };
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: false, committees: [] }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([self]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyMeetingRegistrants(buildRegistrantsReq(), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([self]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns the full roster to an invitee when attendee visibility is on', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: true, committees: [] }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([{ uid: 'reg-self' }]);
+    meetingSvc.getMeetingRegistrants.mockResolvedValue([{ uid: 'r1' }, { uid: 'r2' }]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyMeetingRegistrants(buildRegistrantsReq(), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([{ uid: 'r1' }, { uid: 'r2' }]);
+  });
+
   it('returns an empty list without any upstream fetch when caller has no email', async () => {
     getEffectiveEmailMock.mockReturnValue(undefined);
     const res = buildRes();

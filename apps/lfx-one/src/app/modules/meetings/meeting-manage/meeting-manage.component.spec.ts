@@ -10,7 +10,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { CancelOnCommitteeRemoval, MeetingVisibility } from '@lfx-one/shared/enums';
+import { CancelOnCommitteeRemoval, MeetingType, MeetingVisibility } from '@lfx-one/shared/enums';
 import { Meeting } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, of, throwError } from 'rxjs';
@@ -384,6 +384,31 @@ describe('MeetingManageComponent', () => {
       expect(component.prepareMeetingData().committees).toEqual([
         { uid: 'committee-1', name: 'TSC', allowed_voting_statuses: ['voting_rep', 'alt_voting_rep', 'observer'] },
       ]);
+    });
+  });
+
+  describe('show_meeting_attendees lock', () => {
+    it('disables and clears the toggle when meeting type is Board', async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const fixture = await createComponent();
+      const form = fixture.componentInstance.form();
+      form.get('show_meeting_attendees')?.setValue(true);
+      form.get('meeting_type')?.setValue(MeetingType.BOARD);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(form.get('show_meeting_attendees')?.disabled).toBe(true);
+      expect(form.get('show_meeting_attendees')?.value).toBe(false);
+    });
+
+    it('includes show_meeting_attendees in the save payload', async () => {
+      getMeetingDetail.mockReturnValue(of(unenrichedMeeting()));
+      getProject.mockReturnValue(of(null));
+      const component = (await createComponent()).componentInstance as any;
+      component.form().get('meeting_type')?.setValue('Technical');
+      component.form().get('restricted')?.setValue(false);
+      component.form().get('show_meeting_attendees')?.enable();
+      component.form().get('show_meeting_attendees')?.setValue(true);
+      expect(component.prepareMeetingData().show_meeting_attendees).toBe(true);
     });
   });
 });
