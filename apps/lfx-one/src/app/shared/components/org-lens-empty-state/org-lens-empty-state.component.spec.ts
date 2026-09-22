@@ -88,6 +88,15 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(render('wrong-organization', { orgList: ORG_LIST }), 'description')?.textContent).toContain('Here is what you do have access to:');
   });
 
+  // #2535: an unrecognised state must never yield a blank page; the closed name set is compile-time only.
+  it('falls closed to a generic could-not-load block for an unrecognised state name', () => {
+    const fixture = render('not-a-real-state' as OrgLensEmptyStateName);
+
+    expect(byTestId(fixture, 'title')?.textContent?.trim()).toBe('This section could not be loaded');
+    expect(byTestId(fixture, 'retry')).not.toBeNull();
+    expect((fixture.nativeElement as HTMLElement).textContent).not.toContain('access');
+  });
+
   it('disables the Retry control while the retry is in flight', () => {
     const fixture = TestBed.createComponent(OrgLensEmptyStateComponent);
     fixture.componentRef.setInput('state', 'could-not-load');

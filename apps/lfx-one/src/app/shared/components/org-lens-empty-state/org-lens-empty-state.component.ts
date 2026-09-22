@@ -57,7 +57,13 @@ export class OrgLensEmptyStateComponent {
   public readonly resetFilters = output<void>();
   public readonly orgSelected = output<string>();
 
-  protected readonly copy = computed(() => ORG_LENS_EMPTY_STATE_COPY[this.state()]);
+  /**
+   * The registry entry for the state. The name set is closed at compile time, but a name that reaches
+   * here unrecognised (a stale bundle after a registry change, a future wire-carried state) must render
+   * a safe generic block with a control, never a blank page (#2535): it falls closed to
+   * `section-could-not-load` — an outage wording that asserts nothing about access.
+   */
+  protected readonly copy = computed(() => ORG_LENS_EMPTY_STATE_COPY[this.state()] ?? ORG_LENS_EMPTY_STATE_COPY['section-could-not-load']);
 
   protected readonly headline = computed(() => {
     const copy = this.copy();
