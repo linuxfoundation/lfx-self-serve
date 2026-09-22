@@ -56,10 +56,13 @@ The feature flag system consists of three main components:
 │  1. provideAppInitializer (provideFeatureFlags)             │
 │     └─> Initialize LaunchDarkly Provider                     │
 │         └─> OpenFeature.setProviderAndWait()                │
+│             skipped entirely on /invite and /invite/error    │
+│             (no client; flags stay at code defaults)         │
 │                                                               │
 │  2. app.component.ts Constructor                             │
 │     └─> Get authenticated user from Auth0                    │
 │         └─> featureFlagService.initialize(user)             │
+│             skipped entirely on /invite and /invite/error    │
 │             └─> Set user context in OpenFeature             │
 │             └─> Get OpenFeature client                       │
 │             └─> Set isInitialized = true                     │

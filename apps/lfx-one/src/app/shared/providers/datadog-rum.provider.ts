@@ -5,7 +5,7 @@ import { EnvironmentProviders, inject, provideAppInitializer, TransferState } fr
 import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 
-import { redactAuthFragment } from '@lfx-one/shared/utils';
+import { redactAuthFragment, redactInviteToken } from '@lfx-one/shared/utils';
 
 import { getRuntimeConfig } from './runtime-config.provider';
 
@@ -47,13 +47,16 @@ async function initializeDataDogRum(): Promise<void> {
       //
       // Covers the referrer too, which carries the previous URL and would otherwise leak the same
       // fragment on the next view.
+      //
+      // Invite landing puts a single-factor accept credential in `?token=` rather than the hash.
+      // redactAuthFragment does not touch the query string, so redactInviteToken runs after it.
       beforeSend: (event) => {
         const view = (event as { view?: { url?: string; referrer?: string } }).view;
         if (view?.url) {
-          view.url = redactAuthFragment(view.url, window.location.origin);
+          view.url = redactInviteToken(redactAuthFragment(view.url, window.location.origin), window.location.origin);
         }
         if (view?.referrer) {
-          view.referrer = redactAuthFragment(view.referrer, window.location.origin);
+          view.referrer = redactInviteToken(redactAuthFragment(view.referrer, window.location.origin), window.location.origin);
         }
         return true;
       },
