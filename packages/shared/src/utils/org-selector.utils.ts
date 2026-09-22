@@ -16,3 +16,16 @@ export function isFilterSafeUsername(value: string): boolean {
 export function isFilterSafeIdentifier(value: string): boolean {
   return value.length > 0 && value.length <= 64 && FILTER_SAFE_IDENTIFIER.test(value);
 }
+
+/**
+ * The one `OrgItem.status` value the app gives meaning to: an LF membership that is currently in
+ * force. `status` is an `omitempty` passthrough from the indexed doc — free-form upstream text
+ * that other consumers only render — so the comparison is normalized (trim, case-fold) rather
+ * than a literal, and callers degrade to "not known active" for anything else.
+ */
+export const ORG_MEMBERSHIP_STATUS_ACTIVE = 'active';
+
+/** True when the indexed membership status reads as currently active; false for absent, null or any other value. */
+export function isActiveStatus(status: string | null | undefined): boolean {
+  return status?.trim().toLowerCase() === ORG_MEMBERSHIP_STATUS_ACTIVE;
+}

@@ -26,7 +26,14 @@ import { OrgRoleGrantsService } from './org-role-grants.service';
 describe('OrgNavigationService default selection', () => {
   const UID_A = '0014100000MgaAAAAA';
   const UID_B = '0014100000MgbBBBBB';
-  const item = (uid: string, name: string): OrgItem => ({ uid, accountId: uid, name, logoUrl: null, slug: name.toLowerCase() });
+  const item = (uid: string, name: string, extra: Partial<OrgItem> = {}): OrgItem => ({
+    uid,
+    accountId: uid,
+    name,
+    logoUrl: null,
+    slug: name.toLowerCase(),
+    ...extra,
+  });
   const page = (items: OrgItem[]): OrgItemsResponse => ({ items, next_page_token: null, upstream_failed: false });
   const placeholder: Account = { accountId: '', accountName: '', accountSlug: '', membershipTier: '' };
 
@@ -36,6 +43,12 @@ describe('OrgNavigationService default selection', () => {
   let setIndexedSlug: ReturnType<typeof vi.fn>;
   let pinSelection: ReturnType<typeof vi.fn>;
   let clearAccount: ReturnType<typeof vi.fn>;
+  let writerSet: WritableSignal<Set<string>>;
+  let auditorSet: WritableSignal<Set<string>>;
+  let inheritedWriterSet: WritableSignal<Set<string>>;
+  let inheritedAuditorSet: WritableSignal<Set<string>>;
+  let grantsLoaded: WritableSignal<boolean>;
+  let grantsError: WritableSignal<string | null>;
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnAddressedPage: ReturnType<typeof vi.fn>;
   let refreshCanonicalRecord: ReturnType<typeof vi.fn>;
@@ -49,6 +62,12 @@ describe('OrgNavigationService default selection', () => {
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
     pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
+    writerSet = signal(new Set<string>());
+    auditorSet = signal(new Set<string>());
+    inheritedWriterSet = signal(new Set<string>());
+    inheritedAuditorSet = signal(new Set<string>());
+    grantsLoaded = signal(true);
+    grantsError = signal<string | null>(null);
     navigateToSelectedOrg = vi.fn();
     isOnAddressedPage = vi.fn(() => false);
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
@@ -59,7 +78,19 @@ describe('OrgNavigationService default selection', () => {
         provideRouter([]),
         MessageService,
         { provide: LensService, useValue: {} },
-        { provide: OrgRoleGrantsService, useValue: { isStaff: signal(false), degraded: signal(false) } },
+        {
+          provide: OrgRoleGrantsService,
+          useValue: {
+            isStaff: signal(false),
+            degraded: signal(false),
+            writerSet,
+            auditorSet,
+            inheritedWriterSet,
+            inheritedAuditorSet,
+            loaded: grantsLoaded,
+            error: grantsError,
+          },
+        },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnAddressedPage } },
         {
           provide: AccountContextService,
@@ -72,6 +103,9 @@ describe('OrgNavigationService default selection', () => {
   });
 
   afterEach(() => http.verify());
+
+  /** One macrotask: lets a toObservable-driven subscription observe a signal change. */
+  const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
 
   const bootstrapWith = (items: OrgItem[]): void => {
     service.resetAndReload();
@@ -127,6 +161,133 @@ describe('OrgNavigationService default selection', () => {
     await settle();
 
     expect(navigateToSelectedOrg).toHaveBeenCalledTimes(1);
+  });
+
+  // DR-005 rung 4 refined (lfx-self-serve#2570, prod): the list is alphabetical with inherited rows
+  // beside direct ones. An admin whose only direct writer grant is the parent organization, with
+  // three inherited subsidiaries that sort first, must land on the parent — ranked authority-first,
+  // the same order `OrgSelectorComponent.resolvePersona` uses (LFXV2-3029).
+  describe('the default ranks the list authority-first', () => {
+    const PARENT = '0014100000ParentAA';
+    const SUB_EXPIRED = '0014100000ExpiredA';
+    const SUB_ACTIVE = '0014100000ActiveAA';
+    const list = () => [
+      item(SUB_EXPIRED, 'Alpha Subsidiary Inc.', { isMember: false, status: 'Expired', parentName: 'Parent Corporation' }),
+      item(SUB_ACTIVE, 'Beta Subsidiary, Inc.', { isMember: true, status: 'Active', parentName: 'Parent Corporation' }),
+      item(PARENT, 'Parent Corporation', { isMember: true, status: 'Active' }),
+    ];
+
+    it('picks the direct writer grant over inherited rows that sort first', () => {
+      writerSet.set(new Set([PARENT]));
+      inheritedWriterSet.set(new Set([SUB_EXPIRED, SUB_ACTIVE]));
+      bootstrapWith(list());
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: PARENT }));
+    });
+
+    it('an inherited writer outranks a direct auditor (authority first, not directness first)', () => {
+      auditorSet.set(new Set([SUB_EXPIRED]));
+      inheritedWriterSet.set(new Set([PARENT]));
+      bootstrapWith(list());
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: PARENT }));
+    });
+
+    it('a direct auditor outranks an inherited auditor', () => {
+      auditorSet.set(new Set([PARENT]));
+      inheritedAuditorSet.set(new Set([SUB_ACTIVE]));
+      bootstrapWith(list());
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: PARENT }));
+    });
+
+    it('within a band prefers an active member, keeping list order', () => {
+      writerSet.set(new Set([SUB_EXPIRED, SUB_ACTIVE, PARENT]));
+      bootstrapWith(list());
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: SUB_ACTIVE }));
+    });
+
+    it('reads the membership status case-insensitively', () => {
+      writerSet.set(new Set([SUB_EXPIRED, PARENT]));
+      bootstrapWith([item(SUB_EXPIRED, 'Alpha', { isMember: true, status: 'expired' }), item(PARENT, 'Parent', { isMember: true, status: ' ACTIVE ' })]);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: PARENT }));
+    });
+
+    it('with no granted row at all (a staff catalogue, or grants that failed) prefers an active member, then the first row', () => {
+      grantsError.set('boom');
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: SUB_ACTIVE }));
+
+      setAccount.mockClear();
+      selectedAccount.set(placeholder);
+      bootstrapWith([item(SUB_EXPIRED, 'Alpha', { isMember: false, status: 'Expired' }), item(UID_B, 'Beta', { isMember: false })]);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: SUB_EXPIRED }));
+    });
+
+    // The staff catalogue lists assigned rows first, then discovered ones; the membership preference
+    // must not lift a discovered row over the viewer's own assigned rows.
+    it("keeps the viewer's assigned rows ahead of discovered catalogue rows", () => {
+      bootstrapWith([
+        item(SUB_EXPIRED, 'Assigned Non-Member', { isMember: false, status: 'Expired', isAssigned: true }),
+        item(UID_B, 'Discovered Active Member', { isMember: true, status: 'Active', isAssigned: false }),
+      ]);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: SUB_EXPIRED }));
+    });
+
+    // Grants arrive on their own request; org-items may land first. The default must not decide
+    // against an empty, not-yet-loaded grant set — that would be the first-row bug back, intermittently.
+    it('waits for the grants to load when org-items lands first, then ranks', async () => {
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).not.toHaveBeenCalled();
+
+      writerSet.set(new Set([PARENT]));
+      grantsLoaded.set(true);
+      await settle();
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: PARENT }));
+      expect(navigateToSelectedOrg).toHaveBeenCalledWith('default');
+    });
+
+    // While the default waits, an address adoption (path guard, EasyCLA return) or a user pick can
+    // land. The deferred default must not overwrite it — or clear its pin.
+    it('does not overwrite a selection made while it waited for grants', async () => {
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).not.toHaveBeenCalled();
+
+      selectedAccount.set({ ...placeholder, uid: UID_B, accountId: UID_B, slug: 'beta' });
+      isAdoptedFromAddress.mockReturnValue(true);
+      writerSet.set(new Set([PARENT]));
+      grantsLoaded.set(true);
+      await settle();
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(pinSelection).not.toHaveBeenCalled();
+      expect(selectedAccount().uid).toBe(UID_B);
+    });
+
+    it('a reload while it waits supersedes the pending default; only the new page decides', async () => {
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).not.toHaveBeenCalled();
+
+      // The reload's own page — different rows; the stale waiter must not select from `list()`.
+      writerSet.set(new Set([UID_B]));
+      bootstrapWith([item(UID_A, 'Acme'), item(UID_B, 'Beta', { isMember: true, status: 'Active' })]);
+      grantsLoaded.set(true);
+      await settle();
+
+      expect(setAccount).toHaveBeenCalledTimes(1);
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: UID_B }));
+    });
+
+    it('proceeds when the grants request fails rather than waiting forever', async () => {
+      grantsLoaded.set(false);
+      bootstrapWith(list());
+      expect(setAccount).not.toHaveBeenCalled();
+
+      grantsError.set('boom');
+      await settle();
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: SUB_ACTIVE }));
+    });
   });
 
   it('selects the first organization and re-addresses the page as a default, not a switch', () => {
