@@ -719,14 +719,15 @@ export const RESTRICTED_MEETING_FEATURE = {
 
 /**
  * Show meeting attendees feature configuration
- * @description Feature toggle config for showing meeting attendees on the LFX
- * meeting page and as ATTENDEE lines in calendar invites.
+ * @description Feature toggle config for listing the other guests as ATTENDEE lines in each
+ * calendar invite. Scoped to the invite deliberately — the copy must not promise meeting-page
+ * roster gating, which this toggle does not yet control.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
-  title: 'Show attendees',
-  description: 'Let guests see who else is invited, both on the meeting page and in their calendar app',
+  title: 'Show attendees in calendar invites',
+  description: "Let guests see who else is invited, and who has accepted, in their calendar app's invite",
   recommended: false,
   color: lfxColors.blue[500],
 };

@@ -17,7 +17,6 @@ import {
   PresignAttachmentResponse,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { isGuestRosterShared, isShowMeetingAttendeesLocked } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, ServiceValidationError } from '../errors';
@@ -27,7 +26,6 @@ import { AccessCheckService } from '../services/access-check.service';
 import { AttendanceReconciliationService } from '../services/attendance-reconciliation.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 
 /**
  * Controller for handling past meeting HTTP requests
@@ -144,16 +142,6 @@ export class PastMeetingController {
 
   /**
    * GET /past-meetings/:uid/participants
-   *
-   * Organizers receive the full roster. Participants receive it only when
-   * `show_meeting_attendees` is on and the meeting is not board or restricted;
-   * otherwise the response is limited to the caller's own row(s). A failed
-   * meeting lookup fails closed to that same caller-only view.
-   *
-   * The caller is matched on email *or* username because historical participant rows are not
-   * guaranteed to carry both — `isUserPastMeetingParticipant` queries on either for the same
-   * reason. Matching on email alone would hand a username-only participant an empty roster and
-   * hide their own attendance record from them.
    */
   public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -172,39 +160,17 @@ export class PastMeetingController {
         return;
       }
 
-      let pastMeeting: PastMeeting | null = null;
-      try {
-        pastMeeting = await this.meetingService.getPastMeetingById(req, uid);
-      } catch {
-        pastMeeting = null;
-      }
-
-      const isOrganizer = pastMeeting ? await this.isPastMeetingOrganizer(req, pastMeeting, uid) : false;
+      // Get the past meeting participants
       const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
 
-      let payload = participants;
-      if (!isOrganizer) {
-        const userEmail = getEffectiveEmail(req)?.toLowerCase();
-        const username = stripAuthPrefix((await getUsernameFromAuth(req)) ?? '').toLowerCase();
-        const self = participants.filter(
-          (participant) =>
-            (!!userEmail && participant.email?.toLowerCase() === userEmail) ||
-            (!!username && stripAuthPrefix(participant.username ?? '').toLowerCase() === username)
-        );
-        const flagOn = isGuestRosterShared(pastMeeting?.show_meeting_attendees, pastMeeting?.meeting_type, pastMeeting?.restricted);
-        payload = flagOn && self.length > 0 ? participants : self;
-      }
-
+      // Log the success
       logger.success(req, 'get_past_meeting_participants', startTime, {
         past_meeting_id: uid,
-        participant_count: payload.length,
-        organizer: isOrganizer,
-        show_meeting_attendees: pastMeeting?.show_meeting_attendees === true,
-        locked: isShowMeetingAttendeesLocked(pastMeeting?.meeting_type, pastMeeting?.restricted),
-        truncated: payload.length !== participants.length,
+        participant_count: participants.length,
       });
 
-      res.json(payload);
+      // Send the participants data to the client
+      res.json(participants);
     } catch (error) {
       next(error);
     }

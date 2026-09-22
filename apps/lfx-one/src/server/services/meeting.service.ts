@@ -805,19 +805,6 @@ export class MeetingService {
       });
     }
 
-    // Committee-writer import is a deliberately separate authorization tier from the roster
-    // visibility the join page honors — it does not require `show_meeting_attendees`, because
-    // that flag is off by default and gating on it would break the import flow for ordinary
-    // meetings. The board/restricted lock is the one part of that model it must respect: those
-    // meetings can never opt in, so their roster is not exportable through a committee the
-    // caller happens to write to. Their organizer still reaches it through the composer.
-    if (isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted)) {
-      throw new AuthorizationError('Attendees of board or restricted meetings cannot be imported', {
-        operation: 'get_authorized_registrants_for_import',
-        service: 'meeting_service',
-      });
-    }
-
     const registrants = await this.getMeetingRegistrants(req, meetingUid, false, undefined, true, IMPORT_REGISTRANTS_MAX);
 
     if (registrants.length > IMPORT_REGISTRANTS_MAX) {
@@ -1670,33 +1657,6 @@ export class MeetingService {
         ),
       { failOnPartial }
     );
-  }
-
-  /**
-   * Attaches occurrence-scoped RSVPs to an already-fetched registrant list without walking
-   * the full roster again. Used when the caller is only allowed to see their own row(s).
-   */
-  public async attachRsvpsToRegistrantList(
-    req: Request,
-    meetingUid: string,
-    registrants: MeetingRegistrant[],
-    occurrenceId?: string,
-    options?: ApiRequestOptions
-  ): Promise<MeetingRegistrant[]> {
-    if (registrants.length === 0) {
-      return registrants;
-    }
-
-    try {
-      const rsvps = await this.getRawMeetingRsvps(req, meetingUid, options);
-      return attachRsvpsToRegistrants(registrants, filterRsvpsToActiveRegistrants(rsvps, registrants), occurrenceId);
-    } catch (error) {
-      logger.warning(req, 'attach_rsvps_to_registrant_list', 'Failed to fetch RSVPs, returning registrants without RSVP data', {
-        meeting_id: meetingUid,
-        err: error,
-      });
-      return registrants;
-    }
   }
 
   /**

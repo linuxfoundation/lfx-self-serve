@@ -19,17 +19,15 @@ Key files:
 
 ### Current behavior
 
-| Viewer                  | Meeting type                                   | What they see                                                                |
-| ----------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| Anonymous               | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous               | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous               | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
-| Anonymous               | Any                                            | No attachments, no members list                                              |
-| Authenticated (any)     | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
-| Authenticated organizer | Any upcoming                                   | Members drawer enabled                                                       |
-| Authenticated invitee   | Upcoming, `show_meeting_attendees` on          | Members drawer enabled                                                       |
-| Authenticated invitee   | Upcoming, `show_meeting_attendees` off         | No members drawer; organizer chip falls back to owner/created_by             |
-| Any                     | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
+| Viewer                               | Meeting type                                   | What they see                                                                |
+| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| Anonymous                            | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous                            | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous                            | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
+| Anonymous                            | Any                                            | No attachments, no members list                                              |
+| Authenticated (any)                  | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
+| Authenticated (organizer or invited) | Any upcoming                                   | Members drawer enabled                                                       |
+| Any                                  | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
 
 ### Attachment gating
 
@@ -37,11 +35,7 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is rendered when `canViewGuestRoster()` is true: organizers always; everyone else only when `isGuestRosterShared(...)` holds (flag on, not board, not restricted) **and** they belong to the meeting. Belonging is proved differently per variant — upcoming meetings use `meeting.invited` / `optimisticInvited`, past meetings use `pastMeetingFullAccess` because nothing on the past fetch path sets `invited`. Anonymous viewers never see the functional button. The placeholder variant (`showGuestRosterTeaser()` — flag on, not locked, viewer not yet invited) triggers a toast explaining who the list is shared with; it never fetches a roster, and it is suppressed on board/restricted meetings so a legacy stored-true row cannot advertise one.
-
-Four BFF endpoints share that gate through the same `isGuestRosterShared` predicate, so they cannot drift apart: `GET /api/meetings/:uid/registrants` (tolerant branch only), `GET /api/meetings/:uid/my-meeting-registrants`, `GET /api/meetings/:uid/rsvp`, and `GET /api/past-meetings/:uid/participants`. Each returns the full roster to an organizer; to anyone else it returns the full roster only when the flag is on, the meeting is unlocked, and the caller appears in that roster themselves — otherwise just the caller's own row(s). A failed meeting lookup fails closed to the caller-only view. `canViewGuestRoster()` only decides whether the client _asks_; the BFF decision is the authoritative one.
-
-Two paths are deliberately outside that gate. The strict `fail_on_partial` branches of `/registrants` authorize separately — the composer's Guests section requires meeting-organizer access, and the committee "import registrants" flow requires committee-writer (or invite-only member) access on a committee sharing the meeting's project. Committee import does not require `show_meeting_attendees`, which is off by default, but it does honor the board/restricted lock: those rosters are never importable.
+The "Show Members" button is only rendered for `authenticated() && (meeting.organizer || meeting.invited)`. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
 
 ---
 
@@ -146,7 +140,7 @@ Key signals and their gating:
 | `password`           | `WritableSignal<string\|null>`  | set from URL `?password` query param                                                                                                                                              |
 | `attachments`        | `Signal<MeetingAttachment[]>`   | `initializeAttachments` — only fetches when `authenticated()`                                                                                                                     |
 | `materialFiles`      | `Signal<MeetingAttachment[]>`   | filtered from `attachments`                                                                                                                                                       |
-| `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && canViewGuestRoster() && !isPastMeeting`, so non-organizers also need the attendee-visibility flag; empty `[]` otherwise      |
+| `registrants`        | `Signal<MeetingRegistrant[]>`   | `initializeRegistrants` — requires `authenticated && (organizer\|\|invited\|\|optimisticInvited) && !isPastMeeting`; empty `[]` on any other branch                               |
 | `registrantsLoading` | `WritableSignal<boolean>`       | starts `true`; set by `initializeRegistrants` around the roster fetch, cleared via `finalize` (or immediately on the no-fetch branch) so the RSVP card doesn't hang on a skeleton |
 | `fetchedJoinUrl`     | `Signal<string\|undefined>`     | `initializeFetchedJoinUrl` — triggers on guest form submission                                                                                                                    |
 

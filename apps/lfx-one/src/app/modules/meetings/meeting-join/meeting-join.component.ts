@@ -69,14 +69,7 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import {
-  getUserTimezone,
-  isGuestRosterShared,
-  isHostKeyVisible,
-  isMeetingInviteResponsesEnabled,
-  isPastMeetingCompositeId,
-  reconcileOptimisticPad,
-} from '@lfx-one/shared/utils';
+import { getUserTimezone, isHostKeyVisible, isMeetingInviteResponsesEnabled, isPastMeetingCompositeId, reconcileOptimisticPad } from '@lfx-one/shared/utils';
 import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -340,58 +333,10 @@ export class MeetingJoinComponent implements OnInit {
   public additionalRegistrantsCount = computed(() => this.optimisticAdditional());
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
-  /**
-   * Organizers always see the roster. Everyone else sees it only when the organizer turned
-   * Show attendees on and the meeting is not board or restricted.
-   *
-   * The two page variants prove belonging differently. Upcoming meetings carry `invited`, set by
-   * the invite-status enrichment (plus `optimisticInvited` for a guest who just registered). Past
-   * meetings never carry `invited` — nothing on that fetch path sets it — so they gate on
-   * `pastMeetingFullAccess` instead, which the BFF already resolved from registrant, participant,
-   * and committee membership. `full_access` is the broader of the two (it is also true for any
-   * public past meeting), so this only decides whether to *ask*: the BFF still narrows
-   * `/past-meetings/:uid/participants` to the caller's own row when they were not a participant.
-   */
-  public readonly canViewGuestRoster = computed(() => {
-    if (!this.authenticated()) {
-      return false;
-    }
-    const meeting = this.meeting();
-    if (meeting?.organizer) {
-      return true;
-    }
-    if (!isGuestRosterShared(meeting?.show_meeting_attendees, meeting?.meeting_type, meeting?.restricted)) {
-      return false;
-    }
-    if (this.isPastMeeting()) {
-      return this.pastMeetingFullAccess();
-    }
-    return !!meeting?.invited || this.optimisticInvited();
-  });
-  /**
-   * The placeholder control shown to a viewer who can see that a roster exists but is not theirs
-   * to open — an anonymous or not-yet-invited visitor to a meeting that shares its guest list.
-   * Board and restricted meetings are excluded: they can never share a roster, so a row still
-   * carrying a legacy `show_meeting_attendees: true` must not advertise one.
-   */
-  protected showGuestRosterTeaser = computed(() => {
-    const meeting = this.meeting();
-    return !this.canViewGuestRoster() && isGuestRosterShared(meeting?.show_meeting_attendees, meeting?.meeting_type, meeting?.restricted);
-  });
   // Host source for the organizer chip: registrants for upcoming, participants for past (the
   // upcoming registrants signal is empty on past join pages), so the chip and the participants
-  // drawer resolve organizers from the same people. When attendee visibility is off the roster
-  // is truncated to the caller, so passing it here would hide Zoom co-hosts and undercount
-  // invitees — fall back to owner/created_by instead, matching dashboard cards.
-  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => {
-    if (!this.canViewGuestRoster()) {
-      return [];
-    }
-    if (this.isPastMeeting()) {
-      return this.pastMeetingParticipants();
-    }
-    return this.registrants();
-  });
+  // drawer resolve organizers from the same people.
+  protected organizerChipHosts = computed<MeetingHostCandidate[]>(() => (this.isPastMeeting() ? this.pastMeetingParticipants() : this.registrants()));
   // Past meeting attendance stats (derived from participants)
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
@@ -622,7 +567,8 @@ export class MeetingJoinComponent implements OnInit {
   }
 
   public onRegistrantsToggle(): void {
-    if (!this.canViewGuestRoster()) {
+    const meeting = this.meeting();
+    if (!meeting.organizer && !meeting.invited && !this.optimisticInvited()) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Show Members is not enabled',
@@ -660,15 +606,8 @@ export class MeetingJoinComponent implements OnInit {
     this.showGuestForm.set(true);
   }
 
-  // The attendee list ships in this release, so this explains *who* it is shared with rather
-  // than promising a future feature — the viewer seeing this button is outside that audience.
   public onShowMembersPlaceholder(): void {
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Show Members',
-      detail: 'This meeting shares its attendee list with invited guests. Register or sign in with your invited email to see it.',
-      life: 4000,
-    });
+    this.messageService.add({ severity: 'info', summary: 'Coming Soon', detail: 'Attendees list will be available soon.', life: 3000 });
   }
 
   public onRsvpViewToggle(): void {
@@ -1588,9 +1527,9 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializePastMeetingParticipants(): Signal<PastMeetingParticipant[]> {
     return toSignal(
-      combineLatest([this.pastMeetingResourceKey$(of(null)), toObservable(this.canViewGuestRoster)]).pipe(
-        switchMap(([{ hasAccess, id }, canView]) => {
-          if (!hasAccess || !id || !this.authenticated() || !canView) return of([] as PastMeetingParticipant[]);
+      this.pastMeetingResourceKey$(of(null)).pipe(
+        switchMap(({ hasAccess, id }) => {
+          if (!hasAccess || !id || !this.authenticated()) return of([] as PastMeetingParticipant[]);
           return this.meetingService.getPastMeetingParticipants(id).pipe(catchError(() => of([] as PastMeetingParticipant[])));
         })
       ),
@@ -1681,11 +1620,11 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.currentOccurrence).pipe(distinctUntilChanged((a, b) => a?.occurrence_id === b?.occurrence_id)),
         toObservable(this.authenticated),
         this.registrantsRefresh$,
-        toObservable(this.canViewGuestRoster),
+        toObservable(this.optimisticInvited),
       ]).pipe(
-        switchMap(([meeting, occurrence, authenticated, , canView]) => {
-          if (!meeting?.id || !authenticated || !canView || this.isPastMeeting()) {
-            // No fetch will happen on this branch (unauthenticated, roster gated, or a
+        switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
+          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
             // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);

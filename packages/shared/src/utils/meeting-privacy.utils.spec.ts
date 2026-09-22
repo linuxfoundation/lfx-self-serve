@@ -15,7 +15,6 @@ import { syncShowMeetingAttendeesLock } from './form.utils';
 import {
   getMeetingPrivacyIcon,
   getMeetingPrivacyLabel,
-  isGuestRosterShared,
   isHostKeyVisible,
   isHostKeyVisibleForJoinWindow,
   isShowMeetingAttendeesLocked,
@@ -29,6 +28,13 @@ describe('isShowMeetingAttendeesLocked', () => {
   it('locks board meetings regardless of type casing', () => {
     expect(isShowMeetingAttendeesLocked('board', false)).toBe(true);
     expect(isShowMeetingAttendeesLocked('BOARD', false)).toBe(true);
+  });
+
+  it('locks board meetings submitted with surrounding whitespace', () => {
+    // Nothing validates meeting_type before it is forwarded, so a direct API caller could
+    // otherwise send "Board " and persist show_meeting_attendees on a board meeting.
+    expect(isShowMeetingAttendeesLocked('Board ', false)).toBe(true);
+    expect(isShowMeetingAttendeesLocked('  board\t', false)).toBe(true);
   });
 
   it('locks restricted meetings of any type', () => {
@@ -169,24 +175,6 @@ describe('isHostKeyVisibleForJoinWindow', () => {
   it('is false for null/undefined meetings', () => {
     expect(isHostKeyVisibleForJoinWindow(null)).toBe(false);
     expect(isHostKeyVisibleForJoinWindow(undefined)).toBe(false);
-  });
-});
-
-describe('isGuestRosterShared', () => {
-  it('shares the roster when the flag is on and the meeting is unlocked', () => {
-    expect(isGuestRosterShared(true, MeetingType.TECHNICAL, false)).toBe(true);
-  });
-
-  it('does not share the roster when the flag is off', () => {
-    expect(isGuestRosterShared(false, MeetingType.TECHNICAL, false)).toBe(false);
-    expect(isGuestRosterShared(undefined, MeetingType.TECHNICAL, false)).toBe(false);
-    expect(isGuestRosterShared(null, MeetingType.TECHNICAL, false)).toBe(false);
-  });
-
-  it('refuses a legacy stored-true flag on a board or restricted meeting', () => {
-    expect(isGuestRosterShared(true, MeetingType.BOARD, false)).toBe(false);
-    expect(isGuestRosterShared(true, MeetingType.TECHNICAL, true)).toBe(false);
-    expect(isGuestRosterShared(true, 'board', false)).toBe(false);
   });
 });
 

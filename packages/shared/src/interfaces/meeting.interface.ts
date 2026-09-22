@@ -296,11 +296,11 @@ export interface Meeting {
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
   /**
-   * Share the guest list with the meeting's own guests — on the meeting page, in the ICS
-   * ATTENDEE list, and through every BFF roster endpoint (`/registrants`,
-   * `/my-meeting-registrants`, `/rsvp`, `/past-meetings/:uid/participants`), each of which
-   * narrows a non-organizer to their own row when this is off. Board and restricted meetings
-   * can never opt in; read it through `isGuestRosterShared` rather than on its own.
+   * Share the guest list in calendar invites: when on, each guest's ICS lists the other
+   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
+   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
+   * forces the field off on write. This does not currently change what the LFX meeting page or
+   * the BFF roster endpoints return; that gating is tracked separately.
    */
   show_meeting_attendees?: boolean | null;
   /**

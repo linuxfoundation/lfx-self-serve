@@ -92,7 +92,7 @@
                 }
 
                 <!-- View Guests Button -->
-                @if (canViewGuestRoster()) {
+                @if (authenticated() && (meeting().organizer || meeting().invited)) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -102,7 +102,7 @@
                     styleClass="py-[0.15rem] text-xs"
                     data-testid="view-members-button">
                   </lfx-button>
-                } @else if (showGuestRosterTeaser()) {
+                } @else if (meeting().show_meeting_attendees) {
                   <lfx-button
                     label="Show Members"
                     icon="fa-light fa-users"
@@ -335,7 +335,7 @@
                   }
 
                   <!-- Total Invitees -->
-                  @if (canViewGuestRoster() && registrants().length > 0 && !isPastMeeting()) {
+                  @if (registrants().length > 0 && !isPastMeeting()) {
                     <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
                       <i class="fa-light fa-users"></i>
                       <span>{{ totalInvitees() }} invited</span>

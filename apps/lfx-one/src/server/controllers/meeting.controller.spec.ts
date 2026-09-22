@@ -22,7 +22,6 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
     getMeetingRegistrants: vi.fn(),
     assertCommitteeAttributionAllowed: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
-    attachRsvpsToRegistrantList: vi.fn(async (_req: unknown, _uid: unknown, registrants: unknown) => registrants),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
@@ -60,22 +59,10 @@ vi.mock('@lfx-one/shared/constants', () => ({ MEETING_AGENDA_MAX_LENGTH: 2000, M
 // `truncateToUtf16Units` is the real implementation: the truncation assertions below are about what
 // the controller sends upstream, so stubbing it would test the stub. `string.utils` has no imports of
 // its own, so pulling it in directly doesn't drag the aliased barrel's graph along.
-vi.mock('@lfx-one/shared/utils', async () => {
-  // Behavioral doubles, not the real predicates: importing meeting-privacy.utils here would pull
-  // meeting.utils and with it Angular, which a mock factory can't compile. isGuestRosterShared is
-  // derived from the lock double rather than restated, so the two can't contradict each other the
-  // way a second hand-rolled copy could. The predicates' own coverage is meeting-privacy.utils.spec.ts.
-  const isShowMeetingAttendeesLocked = (meetingType?: string | null, restricted?: boolean | null) =>
-    (meetingType ?? '').toLowerCase() === 'board' || restricted === true;
-
-  return {
-    resolveMeetingOrganizer: vi.fn(() => null),
-    truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
-    isShowMeetingAttendeesLocked,
-    isGuestRosterShared: (showMeetingAttendees?: boolean | null, meetingType?: string | null, restricted?: boolean | null) =>
-      showMeetingAttendees === true && !isShowMeetingAttendeesLocked(meetingType, restricted),
-  };
-});
+vi.mock('@lfx-one/shared/utils', async () => ({
+  resolveMeetingOrganizer: vi.fn(() => null),
+  truncateToUtf16Units: (await import('../../../../../packages/shared/src/utils/string.utils')).truncateToUtf16Units,
+}));
 
 vi.mock('../helpers/validation.helper', () => ({ validateUidParameter: vi.fn(() => true) }));
 vi.mock('../helpers/meeting.helper', () => ({
@@ -615,7 +602,7 @@ describe('MeetingController', () => {
     beforeEach(() => {
       meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
       meetingSvc.assertCommitteeAttributionAllowed.mockResolvedValue(undefined);
-      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, committees: [{ uid: V2_COMMITTEE_UID }] });
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID }] });
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));
       committeeSvc.getCommitteeBase.mockResolvedValue({ uid: V2_COMMITTEE_UID, name: 'TAC', category: 'Technical' });
       committeeSvc.getCommitteeMembers.mockResolvedValue([{ email: 'a@example.com', role: { name: 'Chair' }, voting: { status: 'Voting Rep' } }]);
@@ -652,28 +639,28 @@ describe('MeetingController', () => {
 
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
 
+      expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
-    it('leaves registrants unenriched by default', async () => {
+    it('leaves registrants unenriched by default, without fetching the meeting', async () => {
       const res = buildRes();
 
       await controller.getMeetingRegistrants(buildReq(), res, next);
 
+      expect(meetingSvc.getMeetingById).not.toHaveBeenCalled();
       expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
-    it('degrades to the caller row when the meeting fetch fails', async () => {
+    it('degrades to unenriched rows when the meeting fetch fails', async () => {
       meetingSvc.getMeetingById.mockRejectedValue(new Error('upstream down'));
-      meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
       const res = buildRes();
 
       await controller.getMeetingRegistrants(buildReq({ query: { include_committee: 'true' } }), res, next);
 
-      expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
-      expect(res.json).toHaveBeenCalledWith([]);
+      expect(res.json).toHaveBeenCalledWith([registrant]);
     });
 
     // `getCommitteeBase` is a committee-service read gated on the caller being a committee reader,
@@ -681,7 +668,7 @@ describe('MeetingController', () => {
     // already carries the name (`getMeetingById` resolves it off the query service), which is what
     // keeps the "via [Group]" chip rendering for them.
     it('names the group from the meeting when the caller cannot read the committee itself', async () => {
-      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
       committeeSvc.getCommitteeBase.mockRejectedValue(new Error('forbidden'));
       const res = buildRes();
 
@@ -694,7 +681,7 @@ describe('MeetingController', () => {
     // member records, and those stay gated on the caller's own token — a chip that says which group
     // someone came in with is not a licence to read that group's roster.
     it('leaves the member-level committee fields empty for that same caller', async () => {
-      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, organizer: true, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
+      meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID, name: 'TAC' }] });
       committeeSvc.getCommitteeBase.mockRejectedValue(new Error('forbidden'));
       committeeSvc.getCommitteeMembers.mockRejectedValue(new Error('forbidden'));
       const res = buildRes();
