@@ -134,6 +134,21 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     expect(byTestId(fixture, 'org-easycla-acknowledgments-load-more')).toBeNull();
   });
 
+  it('shows the no-match row when a search returns nothing, not the empty-agreement copy', async () => {
+    getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })])));
+    const fixture = await render();
+
+    getContributorAcknowledgments.mockReturnValueOnce(of(page([])));
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('nobody');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('lfx-empty-state')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-acknowledgments-search-empty')?.textContent).toContain('No acknowledgments match your search.');
+  });
+
   /**
    * The identity column falls through: LF Login → GitHub username → GitLab username → email →
    * em-dash. A row with no LF Login but any downstream identifier must render, or an

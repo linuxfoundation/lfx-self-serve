@@ -92,6 +92,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private readonly page = signal<OrgClaContributorAcknowledgmentList | null>(null);
   private readonly errorMessage = signal<string | null>(null);
   private readonly loadingMore = signal(false);
+  private readonly fetchGeneration = signal(0);
   // The last-emitted search term, cached as a signal so `loadMore` can read it synchronously
   // alongside the fetch subscription.
   private readonly searchTerm = signal<string>('');
@@ -135,6 +136,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     combineLatest([this.orgUid$, this.signatureId$, this.search$]).pipe(
       distinctUntilChanged(([a1, b1, c1], [a2, b2, c2]) => a1 === a2 && b1 === b2 && c1 === c2),
       switchMap(([orgUid, signatureId, search]) => {
+        this.fetchGeneration.update((generation) => generation + 1);
         this.errorMessage.set(null);
         // Reset pagination each fetch cycle — Load-more merges into `page`, and this reset is
         // what makes a new search term start from the first page rather than the previous one.
@@ -178,7 +180,9 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly totalCount = computed(() => this.loadedList()?.totalCount ?? 0);
   protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
-  protected readonly showEmptyState = computed(() => !this.loading() && !this.errorMessage() && (this.loadedList()?.list.length ?? 0) === 0);
+  protected readonly showEmptyState = computed(
+    () => !this.loading() && !this.errorMessage() && (this.searchTerm() ?? '').trim().length === 0 && (this.loadedList()?.list.length ?? 0) === 0
+  );
   protected readonly showErrorState = computed(() => !!this.errorMessage());
   protected readonly loadingMoreSignal = this.loadingMore.asReadonly();
 
@@ -188,6 +192,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     if (!list?.nextKey || this.loadingMore()) return;
     this.loadingMore.set(true);
     const search = (this.searchTerm() ?? '').trim();
+    const generation = this.fetchGeneration();
     this.claService
       .getContributorAcknowledgments(this.orgUid(), this.signatureId(), { search, nextKey: list.nextKey })
       .pipe(
@@ -196,6 +201,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       )
       .subscribe({
         next: (next) => {
+          if (this.fetchGeneration() !== generation) return;
           const merged: OrgClaContributorAcknowledgmentList = {
             ...next,
             signatureId: list.signatureId,

@@ -1255,6 +1255,7 @@ export class OrgClaService {
       signatureId,
       claGroupId,
       companyId,
+      companySfid: orgUid,
       projectSfid,
       signed: entry.signed === true,
       canEdit: await this.callerCanEdit(req, entry, operation),
@@ -1359,12 +1360,13 @@ export class OrgClaService {
     operation: string
   ): Promise<EasyClaCorporateContributorList> {
     const params = new URLSearchParams();
+    params.set('companyID', context.companyId);
     if (query.search) params.set('searchTerm', query.search);
     params.set('pageSize', String(query.pageSize));
     if (query.nextKey) params.set('nextKey', query.nextKey);
 
     const url =
-      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(context.companyId)}` +
+      `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(context.companySfid)}` +
       `/cla-group/${encodeURIComponent(context.claGroupId)}/corporate-contributors?${params.toString()}`;
 
     const upstream = await gatewayFetch<EasyClaCorporateContributorList>(req, url, {
@@ -1448,9 +1450,9 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
     email: nonEmpty(row?.email),
-    name: nonEmpty(row?.name ?? row?.userDocusignName),
+    name: nonEmpty(row?.name) ?? nonEmpty(row?.userDocusignName),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
-    signedOn: nonEmpty(row?.userDocusignDateSigned ?? row?.signatureModified),
+    signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.signatureModified),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),
@@ -1476,6 +1478,7 @@ interface ApprovalContext {
   signatureId: string;
   claGroupId: string;
   companyId: string;
+  companySfid: string;
   projectSfid: string;
   signed: boolean;
   canEdit: boolean;

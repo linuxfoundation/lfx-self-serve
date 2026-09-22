@@ -19,6 +19,7 @@ import type {
   OrgClaSignResponse,
   PdfUrlResponse,
 } from '@lfx-one/shared/interfaces';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
 import { Observable, catchError, map, of } from 'rxjs';
 
 /**
@@ -131,7 +132,7 @@ export class OrgLensClaService {
     signatureId: string,
     options: { search?: string; pageSize?: number; nextKey?: string | null } = {}
   ): Observable<OrgClaContributorAcknowledgmentList> {
-    let params = new HttpParams();
+    let params = strictHttpParams();
     if (options.search) params = params.set('search', options.search);
     if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
     if (options.nextKey) params = params.set('nextKey', options.nextKey);

@@ -2403,19 +2403,15 @@ function stageAckRead(page: EasyClaCorporateContributorList = contributorPage(),
 }
 
 describe('OrgClaService.getContributorAcknowledgments — the upstream call', () => {
-  it('addresses the producer by the resolved company id and CLA Group id, not the ids on the wire', async () => {
+  it('addresses the producer by the org Salesforce id and passes the internal company id as a query parameter', async () => {
     stageAckRead();
 
     await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
-    // The producer is keyed on the internal company UUID and the CLA Group id — never on the org
-    // SFID or the CCLA signature id on the URL. Naming the wrong id would pull another
-    // organization's rows.
-    expect(gatewayFetch).toHaveBeenLastCalledWith(
-      expect.anything(),
-      expect.stringMatching(/\/v4\/company\/external\/company-uuid-1\/cla-group\/cla-group-uuid-1\/corporate-contributors\?/),
-      expect.any(Object)
-    );
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain(`/v4/company/external/${ORG_UID}/cla-group/cla-group-uuid-1/corporate-contributors`);
+    expect(url).toContain('companyID=company-uuid-1');
+    expect(url).not.toContain('/company/external/company-uuid-1/');
   });
 
   it('carries the search term and page size to the producer as query parameters', async () => {
@@ -2510,6 +2506,18 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
     expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
+  });
+
+  it('falls through a blank name and a blank signed date to the populated fallback', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ name: '   ', userDocusignName: 'Ada Lovelace', userDocusignDateSigned: '  ', signatureModified: '2026-01-02T00:00:00Z' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]).toMatchObject({ name: 'Ada Lovelace', signedOn: '2026-01-02T00:00:00Z' });
   });
 
   it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
