@@ -117,7 +117,12 @@ export class HealthMetricsEngagementComponent {
    */
   protected onGroupCounts(counts: HealthMetricsEngagementGroupCounts | null): void {
     this.groupCounts.set(counts);
-    if (counts) this.settlePendingSection();
+    if (!counts) return;
+
+    this.settlePendingSection();
+    // Consumed: counts re-emit on every filter and page change, and a still-pending key would
+    // scroll the pane back to the anchor each time.
+    this.pendingSection.set(null);
   }
 
   protected scrollToSection(key: HealthMetricsEngagementSectionKey): void {
@@ -149,7 +154,7 @@ export class HealthMetricsEngagementComponent {
     this.destroyRef.onDestroy(() => window.removeEventListener('resize', onResize));
   }
 
-  /** Replays the deep link. Only the two callers below run it, so it can never fight a user scroll. */
+  /** Replays the deep link. Runs only until the section data settles and clears the pending key. */
   private settlePendingSection(): void {
     const key = this.pendingSection();
     if (!key) return;
