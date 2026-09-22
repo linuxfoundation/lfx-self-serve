@@ -2,23 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, NgClass } from '@angular/common';
-import {
-  afterNextRender,
-  Component,
-  computed,
-  DestroyRef,
-  ElementRef,
-  inject,
-  input,
-  PLATFORM_ID,
-  Signal,
-  signal,
-  viewChild,
-  WritableSignal,
-} from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
-  buildHealthMetricsOverviewPeriods,
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
@@ -41,6 +27,7 @@ import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIX
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
+import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
   HealthMetricsAreaState,
@@ -53,8 +40,6 @@ import type {
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewRevenueByRange,
   HealthMetricsOverviewTileViewModel,
-  HealthMetricsRange,
-  HealthMetricsYearOption,
   ProjectContext,
 } from '@lfx-one/shared/interfaces';
 
@@ -65,17 +50,16 @@ import type {
   styleUrl: './health-metrics-overview.component.scss',
 })
 export class HealthMetricsOverviewComponent {
+  protected readonly chrome = inject(HealthMetricsChromeService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
-  private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
 
   public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
 
-  // Fresh per component instance (not a static/module-level constant) so the derived labels stay
-  // correct across a calendar-year rollover in a long-running SSR process.
-  protected readonly periods: readonly HealthMetricsYearOption[] = buildHealthMetricsOverviewPeriods();
-  protected readonly selectedRange = signal<HealthMetricsRange>('YTD');
+  // Period selection and the sticky-header offset live on the gate-provided chrome service so they
+  // persist across tab switches — see HealthMetricsChromeService.
+  private readonly selectedRange = this.chrome.selectedRange;
 
   // Fetched once per foundation for every period at once (HEALTH_OVERVIEW_REVENUE keys on
   // foundation_slug with the period as a column suffix), then projected by the selected period.
@@ -84,12 +68,6 @@ export class HealthMetricsOverviewComponent {
   protected readonly revenue = computed<HealthMetricsOverviewRevenue>(
     () => this.revenueByRange()[this.selectedRange()] ?? HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY
   );
-
-  protected readonly pageHeader = viewChild<ElementRef<HTMLElement>>('pageHeader');
-  // Measured client-side from the sticky header (see observeHeaderHeight); this fallback only shows
-  // pre-hydration and approximates the header's real rendered height.
-  protected readonly headerHeightPx = signal(72);
-  protected readonly railTopPx = computed(() => this.headerHeightPx() + 16);
 
   protected readonly foundationSummaryLoading = signal(true);
 
@@ -109,17 +87,6 @@ export class HealthMetricsOverviewComponent {
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
 
   private static readonly areaNameByKey = new Map(HEALTH_METRICS_OVERVIEW_AREAS.map((areaMeta) => [areaMeta.key, areaMeta.name]));
-
-  public constructor() {
-    // afterNextRender only runs client-side, never during SSR — safe without an isPlatformBrowser guard.
-    afterNextRender(() => this.observeHeaderHeight());
-  }
-
-  // Pure client-side projection: both all-periods payloads are already in hand, so this issues no
-  // request and never blanks the tiles back to their loading placeholder.
-  protected setPeriod(period: HealthMetricsYearOption): void {
-    this.selectedRange.set(period.range);
-  }
 
   private initRevenueByRange(): Signal<HealthMetricsOverviewRevenueByRange> {
     return this.initByRangeFetch(this.revenueLoading, {}, (slug) => this.analyticsService.getHealthOverviewRevenue(slug));
@@ -271,24 +238,6 @@ export class HealthMetricsOverviewComponent {
       // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
       evaluatedAt: '',
     };
-  }
-
-  private observeHeaderHeight(): void {
-    const header = this.pageHeader()?.nativeElement;
-    // afterNextRender guarantees client-side execution, but not that ResizeObserver exists there
-    // (e.g. jsdom in specs) — guard per .claude/rules/ssr-safety.md.
-    if (!header || typeof ResizeObserver === 'undefined') {
-      return;
-    }
-    const observer = new ResizeObserver(([entry]) => {
-      // contentRect is the content box only (excludes padding/border); this header has vertical
-      // padding, so border-box size is required to get its true rendered height. borderBoxSize
-      // isn't implemented in every engine (e.g. older Safari/jsdom) — fall back to getBoundingClientRect.
-      const height = entry.borderBoxSize?.[0]?.blockSize ?? header.getBoundingClientRect().height;
-      this.headerHeightPx.set(height);
-    });
-    observer.observe(header);
-    this.destroyRef.onDestroy(() => observer.disconnect());
   }
 
   private static toFindingViewModel(

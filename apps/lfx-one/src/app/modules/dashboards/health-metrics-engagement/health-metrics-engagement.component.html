@@ -1,0 +1,48 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- The design's `l2Shell`: a fixed sub-nav beside a single stacked column of anchored sections. -->
+<div class="flex flex-col gap-6 lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:items-start lg:gap-8" data-testid="health-metrics-engagement-page">
+  <lfx-engagement-sub-nav [items]="subNavItems()" [activeKey]="activeSection()" [topPx]="chrome.stickyTopPx()" (sectionPicked)="scrollToSection($event)" />
+
+  <!-- The design's `.panes`: the only thing that scrolls. Its height is measured off the viewport so
+       the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
+       variable goes unused and the page scrolls normally. -->
+  <div
+    #panes
+    class="flex min-w-0 flex-col gap-6 lg:h-[var(--engagement-panes-height)] lg:overflow-y-auto lg:pr-2"
+    [style.--engagement-panes-height]="panesHeight()">
+    @for (section of sections; track section.key) {
+      <section
+        [id]="sectionId(section.key)"
+        class="surface-card flex flex-col gap-3 rounded-xl bg-white p-5"
+        [attr.data-testid]="'engagement-section-' + section.key">
+        <div class="flex flex-col gap-1" [id]="sectionId(section.key) + '-heading'">
+          <h2 class="text-base font-semibold text-gray-900">{{ section.heading }}</h2>
+          <p class="text-[13px] text-gray-500">{{ section.description }}</p>
+        </div>
+
+        @if (section.key === 'committees') {
+          <lfx-engagement-group-attendance (countsChange)="groupCounts.set($event)" />
+        } @else {
+          <!-- PR 1 ships the shell plus Group attendance; the other five sections' Snowflake reads,
+               tables and controls land in the follow-up PRs on #2802. -->
+          <p class="rounded-lg bg-gray-50 px-3 py-6 text-center text-[13px] text-gray-400">Awaiting data</p>
+        }
+
+        @if (section.footnote) {
+          <p class="border-t border-gray-100 pt-3 text-[12px] text-gray-400">
+            @if (section.footnoteCaution) {
+              <i class="fa-light fa-triangle-exclamation mr-1 text-amber-500" aria-hidden="true"></i>
+            }
+            {{ section.footnote }}
+          </p>
+        }
+      </section>
+    }
+
+    <!-- Zero-height sentinel: lets the scroll-spy snap to the short last section without a scroll
+         listener or magic pixel values. -->
+    <div id="engagement-scroll-end-sentinel" aria-hidden="true"></div>
+  </div>
+</div>
