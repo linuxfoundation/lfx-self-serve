@@ -85,7 +85,7 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTIONS = [
   },
 ] as const;
 
-/** Cross-link under the sub-nav items — governance detail lives in Members, not Engagement. */
+/** Static note under the sub-nav items; plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_ENGAGEMENT_SUB_NAV_CROSS_LINK = 'Board & voting-member attendance is reported per member in Members';
 
 /**
@@ -103,7 +103,7 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS = [
 /** Below this many meetings in the period, attendance reads "No data" rather than a percentage. */
 export const HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE = 3;
 
-/** Days without a meeting before a group is dormant, or an organization is lapsed. */
+/** Days without activity before an organization is lapsed. Group dormancy is the view's own flag. */
 export const HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS = 180;
 
 /** Attendance below this share (0-1) is the one threshold worth colouring amber. */
@@ -115,7 +115,7 @@ export const HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS = 2;
 /** Prefix for a section's DOM id; the fragment is the bare section key. */
 export const HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX = 'sec-eng-';
 
-/** Absolute router path the Health Metrics tab bar and every Overview deep-link resolve against. */
+/** Absolute router path the Health Metrics tab bar resolves its tab links against. */
 export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 
 /**
