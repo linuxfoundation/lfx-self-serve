@@ -5,10 +5,11 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import { ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_LIST_INCOMPLETE_NOTICE } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
 import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
@@ -30,6 +31,7 @@ export class OrgSelectorComponent {
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -72,6 +74,13 @@ export class OrgSelectorComponent {
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
   protected readonly hasMore: Signal<boolean> = this.orgNavigationService.hasMore;
+
+  /**
+   * Spec 053 FR-010 — the caller's list is a lower bound (roll-up expansion was incomplete) but the
+   * selected organization did load, so the page renders and the switcher carries the notice instead.
+   */
+  protected readonly listIncomplete: Signal<boolean> = this.emptyState.listIncomplete;
+  protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
 
   /**
    * LFXV2-3029 — a single per-caller decision evaluated across the caller's whole resolved set,
@@ -304,6 +313,11 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /** FR-010 Retry — the one shared Retry: role-grants lookup, then the list from its first page. */
+  protected retryList(): void {
+    this.emptyState.retry();
   }
 
   /**

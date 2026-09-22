@@ -115,7 +115,34 @@ export interface RoleGrantsResponse {
   isStaff: boolean;
   /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
   degraded: boolean;
+  /**
+   * Spec 053 (FR-020) — why the arrays above may be incomplete. `failed`: the roster never loaded and
+   * the answer is unknown; `partial`: direct grants loaded but the inherited roll-up is a lower bound;
+   * `ok`: complete. Optional for rolling deploys: absent ⇒ derive from `degraded` (`true` → `partial`).
+   */
+  lookupOutcome?: OrgLensLookupOutcome;
+  /**
+   * Spec 053 (FR-011) — whether the LF-team membership check answered. `failed` means it threw and
+   * `isStaff` is a fail-closed `false`, so the client MUST render the staff-check state and never the
+   * employee no-access copy. Absent ⇒ `ok`.
+   */
+  staffCheck?: OrgLensStaffCheck;
+  /**
+   * Spec 053 (FR-011) — random per-computation UUID, present only when `staffCheck === 'failed'`; the
+   * same id is logged with that computation's lookup warnings and sent as the `X-Correlation-Id`
+   * response header (`ORG_ROLE_GRANTS_CORRELATION_HEADER`), so a caller quoting it can be found. Never
+   * `req.id` (a per-process counter). It is the id logged by the computation that produced the result
+   * — within the short failed-check cache window (`ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS`)
+   * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
+   */
+  correlationId?: string;
 }
+
+/** Spec 053 — completeness of the caller's organization-list lookup. */
+export type OrgLensLookupOutcome = 'ok' | 'partial' | 'failed';
+
+/** Spec 053 — whether the LF-team membership check answered. */
+export type OrgLensStaffCheck = 'ok' | 'failed';
 
 /**
  * Response of `GET /api/orgs/resolve/:segment` (spec 050). Resolves a `/org/{segment}/…` address
@@ -362,6 +389,10 @@ export interface AccessAwareOrgsResult {
   isStaff: boolean;
   /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;
+  /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
+  staffCheck: OrgLensStaffCheck;
+  /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
+  correlationId?: string;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -375,4 +406,8 @@ export interface AccessAwareOrgsCacheEntry {
   isStaff: boolean;
   /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
   degraded: boolean;
+  /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
+  staffCheck: OrgLensStaffCheck;
+  /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true`) fails the shape guard. */
+  correlationId?: string;
 }

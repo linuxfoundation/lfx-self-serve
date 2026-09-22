@@ -272,7 +272,7 @@ test.describe('Org Projects', () => {
   test('renders no-access, load-error, and empty-workspace states', async ({ page }) => {
     await gotoOrgProjectsPage(page, { hasAccess: false });
     await expect(page.getByTestId('org-projects-no-access-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('No organization linked to your account');
     await expect(page.getByTestId('org-projects-no-access-contact-support')).toBeVisible();
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });

@@ -10,7 +10,7 @@ paths:
 
 ## Brand colors
 
-Brand palette lives in `@linuxfoundation/lfx-ui-core`, exported via `packages/shared/src/constants/colors.constants.ts` as `lfxColors`. Tailwind picks scales up automatically via `apps/lfx-one/tailwind.config.js` (there is no root-level Tailwind config).
+Brand palette lives in `@linuxfoundation/lfx-ui-core`, exported via `packages/shared/src/constants/colors.constants.ts` as `lfxColors`. Tailwind picks scales up automatically via `apps/lfx-one/tailwind.config.js` (there is no root-level Tailwind config). That config is plain JS loaded by Tailwind through jiti's Node/`exports`-map resolution, so the `@lfx-one/shared/*` tsconfig alias does not apply there — it must import shared constants via the deep `@lfx-one/shared/src/...` source subpath (the public entrypoint would read a stale/missing built `dist/` on dev machines), and it is the sole consumer of the package's `"./src/*"` export (guarded by `src/server/tailwind-config.spec.ts`).
 
 Available scales:
 

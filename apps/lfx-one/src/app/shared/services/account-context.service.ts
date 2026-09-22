@@ -121,6 +121,11 @@ export class AccountContextService {
     () =>
       this.orgRoleGrantsService.writerSet().size > 0 ||
       this.orgRoleGrantsService.auditorSet().size > 0 ||
+      // LFXV2-3029: an inherited (roll-up) grant is a held organization too — the switcher lists those
+      // rows, and without it a caller holding only inherited grants never starts the list and the page
+      // waits on it forever (spec 053 review).
+      this.orgRoleGrantsService.inheritedWriterSet().size > 0 ||
+      this.orgRoleGrantsService.inheritedAuditorSet().size > 0 ||
       this.availableAccounts().length > 0 ||
       this.orgRoleGrantsService.isStaff()
   );

@@ -24,16 +24,17 @@ import { catchError, debounceTime, distinctUntilChanged, filter, map, of, skip, 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
 
@@ -48,7 +49,7 @@ type OrgLensGroupRow = OrgLensGroupVm & { membershipLink: string[] | null };
     GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
-    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
     PersonDetailDrawerComponent,
     RouterLink,
     SelectComponent,
@@ -68,6 +69,7 @@ export class OrgGroupsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
@@ -115,12 +117,13 @@ export class OrgGroupsComponent {
   protected readonly statGridClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
 
   // ── Auth / access guards (mirrors org-meetings pattern) ───────────────────
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   // Committee-service B2B endpoints are scoped by org uid, not the Snowflake accountId — mirrors

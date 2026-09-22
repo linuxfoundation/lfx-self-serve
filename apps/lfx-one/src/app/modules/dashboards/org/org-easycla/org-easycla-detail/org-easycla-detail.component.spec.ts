@@ -20,6 +20,7 @@ import {
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { UserService } from '@services/user.service';
@@ -61,6 +62,10 @@ describe('OrgEasyclaDetailComponent', () => {
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
   const navLoaded = signal(true);
+  const correlationId = signal<string | null>(null);
+  // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
+  const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
+  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retry: vi.fn() };
   // Both halves of the address (#2364): the CLA Group in the path, and the signature that narrows
   // it in the query. Separate subjects because they change independently — a card click sets both,
   // and moving between two signing entities' agreements changes only the query.
@@ -119,9 +124,10 @@ describe('OrgEasyclaDetailComponent', () => {
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateService },
         {
           provide: OrgLensClaService,
           useValue: {
@@ -2072,9 +2078,10 @@ describe('OrgEasyclaDetailComponent', () => {
               refreshCanonicalRecord: vi.fn().mockResolvedValue(undefined),
             },
           },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
+          { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
@@ -2709,9 +2716,10 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
           useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
         },
         { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
         {
           provide: OrgLensClaService,
           useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },

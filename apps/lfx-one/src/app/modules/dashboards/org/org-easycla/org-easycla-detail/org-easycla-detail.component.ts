@@ -32,6 +32,7 @@ import {
   ORG_EASYCLA_RETURN_SIGNED_PARAM,
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
   ORG_EASYCLA_SIGNATURE_PARAM,
+  ORG_LENS_EMPTY_STATE_COPY,
 } from '@lfx-one/shared/constants';
 import {
   downloadFromUrl,
@@ -74,13 +75,14 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MessageComponent } from '@components/message/message.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
@@ -100,10 +102,10 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
-    OpenIntercomDirective,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
+    OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
   ],
@@ -146,6 +148,7 @@ export class OrgEasyclaDetailComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // The signed-row wait is started from an adoption callback, which is outside the construction-time
   // injection context `toObservable` would otherwise take implicitly.
@@ -249,12 +252,13 @@ export class OrgEasyclaDetailComponent {
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
   protected readonly selectedOrgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
 
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   /** The CLA Group this page is about. The authoritative half of the address (#2364). */
@@ -499,7 +503,7 @@ export class OrgEasyclaDetailComponent {
       !this.hasCompany() ||
       this.signingOpen() ||
       this.alreadyMailedCurrentAgreement() ||
-      this.hasNoOrgAccess() ||
+      this.hasPageState() ||
       !this.orgContextLoaded() ||
       !this.signingChoice() ||
       this.previewOrgMismatch()
@@ -926,7 +930,8 @@ export class OrgEasyclaDetailComponent {
    */
   private initStartDisabledReason(): Signal<string> {
     return computed(() => {
-      if (this.hasNoOrgAccess()) return 'Organization Lens is not available for your account';
+      const state = this.pageState();
+      if (state) return ORG_LENS_EMPTY_STATE_COPY[state].headline;
       if (!this.orgContextLoaded()) return 'checking your organization access';
       if (!this.hasCompany()) return 'select an organization first';
       if (this.signingOpen()) return 'a signing request is already open';

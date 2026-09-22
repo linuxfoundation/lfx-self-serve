@@ -92,6 +92,25 @@ export class OrgNavigationService {
     this.state.reload$.next();
   }
 
+  /**
+   * Spec 053 Retry — re-fetch the first page **without** bootstrap semantics: the page that lands is
+   * not allowed to default-select another organization or clear the current one (`clearAccount`), which
+   * `resetAndReload` arms through `pendingDefaultSelection`. Retry's contract is "try the same thing
+   * again"; a first page that comes back empty mid-outage must leave the viewer's selection exactly
+   * where it was (FR-022–FR-024 silent-substitution rule).
+   *
+   * One qualification: a bootstrap still in flight keeps its own pending intent — the flag is left
+   * untouched, never forced either way — so the refreshed page (which supersedes the bootstrap's
+   * request) is consumed under the bootstrap's semantics, exactly as the bootstrap's own page would
+   * have been. The guarantee above is therefore "Retry adds no selection semantics of its own".
+   */
+  public refreshList(selectedUid?: string | null): void {
+    if (selectedUid) {
+      this.restoredSelectedUid = selectedUid;
+    }
+    this.state.reload$.next();
+  }
+
   private createOrgListState(): OrgListState {
     const searchTerm = signal<string>('');
     const loading = signal<boolean>(false);

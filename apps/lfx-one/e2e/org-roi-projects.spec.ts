@@ -201,7 +201,10 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-projects-donut-forbidden')).toBeVisible();
+    const state = page.getByTestId('org-roi-projects-donut-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-no-access');
+    await expect(state).toContainText('You do not have access to this organization');
     await expect(page.getByTestId('org-roi-projects-donut-legend')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-projects-donut-chart')).toHaveCount(0);
   });
@@ -213,8 +216,11 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-projects-donut-error')).toBeVisible();
-    await expect(page.getByTestId('org-roi-projects-donut-forbidden')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-projects-donut-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
+    await expect(state).toContainText('Access could not be verified');
+    await expect(state).not.toContainText('You do not have access');
   });
 });
 
@@ -335,7 +341,10 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     });
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-projects-section-error')).toBeVisible();
+    const state = page.getByTestId('org-roi-projects-section-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-load');
+    await expect(state).toContainText('This section could not be loaded');
 
     // Switching method re-issues the read, which now succeeds.
     await page.getByTestId('org-roi-assumptions-trigger').click();
@@ -542,7 +551,10 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-projects-section-forbidden')).toBeVisible();
+    const state = page.getByTestId('org-roi-projects-section-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-no-access');
+    await expect(state).toContainText('You do not have access to this organization');
     await expect(page.getByTestId('org-roi-project-picker')).toHaveCount(0);
     await expect(page.getByTestId('org-roi-projects-bar-chart')).toHaveCount(0);
   });
@@ -554,7 +566,10 @@ test.describe('Org Lens ROI Metrics — projects section', () => {
     );
     await gotoOrgRoiPage(page);
 
-    await expect(page.getByTestId('org-roi-projects-section-error')).toBeVisible();
-    await expect(page.getByTestId('org-roi-projects-section-forbidden')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-projects-section-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
+    await expect(state).toContainText('Access could not be verified');
+    await expect(state).not.toContainText('You do not have access');
   });
 });
