@@ -84,6 +84,8 @@ import {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
 } from '@lfx-one/shared/interfaces';
 import {
@@ -1129,6 +1131,24 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementMeetingParticipation>('/api/analytics/engagement-meeting-participation', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-meeting-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Organization participation" table
+   * @param query - Foundation scope; the period, search and lapsed cut all resolve client-side
+   * @returns Observable of every organization with all four periods and the caption counts
+   */
+  public getEngagementOrgParticipation(query: HealthMetricsEngagementOrgQuery): Observable<HealthMetricsEngagementOrgParticipation> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
+    // state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementOrgParticipation>('/api/analytics/engagement-org-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-org-participation failed', { query, error });
         return throwError(() => error);
       })
     );

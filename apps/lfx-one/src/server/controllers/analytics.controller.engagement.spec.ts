@@ -4,7 +4,11 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getGroupAttendance, getMeetingParticipation } = vi.hoisted(() => ({ getGroupAttendance: vi.fn(), getMeetingParticipation: vi.fn() }));
+const { getGroupAttendance, getMeetingParticipation, getOrgParticipation } = vi.hoisted(() => ({
+  getGroupAttendance: vi.fn(),
+  getMeetingParticipation: vi.fn(),
+  getOrgParticipation: vi.fn(),
+}));
 
 vi.mock('../services/health-metrics-engagement.service', async () => {
   // The range guard is real — a rename of the view's period columns must fail this suite too.
@@ -14,6 +18,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
     HealthMetricsEngagementService: class {
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
+      public getOrgParticipation = getOrgParticipation;
     },
   };
 });
@@ -33,7 +38,11 @@ vi.mock('@lfx-one/shared/utils', async () => {
   return { resolvePeriodRange: actual.resolvePeriodRange };
 });
 
-import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT, HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+} from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
 import { AnalyticsController } from './analytics.controller';
@@ -201,6 +210,58 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     getMeetingParticipation.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callParticipation({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callOrgs(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementOrgParticipation(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementOrgParticipation', () => {
+  beforeEach(() => {
+    getOrgParticipation.mockReset();
+    getOrgParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+  });
+
+  // Every period ships in one read, so a range on the wire would be a param the service ignores.
+  it('takes the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callOrgs({ foundationSlug: 'acme', range: 'COMPLETED_YEAR' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getOrgParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+  });
+
+  it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
+    const { next, promise } = callOrgs({});
+    await promise;
+
+    expect(getOrgParticipation).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('rejects a foundation slug that is not a slug', async () => {
+    const { next, promise } = callOrgs({ foundationSlug: "acme' OR 1=1" });
+    await promise;
+
+    expect(getOrgParticipation).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getOrgParticipation.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callOrgs({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();
