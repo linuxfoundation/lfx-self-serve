@@ -54,6 +54,9 @@ export class MenteeApplicantTasksComponent {
   /** Retry the applicant-phase overview fetch. */
   protected retry(): void {
     this.error.set(null);
+    // A 200 with the wrong phase is cached as a success. Drop it so Retry
+    // actually refetches instead of replaying the same unusable payload.
+    this.mentorshipService.clearMenteeCaches();
     this.reloadTrigger.update((n) => n + 1);
   }
 

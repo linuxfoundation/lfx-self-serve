@@ -45,11 +45,18 @@ export class MentorshipService {
    * Session cache for the mentee overview/tasks reads. The Overview and the
    * "My Application Tasks" / "My Tasks" tabs read the same unparameterized
    * payload, so without this a plain overview↔tasks tab switch re-fetched the
-   * whole response every time. `shareReplay({ refCount: false })` keeps the
-   * first successful response and replays it to later subscribers; a failure
-   * clears the slot so the next read (e.g. a retry) fetches fresh. Phase-scoped
-   * overview reads (the dev phase switcher) bypass the cache. Add explicit
-   * invalidation here once real write endpoints land.
+   * whole response every time. `shareReplay({ bufferSize: 1, refCount: false })`
+   * keeps the first successful response and replays it to later subscribers. A
+   * failure clears that slot so the next read fetches fresh. A user Retry calls
+   * `clearMenteeCaches()` so a successful-but-unusable payload (a non-applicant
+   * phase on the applicant tab) is not replayed forever. Phase-scoped overview
+   * reads (the dev phase switcher) bypass the cache and never fill it.
+   *
+   * The slots last for the browser session. An identity swap is a full document
+   * load here, so this cache is not torn down on user change the way
+   * `UserService` is. Server-side mentee updates stay stale until reload or
+   * `clearMenteeCaches()`. Add write-path invalidation once real write
+   * endpoints land.
    */
   private menteeOverview$: Observable<MentorshipMenteeOverviewResponse> | null = null;
   private menteeTasks$: Observable<MentorshipMenteeTasksResponse> | null = null;
@@ -124,6 +131,12 @@ export class MentorshipService {
     return this.http
       .get<MentorshipMenteeHasProfileResponse>('/api/mentorship/mentee/has-profile')
       .pipe(catchError(this.handleError({ hasProfile: false }, 'hasMenteeProfile')));
+  }
+
+  /** Drop cached mentee overview and tasks so the next read hits the network. */
+  public clearMenteeCaches(): void {
+    this.menteeOverview$ = null;
+    this.menteeTasks$ = null;
   }
 
   public getMenteeOverview(phase?: MentorshipMenteePhase): Observable<MentorshipMenteeOverviewResponse> {

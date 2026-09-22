@@ -4,7 +4,12 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { MentorshipMenteeOverviewResponse, MentorshipMenteeTasksResponse } from '@lfx-one/shared/interfaces';
+import {
+  MentorshipMenteeOverviewAccepted,
+  MentorshipMenteeOverviewApplicant,
+  MentorshipMenteeOverviewResponse,
+  MentorshipMenteeTasksResponse,
+} from '@lfx-one/shared/interfaces';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { MentorshipService } from './mentorship.service';
@@ -141,7 +146,26 @@ describe('MentorshipService — mentee overview/tasks caching', () => {
 
   const OVERVIEW_URL = '/api/mentorship/mentee/overview';
   const TASKS_URL = '/api/mentorship/mentee/tasks';
-  const applicantOverview = { phase: 'applicant', applications: [] } as unknown as MentorshipMenteeOverviewResponse;
+  const applicantOverview: MentorshipMenteeOverviewApplicant = {
+    phase: 'applicant',
+    applications: [],
+    pastApplications: [],
+    openTaskCount: 0,
+  };
+  const acceptedOverview: MentorshipMenteeOverviewAccepted = {
+    phase: 'accepted',
+    openTaskCount: 0,
+    program: {
+      id: 'prog-1',
+      programId: 'mp-1',
+      projectName: 'Project',
+      programName: 'Program',
+      tasksCompleted: 0,
+      tasksTotal: 0,
+      mentors: [],
+      upNextTasks: [],
+    },
+  };
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -183,16 +207,43 @@ describe('MentorshipService — mentee overview/tasks caching', () => {
   });
 
   it('bypasses the cache for phase-scoped overview reads (dev phase switcher)', () => {
-    const acceptedOverview = { phase: 'accepted' } as unknown as MentorshipMenteeOverviewResponse;
-    const isAcceptedRead = (req: { url: string; params: { get(name: string): string | null } }): boolean =>
-      req.url === OVERVIEW_URL && req.params.get('phase') === 'accepted';
-
     service.getMenteeOverview('accepted').subscribe();
-    http.expectOne(isAcceptedRead).flush(acceptedOverview);
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === 'accepted').flush(acceptedOverview);
 
     // A second phase-scoped read issues its own request rather than replaying a cached one.
     service.getMenteeOverview('accepted').subscribe();
-    http.expectOne(isAcceptedRead).flush(acceptedOverview);
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === 'accepted').flush(acceptedOverview);
+  });
+
+  it('does not let a phase-scoped overview read fill the unparameterized cache', () => {
+    service.getMenteeOverview('accepted').subscribe();
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === 'accepted').flush(acceptedOverview);
+
+    service.getMenteeOverview().subscribe();
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === null).flush(applicantOverview);
+  });
+
+  it('does not serve the unparameterized cache to a phase-scoped overview read', () => {
+    service.getMenteeOverview().subscribe();
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === null).flush(applicantOverview);
+
+    service.getMenteeOverview('accepted').subscribe();
+    http.expectOne((req) => req.url === OVERVIEW_URL && req.params.get('phase') === 'accepted').flush(acceptedOverview);
+  });
+
+  it('clearMenteeCaches drops a successful overview so the next read fetches again', () => {
+    service.getMenteeOverview().subscribe();
+    http.expectOne(OVERVIEW_URL).flush(applicantOverview);
+
+    service.clearMenteeCaches();
+
+    const refreshed: MentorshipMenteeOverviewAccepted = { ...acceptedOverview, openTaskCount: 1 };
+    let seen: unknown = 'unset';
+    service.getMenteeOverview().subscribe((response) => {
+      seen = response;
+    });
+    http.expectOne(OVERVIEW_URL).flush(refreshed);
+    expect(seen).toBe(refreshed);
   });
 
   it('serves mentee tasks from one request across repeated reads', () => {
@@ -203,5 +254,37 @@ describe('MentorshipService — mentee overview/tasks caching', () => {
 
     service.getMenteeTasks().subscribe();
     http.expectNone(TASKS_URL);
+  });
+
+  it('drops the cached tasks after each failure so a later retry can succeed', () => {
+    const tasks = { data: [], total: 0 } as MentorshipMenteeTasksResponse;
+    const fail = { status: 503, statusText: 'Service Unavailable' };
+
+    let failed = false;
+    service.getMenteeTasks().subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+    http.expectOne(TASKS_URL).flush('down', fail);
+    expect(failed).toBe(true);
+
+    failed = false;
+    service.getMenteeTasks().subscribe({
+      next: () => undefined,
+      error: () => {
+        failed = true;
+      },
+    });
+    http.expectOne(TASKS_URL).flush('down', fail);
+    expect(failed).toBe(true);
+
+    let recovered: unknown = 'unset';
+    service.getMenteeTasks().subscribe((response) => {
+      recovered = response;
+    });
+    http.expectOne(TASKS_URL).flush(tasks);
+    expect(recovered).toBe(tasks);
   });
 });

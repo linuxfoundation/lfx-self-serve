@@ -15,6 +15,7 @@ describe('MenteeApplicantTasksComponent', () => {
   let fixture: ComponentFixture<MenteeApplicantTasksComponent>;
   let component: MenteeApplicantTasksComponent;
   let getMenteeOverview: ReturnType<typeof vi.fn>;
+  let clearMenteeCaches: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
@@ -23,7 +24,7 @@ describe('MenteeApplicantTasksComponent', () => {
     TestBed.configureTestingModule({
       imports: [MenteeApplicantTasksComponent],
       providers: [
-        { provide: MentorshipService, useValue: { getMenteeOverview } },
+        { provide: MentorshipService, useValue: { getMenteeOverview, clearMenteeCaches } },
         { provide: MentorshipComingSoonService, useValue: { notify: vi.fn() } },
       ],
     });
@@ -47,7 +48,7 @@ describe('MenteeApplicantTasksComponent', () => {
    * precomputed `prerequisiteTasksTotal`, which the card header reflects.
    */
   const applicantOverviewWithoutTasks = (total: number): MentorshipMenteeOverviewApplicant => {
-    const overview = structuredClone(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT) as MentorshipMenteeOverviewApplicant;
+    const overview = structuredClone(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT);
     const [first] = overview.applications;
     delete first.tasks;
     first.prerequisiteTasksTotal = total;
@@ -58,6 +59,7 @@ describe('MenteeApplicantTasksComponent', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    clearMenteeCaches = vi.fn();
   });
 
   it('renders application cards with prerequisite tasks', async () => {
@@ -155,5 +157,6 @@ describe('MenteeApplicantTasksComponent', () => {
     await fixture.whenStable();
     fixture.detectChanges();
     expect(getMenteeOverview.mock.calls.length).toBeGreaterThan(callsBefore);
+    expect(clearMenteeCaches).toHaveBeenCalledOnce();
   });
 });
