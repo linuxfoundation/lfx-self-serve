@@ -2441,7 +2441,7 @@ describe('OrgClaService.getContributorAcknowledgments — the upstream call', ()
     stageAckRead();
 
     await new OrgClaService().getContributorAcknowledgments(
-      { bearerToken: 'target-user-token' } as unknown as Parameters<OrgClaService['getContributorAcknowledgments']>[0],
+      req({ bearerToken: 'target-user-token' } as unknown as Partial<Request>),
       ORG_UID,
       'signature-uuid-1',
       { search: '', pageSize: 50 }

@@ -314,6 +314,14 @@
         data-testid="org-easycla-detail-approval">
         <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
       </section>
+    } @else if (activeTab() === 'acknowledgments' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-acknowledgments"
+        aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
+        data-testid="org-easycla-detail-acknowledgments">
+        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
+      </section>
     } @else {
       <section
         role="tabpanel"
@@ -322,14 +330,13 @@
         class="py-8"
         data-testid="org-easycla-detail-tab-empty">
         <!--
-          The CLA Managers and Approval List tabs on an unsigned agreement, where signing is what
-          creates the content: the signatory becomes the initial CLA Manager, and approval entries
-          are what that manager then maintains. Left bare, the panel reads as a page that failed to
-          load rather than as a state — the same gap the empty Overview had. One lock icon for both,
-          because "locked until signed" is what each panel is actually saying.
-
-          The remaining tabs stay bare. They are unbuilt for every agreement, signed or not, so
-          "once this CLA is signed" would promise content signing does not produce.
+          The CLA Managers, Approval List, and Contributor Acknowledgments tabs on an unsigned
+          agreement, where signing is what creates the content: the signatory becomes the initial
+          CLA Manager, approval entries are what that manager maintains, and acknowledgments are
+          what contributors place against the resulting rules. Left bare, the panel reads as a
+          page that failed to load rather than as a state — the same gap the empty Overview had.
+          One lock icon for all three, because "locked until signed" is what each panel is actually
+          saying.
         -->
         @if (lockedTab(); as locked) {
           <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />
