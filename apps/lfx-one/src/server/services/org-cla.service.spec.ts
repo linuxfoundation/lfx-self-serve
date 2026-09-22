@@ -2084,6 +2084,20 @@ describe('OrgClaService.getManagers', () => {
     );
   });
 
+  it('does not fall back to the CLA-group list when the project-scoped read fails with a non-403', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Server Error', 500, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }));
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 500 });
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('/cla-group/'),
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
+  });
+
   it('falls back to the CLA-group list when the project-scoped read is forbidden', async () => {
     gatewayFetch
       .mockResolvedValueOnce(upstreamList(upstreamEntry()))

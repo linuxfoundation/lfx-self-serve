@@ -270,7 +270,7 @@ function upstreamTrimmedString(value: unknown): string {
 function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = upstreamTrimmedString(entry.name);
   const email = upstreamTrimmedString(entry.email);
-  // Only the events-backed add time from the authenticated project list. `approved_on` is signature
+  // Only the events-backed add time, whichever manager list supplied it. `approved_on` is signature
   // creation time, not manager add time — ignore it for display. The managers tab does not surface
   // `addedOn` until EasyCLA event correlation is trustworthy.
   const addedOn = upstreamTrimmedString(entry.added_on);
@@ -946,14 +946,21 @@ export class OrgClaService {
     } as const;
     const claGroupManagerListUrl = `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/cla-group/${encodeURIComponent(target.claGroupId)}/cla-managers`;
 
-    let upstream: EasyClaCompanyClaManagerList | null;
-    if (!projectSfid) {
-      upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(req, claGroupManagerListUrl, {
+    let managerListOperation = 'org_cla_list_managers';
+    const fetchClaGroupManagerList = () => {
+      managerListOperation = 'org_cla_list_managers_cla_group_fallback';
+      return gatewayFetch<EasyClaCompanyClaManagerList>(req, claGroupManagerListUrl, {
         ...managerListFetchOptions,
         operation: 'org_cla_list_managers_cla_group_fallback',
       });
+    };
+
+    let upstream: EasyClaCompanyClaManagerList | null;
+    if (!projectSfid) {
+      upstream = await fetchClaGroupManagerList();
     } else {
       try {
+        managerListOperation = 'org_cla_list_managers';
         upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(
           req,
           `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(target.companyId)}/project/${encodeURIComponent(projectSfid)}/cla-managers`,
@@ -971,16 +978,13 @@ export class OrgClaService {
           project_sfid: projectSfid,
         });
 
-        upstream = await gatewayFetch<EasyClaCompanyClaManagerList>(req, claGroupManagerListUrl, {
-          ...managerListFetchOptions,
-          operation: 'org_cla_list_managers_cla_group_fallback',
-        });
+        upstream = await fetchClaGroupManagerList();
       }
     }
 
     if (!upstream || !Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch CLA managers: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
-        operation: 'org_cla_list_managers',
+        operation: managerListOperation,
         service: SERVICE,
       });
     }
