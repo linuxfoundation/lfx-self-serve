@@ -3,6 +3,7 @@
 
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
+import { take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
 import { OrgNavigationService } from './org-navigation.service';
@@ -144,10 +145,13 @@ export class OrgLensEmptyStateService {
    * list never requested is left to the switcher's own enabled-transition bootstrap.
    */
   public retry(): void {
-    this.roleGrants.refresh(true).subscribe(() => {
-      if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
-        this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
-      }
-    });
+    this.roleGrants
+      .refresh(true)
+      .pipe(take(1))
+      .subscribe(() => {
+        if (this.orgNavigation.loaded() || this.orgNavigation.loading()) {
+          this.retryGeneration.set(this.orgNavigation.refreshList(this.accountContext.selectedAccount().uid || this.accountContext.getStoredUid()));
+        }
+      });
   }
 }

@@ -49,14 +49,15 @@ export class OrgNavigationService {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
+  private readonly firstPageLandedGenerationInternal = signal<number>(0);
+
   private readonly state: OrgListState = this.createOrgListState();
 
   /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
   private pendingDefaultWrite: Subscription | null = null;
   /** The one default still waiting for the grant set to settle (`whenGrantsSettled`); cleared when it fires, when a later default supersedes it, or when `resetAndReload` starts a new page. */
   private pendingDefaultSelectionSub: Subscription | null = null;
-
-  private readonly firstPageLandedGenerationInternal = signal<number>(0);
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;

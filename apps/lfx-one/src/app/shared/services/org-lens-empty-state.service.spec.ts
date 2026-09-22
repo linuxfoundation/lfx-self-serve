@@ -32,7 +32,6 @@ interface Harness {
   listLoading: WritableSignal<boolean>;
   grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => number>;
-  listGeneration: WritableSignal<number>;
   /** What the real pipeline does when a first page lands: record its generation and clear `loading`. */
   landFirstPage: () => void;
   /** What the real first-page pipeline does on a fetch: bump the generation and raise `loading`. */
@@ -112,7 +111,6 @@ function setup(): Harness {
     listLoading,
     grantsLoading,
     refreshList,
-    listGeneration,
     startListFetch,
     landFirstPage,
   };
