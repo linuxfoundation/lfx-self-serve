@@ -2,15 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
-import { ActivatedRoute, RouterLink } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { HeaderComponent } from '@components/header/header.component';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
+
+import { InviteLandingHeaderComponent } from '../invite-landing-header/invite-landing-header.component';
 
 @Component({
   selector: 'lfx-invite-error',
-  imports: [RouterLink, HeaderComponent, CardComponent, ButtonComponent, OpenIntercomDirective],
+  imports: [InviteLandingHeaderComponent, CardComponent, ButtonComponent, OpenIntercomDirective],
   templateUrl: './invite-error.component.html',
 })
 export class InviteErrorComponent {

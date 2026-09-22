@@ -6,10 +6,14 @@ import { MessageService } from 'primeng/api';
 import { getRuntimeConfig } from '@app/shared/providers/runtime-config.provider';
 import { IntercomService } from '@services/intercom.service';
 
-// Opens the Fin Intercom messenger on click, booting Intercom anonymously on demand when
-// startup boot was skipped (impersonation, public pages, missing JWT claim). The click fails
-// visibly (toast) rather than silently when no app id is configured (boot() would refuse with
-// only a console.warn) or when the widget script fails to load after the click.
+// Opens the Fin Intercom messenger on click, booting Intercom on demand when
+// startup boot was skipped (impersonation, public pages, missing JWT claim, invite landing).
+// The boot is identified when AppComponent staged an identity on IntercomService, anonymous
+// otherwise — the identity decision stays there so this directive needs no user/session DI and
+// can be used from any component, including ones rendered without HttpClient.
+// The click fails visibly (toast) rather than silently when no app id is configured
+// (boot() would refuse with only a console.warn) or when the widget script fails to load
+// after the click.
 @Directive({
   selector: '[lfxOpenIntercom]',
 })

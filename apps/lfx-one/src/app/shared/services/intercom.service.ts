@@ -21,6 +21,13 @@ export class IntercomService {
 
   private scriptElement: HTMLScriptElement | null = null;
 
+  // Identity for an on-demand boot when the startup boot was skipped — the invite landing skips it
+  // to keep first paint off Intercom, but its "Contact support" CTA must still reach support as the
+  // signed-in user (GH-2290). Only AppComponent sets this, and never while impersonating: the
+  // impersonation override rewrites the identity claims but not the Intercom JWT claim, so a boot
+  // built from `UserService.user()` there would pair the operator's JWT with the target's PII.
+  private identity: IntercomBootOptions | null = null;
+
   // Invoked from the widget script's onerror when set by a click-triggered openMessenger() —
   // lets support CTAs surface a toast on load failure while startup boot stays silent.
   private onLoadError?: () => void;
@@ -52,15 +59,21 @@ export class IntercomService {
     window.Intercom('show');
   }
 
-  // Entry point for support CTAs: boots Intercom anonymously on demand when startup boot was
-  // skipped (impersonation, public pages, missing JWT claim), then shows the messenger.
+  // Records who a later on-demand boot should identify as, without loading the widget.
+  public setIdentity(options: IntercomBootOptions): void {
+    this.identity = options;
+  }
+
+  // Entry point for support CTAs: boots Intercom on demand when startup boot was skipped
+  // (impersonation, public pages, missing JWT claim, invite landing). Uses the staged identity
+  // when one was recorded, otherwise boots anonymously with `{ app_id }`.
   // Fire-and-forget — a fresh boot queues behind the stub and replays before show on script load.
   // onLoadError fires if the widget script fails to load (e.g. ad-blockers) — including a click
   // landing while a startup boot is still in flight. It is never registered by page-load boots
   // and is cleared once the script loads, so ad-blocked users are only toasted after a click.
   public openMessenger(appId: string, onLoadError?: () => void): void {
     if (!this.isBootRequested) {
-      this.boot({ app_id: appId });
+      this.boot(this.identity ?? { app_id: appId });
     }
     if (!this.isLoaded) {
       this.onLoadError = onLoadError;
@@ -70,6 +83,9 @@ export class IntercomService {
 
   // Call before re-booting with a different user (impersonation identity reset).
   public shutdown(): void {
+    // Dropped unconditionally: the stale identity must not survive into the next boot even when
+    // there is no widget to shut down.
+    this.identity = null;
     if (typeof window === 'undefined') {
       return;
     }

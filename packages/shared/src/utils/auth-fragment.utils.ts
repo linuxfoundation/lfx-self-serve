@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
+import { AUTH_FRAGMENT_KEYS, INVITE_TOKEN_QUERY_PARAM } from '../constants/auth-fragment.constants';
+import { isInviteLandingPath } from './url.utils';
 
 /** Whether a URL fragment carries any key that counts as authentication material. */
 export function hasAuthFragment(hash: string): boolean {
@@ -36,5 +37,31 @@ export function redactAuthFragment(url: string, base?: string): string {
     // can take RUM down with it. An unparseable URL cannot be redacted precisely, so drop the
     // fragment wholesale — blunt, but it cannot leak.
     return url.split('#')[0];
+  }
+}
+
+/**
+ * Returns `url` with the invite-accept `token` query param replaced by a marker, or unchanged
+ * when the path is not the invite landing or the param is absent.
+ *
+ * Sibling of {@link redactAuthFragment}: that helper only rewrites the hash, and the invite
+ * token lives in the query string (`/invite?token=…`). Both are called from Datadog RUM
+ * `beforeSend` so neither credential reaches the analytics sink (GH-2290).
+ */
+export function redactInviteToken(url: string, base?: string): string {
+  try {
+    const parsed = new URL(url, base);
+    if (!isInviteLandingPath(parsed.pathname) || !parsed.searchParams.has(INVITE_TOKEN_QUERY_PARAM)) {
+      return url;
+    }
+    parsed.searchParams.set(INVITE_TOKEN_QUERY_PARAM, 'redacted');
+    return parsed.toString();
+  } catch {
+    const queryMarker = `?${INVITE_TOKEN_QUERY_PARAM}=`;
+    const extraMarker = `&${INVITE_TOKEN_QUERY_PARAM}=`;
+    if (!url.includes(queryMarker) && !url.includes(extraMarker)) {
+      return url;
+    }
+    return url.split('?')[0];
   }
 }
