@@ -243,6 +243,20 @@ describe('htmlClipboardToText', () => {
 });
 
 describe('stripResourceLoadingHtml', () => {
+  it('drops text inside svg and math rather than leaking it into the body', () => {
+    // sanitize-html KEEPS a disallowed tag's text by default, which is right for `<span>` and
+    // wrong here: the text in these is not copy. `<svg><text>` put the string straight into the
+    // body recipients receive, with no element left to explain where it came from.
+    expect(stripResourceLoadingHtml('<p>a</p><svg><text>LEAK</text></svg><p>b</p>')).toBe('<p>a</p><p>b</p>');
+    expect(stripResourceLoadingHtml('<p>a</p><math><mi>LEAK</mi></math><p>b</p>')).toBe('<p>a</p><p>b</p>');
+  });
+
+  it('still keeps the text of an ordinary disallowed wrapper', () => {
+    // The negative case: dropping a tag must not delete the words inside it. Without this,
+    // "add every unknown tag to nonTextTags" passes the test above and silently eats real copy.
+    expect(stripResourceLoadingHtml('<p>a</p><span>KEEP</span><p>b</p>')).toContain('KEEP');
+  });
+
   // An ALLOW-LIST, after a denylist of resource tags was bypassed four ways in one review round.
   // Every one of those is pinned here, plus two nobody reported, because the point is that the
   // rule no longer depends on having named them.

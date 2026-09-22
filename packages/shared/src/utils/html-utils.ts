@@ -332,6 +332,10 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     allowProtocolRelative: false,
     // Content is DROPPED for these, because their contents are code rather than copy. For every
     // other disallowed tag the TEXT survives -- the copy is the point of the preview.
-    nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title'],
+    // `svg` and `math` are here because their TEXT is not copy. Neither tag is allowed, and
+    // sanitize-html's default is to keep a disallowed tag's text -- correct for `<span>`, wrong
+    // for these: `<svg><text>LEAK</text></svg>` put LEAK into the body that recipients receive,
+    // with no element to explain where it came from. The same is true of `<mi>` in MathML.
+    nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
 }
