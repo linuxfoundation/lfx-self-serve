@@ -74,8 +74,8 @@ function orgItemRow(uid: string, slug: string, name: string): Record<string, unk
   return { uid, accountId: uid, name, slug, logoUrl: null, primaryDomain: `${slug}.example`, isMember: true, parentName: null };
 }
 
-function personaOrg(uid: string, slug: string, name: string): Record<string, unknown> {
-  return { accountId: uid, accountName: name, accountSlug: slug, membershipTier: '', uid };
+function personaOrg(uid: string, name: string): Record<string, unknown> {
+  return { accountId: uid, accountName: name, membershipTier: '', uid };
 }
 
 interface IdentityStubs {
@@ -181,7 +181,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ writers: [ORG_A_UID], degraded: true, lookupOutcome: 'partial' }),
         orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
-        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
         resolvable: [HELD_ORG],
       });
 
@@ -326,7 +326,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ writers: [ORG_A_UID] }),
         orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
-        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
         resolvable: [HELD_ORG],
       });
 
@@ -456,7 +456,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: true, writers: [ORG_A_UID] }),
         orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
-        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
         resolvable: [HELD_ORG],
       });
 

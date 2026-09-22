@@ -122,12 +122,11 @@ export class OrgNotFoundComponent {
     if (!item) {
       return;
     }
-    // Same shape the switcher builds on selection: slug and tier are org-specific and arrive with the
-    // canonical record, never carried over from the previous selection.
+    // Same shape the switcher builds on selection: tier is org-specific and arrives with Snowflake
+    // enrichment, never carried over from the previous selection; `slug` is the indexed row's.
     const account: Account = {
       accountId: item.accountId ?? '',
       accountName: item.name,
-      accountSlug: '',
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,

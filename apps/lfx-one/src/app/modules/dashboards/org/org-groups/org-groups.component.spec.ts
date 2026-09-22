@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
@@ -18,7 +19,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { signal, type WritableSignal } from '@angular/core';
+import { computed, signal, type WritableSignal } from '@angular/core';
 
 import { OrgGroupsComponent } from './org-groups.component';
 
@@ -33,7 +34,6 @@ interface Rendered {
   fixture: ComponentFixture<OrgGroupsComponent>;
   navigate: ReturnType<typeof vi.fn>;
   selectedAccount: WritableSignal<Account>;
-  selectedUrlSegment: WritableSignal<string | null>;
 }
 
 // <lfx-person-detail-drawer /> (GH-1780 follow-up — stacked on the seat-holders drawer) is
@@ -66,8 +66,9 @@ function personDrawerStub() {
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, membershipTier: '', uid: 'org-uid-1' });
-  const selectedUrlSegment = signal<string | null>('acme');
+  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+  // Derived exactly as AccountContextService derives it, so the stub can't hold a segment the real service never would.
+  const selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
 
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
@@ -109,7 +110,7 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
   const fixture = TestBed.createComponent(OrgGroupsComponent);
   await fixture.whenStable();
   fixture.detectChanges();
-  return { fixture, navigate, selectedAccount, selectedUrlSegment };
+  return { fixture, navigate, selectedAccount };
 }
 
 function emptyGroupsResponse(): OrgLensGroupsResponse {
@@ -503,7 +504,7 @@ describe('OrgGroupsComponent', () => {
 
     // clearFilters() resets the form synchronously, but filteredGroups reads the debounced filterValues
     // signal, so this needs the same real-time flush as a direct user edit.
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
@@ -518,7 +519,7 @@ describe('OrgGroupsComponent', () => {
     await clickSeatHoldersTrigger(fixture, 'g1');
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
 
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
     await flushFilterChange(fixture);
 
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
@@ -1181,7 +1182,7 @@ describe('OrgGroupsComponent — CSV export', () => {
     expect(zephyrRow?.[2]).not.toBe('Working Group');
   });
 
-  it('names the download with the org slug and today’s date', async () => {
+  it('names the download with the org URL segment and today’s date', async () => {
     const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
     const { filename } = await captureExportedCsv(fixture);
@@ -1215,12 +1216,24 @@ describe('OrgGroupsComponent — CSV export', () => {
     }
   });
 
-  it('falls back to the default slug when no URL segment is known (placeholder selection)', async () => {
-    const { fixture, selectedUrlSegment } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+  it('names the download with the SFID when the selection has no published slug', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
-    // selectedUrlSegment() is null only for the placeholder selection (no slug, no SFID) — the CSV
-    // filename falls back rather than producing a bare "org-lens-groups--<date>.csv".
-    selectedUrlSegment.set(null);
+    // Uid-only selections (path-param guard stub, cookie restore, org-items row without a slug) are
+    // addressed by SFID, so the export follows the address rather than inventing a name.
+    selectedAccount.set({ accountId: '0014100000MgaAAAAA', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: '0014100000MgaAAAAA', slug: null });
+
+    const { filename } = await captureExportedCsv(fixture);
+
+    expect(filename).toMatch(/^org-lens-groups-0014100000MgaAAAAA-\d{8}\.csv$/);
+  });
+
+  it('falls back to "org" when the selection carries neither a usable slug nor an SFID', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // The placeholder selection: orgUrlSegment() is null, so the filename falls back rather than
+    // producing a bare "org-lens-groups--<date>.csv".
+    selectedAccount.set({ accountId: '', accountName: '', membershipTier: '' });
 
     const { filename } = await captureExportedCsv(fixture);
 
