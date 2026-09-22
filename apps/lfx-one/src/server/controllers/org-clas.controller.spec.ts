@@ -1273,7 +1273,10 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
   it('logs the reason but not the free-text note', async () => {
     await new OrgClasController().invalidateAcknowledgment(invalidateReq({ reason: 'other', note: 'left the company in March' }), buildRes(), vi.fn());
 
-    const metadata = logger.success.mock.calls.map((call) => call[3]);
+    // Read off the hoisted spy, not the `logger` import: that import is typed as the real service,
+    // so `.mock` is not on it and the app build (which type-checks server specs, unlike
+    // `check-types`) rejects it.
+    const metadata = loggerMock.success.mock.calls.map((call: unknown[]) => call[3]);
 
     expect(JSON.stringify(metadata)).not.toContain('left the company in March');
     expect(metadata).toContainEqual(expect.objectContaining({ reason: 'other' }));
