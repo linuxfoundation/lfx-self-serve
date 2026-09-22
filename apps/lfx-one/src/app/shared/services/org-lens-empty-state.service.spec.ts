@@ -330,6 +330,23 @@ describe('OrgLensEmptyStateService.pageState', () => {
     expect(h.service.retrying()).toBe(false);
   });
 
+  // A second Retry before the first page lands starts a newer fetch; only that fetch's first page
+  // releases it (the navigation service drops the superseded page before recording a landing).
+  it('retrying stays true across back-to-back retries until the newest first page lands', () => {
+    h.refreshList.mockImplementation(() => h.startListFetch());
+    h.listLoaded.set(true);
+
+    h.service.retry();
+    expect(h.service.retrying()).toBe(true);
+
+    h.service.retry();
+    expect(h.refreshList).toHaveBeenCalledTimes(2);
+    expect(h.service.retrying()).toBe(true);
+
+    h.landFirstPage();
+    expect(h.service.retrying()).toBe(false);
+  });
+
   it('retry leaves a list that was never requested alone even after the grants answer', () => {
     const grants = new Subject<void>();
     h.refresh.mockReturnValue(grants.asObservable());
