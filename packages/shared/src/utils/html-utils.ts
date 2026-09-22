@@ -337,9 +337,14 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     // Content is DROPPED for these, not just the tag. Everywhere else a disallowed tag's TEXT
     // survives -- dropping `<span>` must not delete the words inside it, and the copy is the
     // point of the preview -- so this list is exactly the set whose contents are not copy:
-    // code for script/style, and glyph/markup internals for svg and math, where
-    // `<svg><text>LEAK</text></svg>` otherwise put LEAK into the body recipients receive with no
-    // element left to explain where it came from.
+    //
+    //   script, style              code
+    //   iframe, object, embed      an embedded document's fallback, not this email's copy
+    //   noscript, textarea         alternate//form content the preview never renders
+    //   title                      document metadata that would otherwise appear mid-body
+    //   svg, math                  glyph and markup internals -- `<svg><text>LEAK</text></svg>`
+    //                              put LEAK into the body recipients receive, with no element
+    //                              left to explain where it came from
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
 }

@@ -574,6 +574,42 @@ describe('isPrivateHost', () => {
     expect(isPrivateHost(host)).toBe(false);
     expect(isPrivateHost(`[${host}]`)).toBe(false);
   });
+
+  it('decodes a long dash label in linear time, not quadratic', () => {
+    // `dashNotationIPv6Candidates` rebuilt a suffix STRING on every iteration, which is O(n^2)
+    // over the label. Nothing upstream enforces DNS's 63-character label limit, so the cost was
+    // attacker-chosen: a 4000-character hostname took ~94ms of CPU, per call, on the request path.
+    //
+    // The bound is a property of the address rather than a guessed cutoff -- a full IPv6 address
+    // is at most 8 groups, so a reading starting further back cannot spell one -- which is why
+    // the deny cases above still pass with it in place.
+    const huge = `${'a-'.repeat(2000)}1.nip.io`;
+
+    const started = performance.now();
+    expect(isPrivateHost(huge)).toBe(false);
+    const elapsed = performance.now() - started;
+
+    // Deliberately loose: this asserts the ALGORITHM changed, not a machine's speed. The
+    // unbounded version measured ~90ms here, the bounded one under 1ms, so a threshold in
+    // between separates them without being flaky on slower CI.
+    expect(elapsed).toBeLessThan(25);
+  });
+
+  it('judges a reading exactly at the bound, pinning the +1 in the formula', () => {
+    // The scan starts at `length - (8 + 1)`. Nothing pinned that `+1`, so an off-by-one would
+    // narrow the window to 8 and silently stop judging the outermost reading -- a bypass, not a
+    // slowdown, and no existing test would have failed.
+    //
+    // `a-fd00--1` is exactly that reading: one affix segment plus the address's own three
+    // (`fd00`, ``, `1`). It must still be refused, and `a-b-fd00--1` -- one segment further out
+    // than the documented single affix split -- is the control that shows the window is a window
+    // rather than unbounded.
+    expect(isPrivateHost('a-fd00--1.sslip.io')).toBe(true);
+    expect(isPrivateHost('a-b-fd00--1.sslip.io')).toBe(true);
+    // And a public address at the same shape must stay allowed, so "refuse everything long"
+    // cannot pass this.
+    expect(isPrivateHost('a-b-2001-4860-4860--8888.sslip.io')).toBe(false);
+  });
 });
 
 describe('canonicalHttpUrl', () => {
@@ -608,25 +644,5 @@ describe('canonicalHttpUrl', () => {
     expect(() => isPrivateHost('93.184.216.34')).not.toThrow();
     expect(isPrivateHost('93.184.216.34')).toBe(false);
     expect(isPrivateHost('10.0.0.1')).toBe(true);
-  });
-
-  it('decodes a long dash label in linear time, not quadratic', () => {
-    // `dashNotationIPv6Candidates` rebuilt a suffix STRING on every iteration, which is O(n^2)
-    // over the label. Nothing upstream enforces DNS's 63-character label limit, so the cost was
-    // attacker-chosen: a 4000-character hostname took ~94ms of CPU, per call, on the request path.
-    //
-    // The bound is a property of the address rather than a guessed cutoff -- a full IPv6 address
-    // is at most 8 groups, so a reading starting further back cannot spell one -- which is why
-    // the deny cases above still pass with it in place.
-    const huge = `${'a-'.repeat(2000)}1.nip.io`;
-
-    const started = performance.now();
-    expect(isPrivateHost(huge)).toBe(false);
-    const elapsed = performance.now() - started;
-
-    // Deliberately loose: this asserts the ALGORITHM changed, not a machine's speed. The
-    // unbounded version measured ~90ms here, the bounded one under 1ms, so a threshold in
-    // between separates them without being flaky on slower CI.
-    expect(elapsed).toBeLessThan(25);
   });
 });

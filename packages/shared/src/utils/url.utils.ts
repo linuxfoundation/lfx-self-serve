@@ -358,9 +358,17 @@ function dashNotationIPv6Candidates(label: string): string[] {
   //
   // The bound is a property of the ADDRESS, not a guessed cutoff: a full IPv6 address is at most
   // 8 groups, and the dash spelling separates groups with `-`, so a reading that starts more than
-  // 8 groups from the end cannot spell one -- `decodeDashIPv6` would reject it anyway. Scanning
-  // only the last 9 suffixes (8 groups plus the one affix split sslip.io documents) therefore
-  // removes work that could never produce a candidate, rather than trading coverage for speed.
+  // 8 groups from the end carries more groups than any address has.
+  //
+  // NOT because `decodeDashIPv6` would reject it -- an earlier version of this comment claimed
+  // that and it is false for the compressed form, where `--` collapses a run of zero groups and
+  // a long label can still decode. What holds is the other direction: every reading DROPPED by
+  // this bound is also reachable as a SHORTER suffix of the same label, because the address
+  // itself occupies at most 8 of the trailing segments. `a-b-c-...-fd00--1` is judged on the
+  // `fd00--1` suffix regardless of how much affix precedes it, which is why the deny cases --
+  // including deliberately over-long ones -- still hold with the bound in place.
+  //
+  // 9 suffixes: 8 groups plus the one affix split sslip.io documents.
   const MAX_IPV6_GROUPS = 8;
   const firstIndex = Math.max(0, segments.length - (MAX_IPV6_GROUPS + 1));
 
