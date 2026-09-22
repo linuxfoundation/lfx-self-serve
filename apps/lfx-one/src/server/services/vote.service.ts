@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
-import { IndexedVoteResponseStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
+import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
   CreateVoteResponseRequest,
+  EnableVoteResponse,
   IndexedVote,
   IndexedVoteResponse,
   MyVoteResponse,
@@ -33,54 +34,100 @@ import { ProjectService } from './project.service';
  */
 export class VoteService {
   /**
-   * Enable-PUT retry grid for the FGA replication gap (GH-1637): bounded at 3 attempts, 600 ms
-   * apart — paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell
-   * apart); the happy path pays nothing. Attempt counts and fixed sleeps alone can't bound
-   * wall-clock time (a slow 403 returns as late as the request timeout), so the loop runs under
-   * the shared `enableEndToEndMaxDurationMs` deadline.
+   * Enable-PUT retry cadence for the FGA replication gap (GH-1637): 600 ms between attempts,
+   * paid on a 403 (the replication gap or a genuine denial, which the BFF cannot tell apart);
+   * the happy path pays nothing. The loop has no attempt cap — attempt counts alone can't bound
+   * wall-clock time (a slow 403 returns as late as the request timeout), so the shared
+   * `enableEndToEndMaxDurationMs` deadline is the only bound. On the create+open path this grid
+   * is the readiness mechanism itself (GH-2729 pivot): a pre-enable read probe was tried and
+   * abandoned — a check fired before fga-sync's tuple write caches `false` for the cluster's
+   * OpenFGA check-query TTL (10 s on dev) and every retry inside the TTL reads that cached
+   * denial back, so the probe manufactured the very denial that defeated it (2/2 drafts in live
+   * verification, 2026-09-21). Only the enable's own retries — graced past the tuple write by
+   * `fgaTuplePropagationGraceMs` and bounded past the cache TTL by the deadline — open the vote
+   * on this cluster.
    */
-  private static readonly enableMaxAttempts = 3;
   private static readonly enableRetryDelayMs = 600;
 
   /**
-   * End-to-end wall-clock cap for one `enableVote` call (GH-1637), sized as the 10.5 s enable poll
-   * window plus the 2 × 600 ms 403-retry backoff = 11.7 s. That sum is a sizing rationale, not an
-   * additive split — PUT request time is paid from the same budget, so after slow denials the poll
-   * inherits less than 10.5 s. One deadline, established before the PUT retry
-   * loop, is shared by the retries and the index poll — every PUT receives only the remaining
-   * budget as its request timeout (each PUT otherwise carried the API client's 30 s default, and
-   * three slow denials plus a fresh poll window could take ~100 s to surface), each backoff sleep
-   * is truncated to the deadline, and the poll gets min(remaining, 10.5 s). A backoff that would
-   * leave less than `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is
-   * rethrown with the exhaustion warning instead, since a sub-floor attempt would abort as a 408
-   * and mask the denial the loop actually saw.
+   * Attempt-1 enable PUT budget (GH-2729 review M-1), exempt from the
+   * `enableEndToEndMaxDurationMs` retry deadline: 16 s is the v2 voting-api's hardcoded
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) plus a 1 s transport margin — this timer starts
+   * before gateway/network transit while the server's write deadline starts after the request
+   * arrives, so an exact 15 s could still abort a response completing just under the upstream
+   * limit (PR #2797 review). Anything slower can never return successfully end-to-end, so the
+   * first attempt gets the full slow-success window instead of the 11.7 s retry deadline — a
+   * legitimate enable taking 11.7 s up to the server's 15 s ceiling would otherwise abort as a
+   * 408 one timeout short, and the 16 s budget covers that full window plus transit.
    */
-  private static readonly enableEndToEndMaxDurationMs = 11700;
+  private static readonly enableFirstAttemptMaxDurationMs = 16000;
 
   /**
-   * Vote index-confirmation poll budget (GH-1637), shared by create/delete/enable at one 300 ms
-   * cadence. The cap is wall-clock, not attempt-count: `maxDurationMs` includes request duration
-   * (attempt counts alone can't bound wall-clock time — each query takes as long as its request,
-   * up to the API client's timeout), and each poll query receives only the remaining budget as its
-   * request timeout, so an in-flight request can't overshoot the deadline. Create/delete cap at 8 s
-   * and enable at 10.5 s (+ the 2 × 600 ms 403-retry backoff = 11.7 s end to end) — each inside
-   * its pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time, the
-   * 7-attempt/2 s grid 12 s plus request time); enable's 11.7 s end to end is enforced by the
-   * shared `enableEndToEndMaxDurationMs` deadline. The attempt counts are only iteration upper bounds
-   * for fast queries; the deadline binds first once queries slow. Nothing that confirmed before
-   * falls back now, while the happy path resolves on the first few attempts (convergence typically
-   * lands in <2 s). Worst-case fan-out is 27 (create/delete) or 36 (enable) query-service requests
-   * per vote write, bounded only by these budgets and the blanket `apiRateLimiter` — paid only
-   * while the index lags. Polls filter on `data.vote_uid` — never `tags`: vote documents are indexed
-   * without a vote-uid tag, so `tags` can never match a vote by uid. A `tags` regression silently
-   * turns create/enable into a fixed full-budget wait followed by the fallback, and makes delete
-   * (predicate `resources.length === 0`) resolve instantly without confirming removal.
+   * End-to-end wall-clock cap for one `enableVote` call's retry grid (GH-1637) — attempt 1 is
+   * exempt (see `enableFirstAttemptMaxDurationMs`); the deadline established before the loop
+   * bounds retries only: every retry PUT receives only the remaining budget as its request
+   * timeout, and each backoff sleep is truncated to the deadline. Sized at 13 s to span the dev
+   * cluster's 10 s OpenFGA check-query cache TTL (GH-2729 pivot): if attempt 1 lands before
+   * fga-sync's tuple write despite the grace, its denial is cached for the TTL and only a
+   * post-expiry retry recomputes — one issued at ~10.2 s still gets ~2.8 s, enough for the
+   * synchronous ITX enable chain (~1.4–2.7 s observed). A genuine denial pays the same grid and
+   * surfaces at ~12 s. Without a cap, slow 403 denials at the API client's 30 s default could
+   * take minutes to surface. A backoff that would leave less than
+   * `MIN_VIABLE_REQUEST_BUDGET_MS` never issues its PUT — the observed 403 is rethrown with the
+   * exhaustion warning instead, since a sub-floor attempt would abort as a 408 and mask the
+   * denial the loop actually saw. (GH-2730 removed the post-PUT index poll, so the method returns
+   * right after the PUT succeeds.)
+   */
+  private static readonly enableEndToEndMaxDurationMs = 13000;
+
+  /**
+   * Grace before the fused create+open path's first enable PUT (GH-2729 pivot): fga-sync writes
+   * the vote's OpenFGA tuple ~1.5 s after the create POST returns (observed 1.1–1.7 s in live
+   * verification, 2026-09-21). A check fired before the tuple lands caches `false` for the
+   * cluster's OpenFGA check-query TTL (10 s on dev) and every later check inside the TTL reads
+   * that cached denial — the probe-based predecessor of this flow failed 2/2 that way. The 2 s
+   * grace keeps attempt 1 fresh in the common case; the 13 s retry deadline then spans the TTL
+   * so a too-early first check still recovers once its cache entry expires. Standalone enables
+   * (edit flow) skip the grace: their vote's tuples were written at create time, long past.
+   */
+  private static readonly fgaTuplePropagationGraceMs = 2000;
+
+  /**
+   * Vote poll budget (GH-1637) for the delete index poll, at one 300 ms cadence. Create no
+   * longer polls anything: the GH-2729 FGA-readiness GET probe was removed (a pre-tuple check
+   * poisons OpenFGA's check-query cache against itself — see `enableRetryDelayMs`), and GH-2730
+   * removed enable's post-PUT index poll (enable returns right after the PUT succeeds). The cap
+   * is wall-clock, not attempt-count: `maxDurationMs` includes request duration (attempt counts
+   * alone can't bound wall-clock time — each query takes as long as its request, up to the API
+   * client's timeout), and each poll query receives only the remaining budget as its request
+   * timeout, so an in-flight request can't overshoot the deadline. Delete caps at 8 s — inside
+   * the pre-GH-1637 window (the old 5-attempt/2 s grid spent 8 s of delays plus request time).
+   * The attempt count is only an iteration upper bound for fast queries; the deadline binds
+   * first once queries slow. Nothing that confirmed before falls back now, while the happy path
+   * resolves on the first few attempts (convergence typically lands in <2 s). Worst-case fan-out
+   * is 27 requests per delete — bounded by these budgets and the blanket `apiRateLimiter`; paid
+   * only while convergence lags. The delete index poll filters on `data.vote_uid` — never
+   * `tags`: vote documents are indexed without a vote-uid tag, so `tags` can never match a vote
+   * by uid. A `tags` regression makes delete (predicate `resources.length === 0`) resolve
+   * instantly without confirming removal.
    */
   private static readonly voteIndexPollMaxAttempts = 27;
-  private static readonly voteIndexPollEnableMaxAttempts = 36;
   private static readonly voteIndexPollRetryDelayMs = 300;
   private static readonly voteIndexPollMaxDurationMs = 8000;
-  private static readonly voteIndexPollEnableMaxDurationMs = 10500;
+
+  /**
+   * Create-POST request timeout (GH-2729 review m-7): 16 s is the v2 voting-api's hardcoded
+   * `WriteTimeout: 15s` (cmd/voting-api/main.go) plus a 1 s transport margin — this timer starts
+   * before gateway/network transit while the server's write deadline starts after the request
+   * arrives, so an exact 15 s could still abort a response completing just under the upstream
+   * limit (PR #2797 review); beyond that margin a slower create can never return successfully
+   * end-to-end, so the API client's 30 s default would only outwait the server's own ceiling.
+   * Worst-case fused create+open hold = 16 s create + 2 s grace + 16 s enable attempt-1 ≈ 34 s
+   * (a hung attempt-1 ends the grid via its non-retryable 408; a fast-denied attempt-1 instead
+   * leaves retries the 13 s deadline, ≈ 31 s), under the 60 s ingress-nginx default; the budgets
+   * stay independent by design — documenting the sum is the fix.
+   */
+  private static readonly createVoteRequestTimeoutMs = 16000;
 
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
@@ -182,58 +229,56 @@ export class VoteService {
   }
 
   /**
-   * Creates a new vote/poll
+   * Creates a new vote/poll and returns the POST response as-is — nothing downstream consumes
+   * more than its `uid`, and list freshness is the list's own refetch (the pre-GH-1637 index
+   * poll never delivered that guarantee anyway: its broken `tags:` predicate exhausted 100% of
+   * the time). No readiness poll follows the create (GH-2729 pivot): on clusters where OpenFGA
+   * caches check results (dev TTL 10 s), a pre-tuple read probe caches `false` and defeats every
+   * retry inside the TTL — the probe manufactured the denial it measured. With `options.open`
+   * (GH-2731) the vote is also opened in the same call: after a short FGA-propagation grace
+   * (fga-sync's tuple write lags the create POST by ~1.5 s), the enable PUT runs inline on its
+   * 403-retry grid — graced past the tuple write, bounded past the cache TTL — and the returned
+   * vote carries `status: 'active'`; if the enable fails, the created vote is returned in its
+   * real (disabled) status — the draft exists and can be opened later from the list. Worst-case
+   * fused create+open hold is ~34 s (16 s create + 2 s grace + 16 s enable attempt-1 — the
+   * budgets are independent by design), under the 60 s ingress-nginx default.
    */
-  public async createVote(req: Request, voteData: CreateVoteRequest): Promise<Vote> {
+  public async createVote(req: Request, voteData: CreateVoteRequest, options: { open?: boolean } = {}): Promise<Vote> {
+    const { open = false } = options;
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'create_vote', 'Creating vote payload', sanitizedPayload);
 
     // No X-Sync header: the voting service neither declares nor honors it (verified end to end —
     // GH-1637; the header is absent from its OpenAPI spec — linuxfoundation/lfx-v2-voting-service#56).
-    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData);
-
-    // After creating, poll the query service until the vote is indexed.
-    // The query service uses eventual consistency, so the vote may not appear immediately.
-    const voteUid = newVote.uid;
-    let fetchedVote: Vote | undefined;
-
-    // Poll until indexed on the shared fine grid — see voteIndexPoll* for the budget rationale
-    // and the filters-on-vote_uid (never tags) invariant.
-    const resolved = await pollEndpoint({
-      req,
-      operation: 'create_vote',
-      pollFn: async ({ remainingMs }) => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          {
-            type: 'vote',
-            filters: [`vote_uid:${voteUid}`],
-          },
-          undefined,
-          undefined,
-          { timeoutMs: remainingMs }
-        );
-        if (resources.length > 0) {
-          fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
-          return true;
-        }
-        return false;
-      },
-      maxRetries: VoteService.voteIndexPollMaxAttempts,
-      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
-      maxDurationMs: VoteService.voteIndexPollMaxDurationMs,
-      metadata: { vote_uid: voteUid },
+    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData, undefined, {
+      timeoutMs: VoteService.createVoteRequestTimeoutMs,
     });
 
-    if (resolved && fetchedVote) {
-      return fetchedVote;
+    if (!open) {
+      return newVote;
     }
 
-    logger.warning(req, 'create_vote', 'Vote not yet indexed in query service, returning POST response', { vote_uid: voteUid });
-    return newVote;
+    // open=true (GH-2731): grace past fga-sync's tuple write so attempt 1's FGA check computes
+    // fresh instead of caching a pre-tuple `false` that every retry inside the 10 s TTL would
+    // read back (GH-2729 pivot), then run the bounded enable loop — its 13 s deadline spans that
+    // TTL, so even a too-early first attempt recovers once the cache entry expires.
+    await new Promise((resolve) => setTimeout(resolve, VoteService.fgaTuplePropagationGraceMs));
+
+    try {
+      await this.enableVoteWithRetry(req, newVote.uid);
+    } catch (error) {
+      // Partial failure: the vote exists as a draft — return it in its real status (HTTP 201)
+      // rather than synthesizing an error for a create that succeeded; the frontend branches on
+      // vote.status to show the recoverable "created as draft" warning. (A 403-exhaustion already
+      // logged its distinguishable warning inside the loop.)
+      logger.warning(req, 'create_vote', 'Vote created but enable failed, returning the created vote in its current status', {
+        vote_uid: newVote.uid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return newVote;
+    }
+
+    return { ...newVote, status: PollStatus.ACTIVE };
   }
 
   /**
@@ -289,126 +334,18 @@ export class VoteService {
   /**
    * Enables a vote (changes status from disabled to active)
    */
-  public async enableVote(req: Request, voteUid: string): Promise<Vote> {
+  public async enableVote(req: Request, voteUid: string): Promise<EnableVoteResponse> {
     logger.debug(req, 'enable_vote', 'Enabling vote', {
       vote_uid: voteUid,
     });
 
-    // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
-    // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags index visibility —
-    // the voting service is observed to publish the indexer message before the fga-sync one
-    // (verified in lfx-v2-voting-service). With the create poll now resolving at
-    // index-visibility, an immediate enable can land inside that replication gap. A genuine
-    // permission denial gets the same bounded retry and then surfaces unchanged — the BFF cannot
-    // distinguish it from the gap.
-    // One wall-clock deadline covers this loop and the index poll below, so the documented 11.7 s
-    // end-to-end cap holds even when a 403 is slow to return — every PUT gets only the remaining
-    // budget as its request timeout and each backoff sleep is truncated to the deadline.
-    const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
+    await this.enableVoteWithRetry(req, voteUid);
 
-    // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
-    // pattern is visible independent of the benign-race framing — the BFF cannot tell
-    // the two apart (see the loop comment above). apiErrorHandler logs the rethrow.
-    const logExhaustedForbidden = (attempts: number) =>
-      logger.warning(
-        req,
-        'enable_vote',
-        'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
-        { vote_uid: voteUid, attempts }
-      );
-
-    for (let attempt = 1; attempt <= VoteService.enableMaxAttempts; attempt++) {
-      try {
-        await this.microserviceProxy.proxyRequestWithResponse<Vote>(
-          req,
-          'LFX_V2_SERVICE',
-          `/votes/${this.encodeVoteUid(voteUid)}/enable`,
-          'PUT',
-          undefined,
-          undefined,
-          undefined,
-          { timeoutMs: Math.max(deadline - Date.now(), 1) }
-        );
-        break;
-      } catch (error) {
-        const retryableForbidden = error instanceof MicroserviceError && error.statusCode === 403;
-        const budgetLeftMs = deadline - Date.now();
-        if (!retryableForbidden || attempt === VoteService.enableMaxAttempts || budgetLeftMs <= 0) {
-          if (retryableForbidden) {
-            logExhaustedForbidden(attempt);
-          }
-          throw error;
-        }
-        const delayMs = Math.min(VoteService.enableRetryDelayMs, budgetLeftMs);
-        // Re-check what the backoff leaves before looping: a remainder under the minimum viable
-        // request budget dooms the next PUT to a sub-round-trip timeout whose 408 would replace
-        // the 403 actually observed — and skip the exhaustion warning, since a 408 is not
-        // `retryableForbidden`. Emit the signal and rethrow the 403 rather than issue a request
-        // that cannot complete.
-        if (budgetLeftMs - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS) {
-          logExhaustedForbidden(attempt);
-          throw error;
-        }
-        logger.debug(req, 'enable_vote', 'Enable PUT returned 403, retrying to allow for possible FGA replication lag', {
-          vote_uid: voteUid,
-          attempt,
-          next_retry_ms: delayMs,
-        });
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-        // The sleep itself can resume late under event-loop load — same floor as the pre-sleep
-        // check above, re-verified against what the backoff actually left.
-        if (deadline - Date.now() < MIN_VIABLE_REQUEST_BUDGET_MS) {
-          logExhaustedForbidden(attempt);
-          throw error;
-        }
-      }
-    }
-
-    // Poll the query service until the indexed vote status is 'active', on the shared fine grid
-    // (enable uses the longer window) — see voteIndexPoll* for the rationale; the poll inherits
-    // only the end-to-end budget the retry loop left, still capped at the 10.5 s enable window;
-    // on exhaustion we still return `{ uid, status: 'active' }` below.
-    let fetchedVote: Vote | undefined;
-
-    const resolved = await pollEndpoint({
-      req,
-      operation: 'enable_vote',
-      pollFn: async ({ remainingMs }) => {
-        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(
-          req,
-          'LFX_V2_SERVICE',
-          '/query/resources',
-          'GET',
-          {
-            type: 'vote',
-            filters: [`vote_uid:${voteUid}`],
-          },
-          undefined,
-          undefined,
-          { timeoutMs: remainingMs }
-        );
-        if (resources.length > 0 && resources[0].data.status === 'active') {
-          fetchedVote = this.normalizeIndexedVote(req, resources[0].data);
-          return true;
-        }
-        return false;
-      },
-      metadata: { vote_uid: voteUid },
-      maxRetries: VoteService.voteIndexPollEnableMaxAttempts,
-      retryDelayMs: VoteService.voteIndexPollRetryDelayMs,
-      maxDurationMs: Math.min(Math.max(deadline - Date.now(), 0), VoteService.voteIndexPollEnableMaxDurationMs),
-    });
-
-    if (resolved && fetchedVote) {
-      logger.debug(req, 'enable_vote', 'Vote enabled and indexed', {
-        vote_uid: voteUid,
-        status: fetchedVote.status,
-      });
-      return fetchedVote;
-    }
-
-    logger.warning(req, 'enable_vote', 'Vote not yet indexed as active, returning minimal response', { vote_uid: voteUid });
-    return { uid: voteUid, status: 'active' } as Vote;
+    // The enable PUT is synchronous upstream (ITX writes the status before responding), so the
+    // vote is open once the loop succeeds — return immediately without waiting on the search
+    // index (GH-2730). The votes list merges this known-open status over stale index rows
+    // client-side while the index catches up.
+    return { uid: voteUid, status: PollStatus.ACTIVE };
   }
 
   /**
@@ -642,6 +579,111 @@ export class VoteService {
   // ============================================
   // Private Helpers
   // ============================================
+
+  /**
+   * The enable PUT with its bounded 403-retry loop (GH-1637), extracted so `createVote`'s
+   * open=true path runs the identical loop inline (GH-2731). On the fused path this grid is the
+   * readiness mechanism itself — no read probe precedes it (GH-2729 pivot). Resolves once the
+   * PUT succeeds; rethrows the observed error on exhaustion or non-retryable failure.
+   */
+  private async enableVoteWithRetry(req: Request, voteUid: string): Promise<void> {
+    // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`
+    // (Heimdall openfga_check), and a freshly created vote's FGA tuple lags the create POST —
+    // the voting service is observed to publish the indexer message before the fga-sync one
+    // (verified in lfx-v2-voting-service). On the create+open path the caller slept
+    // `fgaTuplePropagationGraceMs` first, so attempt 1 usually lands after the tuple write; the
+    // 13 s deadline then spans OpenFGA's 10 s check-query cache TTL, so even a too-early first
+    // attempt (its denial cached for the TTL) recovers on a post-expiry retry. The loop is also
+    // the bounded safety net for callers enabling a vote they did not just create. A genuine
+    // permission denial gets the same bounded retry and then surfaces unchanged — the BFF cannot
+    // distinguish it from the gap.
+    // One wall-clock deadline covers the retry grid, so the documented 13 s cap holds even
+    // when a 403 is slow to return — attempt 1 is exempt (fixed 16 s slow-success budget, see
+    // `enableFirstAttemptMaxDurationMs`); every retry PUT gets only the remaining budget as its
+    // request timeout and each backoff sleep is truncated to the deadline.
+    const deadline = Date.now() + VoteService.enableEndToEndMaxDurationMs;
+
+    // Distinguishable exhaustion signal for security monitoring: a denied-and-exhausted
+    // pattern is visible independent of the benign-race framing — the BFF cannot tell
+    // the two apart (see the loop comment above). apiErrorHandler logs the rethrow when it
+    // propagates (createVote's open path catches it into the created-draft return instead).
+    const logExhaustedForbidden = (attempts: number) =>
+      logger.warning(
+        req,
+        'enable_vote',
+        'Enable PUT still 403 after bounded retries, surfacing — genuine denial and FGA replication lag are indistinguishable',
+        { vote_uid: voteUid, attempts }
+      );
+
+    // No attempt cap: the wall-clock deadline (plus the budget-floor checks below) is the bound —
+    // an attempt count can't size a slow-denial grid, and the 13 s deadline must be reachable on
+    // fast denials too (a 600 ms-cadence grid needs ~20 attempts to span the check-cache TTL).
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.microserviceProxy.proxyRequestWithResponse<Vote>(
+          req,
+          'LFX_V2_SERVICE',
+          `/votes/${this.encodeVoteUid(voteUid)}/enable`,
+          'PUT',
+          undefined,
+          undefined,
+          undefined,
+          { timeoutMs: attempt === 1 ? VoteService.enableFirstAttemptMaxDurationMs : Math.max(deadline - Date.now(), 1) }
+        );
+        break;
+      } catch (error) {
+        // ITX answers any non-disabled poll with 400 "poll is already enabled" — including an ended
+        // one, indistinguishable here without a refetch (cosmetic cost: a success toast on an
+        // already-ended vote; the list renders the server's status, which the carrier only overlays
+        // while the index row is still disabled). Enable is semantically idempotent, so the signature
+        // is success: a double-open or a 408-after-PutPoll (response lost after the write landed) must
+        // not report an opened vote as failed. The match is a substring check on ITX's exact
+        // verified message (ITX main/polling.go:1865 returns {"code":"400","message":"poll is
+        // already enabled"} — the code field is just the HTTP status, no stable error code exists
+        // to match instead), tightened from the bare "already enabled" to reduce the set of
+        // colliding messages. It is still a substring match, not an anchored one; a wording change
+        // misses loudly, reverting to the pre-fix failure rather than a wrong success — fail-safe.
+        const alreadyEnabled = error instanceof MicroserviceError && error.statusCode === 400 && error.message.includes('poll is already enabled');
+        if (alreadyEnabled) {
+          logger.debug(req, 'enable_vote', 'Enable PUT answered "already enabled" — treating as success (enable is idempotent)', {
+            vote_uid: voteUid,
+            attempt,
+          });
+          return;
+        }
+        const retryableForbidden = error instanceof MicroserviceError && error.statusCode === 403;
+        const budgetLeftMs = deadline - Date.now();
+        if (!retryableForbidden || budgetLeftMs <= 0) {
+          if (retryableForbidden) {
+            logExhaustedForbidden(attempt);
+          }
+          throw error;
+        }
+        const delayMs = Math.min(VoteService.enableRetryDelayMs, budgetLeftMs);
+        // Re-check what the backoff leaves before looping: a remainder under the minimum viable
+        // request budget dooms the next PUT to a sub-round-trip timeout whose 408 would replace
+        // the 403 actually observed — and skip the exhaustion warning, since a 408 is not
+        // `retryableForbidden`. Emit the signal and rethrow the 403 rather than issue a request
+        // that cannot complete.
+        if (budgetLeftMs - delayMs < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
+        logger.debug(req, 'enable_vote', 'Enable PUT returned 403, retrying to allow for possible FGA replication lag', {
+          vote_uid: voteUid,
+          attempt,
+          next_retry_ms: delayMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        // The sleep itself can resume late under event-loop load — same floor as the pre-sleep
+        // check above, re-verified against what the backoff actually left.
+        if (deadline - Date.now() < MIN_VIABLE_REQUEST_BUDGET_MS) {
+          logExhaustedForbidden(attempt);
+          throw error;
+        }
+      }
+    }
+  }
 
   /**
    * Batch-enriches rows via the ungated query-service lookup — the gated `/projects/:uid` path 403s for

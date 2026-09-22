@@ -4,16 +4,17 @@ All API routes and auth flows sit behind rate limiters implemented with [`expres
 
 ## Limiters
 
-| Limiter                | Mounted at                                             | Window | Max req | Keyed on                     | Purpose                                          |
-| ---------------------- | ------------------------------------------------------ | ------ | ------- | ---------------------------- | ------------------------------------------------ |
-| `apiRateLimiter`       | `/api/*`                                               | 1 min  | 500     | IP                           | General authenticated API traffic.               |
-| `publicApiRateLimiter` | `/public/api/*`                                        | 1 min  | 100     | IP                           | Unauthenticated surfaces (e.g. public meetings). |
-| `authRateLimiter`      | `/login`, `/passwordless/callback`, `/social/callback` | 1 min  | 20      | IP                           | Auth flows — brute-force mitigation.             |
-| `aiRateLimiter`        | `POST /api/meetings/generate-agenda`                   | 1 min  | 10      | `req.oidc.user.sub`, else IP | LiteLLM-backed AI generation.                    |
+| Limiter                | Mounted at                                             | Window | Max req | Keyed on                     | Purpose                                                                            |
+| ---------------------- | ------------------------------------------------------ | ------ | ------- | ---------------------------- | ---------------------------------------------------------------------------------- |
+| `apiRateLimiter`       | `/api/*`                                               | 1 min  | 500     | IP                           | General authenticated API traffic.                                                 |
+| `publicApiRateLimiter` | `/public/api/*`                                        | 1 min  | 100     | IP                           | Unauthenticated surfaces (e.g. public meetings).                                   |
+| `authRateLimiter`      | `/login`, `/passwordless/callback`, `/social/callback` | 1 min  | 20      | IP                           | Auth flows — brute-force mitigation.                                               |
+| `aiRateLimiter`        | `POST /api/meetings/generate-agenda`                   | 1 min  | 10      | `req.oidc.user.sub`, else IP | LiteLLM-backed AI generation.                                                      |
+| `voteWriteRateLimiter` | `POST /api/votes`, `PUT /api/votes/:uid/enable`        | 1 min  | 10      | `req.oidc.user.sub`, else IP | Vote create/enable — a fused create+open fans out to as many as 22 upstream calls. |
 
-All four limiters use `standardHeaders: true` (modern `RateLimit-*` response headers) and `legacyHeaders: false` (no `X-RateLimit-*`). The window is 1 minute across the board.
+All five limiters use `standardHeaders: true` (modern `RateLimit-*` response headers) and `legacyHeaders: false` (no `X-RateLimit-*`). The window is 1 minute across the board.
 
-`aiRateLimiter` is the one limiter that is not per-IP and not mounted on a prefix. It stacks on top of `apiRateLimiter` (which still applies, since the route sits under `/api/`) and is keyed on the authenticated user so a single caller on a shared egress IP can't exhaust the budget for everyone behind it; anonymous callers fall back to a /56-masked IP key via `ipKeyGenerator`. Two known limits: it is not yet applied to the other LiteLLM callers (newsletter generation, weekly-brief action-item extraction), and its counter lives in the default in-process `MemoryStore`, so the effective ceiling is `limit × replicas` — exact today, since `ecosystem.config.js` runs a single instance, but a shared store would be needed under horizontal scaling.
+`aiRateLimiter` and `voteWriteRateLimiter` are the two limiters that are not per-IP and not mounted on a prefix. Each stacks on top of `apiRateLimiter` (which still applies, since the routes sit under `/api/`) and is keyed on the authenticated user so a single caller on a shared egress IP can't exhaust the budget for everyone behind it; anonymous callers fall back to a /56-masked IP key via `ipKeyGenerator`. The vote write routes are auth-gated, so the `sub` key is effectively always present there, and `POST /api/votes/responses` is deliberately left to `apiRateLimiter` alone — a room of voters can share a NAT IP. Known limits: `aiRateLimiter` is not yet applied to the other LiteLLM callers (newsletter generation, weekly-brief action-item extraction), and both limiters' counters live in the default in-process `MemoryStore` — per pod, not cluster-wide: `ecosystem.config.js` runs a single PM2 instance per pod, but the Helm chart deploys `replicaCount: 3` (100% surge ⇒ up to 6 pods mid-rollout), so the effective production ceiling is `limit × pods` — ~30/min per user today for the two route-scoped limiters. That relaxed-but-bounded ceiling still serves their purpose (bounding expensive fan-out, not enforcing an exact quota); a shared store would be needed only if a per-user cap ever had to hold exactly across replicas.
 
 ## Wiring in `server.ts`
 
@@ -41,7 +42,7 @@ router.post('/generate-agenda', aiRateLimiter, (req, res, next) => meetingContro
 
 - Returns **HTTP 429** with the standard `RateLimit-*` headers indicating remaining budget and reset time.
 - No body payload beyond the library default — clients should surface "too many requests, please retry" to the user.
-- Limiters count per-IP using the default `req.ip` key unless they declare a `keyGenerator` (`aiRateLimiter` keys on the authenticated user). In production behind load balancers, ensure Express `trust proxy` is configured upstream so the correct client IP is used.
+- Limiters count per-IP using the default `req.ip` key unless they declare a `keyGenerator` (`aiRateLimiter` and `voteWriteRateLimiter` key on the authenticated user). In production behind load balancers, ensure Express `trust proxy` is configured upstream so the correct client IP is used.
 
 ## Adding a new limiter
 
