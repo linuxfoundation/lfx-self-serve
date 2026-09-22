@@ -271,7 +271,8 @@ function toOrgClaManager(entry: EasyClaCompanyClaManager): OrgClaManager {
   const name = upstreamTrimmedString(entry.name);
   const email = upstreamTrimmedString(entry.email);
   // Only the events-backed add time from the authenticated project list. `approved_on` is signature
-  // creation time, not manager add time — ignore it for display.
+  // creation time, not manager add time — ignore it for display. The managers tab does not surface
+  // `addedOn` until EasyCLA event correlation is trustworthy.
   const addedOn = upstreamTrimmedString(entry.added_on);
   const lfUsername = upstreamTrimmedString(entry.lf_username);
 

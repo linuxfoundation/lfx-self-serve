@@ -141,28 +141,6 @@ describe('OrgEasyclaManagersComponent', () => {
     expect(counts).toEqual([2]);
   });
 
-  it('formats added_on through the same instant helper as the approval list', async () => {
-    await render();
-
-    component.loadIfNeeded();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    const added = fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-added-on"]');
-    expect(added?.textContent).toMatch(/May 2, 2024/);
-  });
-
-  it('shows an em dash when the roster row has no added_on', async () => {
-    getManagers.mockReturnValue(of({ signatureId: SIGNATURE_ID, managers: [manager({ addedOn: undefined })] }));
-    await render();
-
-    component.loadIfNeeded();
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-managers-added-on"]')?.textContent?.trim()).toBe('—');
-  });
-
   it('links a conservative manager email through buildMeetingOrganizerMailto', async () => {
     await render();
 
