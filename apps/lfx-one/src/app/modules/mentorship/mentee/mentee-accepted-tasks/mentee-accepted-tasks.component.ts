@@ -65,6 +65,8 @@ export class MenteeAcceptedTasksComponent {
   protected retry(): void {
     this.error.set(null);
     this.retrying.set(true);
+    // Drop a cached success so Retry always refetches, matching the applicant tab.
+    this.mentorshipService.clearMenteeCaches();
     this.reloadTrigger.update((n) => n + 1);
   }
 
