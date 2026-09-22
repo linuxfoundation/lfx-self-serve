@@ -104,7 +104,8 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
-  protected readonly counts = computed(() => (this.loading() || this.loadFailed() ? null : this.response().counts));
+  // No foundation means no read happened, so the default's zeroes are not a measured count.
+  protected readonly counts = computed(() => (this.loading() || this.loadFailed() || !this.query().foundationSlug ? null : this.response().counts));
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 
@@ -169,7 +170,8 @@ export class EngagementGroupAttendanceComponent {
         // request for the previous one.
         switchMap((query) =>
           (query.foundationSlug ? this.analyticsService.getEngagementGroupAttendance(query) : of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT)).pipe(
-            // Caught per query so a failure ends this read without tearing down the outer pipeline.
+            // Caught per query so a failure ends this read without tearing down the outer pipeline;
+            // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.loadFailed.set(true);
               return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);

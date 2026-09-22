@@ -41,6 +41,7 @@ function response(overrides: Partial<HealthMetricsEngagementGroupAttendance> = {
 describe('EngagementGroupAttendanceComponent', () => {
   let fixture: ComponentFixture<EngagementGroupAttendanceComponent>;
   let getEngagementGroupAttendance: ReturnType<typeof vi.fn>;
+  let selectedFoundation: ReturnType<typeof signal<{ slug: string } | null>>;
 
   async function render(payload: HealthMetricsEngagementGroupAttendance = response(), onCounts?: (counts: unknown) => void): Promise<void> {
     getEngagementGroupAttendance = vi.fn().mockReturnValue(of(payload));
@@ -53,7 +54,7 @@ describe('EngagementGroupAttendanceComponent', () => {
         provideNoopAnimations(),
         HealthMetricsChromeService,
         { provide: AnalyticsService, useValue: { getEngagementGroupAttendance } },
-        { provide: ProjectContextService, useValue: { selectedFoundation: signal({ slug: 'acme' }) } },
+        { provide: ProjectContextService, useValue: { selectedFoundation } },
       ],
     }).compileComponents();
 
@@ -66,6 +67,7 @@ describe('EngagementGroupAttendanceComponent', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    selectedFoundation = signal<{ slug: string } | null>({ slug: 'acme' });
   });
 
   it('reads the selected foundation and period, and renders the returned page', async () => {
@@ -212,6 +214,17 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
+  });
+
+  // The default response's zeroes are not a measured count, and a deep link waiting on this section
+  // is settled by the first non-null emission — so an unread section must stay null.
+  it('emits no counts while no foundation is selected, since nothing was read', async () => {
+    const emitted: unknown[] = [];
+    selectedFoundation.set(null);
+    await render(response(), (counts) => emitted.push(counts));
+
+    expect(getEngagementGroupAttendance).not.toHaveBeenCalled();
+    expect(emitted.every((counts) => counts === null)).toBe(true);
   });
 
   it('renders the empty state rather than an empty table once the read resolves with nothing', async () => {
