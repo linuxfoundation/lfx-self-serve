@@ -12,7 +12,15 @@
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList, OrgClaManager, OrgClaManagerList } from '@lfx-one/shared/interfaces';
+import type {
+  OrgClaApprovalList,
+  OrgClaContributorAcknowledgment,
+  OrgClaContributorAcknowledgmentList,
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaManager,
+  OrgClaManagerList,
+} from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
@@ -35,6 +43,9 @@ export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-lis
 
 export const MANAGERS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers';
 export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*';
+
+/** Contributor acknowledgments for one agreement. Query string carries search and nextKey. */
+export const ACKNOWLEDGMENTS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/acknowledgments**';
 
 /**
  * The detail page's presigned-URL route.
@@ -507,4 +518,68 @@ export function addManagerLastName(page: Page): Locator {
 
 export function addManagerEmail(page: Page): Locator {
   return page.locator('[data-test="org-easycla-add-manager-email"]');
+}
+
+// ---------------------------------------------------------------------------
+// The Contributor Acknowledgments tab (#2806)
+// ---------------------------------------------------------------------------
+
+export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
+  return {
+    signatureId: 'ecla-sig-1',
+    name: 'Ada Lovelace',
+    lfLogin: 'ada',
+    cclaVersion: 'v2.1',
+    signedOn: '2026-03-11T09:20:00Z',
+    approved: true,
+    ...overrides,
+  };
+}
+
+export function acknowledgmentList(overrides: Partial<OrgClaContributorAcknowledgmentList> = {}): OrgClaContributorAcknowledgmentList {
+  return {
+    signatureId: 'signature-uuid-1',
+    list: [acknowledgment()],
+    canEdit: true,
+    resultCount: 1,
+    totalCount: 1,
+    nextKey: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs GET on the acknowledgments path. A search term and a nextKey select a different page
+ * when the case supplied one, so Load more and search are real requests against the stub.
+ */
+export async function stubAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  const initial = options.initial ?? acknowledgmentList({ list: [], resultCount: 0, totalCount: 0 });
+
+  await page.route(ACKNOWLEDGMENTS_ROUTE, (route) => {
+    if (route.request().method() !== 'GET') return route.abort();
+    const url = new URL(route.request().url());
+    const search = url.searchParams.get('search')?.trim() ?? '';
+    const nextKey = url.searchParams.get('nextKey')?.trim() ?? '';
+    const body = search && options.search ? options.search : nextKey && options.next ? options.next : initial;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+export async function gotoAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubAcknowledgments(p, options);
+  });
+  await openAcknowledgmentsTab(page);
+}
+
+export async function openAcknowledgmentsTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-acknowledgments').click();
+  await expect(page.getByTestId('org-easycla-acknowledgments')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }

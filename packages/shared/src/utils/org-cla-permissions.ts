@@ -20,7 +20,7 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
 
 /**
  * The project/foundation half of an ACS `project|organization` pair, matching
- * `resolveApprovalContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
+ * `resolveClaGroupContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
  * project SFID, else foundation. `pairProjectSfid` is that scan taken before the mapper drops
  * nameless projects from `projects` for display — prefer it so a covered project with an id and
  * no name still beats a parent foundation. Deliberately not Sign's `signingChoiceFrom`, which
