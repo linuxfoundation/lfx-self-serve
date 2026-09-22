@@ -2045,9 +2045,7 @@ describe('OrgClaService.getManagers', () => {
   });
 
   it('reads through the CLA-group list when the org-list row names no project at all', async () => {
-    gatewayFetch
-      .mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })))
-      .mockResolvedValueOnce({ list: [upstreamManager()] });
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
 
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
     expect(gatewayFetch).toHaveBeenNthCalledWith(
