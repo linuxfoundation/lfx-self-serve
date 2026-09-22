@@ -16,6 +16,8 @@ import {
   FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_GLYPHS,
   FORMATION_ITEM_STATUS_TILE_CLASSES,
+  FORMATION_PROGRESS_RING_SIZE_CLASSES,
+  FORMATION_SUB_ITEM_MARKERS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
@@ -105,12 +107,17 @@ export default {
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
-    // Formation checklist — row/section-header grid templates (container-query variants) and sub-item
-    // glyph colors (FORMATION_CHECKLIST_GRID_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
+    // Formation checklist — row/section-header grid templates (container-query variants)
+    // (FORMATION_CHECKLIST_GRID_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_CHECKLIST_GRID_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Formation item drawer — header status tile tint and glyph color per status
+    // (FORMATION_ITEM_STATUS_TILE_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_STATUS_GLYPHS).flatMap((glyph) => glyph.colorClass.split(' ')),
-    // Formation item drawer — header status tile tint per status (FORMATION_ITEM_STATUS_TILE_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_STATUS_TILE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Formation sub-items — per-status marker/title/label classes and the progress ring's sizes
+    // (FORMATION_SUB_ITEM_MARKERS / FORMATION_PROGRESS_RING_SIZE_CLASSES in @lfx-one/shared, not scanned here)
+    ...Object.values(FORMATION_SUB_ITEM_MARKERS).flatMap((marker) => [marker.markerClass, marker.titleClass, marker.labelClass].flatMap((c) => c.split(' '))),
+    ...Object.values(FORMATION_PROGRESS_RING_SIZE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Formations queue — announcement countdown tone per timing (FORMATION_ANNOUNCEMENT_TIMING_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ANNOUNCEMENT_TIMING_CLASS),
     // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups

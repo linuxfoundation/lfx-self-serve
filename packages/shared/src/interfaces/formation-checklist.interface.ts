@@ -127,13 +127,35 @@ export interface FormationLinkRowActionConfig {
 }
 
 /**
- * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape (#2774) — the FontAwesome class and Tailwind text
- * color `lfx-formation-sub-item-list` leads each sub-item row with.
+ * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape — the FontAwesome class and Tailwind text color the
+ * item drawer's header status tile shows for an item status (#2801). Until #2818 it also led every
+ * `lfx-formation-sub-item-list` row; those now draw {@link FormationSubItemMarker}s instead.
  */
 export interface FormationItemStatusGlyph {
   icon: string;
   colorClass: string;
 }
+
+/**
+ * `FORMATION_SUB_ITEM_MARKERS`'s value shape (#2818) — how `lfx-formation-sub-item-list` renders one
+ * sub-item row per status: the 20px round marker's classes (`markerClass`), the icon inside it
+ * (`icon`, `null` for the hollow rings), the title's text color (`titleClass`) and the status
+ * label's classes (`labelClass` — literally `sr-only` where the marker already says it, so the
+ * label stays in the accessibility tree without repeating on screen).
+ */
+export interface FormationSubItemMarker {
+  icon: string | null;
+  markerClass: string;
+  titleClass: string;
+  labelClass: string;
+}
+
+/**
+ * `lfx-formation-progress-ring`'s `size` input (#2818) — `sm` sits inline in the checklist row's
+ * sub-items disclosure trigger, `md` leads the drawer's sub-items summary. The keys of
+ * `FORMATION_PROGRESS_RING_SIZE_CLASSES`.
+ */
+export type FormationProgressRingSize = 'sm' | 'md';
 
 /**
  * The one safe binding an API-sourced `FormationItem.action_href` resolves to — see

@@ -268,10 +268,14 @@
       </div>
 
       @if (currentItem.sub_items.length > 0) {
-        <!-- The list renders its own "Sub-items · N of M done" header (#2774); this wrapper keeps the
-             testid the structural e2e contract nests on. -->
-        <div class="flex flex-col rounded-xl border border-gray-200 p-4" data-testid="formation-item-drawer-sub-items">
-          <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
+        <!-- Same wrapper as Details/Links: the eyebrow sits outside the card (#2818). The list renders
+             its own "N of M done" summary (#2774); the inner card keeps the testid the structural e2e
+             contract nests on. -->
+        <div class="flex flex-col gap-2" data-testid="formation-item-drawer-sub-items-section">
+          <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Sub-items</span>
+          <div class="flex flex-col rounded-xl border border-gray-200 p-4" data-testid="formation-item-drawer-sub-items">
+            <lfx-formation-sub-item-list [subItems]="currentItem.sub_items" />
+          </div>
         </div>
       }
 

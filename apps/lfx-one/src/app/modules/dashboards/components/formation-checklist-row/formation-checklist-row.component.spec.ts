@@ -14,7 +14,6 @@ import {
   FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_GATING_ICON_TOOLTIP,
   FORMATION_ITEM_AUDIENCE_TOOLTIPS,
-  FORMATION_ITEM_SEGMENT_COLORS,
 } from '@lfx-one/shared/constants';
 import { FormationItem, FormationKnownAvailableAction, FormationRowReasonedStatusChange, FormationRowStatusChange } from '@lfx-one/shared/interfaces';
 import { toLocalDateOnlyString } from '@lfx-one/shared/utils';
@@ -782,32 +781,31 @@ describe('FormationChecklistRowComponent', () => {
         ],
       });
 
-    it('renders no trigger, bar or panel for an item without sub-items', async () => {
+    it('renders no trigger, ring or panel for an item without sub-items', async () => {
       await render(buildItem({ uid: 'no-subs', sub_items: [] }));
 
       expect(byTestId('sub-items')).toBeNull();
-      expect(byTestId('sub-items-bar')).toBeNull();
+      expect(byTestId('sub-items-ring')).toBeNull();
       expect(byTestId('sub-items-panel')).toBeNull();
     });
 
-    it('renders a collapsed trigger with the done count and a mini bar with one segment per sub-item', async () => {
+    // #2818: the trigger says what its count means ("… done") and carries a decorative progress
+    // ring inside it — aria-hidden, so it adds nothing to the button's accessible name.
+    it('renders a collapsed trigger with the done count and a decorative progress ring', async () => {
       await render(withSubItems('subs-collapsed'));
 
       const trigger = byTestId('sub-items');
-      expect(trigger?.textContent).toContain('1 of 3 sub-items');
+      expect(trigger?.textContent).toContain('1 of 3 sub-items done');
       expect(trigger?.getAttribute('aria-expanded')).toBe('false');
       expect(trigger?.getAttribute('aria-controls')).toBeNull();
       expect(byTestId('sub-items-panel')).toBeNull();
+      expect(byTestId('sub-items-bar')).toBeNull();
 
-      const bar = byTestId('sub-items-bar');
-      expect(bar?.getAttribute('role')).toBe('img');
-      expect(bar?.getAttribute('aria-label')).toBe('1 of 3 sub-items done');
-      const segments = Array.from(bar?.children ?? []) as HTMLElement[];
-      expect(segments.map((segment) => segment.className)).toEqual([
-        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.done),
-        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.in_progress),
-        expect.stringContaining(FORMATION_ITEM_SEGMENT_COLORS.not_started),
-      ]);
+      const ring = byTestId('sub-items-ring');
+      expect(trigger?.contains(ring)).toBe(true);
+      expect(ring?.querySelector('[data-testid="formation-progress-ring"]')?.getAttribute('aria-hidden')).toBe('true');
+      // One of three done — the fill arc covers a third of the 100-unit path.
+      expect(ring?.querySelector('[data-testid="formation-progress-ring-fill"]')?.getAttribute('stroke-dasharray')).toBe('33.33 100');
     });
 
     it('expands an inline list inside the row on click and collapses it again', async () => {
@@ -823,8 +821,10 @@ describe('FormationChecklistRowComponent', () => {
       expect(panel?.id).toBe('formation-checklist-row-sub-items-panel-subs-toggle');
       expect(fixture.nativeElement.querySelector('[data-testid="formation-checklist-row-subs-toggle"]')?.contains(panel)).toBe(true);
       expect(panel?.querySelectorAll('[data-testid^="formation-sub-item-row-"]').length).toBe(3);
-      // The trigger already carries the count and bar, so the inline list renders without its own summary.
+      // The trigger already carries the count and ring, so the inline list renders without its own summary.
       expect(panel?.querySelector('[data-testid="formation-sub-item-list-summary"]')).toBeNull();
+      // #2818: the list sits behind a left rail so the sub-items read as nested under the title.
+      expect(panel?.firstElementChild?.classList.contains('border-l-2')).toBe(true);
 
       (byTestId('sub-items') as HTMLButtonElement).click();
       fixture.detectChanges();

@@ -101,10 +101,11 @@
           @if (item().detail) {
             <span class="text-xs text-gray-500">{{ item().detail }}</span>
           }
-          @if (subItemsSummary()) {
-            <!-- Disclosure (#2774): the trigger carries the count, the sibling mini bar the per-status
-                 tally (a sibling, not a child, so its label isn't folded into the button's name); the
-                 panel it controls renders below the main row, inside this row's wrapper. -->
+          @if (subItemsSummary(); as summary) {
+            <!-- Disclosure (#2774, redrawn in #2818): one trigger carrying a decorative progress ring,
+                 the "N of M sub-items done" count and a trailing chevron; the panel it controls renders
+                 below the main row, inside this row's wrapper. The ring is aria-hidden, so the button's
+                 accessible name is just the count. -->
             <button
               type="button"
               class="inline-flex items-center gap-1.5 bg-transparent border-none p-0 text-xs text-gray-500 hover:text-gray-700 cursor-pointer whitespace-nowrap"
@@ -112,18 +113,14 @@
               [attr.aria-controls]="subItemsExpanded() ? subItemsPanelId() : null"
               (click)="toggleSubItems()"
               [attr.data-testid]="'formation-checklist-row-sub-items-' + item().uid">
-              <i class="fa-light fa-chevron-right text-[10px] transition-transform" [class.rotate-90]="subItemsExpanded()" aria-hidden="true"></i>
+              <lfx-formation-progress-ring
+                size="sm"
+                [done]="summary.counts.done"
+                [total]="summary.totalItems"
+                [attr.data-testid]="'formation-checklist-row-sub-items-ring-' + item().uid" />
               <span>{{ subItemsLabel() }}</span>
+              <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="subItemsExpanded()" aria-hidden="true"></i>
             </button>
-            <span
-              class="flex gap-0.5 h-1 w-12 shrink-0"
-              role="img"
-              [attr.aria-label]="subItemsBarLabel()"
-              [attr.data-testid]="'formation-checklist-row-sub-items-bar-' + item().uid">
-              @for (seg of subItemSegments(); track seg.id) {
-                <span class="flex-1 rounded-sm" [ngClass]="segmentColorClass[seg.status]"></span>
-              }
-            </span>
           }
         </div>
       }
@@ -232,9 +229,12 @@
   </div>
 
   @if (subItemsExpanded()) {
-    <!-- @2xl:pl-44 = px-4 (1rem) + the 9rem status track + the 1rem column gap: lines the list up under the title. -->
+    <!-- @2xl:pl-44 = px-4 (1rem) + the 9rem status track + the 1rem column gap: puts the rail at the
+         title's left edge, so the list reads as nested under the title (#2818). -->
     <div [id]="subItemsPanelId()" class="px-4 pb-3 @2xl:pl-44" [attr.data-testid]="'formation-checklist-row-sub-items-panel-' + item().uid">
-      <lfx-formation-sub-item-list [subItems]="item().sub_items" [showSummary]="false" />
+      <div class="border-l-2 border-gray-200 pl-3">
+        <lfx-formation-sub-item-list [subItems]="item().sub_items" [showSummary]="false" />
+      </div>
     </div>
   }
 </div>

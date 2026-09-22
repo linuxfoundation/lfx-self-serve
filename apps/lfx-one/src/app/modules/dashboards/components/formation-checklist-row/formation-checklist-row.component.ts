@@ -13,7 +13,6 @@ import {
   FORMATION_GATED_ROW_ACTIONS,
   FORMATION_GATING_ICON_TOOLTIP,
   FORMATION_ITEM_AUDIENCE_TOOLTIPS,
-  FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_LABELS,
   FORMATION_ITEM_STATUS_SEVERITY,
   FORMATION_LINK_ROW_ACTIONS,
@@ -32,6 +31,7 @@ import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 
+import { FormationProgressRingComponent } from '../formation-progress-ring/formation-progress-ring.component';
 import { FormationSubItemListComponent } from '../formation-sub-item-list/formation-sub-item-list.component';
 
 @Component({
@@ -45,6 +45,7 @@ import { FormationSubItemListComponent } from '../formation-sub-item-list/format
     PersonAvatarComponent,
     DatePipe,
     TooltipModule,
+    FormationProgressRingComponent,
     FormationSubItemListComponent,
   ],
   templateUrl: './formation-checklist-row.component.html',
@@ -121,9 +122,8 @@ export class FormationChecklistRowComponent {
   /** `#gatedAction`/`#linkOrDetailsAction` template contexts, keyed by action kind — typed at the definition site (see `FORMATION_GATED_ROW_ACTIONS`/`FORMATION_LINK_ROW_ACTIONS`), not inline in the template where `*ngTemplateOutlet` context is untyped. */
   protected readonly gatedActions = FORMATION_GATED_ROW_ACTIONS;
   protected readonly linkActions = FORMATION_LINK_ROW_ACTIONS;
-  /** Row grid templates per panel-width tier (shared with the section header's captions, #2774) and the mini bar's per-status colors — exposed directly so the template does plain lookups. */
+  /** Row grid templates per panel-width tier (shared with the section header's captions, #2774) — exposed directly so the template does plain lookups. */
   protected readonly gridClasses = FORMATION_CHECKLIST_GRID_CLASSES;
-  protected readonly segmentColorClass = FORMATION_ITEM_SEGMENT_COLORS;
 
   /** The gating asterisk's tooltip AND accessible name — one shared constant so the two can't drift (#2689). */
   protected readonly gatingIconTooltip = FORMATION_GATING_ICON_TOOLTIP;
@@ -208,22 +208,16 @@ export class FormationChecklistRowComponent {
     const viewerUsername = this.userService.viewerUsername();
     return !!owner && !!viewerUsername && owner.username === viewerUsername;
   });
-  /** Per-status tally of the item's sub-items (#2774), `null` when it has none — drives the disclosure trigger, its mini bar, and whether either renders. */
+  /** Per-status tally of the item's sub-items (#2774), `null` when it has none — feeds the disclosure trigger's ring and count, and decides whether it renders. */
   protected readonly subItemsSummary = computed(() => {
     const subItems = this.item().sub_items;
     return subItems.length > 0 ? deriveFormationReadinessSummary(subItems) : null;
   });
+  /** The trigger's visible text, "N of M sub-items done" (#2818) — it is the one place the row states the tally, so it says what the count means. */
   protected readonly subItemsLabel = computed(() => {
-    const summary = this.subItemsSummary();
-    return summary ? `${summary.counts.done} of ${summary.totalItems} sub-items` : '';
-  });
-  /** The mini bar's accessible name — shared wording with `lfx-formation-sub-item-list`'s bar (`formatFormationSubItemsDoneLabel`). */
-  protected readonly subItemsBarLabel = computed(() => {
     const summary = this.subItemsSummary();
     return summary ? formatFormationSubItemsDoneLabel(summary) : '';
   });
-  /** Same indexed-track shape as the readiness strip — statuses repeat, so a stable per-position id is the track key. */
-  protected readonly subItemSegments = computed(() => (this.subItemsSummary()?.segments ?? []).map((status, index) => ({ id: index, status })));
   /** `aria-controls` target for the disclosure trigger; only rendered (and only referenced) while expanded. */
   protected readonly subItemsPanelId = computed(() => `formation-checklist-row-sub-items-panel-${this.item().uid}`);
   /**
