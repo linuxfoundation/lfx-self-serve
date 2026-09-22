@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, isPlatformBrowser, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Router } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
@@ -21,7 +22,6 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   MentorshipMenteeOverviewApplicant,
-  MentorshipMenteeOverviewResponse,
   MentorshipMenteePhase,
   MentorshipMenteeTaskStatus,
   MentorshipMenteeTasksResponse,
@@ -29,7 +29,7 @@ import {
 import { MentorshipComingSoonService } from '@modules/mentorship/services/mentorship-coming-soon.service';
 import { MentorshipService } from '@services/mentorship.service';
 import { SelectComponent } from '@components/select/select.component';
-import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, map, of, switchMap, tap } from 'rxjs';
 
 /**
  * My Application Tasks / My Tasks tab — renders phase-specific task views:
@@ -39,14 +39,17 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
  *
  * ## Phase resolution
  *
- * The shell sets the `phase` hint via `onChildActivate()` when the user reaches
- * this tab from the overview, but that value is only known once the overview
- * *tab* has been visited. A direct visit or refresh on
- * `/mentorship/mentee/tasks` therefore arrives with no usable hint, so this
- * component fetches the mentee overview itself (`overviewData`) and derives the
- * authoritative `resolvedPhase` from the response — the deep-linkable contract
- * documented on the route. The shell hint is only a fast-path fallback while
- * that fetch is in flight.
+ * The shell (`MenteePageComponent`) owns the phase: the overview child reports
+ * it via `phaseChange`, and the shell pushes it into this component's `phase`
+ * signal on activation. That value is authoritative here — trusting it (rather
+ * than re-fetching the overview) keeps the tab in sync with the phase the user
+ * actually selected, e.g. the dev phase switcher on the overview.
+ *
+ * The phase is only known once the overview has resolved it. A cold deep-link or
+ * refresh directly on `/mentorship/mentee/tasks` arrives with the shell's
+ * default `empty` phase — there is no tasks tab in that phase — so this
+ * component redirects to the overview, which resolves the real phase and
+ * restores the correct tab bar.
  *
  * All status changes and file uploads fire Coming Soon toasts; the status
  * dropdown reverts to the task's real status after the toast, since persistence
@@ -63,6 +66,8 @@ export class MenteeApplicationTasksComponent {
   // ---- 1. DI ----------------------------------------------------------------
   private readonly mentorshipService = inject(MentorshipService);
   private readonly comingSoonService = inject(MentorshipComingSoonService);
+  private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // ---- 2. Template constants ------------------------------------------------
   protected readonly prerequisiteLabel = MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL;
@@ -77,9 +82,12 @@ export class MenteeApplicationTasksComponent {
   protected readonly acceptedForm = this.initAcceptedForm();
 
   // ---- 4. Simple writable signals -------------------------------------------
-  /** Phase hint from the shell; `resolvedPhase` is the authoritative value. */
-  public readonly phase = signal<MentorshipMenteePhase>('applicant');
-  protected readonly overviewError = signal<string | null>(null);
+  /**
+   * Authoritative phase, pushed by the shell on activation. Defaults to `empty`
+   * so a cold deep-link (no overview resolved yet) redirects to the overview.
+   */
+  public readonly phase = signal<MentorshipMenteePhase>('empty');
+  protected readonly applicantError = signal<string | null>(null);
   protected readonly acceptedError = signal<string | null>(null);
   protected readonly activeFilter = signal<MentorshipMenteeTaskStatus | null>(null);
 
@@ -89,16 +97,12 @@ export class MenteeApplicationTasksComponent {
   private readonly acceptedRetrying = signal(false);
 
   // ---- 5. Complex computed / toSignal signals (via private init functions) ---
-  private readonly overviewData = this.initOverviewData();
-  protected readonly overviewLoaded = computed(() => this.overviewData() !== null || this.overviewError() !== null);
+  /** The phase this tab renders — the shell's authoritative value. */
+  protected readonly resolvedPhase = computed<MentorshipMenteePhase>(() => this.phase());
 
-  /** Authoritative phase — from the fetched overview, falling back to the shell hint while loading. */
-  protected readonly resolvedPhase = computed<MentorshipMenteePhase>(() => this.overviewData()?.phase ?? this.phase());
-
-  private readonly applicantData = computed<MentorshipMenteeOverviewApplicant | null>(() => {
-    const data = this.overviewData();
-    return data?.phase === 'applicant' ? data : null;
-  });
+  private readonly applicantOverview = this.initApplicantOverview();
+  private readonly applicantData = computed<MentorshipMenteeOverviewApplicant | null>(() => this.applicantOverview());
+  protected readonly applicantLoaded = computed(() => this.applicantOverview() !== null || this.applicantError() !== null);
   protected readonly applicantView = this.initApplicantView();
 
   private readonly tasksData = this.initTasksData();
@@ -106,6 +110,16 @@ export class MenteeApplicationTasksComponent {
   protected readonly acceptedLoaded = computed(() => !this.acceptedRetrying() && (this.tasksData() !== null || this.acceptedError() !== null));
   protected readonly filteredTaskViews = this.initFilteredTaskViews();
   protected readonly submittedSummary = this.initSubmittedSummary();
+
+  public constructor() {
+    // Finding: the tasks route has no place in the empty phase (no tab exists),
+    // so bounce to the overview, which resolves the real phase and tab bar.
+    effect(() => {
+      if (this.resolvedPhase() === 'empty' && isPlatformBrowser(this.platformId)) {
+        void this.router.navigate(['/mentorship/mentee/overview']);
+      }
+    });
+  }
 
   // ---- 6. Actions -----------------------------------------------------------
 
@@ -137,9 +151,9 @@ export class MenteeApplicationTasksComponent {
     this.activeFilter.set(filterValue);
   }
 
-  /** Retry the overview fetch (drives phase resolution for both phases). */
+  /** Retry the applicant-phase overview fetch. */
   protected retry(): void {
-    this.overviewError.set(null);
+    this.applicantError.set(null);
     this.reloadTrigger.update((n) => n + 1);
   }
 
@@ -151,18 +165,24 @@ export class MenteeApplicationTasksComponent {
 
   // ---- 7. Private initializers ----------------------------------------------
 
-  private initOverviewData(): Signal<MentorshipMenteeOverviewResponse | null> {
+  private initApplicantOverview(): Signal<MentorshipMenteeOverviewApplicant | null> {
+    // `toObservable` must run in an injection context — capture the reload stream
+    // here (this initializer runs during field construction) rather than inside `switchMap`.
+    const reload$ = toObservable(this.reloadTrigger);
     return toSignal(
-      toObservable(this.reloadTrigger).pipe(
-        tap(() => this.overviewError.set(null)),
+      toObservable(this.resolvedPhase).pipe(
+        filter((p): p is 'applicant' => p === 'applicant'),
+        switchMap(() => reload$),
+        tap(() => this.applicantError.set(null)),
         switchMap(() =>
           this.mentorshipService.getMenteeOverview().pipe(
+            map((res): MentorshipMenteeOverviewApplicant | null => (res.phase === 'applicant' ? res : null)),
             catchError((err: unknown) => {
               const msg =
                 err instanceof HttpErrorResponse
                   ? serverAuthoredMessage(err, 'Could not load application tasks. Please retry.')
                   : 'Could not load application tasks. Please retry.';
-              this.overviewError.set(msg);
+              this.applicantError.set(msg);
               return of(null);
             })
           )
@@ -173,8 +193,8 @@ export class MenteeApplicationTasksComponent {
   }
 
   private initTasksData(): Signal<MentorshipMenteeTasksResponse | null> {
-    // `toObservable` must run in an injection context — capture both streams here
-    // (this initializer runs during field construction) rather than inside `switchMap`.
+    // `toObservable` must run in an injection context — capture the reload stream
+    // here (this initializer runs during field construction) rather than inside `switchMap`.
     const reload$ = toObservable(this.reloadTrigger);
     return toSignal(
       toObservable(this.resolvedPhase).pipe(
@@ -218,7 +238,9 @@ export class MenteeApplicationTasksComponent {
 
   private initFilteredTaskViews() {
     return computed(() => {
-      const views = this.acceptedTasks().map((t) => this.buildTaskView(t.id, t.title, t.description, t.status, t.submitFile, t.fileUrl, t.dueDate, t.submittedDate));
+      const views = this.acceptedTasks().map((t) =>
+        this.buildTaskView(t.id, t.title, t.description, t.status, t.submitFile, t.fileUrl, t.dueDate, t.submittedDate)
+      );
       const f = this.activeFilter();
       if (f === null) return views;
       if (f === 'pending') return views.filter((v) => v.status === 'pending' || v.status === 'incomplete');

@@ -346,7 +346,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
           status: 'complete',
           submitFile: null,
           dueDate: '2026-07-02T00:00:00Z',
-          submittedOn: 'Jul 2',
+          submittedOn: '2026-07-02T00:00:00Z',
         },
         {
           id: 'task_apicurio_2',
@@ -387,7 +387,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
           submitFile: 'required',
           fileUrl: 'https://example.com/uploads/zephyr-build-log.txt',
           dueDate: '2026-07-06T00:00:00Z',
-          submittedOn: 'Jul 6',
+          submittedOn: '2026-07-06T00:00:00Z',
         },
         {
           id: 'task_zephyr_2',
@@ -419,7 +419,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
           status: 'submitted',
           submitFile: null,
           dueDate: '2026-07-07T00:00:00Z',
-          submittedOn: 'Jul 7',
+          submittedOn: '2026-07-07T00:00:00Z',
         },
         {
           id: 'task_janus_2',
@@ -429,7 +429,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
           submitFile: 'required',
           fileUrl: 'https://example.com/uploads/janus-benchmark.pdf',
           dueDate: '2026-07-18T00:00:00Z',
-          submittedOn: 'Jul 18',
+          submittedOn: '2026-07-18T00:00:00Z',
         },
         {
           id: 'task_janus_3',
@@ -439,7 +439,7 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
           submitFile: 'required',
           fileUrl: 'https://example.com/uploads/janus-audit.md',
           dueDate: '2026-07-25T00:00:00Z',
-          submittedOn: 'Jul 25',
+          submittedOn: '2026-07-25T00:00:00Z',
         },
       ],
     },

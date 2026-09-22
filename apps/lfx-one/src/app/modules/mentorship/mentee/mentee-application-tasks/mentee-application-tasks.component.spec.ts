@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import {
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
@@ -22,38 +23,39 @@ describe('MenteeApplicationTasksComponent', () => {
   let getMenteeOverview: ReturnType<typeof vi.fn>;
   let getMenteeTasks: ReturnType<typeof vi.fn>;
   let comingSoonNotify: ReturnType<typeof vi.fn>;
+  let routerNavigate: ReturnType<typeof vi.fn>;
 
   const element = (): HTMLElement => fixture.nativeElement as HTMLElement;
 
-  /** The overview response the component fetches to resolve its phase. */
+  /** The overview response the component fetches for the applicant phase. */
   const overviewForPhase = (phase: MentorshipMenteePhase): MentorshipMenteeOverviewResponse => {
     if (phase === 'accepted') return MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED;
     if (phase === 'empty') return MOCK_MENTORSHIP_MENTEE_OVERVIEW_EMPTY;
     return MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT;
   };
 
-  const createComponent = async (): Promise<void> => {
+  const createComponent = async (phase: MentorshipMenteePhase): Promise<void> => {
     TestBed.resetTestingModule();
     TestBed.configureTestingModule({
       imports: [MenteeApplicationTasksComponent],
       providers: [
         { provide: MentorshipService, useValue: { getMenteeOverview, getMenteeTasks } },
         { provide: MentorshipComingSoonService, useValue: { notify: comingSoonNotify } },
+        { provide: Router, useValue: { navigate: routerNavigate } },
       ],
     });
 
     await TestBed.compileComponents();
     fixture = TestBed.createComponent(MenteeApplicationTasksComponent);
     component = fixture.componentInstance;
+    // The shell pushes the resolved phase into the child on activation.
+    component.phase.set(phase);
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
   };
 
-  /**
-   * Boot the component with a fetched overview that resolves the given phase —
-   * mirrors a deep-link / refresh where the component learns its phase itself.
-   */
+  /** Boot the component in the given phase (as the shell would report it). */
   const bootstrap = async (
     phase: MentorshipMenteePhase,
     overview: MentorshipMenteeOverviewResponse = overviewForPhase(phase),
@@ -62,7 +64,8 @@ describe('MenteeApplicationTasksComponent', () => {
     getMenteeOverview = vi.fn().mockReturnValue(of(overview));
     getMenteeTasks = vi.fn().mockReturnValue(of(tasksData));
     comingSoonNotify = vi.fn();
-    await createComponent();
+    routerNavigate = vi.fn().mockResolvedValue(true);
+    await createComponent(phase);
   };
 
   beforeEach(() => {
@@ -71,14 +74,13 @@ describe('MenteeApplicationTasksComponent', () => {
 
   // ---- Phase resolution -----------------------------------------------------
 
-  it('resolves the accepted phase from its own overview fetch on a direct visit', async () => {
-    // No shell hint is set (deep-link / refresh) — the fetched overview drives the phase.
+  it('renders the accepted phase when the shell reports it', async () => {
     await bootstrap('accepted');
     expect(component['resolvedPhase']()).toBe('accepted');
     expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeTruthy();
   });
 
-  it('resolves the applicant phase from its own overview fetch on a direct visit', async () => {
+  it('renders the applicant phase when the shell reports it', async () => {
     await bootstrap('applicant');
     expect(component['resolvedPhase']()).toBe('applicant');
     expect(element().querySelector('[data-testid="mentee-tasks-applicant"]')).toBeTruthy();
@@ -147,18 +149,19 @@ describe('MenteeApplicationTasksComponent', () => {
     expect(comingSoonNotify).toHaveBeenCalledWith('Coming Soon');
   });
 
-  it('shows error state when overview API fails', async () => {
+  it('shows error state when the applicant overview API fails', async () => {
     getMenteeOverview = vi.fn().mockReturnValue(throwError(() => new Error('Network error')));
     getMenteeTasks = vi.fn().mockReturnValue(of(MOCK_MENTORSHIP_MENTEE_TASKS));
     comingSoonNotify = vi.fn();
+    routerNavigate = vi.fn().mockResolvedValue(true);
 
-    await createComponent();
+    await createComponent('applicant');
 
-    expect(component['overviewError']()).toBeTruthy();
+    expect(component['applicantError']()).toBeTruthy();
     expect(element().querySelector('[data-testid="mentee-tasks-error"]')).toBeTruthy();
   });
 
-  it('retries the overview fetch on retry click', async () => {
+  it('retries the applicant overview fetch on retry click', async () => {
     await bootstrap('applicant');
     const callsBefore = getMenteeOverview.mock.calls.length;
     component['retry']();
@@ -268,9 +271,11 @@ describe('MenteeApplicationTasksComponent', () => {
 
   // ---- Empty phase ----------------------------------------------------------
 
-  it('renders empty state for empty phase', async () => {
+  it('redirects to the overview when the phase is empty (no tasks tab exists)', async () => {
     await bootstrap('empty');
-    const emptyState = element().querySelector('[data-testid="mentee-tasks-empty"]');
-    expect(emptyState).toBeTruthy();
+    expect(routerNavigate).toHaveBeenCalledWith(['/mentorship/mentee/overview']);
+    // No phase content renders while the redirect is in flight.
+    expect(element().querySelector('[data-testid="mentee-tasks-applicant"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentee-tasks-accepted"]')).toBeNull();
   });
 });
