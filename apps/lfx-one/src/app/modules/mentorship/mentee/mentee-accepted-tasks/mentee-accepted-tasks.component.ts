@@ -48,7 +48,7 @@ export class MenteeAcceptedTasksComponent {
   private readonly tasks = computed(() => this.tasksData()?.data ?? []);
   protected readonly loaded = computed(() => !this.retrying() && (this.tasksData() !== null || this.error() !== null));
   /** View models built once per task-list change; filtering reuses these object identities. */
-  private readonly taskViews = computed(() => buildMentorshipMenteeTaskViews(this.tasks()));
+  private readonly taskViews = this.initTaskViews();
   protected readonly filteredTaskViews = this.initFilteredTaskViews();
   protected readonly submittedSummary = this.initSubmittedSummary();
   protected readonly acceptedForm = this.initAcceptedForm();
@@ -87,6 +87,11 @@ export class MenteeAcceptedTasksComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  /** Map the fetched task list into display view models (rebuilt only when the list changes). */
+  private initTaskViews(): Signal<MentorshipMenteeTaskView[]> {
+    return computed(() => buildMentorshipMenteeTaskViews(this.tasks()));
   }
 
   private initFilteredTaskViews(): Signal<MentorshipMenteeTaskView[]> {

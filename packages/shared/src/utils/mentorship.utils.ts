@@ -783,7 +783,12 @@ export function buildMentorshipMenteeTaskView(input: {
   dueDate?: string;
   submittedLabel?: string;
 }): MentorshipMenteeTaskView {
-  const submitted = input.status === 'submitted' || input.status === 'complete';
+  // Normalise once so an unrecognised runtime status resolves to a real option
+  // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
+  // it would read as `pending` in the dropdown yet render unstyled and vanish
+  // under the Pending filter (which matches on the normalised status).
+  const status = normalizeMentorshipMenteeTaskStatus(input.status);
+  const submitted = status === 'submitted';
   const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
   // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
   // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
@@ -793,10 +798,10 @@ export function buildMentorshipMenteeTaskView(input: {
     id: input.id,
     title: input.title,
     description: input.description,
-    status: input.status,
+    status,
     submitted,
-    inProgress: input.status === 'in_progress',
-    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[input.status] ?? '',
+    inProgress: status === 'in_progress',
+    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status] ?? '',
     hasUploadedFile,
     needsUpload: input.submitFile === 'required' && !input.fileUrl,
     fileUrl: input.fileUrl ?? submitFileUrl,

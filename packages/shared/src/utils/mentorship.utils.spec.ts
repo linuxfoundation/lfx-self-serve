@@ -997,6 +997,22 @@ describe('buildMentorshipMenteeTaskView', () => {
     expect(view.needsUpload).toBe(false);
     expect(view.fileUrl).toBe('https://files.example.com/only-submitfile.pdf');
   });
+
+  it('normalises an unrecognised status to a real, styled option', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't5',
+      title: 'Unknown status',
+      description: 'From an unrecognised backend value',
+      status: 'mystery' as never,
+      submitFile: null,
+    });
+    // Falls back to a selectable value so the dropdown, badge styling, and the
+    // Pending filter all agree instead of leaving it blank/unstyled.
+    expect(view.status).toBe('pending');
+    expect(view.submitted).toBe(false);
+    expect(view.inProgress).toBe(false);
+    expect(view.statusClass).not.toBe('');
+  });
 });
 
 describe('buildMentorshipMenteeApplicationViews', () => {
