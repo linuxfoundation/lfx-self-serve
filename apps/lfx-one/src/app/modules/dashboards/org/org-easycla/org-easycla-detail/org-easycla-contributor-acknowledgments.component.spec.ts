@@ -463,6 +463,19 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       });
     });
 
+    it('sends the write once when the dialog closes twice', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'signed-in-error' });
+      dialogClosed.next({ reason: 'signed-in-error' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(invalidateAcknowledgment).toHaveBeenCalledTimes(1);
+    });
+
     /**
      * Refetch, not optimistic removal.
      *

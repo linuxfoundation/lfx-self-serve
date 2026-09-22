@@ -27,7 +27,22 @@ import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, EMPTY, expand, finalize, of, reduce, skip, startWith, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  combineLatest,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  expand,
+  finalize,
+  of,
+  reduce,
+  skip,
+  startWith,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -298,7 +313,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     this.invalidateDialog = dialogRef;
     const orgUid = this.orgUid();
     const claSignatureId = this.signatureId();
-    dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
+    // take(1): the dialog can emit close more than once while it is still closing, and a second
+    // emission would send the write again. The HTTP call itself does not use take(1), so closing
+    // the tab does not cancel a write that has already started.
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
       if (this.invalidateDialog === dialogRef) this.invalidateDialog = null;
       if (!request || this.destroyed) return;
       // The pair captured when the dialog opened. A confirm that races an agreement change

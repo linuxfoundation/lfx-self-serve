@@ -27,6 +27,7 @@ import {
   type OrgClaSignRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  codePointLength,
   hasOrgClaManagerAddErrors,
   isEmailShape,
   isOrgClaManagerLfUsername,
@@ -594,7 +595,8 @@ export class OrgClasController {
         reject('The note must be text', 'invalid_note');
         return;
       }
-      if (typeof body?.note === 'string' && body.note.trim().length > ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH) {
+      // Code points, not UTF-16 units, to match the producer's go-swagger rune cap.
+      if (typeof body?.note === 'string' && codePointLength(body.note.trim()) > ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH) {
         reject(`The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters`, 'note_too_long');
         return;
       }

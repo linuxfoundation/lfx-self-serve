@@ -1229,6 +1229,30 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
     expect(res.status).not.toHaveBeenCalledWith(400);
   });
 
+  /**
+   * The producer counts runes. 2,048 non-BMP characters are 4,096 UTF-16 units, so a `.length`
+   * check would refuse a note the producer accepts.
+   */
+  it('accepts a note of 2048 code points that a UTF-16 count would refuse', async () => {
+    const note = '𠮷'.repeat(2048);
+    expect(note.length).toBe(4096);
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note }), res, vi.fn());
+
+    expect(invalidateAcknowledgment).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(400);
+  });
+
+  it('refuses a note of 2049 code points', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note: '𠮷'.repeat(2049) }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
   it('drops a non-string note rather than passing it to the producer', async () => {
     const res = buildRes();
 

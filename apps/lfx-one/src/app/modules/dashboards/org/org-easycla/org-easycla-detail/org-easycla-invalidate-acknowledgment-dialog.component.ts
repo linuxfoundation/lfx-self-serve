@@ -11,6 +11,7 @@ import {
   ORG_CLA_INVALIDATION_REASONS,
 } from '@lfx-one/shared/constants';
 import type { OrgClaInvalidateAcknowledgmentDialogData, OrgClaInvalidateAcknowledgmentRequest, OrgClaInvalidationReason } from '@lfx-one/shared/interfaces';
+import { maxCodePointsValidator } from '@lfx-one/shared/validators';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
@@ -40,7 +41,6 @@ import { TextareaComponent } from '@components/textarea/textarea.component';
 })
 export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   protected readonly copy = ORG_CLA_INVALIDATE_DIALOG_COPY;
-  protected readonly noteMaxLength = ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH;
 
   /** Picker options in the contract's tuple order, which is the order the CLA manager reads. */
   protected readonly reasonOptions = ORG_CLA_INVALIDATION_REASONS.map((reason) => ({
@@ -50,7 +50,9 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
 
   public readonly form = new FormGroup({
     reason: new FormControl<OrgClaInvalidationReason | null>(null, { validators: [Validators.required] }),
-    note: new FormControl<string>('', { nonNullable: true, validators: [Validators.maxLength(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)] }),
+    // Code points, not Validators.maxLength. The producer's maxLength counts runes, and a native
+    // maxlength on the textarea would stop a non-BMP note at half of that cap.
+    note: new FormControl<string>('', { nonNullable: true, validators: [maxCodePointsValidator(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)] }),
   });
 
   private readonly dialogConfig = inject<DynamicDialogConfig<OrgClaInvalidateAcknowledgmentDialogData>>(DynamicDialogConfig);

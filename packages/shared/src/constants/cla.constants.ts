@@ -725,7 +725,13 @@ export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
  */
 export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
 
-/** Maximum length of the free-text note, matching the producer's own `maxLength: 2048`. */
+/**
+ * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ *
+ * Counted in code points, not UTF-16 units: go-swagger validates `maxLength` with
+ * `utf8.RuneCountInString`. The dialog uses `maxCodePointsValidator` and carries no native
+ * `maxlength`, which would stop a non-BMP note at half this cap.
+ */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
 /**

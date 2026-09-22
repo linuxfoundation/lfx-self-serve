@@ -111,12 +111,32 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     expect(reason?.getAttribute('aria-required')).toBe('true');
   });
 
-  it('caps the note at the length the producer accepts', async () => {
+  /**
+   * The cap is the producer's, counted in code points. A native `maxlength` counts UTF-16 units
+   * and would stop a non-BMP note at half of it — refusing, from the input itself, a length the
+   * producer accepts.
+   */
+  it('accepts a full-length non-BMP note, which a UTF-16 cap would have halved', async () => {
+    const fixture = await render();
+    const atTheCap = '𠮷'.repeat(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH);
+    expect(atTheCap.length).toBe(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH * 2);
+
+    chooseReason(fixture, 'other');
+    fixture.componentInstance.form.controls.note.setValue(atTheCap);
+    fixture.detectChanges();
+
+    expect(confirmButton(fixture)?.disabled).toBe(false);
+    expect(fixture.nativeElement.querySelector('#org-easycla-invalidate-note')?.getAttribute('maxlength')).toBeNull();
+  });
+
+  it('keeps Confirm disabled when the note is past the code-point cap', async () => {
     const fixture = await render();
 
-    const note = fixture.nativeElement.querySelector('#org-easycla-invalidate-note') as HTMLTextAreaElement;
+    chooseReason(fixture, 'other');
+    fixture.componentInstance.form.controls.note.setValue('𠮷'.repeat(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH + 1));
+    fixture.detectChanges();
 
-    expect(note?.getAttribute('maxlength')).toBe(String(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH));
+    expect(confirmButton(fixture)?.disabled).toBe(true);
   });
 
   it('names the contributor the panel resolved', async () => {
