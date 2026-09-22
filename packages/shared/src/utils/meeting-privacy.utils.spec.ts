@@ -25,6 +25,11 @@ describe('isShowMeetingAttendeesLocked', () => {
     expect(isShowMeetingAttendeesLocked(MeetingType.BOARD, false)).toBe(true);
   });
 
+  it('locks board meetings regardless of type casing', () => {
+    expect(isShowMeetingAttendeesLocked('board', false)).toBe(true);
+    expect(isShowMeetingAttendeesLocked('BOARD', false)).toBe(true);
+  });
+
   it('locks restricted meetings of any type', () => {
     expect(isShowMeetingAttendeesLocked(MeetingType.TECHNICAL, true)).toBe(true);
   });

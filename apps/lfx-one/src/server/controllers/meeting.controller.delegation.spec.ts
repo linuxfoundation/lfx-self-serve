@@ -15,6 +15,7 @@ const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatu
     getMeetingById: vi.fn(),
     getMeetingHostKey: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
+    attachRsvpsToRegistrantList: vi.fn(),
   },
   getEffectiveEmailMock: vi.fn(),
   generateM2MTokenMock: vi.fn(),
@@ -107,6 +108,7 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
   });
 
   it('calls the partial-tolerant getMeetingRegistrants for the 3 pre-existing callers (no fail_on_partial)', async () => {
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: true, committees: [] }));
     const res = buildRes();
     const next = vi.fn();
 
@@ -116,6 +118,21 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
     expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false);
     expect(res.json).toHaveBeenCalledWith([]);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('returns only the caller row on the tolerant listing when attendee visibility is off', async () => {
+    const self = { uid: 'reg-self', email: 'user@example.com' };
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: false, committees: [] }));
+    getEffectiveEmailMock.mockReturnValue('user@example.com');
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([self]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({}), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrantsByEmail).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([self]);
   });
 
   // Completeness without a committee is the composer's Guests section, not the import flow — but
@@ -289,6 +306,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([]);
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.attachRsvpsToRegistrantList.mockImplementation(async (_req: unknown, _uid: unknown, registrants: unknown) => registrants);
   });
 
   function buildRegistrantsReq(overrides: Record<string, unknown> = {}): any {
@@ -338,6 +356,22 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
     expect(res.json).toHaveBeenCalledWith([self]);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it('attaches RSVP to the caller row when attendee visibility is off and include_rsvp is true', async () => {
+    const self = { uid: 'reg-self', email: 'user@example.com' };
+    const withRsvp = { ...self, rsvp: { response: 'accepted' } };
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizer: false, show_meeting_attendees: false, committees: [] }));
+    meetingSvc.getMeetingRegistrantsByEmail.mockResolvedValue([self]);
+    meetingSvc.attachRsvpsToRegistrantList.mockResolvedValue([withRsvp]);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMyMeetingRegistrants(buildRegistrantsReq({ query: { include_rsvp: 'true' } }), res, next);
+
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(meetingSvc.attachRsvpsToRegistrantList).toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith([withRsvp]);
   });
 
   it('returns the full roster to an invitee when attendee visibility is on', async () => {

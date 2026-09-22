@@ -44,8 +44,8 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
-  isUnresolvableParticipantName,
   isShowMeetingAttendeesLocked,
+  isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
   normalizeIndexedMeetingInviteResponses,
@@ -540,6 +540,8 @@ export class MeetingService {
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
+    // Defense in depth: the form disables this control, but a direct API caller must not be able
+    // to opt a board/restricted meeting into roster visibility.
     if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
       createPayload.show_meeting_attendees = false;
     }
@@ -610,6 +612,8 @@ export class MeetingService {
 
     const meetingType = meetingData.meeting_type ?? existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
+    // Defense in depth: the form disables this control, but a direct API caller must not be able
+    // to opt a board/restricted meeting into roster visibility.
     if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
       updatePayload.show_meeting_attendees = false;
     }
@@ -1653,6 +1657,33 @@ export class MeetingService {
         ),
       { failOnPartial }
     );
+  }
+
+  /**
+   * Attaches occurrence-scoped RSVPs to an already-fetched registrant list without walking
+   * the full roster again. Used when the caller is only allowed to see their own row(s).
+   */
+  public async attachRsvpsToRegistrantList(
+    req: Request,
+    meetingUid: string,
+    registrants: MeetingRegistrant[],
+    occurrenceId?: string,
+    options?: ApiRequestOptions
+  ): Promise<MeetingRegistrant[]> {
+    if (registrants.length === 0) {
+      return registrants;
+    }
+
+    try {
+      const rsvps = await this.getRawMeetingRsvps(req, meetingUid, options);
+      return attachRsvpsToRegistrants(registrants, filterRsvpsToActiveRegistrants(rsvps, registrants), occurrenceId);
+    } catch (error) {
+      logger.warning(req, 'attach_rsvps_to_registrant_list', 'Failed to fetch RSVPs, returning registrants without RSVP data', {
+        meeting_id: meetingUid,
+        err: error,
+      });
+      return registrants;
+    }
   }
 
   /**

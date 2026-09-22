@@ -799,6 +799,7 @@ describe('MeetingJoinComponent', () => {
       );
       const component = await createComponent();
       expect(component.canViewGuestRoster()).toBe(false);
+      expect(getMyMeetingRegistrants).not.toHaveBeenCalled();
     });
 
     it('shows the roster to invitees when show_meeting_attendees is on', async () => {

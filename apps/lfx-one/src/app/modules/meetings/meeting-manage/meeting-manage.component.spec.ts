@@ -410,5 +410,26 @@ describe('MeetingManageComponent', () => {
       component.form().get('show_meeting_attendees')?.setValue(true);
       expect(component.prepareMeetingData().show_meeting_attendees).toBe(true);
     });
+
+    it('persists false after a hydrated true meeting is re-typed as Board', async () => {
+      getMeetingDetail.mockReturnValue(
+        of({
+          ...unenrichedMeeting(),
+          show_meeting_attendees: true,
+          meeting_type: 'Technical',
+          restricted: false,
+          start_time: '2099-01-01T00:00:00.000Z',
+          duration: 60,
+          timezone: 'UTC',
+          title: 'Test',
+        } as Meeting)
+      );
+      getProject.mockReturnValue(of(null));
+      const component = (await createComponent()).componentInstance as any;
+      await TestBed.inject(ApplicationRef).whenStable();
+      component.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+      await TestBed.inject(ApplicationRef).whenStable();
+      expect(component.prepareMeetingData().show_meeting_attendees).toBe(false);
+    });
   });
 });

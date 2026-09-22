@@ -580,19 +580,18 @@ export class MeetingJoinComponent implements OnInit {
    * Organizers always see the roster. Invitees (and newly registered guests) only see it
    * when the organizer turned Show attendees on.
    */
-  public canViewGuestRoster(): boolean {
+  public readonly canViewGuestRoster = computed(() => {
     if (!this.authenticated()) {
       return false;
     }
     const meeting = this.meeting();
-    if (meeting.organizer) {
+    if (meeting?.organizer) {
       return true;
     }
-    return meeting.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
-  }
+    return meeting?.show_meeting_attendees === true && (!!meeting.invited || this.optimisticInvited());
+  });
 
   public onRegistrantsToggle(): void {
-    const meeting = this.meeting();
     if (!this.canViewGuestRoster()) {
       this.messageService.add({
         severity: 'warn',
@@ -1645,11 +1644,11 @@ export class MeetingJoinComponent implements OnInit {
         toObservable(this.currentOccurrence).pipe(distinctUntilChanged((a, b) => a?.occurrence_id === b?.occurrence_id)),
         toObservable(this.authenticated),
         this.registrantsRefresh$,
-        toObservable(this.optimisticInvited),
+        toObservable(this.canViewGuestRoster),
       ]).pipe(
-        switchMap(([meeting, occurrence, authenticated, , optimisticInvited]) => {
-          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited || optimisticInvited) || this.isPastMeeting()) {
-            // No fetch will happen on this branch (unauthenticated, not organizer/invited, or a
+        switchMap(([meeting, occurrence, authenticated, , canView]) => {
+          if (!meeting?.id || !authenticated || !canView || this.isPastMeeting()) {
+            // No fetch will happen on this branch (unauthenticated, roster gated, or a
             // past meeting) — clear the loading flag so the RSVP card doesn't hang on a skeleton.
             this.registrantsLoading.set(false);
             return of([] as MeetingRegistrant[]);

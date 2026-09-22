@@ -36,7 +36,9 @@ vi.mock('@lfx-one/shared/utils', () => ({
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
     return meaningful.length === 0;
   }),
-  isShowMeetingAttendeesLocked: vi.fn((meetingType?: string | null, restricted?: boolean | null) => meetingType === 'Board' || restricted === true),
+  isShowMeetingAttendeesLocked: vi.fn(
+    (meetingType?: string | null, restricted?: boolean | null) => meetingType === 'Board' || meetingType === 'board' || restricted === true
+  ),
   mapITXResponseToMeetingRsvp: vi.fn(),
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
@@ -45,6 +47,12 @@ vi.mock('@lfx-one/shared/utils', () => ({
   // resolver — stubbed here to the "most recent rsvp" since these tests cover roster/page-walk
   // dedup, not the LFXV2-2864 occurrence-scoping logic (covered in meeting-rsvp.helper.spec.ts).
   selectApplicableRsvp: vi.fn((_occurrenceId: string | undefined, rsvps: unknown[]) => rsvps[rsvps.length - 1] ?? null),
+}));
+vi.mock('../helpers/poll-endpoint.helper', () => ({
+  pollEndpoint: vi.fn(async ({ pollFn }: { pollFn: () => Promise<boolean> }) => {
+    await pollFn();
+    return true;
+  }),
 }));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
@@ -1629,5 +1637,41 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(true);
+  });
+});
+
+describe('MeetingService.createMeeting attendee visibility lock', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    service = new MeetingService();
+  });
+
+  const baseCreate = {
+    project_uid: 'project-1',
+    start_time: '2026-01-01T00:00:00Z',
+    duration: 30,
+    timezone: 'UTC',
+    title: 'Test',
+    description: '',
+    show_meeting_attendees: true,
+  };
+
+  it('forces show_meeting_attendees off for board meetings', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', meeting_type: 'Board' });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Board' });
+
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
+  });
+
+  it('forces show_meeting_attendees off when restricted', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
+
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 });

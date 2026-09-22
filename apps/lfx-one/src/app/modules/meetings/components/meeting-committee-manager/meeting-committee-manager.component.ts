@@ -209,7 +209,6 @@ export class MeetingCommitteeManagerComponent {
 
     toObservable(this.form)
       .pipe(
-        takeUntilDestroyed(),
         switchMap((form) => {
           const meetingTypeControl = form.get('meeting_type');
           const restrictedControl = form.get('restricted');
@@ -220,7 +219,8 @@ export class MeetingCommitteeManagerComponent {
           return merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
             map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
           );
-        })
+        }),
+        takeUntilDestroyed()
       )
       .subscribe((locked) => {
         const wasLocked = this.attendeeVisibilityLocked;

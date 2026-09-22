@@ -19,15 +19,17 @@ Key files:
 
 ### Current behavior
 
-| Viewer                               | Meeting type                                   | What they see                                                                |
-| ------------------------------------ | ---------------------------------------------- | ---------------------------------------------------------------------------- |
-| Anonymous                            | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous                            | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
-| Anonymous                            | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
-| Anonymous                            | Any                                            | No attachments, no members list                                              |
-| Authenticated (any)                  | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
-| Authenticated (organizer or invited) | Any upcoming                                   | Members drawer enabled                                                       |
-| Any                                  | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
+| Viewer                  | Meeting type                                   | What they see                                                                |
+| ----------------------- | ---------------------------------------------- | ---------------------------------------------------------------------------- |
+| Anonymous               | Public, non-restricted                         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous               | Private or restricted (valid password)         | Full title, time, recurrence, agenda; guest-join form                        |
+| Anonymous               | Private or restricted (missing/wrong password) | `→ /meetings/not-found`                                                      |
+| Anonymous               | Any                                            | No attachments, no members list                                              |
+| Authenticated (any)     | Any upcoming                                   | Full content; attachments if organizer/invited/member                        |
+| Authenticated organizer | Any upcoming                                   | Members drawer enabled                                                       |
+| Authenticated invitee   | Upcoming, `show_meeting_attendees` on          | Members drawer enabled                                                       |
+| Authenticated invitee   | Upcoming, `show_meeting_attendees` off         | No members drawer; organizer chip falls back to owner/created_by             |
+| Any                     | Past meeting                                   | Tiered `full_access` gate — see [backend doc](../backend/public-meetings.md) |
 
 ### Attachment gating
 
@@ -35,7 +37,9 @@ Attachments for upcoming meetings are fetched via a separate authenticated endpo
 
 ### Members / registrants gating
 
-The "Show Members" button is only rendered for `authenticated() && (meeting.organizer || meeting.invited)`. Anonymous viewers never see the functional button; the placeholder variant (shown when `meeting.show_meeting_attendees` is set) triggers a "Coming Soon" toast, not a real data fetch.
+The "Show Members" button is rendered when `canViewGuestRoster()` is true: organizers always, invitees only when `meeting.show_meeting_attendees` is true. Anonymous viewers never see the functional button. The placeholder variant (shown when the flag is on but the viewer is not yet invited) triggers a toast, not a roster fetch.
+
+`GET /api/meetings/:uid/my-meeting-registrants` and the tolerant `GET /api/meetings/:uid/registrants` listing both honor the same gate: invitees with the flag off receive only their own registrant row, not the full roster. Board and restricted meetings cannot opt in.
 
 ---
 

@@ -425,15 +425,29 @@ export class MeetingController {
       // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
       // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
       // section, which has to be an organizer of the meeting it is editing. Only the tolerant
-      // listing — the one that may come back short — goes straight through on the caller's own
-      // bearer token.
+      // listing — the one that may come back short — still honors `show_meeting_attendees` so
+      // any authenticated caller who knows a meeting uid cannot scrape registrant PII.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
         registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
       } else {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        let meetingForGate: Meeting | null = null;
+        try {
+          meetingForGate = await this.meetingService.getMeetingById(req, uid);
+        } catch {
+          meetingForGate = null;
+        }
+        if (!meetingForGate?.organizer && meetingForGate?.show_meeting_attendees !== true) {
+          const userEmail = getEffectiveEmail(req);
+          registrants = userEmail ? await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail) : [];
+          if (includeRsvp && registrants.length > 0) {
+            registrants = await this.meetingService.attachRsvpsToRegistrantList(req, uid, registrants, occurrenceId);
+          }
+        } else {
+          registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        }
       }
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
@@ -484,7 +498,8 @@ export class MeetingController {
    * GET /meetings/:uid/my-meeting-registrants
    * Retrieves registrants for a meeting. Organizers always receive the full roster.
    * Invitees receive the full roster only when `show_meeting_attendees` is true; otherwise
-   * they receive only their own registrant row.
+   * they receive only their own registrant row. Callers who are neither a registrant nor an
+   * organizer (or whose email can't be resolved) receive an empty list.
    */
   public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
@@ -572,22 +587,27 @@ export class MeetingController {
         return;
       }
 
-      // Invitees only see the full roster when the organizer opted in. Organizers always
-      // see everyone; everyone else gets only their own registrant row(s).
+      // Step 4: Invitees only see the full roster when the organizer opted in. Organizers always
+      // see everyone; everyone else gets only their own registrant row(s), with RSVP attached
+      // when requested so the join-page contract is unchanged.
       if (!meeting.organizer && meeting.show_meeting_attendees !== true) {
+        let payload = userRegistrantCheck;
+        if (includeRsvp && payload.length > 0) {
+          payload = await this.meetingService.attachRsvpsToRegistrantList(req, uid, payload, occurrenceId, { bearerToken: m2mToken });
+        }
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           user_email: userEmail,
           is_registrant: true,
           is_organizer: false,
           show_meeting_attendees: false,
-          registrant_count: userRegistrantCheck.length,
+          registrant_count: payload.length,
         });
-        res.json(userRegistrantCheck);
+        res.json(payload);
         return;
       }
 
-      // Step 4: User is a registrant or organizer, fetch all registrants using the M2M token —
+      // Step 5: User is a registrant or organizer, fetch all registrants using the M2M token —
       // passed via ApiRequestOptions.bearerToken (not a req.bearerToken mutation) so it can't race
       // against the caller's own token on a shared req.
       logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
