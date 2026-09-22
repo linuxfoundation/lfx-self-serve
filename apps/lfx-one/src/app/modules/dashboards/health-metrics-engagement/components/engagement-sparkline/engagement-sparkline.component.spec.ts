@@ -26,11 +26,20 @@ describe('EngagementSparklineComponent', () => {
   });
 
   it('breaks the line over a period with no invited population rather than plotting it as zero', async () => {
-    const fixture = await render([0.5, null, 0.5]);
+    const fixture = await render([0.6, null, 0.5, 0.7]);
 
     const path = fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"] path').getAttribute('d');
-    // Two move commands and no line between them — the gap stays visible instead of being bridged.
-    expect(path).toBe('M0.0 18.0 M60.0 18.0');
+    // The gap stays visible instead of being bridged: the pen lifts, then draws the later pair.
+    expect(path).toBe('M0.0 9.0 M40.0 18.0 L60.0 0.0');
+  });
+
+  // Two rated periods with an unrated one between them draw no segment at all, so the chart would
+  // be an empty SVG rather than the placeholder the cell reads as "no trend".
+  it('falls back to the placeholder when no two rated periods are adjacent', async () => {
+    const fixture = await render([0.5, null, 0.5]);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-sparkline-empty"]')).not.toBeNull();
   });
 
   it('keeps each period in its own slot, so a gap does not slide later periods left', async () => {

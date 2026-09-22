@@ -25,8 +25,6 @@ export class EngagementSparklineComponent {
   protected readonly height = HEALTH_METRICS_ENGAGEMENT_SPARKLINE_HEIGHT_PX;
 
   private readonly values = computed(() => this.series().filter((value): value is number => value !== null));
-  /** Two points is the minimum that can express a direction; below that the cell stays empty. */
-  protected readonly hasLine = computed(() => this.values().length >= HEALTH_METRICS_ENGAGEMENT_MIN_TREND_POINTS);
 
   protected readonly path = computed(() => {
     const series = this.series();
@@ -54,4 +52,8 @@ export class EngagementSparklineComponent {
       .filter(Boolean)
       .join(' ');
   });
+
+  // Gated on a drawable segment, not the count of rated periods: two rated periods either side of an
+  // unrated one produce two `M` commands and no line, which would render as a blank chart.
+  protected readonly hasLine = computed(() => this.path().includes('L'));
 }
