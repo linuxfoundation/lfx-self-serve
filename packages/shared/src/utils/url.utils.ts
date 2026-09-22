@@ -352,7 +352,19 @@ function dashNotationIPv6Candidates(label: string): string[] {
   const decoded: string[] = [];
   const segments = label.split('-');
 
-  for (let i = 0; i < segments.length; i++) {
+  // BOUNDED, because the loop below rebuilds a suffix string on every iteration and that is
+  // O(n^2) over the label -- a single 4000-character hostname took 94ms, and nothing upstream
+  // enforces DNS's 63-character label limit, so the cost is attacker-chosen.
+  //
+  // The bound is a property of the ADDRESS, not a guessed cutoff: a full IPv6 address is at most
+  // 8 groups, and the dash spelling separates groups with `-`, so a reading that starts more than
+  // 8 groups from the end cannot spell one -- `decodeDashIPv6` would reject it anyway. Scanning
+  // only the last 9 suffixes (8 groups plus the one affix split sslip.io documents) therefore
+  // removes work that could never produce a candidate, rather than trading coverage for speed.
+  const MAX_IPV6_GROUPS = 8;
+  const firstIndex = Math.max(0, segments.length - (MAX_IPV6_GROUPS + 1));
+
+  for (let i = firstIndex; i < segments.length; i++) {
     // Every suffix of the label is a reading, INCLUDING those that begin with an empty segment.
     // Skipping those was itself a bypass: in `app---1` the address's own leading `::` renders as
     // empty segments, so `--1` (which is `::1`) was never judged and the host passed. The

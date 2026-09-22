@@ -609,4 +609,24 @@ describe('canonicalHttpUrl', () => {
     expect(isPrivateHost('93.184.216.34')).toBe(false);
     expect(isPrivateHost('10.0.0.1')).toBe(true);
   });
+
+  it('decodes a long dash label in linear time, not quadratic', () => {
+    // `dashNotationIPv6Candidates` rebuilt a suffix STRING on every iteration, which is O(n^2)
+    // over the label. Nothing upstream enforces DNS's 63-character label limit, so the cost was
+    // attacker-chosen: a 4000-character hostname took ~94ms of CPU, per call, on the request path.
+    //
+    // The bound is a property of the address rather than a guessed cutoff -- a full IPv6 address
+    // is at most 8 groups, so a reading starting further back cannot spell one -- which is why
+    // the deny cases above still pass with it in place.
+    const huge = `${'a-'.repeat(2000)}1.nip.io`;
+
+    const started = performance.now();
+    expect(isPrivateHost(huge)).toBe(false);
+    const elapsed = performance.now() - started;
+
+    // Deliberately loose: this asserts the ALGORITHM changed, not a machine's speed. The
+    // unbounded version measured ~90ms here, the bounded one under 1ms, so a threshold in
+    // between separates them without being flaky on slower CI.
+    expect(elapsed).toBeLessThan(25);
+  });
 });

@@ -253,8 +253,28 @@ describe('stripResourceLoadingHtml', () => {
 
   it('still keeps the text of an ordinary disallowed wrapper', () => {
     // The negative case: dropping a tag must not delete the words inside it. Without this,
-    // "add every unknown tag to nonTextTags" passes the test above and silently eats real copy.
-    expect(stripResourceLoadingHtml('<p>a</p><span>KEEP</span><p>b</p>')).toContain('KEEP');
+    // "add every unknown tag to nonTextTags" passes the svg test above and silently eats real
+    // copy. Asserted EXACTLY rather than with toContain, so a change that also dropped the
+    // surrounding paragraphs would still fail.
+    //
+    // `<span>` is ALLOWED, so it survives as a tag; `<section>` is not, and is the case that
+    // proves the text of a dropped wrapper is kept rather than deleted with it.
+    expect(stripResourceLoadingHtml('<p>a</p><span>KEEP</span><p>b</p>')).toBe('<p>a</p><span>KEEP</span><p>b</p>');
+    expect(stripResourceLoadingHtml('<p>a</p><section>KEEP</section><p>b</p>')).toBe('<p>a</p>KEEP<p>b</p>');
+  });
+
+  it('drops what an UNCLOSED svg swallows, because the parser nests it inside', () => {
+    // Deliberate, and not specific to svg. An unclosed element takes everything after it as its
+    // own content -- htmlparser2 reports `+p-p+svg+text-text+p-p-svg` here, and exactly the same
+    // shape for an unclosed `<div>`. So `<p>b</p>` really is inside the svg, and dropping it is
+    // the parser's reading rather than a sanitizer quirk.
+    //
+    // Pinned because the alternative is worse in both directions: leaving svg out of nonTextTags
+    // leaks `L` into the sent body, and hand-balancing the tag before parsing would mean
+    // second-guessing the parser about where the element ends.
+    expect(stripResourceLoadingHtml('<p>a</p><svg><text>L</text><p>b</p>')).toBe('<p>a</p>');
+    // The CLOSED form is the case that must keep the tail, and it does.
+    expect(stripResourceLoadingHtml('<p>a</p><svg><text>L</text></svg><p>b</p>')).toBe('<p>a</p><p>b</p>');
   });
 
   // An ALLOW-LIST, after a denylist of resource tags was bypassed four ways in one review round.
