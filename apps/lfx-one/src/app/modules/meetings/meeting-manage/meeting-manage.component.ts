@@ -50,6 +50,7 @@ import {
   generateRecurrenceObject,
   getDefaultStartDateTime,
   getEntityCommands,
+  getSavedAttendeeVisibility,
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
@@ -160,6 +161,12 @@ export class MeetingManageComponent {
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
   public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null && !this.meetingLoadError());
+  /**
+   * The organizer's saved sharing decision, for the group picker inside the registrants manager.
+   * @description Resolved from the meeting rather than the form: the picker mounts on `meetingId()`
+   * against a form that is still empty and unlocked, so the form cannot answer this yet.
+   */
+  public savedAttendeeVisibility = computed(() => getSavedAttendeeVisibility(this.meeting()));
   // Meeting → EntityWithProject adapter so the active project context syncs from the loaded
   // meeting rather than the cookie-restored last-visited project.
   private readonly meetingEntityContext: Signal<EntityWithProject | null> = this.initializeMeetingEntityContext();

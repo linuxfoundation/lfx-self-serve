@@ -52,13 +52,13 @@ export class MeetingCommitteeManagerComponent {
   /** Whether the caller's {@link committeeContext} lookup failed, so the scoping group is missing. */
   public readonly contextFailed = input<boolean>(false);
   /**
-   * The saved `show_meeting_attendees` of the meeting being edited, or `null` when creating one.
-   * @description The organizer's standing decision cannot be read off the form: a create that has
-   * never been touched and an existing meeting the organizer turned off both present as `false`.
-   * Only the caller knows which it is, so it says. Without it, a group default silently turns
-   * attendee sharing back on for a meeting that was deliberately saved with it off — the control
-   * emits nothing at hydration that this component could see, because both callers mount it only
-   * after the load has settled.
+   * The organizer's saved decision about sharing the guest list, or `null` when there is none.
+   * @description The decision cannot be read off the form: a create nobody has touched and a
+   * meeting whose organizer switched sharing off both present as `false`. Only the loaded meeting
+   * says which, so the caller resolves it with `getSavedAttendeeVisibility` and passes the answer.
+   * Without it, a group default silently turns sharing back on for a meeting deliberately saved
+   * with it off — hydration emits nothing this component could see, because both callers mount it
+   * only once the load has settled.
    */
   public readonly savedAttendeeVisibility = input<boolean | null>(null);
 
@@ -124,15 +124,6 @@ export class MeetingCommitteeManagerComponent {
    * types — that would turn the toggle back on after they explicitly turned it off.
    */
   private attendeeVisibilityLocked = false;
-
-  /**
-   * Whether the lock was already on when this form arrived.
-   * @description Qualifies a saved `true`. Rows written before the board/restricted rule existed
-   * still carry one, and hydration shows the toggle off for them — restoring that value when the
-   * organizer later switches the meeting to an unlocked type would re-share a guest list they
-   * were last shown as not shared. A saved `false` needs no such qualification.
-   */
-  private attendeeLockedOnLoad = false;
 
   /**
    * Whether the attendees toggle is currently holding a committee's preference rather than a
@@ -261,7 +252,6 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
-          this.attendeeLockedOnLoad = this.attendeeVisibilityLocked;
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
               map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
@@ -505,18 +495,13 @@ export class MeetingCommitteeManagerComponent {
   /**
    * The organizer's standing decision for this meeting, or `null` if they have not made one.
    * @description Their edit in this session if there is one, otherwise what the meeting was saved
-   * with. A saved `true` on a meeting that arrived locked is not read as a decision — see
-   * {@link attendeeLockedOnLoad}.
+   * with — a value the caller has already qualified, so a forced or stale saved flag arrives as
+   * `null` rather than as a choice. Reading the lock here instead would sample it at whatever
+   * moment this component happened to be asked, and the manage page mounts the picker against an
+   * empty form well before the meeting it describes has loaded.
    */
   private organizerAttendeeChoice(): boolean | null {
-    if (this.sessionAttendeeChoice !== null) {
-      return this.sessionAttendeeChoice;
-    }
-    const saved = this.savedAttendeeVisibility();
-    if (saved === null || (saved && this.attendeeLockedOnLoad)) {
-      return null;
-    }
-    return saved;
+    return this.sessionAttendeeChoice ?? this.savedAttendeeVisibility();
   }
 
   /** Puts back an organizer's own `true` that the lock overwrote. Reports whether it applied. */

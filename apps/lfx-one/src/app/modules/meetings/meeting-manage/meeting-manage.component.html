@@ -224,7 +224,7 @@
                   <lfx-meeting-registrants-manager
                     [meetingUid]="meetingId()!"
                     [form]="form()"
-                    [savedAttendeeVisibility]="meeting()?.show_meeting_attendees ?? null"
+                    [savedAttendeeVisibility]="savedAttendeeVisibility()"
                     [(registrantUpdates)]="registrantUpdates"
                     [refresh]="registrantUpdatesRefresh$"
                     [committeeContext]="committeeContext()">

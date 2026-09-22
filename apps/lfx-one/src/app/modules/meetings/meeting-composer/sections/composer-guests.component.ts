@@ -9,7 +9,7 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { UserSearchComponent } from '@components/user-search/user-search.component';
 import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials, getShowMeetingAttendeesLockedNote, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
+import { avatarInitials, getSavedAttendeeVisibility, getShowMeetingAttendeesLockedNote, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
@@ -50,6 +50,8 @@ export class ComposerGuestsComponent {
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
     getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
   );
+  /** The organizer's saved sharing decision, for the group picker; `null` on a create. */
+  protected readonly savedAttendeeVisibility: Signal<boolean | null> = computed(() => getSavedAttendeeVisibility(this.formService.meeting()));
 
   /**
    * The committees currently on the form, for the group manager to render as selected.

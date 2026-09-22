@@ -936,11 +936,12 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
   });
 
   it('does not resurrect a stale saved true on a meeting that loaded locked', async () => {
-    // A board meeting saved before the lock existed still carries `true`. Hydration shows the
-    // toggle off, so switching the meeting to an unlocked type must not turn sharing on behind a
-    // value the organizer was never shown as active.
+    // A board meeting saved before the lock existed still carries `true`, and hydration shows the
+    // toggle off. `getSavedAttendeeVisibility` qualifies that away to "no decision" before it
+    // reaches here — covered in its own spec — so what this asserts is that no decision means no
+    // restore when the organizer switches the meeting to an unlocked type.
     const { component, fixture } = await mount([], {}, [BOARD], 'project-1', false, {
-      savedAttendeeVisibility: true,
+      savedAttendeeVisibility: null,
       meetingType: 'Board',
     });
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);

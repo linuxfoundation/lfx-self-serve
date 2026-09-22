@@ -3,6 +3,7 @@
 
 import { SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '../constants/meeting.constants';
 import { MeetingType } from '../enums';
+import type { Meeting } from '../interfaces';
 
 /**
  * Whether the show-attendees-in-calendar-invites toggle is locked off.
@@ -48,4 +49,28 @@ export function isShowMeetingAttendeesLocked(meetingType: string | null | undefi
  */
 export function getShowMeetingAttendeesLockedNote(meetingType: string | null | undefined, restricted: boolean | string | null | undefined): string | null {
   return isShowMeetingAttendeesLocked(meetingType, restricted) ? SHOW_MEETING_ATTENDEES_LOCKED_NOTE : null;
+}
+
+/**
+ * The organizer's saved decision about sharing the guest list, or `null` if the meeting carries none.
+ * @description Answers what the group picker cannot work out for itself: whether a toggle sitting at
+ * `false` is a create nobody has touched or a meeting whose organizer switched sharing off. Only a
+ * loaded meeting can say, so callers pass the meeting and get one of three answers rather than a
+ * boolean that flattens two of them together.
+ *
+ * A missing field reads as `false`, not as "no decision": the upstream serializer omits the flag
+ * when it is false, so absence is how a stored-off meeting arrives.
+ *
+ * A locked meeting has no decision to report either way. Its saved value was forced off on write,
+ * or predates the rule and still says `true` while hydration shows the toggle off — neither is
+ * something the organizer chose, and honouring the `true` when they later switch the meeting to an
+ * unlocked type would share a guest list they were last shown as private.
+ */
+export function getSavedAttendeeVisibility(
+  meeting: Pick<Meeting, 'meeting_type' | 'restricted' | 'show_meeting_attendees'> | null | undefined
+): boolean | null {
+  if (!meeting || isShowMeetingAttendeesLocked(meeting.meeting_type, meeting.restricted)) {
+    return null;
+  }
+  return meeting.show_meeting_attendees ?? false;
 }
