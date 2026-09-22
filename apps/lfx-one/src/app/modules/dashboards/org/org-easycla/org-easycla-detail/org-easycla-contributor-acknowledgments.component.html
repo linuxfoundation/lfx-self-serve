@@ -113,7 +113,7 @@
                       size="small"
                       [disabled]="!row.invalidatable || row.invalidatePending"
                       [loading]="row.invalidatePending"
-                      [ariaLabel]="actionCopy.ariaLabel(row.identity.display)"
+                      [ariaLabel]="row.invalidateAriaLabel"
                       [tooltip]="row.invalidatable ? undefined : actionCopy.unavailableTooltip"
                       (onClick)="onInvalidate(row)"
                       data-testid="org-easycla-acknowledgment-invalidate" />

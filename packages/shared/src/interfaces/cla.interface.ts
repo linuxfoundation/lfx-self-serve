@@ -5,6 +5,7 @@ import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_MANAGER_REFUSALS,
   ORG_CLA_PERMISSION_ACTIONS,
 } from '../constants/cla.constants';
@@ -1147,16 +1148,11 @@ export interface OrgClaAcknowledgmentRow {
    */
   invalidatable: boolean;
   invalidatePending: boolean;
+  /** Accessible name for the per-row Invalidate control, computed while mapping the row. */
+  invalidateAriaLabel: string;
 }
 
-/**
- * Reasons a CLA manager can pick when invalidating an acknowledgment (#1986, #2807).
- *
- * The producer accepts these four enum values; the free-text note is separate. The tuple order
- * is the UI order the picker presents them in.
- */
-export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
-
+/** Producer enum, derived from the runtime tuple in `cla.constants`. */
 export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[number];
 
 /**
@@ -1171,10 +1167,11 @@ export interface OrgClaInvalidateAcknowledgmentRequest {
   note?: string;
 }
 
-/**
- * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
- */
-export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
+/** What the acknowledgments panel hands the confirmation dialog. */
+export interface OrgClaInvalidateAcknowledgmentDialogData {
+  /** Identity the panel already resolved. The dialog does not repeat that fallback chain. */
+  contributor: string;
+}
 
 /**
  * What the BFF returns once the producer has invalidated the acknowledgment.

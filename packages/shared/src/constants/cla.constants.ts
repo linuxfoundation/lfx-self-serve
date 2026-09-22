@@ -718,6 +718,17 @@ export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 
 /**
+ * Reasons a CLA manager can pick when invalidating an acknowledgment.
+ *
+ * The producer accepts these four enum values; the free-text note is separate. The tuple order
+ * is the UI order the picker presents them in.
+ */
+export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
+
+/** Maximum length of the free-text note, matching the producer's own `maxLength: 2048`. */
+export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
+
+/**
  * Labels for the invalidation-reason picker (#1986, #2807).
  *
  * The four values match the producer's enum. Copy is the CLA manager's wording, not the

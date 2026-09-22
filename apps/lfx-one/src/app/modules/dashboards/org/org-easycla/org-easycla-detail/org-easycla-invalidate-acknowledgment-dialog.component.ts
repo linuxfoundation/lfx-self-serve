@@ -4,33 +4,19 @@
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ORG_CLA_INVALIDATE_DIALOG_COPY, ORG_CLA_INVALIDATION_REASON_LABELS } from '@lfx-one/shared/constants';
 import {
+  ORG_CLA_INVALIDATE_DIALOG_COPY,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
+  ORG_CLA_INVALIDATION_REASON_LABELS,
   ORG_CLA_INVALIDATION_REASONS,
-  type OrgClaInvalidateAcknowledgmentRequest,
-  type OrgClaInvalidationReason,
-} from '@lfx-one/shared/interfaces';
+} from '@lfx-one/shared/constants';
+import type { OrgClaInvalidateAcknowledgmentDialogData, OrgClaInvalidateAcknowledgmentRequest, OrgClaInvalidationReason } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-
-/**
- * What the acknowledgments panel hands this dialog.
- *
- * `contributor` is the identity the panel already resolved through its fallback chain, so the
- * dialog does not repeat the LF Login → GitHub → GitLab → email → DocuSign-name decision.
- *
- * Declared here rather than in `@lfx-one/shared`: it is a two-field hand-off between two files in
- * this folder and crosses no process boundary, which is the same call the shipped approval-list
- * dialog makes.
- */
-interface InvalidateDialogData {
-  contributor: string;
-}
 
 /**
  * Confirmation for invalidating one contributor acknowledgment (#1986, #2807).
@@ -67,7 +53,7 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
     note: new FormControl<string>('', { nonNullable: true, validators: [Validators.maxLength(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)] }),
   });
 
-  private readonly dialogConfig = inject<DynamicDialogConfig<InvalidateDialogData>>(DynamicDialogConfig);
+  private readonly dialogConfig = inject<DynamicDialogConfig<OrgClaInvalidateAcknowledgmentDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
 
   protected readonly contributor = this.dialogConfig.data?.contributor?.trim() || 'this contributor';

@@ -509,5 +509,77 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         expect.objectContaining({ severity: 'error', detail: 'Only a CLA manager named on this CLA can invalidate acknowledgments' })
       );
     });
+
+    it('reports the proxy error sentence when the BFF puts it on error rather than message', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 400, error: { error: 'The note may be at most 2048 characters' } }))
+      );
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'other' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: 'The note may be at most 2048 characters' }));
+    });
+
+    it('names impersonation when the BFF refuses the write as read-only', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+      invalidateAcknowledgment.mockReturnValueOnce(
+        throwError(() => new HttpErrorResponse({ status: 403, error: { error: 'writes are blocked', code: 'IMPERSONATION_READ_ONLY' } }))
+      );
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'other' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ severity: 'error', detail: 'This change is not available while impersonating a user.' })
+      );
+    });
+
+    it('does not send the write against a different agreement when the CCLA changes while the dialog is open', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      const close = openDialog.mock.results[0]?.value.close as ReturnType<typeof vi.fn>;
+
+      fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(close).toHaveBeenCalled();
+
+      dialogClosed.next({ reason: 'compliance' });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+    });
+
+    it('still reports success when the tab is destroyed before the write returns', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const pending = new Subject<{ signatureId: string }>();
+      invalidateAcknowledgment.mockReturnValueOnce(pending.asObservable());
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ reason: 'signed-in-error' });
+      await fixture.whenStable();
+
+      expect(invalidateAcknowledgment).toHaveBeenCalledTimes(1);
+      fixture.destroy();
+
+      pending.next({ signatureId: 'ecla-1' });
+      pending.complete();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success', summary: 'Acknowledgment invalidated' }));
+    });
   });
 });

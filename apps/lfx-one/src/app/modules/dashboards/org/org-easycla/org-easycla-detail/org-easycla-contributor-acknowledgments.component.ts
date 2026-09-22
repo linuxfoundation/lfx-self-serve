@@ -27,7 +27,7 @@ import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, skip, startWith, switchMap, take, tap } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -200,10 +200,27 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly showErrorState = computed(() => !!this.errorMessage());
   protected readonly loadingMoreSignal = this.loadingMore.asReadonly();
 
+  /** Set once the panel is torn down, so a write that outlives the tab does not touch its signals. */
+  private destroyed = false;
+
   constructor() {
+    // The parent reuses this panel when the agreement changes, so a dialog opened against one
+    // CCLA must not stay up for the next one.
+    combineLatest([this.orgUid$, this.signatureId$])
+      .pipe(
+        distinctUntilChanged(([prevOrg, prevSignature], [nextOrg, nextSignature]) => prevOrg === nextOrg && prevSignature === nextSignature),
+        skip(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.invalidateDialog?.close();
+        this.invalidateDialog = null;
+      });
+
     // The dialog attaches to `document.body`, so it would outlive this panel if the CLA manager
-    // switched tabs with it open.
+    // switched tabs with it open. The invalidate request itself is not tied to this teardown.
     this.destroyRef.onDestroy(() => {
+      this.destroyed = true;
       this.invalidateDialog?.close();
       this.invalidateDialog = null;
     });
@@ -277,10 +294,15 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     // to. The control that calls this is browser-side, so there is nothing to subscribe to then.
     if (!dialogRef) return;
     this.invalidateDialog = dialogRef;
+    const orgUid = this.orgUid();
+    const claSignatureId = this.signatureId();
     dialogRef.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
       if (this.invalidateDialog === dialogRef) this.invalidateDialog = null;
-      if (!request) return;
-      this.sendInvalidate(row, request);
+      if (!request || this.destroyed) return;
+      // The pair captured when the dialog opened. A confirm that races an agreement change
+      // must not write the previous row against the agreement now on screen.
+      if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
+      this.sendInvalidate(row, request, orgUid, claSignatureId);
     });
   }
 
@@ -292,14 +314,19 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * stamps. An optimistic removal would show the contributor as gone, which is a different and
    * wrong claim: the acknowledgment stays on the record, invalidated.
    */
-  private sendInvalidate(row: OrgClaAcknowledgmentRow, request: OrgClaInvalidateAcknowledgmentRequest): void {
+  private sendInvalidate(row: OrgClaAcknowledgmentRow, request: OrgClaInvalidateAcknowledgmentRequest, orgUid: string, claSignatureId: string): void {
     const signatureId = row.ack.signatureId;
     this.trackPending(signatureId, true);
     this.claService
-      .invalidateAcknowledgment(this.orgUid(), this.signatureId(), signatureId, request)
+      .invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request)
       .pipe(
-        takeUntilDestroyed(this.destroyRef),
-        finalize(() => this.trackPending(signatureId, false))
+        // `take(1)`, not `takeUntilDestroyed`: leaving the tab destroys this panel and would
+        // cancel the in-flight PUT. The sibling send-by-email write uses the same shape so the
+        // request survives overlay teardown.
+        take(1),
+        finalize(() => {
+          if (!this.destroyed) this.trackPending(signatureId, false);
+        })
       )
       .subscribe({
         next: () => {
@@ -308,18 +335,30 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
             summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
             detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(row.identity.display),
           });
-          this.reloadTrigger.update((value) => value + 1);
+          if (!this.destroyed) this.reloadTrigger.update((value) => value + 1);
         },
         error: (error: unknown) => {
-          // The BFF's own sentence is preferred: it is the producer's account of why this write
-          // was refused, and the generic fallback would throw that away.
-          const detail =
-            error instanceof HttpErrorResponse && typeof error.error?.message === 'string' && error.error.message.trim().length > 0
-              ? error.error.message
-              : ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
-          this.messageService.add({ severity: 'error', summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary, detail });
+          this.messageService.add({
+            severity: 'error',
+            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
+            detail: this.invalidateFailureDetail(error),
+          });
         },
       });
+  }
+
+  /**
+   * The BFF serialises its own sentence on `error` (`BaseApiError.toResponse`) and some replies
+   * put it on `message`. Either is preferred over the generic fallback.
+   */
+  private invalidateFailureDetail(error: unknown): string {
+    if (!(error instanceof HttpErrorResponse)) return ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
+    if (error.status === 403 && error.error?.code === 'IMPERSONATION_READ_ONLY') {
+      return 'This change is not available while impersonating a user.';
+    }
+    const envelope = error.error as { error?: unknown; message?: unknown } | null;
+    const message = [envelope?.error, envelope?.message].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return message?.trim() || ORG_CLA_INVALIDATE_RECEIPT_COPY.failureDetail;
   }
 
   private trackPending(signatureId: string, pending: boolean): void {
@@ -332,16 +371,18 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private toRow(ack: OrgClaContributorAcknowledgment, pending: ReadonlySet<string>): OrgClaAcknowledgmentRow {
     const invalidated = this.isInvalidated(ack);
     const signatureId = ack.signatureId?.trim() ?? '';
+    const identity = this.resolveIdentity(ack);
     return {
       ack,
       name: ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
-      identity: this.resolveIdentity(ack),
+      identity,
       cclaVersion: ack.cclaVersion?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       invalidated,
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
+      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(identity.display),
     };
   }
 

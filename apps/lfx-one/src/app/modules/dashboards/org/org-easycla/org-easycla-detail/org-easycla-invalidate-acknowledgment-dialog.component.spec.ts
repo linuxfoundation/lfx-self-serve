@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH } from '@lfx-one/shared/interfaces';
+import { ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH } from '@lfx-one/shared/constants';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
