@@ -1,7 +1,7 @@
-import sanitizeHtml from 'sanitize-html';
-
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
+
+import sanitizeHtml from 'sanitize-html';
 
 const NAMED_HTML_ENTITIES: Record<string, string> = {
   nbsp: ' ',
@@ -280,6 +280,10 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * of model-generated content must not make. campaign-service's `/email-copy` path applies no
  * sanitizer of its own, so this is the only place it can be stopped.
  *
+ * A dropped tag KEEPS its text -- `<section>hello</section>` renders `hello` -- because the copy
+ * is what the preview is for. The exception is `nonTextTags` below, whose contents are code or
+ * markup internals rather than words; those are dropped with the tag.
+ *
  * Delegates to `sanitize-html`, which PARSES rather than pattern-matches. Three hand-written
  * versions preceded it -- a regex denylist and two hand-rolled scanners -- and review found
  * eleven defects across them: `<image>`, `<input type=image>`, unquoted `background=`/`style=`,
@@ -330,12 +334,12 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     allowedSchemes: ['http', 'https'],
     allowedSchemesAppliedToAttributes: ['href'],
     allowProtocolRelative: false,
-    // Content is DROPPED for these, because their contents are code rather than copy. For every
-    // other disallowed tag the TEXT survives -- the copy is the point of the preview.
-    // `svg` and `math` are here because their TEXT is not copy. Neither tag is allowed, and
-    // sanitize-html's default is to keep a disallowed tag's text -- correct for `<span>`, wrong
-    // for these: `<svg><text>LEAK</text></svg>` put LEAK into the body that recipients receive,
-    // with no element to explain where it came from. The same is true of `<mi>` in MathML.
+    // Content is DROPPED for these, not just the tag. Everywhere else a disallowed tag's TEXT
+    // survives -- dropping `<span>` must not delete the words inside it, and the copy is the
+    // point of the preview -- so this list is exactly the set whose contents are not copy:
+    // code for script/style, and glyph/markup internals for svg and math, where
+    // `<svg><text>LEAK</text></svg>` otherwise put LEAK into the body recipients receive with no
+    // element left to explain where it came from.
     nonTextTags: ['script', 'style', 'iframe', 'object', 'embed', 'noscript', 'textarea', 'title', 'svg', 'math'],
   });
 }
