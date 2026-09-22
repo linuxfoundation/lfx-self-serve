@@ -85,8 +85,11 @@ export class OrgLensEmptyStateService {
   /** Convenience for templates that only need "is a page-level state replacing the page". */
   public readonly hasPageState: Signal<boolean> = computed(() => this.pageState() !== null);
 
-  /** The shared Retry is in flight — bind to the state's `retrying` so the control cannot be re-fired. */
-  public readonly retrying: Signal<boolean> = this.roleGrants.loading;
+  /**
+   * The shared Retry is in flight — bind to the state's `retrying` so the control cannot be re-fired.
+   * Covers both phases of `retry()`: the role-grants refresh and the org-list refresh it chains.
+   */
+  public readonly retrying: Signal<boolean> = computed(() => this.roleGrants.loading() || this.orgNavigation.loading());
 
   /**
    * FR-016 rules 2–4 — the outage head every page-level decision shares. `holdsAnything` is the

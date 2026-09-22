@@ -30,6 +30,7 @@ interface Harness {
   refresh: Mock<(bypassCache?: boolean) => Observable<void>>;
   listLoaded: WritableSignal<boolean>;
   listLoading: WritableSignal<boolean>;
+  grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => void>;
 }
 
@@ -48,6 +49,7 @@ function setup(): Harness {
   const selectedAccount = signal<Account>(account(''));
   const hasOrgSelectorAccess = signal(false);
   const refresh: Mock<(bypassCache?: boolean) => Observable<void>> = vi.fn(() => of(undefined));
+  const grantsLoading = signal(false);
   const listLoaded = signal(false);
   const listLoading = signal(false);
   const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
@@ -58,7 +60,7 @@ function setup(): Harness {
         provide: OrgRoleGrantsService,
         useValue: {
           loaded,
-          loading: signal(false),
+          loading: grantsLoading,
           isStaff,
           lookupOutcome,
           staffCheck,
@@ -89,6 +91,7 @@ function setup(): Harness {
     refresh,
     listLoaded,
     listLoading,
+    grantsLoading,
     refreshList,
   };
 }
@@ -236,6 +239,22 @@ describe('OrgLensEmptyStateService.pageState', () => {
     grants.next();
 
     expect(h.refreshList).toHaveBeenCalledTimes(1);
+  });
+
+  // The Retry control binds to `retrying`; it must stay disabled through BOTH phases — the grants
+  // refresh and the chained list refresh — or a second click can fire a concurrent list reload.
+  it('retrying reflects the grants refresh and then the chained list refresh', () => {
+    expect(h.service.retrying()).toBe(false);
+
+    h.grantsLoading.set(true);
+    expect(h.service.retrying()).toBe(true);
+
+    h.grantsLoading.set(false);
+    h.listLoading.set(true);
+    expect(h.service.retrying()).toBe(true);
+
+    h.listLoading.set(false);
+    expect(h.service.retrying()).toBe(false);
   });
 
   it('retry leaves a list that was never requested alone even after the grants answer', () => {

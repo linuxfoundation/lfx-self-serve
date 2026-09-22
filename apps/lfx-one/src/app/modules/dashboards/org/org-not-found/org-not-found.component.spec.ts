@@ -31,6 +31,7 @@ interface Harness {
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   orgLensEnabled: WritableSignal<boolean>;
   refresh: Mock<(bypassCache?: boolean) => unknown>;
+  grantsLoading: WritableSignal<boolean>;
   refreshList: Mock<(uid?: string | null) => void>;
   writerSet: WritableSignal<Set<string>>;
   selectedAccount: WritableSignal<Account>;
@@ -48,6 +49,7 @@ function setup(): Harness {
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const orgLensEnabled = signal(true);
   const refresh: Mock<(bypassCache?: boolean) => unknown> = vi.fn(() => of(undefined));
+  const grantsLoading = signal(false);
   const refreshList: Mock<(uid?: string | null) => void> = vi.fn();
   const writerSet = signal(new Set<string>());
   const selectedAccount = signal<Account>({ accountId: '', accountName: '', accountSlug: '', membershipTier: '', logoUrl: null, uid: '', slug: null });
@@ -69,7 +71,7 @@ function setup(): Harness {
         provide: OrgRoleGrantsService,
         useValue: {
           loaded: signal(true),
-          loading: signal(false),
+          loading: grantsLoading,
           isStaff,
           lookupOutcome,
           staffCheck,
@@ -109,6 +111,7 @@ function setup(): Harness {
     staffCheck,
     orgLensEnabled,
     refresh,
+    grantsLoading,
     refreshList,
     writerSet,
     selectedAccount,
@@ -209,6 +212,20 @@ describe('OrgNotFoundComponent.state', () => {
     h.lookupOutcome.set('partial');
 
     expect(renderedState(h)).toBe<OrgLensEmptyStateName>('wrong-organization');
+  });
+
+  // End-to-end wiring of the throttle: role-grants loading → service `retrying` → page input → button.
+  it('disables the rendered Retry while the role-grants refresh is in flight', () => {
+    h.lookupOutcome.set('failed');
+    h.grantsLoading.set(true);
+    h.fixture.detectChanges();
+
+    const button = (h.fixture.nativeElement as HTMLElement).querySelector('[data-testid="org-not-found-retry"] button') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    h.grantsLoading.set(false);
+    h.fixture.detectChanges();
+    expect(button.disabled).toBe(false);
   });
 
   it('picks a held organization through the switcher\u2019s own selection path', () => {
