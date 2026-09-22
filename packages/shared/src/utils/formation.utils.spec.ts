@@ -16,6 +16,7 @@ import {
   normalizeFormationItemAudience,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
+  resolveFormationActionHref,
 } from './formation.utils';
 
 describe('deriveFormationEntityType', () => {
@@ -304,5 +305,29 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
 
   it('returns a null detail when before/after are absent', () => {
     expect(getFormationActivityDisplay(entry({ before: null, after: null })).detail).toBeNull();
+  });
+});
+
+describe('resolveFormationActionHref (#2801)', () => {
+  it('returns no destination for a missing href', () => {
+    expect(resolveFormationActionHref(null)).toEqual({ external: null, internal: null });
+    expect(resolveFormationActionHref(undefined)).toEqual({ external: null, internal: null });
+    expect(resolveFormationActionHref('')).toEqual({ external: null, internal: null });
+  });
+
+  it('routes a same-origin relative path to internal', () => {
+    expect(resolveFormationActionHref('/project/settings')).toEqual({ external: null, internal: '/project/settings' });
+  });
+
+  it('treats a protocol-relative value as neither an in-app path nor a valid external URL', () => {
+    expect(resolveFormationActionHref('//evil.example/x')).toEqual({ external: null, internal: null });
+  });
+
+  it('routes a valid absolute http(s) URL to external', () => {
+    expect(resolveFormationActionHref('https://example.com/docs')).toEqual({ external: 'https://example.com/docs', internal: null });
+  });
+
+  it('drops a dangerous scheme', () => {
+    expect(resolveFormationActionHref('javascript:alert(1)')).toEqual({ external: null, internal: null });
   });
 });

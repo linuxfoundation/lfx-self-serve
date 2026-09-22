@@ -81,6 +81,10 @@ import {
   RevenueImpactResponse,
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
+  HealthMetricsEngagementGroupAttendance,
+  HealthMetricsEngagementGroupQuery,
+  HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementParticipationQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1080,6 +1084,54 @@ export class AnalyticsService {
       params['range'] = range;
     }
     return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(catchError(() => of(HEALTH_METRICS_NPS_DEFAULT_SUMMARY)));
+  }
+
+  /**
+   * Get one page of the Health Metrics Engagement "Group attendance" table
+   * @param query - Foundation, project scope, group-type cut, period and page
+   * @returns Observable of the page, already ranked dormant-first by the server
+   */
+  public getEngagementGroupAttendance(query: HealthMetricsEngagementGroupQuery): Observable<HealthMetricsEngagementGroupAttendance> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      groupType: query.groupType,
+      range: query.range,
+      page: String(query.page),
+      size: String(query.size),
+    };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
+
+    // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
+    // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-group-attendance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Meeting participation" roll-up and meeting-type table
+   * @param query - Foundation and period
+   * @returns Observable of the roll-up row plus one row per meeting-type group
+   */
+  public getEngagementMeetingParticipation(query: HealthMetricsEngagementParticipationQuery): Observable<HealthMetricsEngagementMeetingParticipation> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      range: query.range,
+    };
+
+    // Errors propagate: a null total renders "no participation data for this foundation", so a
+    // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementMeetingParticipation>('/api/analytics/engagement-meeting-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-meeting-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
   }
 
   /**

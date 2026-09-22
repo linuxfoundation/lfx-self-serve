@@ -7,17 +7,33 @@ import express from 'express';
 import type { Server } from 'node:http';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList, checkPermission } =
-  vi.hoisted(() => ({
-    listClaGroups: vi.fn(),
-    getPdfUrl: vi.fn(),
-    getCclaPreview: vi.fn(),
-    getSignOptions: vi.fn(),
-    requestCorporateSignature: vi.fn(),
-    getApprovalList: vi.fn(),
-    updateApprovalList: vi.fn(),
-    checkPermission: vi.fn(),
-  }));
+const {
+  listClaGroups,
+  getPdfUrl,
+  getCclaPreview,
+  getSignOptions,
+  requestCorporateSignature,
+  getApprovalList,
+  updateApprovalList,
+  checkPermission,
+  listManagers,
+  addManager,
+  removeManager,
+  getContributorAcknowledgments,
+} = vi.hoisted(() => ({
+  listClaGroups: vi.fn(),
+  getPdfUrl: vi.fn(),
+  getCclaPreview: vi.fn(),
+  getSignOptions: vi.fn(),
+  requestCorporateSignature: vi.fn(),
+  getApprovalList: vi.fn(),
+  updateApprovalList: vi.fn(),
+  checkPermission: vi.fn(),
+  listManagers: vi.fn(),
+  addManager: vi.fn(),
+  removeManager: vi.fn(),
+  getContributorAcknowledgments: vi.fn(),
+}));
 
 vi.mock('../controllers/org-clas.controller', () => ({
   OrgClasController: class {
@@ -29,6 +45,10 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
     public checkPermission = checkPermission;
+    public listManagers = listManagers;
+    public addManager = addManager;
+    public removeManager = removeManager;
+    public getContributorAcknowledgments = getContributorAcknowledgments;
   },
 }));
 
@@ -130,6 +150,18 @@ beforeEach(() => {
   });
   checkPermission.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ allowed: true });
+  });
+  listManagers.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', managers: [] });
+  });
+  addManager.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.status(201).json({ lfUsername: 'aporter' });
+  });
+  removeManager.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.status(204).send();
+  });
+  getContributorAcknowledgments.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -362,6 +394,38 @@ describe('org-clas router — approval-list write during impersonation', () => {
   });
 });
 
+/**
+ * Contributor Acknowledgments read route (#1986). The list carries every listed contributor's
+ * identity attributes, so a caller without an Org Lens grant on the organization must not reach
+ * it — otherwise the signature id alone would select the list. Impersonation is allowed on the
+ * read, matching every other read on this router: a support engineer viewing as the target sees
+ * exactly what the target sees.
+ */
+describe('org-clas router — acknowledgments read', () => {
+  it('refuses the list for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(403);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('admits the list for an org the caller holds a grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(200);
+    expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+
+  it('stays available while impersonating, because it reads nothing that a write would', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(200);
+    expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+});
+
 describe('permissions/checks', () => {
   function check(orgUid: string): Promise<Response> {
     return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/permissions/checks`, {
@@ -393,5 +457,65 @@ describe('permissions/checks', () => {
 
     expect(res.status).toBe(200);
     expect(checkPermission).toHaveBeenCalled();
+  });
+});
+
+const MANAGERS = 'lens/cla-groups/signature-uuid-1/managers';
+
+describe('org-clas router — CLA managers', () => {
+  describe.each([
+    ['read', 'GET', MANAGERS, () => listManagers],
+    ['add', 'POST', MANAGERS, () => addManager],
+    ['remove', 'DELETE', `${MANAGERS}/aporter`, () => removeManager],
+  ] as const)('%s', (_name, method, path, handler) => {
+    it('refuses an org the caller holds no grant on', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(handler()).not.toHaveBeenCalled();
+    });
+
+    it('admits a granted org', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method });
+
+      expect(res.status).toBeLessThan(400);
+      expect(handler()).toHaveBeenCalled();
+    });
+  });
+
+  describe('while impersonating', () => {
+    it('still allows the read', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${MANAGERS}`);
+
+      expect(res.status).toBe(200);
+      expect(listManagers).toHaveBeenCalled();
+    });
+
+    it.each([
+      ['add', 'POST', MANAGERS, () => addManager],
+      ['remove', 'DELETE', `${MANAGERS}/aporter`, () => removeManager],
+    ] as const)('blocks the %s before it reaches the controller', async (_name, method, path, handler) => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+      expect(handler()).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['add', 'POST', MANAGERS],
+      ['remove', 'DELETE', `${MANAGERS}/aporter`],
+    ] as const)('names impersonation, not a missing grant, on the %s of an org the caller cannot see', async (_name, method, path) => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    });
   });
 });

@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { AUTH_FRAGMENT_KEYS } from '../constants/auth-fragment.constants';
-import { hasAuthFragment, redactAuthFragment } from './auth-fragment.utils';
+import { hasAuthFragment, redactAuthFragment, redactInviteToken } from './auth-fragment.utils';
 
 /**
  * Guards Supabase access AND refresh tokens from reaching a third-party analytics sink. A refresh
@@ -42,6 +42,28 @@ describe('redactAuthFragment', () => {
 
   it('drops the fragment wholesale when the URL cannot be parsed, rather than passing it through', () => {
     expect(redactAuthFragment('http://[not a url#access_token=SECRET')).not.toContain('SECRET');
+  });
+});
+
+describe('redactInviteToken', () => {
+  const ORIGIN = 'https://lfx.example.com';
+
+  it('redacts the token query param on /invite and /invite/error', () => {
+    expect(redactInviteToken(`${ORIGIN}/invite?token=SUPER_SECRET`, ORIGIN)).toBe(`${ORIGIN}/invite?token=redacted`);
+    expect(redactInviteToken(`${ORIGIN}/invite/error?reason=failed&token=SUPER_SECRET`, ORIGIN)).not.toContain('SUPER_SECRET');
+  });
+
+  it('resolves a relative invite URL against the base', () => {
+    expect(redactInviteToken('/invite?token=SUPER_SECRET', ORIGIN)).not.toContain('SUPER_SECRET');
+  });
+
+  it('leaves non-invite URLs and invite URLs without a token untouched', () => {
+    expect(redactInviteToken(`${ORIGIN}/meetings?token=keep-me`, ORIGIN)).toBe(`${ORIGIN}/meetings?token=keep-me`);
+    expect(redactInviteToken(`${ORIGIN}/invite`, ORIGIN)).toBe(`${ORIGIN}/invite`);
+  });
+
+  it('drops the query string when the URL cannot be parsed but still carries a token param', () => {
+    expect(redactInviteToken('http://[not a url?token=SUPER_SECRET')).not.toContain('SUPER_SECRET');
   });
 });
 

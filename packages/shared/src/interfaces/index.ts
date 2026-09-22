@@ -186,6 +186,9 @@ export * from './impersonation.interface';
 // Health Metrics interfaces
 export * from './health-metrics.interface';
 
+// Health Metrics Engagement page (LFXV2-3366) interfaces
+export * from './health-metrics-engagement.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
 

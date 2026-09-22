@@ -11,7 +11,15 @@ import type { Request } from 'express';
 
 import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/utils/cla-identifier.utils';
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
-import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
+import { customErrorSerializer } from '../helpers/error-serializer';
+import type {
+  EasyClaApprovalItem,
+  EasyClaCompanyClaGroup,
+  EasyClaCompanyClaGroupList,
+  EasyClaCorporateContributor,
+  EasyClaCorporateContributorList,
+  EasyClaCorporateSignature,
+} from '../types/cla.types';
 import { orgClaPairProjectSfid } from '../../../../../packages/shared/src/utils/org-cla-permissions';
 
 const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
@@ -32,6 +40,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const approval = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-approval.utils')>(
     '../../../../../packages/shared/src/utils/org-cla-approval.utils'
   );
+  const managers = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-manager.utils')>(
+    '../../../../../packages/shared/src/utils/org-cla-manager.utils'
+  );
   const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
     '../../../../../packages/shared/src/utils/org-cla-permissions'
   );
@@ -42,6 +53,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     isSameClaGroup: actual.isSameClaGroup,
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
+    classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
     // The return-address builders ship as written: the spec asserts the minted shapes.
     orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
@@ -805,6 +817,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
+          cla_group_id: CLA_GROUP_ID,
           return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
           authority_acked: true,
           embargo_acked: true,
@@ -932,7 +945,10 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest());
 
     const body = gatewayFetch.mock.calls[0][2].body as Record<string, unknown>;
-    expect(body).toMatchObject({
+    expect(body).toEqual({
+      project_sfid: PROJECT_SFID,
+      company_sfid: ORG_UID,
+      cla_group_id: CLA_GROUP_ID,
       send_as_email: true,
       authority_name: 'Alex Contributor',
       authority_email: 'contributor@example.org',
@@ -1055,10 +1071,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
   });
 
-  // The agreement is requested by project; the upstream input has no CLA Group field, so the group
-  // the signatory chose cannot be bound to the request and the echoed one is the only way to tell
-  // whether the session that came back is for the agreement they picked. Handing over a mismatched
-  // session would have them sign the wrong corporate agreement with nothing recording it.
+  // Keep checking the response even though the selected group is now bound in the request.
   it('refuses a session opened for a different CLA Group than the one chosen', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: 'a-different-cla-group-uuid' });
 
@@ -1078,6 +1091,8 @@ describe('OrgClaService.requestCorporateSignature', () => {
       signUrl: 'https://docusign.example.org/session/1',
       signatureId: 'signature-uuid-1',
     });
+    const body = gatewayFetch.mock.calls[0][2].body as { cla_group_id: string };
+    expect(body.cla_group_id).toBe(claGroupId);
   });
 
   it('does not hand back the signing address when the CLA Group does not match', async () => {
@@ -1088,9 +1103,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(JSON.stringify(outcome)).not.toContain('docusign.example.org');
   });
 
-  // The echo is the whole check. An answer that carries no CLA Group cannot be shown to be the
-  // agreement the signatory chose, which from here is indistinguishable from one that is not — so
-  // it is refused on the same terms as a mismatch rather than accepted for lacking the evidence.
+  // A missing echo is still unverifiable, even when the request supplies the selected group.
   it.each([[''], ['   '], [undefined]])('refuses a session attributed to no CLA Group, given %p', async (claGroupId) => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: claGroupId });
 
@@ -1909,5 +1922,762 @@ describe('OrgClaService.getCclaPreview — the watermarked review copy', () => {
     );
 
     await expect(new OrgClaService().getCclaPreview(req(), PREVIEW_GROUP)).rejects.toMatchObject({ statusCode: 400, code: 'UPSTREAM_ERROR' });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLA Managers (#1984)
+// ---------------------------------------------------------------------------
+
+function upstreamManager(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    lf_username: 'aporter',
+    name: 'Ada Porter',
+    email: 'ada.porter@example.org',
+    user_sfid: '0054100000Te2ovAAB',
+    added_on: '2024-05-02T11:00:00Z',
+    project_id: 'project-uuid-1',
+    project_sfid: 'a09410000182dD3AAI',
+    organization_id: 'company-uuid-1',
+    organization_sfid: ORG_UID,
+    cla_group_name: 'Nimbus Foundation CLA',
+    ...overrides,
+  };
+}
+
+/**
+ * Contributor Acknowledgments — read (#1986).
+ *
+ * The service resolves the CCLA through the organization's own list first (matching
+ * `getApprovalList` and `getPdfUrl`), then paginates via the producer's `nextKey`. The mapper
+ * carries the invariants the shared contract states: never drop a row for a missing LF Login,
+ * treat `github_id` and `gitlab_id` as display logins, and normalize `signature_version` to a
+ * `v`-prefixed string with an empty passthrough for the em-dash fallback at the row.
+ */
+function contributor(overrides: Partial<EasyClaCorporateContributor> = {}): EasyClaCorporateContributor {
+  return {
+    signatureID: 'ecla-sig-1',
+    linux_foundation_id: 'jsmith',
+    email: 'contributor@example.org',
+    github_id: 'jsmith-gh',
+    gitlab_id: 'jsmith-gl',
+    signature_version: '1',
+    userDocusignDateSigned: '2026-03-11T09:20:00Z',
+    signatureApproved: true,
+    ...overrides,
+  };
+}
+
+/** POST add returns a Signature; the BFF re-reads `GET …/cla-managers` before answering. */
+function mockAddManagerUpstream(entry: ReturnType<typeof upstreamEntry> = upstreamEntry(), manager: Record<string, unknown> = upstreamManager()): void {
+  gatewayFetch
+    .mockResolvedValueOnce(upstreamList(entry))
+    .mockResolvedValueOnce({ signatureID: 'signature-uuid-1' })
+    .mockResolvedValueOnce(upstreamList(entry))
+    .mockResolvedValueOnce({ list: [manager] });
+}
+
+describe('OrgClaService.getManagers', () => {
+  it('maps only the four fields the tab renders, and drops the Salesforce user id', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers).toEqual([{ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' }]);
+  });
+
+  it('omits addedOn when only approved_on is present, because that is signature time not manager add time', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ added_on: '', approved_on: '2021-09-13T11:59:00.981612+0000' })] });
+
+    const manager = (await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0];
+    expect(manager).not.toHaveProperty('addedOn');
+  });
+
+  it('omits a missing name rather than mapping it to an empty string', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager({ name: '  ' })] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers[0]).not.toHaveProperty('name');
+    expect(result?.managers[0].lfUsername).toBe('aporter');
+  });
+
+  it('omits a missing address rather than blank-filling it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [upstreamManager({ email: '' })] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0]).not.toHaveProperty('email');
+  });
+
+  it('drops a record with no LF username, which no removal could address', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: '' }), upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('drops a null row rather than throwing while reading its LF username', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [null, upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('drops a row whose lf_username is not a string', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [upstreamManager({ lf_username: 42 as unknown as string }), upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('omits optional manager fields that are not strings instead of throwing while trimming', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({
+      list: [upstreamManager({ name: 42 as unknown as string, email: 99 as unknown as string, added_on: false as unknown as string })],
+    });
+
+    const manager = (await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers[0];
+    expect(manager?.lfUsername).toBe('aporter');
+    expect(manager).not.toHaveProperty('name');
+    expect(manager).not.toHaveProperty('email');
+    expect(manager).not.toHaveProperty('addedOn');
+  });
+
+  it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+  });
+
+  it('reads an empty list array as an agreement with no managers', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
+
+    expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toEqual([]);
+  });
+
+  it('rejects a manager list response with no list array', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({});
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('calls upstream with the internal company id, never the Salesforce organization id', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
+
+    await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers' })
+    );
+  });
+
+  it('never lets the manager list body reach a log', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce({ list: [] });
+
+    await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().getManagers(req(), ORG_UID, 'signature-another-org-signed')).toBeNull();
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
+  it('answers an empty roster for an unsigned agreement without asking upstream for one', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result).toEqual({ signatureId: 'signature-uuid-1', managers: [] });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
+  it('does not answer absent for an unsigned agreement', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    expect(await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).not.toBeNull();
+  });
+
+  it('fails closed when two signatures share the same company and CLA group, because manager APIs are not signature-scoped', async () => {
+    gatewayFetch.mockResolvedValueOnce(
+      upstreamList(
+        upstreamEntry({ signatureID: 'signature-a', signingEntityName: 'Vertex Robotics GmbH' }),
+        upstreamEntry({ signatureID: 'signature-b', signingEntityName: 'Vertex Robotics KK' })
+      )
+    );
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-b')).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AMBIGUOUS_MANAGER_TARGET',
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
+  it('finds the agreement when the path spells the signature UUID without hyphens', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: '0f9b8c7d-1234-4abc-89de-0123456789ab' })))
+      .mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, '0F9B8C7D12344ABC89DE0123456789AB');
+
+    expect(result?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+});
+
+describe('OrgClaService.addManager', () => {
+  const request = { firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' };
+
+  it('sends camelCase and renames the address field, unlike its snake_case neighbours', async () => {
+    mockAddManagerUpstream();
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.stringContaining('/company/company-uuid-1/project/a09410000182dD3AAI/cla-manager'),
+      expect.objectContaining({ method: 'POST', body: { firstName: 'Ada', lastName: 'Porter', userEmail: 'ada.porter@example.org' } })
+    );
+  });
+
+  it('keys the write on a covered project, not on the foundation', async () => {
+    mockAddManagerUpstream();
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    const url = gatewayFetch.mock.calls[1][1] as string;
+    expect(url).toContain('/project/a09410000182dD3AAI/');
+    expect(url).not.toContain('a09410000182dD2AAI');
+  });
+
+  it('keys the write on the first covered project, matching the ACS pair', async () => {
+    const reversed = upstreamEntry({
+      projects: [
+        { projectSFID: 'a09410000182dD4AAI', projectName: 'Driftwood' },
+        { projectSFID: 'a09410000182dD3AAI', projectName: 'Cascade' },
+      ],
+    });
+    mockAddManagerUpstream(reversed);
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD4AAI/');
+  });
+
+  it('falls back to the foundation only when the agreement covers no project', async () => {
+    mockAddManagerUpstream(upstreamEntry({ projects: [] }));
+
+    await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(gatewayFetch.mock.calls[1][1]).toContain('/project/a09410000182dD2AAI/');
+  });
+
+  it('fails rather than compose an empty project segment when the row names no project at all', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })));
+
+    await expect(new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request)).rejects.toThrow(/missing its project id/);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns a display payload when the roster re-read is empty, because the write already succeeded', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ signatureID: 'signature-uuid-1' })
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockResolvedValueOnce({ list: [] });
+
+    const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(manager).toEqual({ lfUsername: '', name: 'Ada Porter', email: 'ada.porter@example.org' });
+  });
+
+  it('re-reads the roster when POST returns a Signature without a top-level lf_username', async () => {
+    mockAddManagerUpstream();
+
+    const manager = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request);
+
+    expect(manager).toEqual({ lfUsername: 'aporter', name: 'Ada Porter', email: 'ada.porter@example.org', addedOn: '2024-05-02T11:00:00Z' });
+    expect(gatewayFetch).toHaveBeenNthCalledWith(4, expect.anything(), expect.stringContaining('/cla-managers'), expect.anything());
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().addManager(req(), ORG_UID, 'signature-other', request)).toBeNull();
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an unsigned agreement without calling the write endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const error = await new OrgClaService().addManager(req(), ORG_UID, 'signature-uuid-1', request).then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect((error as MicroserviceErrorType).statusCode).toBe(400);
+    expect((error as MicroserviceErrorType).code).toBe('AGREEMENT_NOT_SIGNED');
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrgClaService.removeManager', () => {
+  it('addresses the removal by LF username on a covered project', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter');
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/project/a09410000182dD3AAI/cla-manager/aporter',
+      expect.objectContaining({ method: 'DELETE' })
+    );
+  });
+
+  it('answers an agreement the organization does not hold as absent, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().removeManager(req(), ORG_UID, 'signature-other', 'aporter')).toBe(false);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an unsigned agreement without calling the write endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const error = await new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter').then(
+      () => undefined,
+      (caught: unknown) => caught
+    );
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect((error as MicroserviceErrorType).statusCode).toBe(400);
+    expect((error as MicroserviceErrorType).code).toBe('AGREEMENT_NOT_SIGNED');
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('fails rather than compose an empty project segment when the row names no project at all', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' })));
+
+    await expect(new OrgClaService().removeManager(req(), ORG_UID, 'signature-uuid-1', 'aporter')).rejects.toThrow(/missing its project id/);
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Refusals — classified name only, refusal sentence never logged
+// ---------------------------------------------------------------------------
+
+const REFUSAL_SENTENCE = 'user jdelacroix does not have an LF Login account for company company-uuid-1 on project a09410000182dD3AAI';
+
+function upstreamRefusal(status = 400, body: string = JSON.stringify({ Message: REFUSAL_SENTENCE })): MicroserviceErrorType {
+  return new MicroserviceError(`Failed: ${status}`, status, 'UPSTREAM_ERROR', { operation: 'op', service: 'cla', errorBody: body });
+}
+
+function everythingLogged(error: unknown): string {
+  const contextual = error instanceof MicroserviceError ? error.getLogContext() : {};
+  return JSON.stringify({ contextual, serialized: customErrorSerializer(error), message: (error as Error)?.message });
+}
+
+describe.each([
+  [
+    'addManager',
+    (service: InstanceType<typeof OrgClaService>) =>
+      service.addManager(req(), ORG_UID, 'signature-uuid-1', { firstName: 'Ada', lastName: 'Porter', email: 'ada.porter@example.org' }),
+  ],
+  ['removeManager', (service: InstanceType<typeof OrgClaService>) => service.removeManager(req(), ORG_UID, 'signature-uuid-1', 'jdelacroix')],
+] as const)('%s refusals', (_name, invoke) => {
+  async function refusalFrom(status: number, body?: string): Promise<unknown> {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(status, body));
+    return invoke(new OrgClaService()).then(
+      () => undefined,
+      (error: unknown) => error
+    );
+  }
+
+  it.each([
+    ['no-lf-login', 400, JSON.stringify({ Message: REFUSAL_SENTENCE })],
+    ['last-manager', 400, JSON.stringify({ Message: "Can't delete the only remaining CLA Manager for this CLA Group" })],
+    ['not-authorized', 400, JSON.stringify({ Message: 'user aporter is not authorized for project a09410000182dD3AAI' })],
+    ['already-manager', 409, ''],
+    ['unknown', 400, JSON.stringify({ Message: 'the request could not be completed at this time' })],
+  ] as const)('classifies the refusal as %s and carries only that name', async (expected, status, body) => {
+    const error = (await refusalFrom(status, body)) as MicroserviceErrorType;
+
+    expect(error).toBeInstanceOf(MicroserviceError);
+    expect(error.errorBody).toEqual({ error: expected });
+  });
+
+  it('publishes no part of the refusal sentence to any log surface', async () => {
+    const error = await refusalFrom(400);
+    const logged = everythingLogged(error);
+
+    expect(logged).not.toContain(REFUSAL_SENTENCE);
+    expect(logged).not.toContain('jdelacroix');
+    expect(logged).not.toContain('company-uuid-1');
+    expect(logged).not.toContain('a09410000182dD3AAI');
+    expect(logged).toContain('no-lf-login');
+  });
+
+  it('keeps the sentence out of the message the failure log line is built from', async () => {
+    const error = (await refusalFrom(400)) as Error;
+
+    expect(error.message).not.toContain(REFUSAL_SENTENCE);
+    expect(error.message).toContain('no-lf-login');
+  });
+
+  it('asks the fetch helper to keep the body out of the log while still attaching it', async () => {
+    if (_name === 'addManager') {
+      mockAddManagerUpstream();
+    } else {
+      gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+    }
+
+    await invoke(new OrgClaService()).catch(() => undefined);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(2, expect.anything(), expect.anything(), expect.objectContaining({ redactResponseBodyFromLogs: true }));
+  });
+
+  it('leaves a transport failure alone rather than dressing it as a refusal', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(504, ''));
+
+    const error = (await invoke(new OrgClaService()).then(
+      () => undefined,
+      (caught: unknown) => caught
+    )) as MicroserviceErrorType;
+
+    expect(error.statusCode).toBe(504);
+    expect(error.errorBody).toBeUndefined();
+  });
+
+  it('scrubs an unclassified 5xx body so the submitted name cannot reach the log', async () => {
+    const leak = JSON.stringify({ Message: 'create failed for Ada Porter ada.porter@example.org' });
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(upstreamRefusal(502, leak));
+
+    const error = (await invoke(new OrgClaService()).then(
+      () => undefined,
+      (caught: unknown) => caught
+    )) as MicroserviceErrorType;
+    const logged = everythingLogged(error);
+
+    expect(error.statusCode).toBe(502);
+    expect(error.errorBody).toBeUndefined();
+    expect(logged).not.toContain('Ada Porter');
+    expect(logged).not.toContain('ada.porter@example.org');
+  });
+});
+
+function contributorPage(overrides: Partial<EasyClaCorporateContributorList> = {}): EasyClaCorporateContributorList {
+  return {
+    companySFID: ORG_UID,
+    claGroupID: 'cla-group-uuid-1',
+    resultCount: 1,
+    totalCount: 1,
+    nextKey: '',
+    list: [contributor()],
+    ...overrides,
+  };
+}
+
+/**
+ * Stages the two upstream calls one acknowledgments read makes: the organization's list (used to
+ * resolve `(claGroupId, companyId)` and derive `canEdit`), then the contributors page.
+ */
+function stageAckRead(page: EasyClaCorporateContributorList = contributorPage(), entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+  gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce(page);
+}
+
+describe('OrgClaService.getContributorAcknowledgments — the upstream call', () => {
+  it('addresses the producer by the org Salesforce id and passes the internal company id as a query parameter', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain(`/v4/company/external/${ORG_UID}/cla-group/cla-group-uuid-1/corporate-contributors`);
+    expect(url).toContain('companyID=company-uuid-1');
+    expect(url).not.toContain('/company/external/company-uuid-1/');
+  });
+
+  it('lists acknowledgments when the agreement covers neither a project nor a foundation', async () => {
+    // The contributors URL does not take a project id. A held row with neither a project nor a
+    // foundation Salesforce id is still addressable here; only the approval-list paths 502.
+    stageAckRead(contributorPage(), [upstreamEntry({ projects: [], foundationSFID: '' })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain('/corporate-contributors');
+    expect(url).not.toContain('/signatures/project/');
+  });
+
+  it('carries the search term and page size to the producer as query parameters', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: 'ahmed', pageSize: 25, nextKey: 'cursor-xyz' });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/searchTerm=ahmed/), expect.any(Object));
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/pageSize=25/), expect.any(Object));
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/nextKey=cursor-xyz/), expect.any(Object));
+  });
+
+  it('redacts the response body so contributor identity attributes cannot reach the logs', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it("sends the target user's token upstream while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(
+      req({ bearerToken: 'target-user-token' } as unknown as Partial<Request>),
+      ORG_UID,
+      'signature-uuid-1',
+      { search: '', pageSize: 50 }
+    );
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-user-token' }));
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the answer shape', () => {
+  it('returns null for a signature this organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'someone-elses-signature' })));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toBeNull();
+    // Only the org list was called; the contributor endpoint was not reached for a signature
+    // that does not belong to this org.
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an empty uneditable page for an unsigned agreement, without calling the producer for one', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toEqual({ signatureId: 'signature-uuid-1', list: [], canEdit: false, resultCount: 0, totalCount: 0, nextKey: null });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes an empty nextKey to null so the client stops paging on it', async () => {
+    stageAckRead(contributorPage({ nextKey: '' }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.nextKey).toBeNull();
+  });
+
+  it('keeps a non-empty nextKey verbatim so the client can request the next page', async () => {
+    stageAckRead(contributorPage({ nextKey: 'cursor-page-2' }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.nextKey).toBe('cursor-page-2');
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the identity fallback', () => {
+  // Parent story #1973 AC1 requires every acknowledged contributor to be visible. A row with any
+  // one of LF Login / GitHub / GitLab / email / DocuSign name populated must render, because the
+  // corporate console shows every one of them today.
+  it('never drops a row when LF Login is absent — a GitHub-only contributor survives', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ linux_foundation_id: '', github_id: 'gh-only', email: '' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    expect(list?.list[0]).toMatchObject({ lfLogin: undefined, githubUsername: 'gh-only' });
+  });
+
+  it('carries github_id and gitlab_id as usernames (logins), never as identifiers', async () => {
+    // Producer swagger example is a stale numeric "123456"; the field carries the login. This
+    // pins that the mapper preserves the login verbatim rather than any numeric normalization.
+    stageAckRead(contributorPage({ list: [contributor({ github_id: 'gh-login', gitlab_id: 'gl-login' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
+  });
+
+  it('falls through a blank name and a blank signed date to the creation time, not the last modification', async () => {
+    // Invalidation refreshes signatureModified. Using it as Acknowledged On would show the
+    // invalidation instant for a row the producer recorded with no DocuSign date.
+    stageAckRead(
+      contributorPage({
+        list: [
+          contributor({
+            name: '   ',
+            userDocusignName: 'Ada Lovelace',
+            userDocusignDateSigned: '  ',
+            timestamp: '2026-01-02T00:00:00Z',
+            signatureModified: '2026-04-01T00:00:00Z',
+          }),
+        ],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]).toMatchObject({ name: 'Ada Lovelace', signedOn: '2026-01-02T00:00:00Z' });
+  });
+
+  it('leaves signedOn empty when neither the DocuSign date nor the creation time is present', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ userDocusignDateSigned: '  ', timestamp: '', signatureModified: '2026-04-01T00:00:00Z' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.signedOn).toBeUndefined();
+  });
+
+  it('prefers the DocuSign name when the profile name differs', async () => {
+    // The producer puts the profile name (or username) on `name` and the name on the DocuSign
+    // document on `userDocusignName`. The shared contract's `name` is the signing name, so a
+    // row that carries both must surface the DocuSign one.
+    stageAckRead(contributorPage({ list: [contributor({ name: 'ada', userDocusignName: 'Ada Lovelace' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
+  it('keeps the profile name when no DocuSign name was recorded', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: '   ' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
+  it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ linux_foundation_id: '   ', email: '', github_id: '', gitlab_id: '   ' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    const row = list?.list[0];
+    expect(row?.lfLogin).toBeUndefined();
+    expect(row?.email).toBeUndefined();
+    expect(row?.githubUsername).toBeUndefined();
+    expect(row?.gitlabUsername).toBeUndefined();
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () => {
+  it('prefixes a bare version with `v`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '2.1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v2.1');
+  });
+
+  it('leaves an already-prefixed version unchanged so `v1` stays `v1` rather than becoming `vv1`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: 'v1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v1');
+  });
+
+  it('passes an empty version through as an empty string so the row renders an em-dash', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('');
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
+  it.each([
+    ['null', null],
+    ['omitted', undefined],
+    ['an empty string', ''],
+  ])('rejects a contributor page whose list is %s rather than showing an empty agreement', async (_label, list) => {
+    stageAckRead({ ...contributorPage(), list } as EasyClaCorporateContributorList);
+
+    await expect(new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('keeps an empty array as an empty page', async () => {
+    stageAckRead(contributorPage({ list: [], resultCount: 0, totalCount: 0 }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toEqual([]);
+  });
+
+  // The shared interface types `signatureId` as required; a producer row without one cannot be
+  // invalidated and, if two absent-id rows were kept, they would collide on Angular's `@for`
+  // tracking key and throw NG0955, killing the whole tab.
+  it('drops a producer row that arrives without a per-ack signature id, rather than emitting an empty string that collides on `@for` tracking', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signatureID: '' }), contributor({ signatureID: 'ecla-sig-2' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    expect(list?.list[0]?.signatureId).toBe('ecla-sig-2');
+  });
+
+  it('walks the roster to decide `canEdit`, mirroring the sibling approval-list posture', async () => {
+    getUsernameFromAuth.mockResolvedValue('aporter');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(true);
+  });
+
+  it('withholds `canEdit` from an org viewer who is not a CLA manager on the agreement', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(false);
+  });
+
+  it('carries no manager identity or username into the acknowledgment response', async () => {
+    stageAckRead();
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    // The roster is what `canEdit` is computed from; computing the flag must not be what puts the
+    // identities back on the wire. Same rule the approval-list read pins.
+    const serialized = JSON.stringify(list);
+    expect(serialized).not.toContain('aporter');
+    expect(serialized).not.toContain('user-uuid-1');
   });
 });

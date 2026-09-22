@@ -364,6 +364,9 @@ export interface EasyClaSignedDocument {
  * one place — the mapping in `OrgClaService.requestCorporateSignature` — rather than leaking
  * into the shared contract.
  *
+ * `cla_group_id` is sent ahead of linuxfoundation/easycla#5219 in a consumer-first rollout:
+ * older producers ignore the unknown field, so the response echo must still be checked.
+ *
  * `signing_entity_name` stays absent: that path is still out of scope. `send_as_email`,
  * `authority_name` and `authority_email` belong to send-by-email (#2365) and are set only
  * when that path asked for them. The two acks are required on self-sign and omitted on
@@ -372,6 +375,8 @@ export interface EasyClaSignedDocument {
 export interface EasyClaSelfServeCorporateSignatureInput {
   project_sfid: string;
   company_sfid: string;
+  /** Selected agreement; pre-envelope validation requires the producer change in linuxfoundation/easycla#5219. */
+  cla_group_id: string;
   /**
    * Absolute https URL. EasyCLA stores it and later redirects to it verbatim. Self-sign only —
    * the producer documents this as valid only when `send_as_email` is false, and still writes a
@@ -504,4 +509,112 @@ export interface EasyClaSignatureApprovalLists {
   githubOrgApprovalList?: string[] | null;
   gitlabUsernameApprovalList?: string[] | null;
   gitlabOrgApprovalList?: string[] | null;
+}
+
+/**
+ * One entry of `GET /v4/company/{companyID}/cla-group/{claGroupID}/cla-managers`
+ * (`#/definitions/company-cla-manager`), snake_case as the CLA service sends it.
+ */
+export interface EasyClaCompanyClaManager {
+  lf_username?: string;
+  name?: string;
+  email?: string;
+  /**
+   * From a `cla_manager.added` event, when one exists. Often empty for the
+   * signatory who became the first manager with the signature.
+   */
+  added_on?: string;
+  /**
+   * The CCLA's `signature_created`. Always set. Corporate Console's Added
+   * column reads this (`approvedOn`), not `added_on`.
+   */
+  approved_on?: string;
+}
+
+export interface EasyClaCompanyClaManagerList {
+  list?: EasyClaCompanyClaManager[];
+}
+
+export interface ManagerTarget {
+  /** The CLA service's internal company id — never sent to the browser. */
+  companyId: string;
+  claGroupId: string;
+  projectSfid: string;
+  signed: boolean;
+}
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments — read (#1986)
+//
+// Producer endpoint (already deployed):
+//   GET /v4/company/external/{companySFID}/cla-group/{claGroupID}/corporate-contributors
+// Returns paginated ECLA signatures under one CCLA. Snake_case.
+//
+// The shared BFF contract lives in `packages/shared/src/interfaces/cla.interface.ts`. Every
+// snake_case ↔ camelCase conversion stops here in `org-cla.service.ts`.
+// ---------------------------------------------------------------------------
+
+/**
+ * One row on the corporate-contributor list (`#/definitions/corporate-contributor`).
+ *
+ * `github_id` and `gitlab_id` carry the contributor's **username (login)**, not a numeric id —
+ * `fillCorporateContributorModel` in `cla-backend-go/v2/company/service.go` assigns them from the
+ * signature's `UserGithubUsername` / `UserGitlabUsername`. The producer swagger example for
+ * `github_id` is a stale `"123456"`; the description ("the contributor's GitHub username (login)")
+ * is correct. A login is user-changeable, so nothing in this codebase may treat these as stable
+ * identifiers or as client-side join keys — the stable identifier is `signatureID` below.
+ */
+export interface EasyClaCorporateContributor {
+  /** Per-ack signature id. Stable. Needed to address an invalidate. */
+  signatureID?: string;
+  name?: string;
+  linux_foundation_id?: string;
+  /** GitHub username (login). Display only; NOT a stable identifier. */
+  github_id?: string;
+  /** GitLab username (login). Display only; NOT a stable identifier. */
+  gitlab_id?: string;
+  email?: string;
+  /** The CCLA version the acknowledgment was recorded against ("v1", "v2", etc.). */
+  signature_version?: string;
+  /** Signature creation time (`DateCreated`). The Acknowledged On fallback when DocuSign sent no date. */
+  timestamp?: string;
+  userDocusignName?: string;
+  userDocusignDateSigned?: string;
+  signatureModified?: string;
+  signatureSigned?: boolean;
+  /** False when the signature was invalidated. Absent on legacy rows, treated as `true`. */
+  signatureApproved?: boolean;
+  /** Producer's stored date_invalidated, stamped at the first invalidation. */
+  invalidatedAt?: string;
+  /**
+   * Username of the acting CLA manager or admin who invalidated the acknowledgment. Whichever
+   * identity the invalidate call authenticated as is written here — the reason invalidate is
+   * blocked while impersonating (`invalidatedBy` would name the impersonated target).
+   */
+  invalidatedBy?: string;
+  /**
+   * Invalidation reason — "approved list removal (<criteria>)" for approval-list removals, or
+   * the reason given by the invalidating manager / admin for a direct invalidate.
+   */
+  invalidationReason?: string;
+  /** Free-text invalidation note. Deliberately not surfaced on the BFF row. */
+  invalidationNote?: string;
+  /** Signature note; predates the invalidation attributes above on older rows. */
+  note?: string;
+}
+
+/**
+ * Response for `GET /v4/company/external/{companySFID}/cla-group/{claGroupID}/corporate-contributors`
+ * (`#/definitions/corporate-contributors-list`).
+ *
+ * Paginated, with an opaque cursor. `resultCount` is the size of `list` on this page;
+ * `totalCount` is the total across the paginated set. `nextKey` is empty on the last page.
+ */
+export interface EasyClaCorporateContributorList {
+  companySFID?: string;
+  claGroupID?: string;
+  resultCount?: number;
+  totalCount?: number;
+  nextKey?: string;
+  list?: EasyClaCorporateContributor[];
 }

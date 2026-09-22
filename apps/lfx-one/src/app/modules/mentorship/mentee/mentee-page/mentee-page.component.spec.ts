@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, OutputEmitterRef } from '@angular/core';
+import { Component, computed, OutputEmitterRef, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { DefaultUrlSerializer, NavigationEnd, Router, RouterOutlet, UrlTree } from '@angular/router';
 import { MentorshipMenteePhase } from '@lfx-one/shared/interfaces';
@@ -243,5 +243,21 @@ describe('MenteePageComponent', () => {
     // Child with no outputs — should not throw
     component.onChildActivate({});
     expect(tabButtons().length).toBe(2);
+  });
+
+  it('pushes the resolved phase into a tasks child that exposes a writable phase signal', async () => {
+    await bootstrap();
+    component.onPhaseChange('applicant');
+    const child = { phase: signal<MentorshipMenteePhase>('empty') };
+    component.onChildActivate(child);
+    expect(child.phase()).toBe('applicant');
+  });
+
+  it('does not throw or mutate when the child exposes a read-only computed phase', async () => {
+    await bootstrap();
+    component.onPhaseChange('applicant');
+    const child = { phase: computed<MentorshipMenteePhase>(() => 'empty') };
+    expect(() => component.onChildActivate(child)).not.toThrow();
+    expect(child.phase()).toBe('empty');
   });
 });

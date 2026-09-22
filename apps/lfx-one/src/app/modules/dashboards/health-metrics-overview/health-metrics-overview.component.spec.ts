@@ -9,6 +9,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
+import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
 import type { HealthMetricsAreaState, HealthMetricsFinding, ProjectContext } from '@lfx-one/shared/interfaces';
 
@@ -23,6 +24,8 @@ describe('HealthMetricsOverviewComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        // Normally provided by HealthMetricsGateComponent, which owns the sticky header and tab bar.
+        HealthMetricsChromeService,
         {
           provide: ProjectContextService,
           useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal(foundationSfid) },
@@ -36,38 +39,26 @@ describe('HealthMetricsOverviewComponent', () => {
     return foundationSignal;
   }
 
+  /** The period pills live on the gate's header now, so tests drive the shared chrome state directly. */
+  function selectPeriod(label: string): void {
+    const chrome = TestBed.inject(HealthMetricsChromeService);
+    const period = chrome.periods.find((candidate) => candidate.label === label);
+    if (!period) throw new Error(`No period option labelled ${label}`);
+    chrome.setPeriod(period);
+  }
+
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it('measures the sticky header via ResizeObserver and feeds its height into the rail offset', async () => {
-    let observedCallback: ResizeObserverCallback | undefined;
-    vi.stubGlobal(
-      'ResizeObserver',
-      class {
-        public constructor(callback: ResizeObserverCallback) {
-          observedCallback = callback;
-        }
-        public observe(): void {
-          /* no-op — the fake reports height only via the manually-invoked callback below */
-        }
-        public disconnect(): void {
-          /* no-op */
-        }
-      }
-    );
-
+  it('pins the rail below the gate-measured sticky header height', async () => {
     await render(null, null);
-    // afterNextRender (which calls observeHeaderHeight) only fires once the render is stable.
-    await fixture.whenStable();
-    fixture.detectChanges();
-
-    expect(observedCallback).toBeDefined();
-    observedCallback?.([{ borderBoxSize: [{ blockSize: 120 }] } as unknown as ResizeObserverEntry], {} as ResizeObserver);
+    // The gate measures the header and publishes it here; the rail must follow it, not a constant.
+    TestBed.inject(HealthMetricsChromeService).headerHeightPx.set(120);
     fixture.detectChanges();
 
     const rail: HTMLElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]');
-    expect(rail.style.top).toBe('136px'); // headerHeightPx (120) + 16, per railTopPx()
+    expect(rail.style.top).toBe('136px'); // headerHeightPx (120) + 16, per stickyTopPx()
   });
 
   it('renders findings groups in the fixed order', async () => {
@@ -301,7 +292,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
       // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
       const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
-      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      selectPeriod(lastCompletedYearLabel);
       fixture.detectChanges();
 
       // A wrong range key would render '—'/"no data this period", which reads as a legitimate empty
@@ -326,7 +317,7 @@ describe('HealthMetricsOverviewComponent', () => {
       await fixture.whenStable();
 
       const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
-      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      selectPeriod(lastCompletedYearLabel);
       fixture.detectChanges();
 
       // Covers the `?? []` in kpiAreaStates: a period the map doesn't carry must degrade to the neutral
@@ -476,11 +467,9 @@ describe('HealthMetricsOverviewComponent', () => {
 
       // Recomputed from the real clock, not hardcoded, so this doesn't go stale across a year rollover.
       const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
-      const button: HTMLButtonElement = fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`);
-      button.click();
+      selectPeriod(lastCompletedYearLabel);
       fixture.detectChanges();
 
-      expect(button.getAttribute('aria-pressed')).toBe('true');
       // The whole point of the all-periods read: switching period costs zero requests and never
       // blanks the rail back to its skeleton. httpMock.verify() below fails if anything was issued.
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-skeleton"]')).toBeNull();
@@ -494,7 +483,7 @@ describe('HealthMetricsOverviewComponent', () => {
       fixture.detectChanges();
 
       const lastCompletedYearLabel = String(new Date().getFullYear() - 1);
-      fixture.nativeElement.querySelector(`[data-testid="health-metrics-overview-period-${lastCompletedYearLabel}"]`).click();
+      selectPeriod(lastCompletedYearLabel);
       fixture.detectChanges();
 
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-revenue-unavailable"]')).not.toBeNull();

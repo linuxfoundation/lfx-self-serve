@@ -158,6 +158,7 @@ import type {
   MentorshipMenteeProfileResponse,
   MentorshipMenteeTask,
   MentorshipMenteeTasksResponse,
+  MentorshipMenteeTaskStatus,
   MentorshipMenteeUpNextTaskStatus,
 } from '../interfaces/mentorship.interface';
 
@@ -264,6 +265,52 @@ export const MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES: Record<MentorshipMenteeUp
 };
 
 // ---------------------------------------------------------------------------
+// Tasks tab — unified task status labels, classes, and dropdown options
+// ---------------------------------------------------------------------------
+
+export const MENTORSHIP_MENTEE_TASK_STATUS_LABELS: Record<MentorshipMenteeTaskStatus, string> = {
+  pending: 'To Do',
+  incomplete: 'To Do',
+  in_progress: 'In Progress',
+  submitted: 'Submitted',
+  complete: 'Submitted',
+};
+
+export const MENTORSHIP_MENTEE_TASK_STATUS_CLASSES: Record<MentorshipMenteeTaskStatus, string> = {
+  pending: 'bg-gray-100 !text-gray-600',
+  incomplete: 'bg-gray-100 !text-gray-600',
+  in_progress: 'bg-blue-100 !text-blue-700',
+  submitted: 'bg-emerald-100 !text-emerald-700',
+  complete: 'bg-emerald-100 !text-emerald-700',
+};
+
+/**
+ * Selectable task statuses in the dropdown (both phases) — the single source of
+ * truth for which statuses a mentee can pick. `incomplete` / `complete` are
+ * backend aliases that collapse onto these three.
+ */
+export const MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES: readonly MentorshipMenteeTaskStatus[] = ['pending', 'in_progress', 'submitted'];
+
+/** Dropdown options for the task status selector (both phases). Labels derived from the label map so edits propagate. */
+export const MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS: { value: MentorshipMenteeTaskStatus; label: string }[] = MENTORSHIP_MENTEE_TASK_SELECTABLE_STATUSES.map(
+  (value) => ({ value, label: MENTORSHIP_MENTEE_TASK_STATUS_LABELS[value] })
+);
+
+/**
+ * Filter chip options on the accepted-phase My Tasks tab. `null` value = show all.
+ * Derived from `MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS` (the single source of truth
+ * for selectable statuses) plus a leading "All" chip, so new status options
+ * propagate here automatically.
+ */
+export const MENTORSHIP_MENTEE_TASK_FILTER_OPTIONS: { value: MentorshipMenteeTaskStatus | null; label: string }[] = [
+  { value: null, label: 'All' },
+  ...MENTORSHIP_MENTEE_TASK_STATUS_OPTIONS,
+];
+
+/** Natural case — the template applies the `uppercase` Tailwind class for display. */
+export const MENTORSHIP_MENTEE_TASKS_TAB_PREREQUISITE_LABEL = 'Prerequisite Tasks';
+
+// ---------------------------------------------------------------------------
 // Empty overview response (loading fallback)
 // ---------------------------------------------------------------------------
 
@@ -295,6 +342,33 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
       decisionExpectedDate: 'Jul 22, 2026',
       prerequisiteTasksCompleted: 1,
       prerequisiteTasksTotal: 3,
+      tasks: [
+        {
+          id: 'task_apicurio_1',
+          name: 'Read the contributor guide and set up the dev environment',
+          description: 'Follow the repo CONTRIBUTING.md and confirm the test suite passes locally.',
+          status: 'complete',
+          submitFile: null,
+          dueDate: '2026-07-02T00:00:00Z',
+          submittedOn: '2026-07-02T00:00:00Z',
+        },
+        {
+          id: 'task_apicurio_2',
+          name: 'Open a good-first-issue pull request',
+          description: 'Pick any issue labelled "good first issue" and submit a working PR.',
+          status: 'in_progress',
+          submitFile: 'required',
+          dueDate: '2026-07-09T00:00:00Z',
+        },
+        {
+          id: 'task_apicurio_3',
+          name: 'Write a short proposal for the playground UI',
+          description: 'One-page design brief describing your planned prompt-template playground.',
+          status: 'incomplete',
+          submitFile: 'required',
+          dueDate: '2026-07-14T00:00:00Z',
+        },
+      ],
     },
     {
       id: 'app_zephyr',
@@ -308,6 +382,26 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
       decisionExpectedDate: 'Aug 5, 2026',
       prerequisiteTasksCompleted: 1,
       prerequisiteTasksTotal: 2,
+      tasks: [
+        {
+          id: 'task_zephyr_1',
+          name: 'Build Zephyr for a supported board',
+          description: 'Clone the Zephyr SDK and produce a bootable image for any supported board.',
+          status: 'submitted',
+          submitFile: 'required',
+          fileUrl: 'https://example.com/uploads/zephyr-build-log.txt',
+          dueDate: '2026-07-06T00:00:00Z',
+          submittedOn: '2026-07-06T00:00:00Z',
+        },
+        {
+          id: 'task_zephyr_2',
+          name: 'Run the existing power management tests',
+          description: 'Execute the PM test suite and attach the report.',
+          status: 'pending',
+          submitFile: 'required',
+          dueDate: '2026-07-16T00:00:00Z',
+        },
+      ],
     },
     {
       id: 'app_janusgraph',
@@ -321,6 +415,37 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT: MentorshipMenteeOverview
       decisionExpectedDate: 'Jul 29, 2026',
       prerequisiteTasksCompleted: 3,
       prerequisiteTasksTotal: 3,
+      tasks: [
+        {
+          id: 'task_janus_1',
+          name: 'Introduce yourself on the dev mailing list',
+          description: 'Post an introduction to the JanusGraph dev mailing list.',
+          status: 'submitted',
+          submitFile: null,
+          dueDate: '2026-07-07T00:00:00Z',
+          submittedOn: '2026-07-07T00:00:00Z',
+        },
+        {
+          id: 'task_janus_2',
+          name: 'Reproduce the cache benchmark locally',
+          description: 'Run the adjacency cache benchmark and share results.',
+          status: 'submitted',
+          submitFile: 'required',
+          fileUrl: 'https://example.com/uploads/janus-benchmark.pdf',
+          dueDate: '2026-07-18T00:00:00Z',
+          submittedOn: '2026-07-18T00:00:00Z',
+        },
+        {
+          id: 'task_janus_3',
+          name: 'Summarise where instrumentation is missing',
+          description: 'Review the codebase and list modules without tracing hooks.',
+          status: 'submitted',
+          submitFile: 'required',
+          fileUrl: 'https://example.com/uploads/janus-audit.md',
+          dueDate: '2026-07-25T00:00:00Z',
+          submittedOn: '2026-07-25T00:00:00Z',
+        },
+      ],
     },
   ],
   pastApplications: [
@@ -359,9 +484,12 @@ export const MOCK_MENTORSHIP_MENTEE_OVERVIEW_ACCEPTED: MentorshipMenteeOverviewA
       { id: 'mentor_1', name: 'Test Mentor A' },
       { id: 'mentor_2', name: 'Test Mentor B' },
     ],
+    // Mirror the OPEN tasks in MOCK_MENTEE_TASKS so Overview "Up Next" and the My Tasks
+    // tab never disagree — a submitted task (e.g. "Benchmark 1M points per minute") must
+    // not appear here while it reads as Submitted on the tasks tab.
     upNextTasks: [
-      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'in-progress', dueDate: '2026-09-18T00:00:00Z' },
-      { id: 'unt_2', name: 'Benchmark 1M points per minute', status: 'pending', dueDate: '2026-09-25T00:00:00Z' },
+      { id: 'unt_1', name: 'Implement replay from durable buffer', status: 'pending', dueDate: '2026-09-18T00:00:00Z' },
+      { id: 'unt_2', name: 'Backpressure design note', status: 'in-progress', dueDate: '2026-09-12T00:00:00Z' },
       { id: 'unt_3', name: 'Write contributor onboarding doc', status: 'pending', dueDate: '2026-10-02T00:00:00Z' },
     ],
   },
@@ -379,40 +507,55 @@ export const EMPTY_MENTORSHIP_MENTEE_TASKS_RESPONSE: MentorshipMenteeTasksRespon
 const MOCK_MENTEE_TASKS: MentorshipMenteeTask[] = [
   {
     id: 'mt_1',
-    title: 'Complete onboarding checklist',
-    description: 'Set up your dev environment and review the contributor guide.',
-    status: 'completed',
-    dueDate: '2026-09-15T00:00:00Z',
-    submittedDate: '2026-09-12T00:00:00Z',
+    title: 'Implement replay from durable buffer',
+    description: 'Build the replay mechanism that reads from the durable write-ahead log.',
+    status: 'pending',
+    submitFile: null,
+    dueDate: '2026-09-18T00:00:00Z',
   },
   {
     id: 'mt_2',
-    title: 'First contribution PR',
-    description: 'Submit your first pull request to the project repository.',
-    status: 'submitted',
-    dueDate: '2026-09-30T00:00:00Z',
-    submittedDate: '2026-09-28T00:00:00Z',
+    title: 'Backpressure design note',
+    description: 'Document how the pipeline handles backpressure from slow consumers.',
+    status: 'in_progress',
+    submitFile: 'required',
+    dueDate: '2026-09-12T00:00:00Z',
   },
   {
     id: 'mt_3',
-    title: 'Write a design document',
-    description: 'Document the architecture for the ingestion pipeline feature.',
-    status: 'in-progress',
-    dueDate: '2026-10-15T00:00:00Z',
+    title: 'Benchmark 1M points per minute',
+    description: 'Run the ingestion benchmark at 1M points/min and capture a flame graph.',
+    status: 'submitted',
+    submitFile: 'required',
+    fileUrl: 'https://example.com/uploads/benchmark-report.pdf',
+    dueDate: '2026-09-25T00:00:00Z',
+    submittedDate: '2026-09-25T00:00:00Z',
   },
   {
     id: 'mt_4',
-    title: 'Implement time-series parser',
-    description: 'Build the core parser module for time-series data.',
-    status: 'pending',
-    dueDate: '2026-10-30T00:00:00Z',
+    title: 'Ingestion worker refactor',
+    description: 'Refactor the worker pool to use a bounded channel instead of mutex.',
+    status: 'submitted',
+    submitFile: null,
+    dueDate: '2026-09-04T00:00:00Z',
+    submittedDate: '2026-09-04T00:00:00Z',
   },
   {
     id: 'mt_5',
-    title: 'Final project presentation',
-    description: 'Present your completed work to the mentors and community.',
+    title: 'Set up local dev environment',
+    description: 'Clone the repo, run the test suite, and confirm the CI pipeline passes.',
+    status: 'complete',
+    submitFile: null,
+    dueDate: '2026-08-29T00:00:00Z',
+    submittedDate: '2026-08-29T00:00:00Z',
+  },
+  {
+    id: 'mt_6',
+    title: 'Write contributor onboarding doc',
+    description: 'Create a CONTRIBUTING.md with setup, branching, and review conventions.',
     status: 'pending',
-    dueDate: '2026-11-20T00:00:00Z',
+    submitFile: 'required',
+    dueDate: '2026-10-02T00:00:00Z',
   },
 ];
 

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaDetailTab, OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -467,12 +467,14 @@ export const CCLA_SIGN_COPY = {
  * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
  * string, and the client posts these literals rather than assembling ACS permissions itself.
  */
-export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update'] as const;
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete'] as const;
 
 export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
 export const ACS_CLA_SIGN_ACTION = 'create';
 export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
 export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_MANAGER_DELETE_RESOURCE = 'cla_manager_delete';
+export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
@@ -507,14 +509,15 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers and Approval List tabs hold nothing until the agreement is signed, taken
- * verbatim from the M3 prototype's locked panels.
+ * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
+ * agreement is signed, taken verbatim from the M3 prototype's locked panels.
  *
- * Only these two tabs. Both describe a role and a rule set that come into existence *with* the
- * signature — the signatory becomes the initial CLA Manager, and approval entries are what that
- * manager then maintains — so on an unsigned agreement there is nothing to list rather than a list
- * that failed to load. The remaining tabs are unbuilt for every agreement, signed or not, and
- * saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
+ * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
+ * entries are what that manager maintains, and acknowledgments are what contributors then place
+ * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
+ * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
+ * and saying "once this CLA is signed" on them would promise content signing does not produce.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
@@ -522,13 +525,13 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
  * the empty Overview had.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
-  managers: {
-    title: 'CLA Managers become available once this CLA is signed',
-    subtitle: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
-  },
   approval: {
     title: 'The approval list becomes available once this CLA is signed',
     subtitle: 'Sign this CLA first, then add approval list entries to automatically cover matching contributors.',
+  },
+  acknowledgments: {
+    title: 'No contributor acknowledgments yet',
+    subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
   },
 };
 
@@ -612,3 +615,104 @@ export const ORG_CLA_APPROVAL_RECEIPT = {
   edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
   removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
 } as const;
+
+export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
+
+export const ORG_CLA_MANAGER_REFUSAL_COPY: Record<OrgClaManagerRefusal, string> = {
+  'no-lf-login': 'This person needs an LF Login account before they can be added as a CLA Manager. Ask them to create one, then try again.',
+  'lf-username-required':
+    'This person has an LF Login account but has not chosen an LF username yet. Ask them to finish setting up their LF Login username, then try again.',
+  'not-authorized': 'You do not have permission to change the CLA Managers for this CLA.',
+  'last-manager': 'A CLA must always have at least one CLA Manager, so this person cannot be removed. Add another CLA Manager first.',
+  'already-manager': 'This person is already a CLA Manager for this CLA.',
+  unknown: 'Something went wrong. Please try again.',
+};
+
+export const ORG_CLA_MANAGERS_COPY = {
+  heading: 'CLA Managers',
+  addAction: 'Add CLA Manager',
+  intro:
+    "CLA Managers maintain this CLA's approval list. If a CLA Manager also plans to contribute code themselves, they should add themselves to the Approved List.",
+  unsignedTitle: 'CLA Managers become available once this CLA is signed',
+  unsignedBody: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
+  loadFailed: 'Could not load the CLA Managers for this CLA.',
+  retry: 'Try again',
+  empty: 'This CLA has no CLA Managers yet.',
+  lastManagerHint: 'A CLA must always have at least one CLA Manager.',
+  addDialogTitle: 'Add CLA Manager',
+  addDialogIntro: "Add someone as a CLA Manager for this CLA. They'll be able to maintain its approval list and manage contributor approvals.",
+  addedTitle: 'CLA Manager added',
+  removeAction: 'Remove',
+  removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+} as const;
+
+export const ORG_CLA_MANAGER_REMOVE_COPY = {
+  title: (name: string): string => `Remove ${name} as CLA Manager?`,
+  self: 'You are removing yourself as a CLA Manager for this CLA. You will lose the ability to manage its approval list and add or remove other CLA Managers — this takes effect immediately.',
+  other: (name: string): string => `${name} will no longer be able to manage this CLA's approval list or add other CLA Managers.`,
+} as const;
+
+/** Name-part bounds, matching what the CLA service accepts. */
+export const ORG_CLA_MANAGER_NAME_MIN = 2;
+export const ORG_CLA_MANAGER_NAME_MAX = 30;
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+// ---------------------------------------------------------------------------
+
+/**
+ * The heading the Contributor Acknowledgments tab carries.
+ *
+ * Matches the label the corporate CLA console uses for the same list, so a CLA manager migrating
+ * between the two surfaces reads the same words.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments';
+
+/**
+ * Cap on the acknowledgment page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the CLA
+ * manager fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN = 1;
+
+/**
+ * Empty-state copy for a signed agreement with no acknowledgments yet.
+ *
+ * The title matches the M3 prototype's single empty state. The subtitle deliberately does NOT
+ * repeat "once this CLA is signed" (that wording is reserved for the locked/unsigned state in
+ * `ORG_CLA_LOCKED_TAB_COPY`) — the agreement is already signed on this path, so the answer is
+ * simply "not yet". Parent story #1973 AC4 forbids the smiley icon the prototype used; render the
+ * text with no decorative imagery.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY = {
+  title: 'No contributor acknowledgments yet',
+  subtitle: 'No employee has acknowledged this agreement yet.',
+} as const;
+
+/** Column headers for the Contributor Acknowledgments table. */
+export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
+  name: 'Name',
+  identity: 'LF Login/GitHub or GitLab ID',
+  cclaVersion: 'CCLA Version',
+  signedOn: 'Acknowledged On',
+  state: 'Status',
+  actions: '',
+} as const;
+
+/**
+ * Two visible acknowledgment states.
+ *
+ * The M3 prototype's third amber "Not Authorized" state is deliberately out of scope for #1986;
+ * its design is unresolved. Do not add a third entry here without a locked contract decision.
+ */
+export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
+  acknowledged: 'Acknowledged',
+  invalidated: 'Invalidated',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';

@@ -6,18 +6,33 @@ import '@angular/compiler';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
-const { listClaGroups, getPdfUrl, getCclaPreview, getSignOptions, requestCorporateSignature, getApprovalList, updateApprovalList, checkAcs } = vi.hoisted(
-  () => ({
-    listClaGroups: vi.fn(),
-    getPdfUrl: vi.fn(),
-    getCclaPreview: vi.fn(),
-    getSignOptions: vi.fn(),
-    requestCorporateSignature: vi.fn(),
-    getApprovalList: vi.fn(),
-    updateApprovalList: vi.fn(),
-    checkAcs: vi.fn(),
-  })
-);
+const {
+  listClaGroups,
+  getPdfUrl,
+  getCclaPreview,
+  getSignOptions,
+  requestCorporateSignature,
+  getApprovalList,
+  updateApprovalList,
+  checkAcs,
+  getManagers,
+  addManager,
+  removeManager,
+  getContributorAcknowledgments,
+} = vi.hoisted(() => ({
+  listClaGroups: vi.fn(),
+  getPdfUrl: vi.fn(),
+  getCclaPreview: vi.fn(),
+  getSignOptions: vi.fn(),
+  requestCorporateSignature: vi.fn(),
+  getApprovalList: vi.fn(),
+  updateApprovalList: vi.fn(),
+  checkAcs: vi.fn(),
+  getManagers: vi.fn(),
+  addManager: vi.fn(),
+  removeManager: vi.fn(),
+  getContributorAcknowledgments: vi.fn(),
+}));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
 vi.mock('../services/org-cla.service', () => ({
@@ -29,6 +44,10 @@ vi.mock('../services/org-cla.service', () => ({
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
+    public getManagers = getManagers;
+    public addManager = addManager;
+    public removeManager = removeManager;
+    public getContributorAcknowledgments = getContributorAcknowledgments;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -635,6 +654,112 @@ describe('OrgClasController.getApprovalList', () => {
 });
 
 /**
+ * Contributor Acknowledgments read (#1986). The route guard is asserted in the router spec; this
+ * layer's job is to translate query parameters correctly, clamp the page size before it reaches
+ * the producer, and answer 404 for a signature this organization does not hold.
+ */
+function ackReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function ackList(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getContributorAcknowledgments', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('forwards the trimmed search term to the service so filtering is server-side, not client-side', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const req = ackReq({ search: '  ahmed  ' });
+
+    await new OrgClasController().getContributorAcknowledgments(req, buildRes(), vi.fn());
+
+    // A search that only lived on the browser would filter the already-loaded page and silently
+    // miss every match on the pages that follow.
+    expect(getContributorAcknowledgments).toHaveBeenCalledWith(req, ORG_UID, 'signature-uuid-1', expect.objectContaining({ search: 'ahmed' }));
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: 'cursor-xyz' })
+    );
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: undefined })
+    );
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getContributorAcknowledgments.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries every listed contributor's identity attributes and a per-caller `canEdit`
+  // flag, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+});
+
+/**
  * The delta arrives from a browser, so every part of it is untrusted. Validation lives here rather
  * than in the service because these are malformed *requests* — a 400 naming the offending entry is
  * the answer, and the producer's own 400 arrives as one joined sentence about every failure at
@@ -918,5 +1043,83 @@ describe('OrgClasController.checkPermission', () => {
 
     expect(res.json).toHaveBeenCalledWith({ allowed: false });
     expect(res.status).not.toHaveBeenCalledWith(403);
+  });
+
+  it('accepts the manager-delete action the Managers tab uses', async () => {
+    checkAcs.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'cla-manager-delete', projectSfid: PROJECT }), res, vi.fn());
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT);
+    expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
+});
+
+describe('OrgClasController — CLA manager path parameters', () => {
+  const ORG_UID = '0014100000Te2ovAAB';
+  const SIGNATURE_ID = '0f9b8c7d-1234-4abc-89de-0123456789ab';
+
+  it('rejects a signature id that is not UUID-shaped before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: '../../admin' } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getManagers).not.toHaveBeenCalled();
+  });
+
+  it('rejects an LF username that can walk out of the path segment before calling the service', async () => {
+    const { ServiceValidationError } = await import('../errors');
+    const next = vi.fn();
+
+    await new OrgClasController().removeManager(
+      { params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'a porter/../..' } } as any,
+      buildRes(),
+      next
+    );
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(removeManager).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when the agreement is not on this organization list', async () => {
+    getManagers.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().listManagers({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(logger.success).toHaveBeenCalledWith(expect.anything(), 'list_org_cla_managers', expect.anything(), expect.objectContaining({ found: false }));
+  });
+
+  it('answers a removal with 204 and no body', async () => {
+    removeManager.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername: 'aporter' } } as any, res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(204);
+    expect(res.json).not.toHaveBeenCalled();
+  });
+
+  it.each(['john.doe', 'ab'])('forwards an EasyCLA LF username %s to the service', async (lfUsername) => {
+    removeManager.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername } } as any, res, vi.fn());
+
+    expect(removeManager).toHaveBeenCalledWith(expect.anything(), ORG_UID, SIGNATURE_ID, lfUsername);
+  });
+
+  it.each(['.', '..'])('rejects a dot-segment LF username %s before calling the service', async (lfUsername) => {
+    const next = vi.fn();
+
+    await new OrgClasController().removeManager({ params: { orgUid: ORG_UID, signatureId: SIGNATURE_ID, lfUsername } } as any, buildRes(), next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(removeManager).not.toHaveBeenCalled();
   });
 });

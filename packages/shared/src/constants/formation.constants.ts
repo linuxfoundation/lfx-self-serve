@@ -10,7 +10,9 @@ import type {
   FormationDrawerData,
   FormationItemStatusGlyph,
   FormationLinkRowActionConfig,
+  FormationProgressRingSize,
   FormationRowActionConfig,
+  FormationSubItemMarker,
 } from '../interfaces/formation-checklist.interface';
 import type {
   FormationActivityAction,
@@ -199,10 +201,10 @@ export const FORMATION_ITEM_AUDIENCE_LABELS = {
 } as const satisfies Record<FormationItemAudience, string>;
 
 /**
- * `FormationChecklistRowComponent`'s audience icon tooltip AND accessible name (#2774), keyed on
- * the external-involving audiences only — `internal` and `null` render no icon at all (see
- * `isFormationItemExternal`, `formation.utils.ts`). The drawer shows
- * {@link FORMATION_ITEM_AUDIENCE_LABELS} as plain text instead of the icon.
+ * Audience globe tooltip AND accessible name for the external-involving audiences (#2774) —
+ * `internal` and `null` render no icon at all (see `isFormationItemExternal`, `formation.utils.ts`).
+ * Two consumers: `FormationChecklistRowComponent`'s bare globe, and since #2801 the item drawer's
+ * audience chip, which pairs the same globe with its {@link FORMATION_ITEM_AUDIENCE_LABELS} text.
  */
 export const FORMATION_ITEM_AUDIENCE_TOOLTIPS = {
   external: "External — involves people outside the Linux Foundation, such as the project's partners.",
@@ -244,9 +246,11 @@ export const FORMATION_ITEM_SEGMENT_COLORS = {
 } as const satisfies Record<FormationItemStatus, string>;
 
 /**
- * `lfx-formation-sub-item-list`'s per-status glyph (#2774) — the icon a sub-item row leads with
- * and its text color. `colorClass` is spread into `tailwind.config.js`'s safelist because the
- * shared package is outside Tailwind's `content` glob; a color added here is picked up there.
+ * `FormationItemDrawerComponent`'s header status glyph — the icon inside the tinted round tile
+ * ({@link FORMATION_ITEM_STATUS_TILE_CLASSES}) and its text color. Until #2818 this also led every
+ * `lfx-formation-sub-item-list` row; the list now draws its own markers from
+ * {@link FORMATION_SUB_ITEM_MARKERS}. `colorClass` is spread into `tailwind.config.js`'s safelist
+ * because the shared package is outside Tailwind's `content` glob; a color added here is picked up there.
  */
 export const FORMATION_ITEM_STATUS_GLYPHS = {
   done: { icon: 'fa-light fa-circle-check', colorClass: 'text-emerald-600' },
@@ -255,6 +259,68 @@ export const FORMATION_ITEM_STATUS_GLYPHS = {
   skipped: { icon: 'fa-light fa-forward', colorClass: 'text-gray-400' },
   not_started: { icon: 'fa-light fa-circle', colorClass: 'text-gray-400' },
 } as const satisfies Record<FormationItemStatus, FormationItemStatusGlyph>;
+
+/**
+ * `FormationItemDrawerComponent`'s header status tile (#2801) — the tinted round well beside the
+ * title, paired with {@link FORMATION_ITEM_STATUS_GLYPHS}'s icon for the same status. Spread into
+ * `tailwind.config.js`'s safelist (the shared package is outside Tailwind's `content` glob).
+ */
+export const FORMATION_ITEM_STATUS_TILE_CLASSES = {
+  done: 'bg-emerald-50 text-emerald-600',
+  in_progress: 'bg-amber-50 text-amber-600',
+  blocked: 'bg-red-50 text-red-600',
+  skipped: 'bg-gray-100 text-gray-500',
+  not_started: 'bg-gray-100 text-gray-500',
+} as const satisfies Record<FormationItemStatus, string>;
+
+/**
+ * `lfx-formation-sub-item-list`'s per-status row treatment (#2818) — a `w-5` round marker (17.5px
+ * at this app's 14px root; see `.claude/rules/styling.md`) that is a miniature of the drawer's
+ * header tile, the title's tone and the status label's visibility.
+ * `done` is the only filled marker so the eye finds finished work; every open status is a ring
+ * (amber for in progress, red for blocked, dashed for skipped, gray for not started). The label is
+ * `sr-only` where the marker already says it (done, not started) and visible text otherwise, so a
+ * list of untouched sub-items no longer repeats "Not started" on every line. The hollow ring is
+ * the seam for #2775's checkbox toggle: that control replaces the marker in place without a visual
+ * change. Spread into `tailwind.config.js`'s safelist (the shared package is outside Tailwind's
+ * `content` glob).
+ */
+export const FORMATION_SUB_ITEM_MARKERS = {
+  done: { icon: 'fa-solid fa-check', markerClass: 'bg-emerald-600 text-white', titleClass: 'text-gray-500', labelClass: 'sr-only' },
+  in_progress: { icon: null, markerClass: 'border-2 border-amber-500', titleClass: 'text-gray-700', labelClass: 'text-xs text-amber-700' },
+  blocked: { icon: null, markerClass: 'border-2 border-red-500', titleClass: 'text-gray-700', labelClass: 'text-xs text-red-600' },
+  // gray-500, not gray-400: a skipped title is still content to read, and gray-400 sits under the AA
+  // contrast floor on white. The dashed ring and the visible "Skipped" label carry the distinction.
+  skipped: { icon: null, markerClass: 'border-2 border-dashed border-gray-300', titleClass: 'text-gray-500', labelClass: 'text-xs text-gray-500' },
+  not_started: { icon: null, markerClass: 'border-2 border-gray-300', titleClass: 'text-gray-700', labelClass: 'sr-only' },
+} as const satisfies Record<FormationItemStatus, FormationSubItemMarker>;
+
+/**
+ * The label classes `lfx-formation-sub-item-list` gives a sub-item whose wire status is outside
+ * {@link FormationItemStatus} (#2818): the raw value has to be *seen*, so it never takes the
+ * `sr-only` a known status might. Its own constant rather than a read of some other status's
+ * `labelClass`, so retinting a real status can never silently retint every unknown one too.
+ * Safelisted alongside {@link FORMATION_SUB_ITEM_MARKERS}.
+ */
+export const FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS = 'text-xs text-gray-500';
+
+/**
+ * `lfx-formation-progress-ring`'s outer size per {@link FormationProgressRingSize} (#2818) — `sm`
+ * sits inline in the checklist row's "N of M sub-items done" trigger, `md` leads the drawer's
+ * sub-items summary. Spread into `tailwind.config.js`'s safelist (the shared package is outside
+ * Tailwind's `content` glob).
+ */
+export const FORMATION_PROGRESS_RING_SIZE_CLASSES = {
+  sm: 'w-3.5 h-3.5',
+  md: 'w-6 h-6',
+} as const satisfies Record<FormationProgressRingSize, string>;
+
+/**
+ * `FormationItemDrawerComponent`'s Activity timeline (#2801) shows a relative time ("2 hr ago") for
+ * entries younger than this window and a short absolute date for anything older — "612 days ago" is
+ * arithmetic, not information. The `<time>` element's `title` always carries the exact timestamp.
+ */
+export const FORMATION_ACTIVITY_RELATIVE_TIME_WINDOW_MS = 7 * 86_400_000;
 
 /**
  * The checklist row's grid template per panel-width tier (#2774). Container-query variants

@@ -201,6 +201,14 @@ router.get('/health-overview-kpis', requireDashboardAccess, (req, res, next) => 
 // Health Metrics Overview "Foundation" rail endpoint (LFXV2-3365)
 router.get('/foundation-profile-summary', requireDashboardAccess, (req, res, next) => analyticsController.getFoundationProfileSummary(req, res, next));
 
+// Health Metrics Engagement "Group attendance" section (#2802)
+router.get('/engagement-group-attendance', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementGroupAttendance(req, res, next));
+
+// Health Metrics Engagement "Meeting participation" section (#2802)
+router.get('/engagement-meeting-participation', requireDashboardAccess, (req, res, next) =>
+  analyticsController.getEngagementMeetingParticipation(req, res, next)
+);
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

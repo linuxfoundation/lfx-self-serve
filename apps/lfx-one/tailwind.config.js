@@ -15,6 +15,10 @@ import {
   FORMATION_CHECKLIST_GRID_CLASSES,
   FORMATION_ITEM_SEGMENT_COLORS,
   FORMATION_ITEM_STATUS_GLYPHS,
+  FORMATION_ITEM_STATUS_TILE_CLASSES,
+  FORMATION_PROGRESS_RING_SIZE_CLASSES,
+  FORMATION_SUB_ITEM_MARKERS,
+  FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
@@ -31,6 +35,7 @@ import {
   MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
   MENTORSHIP_MENTEE_PAST_OUTCOME_CLASSES,
   MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
   MENTORSHIP_MENTEE_UP_NEXT_STATUS_CLASSES,
   MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES,
   MENTORSHIP_MENTOR_STATUS_BADGE_CLASSES,
@@ -71,6 +76,8 @@ export default {
     ...Object.values(MENTORSHIP_MENTOR_PROGRAM_TERM_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTORING_HISTORY_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
     ...Object.values(MENTORSHIP_MENTEE_STATUS_BADGE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Mentee tasks tab — status dropdown/badge tints selected at runtime from MENTORSHIP_MENTEE_TASK_STATUS_CLASSES.
+    ...Object.values(MENTORSHIP_MENTEE_TASK_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
     // Mentee overview: application status, past-outcome, and up-next task status badges come
     // from @lfx-one/shared constants and are applied via ngClass at runtime.
     ...Object.values(MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES).flatMap((classes) => classes.split(' ')),
@@ -101,10 +108,19 @@ export default {
     ...Object.values(GROUPS_ENGAGEMENT_ICON_CLASS).flatMap((classes) => classes.split(' ')),
     // Formation readiness strip — per-segment fill colors (FORMATION_ITEM_SEGMENT_COLORS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_SEGMENT_COLORS),
-    // Formation checklist — row/section-header grid templates (container-query variants) and sub-item
-    // glyph colors (FORMATION_CHECKLIST_GRID_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
+    // Formation checklist — row/section-header grid templates (container-query variants)
+    // (FORMATION_CHECKLIST_GRID_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_CHECKLIST_GRID_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Formation item drawer — header status tile tint and glyph color per status
+    // (FORMATION_ITEM_STATUS_TILE_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_STATUS_GLYPHS).flatMap((glyph) => glyph.colorClass.split(' ')),
+    ...Object.values(FORMATION_ITEM_STATUS_TILE_CLASSES).flatMap((classes) => classes.split(' ')),
+    // Formation sub-items — per-status marker/title/label classes, the unknown-status label classes, and the
+    // progress ring's sizes (FORMATION_SUB_ITEM_MARKERS / FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS /
+    // FORMATION_PROGRESS_RING_SIZE_CLASSES in @lfx-one/shared, not scanned here)
+    ...Object.values(FORMATION_SUB_ITEM_MARKERS).flatMap((marker) => [marker.markerClass, marker.titleClass, marker.labelClass].flatMap((c) => c.split(' '))),
+    ...FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS.split(' '),
+    ...Object.values(FORMATION_PROGRESS_RING_SIZE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Formations queue — announcement countdown tone per timing (FORMATION_ANNOUNCEMENT_TIMING_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ANNOUNCEMENT_TIMING_CLASS),
     // Behavioral-class tints — org-groups stat tiles, committee dashboard/table chips, my-groups

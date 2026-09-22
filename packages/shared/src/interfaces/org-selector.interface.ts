@@ -356,6 +356,14 @@ export interface MemberServiceB2bOrgResponse {
 /** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
 export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
 
+/** The four grant sets a viewer holds on organizations, direct and roll-up-derived, as `OrgRoleGrantsService` publishes them. Input to `resolveOrgRolePersona` and the default-organization ranking. */
+export interface OrgRoleGrantSets {
+  writerSet: ReadonlySet<string>;
+  inheritedWriterSet: ReadonlySet<string>;
+  auditorSet: ReadonlySet<string>;
+  inheritedAuditorSet: ReadonlySet<string>;
+}
+
 /** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
 export interface ResolvedOrgRole {
   roleSource: OrgRolePersona;

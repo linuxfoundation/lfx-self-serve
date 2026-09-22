@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { computed, DestroyRef, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, DestroyRef, inject, Injectable, Injector, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
-import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { LENS_DEFAULT_ROUTES, ORG_ROLE_AUTHORITY_ORDER, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
+import { isActiveStatus } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import {
   catchError,
@@ -44,6 +45,7 @@ export class OrgNavigationService {
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -51,6 +53,8 @@ export class OrgNavigationService {
 
   /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
   private pendingDefaultWrite: Subscription | null = null;
+  /** The one default still waiting for the grant set to settle (`whenGrantsSettled`); cleared when it fires, when a later default supersedes it, or when `resetAndReload` starts a new page. */
+  private pendingDefaultSelectionSub: Subscription | null = null;
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
@@ -80,6 +84,10 @@ export class OrgNavigationService {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;
     }
+    // A reload supersedes a default still waiting on grants from the previous page: that page is
+    // no longer the answer, and the new page's own pending selection decides.
+    this.pendingDefaultSelectionSub?.unsubscribe();
+    this.pendingDefaultSelectionSub = null;
     this.state.pendingDefaultSelection.set(true);
     this.state.reload$.next();
   }
@@ -340,7 +348,76 @@ export class OrgNavigationService {
       // follow-up (lfx-self-serve#2793).
       return;
     }
-    this.selectDefaultOrg(matchingAccountItem ?? page.items[0]);
+    if (matchingAccountItem) {
+      this.selectDefaultOrg(matchingAccountItem);
+      return;
+    }
+    // The default ranks rows by the viewer's grants, which arrive on a separate request
+    // (`/api/orgs/me/role-grants`) whose landing order against org-items is not guaranteed. Deciding
+    // against a not-yet-loaded grant set would silently fall back to the first row — the very bug
+    // this ranks against — so the choice waits until grants have settled (loaded, or failed: a
+    // failure leaves the sets empty and the membership/list-order bands decide). While it waits, a
+    // selection can be made by someone else — the path guard or the EasyCLA return adopting an
+    // address, or the viewer picking in the selector — so the deferred default re-checks before it
+    // writes: a selection that *changed* since the wait began, or one now pinned by an address, wins
+    // over the default. The selection as it was when the wait began does not — that is the one this
+    // default is replacing (unlisted on the authoritative page, or the placeholder).
+    const uidWhenDeferred = current.uid ?? null;
+    this.whenGrantsSettled(() => {
+      const now = this.accountContextService.selectedAccount().uid ?? null;
+      if (this.accountContextService.isAdoptedFromAddress() || now !== uidWhenDeferred) {
+        return;
+      }
+      this.selectDefaultOrg(this.defaultOrgFrom(page.items));
+    });
+  }
+
+  private whenGrantsSettled(then: () => void): void {
+    // A newer default always supersedes an older one still waiting, whichever path this one takes.
+    this.pendingDefaultSelectionSub?.unsubscribe();
+    this.pendingDefaultSelectionSub = null;
+    if (this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null) {
+      then();
+      return;
+    }
+    this.pendingDefaultSelectionSub = toObservable(
+      computed(() => this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null),
+      { injector: this.injector }
+    )
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.pendingDefaultSelectionSub = null;
+        then();
+      });
+  }
+
+  /**
+   * DR-005 rung 4, "first in the list", refined (lfx-self-serve#2570). DR-005 is the default-organization
+   * precedence record in the umbrella workspace:
+   * https://github.com/linuxfoundation/workspace-org-lens/blob/main/specs/050-org-lens-deep-link/decisions/DR-005-default-org-precedence.md
+   * The list
+   * is alphabetical and carries inherited rows beside direct ones, so a bare `/org/overview` for an
+   * admin whose only direct grant is the parent organization used to land on an expired, non-member
+   * subsidiary that sorted first. The default ranks rows **authority-first**, reading the one shared
+   * order the selector's persona badge also reads (`ORG_ROLE_AUTHORITY_ORDER`, LFXV2-3029): direct
+   * writer → inherited writer → direct auditor → inherited auditor → no grant (a staff viewer's
+   * catalogue). Within the winning
+   * band the viewer's own assigned rows come before discovered ones, an active member before other
+   * members before non-members, and ties keep the list's own order. A grant set that never loaded
+   * (error) leaves every band empty and the membership/list-order rules decide.
+   */
+  private defaultOrgFrom(items: OrgItem[]): OrgItem {
+    const grants = this.orgRoleGrantsService;
+    const sets = {
+      writerSet: grants.writerSet(),
+      inheritedWriterSet: grants.inheritedWriterSet(),
+      auditorSet: grants.auditorSet(),
+      inheritedAuditorSet: grants.inheritedAuditorSet(),
+    };
+    const winning = ORG_ROLE_AUTHORITY_ORDER.map(([, set]) => items.filter((item) => sets[set].has(item.uid))).find((band) => band.length > 0) ?? items;
+    const assigned = winning.filter((item) => item.isAssigned !== false);
+    const band = assigned.length > 0 ? assigned : winning;
+    return band.find((item) => item.isMember && isActiveStatus(item.status)) ?? band.find((item) => item.isMember) ?? band[0];
   }
 
   private selectDefaultOrg(item: OrgItem): void {

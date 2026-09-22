@@ -2,7 +2,92 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (overviewEnabled()) {
-  <lfx-health-metrics-overview />
+  <div class="flex flex-col p-6" data-testid="health-metrics-page">
+    <!-- Stays pinned above the scrolling content at the wide layout, matching the design's `.stickyhead`
+         (its own `margin-top:-32px;padding-top:32px` trick, mirrored below) — the sticky offset of every
+         tab's own rail or sub-nav is measured from this element's rendered height, tab bar included.
+         -mt-12/pt-12 cancel out the two ancestor top paddings above this element (main-layout's
+         router-outlet wrapper `py-6` + this shell's own `p-6` = 3rem total) so the header has zero
+         distance to travel before it locks — otherwise it would visibly shift up by that 3rem on the
+         first bit of scroll before sticking. Page-colored, not white — the design's `.stickyhead`/`.phead`
+         match the page surface; opaque so content scrolls under. -->
+    <header #pageHeader class="mb-6 flex flex-col gap-4 lg:sticky lg:top-0 lg:z-10 lg:-mt-12 lg:bg-gray-50 lg:pt-12">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex flex-col gap-1">
+          <h1 class="text-xl font-semibold text-gray-900">Health Metrics</h1>
+          <p class="text-sm text-gray-500">A snapshot of foundation health across engagement, events, members, non-members, training, and code.</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Visual only for now — mirrors the design's project drill-down pill (`.projsel`/`.pstrig`);
+               no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide).
+               Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
+          <button
+            type="button"
+            aria-disabled="true"
+            class="flex h-9 cursor-default items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
+            data-testid="health-metrics-overview-project-selector">
+            <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
+            All projects
+            <i class="fa-light fa-chevron-down text-[12px] text-gray-500" aria-hidden="true"></i>
+          </button>
+          <div class="flex items-center gap-1 rounded-full bg-gray-100 p-1" data-testid="health-metrics-overview-period-selector">
+            @for (period of chrome.periods; track period.range) {
+              <button
+                type="button"
+                [attr.aria-pressed]="period.range === chrome.selectedRange()"
+                [attr.data-testid]="'health-metrics-overview-period-' + period.label"
+                class="rounded-full px-3 py-1 text-[12px] font-medium"
+                [ngClass]="period.range === chrome.selectedRange() ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'"
+                (click)="setPeriod(period)">
+                {{ period.label }}
+              </button>
+            }
+          </div>
+          <!-- Visual only for now — no export wired up yet. The design's one page-level export
+               replaces the per-card download icons. -->
+          <button
+            type="button"
+            aria-disabled="true"
+            class="flex cursor-default items-center gap-1.5 rounded-full px-3 py-2 text-[14px] font-semibold text-gray-900"
+            data-testid="health-metrics-overview-export">
+            <i class="fa-light fa-arrow-down-to-line" aria-hidden="true"></i>
+            Export
+          </button>
+        </div>
+      </div>
+
+      <!-- Inside the sticky header on purpose (the design's `#tabs` sits in `.stickyhead`), so the
+           measured offset a tab's sub-nav pins below already accounts for the bar. Tabs whose Level 2
+           story hasn't landed render disabled rather than being omitted, so the bar doesn't reshuffle. -->
+      <nav class="-mb-px flex gap-6 overflow-x-auto border-b border-gray-200" aria-label="Health Metrics sections" data-testid="health-metrics-tabs">
+        @for (tab of tabs; track tab.key) {
+          @if (tab.route === null) {
+            <span
+              class="cursor-default border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-300"
+              aria-disabled="true"
+              [attr.data-testid]="'health-metrics-tab-' + tab.key">
+              {{ tab.label }}
+            </span>
+          } @else {
+            <a
+              [routerLink]="tab.route ? [basePath, tab.route] : [basePath]"
+              queryParamsHandling="preserve"
+              routerLinkActive="border-blue-600 text-blue-700"
+              [routerLinkActiveOptions]="tab.route === '' ? exactMatch : subsetMatch"
+              #rla="routerLinkActive"
+              [attr.aria-current]="rla.isActive ? 'page' : null"
+              class="border-b-2 border-transparent pb-3 text-[14px] font-medium whitespace-nowrap text-gray-500 hover:text-gray-900"
+              [attr.data-testid]="'health-metrics-tab-' + tab.key">
+              {{ tab.label }}
+            </a>
+          }
+        }
+      </nav>
+    </header>
+
+    <router-outlet />
+  </div>
 } @else {
   <lfx-health-metrics />
 }

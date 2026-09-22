@@ -7,6 +7,7 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ORG_CATALOGUE_SEARCH_MIN_CHARS, ORG_LENS_LIST_INCOMPLETE_NOTICE } from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
@@ -513,15 +514,7 @@ export class OrgSelectorComponent {
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 
-  /**
-   * LFXV2-3029 — authority-first precedence: direct-writer, inherited-writer, direct-auditor,
-   * inherited-auditor. This replaces the previous directness-first order, which let a direct
-   * viewer grant on a subsidiary shadow the editing authority a roll-up grant confers on that same
-   * subsidiary. The BFF's `writers`/`cascadingWriters`/`auditors`/`cascadingAuditors` arrays are
-   * already disjoint per this same precedence (`OrgRoleGrantsService.buildResolvedMap` server-side),
-   * so at most one branch below ever matches for a given uid — this order is defense-in-depth, not
-   * load-bearing.
-   */
+  /** LFXV2-3029 — authority-first precedence, shared with the default-organization ranking (`resolveOrgRolePersona`). */
   private resolvePersona(
     uid: string,
     writerSet: Set<string>,
@@ -529,11 +522,7 @@ export class OrgSelectorComponent {
     inheritedWriterSet: Set<string>,
     inheritedAuditorSet: Set<string>
   ): OrgRolePersona | null {
-    if (writerSet.has(uid)) return 'direct-writer';
-    if (inheritedWriterSet.has(uid)) return 'inherited-writer';
-    if (auditorSet.has(uid)) return 'direct-auditor';
-    if (inheritedAuditorSet.has(uid)) return 'inherited-auditor';
-    return null;
+    return resolveOrgRolePersona(uid, { writerSet, inheritedWriterSet, auditorSet, inheritedAuditorSet });
   }
 
   /**

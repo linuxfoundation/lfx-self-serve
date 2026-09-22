@@ -4,6 +4,8 @@
 import {
   ACS_CLA_APPROVAL_LIST_ACTION,
   ACS_CLA_APPROVAL_LIST_RESOURCE,
+  ACS_CLA_MANAGER_DELETE_ACTION,
+  ACS_CLA_MANAGER_DELETE_RESOURCE,
   ACS_CLA_PROJECT_ORG_OBJECT_TYPE,
   ACS_CLA_SIGN_ACTION,
   ACS_CLA_SIGN_RESOURCE,
@@ -18,7 +20,7 @@ export function isOrgClaPermissionAction(value: unknown): value is OrgClaPermiss
 
 /**
  * The project/foundation half of an ACS `project|organization` pair, matching
- * `resolveApprovalContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
+ * `resolveClaGroupContext` in `apps/lfx-one/src/server/services/org-cla.service.ts`: first covered
  * project SFID, else foundation. `pairProjectSfid` is that scan taken before the mapper drops
  * nameless projects from `projects` for display — prefer it so a covered project with an id and
  * no name still beats a parent foundation. Deliberately not Sign's `signingChoiceFrom`, which
@@ -37,9 +39,19 @@ export function orgClaPairProjectSfid(group: Pick<OrgClaGroup, 'foundationSfid' 
   return foundation || undefined;
 }
 
+function acsParts(action: OrgClaPermissionAction): { resource: string; verb: string } {
+  switch (action) {
+    case 'sign':
+      return { resource: ACS_CLA_SIGN_RESOURCE, verb: ACS_CLA_SIGN_ACTION };
+    case 'approval-list-update':
+      return { resource: ACS_CLA_APPROVAL_LIST_RESOURCE, verb: ACS_CLA_APPROVAL_LIST_ACTION };
+    case 'cla-manager-delete':
+      return { resource: ACS_CLA_MANAGER_DELETE_RESOURCE, verb: ACS_CLA_MANAGER_DELETE_ACTION };
+  }
+}
+
 export function buildOrgClaAcsPermission(input: { action: OrgClaPermissionAction; projectOrFoundationSfid: string; companySfid: string }): string {
-  const resource = input.action === 'sign' ? ACS_CLA_SIGN_RESOURCE : ACS_CLA_APPROVAL_LIST_RESOURCE;
-  const verb = input.action === 'sign' ? ACS_CLA_SIGN_ACTION : ACS_CLA_APPROVAL_LIST_ACTION;
+  const { resource, verb } = acsParts(input.action);
   return `${resource}:${verb}:${ACS_CLA_PROJECT_ORG_OBJECT_TYPE}:${input.projectOrFoundationSfid}|${input.companySfid}`;
 }
 

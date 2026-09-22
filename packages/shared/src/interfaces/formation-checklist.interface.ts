@@ -127,12 +127,58 @@ export interface FormationLinkRowActionConfig {
 }
 
 /**
- * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape (#2774) — the FontAwesome class and Tailwind text
- * color `lfx-formation-sub-item-list` leads each sub-item row with.
+ * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape — the FontAwesome class and Tailwind text color the
+ * item drawer's header status tile shows for an item status (#2801). Until #2818 it also led every
+ * `lfx-formation-sub-item-list` row; those now draw {@link FormationSubItemMarker}s instead.
  */
 export interface FormationItemStatusGlyph {
   icon: string;
   colorClass: string;
+}
+
+/**
+ * `FORMATION_SUB_ITEM_MARKERS`'s value shape (#2818) — how `lfx-formation-sub-item-list` renders one
+ * sub-item row per status: the round marker's classes (`markerClass`; `w-5`, 17.5px at this app's
+ * 14px root), the icon inside it
+ * (`icon`, `null` for the hollow rings), the title's text color (`titleClass`) and the status
+ * label's classes (`labelClass` — literally `sr-only` where the marker already says it, so the
+ * label stays in the accessibility tree without repeating on screen).
+ */
+export interface FormationSubItemMarker {
+  icon: string | null;
+  markerClass: string;
+  titleClass: string;
+  labelClass: string;
+}
+
+/**
+ * `lfx-formation-progress-ring`'s `size` input (#2818) — `sm` sits inline in the checklist row's
+ * sub-items disclosure trigger, `md` leads the drawer's sub-items summary. The keys of
+ * `FORMATION_PROGRESS_RING_SIZE_CLASSES`.
+ */
+export type FormationProgressRingSize = 'sm' | 'md';
+
+/**
+ * The one safe binding an API-sourced `FormationItem.action_href` resolves to — see
+ * `resolveFormationActionHref`. A same-origin relative path lands in `internal` (bind
+ * `[routerLink]`); an absolute `http(s)` URL lands in `external` (bind `[href]` + `target="_blank"`).
+ * Both `null` means no safe destination.
+ */
+export interface FormationActionHrefTargets {
+  external: string | null;
+  internal: string | null;
+}
+
+/**
+ * `FormationItemDrawerComponent`'s `editForm` value, read through `getRawValue()` so a disabled
+ * due-date control is still present (#2801). The component's `canWrite()` gate is what actually
+ * keeps a disabled control from reading as cleared; the raw read is defense in depth for the
+ * `readOnly && canWrite` state, where the control is disabled but that gate does not fire.
+ */
+export interface FormationItemDrawerFormValue {
+  notes: string | null;
+  ownerUsername: string | null;
+  dueDate: Date | null;
 }
 
 /**
