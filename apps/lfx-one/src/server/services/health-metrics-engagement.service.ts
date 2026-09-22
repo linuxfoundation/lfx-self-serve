@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
@@ -303,6 +304,7 @@ export class HealthMetricsEngagementService {
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
       ORDER BY account_name ASC NULLS LAST
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP}
     `;
 
     const result = await this.executeRead<OrgParticipationRow>(req, sql, [query.foundationSlug], {
@@ -315,6 +317,14 @@ export class HealthMetricsEngagementService {
       foundation_slug: query.foundationSlug,
       row_count: result.rows.length,
     });
+
+    // Hitting the cap means the table is short of the caption's own count, so say so out loud.
+    if (result.rows.length === HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP) {
+      logger.warning(req, 'get_engagement_org_participation', 'Organization rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+      });
+    }
 
     const first = result.rows[0];
     if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT;
@@ -438,12 +448,16 @@ function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange)
   };
 }
 
-/** Both counts are period-agnostic and identical on every row, so any row answers for the scope. */
-function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCounts {
-  return {
-    orgs: Number(row.SCOPE_ORGS_COUNT ?? 0),
-    lapsedOrgs: Number(row.SCOPE_LAPSED_ORGS_COUNT ?? 0),
-  };
+/**
+ * Both counts are period-agnostic and identical on every row, so any row answers for the scope.
+ * A null count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ */
+function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCounts | null {
+  const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
+  const lapsedOrgs = toNullableNumber(row.SCOPE_LAPSED_ORGS_COUNT);
+  if (orgs === null || lapsedOrgs === null) return null;
+
+  return { orgs, lapsedOrgs };
 }
 
 function participationSelectList(suffix: string): string {

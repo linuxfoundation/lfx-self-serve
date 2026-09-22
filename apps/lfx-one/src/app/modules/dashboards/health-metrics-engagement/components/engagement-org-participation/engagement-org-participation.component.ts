@@ -87,7 +87,7 @@ export class EngagementOrgParticipationComponent {
 
   /** Narrowing the table must land the reader on rows, so any change to the cut restarts paging. */
   protected readonly first = linkedSignal<string, number>({
-    source: computed(() => `${this.filter()}|${this.search()}|${this.chrome.selectedRange()}|${this.response().rows.length}`),
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.filter()}|${this.search()}|${this.chrome.selectedRange()}`),
     computation: () => 0,
   });
 
@@ -98,16 +98,23 @@ export class EngagementOrgParticipationComponent {
   // once per row per response instead of on every change-detection pass.
   protected readonly rowViews = computed<HealthMetricsEngagementOrgRowView[]>(() => {
     const range = this.chrome.selectedRange();
-    return this.filteredRows().map((row) => ({
-      row,
-      period: selectHealthMetricsEngagementOrgPeriod(row, range),
-      lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
-    }));
+    return this.filteredRows().map((row) => {
+      const period = selectHealthMetricsEngagementOrgPeriod(row, range);
+
+      return {
+        row,
+        period,
+        lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
+        avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
+      };
+    });
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
     const counts = this.response().counts;
+    if (!counts) return '—';
+
     return `${counts.orgs.toLocaleString()} ${counts.orgs === 1 ? 'organization' : 'organizations'} · ${counts.lapsedOrgs.toLocaleString()} lapsed`;
   });
 
@@ -131,10 +138,6 @@ export class EngagementOrgParticipationComponent {
   protected onTablePage(event: { first?: number; rows?: number }): void {
     this.size.set(event.rows ?? this.size());
     this.first.set(event.first ?? 0);
-  }
-
-  protected formatAvgReps(avgReps: number | null): string {
-    return formatHealthMetricsEngagementAvgReps(avgReps);
   }
 
   private initQuery(): HealthMetricsEngagementOrgQuery {

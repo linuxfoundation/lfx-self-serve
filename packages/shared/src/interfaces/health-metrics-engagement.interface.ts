@@ -223,6 +223,7 @@ export interface HealthMetricsEngagementOrgRowView {
   period: HealthMetricsEngagementOrgPeriod | null;
   /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
   lastEngagedLabel: string;
+  avgRepsLabel: string;
 }
 
 /** Sub-nav badge inputs for `#orgs`. Both counts are period-agnostic, denormalized onto every row. */
@@ -234,7 +235,8 @@ export interface HealthMetricsEngagementOrgCounts {
 /** `GET /api/analytics/engagement-org-participation` — every org, every period, one read. */
 export interface HealthMetricsEngagementOrgParticipation {
   rows: HealthMetricsEngagementOrgRow[];
-  counts: HealthMetricsEngagementOrgCounts;
+  /** `null` when the view reports no scope count on rows that exist — unmeasured, not zero. */
+  counts: HealthMetricsEngagementOrgCounts | null;
 }
 
 /** Wire query for `GET /api/analytics/engagement-org-participation`. Search, the lapsed cut and the

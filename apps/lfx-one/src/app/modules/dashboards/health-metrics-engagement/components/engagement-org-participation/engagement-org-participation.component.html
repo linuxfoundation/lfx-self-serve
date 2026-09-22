@@ -20,6 +20,7 @@
         (filterChange)="onFilterChange($event)"
         data-testid="engagement-org-participation-filters" />
     </div>
+    <!-- 13px caption and the 150px attendance column are the design's own pixel sizes. -->
     <span class="text-[13px] text-gray-500" data-testid="engagement-org-participation-count">
       @if (loading() || loadFailed()) {
         &mdash;
@@ -79,7 +80,7 @@
             <span class="text-sm tabular-nums text-gray-800">{{ period?.attendedCount ?? 0 }} / {{ period?.meetingsTotal ?? 0 }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ formatAvgReps(period?.avgReps ?? null) }}</span>
+            <span class="text-sm tabular-nums text-gray-800">{{ view.avgRepsLabel }}</span>
           </td>
           <td>
             <!-- Lapsed is the view's own flag, so the stale styling never disagrees with the segment. -->

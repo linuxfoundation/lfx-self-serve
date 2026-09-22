@@ -26,6 +26,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -526,6 +527,22 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
 
     expect(response.rows[0]?.periods[3]).toMatchObject({ attendancePct: null, avgReps: null, sortRank: null });
+  });
+
+  it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.counts).toBeNull();
+  });
+
+  // The client sorts and searches this payload in memory, so the read carries its own ceiling.
+  it('caps the read rather than letting warehouse cardinality size the response', async () => {
+    await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP}`);
   });
 
   it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {

@@ -112,6 +112,28 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('136 organizations · 54 lapsed');
   });
 
+  // A view that reports no scope count has not measured zero organizations, and the table says so.
+  it('captions an unmeasured scope with an em dash rather than a confident zero', async () => {
+    const emitted: unknown[] = [];
+    await render(response({ counts: null }), (counts) => emitted.push(counts));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-count"]').textContent.trim()).toBe('\u2014');
+    expect(emitted).toEqual([null, null]);
+  });
+
+  // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.
+  it('restarts paging when the foundation changes, not merely when the row count does', async () => {
+    const rows = Array.from({ length: 60 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Org ${index}` }));
+    await render(response({ rows, counts: { orgs: 60, lapsedOrgs: 0 } }));
+
+    fixture.componentInstance['first'].set(50);
+    selectedFoundation.set({ slug: 'other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(fixture.componentInstance['first']()).toBe(0);
+  });
+
   it('narrows to lapsed organizations on the segment, using the view flag rather than a date sum', async () => {
     const lapsed = orgRow({ accountId: 'a-2', accountName: 'Vendor Corp', lapsed: true, lastEngagedDate: '2025-01-09' });
     await render(response({ rows: [orgRow(), lapsed], counts: { orgs: 2, lapsedOrgs: 1 } }));

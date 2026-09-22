@@ -247,6 +247,12 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetr
 /** Client-side page size for the org table — the whole foundation arrives in one read. */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
 
+/**
+ * Sanity cap on that one read, an order of magnitude above the largest foundation's org count.
+ * It bounds a payload the client sorts and searches in memory; hitting it is logged, not silent.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP = 5000;
+
 /** The org table's cut. "No activity" is the view's own `IS_LAPSED_180D`, not a client-side date sum. */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
   { key: 'all', label: 'All' },
