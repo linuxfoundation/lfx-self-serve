@@ -810,6 +810,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
         body: {
           project_sfid: PROJECT_SFID,
           company_sfid: ORG_UID,
+          cla_group_id: CLA_GROUP_ID,
           return_url: `https://app.lfx.dev/org/${ORG_UID}/easycla/${CLA_GROUP_ID}?signed=1`,
           authority_acked: true,
           embargo_acked: true,
@@ -937,7 +938,10 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, mailedRequest());
 
     const body = gatewayFetch.mock.calls[0][2].body as Record<string, unknown>;
-    expect(body).toMatchObject({
+    expect(body).toEqual({
+      project_sfid: PROJECT_SFID,
+      company_sfid: ORG_UID,
+      cla_group_id: CLA_GROUP_ID,
       send_as_email: true,
       authority_name: 'Alex Contributor',
       authority_email: 'contributor@example.org',
@@ -1060,10 +1064,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     await expect(new OrgClaService().requestCorporateSignature(signReq(), ORG_UID, signRequest())).rejects.toThrow(/no usable corporate signing session/);
   });
 
-  // The agreement is requested by project; the upstream input has no CLA Group field, so the group
-  // the signatory chose cannot be bound to the request and the echoed one is the only way to tell
-  // whether the session that came back is for the agreement they picked. Handing over a mismatched
-  // session would have them sign the wrong corporate agreement with nothing recording it.
+  // Keep checking the response even though the selected group is now bound in the request.
   it('refuses a session opened for a different CLA Group than the one chosen', async () => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: 'a-different-cla-group-uuid' });
 
@@ -1083,6 +1084,8 @@ describe('OrgClaService.requestCorporateSignature', () => {
       signUrl: 'https://docusign.example.org/session/1',
       signatureId: 'signature-uuid-1',
     });
+    const body = gatewayFetch.mock.calls[0][2].body as { cla_group_id: string };
+    expect(body.cla_group_id).toBe(claGroupId);
   });
 
   it('does not hand back the signing address when the CLA Group does not match', async () => {
@@ -1093,9 +1096,7 @@ describe('OrgClaService.requestCorporateSignature', () => {
     expect(JSON.stringify(outcome)).not.toContain('docusign.example.org');
   });
 
-  // The echo is the whole check. An answer that carries no CLA Group cannot be shown to be the
-  // agreement the signatory chose, which from here is indistinguishable from one that is not — so
-  // it is refused on the same terms as a mismatch rather than accepted for lacking the evidence.
+  // A missing echo is still unverifiable, even when the request supplies the selected group.
   it.each([[''], ['   '], [undefined]])('refuses a session attributed to no CLA Group, given %p', async (claGroupId) => {
     gatewayFetch.mockResolvedValueOnce({ ...upstreamOk, cla_group_id: claGroupId });
 

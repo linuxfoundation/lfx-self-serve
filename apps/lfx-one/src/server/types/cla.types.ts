@@ -364,6 +364,9 @@ export interface EasyClaSignedDocument {
  * one place — the mapping in `OrgClaService.requestCorporateSignature` — rather than leaking
  * into the shared contract.
  *
+ * `cla_group_id` is sent ahead of linuxfoundation/easycla#5219 in a consumer-first rollout:
+ * older producers ignore the unknown field, so the response echo must still be checked.
+ *
  * `signing_entity_name` stays absent: that path is still out of scope. `send_as_email`,
  * `authority_name` and `authority_email` belong to send-by-email (#2365) and are set only
  * when that path asked for them. The two acks are required on self-sign and omitted on
@@ -372,6 +375,8 @@ export interface EasyClaSignedDocument {
 export interface EasyClaSelfServeCorporateSignatureInput {
   project_sfid: string;
   company_sfid: string;
+  /** Selected agreement; pre-envelope validation requires the producer change in linuxfoundation/easycla#5219. */
+  cla_group_id: string;
   /**
    * Absolute https URL. EasyCLA stores it and later redirects to it verbatim. Self-sign only —
    * the producer documents this as valid only when `send_as_email` is false, and still writes a
