@@ -274,8 +274,9 @@ export const FORMATION_ITEM_STATUS_TILE_CLASSES = {
 } as const satisfies Record<FormationItemStatus, string>;
 
 /**
- * `lfx-formation-sub-item-list`'s per-status row treatment (#2818) — a 20px round marker that is a
- * miniature of the drawer's header tile, the title's tone and the status label's visibility.
+ * `lfx-formation-sub-item-list`'s per-status row treatment (#2818) — a `w-5` round marker (17.5px
+ * at this app's 14px root; see `.claude/rules/styling.md`) that is a miniature of the drawer's
+ * header tile, the title's tone and the status label's visibility.
  * `done` is the only filled marker so the eye finds finished work; every open status is a ring
  * (amber for in progress, red for blocked, dashed for skipped, gray for not started). The label is
  * `sr-only` where the marker already says it (done, not started) and visible text otherwise, so a
@@ -288,9 +289,20 @@ export const FORMATION_SUB_ITEM_MARKERS = {
   done: { icon: 'fa-solid fa-check', markerClass: 'bg-emerald-600 text-white', titleClass: 'text-gray-500', labelClass: 'sr-only' },
   in_progress: { icon: null, markerClass: 'border-2 border-amber-500', titleClass: 'text-gray-700', labelClass: 'text-xs text-amber-700' },
   blocked: { icon: null, markerClass: 'border-2 border-red-500', titleClass: 'text-gray-700', labelClass: 'text-xs text-red-600' },
-  skipped: { icon: null, markerClass: 'border-2 border-dashed border-gray-300', titleClass: 'text-gray-400', labelClass: 'text-xs text-gray-500' },
+  // gray-500, not gray-400: a skipped title is still content to read, and gray-400 sits under the AA
+  // contrast floor on white. The dashed ring and the visible "Skipped" label carry the distinction.
+  skipped: { icon: null, markerClass: 'border-2 border-dashed border-gray-300', titleClass: 'text-gray-500', labelClass: 'text-xs text-gray-500' },
   not_started: { icon: null, markerClass: 'border-2 border-gray-300', titleClass: 'text-gray-700', labelClass: 'sr-only' },
 } as const satisfies Record<FormationItemStatus, FormationSubItemMarker>;
+
+/**
+ * The label classes `lfx-formation-sub-item-list` gives a sub-item whose wire status is outside
+ * {@link FormationItemStatus} (#2818): the raw value has to be *seen*, so it never takes the
+ * `sr-only` a known status might. Its own constant rather than a read of some other status's
+ * `labelClass`, so retinting a real status can never silently retint every unknown one too.
+ * Safelisted alongside {@link FORMATION_SUB_ITEM_MARKERS}.
+ */
+export const FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS = 'text-xs text-gray-500';
 
 /**
  * `lfx-formation-progress-ring`'s outer size per {@link FormationProgressRingSize} (#2818) — `sm`

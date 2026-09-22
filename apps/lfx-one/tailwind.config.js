@@ -18,6 +18,7 @@ import {
   FORMATION_ITEM_STATUS_TILE_CLASSES,
   FORMATION_PROGRESS_RING_SIZE_CLASSES,
   FORMATION_SUB_ITEM_MARKERS,
+  FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS,
   GRID_COLS_CLASS,
   GRID_DIVIDER_CLASS,
   GROUPS_ENGAGEMENT_ICON_CLASS,
@@ -114,9 +115,11 @@ export default {
     // (FORMATION_ITEM_STATUS_TILE_CLASSES / FORMATION_ITEM_STATUS_GLYPHS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ITEM_STATUS_GLYPHS).flatMap((glyph) => glyph.colorClass.split(' ')),
     ...Object.values(FORMATION_ITEM_STATUS_TILE_CLASSES).flatMap((classes) => classes.split(' ')),
-    // Formation sub-items — per-status marker/title/label classes and the progress ring's sizes
-    // (FORMATION_SUB_ITEM_MARKERS / FORMATION_PROGRESS_RING_SIZE_CLASSES in @lfx-one/shared, not scanned here)
+    // Formation sub-items — per-status marker/title/label classes, the unknown-status label classes, and the
+    // progress ring's sizes (FORMATION_SUB_ITEM_MARKERS / FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS /
+    // FORMATION_PROGRESS_RING_SIZE_CLASSES in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_SUB_ITEM_MARKERS).flatMap((marker) => [marker.markerClass, marker.titleClass, marker.labelClass].flatMap((c) => c.split(' '))),
+    ...FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS.split(' '),
     ...Object.values(FORMATION_PROGRESS_RING_SIZE_CLASSES).flatMap((classes) => classes.split(' ')),
     // Formations queue — announcement countdown tone per timing (FORMATION_ANNOUNCEMENT_TIMING_CLASS in @lfx-one/shared, not scanned here)
     ...Object.values(FORMATION_ANNOUNCEMENT_TIMING_CLASS),

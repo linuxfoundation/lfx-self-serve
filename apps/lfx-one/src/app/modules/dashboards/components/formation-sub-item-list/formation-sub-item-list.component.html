@@ -12,14 +12,14 @@
   <ul class="flex flex-col m-0 p-0 list-none">
     @for (row of rows(); track row.uid) {
       <li class="flex items-center gap-2.5 py-1.5 text-sm" [attr.data-testid]="'formation-sub-item-row-' + row.uid">
-        <!-- A 20px miniature of the drawer's status tile: filled with a check for done, a ring otherwise (FORMATION_SUB_ITEM_MARKERS). -->
+        <!-- A w-5 miniature (17.5px at the app's 14px root) of the drawer's status tile: filled with a check for done, a ring otherwise (FORMATION_SUB_ITEM_MARKERS). -->
         <span
           class="inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0"
           [ngClass]="row.marker.markerClass"
           aria-hidden="true"
           data-testid="formation-sub-item-marker">
           @if (row.marker.icon; as icon) {
-            <!-- text-[10px]: the check has to fit a 20px disc — an exact size, per .claude/rules/styling.md. -->
+            <!-- text-[10px]: the check has to fit the w-5 (17.5px) disc — an exact size, per .claude/rules/styling.md. -->
             <i class="text-[10px]" [ngClass]="icon"></i>
           }
         </span>

@@ -119,6 +119,7 @@
                 [total]="summary.totalItems"
                 [attr.data-testid]="'formation-checklist-row-sub-items-ring-' + item().uid" />
               <span>{{ subItemsLabel() }}</span>
+              <!-- text-[10px]: the caret sits just under the text-xs count it follows — an exact size, per .claude/rules/styling.md. -->
               <i class="fa-light fa-chevron-down text-[10px] transition-transform" [class.rotate-180]="subItemsExpanded()" aria-hidden="true"></i>
             </button>
           }

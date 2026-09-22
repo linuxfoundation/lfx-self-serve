@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { FORMATION_ITEM_STATUS_LABELS, FORMATION_SUB_ITEM_MARKERS } from '@lfx-one/shared/constants';
+import { FORMATION_ITEM_STATUS_LABELS, FORMATION_SUB_ITEM_MARKERS, FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS } from '@lfx-one/shared/constants';
 import { FormationItemStatus, FormationSubItem } from '@lfx-one/shared/interfaces';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -110,5 +110,8 @@ describe('FormationSubItemListComponent', () => {
     const label = inRow('sub_future', 'status');
     expect(label?.textContent).toContain('weird_future_status');
     expect(label?.classList.contains('sr-only')).toBe(false);
+    for (const token of FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS.split(' ')) {
+      expect(label?.classList.contains(token)).toBe(true);
+    }
   });
 });

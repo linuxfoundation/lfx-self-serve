@@ -4,7 +4,7 @@
 import { NgClass } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
 import type { FormationReadinessSummary, FormationSubItem } from '@lfx-one/shared/interfaces';
-import { FORMATION_ITEM_STATUS_LABELS, FORMATION_SUB_ITEM_MARKERS } from '@lfx-one/shared/constants';
+import { FORMATION_ITEM_STATUS_LABELS, FORMATION_SUB_ITEM_MARKERS, FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS } from '@lfx-one/shared/constants';
 import { deriveFormationReadinessSummary } from '@lfx-one/shared/utils';
 
 import { FormationProgressRingComponent } from '../formation-progress-ring/formation-progress-ring.component';
@@ -46,8 +46,8 @@ export class FormationSubItemListComponent {
         ...subItem,
         marker,
         statusLabel: known ? FORMATION_ITEM_STATUS_LABELS[subItem.status] : subItem.status,
-        // An unknown status must be seen, not only heard: show its raw value in the muted label tone.
-        labelClass: known ? marker.labelClass : FORMATION_SUB_ITEM_MARKERS.skipped.labelClass,
+        // An unknown status must be seen, not only heard: its raw value takes the visible label classes.
+        labelClass: known ? marker.labelClass : FORMATION_SUB_ITEM_UNKNOWN_LABEL_CLASS,
       };
     })
   );

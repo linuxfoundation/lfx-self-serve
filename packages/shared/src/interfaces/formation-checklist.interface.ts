@@ -138,7 +138,8 @@ export interface FormationItemStatusGlyph {
 
 /**
  * `FORMATION_SUB_ITEM_MARKERS`'s value shape (#2818) — how `lfx-formation-sub-item-list` renders one
- * sub-item row per status: the 20px round marker's classes (`markerClass`), the icon inside it
+ * sub-item row per status: the round marker's classes (`markerClass`; `w-5`, 17.5px at this app's
+ * 14px root), the icon inside it
  * (`icon`, `null` for the hollow rings), the title's text color (`titleClass`) and the status
  * label's classes (`labelClass` — literally `sr-only` where the marker already says it, so the
  * label stays in the accessibility tree without repeating on screen).
