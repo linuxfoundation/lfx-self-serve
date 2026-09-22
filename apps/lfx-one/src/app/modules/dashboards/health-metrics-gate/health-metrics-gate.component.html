@@ -20,11 +20,12 @@
 
         <div class="flex flex-wrap items-center gap-2">
           <!-- Visual only for now — mirrors the design's project drill-down pill (`.projsel`/`.pstrig`);
-               no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide). -->
+               no per-project data exists yet to scope by (LFXV2-3364 stand-in fixture is foundation-wide).
+               Font sizes stay arbitrary: the design's 14/12px carry no line-height, `text-sm` does. -->
           <button
             type="button"
             aria-disabled="true"
-            class="flex h-[36px] cursor-default items-center gap-[8px] rounded-full border border-gray-200 bg-white px-[12px] text-[14px] font-medium text-gray-900"
+            class="flex h-9 cursor-default items-center gap-2 rounded-full border border-gray-200 bg-white px-3 text-[14px] font-medium text-gray-900"
             data-testid="health-metrics-overview-project-selector">
             <i class="fa-light fa-diagram-project text-gray-500" aria-hidden="true"></i>
             All projects
