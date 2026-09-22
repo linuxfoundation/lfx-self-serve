@@ -33,8 +33,11 @@ function isDecodableCodePoint(code: number): boolean {
  * Drops what cannot legitimately appear in a display name: control characters (C0, C1, DEL),
  * BIDI overrides and marks, and invisible formatting -- with ONE carve-out: U+200C (ZWNJ) and
  * U+200D (ZWJ) are kept, because they are required orthography in Devanagari, Telugu, Bengali,
- * Arabic and Persian rather than formatting. A value consisting ONLY of joiners still comes back
- * empty, since it would render blank while reading as non-empty downstream.
+ * Arabic and Persian rather than formatting. A value consisting only of INVISIBLE characters
+ * still comes back empty -- joiners, but also soft hyphens, word joiners, the BOM and every
+ * other Unicode format or separator character -- since it would render blank while reading as
+ * non-empty downstream. The floor asks whether anything RENDERS rather than naming spellings,
+ * so a format character added to Unicode later needs no change here.
  *
  * An earlier version checked only C0/DEL and five
  * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
@@ -351,7 +354,7 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     allowedSchemesAppliedToAttributes: ['href'],
     allowProtocolRelative: false,
     // Content is DROPPED for these, not just the tag. Everywhere else a disallowed tag's TEXT
-    // survives -- dropping `<span>` must not delete the words inside it, and the copy is the
+    // survives -- dropping `<section>` must not delete the words inside it, and the copy is the
     // point of the preview -- so this list is exactly the set whose contents are not copy:
     //
     //   script, style              code
