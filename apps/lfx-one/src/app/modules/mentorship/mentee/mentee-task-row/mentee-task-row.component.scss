@@ -1,0 +1,29 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Block host so `divide-y` separators between rows lay out correctly.
+:host {
+  display: block;
+}
+
+:host ::ng-deep .mentee-task-status-dropdown {
+  &.p-select {
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.125rem 0.5rem;
+    min-width: 6.5rem;
+    height: auto;
+    font-size: 0.75rem;
+    font-weight: 500;
+  }
+  .p-select-label {
+    padding: 0.125rem 0;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: inherit;
+  }
+  .p-select-dropdown {
+    width: auto;
+    padding: 0 0.25rem;
+  }
+}
