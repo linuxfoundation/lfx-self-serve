@@ -89,12 +89,13 @@ export class HealthMetricsEngagementComponent {
     this.destroyRef.onDestroy(() => {
       this.teardownScrollSpy();
       clearTimeout(this.pendingSectionTimer);
+      // Registered here rather than per arm: a hook per registration would pile up over the page's life.
+      this.removeIntentListeners?.();
     });
     afterNextRender(() => {
       this.measurePanesHeight();
       this.setupScrollSpy();
       this.observeWindowResize();
-      this.observeReaderIntent();
       // `route.fragment` has already emitted by now, before the section ids existed, so the deep
       // link is replayed here rather than scrolling against an empty document.
       this.settlePendingSection();
@@ -196,9 +197,10 @@ export class HealthMetricsEngagementComponent {
   /**
    * A deep link waiting on data would scroll back over wherever the reader has moved to, and a failed
    * read leaves it waiting indefinitely — so their own first scroll or keypress supersedes it.
+   * Idempotent: every arm calls this, and only the first one that finds no listeners registers them.
    */
   private observeReaderIntent(): void {
-    if (!isPlatformBrowser(this.platformId)) return;
+    if (!isPlatformBrowser(this.platformId) || this.removeIntentListeners) return;
 
     // Only a key that scrolls counts: every keystroke in the app shell bubbles to the window, so an
     // unfiltered handler would drop the deep link on a Tab press.
@@ -213,13 +215,12 @@ export class HealthMetricsEngagementComponent {
     // dispatches to the pane at all. A scrollbar drag reaches neither, which is what the TTL is for.
     const events = ['wheel', 'touchmove', 'keydown'];
     for (const event of events) window.addEventListener(event, onIntent, { passive: true });
-    // Nothing re-arms a superseded deep link, so the handlers are dead weight on the browser's
-    // hottest event streams once the key is cleared.
+    // Dead weight on the browser's hottest event streams once no key is armed; the next arm
+    // registers them again.
     this.removeIntentListeners = () => {
       for (const event of events) window.removeEventListener(event, onIntent);
       this.removeIntentListeners = null;
     };
-    this.destroyRef.onDestroy(() => this.removeIntentListeners?.());
   }
 
   /** Bounds the pending key's life, so a read that never settles cannot leave the deep link armed. */
@@ -227,21 +228,31 @@ export class HealthMetricsEngagementComponent {
     this.pendingSection.set(key);
     if (!isPlatformBrowser(this.platformId)) return;
 
+    // Every arm, not just the first: the previous key's teardown unregistered them.
+    this.observeReaderIntent();
     clearTimeout(this.pendingSectionTimer);
-    this.pendingSectionTimer = setTimeout(() => this.pendingSection.set(null), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
+    this.pendingSectionTimer = setTimeout(() => this.clearPendingSection(), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
   }
 
-  /** Nulls the key and its deadline together, so a live timer always implies an armed key. */
+  /**
+   * Nulls the key and its deadline together, so a live timer always implies an armed key, and
+   * unregisters the reader-intent listeners the next arm re-registers.
+   */
   private clearPendingSection(): void {
     this.pendingSection.set(null);
     clearTimeout(this.pendingSectionTimer);
     this.removeIntentListeners?.();
   }
 
-  /** A keystroke in an editable element is typing, not scrolling, whatever key it carries. */
+  /**
+   * True only for a key that scrolls the document, pressed outside a control that consumes it —
+   * typing in an editable element, or Space activating a button, moves nothing.
+   */
   private isScrollIntent(event: KeyboardEvent): boolean {
     const target = event.target as HTMLElement | null;
     if (target?.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target?.tagName ?? '')) return false;
+    // A native button swallows Space without marking the event defaultPrevented.
+    if (target?.closest?.('button, [role="button"]')) return false;
 
     return HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS.includes(event.key);
   }

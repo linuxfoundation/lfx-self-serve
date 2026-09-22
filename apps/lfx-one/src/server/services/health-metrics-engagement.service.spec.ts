@@ -3,10 +3,11 @@
 
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-const { execute, isMissingObjectError, warning } = vi.hoisted(() => ({
+const { execute, isMissingObjectError, warning, errorLog } = vi.hoisted(() => ({
   execute: vi.fn(),
   isMissingObjectError: vi.fn(() => false),
   warning: vi.fn(),
+  errorLog: vi.fn(),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -18,7 +19,7 @@ vi.mock('./snowflake.service', () => ({
   },
 }));
 vi.mock('./logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: vi.fn(), debug: vi.fn(), info: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: errorLog, debug: vi.fn(), info: vi.fn() },
 }));
 
 import { HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT } from '@lfx-one/shared/constants';
@@ -91,6 +92,7 @@ describe('HealthMetricsEngagementService', () => {
     isMissingObjectError.mockReset();
     isMissingObjectError.mockReturnValue(false);
     warning.mockReset();
+    errorLog.mockReset();
   });
 
   it('maps every period onto the row, oldest first, so the sparkline needs no second read', async () => {
@@ -236,6 +238,28 @@ describe('HealthMetricsEngagementService', () => {
     // The raw text is what the log line records, so it must survive the wrap.
     expect(error.message).toContain('ENGAGEMENT_GROUP_ATTENDANCE');
     expect(error.statusCode).toBe(500);
+    // A provider name and its vendor error code would put the warehouse back in the response.
+    expect(error.toResponse()).not.toHaveProperty('service');
+    expect(error.code).toBe('INTERNAL_ERROR');
+  });
+
+  // The breaker treats this as expected and logs it at `warning`, but the same SDK message covers a
+  // revoked GRANT — an access-control event that has to be alertable on its own.
+  it('records an alertable error for a view that is missing or no longer granted', async () => {
+    execute.mockRejectedValue(new Error('Object does not exist or not authorized'));
+    isMissingObjectError.mockReturnValue(true);
+
+    await expect(service.getGroupAttendance(req, query())).rejects.toThrow('not authorized');
+    expect(errorLog).toHaveBeenCalledWith(req, 'get_engagement_group_attendance', expect.any(Number), expect.any(Error), {
+      snowflake_expected_missing_object: 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE',
+    });
+  });
+
+  it('leaves an ordinary Snowflake failure out of the missing-object signal', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getGroupAttendance(req, query())).rejects.toThrow('connection reset');
+    expect(errorLog).not.toHaveBeenCalled();
   });
 
   it('leaves an error that already carries a client message alone', async () => {

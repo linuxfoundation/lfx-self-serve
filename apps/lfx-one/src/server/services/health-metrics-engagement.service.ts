@@ -12,14 +12,15 @@ import type {
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsRange,
+  SnowflakeQueryResult,
 } from '@lfx-one/shared/interfaces';
 
 import { BaseApiError } from '../errors/base.error';
 import { MicroserviceError } from '../errors/microservice.error';
+import { getCodeForStatus } from '../helpers/http-status.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
-import type { SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 import type { Bind } from 'snowflake-sdk';
 
@@ -140,7 +141,7 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
     `;
 
-    const result = await this.executeGroupAttendance(sql, binds);
+    const result = await this.executeGroupAttendance(req, sql, binds);
 
     logger.debug(req, 'get_engagement_group_attendance', 'Fetched group attendance page', {
       foundation_slug: query.foundationSlug,
@@ -170,17 +171,26 @@ export class HealthMetricsEngagementService {
    * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
    *
    * The SDK names the fully-qualified view in its message, so a generic sentence is put in
-   * `clientMessage` — the raw text stays on `message`, which is what the log records.
+   * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
+   * `code` and `service` are dropped for the same reason.
    */
-  private async executeGroupAttendance(sql: string, binds: Bind[]): Promise<SnowflakeQueryResult<GroupAttendanceRow>> {
+  private async executeGroupAttendance(req: Request, sql: string, binds: Bind[]): Promise<SnowflakeQueryResult<GroupAttendanceRow>> {
+    const startTime = Date.now();
     try {
       return await this.snowflakeService.execute<GroupAttendanceRow>(sql, binds, { expectMissingObject: true });
     } catch (error) {
+      // The breaker treats this as expected and logs it at `warning`, but the same message covers a
+      // revoked GRANT — an access-control event that has to be alertable on its own.
+      if (SnowflakeService.isMissingObjectError(error)) {
+        logger.error(req, 'get_engagement_group_attendance', startTime, error, {
+          snowflake_expected_missing_object: GROUP_ATTENDANCE_VIEW,
+        });
+      }
+
       if (!(error instanceof BaseApiError) || error.clientMessage) throw error;
 
-      throw new MicroserviceError(error.message, error.statusCode, error.code, {
+      throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
         operation: error.operation,
-        service: error.service,
         clientMessage: 'Group attendance is unavailable right now.',
         originalError: error,
       });

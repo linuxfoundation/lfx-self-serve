@@ -151,8 +151,8 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
 
 /**
  * The empty Group attendance shape — a period the view carries no columns for, the pre-hydration
- * render, and the client's post-error placeholder behind `loadFailed`. The server never returns it
- * for a failed read; that error propagates.
+ * render, a read with no foundation selected, and the client's post-error placeholder behind
+ * `loadFailed`. The server never returns it for a failed read; that error propagates.
  */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
   rows: [],

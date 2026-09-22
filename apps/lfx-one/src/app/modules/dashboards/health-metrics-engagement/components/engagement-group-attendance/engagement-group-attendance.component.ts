@@ -61,8 +61,8 @@ export class EngagementGroupAttendanceComponent {
 
   /**
    * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
-   * Emits `null` as each read starts, which renders no badge rather than a believable zero and
-   * tells the container a fresh read is underway.
+   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected —
+   * which renders no badge rather than a believable zero and tells the container a read is underway.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
 
@@ -181,7 +181,7 @@ export class EngagementGroupAttendanceComponent {
               if (this.clampPage(response.totalRecords)) {
                 // The clamp can land before the sync subscription's first emission, which `skip(1)`
                 // drops as already-in-the-URL state — so the replacement page is written back here.
-                if (isPlatformBrowser(this.platformId)) this.syncUrl(this.query());
+                this.syncUrl(this.query());
                 return;
               }
               this.loading.set(false);

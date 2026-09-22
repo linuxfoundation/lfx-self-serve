@@ -400,9 +400,11 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 
-  // Space and the arrow keys type or move a caret inside a field; they scroll nothing.
+  // Space and the arrow keys type or move a caret inside a field, and Space on a button activates
+  // it without marking the event defaultPrevented; none of them scrolls.
   it.each([
     ['an input', () => document.createElement('input')],
+    ['a button', () => document.createElement('button')],
     [
       'a contentEditable element',
       () => {
@@ -485,6 +487,44 @@ describe('HealthMetricsEngagementComponent', () => {
     await fixture.whenStable();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // The handlers sit on three of the browser's hottest event streams, so a settled read has to
+  // give them back rather than leave them running for the rest of the page's life.
+  it('unregisters the reader-intent listeners once the read settles', async () => {
+    const removeEventListener = vi.spyOn(window, 'removeEventListener');
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    for (const type of ['wheel', 'touchmove', 'keydown']) expect(removeEventListener).toHaveBeenCalledWith(type, expect.any(Function));
+  });
+
+  // The listeners are registered per arm: registering them once at construction left a link armed
+  // after the first settle with nothing but the TTL protecting it.
+  it('cancels a deep link armed after an earlier read has already settled', async () => {
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // A filter change drops the counts, which is what lets the next fragment arm again.
+    stubChild().countsChange.emit(null);
+    fixture.detectChanges();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    headingOf('participation').dispatchEvent(new Event('wheel', { bubbles: true }));
+
+    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).not.toHaveBeenCalled();
   });
 
   it('schedules no expiry timer on the server, where the deep link is never replayed', async () => {
