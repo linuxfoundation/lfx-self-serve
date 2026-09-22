@@ -3,7 +3,7 @@
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
-import { escapeHtml, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml, sanitizeDisplayText, stripHtml, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -935,10 +935,15 @@ export class CampaignServiceClient {
 
       // REFUSED when sanitization emptied the body, rather than returned as a success with
       // nothing in it. A generator response consisting only of resource-loading markup -- a
-      // tracking pixel and no copy -- strips to '', and an empty body reads downstream as
-      // "blank this field", so a staged draft would lose the body it was meant to set. An
-      // error the operator can retry is the honest answer; a silent blank is not.
-      if (body.trim() === '') {
+      // tracking pixel and no copy -- leaves nothing a recipient can read, and an empty body
+      // reads downstream as "blank this field", so a staged draft would lose the body it was
+      // meant to set. An error the operator can retry is the honest answer; a silent blank is not.
+      //
+      // Judged on the TEXT, not the string length. `<p><img src=...></p>` sanitizes to `<p></p>`
+      // -- non-empty as a string, empty to a reader -- so a `body.trim() === ''` check passed it
+      // and shipped an empty paragraph. `stripHtml` also collapses `<br>` and `&nbsp;`, which
+      // are the other ways a body can be structurally present and visually absent.
+      if (stripHtml(body).trim() === '') {
         logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
         return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
       }

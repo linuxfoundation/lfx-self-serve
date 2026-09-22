@@ -2558,6 +2558,34 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy).toBeUndefined();
   });
 
+  it.each([
+    ['wrapped in a paragraph', '<p><img src="https://evil.test/probe.png"></p>'],
+    ['wrapped in a div', '<div><img src="https://evil.test/probe.png"></div>'],
+    ['a lone line break', '<p><br></p>'],
+    ['a non-breaking space', '<p>&nbsp;</p>'],
+  ])('refuses a body that is visually empty: %s', async (_label, html) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', sections: [{ type: 'rich_text', html }] }));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A string-length check passes all four: `<p><img ...></p>` sanitizes to `<p></p>`, which is
+    // non-empty as a string and empty to a reader. The guard has to judge rendered TEXT.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
+  it('accepts a body whose only content is inside a wrapper', async () => {
+    // The negative half: judging on text must not refuse real copy that happens to be nested.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 's', preheader: 'p', sections: [{ type: 'rich_text', html: '<ul><li>Item</li></ul>' }] })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeFalsy();
+    expect(result.copy?.body).toContain('Item');
+  });
+
   it('strips a BIDI override from the URL-less button label rendered into body', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({
