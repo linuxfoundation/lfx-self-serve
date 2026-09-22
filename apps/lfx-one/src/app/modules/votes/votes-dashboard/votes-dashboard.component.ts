@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { PollStatus, VOTE_LABEL, VOTES_PAGE_WALK_LIMIT, VoteResponseStatus } from '@lfx-one/shared';
-import { Committee, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { Committee, Lens, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -44,7 +44,6 @@ export class VotesDashboardComponent {
   private readonly lensService = inject(LensService);
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly destroyRef = inject(DestroyRef);
 
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL.singular;
@@ -99,18 +98,6 @@ export class VotesDashboardComponent {
     const f = this.filters();
     return !!(f.search?.trim() || f.status || f.group);
   });
-
-  // Lens-change pagination reset is independent of the data-fetch pipelines so it fires for every lens emission, not just Me-lens loads.
-  // fetch$.next() forces initVotes() to re-run after the reset — field-init order means it would otherwise see stale currentFirst and walk from a stale page index.
-  public constructor() {
-    toObservable(this.lensService.activeLens)
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(() => {
-        this.pageTokens = [];
-        this.currentFirst.set(0);
-        this.fetch$.next();
-      });
-  }
 
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
@@ -262,9 +249,23 @@ export class VotesDashboardComponent {
     const filters$ = toObservable(this.filters);
     const lens$ = toObservable(this.lensService.activeLens);
 
+    // Lens-change pagination reset lives inside the pipeline, before the switchMap reads
+    // currentFirst/pageTokens (previously a constructor subscription — but a toObservable's
+    // initial emission also ran it, so every landing paid a fetch$.next() that aborted the
+    // in-flight first fetch and re-issued it; observed in the network log as duplicate aborted
+    // GET /api/votes requests on arrival, GH-2826).
+    let previousLens: Lens | undefined;
+
     return toSignal(
       combineLatest([project$, filters$, this.fetch$, lens$]).pipe(
         tap(() => this.loading.set(true)),
+        tap(([, , , lens]) => {
+          if (lens !== previousLens) {
+            previousLens = lens;
+            this.pageTokens = [];
+            this.currentFirst.set(0);
+          }
+        }),
         switchMap(([project, filterState, , lens]) => {
           if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
