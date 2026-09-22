@@ -7,9 +7,9 @@ import { FormGroup } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { UserSearchComponent } from '@components/user-search/user-search.component';
-import { SHOW_MEETING_ATTENDEES_FEATURE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '@lfx-one/shared/constants';
+import { SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import type { ComposerGuestRow, CommitteeMember, ManualGuestDialogResult, MeetingCommittee, MeetingRegistrantWithState } from '@lfx-one/shared/interfaces';
-import { avatarInitials, isMeetingInviteResponsesEnabled, isShowMeetingAttendeesLocked } from '@lfx-one/shared/utils';
+import { avatarInitials, getShowMeetingAttendeesLockedNote, isMeetingInviteResponsesEnabled } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { MessageService } from 'primeng/api';
@@ -48,7 +48,7 @@ export class ComposerGuestsComponent {
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
-    isShowMeetingAttendeesLocked(this.meetingTypeValue(), this.restrictedValue()) ? SHOW_MEETING_ATTENDEES_LOCKED_NOTE : null
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
   );
 
   /**

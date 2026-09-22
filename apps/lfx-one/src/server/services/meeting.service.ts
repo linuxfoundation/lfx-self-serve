@@ -610,7 +610,10 @@ export class MeetingService {
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
-    const meetingType = meetingData.meeting_type ?? existingMeeting.meeting_type;
+    // A blank type is not a type change: the body is unvalidated, so `meeting_type: ""` would
+    // otherwise read as "not Board" and lift the lock off a board meeting that is still one.
+    const submittedType = typeof meetingData.meeting_type === 'string' ? meetingData.meeting_type.trim() : meetingData.meeting_type;
+    const meetingType = submittedType || existingMeeting.meeting_type;
     const restricted = meetingData.restricted ?? existingMeeting.restricted;
     // Defense in depth: the form disables this control, but a direct API caller must not be able
     // to opt a board/restricted meeting into sharing its guest list in calendar invites.

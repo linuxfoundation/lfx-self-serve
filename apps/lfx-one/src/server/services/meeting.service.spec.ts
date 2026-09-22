@@ -24,7 +24,11 @@ const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } =
 }));
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
-vi.mock('@lfx-one/shared/utils', () => ({
+vi.mock('@lfx-one/shared/utils', async () => ({
+  // The real predicate, not a double: these tests are the only place the server-side lock is
+  // exercised end to end, and a hand-written copy would stop tracking its normalization — the
+  // casing, whitespace and string-coercion rules are the whole point of the gate.
+  ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-privacy.utils')>('@lfx-one/shared/utils/meeting-privacy.utils')),
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
@@ -36,9 +40,6 @@ vi.mock('@lfx-one/shared/utils', () => ({
     const meaningful = tokens.filter((token) => token && token !== 'unknown' && token !== '[unknown]');
     return meaningful.length === 0;
   }),
-  isShowMeetingAttendeesLocked: vi.fn(
-    (meetingType?: string | null, restricted?: boolean | null) => meetingType === 'Board' || meetingType === 'board' || restricted === true
-  ),
   mapITXResponseToMeetingRsvp: vi.fn(),
   normalizeIndexedMeetingAiSummary: vi.fn((meeting) => meeting),
   normalizeIndexedMeetingInviteResponses: vi.fn((meeting) => meeting),
@@ -1624,6 +1625,30 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     proxyRequestWithResponse.mockResolvedValueOnce({});
 
     await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('locks on the stored values as they actually arrive, untrimmed and stringified', async () => {
+    // Neither field is validated between v1 and here, so the gate has to hold on the shapes the
+    // proxy really returns rather than on canonical ones.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board ', restricted: 'true', organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('does not let a blank meeting_type lift the lock off a board meeting', async () => {
+    // `""` is not nullish, so a nullish-only fallback would compare against the empty string and
+    // read a board meeting as unlocked — an unvalidated body must not be able to do that.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: '' });
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);

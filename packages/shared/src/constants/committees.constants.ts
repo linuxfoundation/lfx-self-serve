@@ -548,7 +548,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
     description:
-      'Let guests see who else is invited, both on the meeting page and in their calendar app. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting (board and restricted meetings stay private).',
+      "Let guests see who else is invited, and who has accepted, in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
     color: lfxColors.blue[500],
   },
 ];

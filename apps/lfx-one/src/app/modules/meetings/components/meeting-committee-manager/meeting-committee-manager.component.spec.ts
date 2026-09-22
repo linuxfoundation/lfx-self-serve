@@ -6,7 +6,8 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { Committee, CommitteeMember, CommitteeMemberVotingStatus, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { syncShowMeetingAttendeesLock } from '@lfx-one/shared/utils';
+import { merge, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingCommitteeManagerComponent } from './meeting-committee-manager.component';
@@ -25,6 +26,28 @@ function votingMember(committeeUid: string, email: string, status: CommitteeMemb
 }
 
 const VOTING_BOARD = { ...BOARD, enable_voting: true } as Committee;
+
+/**
+ * The parent form as the composer and manage page build it, lock included.
+ * @description Both hosts run `syncShowMeetingAttendeesLock` on every `meeting_type` /
+ * `restricted` change, which is what actually forces the attendees toggle off and disables it.
+ * A bare `FormGroup` would leave the toggle untouched on a board meeting, so specs about the
+ * lock would pass whether or not the component honoured it.
+ */
+function hostForm(committees: MeetingCommittee[]): FormGroup {
+  const form = new FormGroup({
+    visibility: new FormControl('private'),
+    committees: new FormControl(committees),
+    show_meeting_attendees: new FormControl(false),
+    meeting_type: new FormControl('Technical'),
+    restricted: new FormControl(false),
+  });
+
+  merge(form.get('meeting_type')!.valueChanges, form.get('restricted')!.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form));
+  syncShowMeetingAttendeesLock(form);
+
+  return form;
+}
 
 /**
  * Mounts the manager over `saved` groups, with each committee's member fetch supplied by `members`.
@@ -59,16 +82,7 @@ async function mount(
   const emissions: CommitteeMember[][] = [];
 
   fixture.componentRef.setInput('selectedCommittees', saved);
-  fixture.componentRef.setInput(
-    'form',
-    new FormGroup({
-      visibility: new FormControl('private'),
-      committees: new FormControl(seedParentCommittees ? saved : []),
-      show_meeting_attendees: new FormControl(false),
-      meeting_type: new FormControl('Technical'),
-      restricted: new FormControl(false),
-    })
-  );
+  fixture.componentRef.setInput('form', hostForm(seedParentCommittees ? saved : []));
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
 
   const resolved: string[][] = [];
@@ -742,10 +756,10 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
   it('does not enable a locked meeting toggle from a committee preference', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     component.form().get('meeting_type')?.setValue('Board');
-    component.form().get('show_meeting_attendees')?.disable();
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(component.form().get('show_meeting_attendees')?.disabled).toBe(true);
   });
 
   it('reapplies the committee preference when the lock lifts', async () => {
@@ -822,6 +836,52 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
+  it('does not re-enable the toggle when a committee is added after an opt-out', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    component.form().get('show_meeting_attendees')?.setValue(false);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+
+    // A second committee carrying the same default is not new consent — the organizer's own
+    // choice for this meeting stands until they change it back themselves.
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    // Including across a lock round trip, which reaches the preference through the other path.
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('applies a newly picked committee preference once the opt-out is withdrawn', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    component.form().get('show_meeting_attendees')?.setValue(false);
+    await fixture.whenStable();
+
+    // Turning it back on withdraws the opt-out, so committee defaults apply again from here —
+    // including the one the lock takes away and the unlock puts back.
+    component.form().get('show_meeting_attendees')?.setValue(true);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('leaves a saved opt-out alone when the lock round-trips', async () => {
     // Editing a meeting whose organizer turned the toggle off on an earlier visit: the form
     // hydrates `false` with the preferring committee already selected, and nothing in this
@@ -843,16 +903,7 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
     await fixture.whenStable();
 
-    fixture.componentRef.setInput(
-      'form',
-      new FormGroup({
-        visibility: new FormControl('private'),
-        committees: new FormControl([]),
-        show_meeting_attendees: new FormControl(false),
-        meeting_type: new FormControl('Technical'),
-        restricted: new FormControl(false),
-      })
-    );
+    fixture.componentRef.setInput('form', hostForm([]));
     await fixture.whenStable();
 
     // An edit on the discarded form must not reach the ownership tracking of the live one —

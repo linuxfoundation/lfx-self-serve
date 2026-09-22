@@ -8,7 +8,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE, SHOW_MEETING_ATTENDEES_LOCKED_NOTE } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import {
   Committee,
   CommitteeMember,
@@ -17,7 +17,7 @@ import {
   RegistrantPendingChanges,
   RegistrantState,
 } from '@lfx-one/shared/interfaces';
-import { generateTempId, isShowMeetingAttendeesLocked } from '@lfx-one/shared/utils';
+import { generateTempId, getShowMeetingAttendeesLockedNote } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { ConfirmationService } from 'primeng/api';
@@ -63,7 +63,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
   private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
   protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
-    isShowMeetingAttendeesLocked(this.meetingTypeValue(), this.restrictedValue()) ? SHOW_MEETING_ATTENDEES_LOCKED_NOTE : null
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
   );
 
   // Output events for two-way binding

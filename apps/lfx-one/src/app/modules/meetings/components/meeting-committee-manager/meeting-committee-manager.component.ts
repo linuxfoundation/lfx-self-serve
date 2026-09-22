@@ -21,7 +21,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, EMPTY, filter, forkJoin, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, forkJoin, ignoreElements, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -131,7 +131,15 @@ export class MeetingCommitteeManagerComponent {
    */
   private committeeOwnsAttendeeToggle = false;
 
-  /** Guards {@link committeeOwnsAttendeeToggle} against this component's own writes. */
+  /**
+   * Whether the organizer turned attendee visibility off themselves.
+   * @description Blocks every path that would turn it back on, not only the unlock: picking or
+   * swapping a committee that carries the preference must not silently undo a choice the
+   * organizer made on this meeting. Cleared if they turn it back on.
+   */
+  private organizerOptedOut = false;
+
+  /** Guards the two flags above against this component's own writes. */
   private applyingCommitteePreference = false;
 
   /**
@@ -448,33 +456,41 @@ export class MeetingCommitteeManagerComponent {
    * back to them.
    * @description Returned as part of the lock stream rather than subscribed on the side, so the
    * `switchMap` tears it down when the form input is replaced; a side subscription would
-   * outlive its control and accumulate one per form. It contributes no lock readings of its own
-   * — the edits are the point, the emissions are not.
+   * outlive its control and accumulate one per form. `ignoreElements` keeps it a side effect:
+   * the edits are the point, the emissions are not.
    */
-  private watchAttendeeEdits(form: FormGroup): Observable<boolean> {
+  private watchAttendeeEdits(form: FormGroup): Observable<never> {
     const attendeesControl = form.get('show_meeting_attendees');
     if (!attendeesControl) {
       return EMPTY;
     }
     return attendeesControl.valueChanges.pipe(
-      tap(() => {
+      tap((value) => {
         if (!this.applyingCommitteePreference) {
           this.committeeOwnsAttendeeToggle = false;
+          this.organizerOptedOut = value === false;
         }
       }),
-      switchMap(() => EMPTY)
+      ignoreElements()
     );
   }
 
   /**
    * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
    * unless board/restricted meetings lock the control off.
-   * @description Also maintains {@link committeeOwnsAttendeeToggle}: a preference applied or
-   * withheld here is one the unlock may put back, and a selection that no longer carries a
-   * preference leaves nothing to put back. The unlock calls this again rather than replaying a
-   * remembered value, so it always acts on the committees selected at that moment.
+   * @description An organizer who turned the toggle off outranks every committee default, so
+   * neither picking a new committee nor lifting the lock can put it back on.
+   *
+   * Also maintains {@link committeeOwnsAttendeeToggle}: a preference applied or withheld here
+   * is one the unlock may put back, and a selection that no longer carries a preference leaves
+   * nothing to put back. The unlock calls this again rather than replaying a remembered value,
+   * so it always acts on the committees selected at that moment.
    */
   private applyCommitteeAttendeePreference(): void {
+    if (this.organizerOptedOut) {
+      return;
+    }
+
     const ids = this.selectedCommitteeIds();
     const hasShowMeetingAttendees = this.committeeOptions().some((committee) => ids.includes(committee.uid) && committee.show_meeting_attendees === true);
     const attendeesControl = this.form().get('show_meeting_attendees');
