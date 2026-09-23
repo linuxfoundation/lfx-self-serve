@@ -1872,11 +1872,11 @@ const ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE: Readonly<Record<string, OrgClaActivit
  * sibling id-less entries on `@for` tracking in the browser and has no address downstream can
  * reach. A dropped row is logged at the caller.
  *
- * `summary` prefers the producer's `EventSummary` and falls back to `EventData` for older rows
- * that predate the summary column. Both are treated as opaque display copy: rendered as plain
- * text, never parsed for substrings, never re-linked. Some historical rows carry a project name
- * behind the literal label "with project SFID" (a producer-side rendering bug that was later
- * corrected and left historical rows in place); the tab tolerates that shape unchanged.
+ * `summary` is the producer's `EventSummary` only. A missing summary stays empty and the client
+ * renders an em-dash. `EventData` is the detailed audit sentence and is not copied onto the row.
+ * A present `EventSummary` is opaque display copy: rendered as plain text, never parsed, never
+ * re-linked. Some historical summaries carry a project name behind the literal label "with
+ * project SFID"; the tab leaves that sentence unchanged.
  *
  * `actor` prefers `UserName` (a display name) and falls back to `LfUsername` (an LF login) —
  * neither is guaranteed to be present, so a producer row with neither leaves `actor` as `null`
@@ -1892,7 +1892,7 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
     return trimmed.length > 0 ? trimmed : undefined;
   };
 
-  const summary = nonEmpty(row?.EventSummary) ?? nonEmpty(row?.EventData) ?? '';
+  const summary = nonEmpty(row?.EventSummary) ?? '';
   const actor = nonEmpty(row?.UserName) ?? nonEmpty(row?.LfUsername) ?? null;
   const when = nonEmpty(row?.EventTime) ?? '';
   const eventType = row?.EventType?.trim() ?? '';

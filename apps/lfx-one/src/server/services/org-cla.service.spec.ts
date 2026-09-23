@@ -3217,12 +3217,12 @@ describe('OrgClaService.getActivityLog — the row mapper', () => {
     expect(page?.list[0]?.actor).toBeNull();
   });
 
-  it('falls back to EventData when EventSummary is empty — historical rows predate the summary column', async () => {
-    stageActivityLog(eventPage({ Events: [eventRow({ EventSummary: '   ', EventData: 'legacy summary text' })] }));
+  it('leaves summary empty when EventSummary is missing — EventData is not copied onto the row', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow({ EventSummary: '   ', EventData: 'legacy audit sentence with a request id' })] }));
 
     const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
 
-    expect(page?.list[0]?.summary).toBe('legacy summary text');
+    expect(page?.list[0]?.summary).toBe('');
   });
 
   // The historical "with project SFID" bug (easycla#5199) rendered a project name in a slot the

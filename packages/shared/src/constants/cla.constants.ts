@@ -855,11 +855,5 @@ export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
   busyLabel: 'Loading…',
 } as const;
 
-/** Label for the Overview's "View full activity log →" control (US2 / #2857). */
-export const ORG_CLA_ACTIVITY_LOG_VIEW_ALL_LABEL = 'View full activity log →';
-
-/** Overview section heading for the Recent activity preview block (US2 / #2857). */
-export const ORG_CLA_ACTIVITY_LOG_RECENT_HEADING = 'Recent activity';
-
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';
