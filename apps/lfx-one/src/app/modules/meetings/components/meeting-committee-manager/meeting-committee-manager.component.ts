@@ -142,9 +142,11 @@ export class MeetingCommitteeManagerComponent {
   private committeeOwnsAttendeeToggle = false;
 
   /**
-   * The organizer's own edit to the toggle in this session, or `null` if they have not made one.
+   * The organizer's own edit to the toggle since the form was last hydrated, or `null` if they
+   * have not made one.
    * @description Read through {@link organizerAttendeeChoice}, which falls back to the saved value
-   * so an edit session starts from the decision the meeting already carries.
+   * so an edit session starts from the decision the meeting already carries. Seeded from the
+   * control by {@link seedSessionAttendeeChoice}, because an edit can predate this component.
    */
   private sessionAttendeeChoice: boolean | null = null;
 
@@ -252,6 +254,7 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          this.seedSessionAttendeeChoice(form);
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
               map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
@@ -481,9 +484,9 @@ export class MeetingCommitteeManagerComponent {
    *
    * Read `dirty` as "edited since this control was last hydrated", not as "a human flipped it at
    * some point": the flag is sticky, and both hosts mark every control dirty in bulk when a
-   * submit fails. They each mark this one pristine again at the end of hydration to keep the
-   * reading true, and {@link applyingAttendeeWrite} still covers this component's own writes,
-   * which land on whatever dirty state the form happens to be in.
+   * submit fails. They each mark this one pristine before hydrating to keep the reading true, and
+   * {@link applyingAttendeeWrite} still covers this component's own writes, which land on whatever
+   * dirty state the form happens to be in.
    *
    * Returned as part of the lock stream rather than subscribed on the side, so the `switchMap`
    * tears it down when the form input is replaced; a side subscription would outlive its control
@@ -504,6 +507,24 @@ export class MeetingCommitteeManagerComponent {
       }),
       ignoreElements()
     );
+  }
+
+  /**
+   * Picks up an organizer edit that predates this component.
+   * @description The composer renders the Guests section under an `@switch`, so leaving it and
+   * coming back destroys and rebuilds this component while the form — and the edit on it — lives
+   * on in the host's form service. A rebuilt instance starting at `null` would read their opt-out
+   * as "no decision" and let the next group default turn sharing back on, which is the case
+   * {@link organizerAttendeeChoice} exists to prevent.
+   *
+   * The control already carries the answer. `dirty` is the same evidence {@link watchAttendeeEdits}
+   * records an edit on, so a dirty control at mount means its value is the organizer's, made since
+   * the last hydration. A pristine one clears the field rather than leaving it, so replacing the
+   * form input does not carry a previous meeting's decision into the new one.
+   */
+  private seedSessionAttendeeChoice(form: FormGroup): void {
+    const control = form.get('show_meeting_attendees');
+    this.sessionAttendeeChoice = control?.dirty ? control.value === true : null;
   }
 
   /**

@@ -50,12 +50,6 @@ function hostForm(committees: MeetingCommittee[], hydrated: { meetingType?: stri
 }
 
 /**
- * Flips the attendees toggle the way the organizer does, not the way hydration does.
- * @description The toggle binds through `formControlName`, so a human flipping it marks the
- * control dirty; a programmatic patch leaves it pristine. The picker reads exactly that
- * difference, so a spec that only calls `setValue` is simulating hydration, not an edit.
- */
-/**
  * Replays a host's hydration sequence over an already-mounted picker.
  * @description Both hosts hydrate the same way: clear this control's dirty flag so the patch
  * cannot read as an edit, one loud `patchValue`, then `syncShowMeetingAttendeesLock` to force a
@@ -68,10 +62,31 @@ function hydrate(form: FormGroup, values: Record<string, unknown>): void {
   syncShowMeetingAttendeesLock(form);
 }
 
+/**
+ * Flips the attendees toggle the way the organizer does, not the way hydration does.
+ * @description The toggle binds through `formControlName`, so a human flipping it marks the
+ * control dirty; a programmatic patch leaves it pristine. The picker reads exactly that
+ * difference, so a spec that only calls `setValue` is simulating hydration, not an edit.
+ */
 function organizerSets(form: FormGroup, value: boolean): void {
   const control = form.get('show_meeting_attendees');
   control?.markAsDirty();
   control?.setValue(value);
+}
+
+/**
+ * Rebuilds the picker over a form that outlives it, the way leaving and re-entering Guests does.
+ * @description The composer renders the section under an `@switch`, so this component is destroyed
+ * and a new one built while the host's form service keeps the form — and anything the organizer
+ * did to it.
+ */
+async function remount(form: FormGroup, saved: MeetingCommittee[] = [], savedAttendeeVisibility: boolean | null = null) {
+  const fixture = TestBed.createComponent(MeetingCommitteeManagerComponent);
+  fixture.componentRef.setInput('selectedCommittees', saved);
+  fixture.componentRef.setInput('savedAttendeeVisibility', savedAttendeeVisibility);
+  fixture.componentRef.setInput('form', form);
+  await fixture.whenStable();
+  return fixture;
 }
 
 /**
@@ -886,6 +901,43 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     component.form().get('meeting_type')?.setValue('Technical');
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('keeps an opt-out made before the organizer left and re-entered the Guests section', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    organizerSets(component.form(), false);
+    await fixture.whenStable();
+
+    const form = component.form();
+    fixture.destroy();
+    const returned = await remount(form);
+
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await returned.whenStable();
+
+    // The choice survived in the form, so the rebuilt picker has to find it there. Reading it as
+    // "no decision yet" would let the next group default silently re-share the guest list.
+    expect(form.get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('does not read an untouched toggle as an opt-out when the section is re-entered', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    await fixture.whenStable();
+
+    // Pristine and `false` is what every create starts at, so seeding off the value alone would
+    // read an organizer who has done nothing as having opted out, and no group default would apply.
+    const form = component.form();
+    expect(form.get('show_meeting_attendees')?.dirty).toBe(false);
+    fixture.destroy();
+    const returned = await remount(form);
+
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await returned.whenStable();
+
+    expect(form.get('show_meeting_attendees')?.value).toBe(true);
   });
 
   it('applies a newly picked committee preference once the opt-out is withdrawn', async () => {
