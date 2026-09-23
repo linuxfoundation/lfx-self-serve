@@ -1,0 +1,136 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+//
+// Meeting details V2 — scoped design token layer (E0-05 / #1769).
+//
+// The V2 prototype deliberately diverges from the app's current look. This file is the
+// ONLY place that divergence is allowed to live: every colour, radius and shadow the V2
+// tree uses resolves through one of the custom properties below, so a component never
+// writes a raw hex, rgba or arbitrary Tailwind colour value.
+//
+// Scope
+// -----
+// Everything hangs off a single container class, `.meeting-details-v2`. Nothing is added
+// to global styles and nothing is redefined on `:root`, so V1 and the rest of the app are
+// untouched and the whole layer reverts by deleting this file and its `@use`.
+//
+// Custom properties inherit through the DOM regardless of Angular's view encapsulation,
+// so a descendant component — including an `lfx-*` wrapper rendered inside the V2 tree —
+// resolves `var(--md-*)` without importing anything. The scope class therefore belongs on
+// a wrapper element inside the V2 page component's own template (an emulated-encapsulation
+// stylesheet cannot reach its own host element with a plain class selector).
+//
+//   // meeting-details-v2.component.scss
+//   @use './meeting-details-v2.tokens';
+//
+//   <!-- meeting-details-v2.component.html -->
+//   <div class="meeting-details-v2"> … </div>
+//
+// Naming
+// ------
+// Tokens are named by ROLE, never by hue: `--md-status-good`, never `--md-green-500`.
+// Swapping the palette must not require renaming a token.
+//
+// Raw values
+// ----------
+// Literal colour values appear here and nowhere else in the V2 tree. That is the point of
+// a token layer: this file is the definition boundary, so the repo-wide "no hard-coded
+// hex" rule is satisfied by every consumer resolving `var(--md-*)`.
+//
+// Relationship to `lfxColors`
+// ---------------------------
+// Each token below records the nearest `lfxColors` scale step. Where the prototype value
+// is not that step, the comment is marked `DIVERGENCE` with the reason. The full table and
+// the convergence path live in
+// `specs/010-meeting-details-redesign/design-token-deviations.md`.
+//
+
+.meeting-details-v2 {
+  // ── Surfaces ──────────────────────────────────────────────────────────────
+  --md-surface-page: #ffffff; // lfxColors.white — exact match
+  --md-surface-card: #ffffff; // lfxColors.white — exact match
+  --md-surface-hover: #f6f7f9; // DIVERGENCE: lfxColors.gray.50 (#F8FAFC) is cooler; prototype hover is neutral
+
+  // ── Edges ─────────────────────────────────────────────────────────────────
+  --md-border: #e6e8eb; // DIVERGENCE: nearest lfxColors.gray.200 (#E2E8F0), prototype is warmer/lighter
+  --md-border-strong: #d5d8dd; // DIVERGENCE: nearest lfxColors.gray.300 (#CAD5E2)
+  --md-divider: #eef0f2; // DIVERGENCE: nearest lfxColors.gray.100 (#F1F5F9)
+  --md-dot: #c7cbd1; // DIVERGENCE: nearest lfxColors.gray.300 (#CAD5E2); timeline/step dots only
+
+  // ── Text hierarchy ────────────────────────────────────────────────────────
+  --md-text-heading: #0f1419; // DIVERGENCE: nearest lfxColors.gray.900 (#0F172B), prototype is neutral not blue-black
+  --md-text-body: #374151; // DIVERGENCE: sits between lfxColors.gray.700 (#314158) and gray.600 (#45556C)
+  --md-text-muted: #6b7280; // DIVERGENCE: nearest lfxColors.gray.500 (#62748E)
+  --md-text-faint: #9ca3af; // DIVERGENCE: nearest lfxColors.gray.400 (#90A1B9)
+
+  // ── Accent / CTA ──────────────────────────────────────────────────────────
+  --md-accent: #0f6fff; // DIVERGENCE: lfxColors.blue.500 (#009AFF) is markedly cyan; prototype blue is a true blue
+  --md-accent-ink: #1558c0; // DIVERGENCE: nearest lfxColors.blue.700 (#0061A3); text/icon on accent backgrounds
+  --md-accent-bg: rgb(15 111 255 / 9%); // derived from --md-accent
+
+  // ── Status: good (going, attended, success) ───────────────────────────────
+  --md-status-good: #1a8f5a; // DIVERGENCE: nearest lfxColors.emerald.600 (#009966), prototype is less saturated
+  --md-status-good-bg: rgb(26 143 90 / 10%); // derived from --md-status-good
+
+  // ── Status: warn (awaiting RSVP, pending, low attendance) ─────────────────
+  --md-status-warn: #b7791f; // DIVERGENCE: lfxColors.amber.700 (#BB4D00) is far more orange; prototype reads as ochre
+  --md-status-warn-bg: rgb(183 121 31 / 12%); // derived from --md-status-warn
+
+  // ── Status: live (in progress, declined, destructive) ─────────────────────
+  --md-status-live: #e0453a; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), prototype is softer
+  --md-status-live-bg: rgb(224 69 58 / 10%); // derived from --md-status-live
+
+  // ── Radii ─────────────────────────────────────────────────────────────────
+  --md-radius-xs: 3px; // progress bars, rails, hairline chips
+  --md-radius-md: 8px; // buttons, inputs, small tiles
+  --md-radius-lg: 10px; // cards, panels
+  --md-radius-chip: 13px; // pill chips (26px tall)
+  --md-radius-circle: 50%; // avatars, status dots
+
+  // ── Elevation ─────────────────────────────────────────────────────────────
+  --md-shadow-color: rgb(15 20 25 / 9%); // derived from --md-text-heading
+  --md-shadow-pop: 0 6px 18px var(--md-shadow-color); // hover/raised cards and tiles
+  --md-shadow-focus: 0 0 0 3px var(--md-accent-bg); // focus ring
+}
+
+//
+// Dark values, taken from the prototype's own `[data-theme="dark"]` block.
+//
+// The app configures PrimeNG's `darkModeSelector: '.dark-mode'` but ships no toggle that
+// sets it, so this block is inert today. It is included so the V2 tree does not have to be
+// re-derived when a toggle lands, and so the prototype's dark contract is recorded rather
+// than lost. If the app adopts a different dark-mode mechanism, change the selector here
+// only — the token names and every consumer stay as they are.
+//
+.dark-mode .meeting-details-v2 {
+  --md-surface-page: #0e1013;
+  --md-surface-card: #17191f;
+  --md-surface-hover: #1b1e24;
+
+  --md-border: #282c34;
+  --md-border-strong: #3a3f48;
+  --md-divider: #22262d;
+  --md-dot: #3a3f48;
+
+  --md-text-heading: #eef1f4;
+  --md-text-body: #c2c8d0;
+  --md-text-muted: #98a0ab;
+  --md-text-faint: #6f7783;
+
+  --md-accent: #4f9bff;
+  --md-accent-ink: #7db4ff;
+  --md-accent-bg: rgb(79 155 255 / 13%);
+
+  --md-status-good: #3bb87c;
+  --md-status-good-bg: rgb(59 184 124 / 14%);
+
+  --md-status-warn: #e0a94a;
+  --md-status-warn-bg: rgb(224 169 74 / 14%);
+
+  --md-status-live: #ff6b60;
+  --md-status-live-bg: rgb(255 107 96 / 14%);
+
+  // --md-shadow-color is intentionally not overridden: the prototype's dark block leaves
+  // the elevation colour alone.
+}

@@ -206,6 +206,44 @@ When utilities aren't sufficient, use component-specific styles:
 }
 ```
 
+### Scoped design token layers
+
+A feature that deliberately diverges from the app's look — a redesign shipping behind a flag,
+for example — confines that divergence to a **scoped token layer** rather than spreading raw
+values across components or widening the global palette.
+
+The rules:
+
+- Declare the tokens under **one container class**, never on `:root` and never in
+  `styles.scss`. The layer must revert by deleting the file and its `@use`.
+- Name tokens by **role, not hue** — `--md-status-good`, never `--md-green-500` — so the
+  palette can be swapped without renaming a token or touching a consumer.
+- **Literal colour values belong in the token file and nowhere else.** That file is the
+  definition boundary; every consumer resolves `var(--*)`, which is what satisfies the
+  repo-wide "never hard-code hex" rule.
+- Record each token's nearest `lfxColors` equivalent next to it, and mark deliberate
+  divergences explicitly, with the full table and the convergence path in the feature's
+  `specs/` directory. A divergence that isn't written down becomes permanent by default.
+
+Custom properties inherit through the DOM regardless of Angular's view encapsulation, so
+descendant components — including `lfx-*` wrappers — resolve the tokens without importing
+anything. The scope class goes on a wrapper element **inside** the owning component's own
+template: an emulated-encapsulation stylesheet rewrites selectors with a `_ngcontent`
+attribute, so a plain class selector cannot reach its own host element.
+
+```scss
+// feature.component.scss
+@use './feature.tokens';
+```
+
+```html
+<!-- feature.component.html -->
+<div class="feature-scope">…</div>
+```
+
+Worked example: `apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss`,
+with its deviation table in `specs/010-meeting-details-redesign/design-token-deviations.md`.
+
 ## 🎭 Icon System
 
 ### Font Awesome Pro
