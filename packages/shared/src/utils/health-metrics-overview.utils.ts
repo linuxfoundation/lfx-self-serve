@@ -37,8 +37,9 @@ const KPI_STATUS_TO_CLASSIFICATION: Record<string, HealthMetricsOverviewClassifi
  * Resolves an `hm_findings.link_target` key to a full PCC URL: `{pccBaseUrl}/project/{pccProjectId}
  * /reports/health-metrics{anchor}`. `pccBaseUrl` is passed in by the caller (e.g. `environment.urls.pcc`)
  * so this package stays environment-agnostic. Returns `undefined` for `code.insights` (which opens
- * externally via `buildLensAwareInsightsUrl` instead) or a missing `pccProjectId`, so a caller never
- * renders a broken link.
+ * externally via `buildLensAwareInsightsUrl` instead), for `eng.*` targets (which route in-app via
+ * `buildHealthMetricsOverviewEngagementRoute`), or a missing `pccProjectId`, so a caller never renders
+ * a broken link.
  */
 export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectId: string, linkTarget: HealthMetricsOverviewLinkTarget): string | undefined {
   const anchor = Object.hasOwn(HEALTH_METRICS_OVERVIEW_LINK_TARGETS, linkTarget)

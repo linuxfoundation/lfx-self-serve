@@ -8,7 +8,8 @@ import type { HealthMetricsOverviewEngagementLinkSpec, HealthOverviewKpisRow, He
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
- * `link_target` prefixes in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS} (`eng.*`, `evt.*`, ...).
+ * `link_target` prefixes (`eng.*`, `evt.*`, ...) in {@link HEALTH_METRICS_OVERVIEW_LINK_TARGETS} and
+ * {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}.
  * Order here is the tile-strip render order — never re-sorted.
  */
 export const HEALTH_METRICS_OVERVIEW_AREAS = [
