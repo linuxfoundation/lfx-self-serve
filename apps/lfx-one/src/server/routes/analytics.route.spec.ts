@@ -51,6 +51,8 @@ vi.mock('../services/logger.service', () => ({
 }));
 
 const analyticsRouter = (await import('./analytics.route')).default;
+const { ProjectService } = await import('../services/project.service');
+const { AccessCheckService } = await import('../services/access-check.service');
 
 let server: Server;
 let baseUrl: string;
@@ -190,6 +192,24 @@ describe.each(['/member-retention', '/member-acquisition', '/engaged-community',
 
       expect(res.status).toBe(200);
       expect(checkRootMarketingAuditor).toHaveBeenCalled();
+    });
+
+    it('refuses a project-scoped grant on the tlf umbrella aggregate when marketing-ops FGA is on', async () => {
+      process.env[ServerFeatureFlag.MarketingOpsFga] = 'true';
+      getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
+      checkRootMarketingAuditor.mockResolvedValue(false);
+      const projectLookup = vi.spyOn(ProjectService.prototype, 'getProjectIdBySlug').mockResolvedValue({ uid: 'uid-tlf', slug: 'tlf', exists: true });
+      const projectGrant = vi.spyOn(AccessCheckService.prototype, 'checkSingleAccess').mockResolvedValue(true);
+
+      try {
+        const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=tlf`);
+
+        expect(res.status).toBe(403);
+        expect(execute).not.toHaveBeenCalled();
+      } finally {
+        projectLookup.mockRestore();
+        projectGrant.mockRestore();
+      }
     });
   }
 );

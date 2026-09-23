@@ -5,7 +5,7 @@ import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
 import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
-import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff } from '../middleware/require-marketing-access.middleware';
+import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 
@@ -174,12 +174,13 @@ router.get('/social-media/monthly', requireMarketingAuditor, (req, res, next) =>
 // revenue/retention KPIs straight from Snowflake with the BFF's own credentials, so the BFF is the
 // only authorization point. They render in Marketing Overview alongside `event-growth`/`brand-reach`
 // (and the ED + LF Staff health-metrics flywheel card), so they share that audience's gate: LF Staff,
-// EDs scoped to the requested foundation, and marketing_auditor grantees. See note above on
-// `requireMarketingAuditorOrLfStaff`.
-router.get('/member-retention', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getMemberRetention(req, res, next));
-router.get('/member-acquisition', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
-router.get('/engaged-community', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
-router.get('/flywheel-conversion', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
+// EDs scoped to the requested foundation, and marketing_auditor grantees. The handlers aggregate every
+// foundation for `tlf`, so `requireNorthStarAccess` refuses a project-scoped grant on `tlf` and
+// requires the ROOT grant for that umbrella view.
+router.get('/member-retention', requireNorthStarAccess, (req, res, next) => analyticsController.getMemberRetention(req, res, next));
+router.get('/member-acquisition', requireNorthStarAccess, (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
+router.get('/engaged-community', requireNorthStarAccess, (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
+router.get('/flywheel-conversion', requireNorthStarAccess, (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
 
 // Health metrics page endpoints (ED + LF Staff) — the health-metrics route is gated client-side by
 // dashboardAccessGuard; requireDashboardAccess enforces the same policy server-side so the
