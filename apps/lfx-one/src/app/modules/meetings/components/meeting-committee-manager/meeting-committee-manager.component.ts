@@ -134,10 +134,10 @@ export class MeetingCommitteeManagerComponent {
    * wrote — restoring on that reading would silently re-share a roster they had turned off.
    *
    * Set when a committee preference is applied or withheld by the lock; cleared as soon as the
-   * organizer edits the toggle or the selection stops carrying the preference. Lock-driven
-   * writes are silent (`{ emitEvent: false }`), so an emission on that control is either the
-   * organizer or this component's own write, and {@link applyingAttendeeWrite}
-   * distinguishes those two.
+   * organizer edits the toggle or the selection stops carrying the preference. An emission on
+   * that control counts as an organizer edit only when the control is dirty and
+   * {@link applyingAttendeeWrite} is not set — hydration patches it loudly too. See
+   * {@link watchAttendeeEdits}.
    */
   private committeeOwnsAttendeeToggle = false;
 
@@ -478,6 +478,12 @@ export class MeetingCommitteeManagerComponent {
    * resurrect it through this cache instead of through the saved value, bypassing the guard
    * entirely. The toggle binds through `formControlName`, so a human flipping it marks the
    * control dirty and a programmatic patch does not — that, not the emission, is the signal.
+   *
+   * Read `dirty` as "edited since this control was last hydrated", not as "a human flipped it at
+   * some point": the flag is sticky, and both hosts mark every control dirty in bulk when a
+   * submit fails. They each mark this one pristine again at the end of hydration to keep the
+   * reading true, and {@link applyingAttendeeWrite} still covers this component's own writes,
+   * which land on whatever dirty state the form happens to be in.
    *
    * Returned as part of the lock stream rather than subscribed on the side, so the `switchMap`
    * tears it down when the form input is replaced; a side subscription would outlive its control

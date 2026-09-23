@@ -1570,6 +1570,12 @@ export class MeetingComposerFormService {
 
   private populateFormWithMeetingData(meeting: Meeting): void {
     const form = this.form();
+    // A hydrated value is not an edit. The group picker reads this control's `dirty` flag to tell
+    // the organizer's own choice from a patch, and `dirty` is sticky: `validateForSubmit` marks
+    // every control dirty in bulk, so a reload after a failed submit would otherwise let the patch
+    // below read as a choice. Cleared before the patch rather than after, because the patch is
+    // loud and the picker decides as it arrives.
+    form.get('show_meeting_attendees')?.markAsPristine();
     this.originalStartTime.set(meeting.start_time);
 
     // Parse start_time into the meeting's own timezone so the date and time pickers show

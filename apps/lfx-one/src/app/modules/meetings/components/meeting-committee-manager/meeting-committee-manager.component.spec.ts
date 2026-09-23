@@ -55,6 +55,19 @@ function hostForm(committees: MeetingCommittee[], hydrated: { meetingType?: stri
  * control dirty; a programmatic patch leaves it pristine. The picker reads exactly that
  * difference, so a spec that only calls `setValue` is simulating hydration, not an edit.
  */
+/**
+ * Replays a host's hydration sequence over an already-mounted picker.
+ * @description Both hosts hydrate the same way: clear this control's dirty flag so the patch
+ * cannot read as an edit, one loud `patchValue`, then `syncShowMeetingAttendeesLock` to force a
+ * locked meeting's toggle off silently. A spec that only calls `patchValue` is missing the two
+ * steps that decide what the picker sees.
+ */
+function hydrate(form: FormGroup, values: Record<string, unknown>): void {
+  form.get('show_meeting_attendees')?.markAsPristine();
+  form.patchValue(values);
+  syncShowMeetingAttendeesLock(form);
+}
+
 function organizerSets(form: FormGroup, value: boolean): void {
   const control = form.get('show_meeting_attendees');
   control?.markAsDirty();
@@ -964,17 +977,64 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
-  it('does not read a hydration patch as the organizer choosing to share', async () => {
-    // Opening a legacy Board meeting on the guests step: the picker is already mounted when the
-    // load lands, so it sees the loud patch carrying the stale `true` — and the lock only forces
-    // the control back off afterwards, silently. Treating that patch as a choice would resurrect
-    // the value on unlock through the session cache, going around the saved-value guard that
-    // discards it.
+  // Opening a legacy Board meeting on the guests step: the picker is already mounted when the load
+  // lands, so it sees the loud patch carrying the stale `true`, and the lock only forces the control
+  // back off afterwards, silently. Treating that patch as a choice would resurrect the value on
+  // unlock through the session cache, going around the saved-value guard that discards it.
+  //
+  // Both key orders, because the two differ in whether the stale `true` lands before or after the
+  // lock takes hold: the hosts patch `meeting_type` first, and a patch built the other way round is
+  // one key reordering away.
+  for (const [order, patch] of [
+    ['as the hosts patch it', { meeting_type: 'Board', show_meeting_attendees: true }],
+    ['when the flag lands before the type', { show_meeting_attendees: true, meeting_type: 'Board' }],
+  ] as const) {
+    it(`does not read a hydration patch as the organizer choosing to share, ${order}`, async () => {
+      const { component, fixture } = await mount([], {}, [BOARD]);
+      hydrate(component.form(), patch);
+      await fixture.whenStable();
+      expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+      component.form().get('meeting_type')?.setValue('Technical');
+      await fixture.whenStable();
+
+      expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+    });
+  }
+
+  it('does not read a re-hydration as an edit just because a failed submit left the control dirty', async () => {
+    // `dirty` is sticky and both hosts mark every control dirty when a submit fails, so a reload
+    // after that would land on a control that still looks edited. The pristine reset at the end of
+    // hydration is what keeps the flag meaning "edited since the load".
     const { component, fixture } = await mount([], {}, [BOARD]);
-    component.form().patchValue({ show_meeting_attendees: true, meeting_type: 'Board' });
+    component.form().get('show_meeting_attendees')?.markAsDirty();
+
+    hydrate(component.form(), { meeting_type: 'Board', show_meeting_attendees: true });
     await fixture.whenStable();
     expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
 
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('does not read its own committee write as the organizer’s, on a control left dirty by a failed submit', async () => {
+    // `dirty` is sticky and both hosts mark every control dirty when a submit fails, so the
+    // component's own writes can land on a dirty control. `applyingAttendeeWrite`, not the dirty
+    // flag, is what keeps those from being recorded as the organizer's choice — without it, the
+    // preference below would be remembered as theirs and restored after the committee is gone.
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('show_meeting_attendees')?.markAsDirty();
+
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
     component.form().get('meeting_type')?.setValue('Technical');
     await fixture.whenStable();
 
