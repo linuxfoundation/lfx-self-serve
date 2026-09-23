@@ -78,8 +78,12 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   // seeded as the initial value — without it Confirm would render enabled until the first edit.
   private readonly status = toSignal(this.form.statusChanges, { initialValue: this.form.status });
   protected readonly canConfirm = computed(() => this.status() === 'VALID');
+  // The form starts invalid because the reason is empty, and it stays invalid when a too-long note
+  // is typed before a reason is chosen. `statusChanges` does not emit when the status string does
+  // not change, so the message has to follow the note's own value.
+  private readonly noteValue = toSignal(this.form.controls.note.valueChanges, { initialValue: this.form.controls.note.value });
   protected readonly noteTooLong = computed(() => {
-    this.status();
+    this.noteValue();
     return this.form.controls.note.hasError('maxCodePoints');
   });
 

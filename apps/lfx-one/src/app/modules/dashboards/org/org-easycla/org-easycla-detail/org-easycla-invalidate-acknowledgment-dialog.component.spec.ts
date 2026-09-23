@@ -145,6 +145,26 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     expect(note?.getAttribute('aria-describedby')).toBe('org-easycla-invalidate-note-error');
   });
 
+  it('shows the note-length error before a reason is chosen', async () => {
+    const fixture = await render();
+
+    fixture.componentInstance.form.controls.note.setValue('𠮷'.repeat(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH + 1));
+    fixture.detectChanges();
+
+    const note = fixture.nativeElement.querySelector('#org-easycla-invalidate-note');
+
+    expect(confirmButton(fixture)?.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-note-error"]')?.textContent?.trim()).toBe(
+      `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`
+    );
+    expect(note?.getAttribute('aria-invalid')).toBe('true');
+
+    chooseReason(fixture, 'other');
+
+    expect(confirmButton(fixture)?.disabled).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-note-error"]')).not.toBeNull();
+  });
+
   it('accepts a full-length note once surrounding whitespace is trimmed', async () => {
     const fixture = await render();
 
