@@ -44,3 +44,6 @@ export const FOUNDATION_LOGO_SQUARE_PALETTE: readonly string[] = [
   'bg-red-600 text-white',
   'bg-violet-600 text-white',
 ];
+
+/** 503 copy when the BFF could not verify the caller's access to an organization (grant roster, authorizer, or persona lookup unavailable). */
+export const ORG_ACCESS_UNVERIFIABLE_MESSAGE = "Couldn't verify your access to this organization right now. Please try again.";

@@ -20,7 +20,7 @@ import type * as AuthHelper from '../utils/auth-helper';
  * on the org-scoped rows (linuxfoundation/lfx-self-serve-ops#44). `requireNorthStarAccess` is stricter
  * than the sibling `requireMarketingAuditorOrLfStaff`: it refuses a project-scoped grant on the `tlf` umbrella.
  *
- * The middleware has its own unit tests, but those call it directly — they would keep passing if
+ * Middleware unit tests (where a gate has them) call it directly — they would keep passing if
  * `router.get('/foundation-profile-summary', requireDashboardAccess, ...)` had the middleware
  * dropped or reordered. Since that registration *is* the fix, these tests drive real HTTP requests
  * through the assembled router.
@@ -31,13 +31,14 @@ import type * as AuthHelper from '../utils/auth-helper';
  */
 
 const getPersonas = vi.fn();
+const getDetections = vi.fn();
 const checkRootMarketingAuditor = vi.fn();
 const execute = vi.fn();
 const getAccessAwareOrgs = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { getPersonas, checkRootMarketingAuditor },
+  personaDetectionService: { getPersonas, getDetections, checkRootMarketingAuditor },
 }));
 // The org gate delegates to the real `assertOrgLensRead`; these mock what that helper consumes (the
 // caller's grant roster and the `b2b_org#auditor` authorizer), so the real decision logic runs.
@@ -84,12 +85,15 @@ vi.mock('../services/logger.service', () => ({
     debug: vi.fn(),
     startOperation: vi.fn(() => Date.now()),
     success: vi.fn(),
+    // Read by the production `apiErrorHandler` mounted below.
+    getLastOperation: vi.fn(),
   },
 }));
 
 const analyticsRouter = (await import('./analytics.route')).default;
 const { ProjectService } = await import('../services/project.service');
 const { AccessCheckService } = await import('../services/access-check.service');
+const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 
 let server: Server;
 let baseUrl: string;
@@ -97,6 +101,8 @@ let baseUrl: string;
 beforeAll(async () => {
   const app = express();
   app.use('/api/analytics', analyticsRouter);
+  // The production error handler, so tests observe the error body a real client receives.
+  app.use(apiErrorHandler);
   await new Promise<void>((resolve) => {
     server = app.listen(0, '127.0.0.1', resolve);
   });
@@ -267,14 +273,10 @@ const VICTIM = '001EXAMPLEOTHER0AA';
 
 /** A caller who is a board member of `boardMemberOf` and holds an org grant on `grants`, and nothing else. */
 function caller({ boardMemberOf = [], grants = [], personaError = null }: { boardMemberOf?: string[]; grants?: string[]; personaError?: string | null }): void {
-  getPersonas.mockResolvedValue({
-    personas: boardMemberOf.length > 0 ? ['board-member'] : ['contributor'],
-    isLFStaff: false,
-    isRootWriter: false,
-    personaProjects: {},
-    organizations: boardMemberOf.map((accountId) => ({ accountId, accountName: 'Org', uid: accountId })),
-    error: personaError,
-  });
+  const personas = boardMemberOf.length > 0 ? ['board-member'] : ['contributor'];
+  const organizations = boardMemberOf.map((accountId) => ({ accountId, accountName: 'Org', uid: accountId }));
+  getDetections.mockResolvedValue({ personas, personaProjects: {}, projects: [], organizations, error: personaError });
+  getPersonas.mockResolvedValue({ personas, isLFStaff: false, isRootWriter: false, personaProjects: {}, organizations, error: personaError });
   getAccessAwareOrgs.mockResolvedValue({
     resolved: new Map(grants.map((uid) => [uid, { roleSource: 'direct-writer' }])),
     upstreamFailed: false,
@@ -291,19 +293,53 @@ function queried(accountId: string): boolean {
 // gap the org rows fell into when the Org Lens prefix was gated but these were not.
 const routePaths = analyticsRouter.stack.flatMap((layer) => (typeof layer.route?.path === 'string' ? [layer.route.path] : []));
 
+// Every row that reads an organization's Snowflake data by the caller-supplied account id. The sweep
+// pins this set from both sides: each listed row must actually reach Snowflake for an admitted
+// account (so its "never for an ungranted one" assertion is not vacuous), and any other row that
+// starts querying by account id fails until it is added here — and therefore gated.
+const ORG_SCOPED_ROWS = new Set([
+  '/certified-employees',
+  '/membership-tier',
+  '/organization-maintainers',
+  '/organization-contributors',
+  '/training-enrollments',
+  '/event-attendance-monthly',
+  '/org-contributors-monthly',
+  '/org-contributors-project-distribution',
+  '/org-maintainers-monthly',
+  '/org-maintainers-distribution',
+  '/org-maintainers-key-members',
+  '/org-event-attendees-monthly',
+  '/org-event-speakers-monthly',
+  '/org-training-enrollments-monthly',
+  '/org-training-enrollments-distribution',
+  '/org-certified-employees-monthly',
+  '/org-certified-employees-distribution',
+  '/org-foundation-coverage',
+  '/org-involvement-contributors-monthly',
+  '/org-involvement-maintainers-monthly',
+  '/org-involvement-event-attendance-monthly',
+  '/org-involvement-certified-employees-monthly',
+  '/org-involvement-training-enrollments',
+  '/org-lens-account-context',
+]);
+
 describe('analytics router — no row reads an organization the caller holds no access to', () => {
-  it('sweeps the org-scoped rows', () => {
-    expect(routePaths).toEqual(
-      expect.arrayContaining(['/membership-tier', '/org-maintainers-key-members', '/org-foundation-coverage', '/org-lens-account-context'])
-    );
+  const request = (path: string, accountId: string): Promise<Response> =>
+    fetch(`${baseUrl}/api/analytics${path}?accountId=${accountId}&accountIds=${accountId}&foundationSlug=cncf&projectSlug=cncf&slugs=cncf`);
+
+  it('lists only rows the router actually serves', () => {
+    expect(routePaths).toEqual(expect.arrayContaining([...ORG_SCOPED_ROWS]));
   });
 
   it.each(routePaths)('%s never queries Snowflake with an ungranted account id', async (path) => {
     caller({ boardMemberOf: [OWN], grants: [OWN] });
 
-    const res = await fetch(`${baseUrl}/api/analytics${path}?accountId=${VICTIM}&accountIds=${VICTIM}&foundationSlug=cncf&projectSlug=cncf&slugs=cncf`);
-    await res.arrayBuffer();
+    await (await request(path, OWN)).arrayBuffer();
+    expect(queried(OWN)).toBe(ORG_SCOPED_ROWS.has(path));
 
+    execute.mockClear();
+    await (await request(path, VICTIM)).arrayBuffer();
     expect(queried(VICTIM)).toBe(false);
   });
 });
@@ -376,6 +412,7 @@ describe.each([
     const res = await request(OWN.slice(0, 15));
 
     expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ errors: [expect.objectContaining({ field: 'accountId' })] });
     expect(execute).not.toHaveBeenCalled();
   });
 });

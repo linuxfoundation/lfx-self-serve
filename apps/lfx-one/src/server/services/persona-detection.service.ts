@@ -102,6 +102,18 @@ export class PersonaDetectionService {
   }
 
   /**
+   * The caller's persona detections (personas, projects, board-member organizations) on their own —
+   * the shared per-user cache, without the per-request ROOT-writer / LF-staff / auditor checks
+   * `getPersonas` always adds. For gates that read only detection data, where those checks would be
+   * FGA round trips whose answers are discarded.
+   */
+  public async getDetections(req: Request): Promise<PersonaDetections> {
+    const username = getEffectiveUsername(req) || '';
+    const email = getEffectiveEmail(req) || '';
+    return this.getPersonaDetections(req, username, email, username || email);
+  }
+
+  /**
    * `projectSlug`, when passed (the route's `?project=`/`?foundationSlug=` context), also folds a
    * project-scoped `marketing_auditor`/`campaign_manager` grant into the two booleans below —
    * without it, only the ROOT-scoped grant is visible, which under-reports access for a caller
@@ -117,10 +129,6 @@ export class PersonaDetectionService {
     projectSlug?: string,
     marketingRelations: 'marketing_auditor' | 'campaign_manager' | 'both' | 'none' = 'both'
   ): Promise<PersonaApiResponse> {
-    const username = getEffectiveUsername(req) || '';
-    const email = getEffectiveEmail(req) || '';
-    const cacheKey = username || email;
-
     // isRootWriter/isLFStaff/isMarketingAuditor/isCampaignManager are request-scoped
     // (bearer-token dependent) — resolve per-request and merge. The marketing-ops checks are
     // skipped entirely while their server flag is off, so this endpoint costs nothing extra
@@ -142,7 +150,7 @@ export class PersonaDetectionService {
     // (Copilot finding, PR #1835).
     const [detections, isRootWriter, isLFStaff, isAuditor, isMarketingAuditor, isCampaignManager, isMarketingAuditorRootGrant, isCampaignManagerRootGrant] =
       await Promise.all([
-        this.getPersonaDetections(req, username, email, cacheKey),
+        this.getDetections(req),
         this.checkRootWriter(req),
         this.checkLFStaff(req),
         this.checkRootAuditor(req),

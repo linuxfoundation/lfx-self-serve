@@ -3496,7 +3496,10 @@ export class AnalyticsController {
     return slugs;
   }
 
-  /** Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format. */
+  /**
+   * Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format.
+   * Every route that uses it sits behind `requireOrgAnalyticsAccess`, which already admits only the canonical 18-char id.
+   */
   private parseAccountIdParam(req: Request, operation: string): string {
     const accountId = getStringQueryParam(req, 'accountId');
     if (!accountId) {
@@ -3512,6 +3515,7 @@ export class AnalyticsController {
    * Parse and validate the `accountIds` query parameter (comma-separated
    * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
    * checks each id matches the Salesforce 15/18-char alphanumeric format.
+   * `filterReadableAccountIds` then keeps only the caller's own canonical 18-char board-member ids.
    */
   private parseAccountIdsParam(req: Request, operation: string): string[] {
     const raw = getStringQueryParam(req, 'accountIds');

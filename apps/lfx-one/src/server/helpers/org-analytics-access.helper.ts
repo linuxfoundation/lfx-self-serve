@@ -1,15 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
-import { BaseApiError, MicroserviceError } from '../errors';
+import { BaseApiError, MicroserviceError, ServiceValidationError } from '../errors';
 import { personaDetectionService } from '../utils/persona-helper';
 import { assertOrgLensRead } from './org-lens-read-access.helper';
-import { assertOrgUid } from './org-uid.helper';
-
-const PERSONA_UNAVAILABLE_MESSAGE = "Couldn't verify your access to this organization right now. Please try again.";
 
 /**
  * Read gate for org-scoped Snowflake analytics keyed by a caller-supplied account id.
@@ -21,17 +18,19 @@ const PERSONA_UNAVAILABLE_MESSAGE = "Couldn't verify your access to this organiz
  * `b2b_org#auditor`, which is also how LF team membership resolves) — the organizations the org
  * selector offers them.
  *
- * The id must already be the canonical 18-char SFID (`assertOrgUid`), so the id authorized here is
- * byte-for-byte the id the handler queries.
+ * Only the canonical 18-char SFID is accepted (`ORG_ACCOUNT_ID_PATTERN`, 400 on the `accountId`
+ * field otherwise), so the id authorized here is byte-for-byte the id the handler queries.
  *
  * Failure semantics follow `assertOrgLensRead`: 403 when we checked and the caller has no access,
  * 503 when we could not check. A failed persona lookup leaves the board-member branch unverified,
  * so a 403 that follows it is reported as 503 rather than as a verified denial.
  */
-export async function assertOrgAnalyticsRead(req: Request, accountId: string | undefined, operation: string): Promise<void> {
-  assertOrgUid(accountId, operation);
+export async function assertOrgAnalyticsRead(req: Request, accountId: string, operation: string): Promise<void> {
+  if (!ORG_ACCOUNT_ID_PATTERN.test(accountId)) {
+    throw ServiceValidationError.forField('accountId', 'Invalid organization account id format', { operation });
+  }
 
-  const { organizations, error: personaError } = await personaDetectionService.getPersonas(req, undefined, 'none');
+  const { organizations, error: personaError } = await personaDetectionService.getDetections(req);
   if (organizations.some((account) => account.accountId === accountId)) {
     return;
   }
@@ -40,7 +39,7 @@ export async function assertOrgAnalyticsRead(req: Request, accountId: string | u
     await assertOrgLensRead(req, accountId, operation);
   } catch (error) {
     if (personaError && error instanceof BaseApiError && error.statusCode === 403) {
-      throw new MicroserviceError(PERSONA_UNAVAILABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', {
+      throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', {
         operation,
         service: 'LFX_V2_SERVICE',
       });
@@ -59,9 +58,9 @@ export async function assertOrgAnalyticsRead(req: Request, accountId: string | u
  * which ids are the caller's, so it fails the call closed (503).
  */
 export async function filterReadableAccountIds(req: Request, accountIds: string[], operation: string): Promise<string[]> {
-  const { organizations, error } = await personaDetectionService.getPersonas(req, undefined, 'none');
+  const { organizations, error } = await personaDetectionService.getDetections(req);
   if (error) {
-    throw new MicroserviceError(PERSONA_UNAVAILABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', { operation, service: 'LFX_V2_SERVICE' });
+    throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', { operation, service: 'LFX_V2_SERVICE' });
   }
 
   const own = new Set(organizations.map((account) => account.accountId));
