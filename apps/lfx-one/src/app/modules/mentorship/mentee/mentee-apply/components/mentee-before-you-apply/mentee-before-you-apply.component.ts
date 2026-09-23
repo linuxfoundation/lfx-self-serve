@@ -52,8 +52,7 @@ export class MenteeBeforeYouApplyComponent {
 
   /** Unchecked confirmations. The apply page uses this to enable Submit. */
   readonly remaining = computed(() => {
-    const value = this.formSnapshot();
-    const checks = [value.ageEligible, value.workAuthorized, value.noDuplicateProfile, value.complianceAccepted, value.termsAccepted];
+    const checks = Object.values(this.formSnapshot());
     return checks.length - checks.filter(Boolean).length;
   });
 }

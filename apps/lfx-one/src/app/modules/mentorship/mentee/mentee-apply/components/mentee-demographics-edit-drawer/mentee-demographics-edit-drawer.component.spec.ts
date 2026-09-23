@@ -20,6 +20,7 @@ import { MenteeDemographicsEditDrawerComponent } from './mentee-demographics-edi
 })
 class StubDrawerComponent {
   readonly visible = input(false);
+  readonly visibleChange = output<boolean>();
   readonly position = input('right');
   readonly modal = input(false);
   readonly styleClass = input('');
@@ -107,13 +108,5 @@ describe('MenteeDemographicsEditDrawerComponent', () => {
 
     expect(comp.visible()).toBe(false);
     expect(messageAdd).not.toHaveBeenCalled();
-  });
-
-  it('closes on visibleChange(false)', () => {
-    comp.visible.set(true);
-
-    comp['onVisibleChange'](false);
-
-    expect(comp.visible()).toBe(false);
   });
 });

@@ -41,7 +41,7 @@ export class MenteeProfileDetailsComponent {
 
   public readonly profile = input.required<MentorshipMenteeProfileDetails>();
   public readonly editClick = output<void>();
-  /** Defaults keep the profile tab copy. The apply page passes its own title, subtitle, and labels. */
+  /** Defaults keep the profile tab copy. The apply page passes its own title and subtitle. */
   public readonly title = input(MENTORSHIP_MENTEE_PROFILE_DETAILS_TITLE);
   public readonly subtitle = input('');
 

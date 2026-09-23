@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { MENTORSHIP_COMING_SOON_DETAIL, MOCK_MENTORSHIP_MENTEE_PROFILE } from '@lfx-one/shared/constants';
+import { MENTORSHIP_COMING_SOON_DETAIL, MENTORSHIP_MENTEE_PROFILE_CREATED_STATE, MOCK_MENTORSHIP_MENTEE_PROFILE } from '@lfx-one/shared/constants';
 import { MentorshipMenteeApplyTarget } from '@lfx-one/shared/interfaces';
 import { MentorshipService } from '@services/mentorship.service';
 import { MessageService } from 'primeng/api';
@@ -134,5 +135,22 @@ describe('MenteeApplyComponent', () => {
     await bootstrap(applyParams);
 
     expect(element().querySelector('[data-testid="mentorship-mentee-apply-error"]')?.textContent).toContain('Could not load this application');
+  });
+
+  it('lets a mentee who just registered submit without checking confirmations, and clears the one-time flag', async () => {
+    const getState = vi.fn().mockReturnValue({ [MENTORSHIP_MENTEE_PROFILE_CREATED_STATE]: true });
+    const replaceState = vi.fn();
+    TestBed.overrideProvider(Location, { useValue: { getState, replaceState, path: () => '/mentorship/mentee/apply' } });
+
+    await bootstrap(applyParams);
+
+    expect(element().querySelector('[data-testid="mentorship-mentee-apply-before"]')).toBeNull();
+    expect(element().querySelector('[data-testid="mentorship-mentee-apply-remaining"]')).toBeNull();
+    expect(submitButton()?.disabled).toBe(false);
+    expect(replaceState).toHaveBeenCalled();
+
+    submitButton()?.click();
+
+    expect(toast).toHaveBeenCalledWith(expect.objectContaining({ summary: 'Submit Application', detail: MENTORSHIP_COMING_SOON_DETAIL }));
   });
 });

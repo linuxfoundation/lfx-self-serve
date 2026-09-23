@@ -10,6 +10,7 @@ import {
   MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EDIT_LABEL,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_PREFER_NOT_TO_SAY,
   MENTORSHIP_MENTEE_DEMOGRAPHIC_ROWS,
+  MENTORSHIP_MENTEE_DEMOGRAPHICS_EDIT_DRAWER_TITLE_ID,
   MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO,
   MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
@@ -20,8 +21,6 @@ import { filter } from 'rxjs';
 
 import { MentorshipComingSoonService } from '../../../../services/mentorship-coming-soon.service';
 import { MenteeDemographicsSectionComponent } from '../../../mentee-register/components/mentee-demographics-section/mentee-demographics-section.component';
-
-const TITLE_ID = 'mentorship-mentee-demographics-edit-drawer-title';
 
 /**
  * Edit drawer for the apply-page demographics summary. Reuses the register
@@ -43,6 +42,7 @@ export class MenteeDemographicsEditDrawerComponent {
   protected readonly intro = MENTORSHIP_MENTEE_DEMOGRAPHICS_INTRO;
   protected readonly saveLabel = MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL;
   protected readonly cancelLabel = MENTORSHIP_MENTEE_PROFILE_CANCEL_LABEL;
+  protected readonly titleId = MENTORSHIP_MENTEE_DEMOGRAPHICS_EDIT_DRAWER_TITLE_ID;
 
   protected readonly form = new FormGroup({
     ageConsent: new FormControl(false, { nonNullable: true }),
@@ -60,7 +60,7 @@ export class MenteeDemographicsEditDrawerComponent {
   public readonly visible = model(false);
 
   protected readonly drawerPt = computed(() => ({
-    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': TITLE_ID },
+    root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': this.titleId },
   }));
 
   private previouslyFocusedElement: HTMLElement | null = null;
@@ -97,10 +97,6 @@ export class MenteeDemographicsEditDrawerComponent {
 
   protected onCancel(): void {
     this.visible.set(false);
-  }
-
-  protected onVisibleChange(visible: boolean): void {
-    this.visible.set(visible);
   }
 
   protected onDrawerShow(): void {

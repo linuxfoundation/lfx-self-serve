@@ -118,11 +118,18 @@ export class MenteeApplyComponent {
     this.comingSoon.notify(this.submitLabel);
   }
 
-  /** Router `state` from the register redirect (#1509), read once at construction — see `menteeApplyGuard`'s equivalent check. SSR has neither a navigation nor a browser `history`, so it falls back to `false`. */
+  /**
+   * Router `state` from the register redirect (#1509), read once at construction — see `menteeApplyGuard`'s equivalent check.
+   * Single-use: cleared from history immediately after read so a later reload or back/forward navigation doesn't replay it.
+   * SSR has neither a navigation nor a browser `history`, so it falls back to `false`. The real submit endpoint must still
+   * re-validate the mentee's profile server-side rather than trusting this client-only flag.
+   */
   private readProfileCreated(): boolean {
     if (!isPlatformBrowser(this.platformId)) return false;
     const state = this.router.getCurrentNavigation()?.extras.state ?? (this.location.getState() as Record<string, unknown> | null);
-    return state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] === true;
+    const created = state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] === true;
+    if (created) this.location.replaceState(this.router.url, '', {});
+    return created;
   }
 
   private initPage(): Signal<{ target: MentorshipMenteeApplyTarget; profile: MentorshipMenteeProfileResponse } | null> {

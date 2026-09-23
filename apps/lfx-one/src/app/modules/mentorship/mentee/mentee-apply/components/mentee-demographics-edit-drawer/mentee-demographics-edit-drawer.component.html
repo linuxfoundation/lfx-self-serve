@@ -2,8 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <p-drawer
-  [visible]="visible()"
-  (visibleChange)="onVisibleChange($event)"
+  [(visible)]="visible"
   (onShow)="onDrawerShow()"
   [pt]="drawerPt()"
   position="right"
@@ -14,7 +13,7 @@
     <div class="flex flex-col gap-2">
       <h2
         #titleRef
-        id="mentorship-mentee-demographics-edit-drawer-title"
+        [id]="titleId"
         tabindex="-1"
         class="text-lg font-semibold text-gray-900 pr-8"
         data-testid="mentorship-mentee-demographics-edit-drawer-header">

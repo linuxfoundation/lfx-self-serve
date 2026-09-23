@@ -607,6 +607,9 @@ export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_INTRO =
 export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EDIT_LABEL = 'Edit Demographics';
 export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHICS_EMPTY = 'Not provided';
 
+/** `aria-labelledby` target for the demographics edit drawer header — shared between the `[pt]` override and the header title element. */
+export const MENTORSHIP_MENTEE_DEMOGRAPHICS_EDIT_DRAWER_TITLE_ID = 'mentorship-mentee-demographics-edit-drawer-title';
+
 /** Short column labels for the apply-page demographics summary. Order matches the design grid. */
 export const MENTORSHIP_MENTEE_APPLY_DEMOGRAPHIC_FIELDS = [
   { answerControl: 'age', label: 'Age' },
