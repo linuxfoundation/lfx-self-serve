@@ -13,8 +13,9 @@ import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 /**
  * Router-level coverage for the `requireDashboardAccess` gate on the Health Metrics Overview
- * "Foundation" rail endpoints (LFXV2-3365) and the `requireMarketingAuditorOrLfStaff` gate on the
- * North Star endpoints (linuxfoundation/lfx-self-serve-ops#43).
+ * "Foundation" rail endpoints (LFXV2-3365) and the `requireNorthStarAccess` gate on the North Star
+ * endpoints (linuxfoundation/lfx-self-serve-ops#43). The latter is stricter than the sibling
+ * `requireMarketingAuditorOrLfStaff`: it refuses a project-scoped grant on the `tlf` umbrella.
  *
  * The middleware has its own unit tests, but those call it directly — they would keep passing if
  * `router.get('/foundation-profile-summary', requireDashboardAccess, ...)` had the middleware
@@ -135,6 +136,13 @@ describe.each([
 describe.each(['/member-retention', '/member-acquisition', '/engaged-community', '/flywheel-conversion'])(
   'analytics router — North Star gate on %s',
   (path) => {
+    // Vitest auto-loads apps/lfx-one/.env, so an ambient LFX_MARKETING_OPS_FGA_ENABLED=true would send
+    // the denial tests down the flag-on path; clearAllMocks also keeps mockResolvedValue implementations.
+    beforeEach(() => {
+      delete process.env[ServerFeatureFlag.MarketingOpsFga];
+      checkRootMarketingAuditor.mockReset();
+    });
+
     afterEach(() => {
       delete process.env[ServerFeatureFlag.MarketingOpsFga];
     });
