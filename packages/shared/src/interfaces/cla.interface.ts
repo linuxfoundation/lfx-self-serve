@@ -1066,7 +1066,7 @@ export interface OrgClaApprovalEntriesDialogData {
 /**
  * One acknowledgment as the table renders it.
  *
- * Every field except `signatureId`, `cclaVersion`, and `approved` is optional; missing attributes
+ * Every field except `signatureId` and `approved` is optional; missing attributes
  * render as an em-dash rather than dropping the row. The row is Invalidated when `approved` is
  * false OR any of `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy
  * rows can carry the stamps with `approved: true`; the stamps are authoritative).
@@ -1081,15 +1081,8 @@ export interface OrgClaContributorAcknowledgment {
   /** GitLab username (login). Display only; NOT a stable identifier. */
   gitlabUsername?: string;
   email?: string;
-  /** DocuSign name the contributor signed under. */
+  /** The contributor's name as the producer records it on the acknowledgment. */
   name?: string;
-  /**
-   * The CCLA version the acknowledgment was recorded against.
-   *
-   * Normalized to a `v`-prefixed string ("v1", "v2.1", …) at the mapper; a value already prefixed
-   * with `v`/`V` is returned unchanged. An empty version renders as an em-dash at the row.
-   */
-  cclaVersion: string;
   /** When the acknowledgment was recorded, when the producer reported it. */
   signedOn?: string;
   /** False when the signature is invalidated. Default true for legacy rows the producer omits. */
@@ -1136,9 +1129,10 @@ export interface OrgClaAcknowledgmentRow {
     href: string | null;
     ariaLabel: string;
   };
-  cclaVersion: string;
   signedOnLabel: string;
   invalidated: boolean;
+  /** The invalidation date shown under the Invalidated tag, or empty when the producer stamped none. */
+  invalidatedOnLabel: string;
   invalidatedTooltip: string;
   /**
    * Whether this row can be invalidated at all, independent of who is asking.

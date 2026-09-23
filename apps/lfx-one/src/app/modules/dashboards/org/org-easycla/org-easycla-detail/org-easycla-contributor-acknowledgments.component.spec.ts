@@ -44,7 +44,6 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   function ack(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
     return {
       signatureId: `ecla-${Math.random().toString(36).slice(2, 8)}`,
-      cclaVersion: 'v1',
       approved: true,
       ...overrides,
     };
@@ -62,7 +61,10 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     };
   }
 
-  async function render(row: OrgClaGroup = claGroup()): Promise<ComponentFixture<OrgEasyclaContributorAcknowledgmentsComponent>> {
+  async function render(
+    row: OrgClaGroup = claGroup(),
+    beforeFirstRender?: (component: OrgEasyclaContributorAcknowledgmentsComponent) => void
+  ): Promise<ComponentFixture<OrgEasyclaContributorAcknowledgmentsComponent>> {
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
       imports: [OrgEasyclaContributorAcknowledgmentsComponent],
@@ -82,6 +84,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
     const fixture = TestBed.createComponent(OrgEasyclaContributorAcknowledgmentsComponent);
     fixture.componentRef.setInput('claGroup', row);
+    beforeFirstRender?.(fixture.componentInstance);
     fixture.detectChanges();
     // `combineLatest` sources include `toObservable` streams whose emissions land on the
     // microtask queue. Two stable/detect cycles: the first drains those microtasks so the fetch
@@ -242,11 +245,11 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     });
 
     it('renders an em-dash for the ID column when the producer sent nothing usable, rather than dropping the row', async () => {
-      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ name: 'DocuSign Only' })])));
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ name: 'Name Only' })])));
       const fixture = await render();
 
-      // The row is still rendered — a contributor with only a DocuSign name is a real signature.
-      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['DocuSign Only']);
+      // The row is still rendered — a contributor with only a name is a real signature.
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Name Only']);
       // The identity column carries the em-dash rather than dropping the row.
       expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-identity'))).toBe('—');
     });
@@ -289,23 +292,75 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     });
   });
 
-  /**
-   * The CCLA version column renders the producer's `signature_version` verbatim (already
-   * normalized to a `v`-prefixed string by the mapper). An empty version renders as an em-dash.
-   */
-  describe('the CCLA version column', () => {
-    it('renders a populated version verbatim', async () => {
-      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ cclaVersion: 'v2.1' })])));
+  describe('the prototype layout', () => {
+    it('heads the table with the prototype heading and subtitle, and no row count', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 3 })));
       const fixture = await render();
 
-      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-version'))).toBe('v2.1');
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgments-heading'))).toBe('Contributor Acknowledgments from My Organization');
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgments-subtitle'))).toBe("Employees who've acknowledged they're covered by this CLA.");
+      expect(byTestId(fixture, 'org-easycla-acknowledgments-count')).toBeNull();
     });
 
-    it('renders an em-dash for an empty version rather than an empty cell', async () => {
-      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ cclaVersion: '' })])));
+    it('has no CCLA Version column', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()])));
       const fixture = await render();
 
-      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-version'))).toBe('—');
+      const headers = Array.from(fixture.nativeElement.querySelectorAll('th')).map((th) => textIn(th as HTMLElement));
+      expect(headers).not.toContain('CCLA Version');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-version')).toBeNull();
+    });
+
+    it('labels an approved acknowledgment Authorized', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ approved: true })])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-state-acknowledged'))).toBe('Authorized');
+    });
+
+    it('shows the invalidation date under the Invalidated tag', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ approved: false, invalidatedAt: '2026-03-11T09:20:00Z' })])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on'))).toMatch(/^on \S/);
+    });
+
+    it('shows no date line under an Invalidated tag the producer stamped no date on', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ approved: false })])));
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
+    });
+  });
+
+  describe('the tab badge count', () => {
+    it('reports the agreement total when an unsearched list loads', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 7 })));
+      const counts: number[] = [];
+      await render(claGroup(), (component) => component.countChanged.subscribe((count) => counts.push(count)));
+
+      expect(counts).toEqual([7]);
+    });
+
+    it('does not report a searched total, which counts only the matches', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 7 })));
+      const counts: number[] = [];
+      const fixture = await render(claGroup(), (component) => component.countChanged.subscribe((count) => counts.push(count)));
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 1 })));
+
+      vi.useFakeTimers();
+      try {
+        (
+          fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (v: string) => void } } } }
+        ).filterForm.controls.search.setValue('ada');
+        await vi.advanceTimersByTimeAsync(600);
+        fixture.detectChanges();
+      } finally {
+        vi.useRealTimers();
+      }
+
+      expect(getContributorAcknowledgments.mock.calls.some((call) => call[2]?.search === 'ada')).toBe(true);
+      expect(counts).toEqual([7]);
     });
   });
 

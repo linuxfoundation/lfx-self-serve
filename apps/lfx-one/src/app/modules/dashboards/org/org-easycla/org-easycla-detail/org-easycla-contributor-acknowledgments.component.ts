@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, output, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import {
@@ -11,6 +11,7 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
   ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY,
   ORG_CLA_ACKNOWLEDGMENTS_HEADING,
+  ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
   ORG_CLA_INVALIDATE_ACTION_COPY,
   ORG_CLA_INVALIDATE_DIALOG_COPY,
@@ -58,12 +59,12 @@ import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla
  * The Contributor Acknowledgments tab of the CLA Group detail page (#1986, #2806).
  *
  * Lists the employee acknowledgments (ECLA signatures) the producer holds under this CCLA. Per
- * the M3 prototype the identity is split into two columns: Name (DocuSign name) and the
- * LF Login / GitHub or GitLab ID, so a row with any identifier is visible even without an
- * LF Login. Both columns fall through to an em-dash rather than dropping the row.
+ * the M3 prototype the identity is split into two columns: Name and the LF Login / GitHub or
+ * GitLab ID, so a row with any identifier is visible even without an LF Login. Both columns fall
+ * through to an em-dash rather than dropping the row.
  *
- * Two visible states only: Acknowledged and Invalidated. The prototype's third amber state is
- * deliberately out of scope and has no scaffolding.
+ * Two visible states only: Authorized and Invalidated. The prototype's third amber state is not
+ * built and has no scaffolding.
  *
  * Search is server-side: the input feeds a debounced observable whose term is forwarded to the
  * BFF as `search`. A new term resets pagination (the producer's `nextKey` is scoped to a term)
@@ -93,7 +94,16 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   public readonly claGroup = input.required<OrgClaGroup>();
 
+  /**
+   * The agreement's acknowledgment total, each time an unsearched list loads.
+   *
+   * The detail page's tab badge counts from its own read on page load; this keeps it matching the
+   * table once the tab has loaded. A searched load is not emitted: its total is the matches.
+   */
+  public readonly countChanged = output<number>();
+
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
+  protected readonly subtitle = ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE;
   protected readonly emptyCopy = ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY;
   protected readonly columnHeaders = ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS;
   protected readonly stateLabels = ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS;
@@ -173,6 +183,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           tap((list) => {
             this.page.set(list);
             this.errorMessage.set(null);
+            if (!search.trim()) this.countChanged.emit(list.totalCount);
           }),
           catchError((error: unknown) => {
             const message =
@@ -208,8 +219,6 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   protected readonly canEdit = computed(() => this.loadedList()?.canEdit === true);
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
-  protected readonly totalCount = computed(() => this.loadedList()?.totalCount ?? 0);
-  protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
   protected readonly showEmptyState = computed(
     () => !this.loading() && !this.errorMessage() && (this.searchTerm() ?? '').trim().length === 0 && (this.loadedList()?.list.length ?? 0) === 0
   );
@@ -449,7 +458,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * Who the confirmation, the toast, and the button name.
    *
    * Identity first, because that is the column the manager matched the row on. A row that has
-   * only a DocuSign or profile name would otherwise be "—" in all three places.
+   * only a name would otherwise be "—" in all three places.
    */
   private contributorLabel(row: OrgClaAcknowledgmentRow): string {
     return this.labelFor(row.identity.display, row.name);
@@ -479,9 +488,9 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       ack,
       name,
       identity,
-      cclaVersion: ack.cclaVersion?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       invalidated,
+      invalidatedOnLabel: invalidated && ack.invalidatedAt ? formatClaSignedOnInstant(ack.invalidatedAt) : '',
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
@@ -525,8 +534,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   private formatInvalidatedTooltip(ack: OrgClaContributorAcknowledgment): string {
     const parts: string[] = [];
-    if (ack.invalidatedAt) parts.push(`Invalidated ${formatClaSignedOnInstant(ack.invalidatedAt)}`);
-    if (ack.invalidatedBy) parts.push(`by ${ack.invalidatedBy}`);
+    if (ack.invalidatedBy) parts.push(`Invalidated by ${ack.invalidatedBy}`);
     if (ack.invalidationReason) parts.push(`Reason: ${ack.invalidationReason}`);
     return parts.join(' · ');
   }

@@ -660,13 +660,9 @@ export const ORG_CLA_MANAGER_NAME_MAX = 30;
 // Contributor Acknowledgments (#1986)
 // ---------------------------------------------------------------------------
 
-/**
- * The heading the Contributor Acknowledgments tab carries.
- *
- * Matches the label the corporate CLA console uses for the same list, so a CLA manager migrating
- * between the two surfaces reads the same words.
- */
-export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments';
+/** The heading and subtitle over the Contributor Acknowledgments table, as the M3 prototype words them. */
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments from My Organization';
+export const ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE = "Employees who've acknowledged they're covered by this CLA.";
 
 /**
  * Cap on the acknowledgment page size the BFF forwards to the producer.
@@ -697,20 +693,20 @@ export const ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY = {
 export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
   name: 'Name',
   identity: 'LF Login/GitHub or GitLab ID',
-  cclaVersion: 'CCLA Version',
   signedOn: 'Acknowledged On',
   state: 'Status',
   actions: '',
 } as const;
 
 /**
- * Two visible acknowledgment states.
+ * Two visible acknowledgment states. `acknowledged` is an approved acknowledgment, which the M3
+ * prototype labels Authorized.
  *
- * The M3 prototype's third amber "Not Authorized" state is deliberately out of scope for #1986;
- * its design is unresolved. Do not add a third entry here without a locked contract decision.
+ * The prototype's third amber "Not Authorized" state is not built. Do not add a third entry here
+ * without a locked contract decision.
  */
 export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
-  acknowledged: 'Acknowledged',
+  acknowledged: 'Authorized',
   invalidated: 'Invalidated',
 } as const;
 

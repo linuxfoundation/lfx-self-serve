@@ -515,7 +515,6 @@ export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgmen
     signatureId: 'ecla-sig-1',
     name: 'Ada Lovelace',
     lfLogin: 'ada',
-    cclaVersion: 'v2.1',
     signedOn: '2026-03-11T09:20:00Z',
     approved: true,
     ...overrides,

@@ -1951,8 +1951,7 @@ function upstreamManager(overrides: Record<string, unknown> = {}): Record<string
  * The service resolves the CCLA through the organization's own list first (matching
  * `getApprovalList` and `getPdfUrl`), then paginates via the producer's `nextKey`. The mapper
  * carries the invariants the shared contract states: never drop a row for a missing LF Login,
- * treat `github_id` and `gitlab_id` as display logins, and normalize `signature_version` to a
- * `v`-prefixed string with an empty passthrough for the em-dash fallback at the row.
+ * and treat `github_id` and `gitlab_id` as display logins.
  */
 function contributor(overrides: Partial<EasyClaCorporateContributor> = {}): EasyClaCorporateContributor {
   return {
@@ -2556,15 +2555,14 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
   });
 
-  it('falls through a blank name and a blank signed date to the creation time, not the last modification', async () => {
+  it('falls through a blank signed date to the creation time, not the last modification', async () => {
     // Invalidation refreshes signatureModified. Using it as Acknowledged On would show the
     // invalidation instant for a row the producer recorded with no DocuSign date.
     stageAckRead(
       contributorPage({
         list: [
           contributor({
-            name: '   ',
-            userDocusignName: 'Ada Lovelace',
+            name: 'Ada Lovelace',
             userDocusignDateSigned: '  ',
             timestamp: '2026-01-02T00:00:00Z',
             signatureModified: '2026-04-01T00:00:00Z',
@@ -2590,23 +2588,20 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]?.signedOn).toBeUndefined();
   });
 
-  it('prefers the DocuSign name when the profile name differs', async () => {
-    // The producer puts the profile name (or username) on `name` and the name on the DocuSign
-    // document on `userDocusignName`. The shared contract's `name` is the signing name, so a
-    // row that carries both must surface the DocuSign one.
-    stageAckRead(contributorPage({ list: [contributor({ name: 'ada', userDocusignName: 'Ada Lovelace' })] }));
+  it('never reads the DocuSign name, which is not an identity on an acknowledgment', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: 'Someone Else' })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
     expect(list?.list[0]?.name).toBe('Ada Lovelace');
   });
 
-  it('keeps the profile name when no DocuSign name was recorded', async () => {
-    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: '   ' })] }));
+  it('leaves the name empty when only a DocuSign name was recorded', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: '   ', userDocusignName: 'Ada Lovelace' })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
-    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+    expect(list?.list[0]?.name).toBeUndefined();
   });
 
   it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
@@ -2623,32 +2618,6 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(row?.email).toBeUndefined();
     expect(row?.githubUsername).toBeUndefined();
     expect(row?.gitlabUsername).toBeUndefined();
-  });
-});
-
-describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () => {
-  it('prefixes a bare version with `v`', async () => {
-    stageAckRead(contributorPage({ list: [contributor({ signature_version: '2.1' })] }));
-
-    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
-
-    expect(list?.list[0]?.cclaVersion).toBe('v2.1');
-  });
-
-  it('leaves an already-prefixed version unchanged so `v1` stays `v1` rather than becoming `vv1`', async () => {
-    stageAckRead(contributorPage({ list: [contributor({ signature_version: 'v1' })] }));
-
-    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
-
-    expect(list?.list[0]?.cclaVersion).toBe('v1');
-  });
-
-  it('passes an empty version through as an empty string so the row renders an em-dash', async () => {
-    stageAckRead(contributorPage({ list: [contributor({ signature_version: '' })] }));
-
-    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
-
-    expect(list?.list[0]?.cclaVersion).toBe('');
   });
 });
 

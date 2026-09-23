@@ -5,18 +5,9 @@
   class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
   data-testid="org-easycla-acknowledgments"
   [attr.aria-busy]="loading() ? true : null">
-  <header class="flex flex-col gap-1">
-    <div class="flex flex-wrap items-baseline justify-between gap-2">
-      <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-acknowledgments-heading">{{ heading }}</h2>
-      @if (!loading() && !showErrorState() && loadedList()) {
-        <p class="text-sm text-gray-500" data-testid="org-easycla-acknowledgments-count">
-          @if (totalCount() > 0) {
-            {{ resultCount() }} of {{ totalCount() }}
-          }
-        </p>
-      }
-    </div>
-    <p class="text-sm text-gray-500">Employees who've acknowledged they're covered by this CLA.</p>
+  <header class="flex flex-wrap items-baseline justify-between gap-2">
+    <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-acknowledgments-heading">{{ heading }}</h2>
+    <p class="text-sm text-gray-500" data-testid="org-easycla-acknowledgments-subtitle">{{ subtitle }}</p>
   </header>
 
   <form [formGroup]="filterForm" (submit)="$event.preventDefault()" class="max-w-md" data-testid="org-easycla-acknowledgments-search">
@@ -57,7 +48,6 @@
           <tr class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
             <th class="px-3 py-2">{{ columnHeaders.name }}</th>
             <th class="px-3 py-2">{{ columnHeaders.identity }}</th>
-            <th class="px-3 py-2">{{ columnHeaders.cclaVersion }}</th>
             <th class="px-3 py-2">{{ columnHeaders.signedOn }}</th>
             <th class="px-3 py-2">{{ columnHeaders.state }}</th>
             @if (canEdit()) {
@@ -68,7 +58,12 @@
         <tbody>
           @for (row of rows(); track row.ack.signatureId) {
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-easycla-acknowledgment-row-' + row.ack.signatureId">
-              <td class="px-3 py-2 font-medium text-gray-900" data-testid="org-easycla-acknowledgment-name">{{ row.name }}</td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2.5">
+                  <span class="h-7 w-7 shrink-0 rounded-full bg-gray-900" aria-hidden="true"></span>
+                  <span class="font-semibold text-gray-900" data-testid="org-easycla-acknowledgment-name">{{ row.name }}</span>
+                </div>
+              </td>
               <td class="px-3 py-2 text-gray-700">
                 @if (row.identity.href) {
                   <a
@@ -84,21 +79,23 @@
                   <span data-testid="org-easycla-acknowledgment-identity">{{ row.identity.display }}</span>
                 }
               </td>
-              <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-acknowledgment-version">{{ row.cclaVersion }}</td>
               <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-acknowledgment-signed-on">{{ row.signedOnLabel }}</td>
               <td class="px-3 py-2">
                 @if (row.invalidated) {
                   <lfx-tag
                     [value]="stateLabels.invalidated"
-                    severity="secondary"
-                    icon="fa-light fa-ban"
+                    severity="danger"
+                    icon="fa-light fa-xmark"
                     [tooltip]="row.invalidatedTooltip"
                     data-testid="org-easycla-acknowledgment-state-invalidated" />
+                  @if (row.invalidatedOnLabel) {
+                    <div class="mt-1 text-xs text-gray-500" data-testid="org-easycla-acknowledgment-invalidated-on">on {{ row.invalidatedOnLabel }}</div>
+                  }
                 } @else {
                   <lfx-tag
                     [value]="stateLabels.acknowledged"
                     severity="success"
-                    icon="fa-light fa-circle-check"
+                    icon="fa-light fa-check"
                     data-testid="org-easycla-acknowledgment-state-acknowledged" />
                 }
               </td>
@@ -123,7 +120,7 @@
             </tr>
           } @empty {
             <tr>
-              <td [attr.colspan]="canEdit() ? 6 : 5" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
+              <td [attr.colspan]="canEdit() ? 5 : 4" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
                 No acknowledgments match your search.
               </td>
             </tr>

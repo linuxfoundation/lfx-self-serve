@@ -1685,15 +1685,11 @@ export interface ContributorAcknowledgmentQuery {
  * mapper carries them forward as `githubUsername` / `gitlabUsername` for that reason.
  *
  * `approved` defaults to `true` when the producer omits it — the field was added later and older
- * rows predate it. `name` is the DocuSign signing name: the producer stores that on
- * `userDocusignName` and puts the profile name (or, when that is empty, the username) on `name`,
- * so a row that has both can disagree. Prefer the DocuSign field and keep `name` as the fallback
- * for rows recorded before that field existed. `signedOn` prefers `userDocusignDateSigned` (a
- * signing timestamp) and falls back to `timestamp` (the signature's creation time). It does not
- * use `signatureModified`: an invalidation refreshes that field, so it would show the
- * invalidation instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed
- * string; a value already prefixed with `v`/`V` is returned unchanged, an empty version stays
- * empty so the row renders an em-dash.
+ * rows predate it. `name` is the producer's `name`, never `userDocusignName`: an acknowledgment is
+ * not signed through DocuSign, so that field is not an identity for it. `signedOn` prefers
+ * `userDocusignDateSigned` (a signing timestamp) and falls back to `timestamp` (the signature's
+ * creation time). It does not use `signatureModified`: an invalidation refreshes that field, so it
+ * would show the invalidation instant under Acknowledged On.
  */
 function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefined | null): OrgClaContributorAcknowledgment | null {
   const signatureId = row?.signatureID?.trim() ?? '';
@@ -1710,27 +1706,13 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
     email: nonEmpty(row?.email),
-    name: nonEmpty(row?.userDocusignName) ?? nonEmpty(row?.name),
-    cclaVersion: normalizeCclaVersion(row?.signature_version),
+    name: nonEmpty(row?.name),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),
     invalidationReason: nonEmpty(row?.invalidationReason),
   };
-}
-
-/**
- * Normalizes a producer `signature_version` to a `v`-prefixed string.
- *
- * A value already prefixed with `v`/`V` is returned unchanged (so `v1` stays `v1` — never `vv1`);
- * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty so the row's render
- * site can substitute an em-dash.
- */
-function normalizeCclaVersion(value: string | undefined): string {
-  const trimmed = value?.trim() ?? '';
-  if (!trimmed) return '';
-  return /^v/i.test(trimmed) ? trimmed : `v${trimmed}`;
 }
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */
