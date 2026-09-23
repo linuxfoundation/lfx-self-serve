@@ -387,6 +387,14 @@ describe('EventsService direct Gateway authentication', () => {
       expect(fetchMock).not.toHaveBeenCalled();
     });
 
+    it('does not substitute an isolated operator token during impersonation', async () => {
+      const req = { bearerToken: 'target-token', apiGatewayOperatorToken: 'operator-token', impersonationActive: true } as Request;
+
+      await expect(invoke(req)).rejects.toMatchObject({ statusCode: 503, code: 'API_GATEWAY_UNAVAILABLE' });
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(snowflakeMocks.gatewayProfile).not.toHaveBeenCalled();
+    });
+
     it('preserves upstream failure handling instead of issuing an auth challenge', async () => {
       fetchMock.mockResolvedValue(new Response('temporarily unavailable', { status: 503 }));
       const result = invoke({ apiGatewayToken: 'gateway-token' } as Request);

@@ -279,6 +279,45 @@ describe('Gateway acquisition in the selective auth middleware', () => {
     expect(req.appSession!.apiGatewayGrant).toBeUndefined();
   });
 
+  it.each([false, true])('isolates the Authelia operator token during impersonation (cached: %s)', async (cached) => {
+    vi.stubEnv('PCC_AUTH0_ISSUER_BASE_URL', 'https://auth.k8s.orb.local/');
+    const req = request('/api/events/visa-applications', 'POST', 'application/json');
+    const targetToken = 'header.eyJzdWIiOiJ0YXJnZXQifQ.signature';
+    req.appSession!['impersonationToken'] = targetToken;
+    req.appSession!['impersonationExpiresAt'] = Date.now() + 60_000;
+    req.appSession!['impersonationUser'] = { sub: 'target' };
+    if (cached) {
+      req.appSession!.apiGatewayToken = 'local-operator-token';
+      req.appSession!.apiGatewayTokenExpiresAt = Math.floor(Date.now() / 1000) + 3600;
+    }
+    fetchMock.mockResolvedValue(globalThis.Response.json({ access_token: 'local-operator-token', expires_in: 3600 }));
+    const res = response();
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(next).toHaveBeenCalledWith();
+    expect(req.impersonationActive).toBe(true);
+    expect(req.bearerToken).toBe(targetToken);
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(req.apiGatewayOperatorToken).toBe('local-operator-token');
+    expect(req.appSession!['refresh_token']).toBe('primary-refresh');
+    expect(req.oidc.accessToken!.refresh).not.toHaveBeenCalled();
+    expect(res.redirect).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(cached ? 0 : 1);
+    await expect(
+      gatewayFetch(req, 'https://gateway.example/resource', {
+        operation: 'synthetic_write',
+        service: 'test',
+        errorMessage: 'failed',
+        errorCode: 'FAILED',
+        method: 'POST',
+        allowOperatorToken: true,
+      })
+    ).rejects.toMatchObject({ statusCode: 403, code: 'IMPERSONATION_READ_ONLY' });
+    expect(fetchMock).toHaveBeenCalledTimes(cached ? 0 : 1);
+  });
+
   it('does not redirect local Authelia document navigation into the Auth0-only grant', async () => {
     vi.stubEnv('PCC_AUTH0_ISSUER_BASE_URL', 'https://auth.k8s.orb.local/');
     const req = request('/org/acme/easycla');

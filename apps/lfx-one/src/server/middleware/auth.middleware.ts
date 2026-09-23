@@ -334,7 +334,7 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
   });
 
   if (token) {
-    req.apiGatewayToken = token;
+    req[req.impersonationActive ? 'apiGatewayOperatorToken' : 'apiGatewayToken'] = token;
     logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
   }
 }
