@@ -263,6 +263,14 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(byTestId(fixture, 'org-easycla-activity-log-load-more')).toBeTruthy();
   });
 
+  it('keeps Load more when this page mapped to zero rows but a later page exists', async () => {
+    getActivityLog.mockReturnValueOnce(of(page([], { nextKey: 'cursor-2' })));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-activity-log-empty')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-activity-log-load-more')).toBeTruthy();
+  });
+
   it('shows the tab-empty state when the fetched set is empty AND no search term is entered', async () => {
     getActivityLog.mockReturnValueOnce(of(page([])));
     const fixture = await render();

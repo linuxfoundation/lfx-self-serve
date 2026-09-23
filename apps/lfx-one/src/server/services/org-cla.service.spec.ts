@@ -3037,7 +3037,7 @@ describe('OrgClaService.invalidateAcknowledgment — the receipt', () => {
 function eventRow(overrides: Partial<EasyClaEvent> = {}): EasyClaEvent {
   return {
     EventID: 'event-uuid-1',
-    EventType: 'CCLASigned',
+    EventType: 'corporate.signature.signed',
     UserName: 'Ada Porter',
     LfUsername: 'aporter',
     EventTime: '2026-01-15T09:20:00Z',
@@ -3250,18 +3250,19 @@ describe('OrgClaService.getActivityLog — the row mapper', () => {
     stageActivityLog(
       eventPage({
         Events: [
-          eventRow({ EventID: 'a', EventType: 'CCLASigned' }),
-          eventRow({ EventID: 'b', EventType: 'ClaManagerCreated' }),
-          eventRow({ EventID: 'c', EventType: 'ClaApprovalListAddEmail' }),
-          eventRow({ EventID: 'd', EventType: 'EmployeeSignatureCreated' }),
+          eventRow({ EventID: 'a', EventType: 'corporate.signature.signed' }),
+          eventRow({ EventID: 'b', EventType: 'cla_manager.added' }),
+          eventRow({ EventID: 'c', EventType: 'cla_manager.approval_list_updated' }),
+          eventRow({ EventID: 'd', EventType: 'employee.signature.created' }),
           eventRow({ EventID: 'e', EventType: 'SomeBrandNewEventType' }),
+          eventRow({ EventID: 'f', EventType: 'CCLASigned' }),
         ],
       })
     );
 
     const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
 
-    expect(page?.list.map((r) => r.category)).toEqual(['signing', 'manager', 'approval-list', 'acknowledgment', 'other']);
+    expect(page?.list.map((r) => r.category)).toEqual(['signing', 'manager', 'approval-list', 'acknowledgment', 'other', 'other']);
   });
 });
 

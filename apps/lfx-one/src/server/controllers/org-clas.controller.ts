@@ -616,7 +616,9 @@ export class OrgClasController {
       });
       res.json(page);
     } catch (error) {
-      logger.error(req, 'get_org_cla_activity_log', startTime, error instanceof Error ? error : new Error('get_org_cla_activity_log failed'), {});
+      // The error handler closes the operation and picks the severity. Logging here first
+      // deletes the registered operation, so the handler then logs again under a path-derived
+      // name — and a client 4xx is recorded at error level. Sibling reads only call `next`.
       next(error);
     }
   }
