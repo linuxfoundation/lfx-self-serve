@@ -1555,9 +1555,14 @@ export class OrgClaService {
       });
     }
 
-    // A missing, null, or non-array list is a malformed body, not an empty page. Truthiness would
-    // let those through, and the mapper would render them as "no acknowledgments yet". An empty
-    // array is the real empty page and passes this check. Same rule as the organization-list read.
+    // The producer serializes an empty page as `list: null`, not `[]`: its v2 handler copies the
+    // result with `copier.Copy`, which turns an empty slice into nil. So `null` is the empty page
+    // only when the producer's own row count for the page agrees. A missing or non-array list, or
+    // `null` beside a non-zero count, is still malformed — rendering those as "no acknowledgments
+    // yet" would hide a real failure.
+    if (upstream.list === null && upstream.resultCount === 0) {
+      return { ...upstream, list: [] };
+    }
     if (!Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch the contributor acknowledgments: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,

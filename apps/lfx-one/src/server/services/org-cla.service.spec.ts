@@ -2654,7 +2654,7 @@ describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () 
 
 describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
   it.each([
-    ['null', null],
+    ['null beside a non-zero row count', null],
     ['omitted', undefined],
     ['an empty string', ''],
   ])('rejects a contributor page whose list is %s rather than showing an empty agreement', async (_label, list) => {
@@ -2664,6 +2664,16 @@ describe('OrgClaService.getContributorAcknowledgments — malformed producer row
       statusCode: 502,
       code: 'UPSTREAM_INVALID_RESPONSE',
     });
+  });
+
+  // The producer's real empty page: its v2 handler copies the result with `copier.Copy`, which
+  // turns an empty slice into nil, so the wire body is `list: null` with zero counts.
+  it('reads the producer’s null list with a zero row count as an empty page', async () => {
+    stageAckRead(contributorPage({ list: null, resultCount: 0, totalCount: 0 }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toMatchObject({ list: [], resultCount: 0, totalCount: 0, nextKey: null });
   });
 
   it('keeps an empty array as an empty page', async () => {
