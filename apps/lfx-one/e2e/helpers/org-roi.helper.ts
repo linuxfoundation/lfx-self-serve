@@ -7,6 +7,7 @@ import { expect, Page, Route, test } from '@playwright/test';
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
+import type { OrgLensRoiAnnualRow, OrgLensRoiProjectAnnual } from '@lfx-one/shared/interfaces';
 
 import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 
@@ -120,18 +121,30 @@ export const MOCK_SUMMARY = {
 
 export const MOCK_COVERAGE = { orgUid: MOCK_ACCOUNT_ID, hasData: true, coverageReason: 'covered' };
 
-/** Per-year ROI and BCR are constant by contract, so every row carries the portfolio's lifetime ratios. */
-export function annualRow(year: number, totalReturn: number, expenditure: number): unknown {
-  return { year, totalReturn, expenditure, profit: totalReturn - expenditure, roi: MOCK_SUMMARY.roi, bcr: MOCK_SUMMARY.bcr };
+/** One year of a distribution. ROI and BCR are computed from the row's own figures. */
+export function annualRow(year: number, totalReturn: number, expenditure: number): OrgLensRoiAnnualRow {
+  const profit = totalReturn - expenditure;
+  return { year, totalReturn, expenditure, profit, roi: profit / expenditure, bcr: totalReturn / expenditure };
+}
+
+/** Weights for the last three years, oldest first. The year still in progress carries the least. */
+const ANNUAL_WEIGHTS = [8, 7, 5];
+
+/**
+ * Splits lifetime totals across the last three years in proportion. Per-year ROI and BCR are
+ * constant by contract, and a proportional split is exactly that: every row's ratios equal the
+ * lifetime ones.
+ */
+function annualSeries(expenditure: number, totalReturn: number): OrgLensRoiAnnualRow[] {
+  const weightTotal = ANNUAL_WEIGHTS.reduce((sum, weight) => sum + weight, 0);
+  return ANNUAL_WEIGHTS.map((weight, index) =>
+    annualRow(CURRENT_YEAR - (ANNUAL_WEIGHTS.length - 1 - index), (totalReturn * weight) / weightTotal, (expenditure * weight) / weightTotal)
+  );
 }
 
 export const MOCK_ANNUAL = {
   method: 'logit',
-  rows: [
-    annualRow(CURRENT_YEAR - 2, 1_200_000_000, 32_000_000),
-    annualRow(CURRENT_YEAR - 1, 1_400_000_000, 38_000_000),
-    annualRow(CURRENT_YEAR, 620_000_000, 17_000_000),
-  ],
+  rows: annualSeries(TOTAL_INVESTMENT, MOCK_TOTAL_RETURN),
   apportioned: true,
 };
 
@@ -173,16 +186,18 @@ function projectRow(projectSlug: string, projectName: string, totalExpenditure: 
  * Eight projects: enough that the leading slices leave a labelled remainder on every measure, and
  * two of them lose money. Negative net return is 6.45% of production project rows across 775
  * organizations — a mainline path, so the fixture carries it by default rather than in a variant.
+ * Sized so they sum exactly to the portfolio figures above: investment to `TOTAL_INVESTMENT` and
+ * return to `MOCK_TOTAL_RETURN`.
  */
 export const MOCK_PROJECT_INPUTS = [
-  { slug: 'kubernetes', name: 'Kubernetes', expenditure: 60_000_000, return: 3_000_000_000 },
-  { slug: 'openstack', name: 'OpenStack', expenditure: 40_000_000, return: 1_500_000_000 },
-  { slug: 'ceph', name: 'Ceph', expenditure: 25_000_000, return: 700_000_000 },
-  { slug: 'podman', name: 'Podman', expenditure: 12_000_000, return: 200_000_000 },
-  { slug: 'fedora-infra', name: 'Fedora Infrastructure', expenditure: 6_000_000, return: 80_000_000 },
-  { slug: 'ansible-docs', name: 'Ansible Docs', expenditure: 3_000_000, return: 20_000_000 },
-  { slug: 'legacy-bridge', name: 'Legacy Bridge', expenditure: 2_000_000, return: 500_000 },
-  { slug: 'sunset-tooling', name: 'Sunset Tooling', expenditure: 1_000_000, return: 250_000 },
+  { slug: 'kubernetes', name: 'Kubernetes', expenditure: 15_000_000, return: 600_000_000 },
+  { slug: 'openstack', name: 'OpenStack', expenditure: 10_000_000, return: 300_000_000 },
+  { slug: 'ceph', name: 'Ceph', expenditure: 6_000_000, return: 120_000_000 },
+  { slug: 'podman', name: 'Podman', expenditure: 3_500_000, return: 45_000_000 },
+  { slug: 'fedora-infra', name: 'Fedora Infrastructure', expenditure: 1_600_000, return: 18_000_000 },
+  { slug: 'ansible-docs', name: 'Ansible Docs', expenditure: 1_200_000, return: 11_620_000 },
+  { slug: 'legacy-bridge', name: 'Legacy Bridge', expenditure: 500_000, return: 300_000 },
+  { slug: 'sunset-tooling', name: 'Sunset Tooling', expenditure: 200_000, return: 50_000 },
 ];
 
 export const MOCK_PROJECTS = {
@@ -278,17 +293,14 @@ export function mockProjectDetail(slug: string, hasOrgLensProject = true): unkno
 }
 
 /**
- * A project's yearly distribution. `efficiencyConstant` is always true in the contract — per-year
- * ROI and BCR cancel to the lifetime figure — and the disclosure is driven by it, so a case can
- * flip it to prove the copy is not hardcoded.
+ * A project's yearly distribution, split in proportion from its lifetime figures; a slug outside
+ * the fixture falls back to the detail project's. `efficiencyConstant` is always true in the
+ * contract — per-year ROI and BCR cancel to the lifetime figure — and the disclosure is driven by
+ * it, so a case can flip it to prove the copy is not hardcoded.
  */
-export function mockProjectAnnual(slug: string, efficiencyConstant = true, apportioned = true): unknown {
-  const rows = [
-    annualRow(CURRENT_YEAR - 2, 1_200_000_000, 30_000_000),
-    annualRow(CURRENT_YEAR - 1, 1_300_000_000, 20_000_000),
-    annualRow(CURRENT_YEAR, 500_000_000, 10_000_000),
-  ];
-  return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
+export function mockProjectAnnual(slug: string, efficiencyConstant = true, apportioned = true): OrgLensRoiProjectAnnual {
+  const project = MOCK_PROJECT_INPUTS.find((input) => input.slug === slug) ?? DETAIL_PROJECT;
+  return { method: 'logit', projectSlug: slug, rows: annualSeries(project.expenditure, project.return), apportioned, efficiencyConstant };
 }
 
 interface StubOptions {
