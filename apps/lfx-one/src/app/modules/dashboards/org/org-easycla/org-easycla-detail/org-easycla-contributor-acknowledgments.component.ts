@@ -12,6 +12,7 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY,
   ORG_CLA_ACKNOWLEDGMENTS_HEADING,
   ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE,
+  ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
   ORG_CLA_INVALIDATE_ACTION_COPY,
   ORG_CLA_INVALIDATE_DIALOG_COPY,
@@ -63,8 +64,9 @@ import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla
  * GitLab ID, so a row with any identifier is visible even without an LF Login. Both columns fall
  * through to an em-dash rather than dropping the row.
  *
- * Two visible states only: Authorized and Invalidated. The prototype's third amber state is not
- * built and has no scaffolding.
+ * Three states, as the prototype shows them: Authorized, Not Authorized (the acknowledgment's
+ * approval-list criteria were removed), and Invalidated (a CLA manager or admin revoked it). A Not
+ * Authorized row keeps its Invalidate control, which the prototype offers to remove it for good.
  *
  * Search is server-side: the input feeds a debounced observable whose term is forwarded to the
  * BFF as `search`. A new term resets pagination (the producer's `nextKey` is scoped to a term)
@@ -102,11 +104,15 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    */
   public readonly countChanged = output<number>();
 
+  /** The Not Authorized row's "Add the user to the Approval list" link. The page switches tabs. */
+  public readonly approvalListRequested = output<void>();
+
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
   protected readonly subtitle = ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE;
   protected readonly emptyCopy = ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY;
   protected readonly columnHeaders = ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS;
   protected readonly stateLabels = ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS;
+  protected readonly notAuthorizedCopy = ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY;
   protected readonly emDash = ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
   protected readonly actionCopy = ORG_CLA_INVALIDATE_ACTION_COPY;
   protected readonly loadingRows = [1, 2, 3, 4] as const;
@@ -480,7 +486,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   }
 
   private toRow(ack: OrgClaContributorAcknowledgment, pending: ReadonlySet<string>): OrgClaAcknowledgmentRow {
-    const invalidated = this.isInvalidated(ack);
+    const notAuthorized = ack.removedFromApprovalList === true;
+    const invalidated = !notAuthorized && this.isInvalidated(ack);
     const signatureId = ack.signatureId?.trim() ?? '';
     const identity = this.resolveIdentity(ack);
     const name = ack.name?.trim() || ORG_CLA_ACKNOWLEDGMENTS_EM_DASH;
@@ -489,6 +496,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       name,
       identity,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
+      notAuthorized,
+      notAuthorizedTooltip: notAuthorized ? ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY.tooltip(ack.removedCriteria) : '',
       invalidated,
       invalidatedOnLabel: invalidated && ack.invalidatedAt ? formatClaSignedOnInstant(ack.invalidatedAt) : '',
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',

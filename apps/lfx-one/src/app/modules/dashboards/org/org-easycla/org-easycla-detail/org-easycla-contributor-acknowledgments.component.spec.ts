@@ -45,6 +45,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     return {
       signatureId: `ecla-${Math.random().toString(36).slice(2, 8)}`,
       approved: true,
+      removedFromApprovalList: false,
       ...overrides,
     };
   }
@@ -330,6 +331,51 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       const fixture = await render();
 
       expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
+    });
+  });
+
+  describe('the Not Authorized state', () => {
+    function notAuthorized(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
+      return ack({
+        approved: false,
+        removedFromApprovalList: true,
+        removedCriteria: 'Email Domain Criteria',
+        invalidatedAt: '2026-03-11T09:20:00Z',
+        invalidatedBy: 'cla-manager',
+        invalidationReason: 'approved list removal (Email Domain Criteria)',
+        ...overrides,
+      });
+    }
+
+    it('renders Not Authorized, not Invalidated, for a row whose approval-list criteria were removed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      const fixture = await render();
+
+      const tag = byTestId(fixture, 'org-easycla-acknowledgment-state-not-authorized');
+      expect(textIn(tag)).toBe('Not Authorized');
+      expect(tag?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '').toContain('approval criteria (Email Domain Criteria) was removed');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
+    });
+
+    it('explains the state and offers both remedies the prototype names', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria. Add the user to the Approval list, or Invalidate to remove for good.'
+      );
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeTruthy();
+    });
+
+    it('asks the page for the Approval List tab from the link', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      let requested = 0;
+      const fixture = await render(claGroup(), (component) => component.approvalListRequested.subscribe(() => requested++));
+
+      (byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list') as HTMLButtonElement).click();
+
+      expect(requested).toBe(1);
     });
   });
 

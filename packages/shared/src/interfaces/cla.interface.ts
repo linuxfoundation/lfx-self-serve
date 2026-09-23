@@ -1092,6 +1092,14 @@ export interface OrgClaContributorAcknowledgment {
   invalidatedBy?: string;
   /** Reason recorded with the invalidation. Free text from the invalidator. */
   invalidationReason?: string;
+  /**
+   * True when the acknowledgment lost its approval only because its criteria were removed from the
+   * approval list — Not Authorized, not Invalidated. Server-derived from the producer's reason or
+   * note.
+   */
+  removedFromApprovalList: boolean;
+  /** The approval-list criteria that were removed, as the producer names them. */
+  removedCriteria?: string;
 }
 
 /**
@@ -1130,6 +1138,9 @@ export interface OrgClaAcknowledgmentRow {
     ariaLabel: string;
   };
   signedOnLabel: string;
+  /** Not Authorized: its approval-list criteria were removed. Never also `invalidated`. */
+  notAuthorized: boolean;
+  notAuthorizedTooltip: string;
   invalidated: boolean;
   /** The invalidation date shown under the Invalidated tag, or empty when the producer stamped none. */
   invalidatedOnLabel: string;

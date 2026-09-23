@@ -1686,10 +1686,12 @@ export interface ContributorAcknowledgmentQuery {
  *
  * `approved` defaults to `true` when the producer omits it — the field was added later and older
  * rows predate it. `name` is the producer's `name`, never `userDocusignName`: an acknowledgment is
- * not signed through DocuSign, so that field is not an identity for it. `signedOn` prefers
- * `userDocusignDateSigned` (a signing timestamp) and falls back to `timestamp` (the signature's
- * creation time). It does not use `signatureModified`: an invalidation refreshes that field, so it
- * would show the invalidation instant under Acknowledged On.
+ * not signed through DocuSign, so that field is not an identity for it. `signedOn` is
+ * `userDocusignDateSigned` despite its name: the producer fills it with the DocuSign date when one
+ * exists and with the creation time otherwise, which for an acknowledgment is when the employee
+ * acknowledged. `timestamp` (the creation time) is the fallback when that is blank. It does not use
+ * `signatureModified`: an invalidation refreshes that field, so it would show the invalidation
+ * instant under Acknowledged On.
  */
 function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefined | null): OrgClaContributorAcknowledgment | null {
   const signatureId = row?.signatureID?.trim() ?? '';
@@ -1712,7 +1714,41 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),
     invalidationReason: nonEmpty(row?.invalidationReason),
+    ...approvalListRemoval(row),
   };
+}
+
+const APPROVAL_LIST_REMOVAL_REASON = /^approved list removal(?:\s*\((.*)\))?$/i;
+const LEGACY_INVALIDATION_NOTE = 'signature invalidated (approved set to false)';
+const LEGACY_APPROVAL_LIST_REMOVAL_NOTE = /^signature invalidated \(approved set to false\) by .* due to (.+?)\s+removal\b/i;
+
+/**
+ * Whether an unapproved acknowledgment lost its approval-list criteria rather than being
+ * invalidated on purpose, and which criteria.
+ *
+ * The producer marks an approval-list removal with the reason `approved list removal (<criteria>)`.
+ * Records from before that reason existed carry only the note
+ * `Signature invalidated (approved set to false) by <user> due to <criteria>  removal`; notes
+ * accumulate, so only the latest invalidation entry is read. An approved row is never a removal.
+ */
+function approvalListRemoval(
+  row: EasyClaCorporateContributor | undefined | null
+): Pick<OrgClaContributorAcknowledgment, 'removedFromApprovalList' | 'removedCriteria'> {
+  if (row?.signatureApproved !== false) return { removedFromApprovalList: false };
+
+  const reason = row.invalidationReason?.trim() ?? '';
+  if (reason) {
+    const match = APPROVAL_LIST_REMOVAL_REASON.exec(reason);
+    if (!match) return { removedFromApprovalList: false };
+    const criteria = match[1]?.trim();
+    return { removedFromApprovalList: true, ...(criteria ? { removedCriteria: criteria } : {}) };
+  }
+
+  const note = row.note ?? '';
+  const latest = note.slice(Math.max(0, note.toLowerCase().lastIndexOf(LEGACY_INVALIDATION_NOTE)));
+  const legacy = LEGACY_APPROVAL_LIST_REMOVAL_NOTE.exec(latest);
+  if (!legacy) return { removedFromApprovalList: false };
+  return { removedFromApprovalList: true, removedCriteria: legacy[1].trim() };
 }
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */

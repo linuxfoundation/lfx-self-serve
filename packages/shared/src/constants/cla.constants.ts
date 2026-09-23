@@ -699,15 +699,23 @@ export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
 } as const;
 
 /**
- * Two visible acknowledgment states. `acknowledged` is an approved acknowledgment, which the M3
- * prototype labels Authorized.
- *
- * The prototype's third amber "Not Authorized" state is not built. Do not add a third entry here
- * without a locked contract decision.
+ * The three acknowledgment states the M3 prototype shows. `acknowledged` is an approved
+ * acknowledgment, which the prototype labels Authorized. `notAuthorized` is an acknowledgment whose
+ * approval-list criteria were removed; `invalidated` is one a CLA manager or admin revoked.
  */
 export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
   acknowledged: 'Authorized',
+  notAuthorized: 'Not Authorized',
   invalidated: 'Invalidated',
+} as const;
+
+/** The explanation a Not Authorized row carries, worded as the M3 prototype words it. */
+export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
+  tooltip: (criteria?: string): string =>
+    `Not Authorized is not the same as Invalidate. This person's approval criteria${criteria ? ` (${criteria})` : ''} was removed from the Approval List — no one purposefully revoked their access. If they should still be covered, add their criteria back to the Approval List. Use Invalidate only to deliberately revoke this acknowledgment.`,
+  detail: 'No longer matches Approval List criteria.',
+  approvalListLink: 'Add the user to the Approval list',
+  detailSuffix: ', or Invalidate to remove for good.',
 } as const;
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */

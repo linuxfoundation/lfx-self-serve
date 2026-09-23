@@ -517,6 +517,7 @@ export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgmen
     lfLogin: 'ada',
     signedOn: '2026-03-11T09:20:00Z',
     approved: true,
+    removedFromApprovalList: false,
     ...overrides,
   };
 }

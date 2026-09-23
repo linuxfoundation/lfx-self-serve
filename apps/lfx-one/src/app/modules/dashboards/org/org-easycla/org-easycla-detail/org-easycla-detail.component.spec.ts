@@ -1620,6 +1620,30 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeTruthy();
   });
 
+  it('opens the Approval List tab from a Not Authorized acknowledgment', async () => {
+    getContributorAcknowledgments.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        list: [{ signatureId: 'ecla-1', approved: false, removedFromApprovalList: true }],
+        canEdit: true,
+        resultCount: 1,
+        totalCount: 1,
+        nextKey: null,
+      })
+    );
+    const fixture = await render();
+
+    byTestId(fixture, 'org-easycla-detail-tab-acknowledgments')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')?.click();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-approval-list')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeNull();
+  });
+
   it('still leaves the tabs this feature does not build empty', async () => {
     const fixture = await render();
 

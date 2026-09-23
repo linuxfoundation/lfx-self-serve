@@ -2621,6 +2621,64 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
   });
 });
 
+describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () => {
+  async function mapped(overrides: Partial<EasyClaCorporateContributor>) {
+    stageAckRead(contributorPage({ list: [contributor(overrides)] }));
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+    return list?.list[0];
+  }
+
+  it('marks an approval-list removal Not Authorized, with the criteria the producer names', async () => {
+    const row = await mapped({ signatureApproved: false, invalidationReason: 'approved list removal (Email Domain Criteria)' });
+
+    expect(row).toMatchObject({ removedFromApprovalList: true, removedCriteria: 'Email Domain Criteria' });
+  });
+
+  it('marks an approval-list removal without criteria Not Authorized', async () => {
+    const row = await mapped({ signatureApproved: false, invalidationReason: 'approved list removal' });
+
+    expect(row?.removedFromApprovalList).toBe(true);
+    expect(row?.removedCriteria).toBeUndefined();
+  });
+
+  it('reads the removal from the note on a record that predates the invalidation reason', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      note: 'Signature invalidated (approved set to false) by cla-manager due to GitHub Org Criteria  removal',
+    });
+
+    expect(row).toMatchObject({ removedFromApprovalList: true, removedCriteria: 'GitHub Org Criteria' });
+  });
+
+  it('reads only the latest invalidation in an accumulated note', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      note:
+        'Signature invalidated (approved set to false) by cla-manager due to Email Domain Criteria  removal ' +
+        'Signature invalidated (approved set to false) by cla-manager for contributor ',
+    });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+
+  it.each([
+    ['a manager invalidation reason', { invalidationReason: 'left the company' }],
+    ['a CLA Group deletion note', { note: 'Signature invalidated (approved set to false) by pcc-admin due to CLA Group/Project: p-1 deletion' }],
+    ['a manual invalidation note', { note: 'Signature invalidated (approved set to false) by cla-manager for contributor ' }],
+    ['no evidence at all', {}],
+  ])('does not mark %s Not Authorized', async (_label, overrides) => {
+    const row = await mapped({ signatureApproved: false, ...overrides });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+
+  it('never marks an approved row Not Authorized', async () => {
+    const row = await mapped({ signatureApproved: true, invalidationReason: 'approved list removal (Email Domain Criteria)' });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+});
+
 describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
   it.each([
     ['null beside a non-zero row count', null],
