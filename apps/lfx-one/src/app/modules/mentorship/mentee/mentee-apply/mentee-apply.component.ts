@@ -133,9 +133,9 @@ export class MenteeApplyComponent {
   private readProfileCreated(): boolean {
     if (!isPlatformBrowser(this.platformId)) return false;
     const state = this.location.getState() as Record<string, unknown> | null;
-    const created = state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] === true;
+    const { [MENTORSHIP_MENTEE_PROFILE_CREATED_STATE]: profileCreated, ...rest } = state ?? {};
+    const created = profileCreated === true;
     if (created) {
-      const { [MENTORSHIP_MENTEE_PROFILE_CREATED_STATE]: _removed, ...rest } = state ?? {};
       this.location.replaceState(this.location.path(), '', rest);
     }
     return created;
