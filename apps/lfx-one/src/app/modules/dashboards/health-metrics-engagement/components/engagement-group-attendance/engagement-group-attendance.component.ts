@@ -109,6 +109,9 @@ export class EngagementGroupAttendanceComponent {
     }));
   });
   protected readonly totalRecords = computed(() => this.response().totalRecords);
+  /** `null` means the unfiltered scope was never measured — a filtered cut with zero matches keeps
+   * its own counts, so this is not the same signal as `totalRecords() === 0`. */
+  protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
   protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
 

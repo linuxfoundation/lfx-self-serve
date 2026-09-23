@@ -102,11 +102,12 @@ export interface HealthOverviewRevenueRow {
 
 /**
  * One period's group counts behind the Engagement tile, read from `ENGAGEMENT_GROUP_ATTENDANCE` until
- * `HEALTH_OVERVIEW_KPIS` carries engagement columns. Both counts share the expected-to-meet population.
+ * `HEALTH_OVERVIEW_KPIS` carries engagement columns. Both counts share the expected-to-meet population;
+ * `null` means the view has no figure for that period.
  */
 export interface HealthOverviewEngagementCounts {
-  activeGroups: number;
-  lowAttendanceGroups: number;
+  activeGroups: number | null;
+  lowAttendanceGroups: number | null;
 }
 
 /**
@@ -276,16 +277,19 @@ export interface HealthMetricsFindingVisualBarViewModel {
 export interface HealthMetricsOverviewRevenue {
   dataAvailable: boolean;
   total: number;
-  streams: { key: string; value: number }[];
+  /** `value` is `null` when the view has no figure for that stream — rendered as "—", not "$0". */
+  streams: { key: string; value: number | null }[];
 }
 
 /**
  * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
  * doc). No `size` field: the doc's table has no backing column for it and it was dropped rather
  * than fabricated. `nextRenewals` reflects the table's only renewal window, 90 days (not 30).
+ * `dataAvailable` is false when the read failed or found no row; a null column renders as "—".
  */
 export interface HealthMetricsOverviewFoundationSummary {
-  projects: number;
+  dataAvailable: boolean;
+  projects: string;
   tiers: string;
   board: string;
   nextRenewals: string;
@@ -297,8 +301,8 @@ export interface HealthMetricsOverviewRevenueStreamViewModel {
   key: string;
   label: string;
   dotClass: string;
-  /** Rounded, for the "N%" legend text only — see {@link HealthMetricsOverviewRevenueStreamViewModel.widthPercent} for the bar segment. */
-  percent: number;
+  /** Rounded "N%" legend text, or "—" when the stream has no value — see `widthPercent` for the bar segment. */
+  percentLabel: string;
   /** Unrounded percent share, for the segmented bar's `[style.width.%]` — rounding each stream independently before sizing can leave a visible gap even when the raw shares sum to 100%. */
   widthPercent: number;
   valueLabel: string;

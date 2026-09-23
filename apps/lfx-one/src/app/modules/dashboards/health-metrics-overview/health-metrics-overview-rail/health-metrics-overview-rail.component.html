@@ -37,7 +37,7 @@
           <div class="flex items-center gap-2 text-[12px] text-gray-600">
             <span class="h-1.5 w-1.5 rounded-full" [ngClass]="stream.dotClass" aria-hidden="true"></span>
             <span class="flex-1">{{ stream.label }}</span>
-            <span class="text-gray-400">{{ stream.percent }}%</span>
+            <span class="text-gray-400">{{ stream.percentLabel }}</span>
             <span class="font-semibold text-gray-900">{{ stream.valueLabel }}</span>
           </div>
         }
@@ -57,6 +57,8 @@
         <p-skeleton width="100%" height="0.875rem" />
         <p-skeleton width="100%" height="0.875rem" />
       </div>
+    } @else if (!foundationSummary().dataAvailable) {
+      <p class="text-[12px] text-gray-500" data-testid="health-metrics-overview-foundation-summary-unavailable">Foundation details are not available yet.</p>
     } @else {
       <div class="flex flex-col gap-1.5 text-[12px]">
         <div class="flex items-center justify-between gap-2">

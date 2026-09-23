@@ -89,7 +89,11 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
       showStatus: state.showStatus,
-      route: areaMeta.key === 'eng' ? buildHealthMetricsOverviewEngagementRoute(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET) : undefined,
+      // No "View groups" link on an Engagement tile with no figure — there is nothing to drill into.
+      route:
+        areaMeta.key === 'eng' && state.statValue !== '—'
+          ? buildHealthMetricsOverviewEngagementRoute(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET)
+          : undefined,
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);
@@ -150,14 +154,18 @@ export function buildHealthMetricsOverviewRevenueStreams(revenue: HealthMetricsO
   return revenue.streams.map((stream) => {
     const streamMeta = HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS as Record<string, { label: string; dotClass: string }>;
     const meta = Object.hasOwn(streamMeta, stream.key) ? streamMeta[stream.key] : UNKNOWN_REVENUE_STREAM_META;
-    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as
-    // `percent`, kept for the legend text) before sizing can leave the segmented bar short of 100%.
+    // A null stream is unmeasured — show "—" rather than a fabricated "$0 / 0%".
+    if (stream.value === null) {
+      return { key: stream.key, label: meta.label, dotClass: meta.dotClass, percentLabel: '—', widthPercent: 0, valueLabel: '—' };
+    }
+    // widthPercent stays unrounded for the bar segment — rounding each stream independently (as the
+    // legend's percentLabel does) before sizing can leave the segmented bar short of 100%.
     const widthPercent = revenue.total > 0 ? (stream.value / revenue.total) * 100 : 0;
     return {
       key: stream.key,
       label: meta.label,
       dotClass: meta.dotClass,
-      percent: Math.round(widthPercent),
+      percentLabel: `${Math.round(widthPercent)}%`,
       widthPercent,
       valueLabel: formatCurrency(stream.value),
     };

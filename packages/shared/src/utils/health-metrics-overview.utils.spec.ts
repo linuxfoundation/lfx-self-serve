@@ -87,6 +87,11 @@ describe('buildHealthMetricsOverviewTiles', () => {
     expect(tiles.find((tile) => tile.area === 'code')?.route).toBeUndefined();
   });
 
+  it('drops the eng tile link when the tile has no figure to drill into', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng', statValue: '—' })], undefined);
+    expect(tiles[0].route).toBeUndefined();
+  });
+
   it('carries showStatus through to the tile view model', () => {
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', showStatus: false })], undefined);
     expect(tiles[0].showStatus).toBe(false);
@@ -239,14 +244,14 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
   it('computes each stream’s percent share of the total and formats its value', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue());
     expect(streams).toEqual([
-      { key: 'memberships', label: 'Memberships', dotClass: 'bg-blue-500', percent: 60, widthPercent: 60, valueLabel: expect.any(String) },
-      { key: 'events', label: 'Events', dotClass: 'bg-emerald-500', percent: 40, widthPercent: 40, valueLabel: expect.any(String) },
+      { key: 'memberships', label: 'Memberships', dotClass: 'bg-blue-500', percentLabel: '60%', widthPercent: 60, valueLabel: expect.any(String) },
+      { key: 'events', label: 'Events', dotClass: 'bg-emerald-500', percentLabel: '40%', widthPercent: 40, valueLabel: expect.any(String) },
     ]);
   });
 
   it('reports 0% for every stream when the total is 0, instead of dividing by zero', () => {
     const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ total: 0, streams: [{ key: 'training', value: 0 }] }));
-    expect(streams[0].percent).toBe(0);
+    expect(streams[0].percentLabel).toBe('0%');
     expect(streams[0].widthPercent).toBe(0);
   });
 
@@ -261,8 +266,13 @@ describe('buildHealthMetricsOverviewRevenueStreams', () => {
         ],
       })
     );
-    expect(streams.map((stream) => stream.percent)).toEqual([33, 33, 33]);
+    expect(streams.map((stream) => stream.percentLabel)).toEqual(['33%', '33%', '33%']);
     expect(streams.reduce((sum, stream) => sum + stream.widthPercent, 0)).toBeCloseTo(100);
+  });
+
+  it('renders a null stream as an em dash instead of $0 / 0%', () => {
+    const streams = buildHealthMetricsOverviewRevenueStreams(revenue({ streams: [{ key: 'events', value: null }] }));
+    expect(streams[0]).toEqual(expect.objectContaining({ percentLabel: '—', widthPercent: 0, valueLabel: '—' }));
   });
 
   it('degrades an out-of-contract stream key to a fallback label/color instead of throwing', () => {

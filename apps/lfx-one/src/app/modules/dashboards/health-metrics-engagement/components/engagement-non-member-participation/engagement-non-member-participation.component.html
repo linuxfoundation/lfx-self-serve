@@ -20,8 +20,8 @@
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="No non-member organizations"
-      subtitle="No organization outside this foundation's membership has attended a meeting in the loaded periods."
+      title="Non-member participation data is not available yet"
+      subtitle="This foundation has no non-member participation data in the analytics model yet."
       data-testid="engagement-non-member-participation-empty" />
   } @else {
     <lfx-table
@@ -53,10 +53,10 @@
             <span class="text-sm font-medium text-gray-900">{{ row.accountName }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsAttended ?? 0 }}</span>
+            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsAttended ?? '—' }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.distinctPeople ?? 0 }}</span>
+            <span class="text-sm tabular-nums text-gray-800">{{ period?.distinctPeople ?? '—' }}</span>
           </td>
           <td>
             <!-- The view's own status string, rendered as-is rather than re-derived client-side. -->

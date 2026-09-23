@@ -25,12 +25,12 @@ vi.mock('./logger.service', () => ({
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
-  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -130,12 +130,33 @@ describe('HealthMetricsEngagementService', () => {
     expect(response.counts).toEqual({ groups: 34, dormantGroups: 3 });
   });
 
-  it('reports zeroed counts for an empty page instead of reading an absent first row', async () => {
+  it('reports unmeasured counts, not a real zero, when the unfiltered scope has no rows', async () => {
     execute.mockResolvedValue({ rows: [] });
 
     const response = await service.getGroupAttendance(req, query());
 
     expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(response.counts).toBeNull();
+  });
+
+  // A filtered cut with zero matches is a real measured zero — the "No groups of this type" empty
+  // state needs its own counts, not the unfiltered scope's unmeasured shape.
+  it('reports real zero counts, not unmeasured, when a filtered cut matches nothing', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getGroupAttendance(req, query({ groupType: 'wg' }));
+
+    expect(response.counts).toEqual({ groups: 0, dormantGroups: 0 });
+    expect(response.totalRecords).toBe(0);
+  });
+
+  // A project-scoped read with no rows is likewise a real measured zero, not an unmeasured foundation.
+  it('reports real zero counts, not unmeasured, when a project-scoped read matches nothing', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getGroupAttendance(req, query({ projectSlug: 'acme-core' }));
+
+    expect(response.counts).toEqual({ groups: 0, dormantGroups: 0 });
   });
 
   // The totals join keeps one row when the page selects nothing, so a page past the end still
@@ -424,6 +445,16 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  // A null column is unmeasured, not zero — coercing it would report a real "no meetings held".
+  it('keeps a null meetings-held column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [participationRow({ MEETINGS_HELD_COUNT_YTD: null, TOTAL_GROUPS_COUNT: null })] });
+
+    const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
+
+    expect(response.total?.periods[3]).toMatchObject({ meetingsHeld: null, meetingsChangePct: null });
+    expect(response.total?.totalGroups).toBeNull();
+  });
+
   it('reports a null total when the foundation has no roll-up row', async () => {
     execute.mockResolvedValue({ rows: [] });
 
@@ -534,6 +565,15 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     expect(response.rows[0]?.periods[3]).toMatchObject({ attendancePct: null, avgReps: null, sortRank: null });
   });
 
+  // A null attended/total column is unmeasured, not zero — coercing it would report a real "no attendance".
+  it('keeps a null attended-count and meetings-total column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [orgWarehouseRow({ MEETINGS_ATTENDED_COUNT_YTD: null, MEETINGS_ORG_TOTAL_COUNT_YTD: null })] });
+
+    const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ attendedCount: null, meetingsTotal: null });
+  });
+
   it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
     execute.mockResolvedValue({ rows: [orgWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
 
@@ -587,7 +627,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
 
     const response = await service.getOrgParticipation(req, { foundationSlug: 'acme' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {
@@ -681,6 +721,15 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     expect(response.rows[0]?.periods[3]).toMatchObject({ sortRank: null, meetingsAttended: 12 });
   });
 
+  // A null attended/people column is unmeasured, not zero — coercing it would report a real "no attendance".
+  it('keeps a null attended-count and distinct-people column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ MEETINGS_ATTENDED_COUNT_YTD: null, DISTINCT_PEOPLE_COUNT_YTD: null })] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsAttended: null, distinctPeople: null });
+  });
+
   it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
     execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
 
@@ -728,7 +777,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
 
     const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {
@@ -807,6 +856,15 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       lastAttendedDate: '2026-08-14',
     });
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false });
+  });
+
+  // A null invited/attended column is unmeasured, not zero — coercing it would report a real "never invited".
+  it('keeps a null invited-count and attended-count column null rather than coercing it to zero', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ MEETINGS_INVITED_COUNT_YTD: null, MEETINGS_ATTENDED_COUNT_YTD: null })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsInvited: null, meetingsAttended: null });
   });
 
   // The view owns these metrics. Re-deriving never-attended or lapsed from rolled-up project rows
@@ -905,7 +963,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
 
     const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {

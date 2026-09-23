@@ -165,8 +165,8 @@ export const HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS = {
   training: { label: 'Training', dotClass: 'bg-violet-500' },
 } as const;
 
-/** Fixed 5-tag "Data sources" list in the rail — same tags for every foundation, per `railHTML()`. */
-export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights'] as const;
+/** Fixed "Data sources" list in the rail — only the sources the Overview actually reads today. */
+export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', 'Events', 'LFX Insights'] as const;
 
 /**
  * Period selector (design's `.per`) — the 4 most recent options from {@link buildHealthMetricsYearOptions}

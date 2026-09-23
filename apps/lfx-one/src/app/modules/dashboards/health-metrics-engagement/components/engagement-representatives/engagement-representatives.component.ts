@@ -18,6 +18,7 @@ import {
 } from '@lfx-one/shared/constants';
 import {
   filterHealthMetricsEngagementRepRows,
+  formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
   selectHealthMetricsEngagementRepCounts,
   selectHealthMetricsEngagementRepPeriod,
@@ -103,6 +104,9 @@ export class EngagementRepresentativesComponent {
   protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
   protected readonly totalRecords = computed(() => this.rowViews().length);
   protected readonly countLabel: Signal<string> = this.initCountLabel();
+  /** The whole foundation's scope was never measured when the read carried no rows at all — a
+   * filtered cut with zero matches over a non-empty scope is a real measured zero. */
+  protected readonly scopeUnmeasured = computed(() => this.response().rows.length === 0);
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -158,7 +162,7 @@ export class EngagementRepresentativesComponent {
             {
               row,
               period,
-              attendedLabel: `${period?.meetingsAttended ?? 0} / ${period?.meetingsInvited ?? 0}`,
+              attendedLabel: formatHealthMetricsEngagementRatio(period?.meetingsAttended ?? null, period?.meetingsInvited ?? null),
               lastAttendedLabel: dateLabels.get(row) ?? '—',
             },
           ];

@@ -30,8 +30,8 @@
   } @else if (!totalPeriod()) {
     <lfx-empty-state
       icon="fa-light fa-calendar-days"
-      title="No meeting participation yet"
-      subtitle="This foundation has no meetings recorded for the selected period."
+      title="Meeting participation data is not available yet"
+      subtitle="This foundation has no meeting participation data in the analytics model yet."
       data-testid="engagement-meeting-participation-empty" />
   } @else {
     <div class="flex flex-col gap-4 rounded-lg border border-gray-100 p-4 md:flex-row md:items-center md:justify-between">
@@ -61,7 +61,7 @@
               class="text-sm tabular-nums text-blue-600 hover:underline"
               (click)="onSectionLink('committees')"
               data-testid="engagement-meeting-participation-active-groups">
-              {{ totalPeriod()?.activeGroups ?? 0 }} / {{ totalGroups() }}
+              {{ activeGroupsLabel() }}
             </button>
           </dd>
         </div>
@@ -73,7 +73,7 @@
               class="text-sm tabular-nums text-blue-600 hover:underline"
               (click)="onSectionLink('reps')"
               data-testid="engagement-meeting-participation-never-attended">
-              {{ totalPeriod()?.neverAttended ?? 0 }}
+              {{ totalPeriod()?.neverAttended ?? '—' }}
             </button>
           </dd>
         </div>
@@ -115,7 +115,7 @@
               </div>
             </td>
             <td>
-              <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? 0 }}</span>
+              <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
             </td>
             <!-- Meetings mode drops this column rather than repeating the count beside itself. -->
             @if (attendanceMode()) {

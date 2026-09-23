@@ -33,6 +33,7 @@ import {
   formatHealthMetricsEngagementAvgReps,
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
+  formatHealthMetricsEngagementRatio,
   isHealthMetricsEngagementSectionKey,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
@@ -94,6 +95,26 @@ describe('formatHealthMetricsEngagementAttendance', () => {
 
   it('renders a genuine zero attendance as 0%, distinct from the em dash', () => {
     expect(formatHealthMetricsEngagementAttendance(0, 9)).toBe('0%');
+  });
+
+  it('renders "No data" when the meeting count itself is unmeasured, not a real fraction', () => {
+    expect(formatHealthMetricsEngagementAttendance(0.83, null)).toBe('No data');
+  });
+});
+
+describe('formatHealthMetricsEngagementRatio', () => {
+  it('renders the "N / N" cell when both sides are measured', () => {
+    expect(formatHealthMetricsEngagementRatio(12, 27)).toBe('12 / 27');
+  });
+
+  it('renders an em dash when either side is unmeasured, never a partial ratio', () => {
+    expect(formatHealthMetricsEngagementRatio(null, 27)).toBe('—');
+    expect(formatHealthMetricsEngagementRatio(12, null)).toBe('—');
+    expect(formatHealthMetricsEngagementRatio(null, null)).toBe('—');
+  });
+
+  it('renders a genuine zero side as 0, distinct from the em dash', () => {
+    expect(formatHealthMetricsEngagementRatio(0, 27)).toBe('0 / 27');
   });
 });
 
@@ -192,6 +213,13 @@ describe('selectHealthMetricsEngagementGroupPeriod / buildHealthMetricsEngagemen
   it('nulls a period with too few meetings to rate', () => {
     const periods = [...row.periods];
     periods[3] = { ...periods[3], meetingsHeld: HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE - 1 };
+
+    expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
+  });
+
+  it('nulls a period whose meeting count is unmeasured, not just below the floor', () => {
+    const periods = [...row.periods];
+    periods[3] = { ...periods[3], meetingsHeld: null };
 
     expect(buildHealthMetricsEngagementGroupTrend({ ...row, periods })).toEqual([0.54, null, 0.59, null]);
   });
@@ -473,6 +501,19 @@ describe('representatives rules', () => {
 
     expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD').map((row) => row.personName)).toEqual(['Dana Fields']);
     expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'COMPLETED_YEAR').map((row) => row.personName)).toEqual(['Dana Fields', 'Sam Rivera']);
+  });
+
+  // A null invited count is unmeasured, the same as a real 0 — neither belongs in the counted population.
+  it('drops a row whose invited count is unmeasured for the selected period', () => {
+    const unmeasured = repRow('Sam Rivera', 'Vendor Corp', {
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsInvited: 4, meetingsAttended: 0, neverAttended: true, lapsed: false },
+        { range: 'YTD', meetingsInvited: null, meetingsAttended: null, neverAttended: false, lapsed: false },
+      ],
+    });
+    const rows = [repRow('Dana Fields', 'Acme Motors'), unmeasured];
+
+    expect(filterHealthMetricsEngagementRepRows(rows, 'all', '', 'YTD').map((row) => row.personName)).toEqual(['Dana Fields']);
   });
 
   it('cuts on the selected period own flags rather than a client-side date comparison', () => {

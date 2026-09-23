@@ -19,6 +19,7 @@ import {
 import {
   filterHealthMetricsEngagementOrgRows,
   formatHealthMetricsEngagementAvgReps,
+  formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
   selectHealthMetricsEngagementOrgPeriod,
 } from '@lfx-one/shared/utils';
@@ -114,6 +115,7 @@ export class EngagementOrgParticipationComponent {
             period,
             lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
             avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
+            attendedLabel: formatHealthMetricsEngagementRatio(period?.attendedCount ?? null, period?.meetingsTotal ?? null),
           },
         ];
       })
@@ -127,6 +129,9 @@ export class EngagementOrgParticipationComponent {
       .filter((view) => view !== undefined);
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
+  /** `null` means the foundation's whole scope was never measured — a filtered cut with zero matches
+   * keeps its own counts, so this is not the same signal as `totalRecords() === 0`. */
+  protected readonly counts = computed(() => this.response().counts);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
     const counts = this.response().counts;

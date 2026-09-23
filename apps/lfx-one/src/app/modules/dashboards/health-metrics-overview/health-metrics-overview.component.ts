@@ -8,7 +8,6 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
-  HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
@@ -24,7 +23,6 @@ import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { Observable, of, startWith, switchMap, tap } from 'rxjs';
 
-import { HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE, HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS } from './health-metrics-overview.fixture';
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item/health-metrics-overview-finding-item.component';
 import { HealthMetricsOverviewRailComponent } from './health-metrics-overview-rail/health-metrics-overview-rail.component';
 import { HealthMetricsOverviewTileComponent } from './health-metrics-overview-tile/health-metrics-overview-tile.component';
@@ -56,7 +54,8 @@ export class HealthMetricsOverviewComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly platformId = inject(PLATFORM_ID);
 
-  public readonly findings = input<HealthMetricsFinding[]>(HEALTH_METRICS_OVERVIEW_FIXTURE_FINDINGS);
+  // Empty until the findings feed is wired up — the list renders its "not available yet" state.
+  public readonly findings = input<HealthMetricsFinding[]>([]);
 
   // Period selection and the sticky-header offset live on the gate-provided chrome service so they
   // persist across tab switches — see HealthMetricsChromeService.
@@ -81,7 +80,7 @@ export class HealthMetricsOverviewComponent {
   protected readonly tiles: Signal<HealthMetricsOverviewTileViewModel[]> = this.initTiles();
   protected readonly findingGroups: Signal<HealthMetricsOverviewFindingGroup[]> = this.initFindingGroups();
   // Live-fetched from HEALTH_OVERVIEW_PROFILE, keyed off the selected foundation only — re-fetches
-  // whenever the foundation changes (unlike findings, still an LFXV2-3364 fixture).
+  // whenever the foundation changes (unlike findings, which have no live source yet).
   protected readonly foundationSummary: Signal<HealthMetricsOverviewFoundationSummary> = this.initFoundationSummary();
 
   protected readonly hasFindings = computed(() => this.findingGroups().length > 0);
@@ -180,11 +179,7 @@ export class HealthMetricsOverviewComponent {
     return computed(() => {
       const foundation = this.projectContextService.selectedFoundation();
       const insightsUrl = buildLensAwareInsightsUrl(foundation?.slug, true);
-      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(
-        this.kpiAreaStates(),
-        this.kpiAreaStatesLoading(),
-        HEALTH_METRICS_OVERVIEW_FIXTURE_AREA_STATE
-      );
+      const areaStates = HealthMetricsOverviewComponent.mergeAreaStates(this.kpiAreaStates(), this.kpiAreaStatesLoading());
       return buildHealthMetricsOverviewTiles(areaStates, insightsUrl);
     });
   }
@@ -208,22 +203,12 @@ export class HealthMetricsOverviewComponent {
   }
 
   /**
-   * Every area in HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS reads live data. For those, the fixture's
-   * numbers are fabricated placeholders, not real fallback data — showing them while the live fetch
-   * is still loading, or after it resolved empty/failed, would render fake figures as if they were
-   * the foundation's actual metrics. Those areas get a neutral "no data" row instead.
+   * One row per tile area: the live row when there is one, otherwise a neutral "no data" row — never
+   * a placeholder figure, which would read as the foundation's actual metrics.
    */
-  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean, fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
+  private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean): HealthMetricsAreaState[] {
     const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));
-    return fixture.map((fixtureState) => {
-      const liveState = liveByArea.get(fixtureState.area);
-      if (liveState) {
-        return liveState;
-      }
-      return HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS.has(fixtureState.area)
-        ? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(fixtureState.area, loading)
-        : fixtureState;
-    });
+    return HEALTH_METRICS_OVERVIEW_AREAS.map(({ key }) => liveByArea.get(key) ?? HealthMetricsOverviewComponent.buildNeutralKpiAreaState(key, loading));
   }
 
   private static buildNeutralKpiAreaState(area: HealthMetricsOverviewArea, loading: boolean): HealthMetricsAreaState {

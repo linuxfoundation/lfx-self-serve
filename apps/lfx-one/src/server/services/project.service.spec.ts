@@ -2143,6 +2143,22 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
     expect(result['COMPLETED_YEAR']).toEqual({ dataAvailable: false, total: 0, streams: [] });
   });
 
+  it('keeps a null stream value as null rather than reporting it as $0', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'memberships', REVENUE_USD: 600_000, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
+        buildRevenueWideRow({ REVENUE_DOMAIN: 'events', REVENUE_USD: null, FOUNDATION_TOTAL_REVENUE_USD: 600_000 }),
+      ],
+    });
+
+    const result = await service.getHealthOverviewRevenue('cncf');
+
+    expect(result['YTD']?.streams).toEqual([
+      { key: 'memberships', value: 600_000 },
+      { key: 'events', value: null },
+    ]);
+  });
+
   it('keeps a period available when the driver returns its high-precision totals as strings', async () => {
     // Snowflake can serialize a high-precision NUMBER as a string; rejecting it instead of coercing
     // would report a funded foundation as having no revenue data for the period.
@@ -2369,6 +2385,23 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
   });
 
+  it('reads a null Engagement count as no data rather than zero', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql)
+        ? {
+            rows: [
+              { ACTIVE_GROUPS__YTD: null, LOW_ATTENDANCE_GROUPS__YTD: null, ACTIVE_GROUPS__COMPLETED_YEAR: 12, LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: null },
+            ],
+          }
+        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
+    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
+  });
+
   it('counts only rated, non-dormant groups per period, binding the thresholds and the foundation', async () => {
     await service.getHealthOverviewKpis('cncf');
 
@@ -2473,7 +2506,7 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
     expect(execute.mock.calls[0][0]).toContain('LIMIT 1');
   });
 
@@ -2484,24 +2517,34 @@ describe('ProjectService — getFoundationProfileSummary', () => {
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 1, tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+    expect(result).toEqual({ dataAvailable: true, projects: '1', tiers: '1 tier', board: '1 seat', nextRenewals: '0 in the next 90 days' });
   });
 
-  it('returns the zero-filled default when no row is returned for the foundation', async () => {
+  it('renders a null column as an em dash rather than a zero count', async () => {
+    execute.mockResolvedValueOnce({
+      rows: [{ PROJECT_COUNT: 3, MEMBERSHIP_TIER_COUNT: null, BOARD_SEAT_COUNT: null, RENEWALS_NEXT_90D_COUNT: null }],
+    });
+
+    const result = await service.getFoundationProfileSummary('cncf');
+
+    expect(result).toEqual({ dataAvailable: true, projects: '3', tiers: '—', board: '—', nextRenewals: '—' });
+  });
+
+  it('returns the unavailable default when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
+    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 
-  it('returns the zero-filled default instead of a 5xx when the table is not deployed yet', async () => {
+  it('returns the unavailable default instead of a 5xx when the table is not deployed yet', async () => {
     vi.mocked(SnowflakeService.isMissingObjectError).mockReturnValue(true);
     execute.mockRejectedValueOnce(new Error('Object does not exist'));
 
     const result = await service.getFoundationProfileSummary('cncf');
 
-    expect(result).toEqual({ projects: 0, tiers: 'N/A', board: 'N/A', nextRenewals: 'N/A' });
+    expect(result).toEqual({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
   });
 });
 

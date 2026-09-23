@@ -65,6 +65,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
   it('renders findings groups in the fixed order', async () => {
     await render(null, null);
+    fixture.componentRef.setInput('findings', sampleFindings());
+    fixture.detectChanges();
 
     const groupEls = fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]');
     const order = Array.from<Element>(groupEls).map((el) => el.getAttribute('data-testid'));
@@ -79,6 +81,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
   it('sorts findings within a group by sortRank', async () => {
     await render(null, null);
+    fixture.componentRef.setInput('findings', sampleFindings());
+    fixture.detectChanges();
 
     const rows = fixture.nativeElement.querySelectorAll(
       '[data-testid="health-metrics-overview-findings-group-act"] [data-testid^="health-metrics-overview-finding-row-"]'
@@ -98,6 +102,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
   it('resolves a PCC finding link from the Salesforce id, not the project uid', async () => {
     await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+    fixture.componentRef.setInput('findings', sampleFindings());
+    fixture.detectChanges();
 
     const link: HTMLAnchorElement | null = fixture.nativeElement.querySelector('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]');
     expect(link?.href).toContain('/project/a0912345678901234A/');
@@ -106,6 +112,8 @@ describe('HealthMetricsOverviewComponent', () => {
 
   it('hides a PCC finding link while the Salesforce id has not resolved yet', async () => {
     await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+    fixture.componentRef.setInput('findings', sampleFindings());
+    fixture.detectChanges();
 
     // The code.insights finding link has nothing to do with the SFID and should still render —
     // only the PCC-bound links (target="_self") are expected to disappear.
@@ -153,12 +161,24 @@ describe('HealthMetricsOverviewComponent', () => {
     };
   }
 
-  it('renders the all-clear state and no group elements when there are no findings', async () => {
-    await render(null, null);
-    fixture.componentRef.setInput('findings', []);
-    fixture.detectChanges();
+  /** One finding per group, with two `act` rows out of rank order and one PCC-, Insights- and in-app link each. */
+  function sampleFindings(): HealthMetricsFinding[] {
+    return [
+      finding({ classification: 'act', linkTarget: 'mem.atrisk', sortRank: 2 }),
+      finding({ classification: 'act', linkTarget: 'eng.groups', sortRank: 1 }),
+      finding({ classification: 'watch', area: 'evt', linkTarget: 'evt.forecast', sortRank: 3 }),
+      finding({ classification: 'opp', area: 'non', linkTarget: 'non.orgs', sortRank: 4 }),
+      finding({ classification: 'ok', area: 'code', linkTarget: 'code.insights', sortRank: 5 }),
+      finding({ classification: 'none', area: 'trn', linkTarget: 'trn.enrollment', sortRank: 6 }),
+    ];
+  }
 
-    expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-all-clear"]')).not.toBeNull();
+  it('renders a "not available yet" state, not an all-clear, when there are no findings', async () => {
+    await render(null, null);
+
+    const unavailable: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-findings-unavailable"]');
+    expect(unavailable?.textContent).toContain('Findings are not available yet.');
+    expect(fixture.nativeElement.textContent).not.toContain('Nothing needs your attention');
     expect(fixture.nativeElement.querySelectorAll('[data-testid^="health-metrics-overview-findings-group-"]').length).toBe(0);
   });
 
@@ -180,7 +200,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -198,7 +218,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -211,12 +231,12 @@ describe('HealthMetricsOverviewComponent', () => {
       httpMock.verify();
     });
 
-    it('shows a neutral "no data" tile, not the fabricated fixture, for a live area when the KPI fetch fails', async () => {
+    it('shows a neutral "no data" tile, never a placeholder figure, for a live area when the KPI fetch fails', async () => {
       await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       const kpiRequest = httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis');
       fixture.detectChanges();
@@ -231,7 +251,7 @@ describe('HealthMetricsOverviewComponent', () => {
       await fixture.whenStable();
 
       // AnalyticsService.getHealthOverviewKpis degrades to an empty per-range map on failure. All 6 tiles
-      // still render, each as a neutral "no data" row rather than the fixture's fabricated numbers.
+      // still render, each as a neutral "no data" row rather than a placeholder figure.
       const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
       expect(tileStrip.children.length).toBe(6);
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
@@ -243,6 +263,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
       expect(engTile.textContent).toContain('no data this period');
       expect(engTile.textContent).not.toContain('8 of 31');
+      expect(engTile.textContent).not.toContain('View groups');
       httpMock.verify();
     });
 
@@ -251,7 +272,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -274,7 +295,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -297,7 +318,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '2', tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 50, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -313,7 +334,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       // The `range` assertion is the endpoint contract this PR establishes: the fetch is per
       // foundation, so a period pill must never reintroduce a range param.
@@ -345,7 +366,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -387,7 +408,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock
         .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
@@ -410,7 +431,7 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-skeleton"]')).toBeNull();
       expect(fixture.nativeElement.textContent).not.toContain('5 in the next 90 days');
       // Positive too: the absences above would also hold if the rail stopped rendering altogether.
-      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-rail"]').textContent).toContain('N/A');
+      expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-foundation-summary-unavailable"]')).not.toBeNull();
       httpMock.verify();
     });
   });
@@ -424,7 +445,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       fixture.detectChanges();
@@ -439,7 +460,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'test-foundation')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
 
@@ -448,7 +469,7 @@ describe('HealthMetricsOverviewComponent', () => {
 
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary' && r.params.get('foundationSlug') === 'other-foundation')
-        .flush({ projects: 2, tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '2', tiers: '2 tiers', board: '1 seat', nextRenewals: '0 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 50, streams: [] } });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       fixture.detectChanges();
@@ -464,7 +485,7 @@ describe('HealthMetricsOverviewComponent', () => {
       const httpMock = TestBed.inject(HttpTestingController);
       httpMock
         .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
-        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+        .flush({ dataAvailable: true, projects: '14', tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
       httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-kpis').flush({});
       return httpMock;
     }

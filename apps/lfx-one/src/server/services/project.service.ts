@@ -1742,15 +1742,15 @@ export class ProjectService {
       return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
     }
 
-    const tierCount = row.MEMBERSHIP_TIER_COUNT ?? 0;
-    const boardCount = row.BOARD_SEAT_COUNT ?? 0;
-    const renewalsCount = row.RENEWALS_NEXT_90D_COUNT ?? 0;
+    // A null column is unmeasured, not zero — render it as "—" rather than "0 tiers".
+    const format = (value: number | null, render: (count: number) => string): string => (value === null ? '—' : render(value));
 
     return {
-      projects: row.PROJECT_COUNT ?? 0,
-      tiers: `${tierCount} ${tierCount === 1 ? 'tier' : 'tiers'}`,
-      board: `${boardCount} ${boardCount === 1 ? 'seat' : 'seats'}`,
-      nextRenewals: `${renewalsCount} in the next 90 days`,
+      dataAvailable: true,
+      projects: format(row.PROJECT_COUNT, (count) => String(count)),
+      tiers: format(row.MEMBERSHIP_TIER_COUNT, (count) => `${count} ${count === 1 ? 'tier' : 'tiers'}`),
+      board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'seat' : 'seats'}`),
+      nextRenewals: format(row.RENEWALS_NEXT_90D_COUNT, (count) => `${count} in the next 90 days`),
     };
   }
 
@@ -6233,7 +6233,7 @@ export class ProjectService {
         total,
         streams: rows.map((row) => ({
           key: String(row['REVENUE_DOMAIN'] ?? '').toLowerCase(),
-          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]) ?? 0,
+          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]),
         })),
       };
     }
@@ -8097,8 +8097,8 @@ export class ProjectService {
         ranges.map((range) => [
           range,
           {
-            activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]) ?? 0,
-            lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]) ?? 0,
+            activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
+            lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
           },
         ])
       );
@@ -8775,13 +8775,19 @@ export class ProjectService {
    * count, so the tile carries a link into the group attendance view instead.
    */
   private static buildHealthOverviewEngagementAreaState(counts: HealthOverviewEngagementCounts): HealthMetricsAreaState {
+    const { activeGroups, lowAttendanceGroups } = counts;
+    let statValue = '—';
+    let statLabel = 'no data this period';
+    if (activeGroups === 0) {
+      statLabel = 'no active groups this period';
+    } else if (activeGroups !== null && lowAttendanceGroups !== null) {
+      statValue = `${formatNumber(lowAttendanceGroups)} of ${formatNumber(activeGroups)}`;
+      statLabel = `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`;
+    }
     return {
       area: 'eng',
-      statValue: counts.activeGroups === 0 ? '—' : `${formatNumber(counts.lowAttendanceGroups)} of ${formatNumber(counts.activeGroups)}`,
-      statLabel:
-        counts.activeGroups === 0
-          ? 'no active groups this period'
-          : `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`,
+      statValue,
+      statLabel,
       statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
       classification: 'none',
       evaluatedAt: '',
