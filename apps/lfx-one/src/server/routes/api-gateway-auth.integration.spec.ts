@@ -15,15 +15,19 @@ import type { AddressInfo } from 'node:net';
 import { from, lastValueFrom, mergeMap } from 'rxjs';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { stubConstructor } = vi.hoisted(() => ({
+const { stubConstructor, valkey } = vi.hoisted(() => ({
   stubConstructor: vi.fn(function (this: object) {
     return this;
   }),
+  valkey: { isEnabled: vi.fn(() => false), setJson: vi.fn(), getdelJson: vi.fn() },
 }));
 vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), info: vi.fn(), warning: vi.fn(), debug: vi.fn(), error: vi.fn(), getLastOperation: vi.fn() },
 }));
-vi.mock('../services/valkey.service', () => ({ valkeyService: { isEnabled: () => false }, buildAuthStateCacheKey: () => null }));
+vi.mock('../services/valkey.service', () => ({
+  valkeyService: valkey,
+  buildAuthStateCacheKey: (state: string) => `lfx-ui:auth-state:v1:${state}`,
+}));
 // Exercise Developer Settings and Salesforce ID without connecting their unrelated
 // collaborators; OIDC, Gateway auth, session persistence and profile HTTP requests are real.
 vi.mock('../services/auth0.service', () => ({ Auth0Service: stubConstructor }));
@@ -250,6 +254,9 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
   });
 
   beforeEach(async () => {
+    valkey.isEnabled.mockReturnValue(false);
+    valkey.setJson.mockReset();
+    valkey.getdelJson.mockReset();
     for (const limiter of [apiRateLimiter, authRateLimiter, publicApiRateLimiter]) limiter.resetKey('127.0.0.1');
     sessions.clear();
     cookies.clear();
@@ -354,6 +361,7 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
       }
     });
     app.get('/org/acme/easycla', (_req, res) => res.type('html').send('<p>Application shell</p>'));
+    app.get(/^\/(?:foundation|project)\/gw(?:\/.*)?$/, (_req, res) => res.type('html').send('<p>Gatewaze shell</p>'));
     app.get('/meetings/public-event', (_req, res) => res.type('html').send('<p>Public meeting</p>'));
     app.use((error: Error, req: Request, res: Response, next: NextFunction) => apiErrorHandler(error, req, res, next));
   });
@@ -409,6 +417,47 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     expect(tokenRequests).toHaveLength(1);
     expect((await send('/api/v2-only', 'GET', 'application/json')).status).toBe(200);
     expect(tokenRequests).toHaveLength(1);
+  });
+
+  it.each(['/foundation/gw/newsletters', '/project/gw/newsletters'])('renders %s without an extra OAuth round trip before fragment adoption', async (path) => {
+    await login('/meetings/public-event');
+    const browserUrl = new URL(`${baseUrl}${path}?project=synthetic-project&gw_state=synthetic-state#access_token=gw-access&refresh_token=gw-refresh`);
+    const page = await send(`${browserUrl.pathname}${browserUrl.search}`);
+
+    expect(page.status).toBe(200);
+    expect(page.headers.get('location')).toBeNull();
+    expect(await page.text()).toBe('<p>Gatewaze shell</p>');
+    expect([...sessions.values()][0].data['apiGatewayAuthAttempted']).toBeUndefined();
+    expect(tokenRequests).toHaveLength(1);
+
+    const operation = await send('/api/gateway-operation', 'POST', 'application/json');
+    expect(operation.status).toBe(403);
+    expect(await operation.json()).toMatchObject({ code: 'API_GATEWAY_AUTH_REQUIRED' });
+    expect(upstreamAuthorizations).toEqual([]);
+  });
+
+  it.each(['refused', 'rejected'] as const)('recovers automatic navigation after a %s auth-state write across persisted sessions', async (failure) => {
+    await login();
+    valkey.isEnabled.mockReturnValue(true);
+    if (failure === 'rejected') valkey.setJson.mockRejectedValueOnce(new Error('state-store unavailable'));
+    else valkey.setJson.mockResolvedValueOnce(false);
+    valkey.setJson.mockResolvedValue(true);
+
+    const unavailable = await send('/org/acme/easycla');
+    expect(unavailable.status).toBe(200);
+    expect(unavailable.headers.get('location')).toBeNull();
+    expect([...sessions.values()][0].data['apiGatewayAuthAttempted']).toBeUndefined();
+    expect([...sessions.values()][0].data['apiGatewayAuthState']).toBeUndefined();
+
+    const recovered = await send('/org/acme/easycla');
+    expect(recovered.status).toBe(302);
+    expect(new URL(recovered.headers.get('location')!).searchParams.get('audience')).toBe(`${issuer}gateway/`);
+    expect([...sessions.values()][0].data['apiGatewayAuthAttempted']).toBe(true);
+    expect(valkey.setJson).toHaveBeenCalledTimes(2);
+    expect(tokenRequests).toHaveLength(1);
+
+    expect((await send('/org/acme/easycla')).status).toBe(200);
+    expect(valkey.setJson).toHaveBeenCalledTimes(2);
   });
 
   it('rejects excess requests before refreshing tokens or starting document authorization', async () => {

@@ -71,8 +71,6 @@ export class ApiGatewayAuthService {
       silent,
       expiresAt: Date.now() + VALKEY_CACHE.AUTH_STATE_TTL_SECONDS * 1000,
     };
-    // Retry a failed flow only through an explicit start, not an automatic redirect loop.
-    req.appSession.apiGatewayAuthAttempted = true;
     delete req.appSession.apiGatewayAuthState;
     if (valkeyService.isEnabled()) {
       // Keep single-use state outside whole-session write races.
@@ -83,6 +81,8 @@ export class ApiGatewayAuthService {
     } else {
       req.appSession.apiGatewayAuthState = record;
     }
+    // Retry a failed flow only through an explicit start, not an automatic redirect loop.
+    req.appSession.apiGatewayAuthAttempted = true;
 
     const params = new URLSearchParams({
       response_type: 'code',

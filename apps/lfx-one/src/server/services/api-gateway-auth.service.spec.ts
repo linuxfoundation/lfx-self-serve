@@ -500,6 +500,41 @@ describe('ApiGatewayAuthService', () => {
     expect(await service.consumeAuthState(req, previous.state)).toBeNull();
   });
 
+  it.each(['refused', 'rejected'] as const)('does not suppress a later authorization attempt after a %s state write', async (failure) => {
+    valkey.isEnabled.mockReturnValue(true);
+    if (failure === 'rejected') valkey.setJson.mockRejectedValueOnce(new Error('state-store unavailable'));
+    else valkey.setJson.mockResolvedValueOnce(false);
+    valkey.setJson.mockResolvedValue(true);
+    const req = request();
+
+    await expect(service.getAuthorizationUrl(req, '/org/acme')).rejects.toThrow(failure === 'rejected' ? 'state-store unavailable' : 'could not be saved');
+    expect(req.appSession!.apiGatewayAuthAttempted).toBeUndefined();
+    expect(req.appSession!.apiGatewayAuthState).toBeUndefined();
+
+    const url = new URL(await service.getAuthorizationUrl(req, '/org/acme'));
+    expect(url.pathname).toBe('/authorize');
+    expect(valkey.setJson).toHaveBeenCalledTimes(2);
+    expect(req.appSession!.apiGatewayAuthAttempted).toBe(true);
+    expect(req.appSession!.apiGatewayAuthState).toBeUndefined();
+    expect(req.appSession!['refresh_token']).toBe('primary-refresh');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('marks an authorization attempt only after its pending state write succeeds', async () => {
+    valkey.isEnabled.mockReturnValue(true);
+    let finish!: (saved: boolean) => void;
+    valkey.setJson.mockImplementationOnce(() => new Promise<boolean>((resolve) => (finish = resolve)));
+    const req = request();
+    const pending = service.getAuthorizationUrl(req, '/org/acme');
+    const attemptedBeforeSave = req.appSession!.apiGatewayAuthAttempted;
+
+    finish(true);
+    await pending;
+
+    expect(attemptedBeforeSave).toBeUndefined();
+    expect(req.appSession!.apiGatewayAuthAttempted).toBe(true);
+  });
+
   it('leaves Authelia on its existing refresh-token exchange rather than starting a new grant', async () => {
     vi.stubEnv('PCC_AUTH0_ISSUER_BASE_URL', 'https://auth.k8s.orb.local/');
     const req = request();

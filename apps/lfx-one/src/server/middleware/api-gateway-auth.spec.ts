@@ -117,6 +117,51 @@ describe('Gateway acquisition in the selective auth middleware', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it.each(['/foundation/gw', '/foundation/gw/', '/foundation/gw/newsletters', '/project/gw', '/project/gw/', '/project/gw/newsletters'])(
+    'lets Gatewaze render before its browser-only fragment is consumed (%s)',
+    async (path) => {
+      const req = request(path);
+      req.originalUrl = `${path}?project=synthetic-project&gw_state=synthetic-state`;
+      const res = response();
+      const next = vi.fn();
+
+      await middleware(req, res, next);
+
+      expect(next).toHaveBeenCalledWith();
+      expect(res.redirect).not.toHaveBeenCalled();
+      expect(res.oidc.login).not.toHaveBeenCalled();
+      expect(req.appSession!.apiGatewayAuthAttempted).toBeUndefined();
+      expect(req.appSession!.apiGatewayAuthState).toBeUndefined();
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['/foundation/gwidgets', '/project/gw-settings'])('still authorizes a protected route that only shares the Gatewaze prefix (%s)', async (path) => {
+    const req = request(path);
+    const res = response();
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(res.redirect).toHaveBeenCalledTimes(1);
+    expect(next).not.toHaveBeenCalled();
+    expect(req.appSession!.apiGatewayAuthState!.returnTo).toBe(path);
+  });
+
+  it.each(['/foundation/gw/newsletters', '/project/gw/newsletters'])('keeps primary authentication required for Gatewaze (%s)', async (path) => {
+    const req = request(path);
+    req.oidc.isAuthenticated = () => false;
+    const res = response();
+    const next = vi.fn();
+
+    await middleware(req, res, next);
+
+    expect(res.oidc.login).toHaveBeenCalledWith({ returnTo: path });
+    expect(res.redirect).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(req.appSession!.apiGatewayAuthAttempted).toBeUndefined();
+  });
+
   it.each(['GET', 'POST', 'PATCH', 'DELETE'])('never redirects/replays an API %s; only Gateway operations require the secondary grant', async (method) => {
     const req = request('/api/orgs/acme/clas', method);
     const next = vi.fn();

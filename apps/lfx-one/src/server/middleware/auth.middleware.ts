@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { API_GATEWAY_AUTH } from '@lfx-one/shared/constants';
+import { API_GATEWAY_AUTH, GW_EMBED_ROUTE_PREFIXES } from '@lfx-one/shared/constants';
 import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -354,6 +354,8 @@ async function authorizeApiGatewayNavigation(req: Request, res: Response, route:
   ) {
     return false;
   }
+  // Gatewaze consumes its client-only sign-in fragment after rendering.
+  if (GW_EMBED_ROUTE_PREFIXES.some((prefix) => req.path === prefix || req.path.startsWith(`${prefix}/`))) return false;
   const returnTo = normalizeApiGatewayReturnTo(req.originalUrl);
   if (returnTo === '/' && req.path !== '/') return false;
 
