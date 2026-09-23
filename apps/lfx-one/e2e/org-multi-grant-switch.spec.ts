@@ -57,8 +57,8 @@ function skipWhenAuthMissing(page: Page): void {
 }
 
 // Inverse of `skipWhenNotLfTeam` in `org-selector.spec.ts`: skip a scenario whose expected answer is
-// a refusal when the bootstrap identity is in an LF team (lf-staff or lf-contractor), because both
-// teams hold `auditor` on every b2b_org and are deliberately allowed through the per-org check —
+// a refusal when the bootstrap identity is in an LF team (`LF_TEAM_IDS`, lf-staff only), because
+// that team holds `auditor` on every b2b_org and is deliberately allowed through the per-org check —
 // for them a 200 is correct, not a bug.
 //
 // The probe deliberately uses the top-level `request` fixture rather than `page.request`: it is a
@@ -72,7 +72,7 @@ async function skipWhenLfTeam(request: APIRequestContext): Promise<void> {
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (body.isStaff) {
-    test.skip(true, 'Skipping ungranted-refusal scenario — TEST_USERNAME is lf-staff or lf-contractor, which is legitimately allowed on every org');
+    test.skip(true, 'Skipping ungranted-refusal scenario — TEST_USERNAME is lf-staff, which is legitimately allowed on every org');
   }
 }
 
