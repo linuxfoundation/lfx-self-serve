@@ -952,8 +952,19 @@ export class CampaignServiceClient {
       // `stripHtml(...).trim() === ''` -- and each one passed a value the previous caught: an
       // empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
       // `hasVisibleText` asks it by Unicode category, so there is one definition to keep right.
-      const legacyBody = typeof legacy.body === 'string' ? stripResourceLoadingHtml(legacy.body) : '';
-      const effectiveBody = hasVisibleHtmlText(body) ? body : legacyBody;
+      // The fallback is chosen ONCE, by SHAPE, not per field.
+      //
+      // Deciding it per field mixed the two response shapes: `cta || legacy.cta` refilled a button
+      // an operator had deliberately left with no destination, and a sections body that is
+      // image-only -- which is supposed to fail the empty-body guard below -- could be refilled
+      // from a leftover flat field and pass. An empty value in a sections response is an ANSWER;
+      // only the absence of sections entirely means "this is the older flat shape".
+      const isLegacyShape = sections.length === 0;
+      const legacyText = (value: unknown): string => (typeof value === 'string' ? value : '');
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body)) : '';
+      const effectiveBody = isLegacyShape ? legacyBody : body;
+      const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
+      const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;
       if (!hasVisibleHtmlText(effectiveBody)) {
         logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
         return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
@@ -967,8 +978,8 @@ export class CampaignServiceClient {
           subject: sanitizeDisplayText(copy.subject ?? ''),
           preheader: sanitizeDisplayText(copy.preheader ?? ''),
           body: effectiveBody,
-          cta: cta || sanitizeDisplayText(typeof legacy.cta === 'string' ? legacy.cta : ''),
-          ctaUrl: ctaUrl || (typeof legacy.ctaUrl === 'string' ? legacy.ctaUrl : ''),
+          cta: effectiveCta,
+          ctaUrl: effectiveCtaUrl,
         },
       };
     } catch (error) {

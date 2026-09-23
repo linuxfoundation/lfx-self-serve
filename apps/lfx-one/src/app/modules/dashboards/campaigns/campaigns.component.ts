@@ -2573,19 +2573,22 @@ export class CampaignsComponent {
 
       // Per field, not all-or-nothing: an operator who typed a subject while the body generated
       // keeps their subject AND gets the generated body.
+      // `?? ''` on EVERY model-supplied field, not just the one a review round happened to flag.
+      // The wire type says `string`, but the value comes from a MODEL: a response that omits the
+      // field satisfies the decoder and lands `undefined` in the control, and the `ForSend`
+      // computeds call `.trim()` on it unguarded -- which throws a TypeError inside a computed
+      // during change detection. Guarding one field and not its two siblings is how the same
+      // defect comes back with a different field name.
       if (this.abTestForm.controls.subjectB.value === clearedSubjectB) {
-        this.abTestForm.controls.subjectB.setValue(result.copy.subject);
+        this.abTestForm.controls.subjectB.setValue(result.copy.subject ?? '');
       }
       if (this.abTestForm.controls.bodyHtmlB.value === clearedBodyHtmlB) {
-        this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body);
+        this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body ?? '');
       }
       // Guarded like the others: this field HAS its own input, so an operator can type into it
       // mid-generation exactly as they can the subject. (The generator returning a preheader for
       // B is what stops B inheriting A's.)
       if (this.abTestForm.controls.preheaderB.value === clearedPreheaderB) {
-        // `?? ''` because the wire type says `preheader: string` while the value comes from a
-        // MODEL: a response omitting the field satisfies the decoder and lands `undefined` in the
-        // control, and `abTestPreheaderBForSend` calls `.trim()` on it unguarded.
         this.abTestForm.controls.preheaderB.setValue(result.copy.preheader ?? '');
       }
       this.abTestCopyState.set('idle');

@@ -2381,6 +2381,46 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     isServerFeatureEnabled.mockReturnValue(true);
   });
 
+  /**
+   * The flat-field fallback exists for the OLDER response shape, which had `body`/`cta`/`ctaUrl`
+   * instead of `sections`. It used to be chosen per field -- `cta || legacy.cta` -- which mixed
+   * the two shapes: an empty value in a sections response is an ANSWER, not a gap, and refilling
+   * it from a leftover flat field overrode the operator.
+   */
+  it('does not refill an empty sections field from a leftover flat field', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        // A button with no destination: deliberate, and the flat `ctaUrl` beside it is leftover.
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: 'Register', url: '' },
+        ],
+        cta: 'Leftover CTA',
+        ctaUrl: 'https://leftover.example.com',
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.ctaUrl).toBe('');
+    expect(result.copy?.ctaUrl).not.toBe('https://leftover.example.com');
+  });
+
+  it('still uses the flat fields when sections is absent entirely', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', body: '<p>Legacy body</p>', cta: 'Register', ctaUrl: 'https://example.com' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // The control for the case above: narrowing the fallback to the legacy SHAPE must not break
+    // the shape it exists for.
+    expect(result.copy?.body).toContain('Legacy body');
+    expect(result.copy?.ctaUrl).toBe('https://example.com');
+  });
+
   it('sends the stage as a QUERY param, not a body', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
