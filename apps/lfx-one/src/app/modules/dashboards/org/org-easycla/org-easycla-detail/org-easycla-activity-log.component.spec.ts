@@ -245,6 +245,22 @@ describe('OrgEasyclaActivityLogComponent', () => {
     // The tab-level empty state is deliberately different copy — a term that matches nothing is
     // not the same as "no activity yet".
     expect(byTestId(fixture, 'org-easycla-activity-log-empty')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-activity-log-load-more')).toBeNull();
+  });
+
+  it('keeps Load more when the term matches nothing on this page but a later page exists', async () => {
+    getActivityLog.mockReturnValueOnce(of(page([entry({ id: 'e1', summary: 'aporter signed', actor: 'Ada' })], { nextKey: 'cursor-2' })));
+    const fixture = await render();
+
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('nomatch');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-activity-log-filter-empty')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-activity-log-load-more')).toBeTruthy();
   });
 
   it('shows the tab-empty state when the fetched set is empty AND no search term is entered', async () => {

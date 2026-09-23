@@ -1296,6 +1296,13 @@ export class OrgClaService {
       return { signatureId, list: [], resultCount: 0, nextKey: null };
     }
 
+    if (!context.projectSfid) {
+      throw new MicroserviceError('Failed to fetch the activity log: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_get_activity_log',
+        service: SERVICE,
+      });
+    }
+
     const page = await this.fetchActivityLogPage(req, context, query, 'org_cla_get_activity_log');
     const upstreamRows = Array.isArray(page.Events) ? page.Events : [];
     const mapped: OrgClaActivityLogEntry[] = [];

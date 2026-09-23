@@ -3089,6 +3089,16 @@ describe('OrgClaService.getActivityLog — the upstream call', () => {
     expect(url).toContain('/v4/company/company-uuid-1/project/a09410000182dD2AAI/events');
   });
 
+  it('refuses a signed agreement with neither a project nor a foundation id, without calling the events endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '   ' })));
+
+    await expect(new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 })).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+      statusCode: 502,
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('carries the page size and next-key cursor to the producer as query parameters', async () => {
     stageActivityLog();
 
