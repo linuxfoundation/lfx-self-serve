@@ -6,7 +6,7 @@
     <div class="flex items-center gap-2">
       <p-toggleSwitch
         [formControlName]="control()!"
-        [id]="id()"
+        [inputId]="id()"
         [readonly]="readonly()"
         [styleClass]="styleClass()"
         [trueValue]="trueValue()"
@@ -32,7 +32,7 @@
       [ngModel]="checked()"
       (ngModelChange)="checkedChange.emit($event)"
       [disabled]="disabled()"
-      [id]="id()"
+      [inputId]="id()"
       [readonly]="readonly()"
       [styleClass]="styleClass()"
       [ariaLabel]="ariaLabel()"

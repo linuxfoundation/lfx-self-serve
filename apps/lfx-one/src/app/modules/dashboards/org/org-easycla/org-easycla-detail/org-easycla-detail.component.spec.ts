@@ -2943,6 +2943,8 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
   });
 
   it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
