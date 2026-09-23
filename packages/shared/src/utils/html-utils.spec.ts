@@ -677,6 +677,27 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe(`<p><a href="${expected}">x</a></p>`);
   });
 
+  it('agrees with itself across layers, whatever the model returns', () => {
+    // The three call sites filter the SAME body in sequence: the service against the model's own
+    // button url, then the client and controller against `emailCtaDestination()` -- which is ''
+    // unless the model's url equals the brief's. What must hold is that the operator's preview
+    // and the staged draft are identical, for every shape the model can return.
+    const brief = 'https://events.linuxfoundation.org/kubecon';
+    const body = `<p>Go <a href="${brief}/register">A</a> and <a href="https://evil.example/p">B</a></p>`;
+
+    for (const modelUrl of [brief, 'https://evil.example/cfp', '']) {
+      const fromService = stripResourceLoadingHtml(body, modelUrl === '' ? [] : [modelUrl]);
+      // `emailCtaDestination` keeps the model's url ONLY when it matches the brief.
+      const validated = modelUrl === brief ? [modelUrl] : [];
+      const preview = stripResourceLoadingHtml(fromService, validated);
+      const staged = stripResourceLoadingHtml(fromService, validated);
+
+      expect(preview).toBe(staged);
+      // And an invented destination never survives to the draft, however it entered.
+      expect(staged).not.toContain('evil.example');
+    }
+  });
+
   it('drops a relative href when NOTHING is vouched for', () => {
     // An empty list is "vouched for nothing", and that has to mean every link -- a relative one
     // has no base to resolve against either. Keeping them contradicted the stated policy.

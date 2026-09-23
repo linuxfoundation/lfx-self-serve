@@ -490,6 +490,13 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
   const allowedHosts = buildAllowedHosts(allowedDestinations);
   // The base a relative href resolves against: the first destination the caller vouched for.
   // '' when none was, which is the same "nothing is vouched for" state an empty list expresses.
+  //
+  // FIRST, not "all": a relative href has exactly one base, so a list with two hosts would have
+  // to guess which the author meant. Every caller today passes at most ONE destination -- the
+  // generator's CTA url (service), `buttonUrl` (controller), `emailCtaDestination()` (client) --
+  // so the ambiguity is not reachable. The parameter stays a list because the HOST allow-list
+  // genuinely takes several; if a caller ever vouches for two, relative resolution needs an
+  // explicit base rather than this fallback.
   const firstAllowedBase = (allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '';
 
   return sanitizeHtml(html, {

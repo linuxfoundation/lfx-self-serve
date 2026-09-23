@@ -902,6 +902,17 @@ export class CampaignServiceClient {
       // flat field on the wire, so a second button's url is discarded everywhere else -- letting
       // it vouch for a host here would whitelist a destination the draft never carries, leaving a
       // clickable unvouched link in the operator preview.
+      //
+      // This vouches for the MODEL'S OWN url, which is all this layer can do: `generateEmailCopy`
+      // receives `briefId`, not the brief, so it has no registration url to compare against. A
+      // model that invents a destination therefore gets its invented host past THIS filter while
+      // losing the legitimate one -- the inverse of what is wanted.
+      //
+      // That is safe only because this body goes straight out of the HTTP response to the client
+      // and is consumed nowhere else (`campaign.controller.ts:586` is the only caller). The
+      // client re-filters it against `emailCtaDestination()`, which DOES compare with the brief,
+      // and the controller re-filters again at the request boundary. If a server-side consumer is
+      // ever added, it must not treat this output as vouched.
       const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
       const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
 
