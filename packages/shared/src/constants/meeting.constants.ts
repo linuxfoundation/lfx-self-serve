@@ -719,16 +719,21 @@ export const RESTRICTED_MEETING_FEATURE = {
 
 /**
  * Show meeting attendees feature configuration
- * @description Feature toggle config for showing meeting attendees
+ * @description Feature toggle config for listing the other guests as ATTENDEE lines in each
+ * calendar invite. Scoped to the invite deliberately — the copy must not promise meeting-page
+ * roster gating, which this toggle does not yet control.
  */
 export const SHOW_MEETING_ATTENDEES_FEATURE = {
   key: 'show_meeting_attendees',
   icon: 'fa-light fa-users',
-  title: 'Show Members on Meeting Details Page',
-  description: 'Allow members to see who were invited to this meeting and who will be attending',
+  title: 'Show attendees in calendar invites',
+  description: "Let guests see who else is invited, and who has accepted, in their calendar app's invite",
   recommended: false,
   color: lfxColors.blue[500],
 };
+
+/** Note shown when the attendees toggle is locked off for board or restricted meetings. */
+export const SHOW_MEETING_ATTENDEES_LOCKED_NOTE = 'Not available for board or restricted meetings';
 
 // ============================================================================
 // Meeting Duration Options
