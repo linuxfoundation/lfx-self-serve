@@ -224,12 +224,31 @@ The rules:
 - Record each token's nearest `lfxColors` equivalent next to it, and mark deliberate
   divergences explicitly, with the full table and the convergence path in the feature's
   `specs/` directory. A divergence that isn't written down becomes permanent by default.
+- **Measure contrast before adopting a value, including values taken from a prototype.**
+  Record the ratio next to each ink, status and focus token. A token named for a text role
+  will be used as text, so one that cannot clear 4.5:1 belongs in a non-text group under a
+  name that says so. Focus rings need 3:1 against the adjacent surface (WCAG 2.2 SC 1.4.11),
+  which a low-alpha tint of an accent will not give. Consumers may not write raw colour
+  values, so they cannot correct a token locally — it has to be right here.
 
 Custom properties inherit through the DOM regardless of Angular's view encapsulation, so
 descendant components — including `lfx-*` wrappers — resolve the tokens without importing
 anything. The scope class goes on a wrapper element **inside** the owning component's own
 template: an emulated-encapsulation stylesheet rewrites selectors with a `_ngcontent`
 attribute, so a plain class selector cannot reach its own host element.
+
+The same rewrite applies to **every** compound in a selector, not just the rightmost one.
+That matters whenever a token block keys off an ancestor outside the component — a
+`.dark-mode` class on the document root, say. Written plainly, `.dark-mode .scope { … }`
+compiles to `.dark-mode[_ngcontent-x] .scope[_ngcontent-x]`, and the root element never
+carries that attribute, so the block matches nothing and looks merely dormant rather than
+broken. Use `:host-context()`, whose ancestor part is deliberately left unscoped:
+
+```scss
+:host-context(.dark-mode) .feature-scope {
+  --feature-surface: #17191f;
+}
+```
 
 ```scss
 // feature.component.scss

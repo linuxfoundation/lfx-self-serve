@@ -23,6 +23,15 @@ Available scales:
 
 **Never hard-code hex values.** Reference scale names so brand updates propagate without code changes.
 
+The one exception is a **scoped design token layer** — a `*.tokens.scss` file that defines
+`--*` custom properties under a single container class for a feature that deliberately
+diverges from the app's look. That file is the definition boundary: literal values live
+there and nowhere else, every consumer still resolves `var(--*)`, and each token records its
+nearest `lfxColors` equivalent. See `docs/architecture/frontend/styling-system.md`
+§ Scoped design token layers for the full rules, and
+`apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss`
+for the worked example.
+
 ## Layout primitives
 
 - Use `flex + flex-col + gap-*` for vertical stacking, never `space-y-*`
@@ -32,5 +41,5 @@ Available scales:
 
 ## Tailwind & PrimeNG wrappers
 
-- Tailwind first; reach for custom SCSS only for PrimeNG overrides, complex animations, or pseudo-elements
+- Tailwind first; reach for custom SCSS only for PrimeNG overrides, complex animations, pseudo-elements, or a scoped design token layer (above)
 - All PrimeNG components are accessed through LFX wrapper components in `shared/components/` — don't reach for raw `<p-*>` components directly in feature module templates if a wrapper exists

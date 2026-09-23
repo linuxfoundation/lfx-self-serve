@@ -61,25 +61,38 @@
   // ── Text hierarchy ────────────────────────────────────────────────────────
   --md-text-heading: #0f1419; // DIVERGENCE: nearest lfxColors.gray.900 (#0F172B), prototype is neutral not blue-black
   --md-text-body: #374151; // DIVERGENCE: sits between lfxColors.gray.700 (#314158) and gray.600 (#45556C)
-  --md-text-muted: #6b7280; // DIVERGENCE: nearest lfxColors.gray.500 (#62748E)
-  --md-text-faint: #9ca3af; // DIVERGENCE: nearest lfxColors.gray.400 (#90A1B9)
+  --md-text-muted: #6b7280; // DIVERGENCE: nearest lfxColors.gray.500 (#62748E); 4.83:1 on card — lowest AA text tier
+
+  // ── Non-text ink ──────────────────────────────────────────────────────────
+  // NEVER use for copy. At 2.54:1 on --md-surface-card this is far below WCAG AA
+  // (4.5:1), and below even the 3:1 large-text floor. A white surface cannot carry
+  // four AA-compliant text tiers, so the prototype's faintest tier is decorative by
+  // definition: disabled glyphs, placeholder iconography, hairline rules. Named
+  // `glyph` rather than `text` so a component that reaches for it as copy reads wrong.
+  --md-glyph-faint: #9ca3af; // DIVERGENCE: nearest lfxColors.gray.400 (#90A1B9)
 
   // ── Accent / CTA ──────────────────────────────────────────────────────────
-  --md-accent: #0f6fff; // DIVERGENCE: lfxColors.blue.500 (#009AFF) is markedly cyan; prototype blue is a true blue
-  --md-accent-ink: #1558c0; // DIVERGENCE: nearest lfxColors.blue.700 (#0061A3); text/icon on accent backgrounds
-  --md-accent-bg: rgb(15 111 255 / 9%); // derived from --md-accent
+  // A11Y: darkened from the prototype's #0f6fff, which measured 4.43:1 on white and
+  // missed AA for link and CTA text. 4.82:1 here. Text sitting on --md-accent-bg uses
+  // --md-accent-ink, not --md-accent (the accent on its own tint is only 4.27:1).
+  --md-accent: #0d69f5; // DIVERGENCE: lfxColors.blue.500 (#009AFF) is markedly cyan; prototype blue is a true blue
+  --md-accent-ink: #1558c0; // DIVERGENCE: nearest lfxColors.blue.700 (#0061A3); 6.59:1 — text/icon on accent backgrounds
+  --md-accent-bg: rgb(13 105 245 / 9%); // derived from --md-accent
 
   // ── Status: good (going, attended, success) ───────────────────────────────
-  --md-status-good: #1a8f5a; // DIVERGENCE: nearest lfxColors.emerald.600 (#009966), prototype is less saturated
-  --md-status-good-bg: rgb(26 143 90 / 10%); // derived from --md-status-good
+  // A11Y: each status hue is darkened from the prototype so the chip text clears AA on
+  // its own tinted background, which is where these are actually used. Prototype values
+  // measured 3.6:1 on-chip across all three.
+  --md-status-good: #157347; // DIVERGENCE: nearest lfxColors.emerald.600 (#009966); 5.10:1 on chip, 5.87:1 on card
+  --md-status-good-bg: rgb(21 115 71 / 10%); // derived from --md-status-good
 
   // ── Status: warn (awaiting RSVP, pending, low attendance) ─────────────────
-  --md-status-warn: #b7791f; // DIVERGENCE: lfxColors.amber.700 (#BB4D00) is far more orange; prototype reads as ochre
-  --md-status-warn-bg: rgb(183 121 31 / 12%); // derived from --md-status-warn
+  --md-status-warn: #945e10; // DIVERGENCE: lfxColors.amber.700 (#BB4D00) is far more orange; ochre. 4.62:1 on chip, 5.43:1 on card
+  --md-status-warn-bg: rgb(148 94 16 / 12%); // derived from --md-status-warn
 
   // ── Status: live (in progress, declined, destructive) ─────────────────────
-  --md-status-live: #e0453a; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), prototype is softer
-  --md-status-live-bg: rgb(224 69 58 / 10%); // derived from --md-status-live
+  --md-status-live: #c4342b; // DIVERGENCE: nearest lfxColors.red.600 (#E7000B), softer than upstream. 4.67:1 on chip, 5.42:1 on card
+  --md-status-live-bg: rgb(196 52 43 / 10%); // derived from --md-status-live
 
   // ── Radii ─────────────────────────────────────────────────────────────────
   --md-radius-xs: 3px; // progress bars, rails, hairline chips
@@ -91,7 +104,11 @@
   // ── Elevation ─────────────────────────────────────────────────────────────
   --md-shadow-color: rgb(15 20 25 / 9%); // derived from --md-text-heading
   --md-shadow-pop: 0 6px 18px var(--md-shadow-color); // hover/raised cards and tiles
-  --md-shadow-focus: 0 0 0 3px var(--md-accent-bg); // focus ring
+  // A11Y: rings on the solid accent, not its 9% tint. The tint composites to roughly
+  // #e9f2ff over a card — 1.13:1 against that card, an invisible focus indicator, where
+  // WCAG 2.2 SC 1.4.11 wants 3:1. Resolving `var(--md-accent)` also means the ring
+  // follows the dark-mode accent for free.
+  --md-shadow-focus: 0 0 0 3px var(--md-accent); // focus ring — 4.82:1 light, 6.25:1 dark
 }
 
 //
@@ -100,10 +117,17 @@
 // The app configures PrimeNG's `darkModeSelector: '.dark-mode'` but ships no toggle that
 // sets it, so this block is inert today. It is included so the V2 tree does not have to be
 // re-derived when a toggle lands, and so the prototype's dark contract is recorded rather
-// than lost. If the app adopts a different dark-mode mechanism, change the selector here
-// only — the token names and every consumer stay as they are.
+// than lost.
 //
-.dark-mode .meeting-details-v2 {
+// The selector must stay `:host-context`. Angular's emulated encapsulation scopes EVERY
+// compound in a selector, not just the rightmost one, so a plain `.dark-mode .meeting-details-v2`
+// compiles to `.dark-mode[_ngcontent-x] .meeting-details-v2[_ngcontent-x]` — and `.dark-mode`
+// sits on the document root, which never carries the component's `_ngcontent` attribute. That
+// form would match nothing, permanently. `:host-context` is the one construct whose ancestor
+// part ShadowCss deliberately leaves unscoped. If the app adopts a different dark-mode
+// mechanism, change the ancestor here only — token names and consumers stay as they are.
+//
+:host-context(.dark-mode) .meeting-details-v2 {
   --md-surface-page: #0e1013;
   --md-surface-card: #17191f;
   --md-surface-hover: #1b1e24;
@@ -116,7 +140,7 @@
   --md-text-heading: #eef1f4;
   --md-text-body: #c2c8d0;
   --md-text-muted: #98a0ab;
-  --md-text-faint: #6f7783;
+  --md-glyph-faint: #6f7783;
 
   --md-accent: #4f9bff;
   --md-accent-ink: #7db4ff;
