@@ -86,6 +86,18 @@ describe('formatMemberSince', () => {
   it('returns empty string for a malformed date string', () => {
     expect(formatMemberSince('not-a-date')).toBe('');
   });
+
+  // Go's zero time.Time sentinel — never a real join date.
+  it('returns empty string for a zero-time sentinel', () => {
+    expect(formatMemberSince('0001-01-01T00:00:00Z')).toBe('');
+  });
+
+  // JS's lenient Date parser accepts these as plausible-but-wrong dates; the ISO-prefix guard rejects them.
+  it('returns empty string for non-ISO strings Date would otherwise parse leniently', () => {
+    expect(formatMemberSince('1')).toBe('');
+    expect(formatMemberSince('2023')).toBe('');
+    expect(formatMemberSince('12/31/2022')).toBe('');
+  });
 });
 
 /**

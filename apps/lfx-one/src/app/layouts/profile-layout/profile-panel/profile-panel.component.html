@@ -60,10 +60,11 @@
         </span>
       </div>
 
-      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width in
-           the sm-2xl row (the flex default is min-width: auto, which would instead force the row to
-           overflow if displayName() falls back to a long, unbreakable username); break-words lets a
-           long name wrap instead of pushing the fixed-width pills container past the card edge. -->
+      <!-- Name + handle + member-since. min-w-0 lets this flex item shrink below its content's
+           min-content width in the sm-2xl row (the flex default is min-width: auto, which would
+           instead force the row to overflow if displayName() falls back to a long, unbreakable
+           username); break-words lets a long name wrap instead of pushing the fixed-width pills
+           container past the card edge. -->
       <div class="min-w-0">
         <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
         @if (username()) {

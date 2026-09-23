@@ -203,7 +203,8 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
-            // Real, NATS-sourced join date for the impersonated target — never fabricated.
+            // NATS-sourced join date for the resolved username (target user except on the
+            // Authelia shortcut noted above) — never fabricated.
             created_at: natsCreatedAt,
             updated_at: '',
           }
@@ -213,8 +214,9 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
             username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
-            // Use the real NATS-sourced join date. Never fabricate a timestamp (e.g. new Date()) —
-            // an unavailable date must surface as '' so the UI can hide the field, not a moving value.
+            // created_at: use the real NATS-sourced join date. Never fabricate a timestamp (e.g.
+            // new Date()) — an unavailable date must surface as '' so the UI can hide the field,
+            // not a moving value. (updated_at below is unrelated and out of scope for this rule.)
             created_at: natsCreatedAt,
             updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
           };

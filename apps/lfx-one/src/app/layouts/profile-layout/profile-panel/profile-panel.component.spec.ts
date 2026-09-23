@@ -82,4 +82,24 @@ describe('ProfilePanelComponent — member since (#2837)', () => {
     const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
     expect(el).toBeNull();
   });
+
+  it('moves mb-4 off the handle onto member-since when both are present', () => {
+    fixture.componentRef.setInput('username', 'alice');
+    fixture.componentRef.setInput('memberSince', 'Mar 2023');
+    fixture.detectChanges();
+
+    const handle = fixture.nativeElement.querySelector('[data-testid="profile-panel-handle"]');
+    const memberSince = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
+    expect(handle.classList).not.toContain('mb-4');
+    expect(memberSince.classList).toContain('mb-4');
+  });
+
+  it('keeps mb-4 on the handle when member-since is absent', () => {
+    fixture.componentRef.setInput('username', 'alice');
+    fixture.componentRef.setInput('memberSince', '');
+    fixture.detectChanges();
+
+    const handle = fixture.nativeElement.querySelector('[data-testid="profile-panel-handle"]');
+    expect(handle.classList).toContain('mb-4');
+  });
 });

@@ -1155,4 +1155,53 @@ describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () =>
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '2023-03-15T10:00:00Z' }) }));
     expect(next).not.toHaveBeenCalled();
   });
+
+  // Pre-#90-deploy compatibility: a successful legacy reply that carries no created_at at all
+  // must never fall back to a fabricated timestamp — only an empty string.
+  it('falls back to empty string when a successful reply omits created_at entirely', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Test User' } });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string while impersonating when a successful reply omits created_at entirely', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveSubMock.mockReturnValue('auth0|target-user');
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Target User' } });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string when a successful reply has an empty created_at', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Test User' }, created_at: '' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string (never a fabricated timestamp) when getUserInfo throws', async () => {
+    userSvc.getUserInfo.mockRejectedValue(new Error('upstream timeout'));
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
 });
