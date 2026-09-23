@@ -5,7 +5,7 @@ import { isPlatformBrowser, Location } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute } from '@angular/router';
 import { serverAuthoredMessage } from '@app/shared/utils/http-error.utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -62,7 +62,6 @@ import { MenteeDemographicsEditDrawerComponent } from './components/mentee-demog
 })
 export class MenteeApplyComponent {
   private readonly route = inject(ActivatedRoute);
-  private readonly router = inject(Router);
   private readonly location = inject(Location);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly mentorshipService = inject(MentorshipService);
@@ -123,12 +122,22 @@ export class MenteeApplyComponent {
    * Single-use: cleared from history immediately after read so a later reload or back/forward navigation doesn't replay it.
    * SSR has neither a navigation nor a browser `history`, so it falls back to `false`. The real submit endpoint must still
    * re-validate the mentee's profile server-side rather than trusting this client-only flag.
+   *
+   * Always reads and clears against `location.getState()` (the entry actually on top of history right now), never
+   * `router.getCurrentNavigation()` — that navigation is still in flight during construction, so `router.url` has not
+   * been committed to the current history entry yet, and replacing "the previous URL" with a cleared flag would leave
+   * this entry able to replay it. Cloning the current state and deleting only this key (rather than passing `{}`)
+   * preserves Angular's own `navigationId` and any other state already on the entry, matching the existing
+   * profile-card cleanup pattern.
    */
   private readProfileCreated(): boolean {
     if (!isPlatformBrowser(this.platformId)) return false;
-    const state = this.router.getCurrentNavigation()?.extras.state ?? (this.location.getState() as Record<string, unknown> | null);
+    const state = this.location.getState() as Record<string, unknown> | null;
     const created = state?.[MENTORSHIP_MENTEE_PROFILE_CREATED_STATE] === true;
-    if (created) this.location.replaceState(this.router.url, '', {});
+    if (created) {
+      const { [MENTORSHIP_MENTEE_PROFILE_CREATED_STATE]: _removed, ...rest } = state ?? {};
+      this.location.replaceState(this.location.path(), '', rest);
+    }
     return created;
   }
 

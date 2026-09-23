@@ -84,10 +84,13 @@ export class MenteeDemographicsSectionComponent implements OnInit {
       const consentControl = form.get(row.consentControl);
       const answerControl = form.get(row.answerControl);
 
-      // Start disabled unless the parent handed us a pre-checked consent (e.g. an
-      // edit-in-place flow); the mentee-register form seeds every consent to `false`,
-      // so this branch is the common path.
-      if (!consentControl?.value) {
+      // Sync disabled state to the current consent value on every mount, not just
+      // disable when unanswered — the drawer's `@if` remounts this component against
+      // a long-lived `FormGroup`, so a control left disabled by an earlier uncheck-in-
+      // this-session must be explicitly re-enabled here rather than assumed enabled.
+      if (consentControl?.value) {
+        answerControl?.enable({ emitEvent: false });
+      } else {
         answerControl?.disable({ emitEvent: false });
       }
 
