@@ -281,6 +281,9 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // Following the primary must reach its destination, not just render (SC-004).
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
