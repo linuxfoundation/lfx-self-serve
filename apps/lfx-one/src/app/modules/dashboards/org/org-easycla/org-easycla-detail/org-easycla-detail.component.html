@@ -278,6 +278,34 @@
             </div>
           </div>
         }
+        <!--
+          Auto ECLA toggle (#1988). Hidden entirely when ACS denies the write — the disabled-with-
+          banner pattern needs #1989 to explain itself, and the design prefers withholding a
+          control the viewer cannot use over showing one that only fails. Hidden on the pre-sign
+          preview too: the flag lives on the corporate signature record, which does not exist yet
+          for a preview row. The control is intentionally coarse: one switch, no pending copy —
+          the optimistic flip and the toast on refusal are the whole of the feedback.
+        -->
+        @if (showAutoEclaToggle()) {
+          <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
+            <p-toggleSwitch
+              inputId="org-easycla-detail-auto-ecla-toggle"
+              [ngModel]="autoEclaValue()"
+              (ngModelChange)="onAutoEclaToggle($event)"
+              [disabled]="autoEclaPending()"
+              ariaLabel="Automatically add contributors to this Corporate CLA when re-adding them"
+              [attr.data-test]="'org-easycla-detail-auto-ecla-toggle'" />
+            <div class="flex flex-col gap-1">
+              <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">
+                Auto-approve when re-adding a contributor
+              </label>
+              <p class="text-xs text-gray-600">
+                Re-adding an invalidated contributor to the Approval List restores their employee acknowledgement automatically. Turn off to require a new
+                signature each time.
+              </p>
+            </div>
+          </div>
+        }
         @if (canDownload()) {
           <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile

@@ -41,12 +41,15 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaPairProjectSfid,
   orgClaPreviewGroup,
   isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
+import { FormsModule } from '@angular/forms';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
+import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import {
   catchError,
   combineLatest,
@@ -101,6 +104,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     BreadcrumbComponent,
     ButtonComponent,
     EmptyStateComponent,
+    FormsModule,
     MessageComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -108,6 +112,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
+    ToggleSwitchModule,
   ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
@@ -247,6 +252,27 @@ export class OrgEasyclaDetailComponent {
    * next agreement's badge.
    */
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
+
+  /**
+   * Auto ECLA toggle state (#1988). Three signals, one purpose.
+   *
+   * - `autoEclaAllowed`: whether ACS grants the current viewer the Auto ECLA write for this
+   *   agreement's pair. `null` while the hop is in flight — the toggle is withheld during that
+   *   window rather than shown enabled from an unchecked grant. `false` hides the toggle
+   *   entirely (spec 054 FR-004), matching the design's choice to hide rather than disable a
+   *   control the viewer cannot use, until the read-only banner (#1989) exists to explain a
+   *   disabled state.
+   * - `autoEclaSaving`: a write is in flight. The toggle stays visible but is refused for its
+   *   duration, so a rapid double-click cannot open two writes in parallel or roll the second
+   *   back onto the first.
+   * - `autoEclaOverride`: the state the just-written PUT confirmed, keyed on the signature id so
+   *   Angular's component reuse across `:signatureId` cannot show one agreement's flip on
+   *   another agreement's toggle. Cleared when the row on screen carries the same value under
+   *   its own field, so the override lives no longer than it must.
+   */
+  private readonly autoEclaAllowed = signal<boolean | null>(null);
+  private readonly autoEclaSaving = signal(false);
+  private readonly autoEclaOverride = signal<{ signatureId: string; value: boolean } | null>(null);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -454,6 +480,38 @@ export class OrgEasyclaDetailComponent {
   // exists. Offering the download on an agreement without one is a control that can only fail.
   protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
 
+  /**
+   * Whether the Auto ECLA toggle is shown at all.
+   *
+   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
+   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
+   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
+   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
+   * (the row it would flip does not exist yet).
+   */
+  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+
+  /**
+   * The current toggle value the template binds to.
+   *
+   * Prefers the just-written override (keyed on this signature id, so an override for another
+   * agreement never bleeds through) over the row's own flag; falls back to `false` when the row
+   * carries no value, matching the producer's own default when the column is unset.
+   */
+  protected readonly autoEclaValue = computed(() => {
+    const override = this.autoEclaOverride();
+    const currentSignatureId = this.claGroup()?.id;
+    if (override && currentSignatureId && override.signatureId === currentSignatureId) return override.value;
+    return this.claGroup()?.autoCreateEcla === true;
+  });
+
+  protected readonly autoEclaPending = computed(() => this.autoEclaSaving());
+
+  private readonly autoEclaProjectSfid = computed(() => {
+    const group = this.claGroup();
+    return group ? (orgClaPairProjectSfid(group) ?? '') : '';
+  });
+
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
@@ -571,6 +629,38 @@ export class OrgEasyclaDetailComponent {
       .subscribe(() => this.leavePreviewIfContextLost());
 
     this.followReturnAddress();
+
+    // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
+    // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
+    // the grant to `project|organization` and one CLA Group covers one pair. Withheld while the
+    // group is unsigned (nothing to toggle) or while the pair is unresolvable (a data problem
+    // upstream that the toggle would silently open a 403 into). `null` resets the allowed signal
+    // so a stale answer cannot outlive the row it was fetched for.
+    toObservable(
+      computed(() => {
+        const group = this.claGroup();
+        if (!group?.signed || this.showingPreview()) return '';
+        const orgUid = this.selectedOrgUid();
+        const projectSfid = this.autoEclaProjectSfid();
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    )
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => {
+          this.autoEclaAllowed.set(null);
+          // Clear any override for a previous signature so the row's own value takes over on
+          // navigation between agreements. Same discipline as `approvalCountOverride`.
+          this.autoEclaOverride.set(null);
+        }),
+        switchMap((pair) => {
+          if (!pair) return of(false);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
 
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
@@ -710,6 +800,61 @@ export class OrgEasyclaDetailComponent {
 
   protected onApprovalCountChanged(count: number): void {
     this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+  }
+
+  /**
+   * Turns Auto ECLA on or off for the agreement on screen (#1988).
+   *
+   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
+   * click without a round trip. On success the override stays (the state was written) and the
+   * saving flag is cleared. On failure the override is dropped — reverting to the row's own
+   * value, which the producer did not change — and the producer's own sentence is shown as an
+   * error toast. A 403 body carries the sanctions or ACL refusal upstream wrote; the shared
+   * error interceptor pulls that off `.message`, and the fallback copy names the value nobody
+   * would want under an Auto ECLA line ("Could not turn Auto ECLA off").
+   *
+   * Refused while a write is already in flight, or against a group with no pair project SFID
+   * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
+   * generic refusal); either case leaves the toggle unchanged.
+   */
+  protected onAutoEclaToggle(next: boolean): void {
+    if (this.autoEclaSaving()) return;
+
+    const group = this.claGroup();
+    const orgUid = this.selectedOrgUid();
+    if (!group?.signed || !orgUid) return;
+
+    const signatureId = group.id;
+    const previous = this.autoEclaValue();
+    if (previous === next) return;
+
+    this.autoEclaOverride.set({ signatureId, value: next });
+    this.autoEclaSaving.set(true);
+
+    this.claService
+      .setAutoCreateEcla(orgUid, signatureId, next)
+      .pipe(
+        finalize(() => this.autoEclaSaving.set(false)),
+        takeUntil(this.contextChanged$),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (response) => {
+          // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
+          // on the ordinary path and disagreement here means the server refused the ask silently
+          // (which it does not, but if it did, the toggle should tell the truth).
+          this.autoEclaOverride.set({ signatureId, value: response?.autoCreateEcla === true });
+        },
+        error: (error: HttpErrorResponse) => {
+          this.autoEclaOverride.set({ signatureId, value: previous });
+          const producer = typeof error?.error?.message === 'string' ? error.error.message.trim() : '';
+          this.messageService.add({
+            severity: 'error',
+            summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+            detail: producer || 'Please try again in a moment.',
+          });
+        },
+      });
   }
 
   /**

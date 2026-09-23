@@ -81,6 +81,7 @@ describe('OrgEasyclaDetailComponent', () => {
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
+  const setAutoCreateEcla = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -140,6 +141,7 @@ describe('OrgEasyclaDetailComponent', () => {
             getManagers,
             addManager,
             removeManager,
+            setAutoCreateEcla,
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
@@ -218,6 +220,8 @@ describe('OrgEasyclaDetailComponent', () => {
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
+    setAutoCreateEcla.mockReset();
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -2823,5 +2827,204 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
     const fixture = await render(row({ approvalCriteriaCount: undefined }));
 
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('—');
+  });
+});
+
+/**
+ * The Auto ECLA toggle on the Overview (#1988).
+ *
+ * Rendered inside the signed-agreement path: the flag lives on the corporate signature record, so
+ * an unsigned row has nothing to update. Hidden entirely when ACS denies the write — the design
+ * withholds the control from a viewer who cannot use it, since the disabled-with-banner pattern
+ * needs #1989 to explain itself. The write is optimistic: the toggle answers the click first and
+ * rolls back on a refusal, using the producer's own sentence on the toast.
+ */
+describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
+  const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
+  const PAIR_PROJECT = 'a09410000182dD3AAI';
+
+  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [{ paramMap: convertToParamMap({}) }, { paramMap: paramMap.value }];
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
+  const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
+  const queryParamMap = new BehaviorSubject(convertToParamMap({ sig: 'signature-uuid-1' }));
+
+  const getClaGroups = vi.fn();
+  const checkPermission = vi.fn();
+  const setAutoCreateEcla = vi.fn();
+  const addMessage = vi.fn();
+
+  function row(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
+    return {
+      id: 'signature-uuid-1',
+      claGroupId: GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projects: [{ projectName: 'Cascade', projectSfid: PAIR_PROJECT }],
+      pairProjectSfid: PAIR_PROJECT,
+      signed: true,
+      status: 'signed',
+      needsClaManager: false,
+      claManagersCount: 2,
+      approvalCriteriaCount: 7,
+      autoCreateEcla: false,
+      ...overrides,
+    };
+  }
+
+  async function render(claGroup: OrgClaGroup = row()): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup] }));
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgEasyclaDetailComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
+        },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensClaService,
+          useValue: {
+            getClaGroups,
+            getPdfUrl: vi.fn(),
+            getCclaPreview: vi.fn(),
+            getApprovalList: vi.fn(),
+            updateApprovalList: vi.fn(),
+            checkPermission,
+            getManagers: vi.fn(() => of({ signatureId: 'signature-uuid-1', managers: [] })),
+            addManager: vi.fn(),
+            removeManager: vi.fn(),
+            setAutoCreateEcla,
+          },
+        },
+        { provide: MessageService, useValue: { add: addMessage } },
+        ConfirmationService,
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgEasyclaDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function byTestId(fixture: ComponentFixture<unknown>, id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  beforeEach(() => {
+    selectedAccount.set(SELECTED_ACCOUNT);
+    paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    getClaGroups.mockReset();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
+    setAutoCreateEcla.mockReset();
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    addMessage.mockReset();
+  });
+
+  it('asks ACS for the auto-ecla-update grant with the pair project SFID', async () => {
+    await render();
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT);
+  });
+
+  it('renders the toggle when ACS allows the write on a signed row', async () => {
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+  });
+
+  it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
+    checkPermission.mockReturnValue(of(false));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+  });
+
+  it('withholds the toggle from an unsigned agreement, so no ACS hop fires either', async () => {
+    const fixture = await render(row({ signed: false, autoCreateEcla: undefined }));
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+    expect(checkPermission).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', expect.anything());
+  });
+
+  it('PUTs the target state and shows the new value optimistically', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect(setAutoCreateEcla).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', true);
+    expect(component.autoEclaValue()).toBe(true);
+  });
+
+  it('rolls back and toasts with the producer sentence when the write is refused', async () => {
+    const error = { status: 403, error: { message: 'This organization is on the OFAC list. Contact support.' } };
+    setAutoCreateEcla.mockReturnValue(throwError(() => error));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Row's original false value survives the failed write, so the toggle tells the truth.
+    expect(component.autoEclaValue()).toBe(false);
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'This organization is on the OFAC list. Contact support.',
+      })
+    );
+  });
+
+  it('falls back to generic copy when the refusal carries no producer sentence', async () => {
+    setAutoCreateEcla.mockReturnValue(throwError(() => ({ status: 500, error: null })));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: "Couldn't turn Auto ECLA on",
+        detail: 'Please try again in a moment.',
+      })
+    );
+  });
+
+  it('does not issue a second write while one is in flight', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    component.onAutoEclaToggle(true);
+    component.onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    // Only the first click reached the network — the second is refused by autoEclaSaving.
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+    expect(setAutoCreateEcla).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', true);
+
+    answer.next({ autoCreateEcla: true });
+    answer.complete();
   });
 });
