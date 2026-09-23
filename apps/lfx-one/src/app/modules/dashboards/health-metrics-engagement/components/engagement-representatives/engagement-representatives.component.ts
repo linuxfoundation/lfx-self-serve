@@ -98,10 +98,19 @@ export class EngagementRepresentativesComponent {
     computation: () => 0,
   });
 
-  // Resolved once per response and period rather than per cell or per keystroke: `formatIsoDateLabel`
-  // builds a fresh `Intl` formatter per call, which the search must not pay for on every character.
+  // Keyed off the response alone because `lastAttendedDate` is all-time: `formatIsoDateLabel` builds
+  // a fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
+  private readonly dateLabelsByRow = computed(
+    () =>
+      new Map<HealthMetricsEngagementRepRow, string>(
+        this.response().rows.map((row) => [row, row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—'])
+      )
+  );
+  // Resolved once per response and period rather than per cell or per keystroke, so a keystroke
+  // only filters rows whose labels are already built.
   private readonly rowViewsByRow = computed(() => {
     const range = this.chrome.selectedRange();
+    const dateLabels = this.dateLabelsByRow();
     return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
       this.response().rows.map((row) => {
         const period = selectHealthMetricsEngagementRepPeriod(row, range);
@@ -112,7 +121,7 @@ export class EngagementRepresentativesComponent {
             row,
             period,
             attendedLabel: `${period?.meetingsAttended ?? 0} / ${period?.meetingsInvited ?? 0}`,
-            lastAttendedLabel: row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—',
+            lastAttendedLabel: dateLabels.get(row) ?? '—',
           },
         ];
       })

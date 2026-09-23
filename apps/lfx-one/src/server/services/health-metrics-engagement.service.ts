@@ -424,26 +424,25 @@ export class HealthMetricsEngagementService {
   }
 
   /**
-   * Every representative in one read, with all four periods on each row. The view's grain is one row
-   * per person *per project*, so the read regroups to (person, committee) — the grain its own
-   * `SCOPE_*_ALL_PROJECTS_*` caption columns are computed at.
+   * Every representative in one read, with all four periods on each row. The view publishes
+   * project-grain rows and its own per-period flags; the read takes both as published rather than
+   * regrouping, because re-deriving them here would restate metrics dbt already owns.
    */
   public async getRepresentatives(req: Request, query: HealthMetricsEngagementRepQuery): Promise<HealthMetricsEngagementRepresentatives> {
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => repSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
-    // `MAX`, not `SUM`: a person/committee pair repeats only when its committee hangs off more than
-    // one project, and each of those rows already carries that committee's whole meeting count.
+    // Caption counts are deduped to (person, committee) upstream while these rows are per project,
+    // so a rep on one committee under two projects is two rows the caption counts once.
     const sql = `
       SELECT
-        MIN(_key) AS rep_key,
-        MAX(person_display_name) AS person_display_name,
-        MAX(account_name) AS account_name,
-        MAX(committee_name) AS committee_name,
-        MAX(last_attended_date) AS last_attended_date,
+        _key AS rep_key,
+        person_display_name,
+        account_name,
+        committee_name,
+        last_attended_date,
         ${periodColumns}
       FROM ${REPRESENTATIVES_VIEW}
       WHERE foundation_slug = ?
-      GROUP BY person_key, committee_id
       ORDER BY last_attended_date ASC NULLS FIRST, person_display_name ASC NULLS LAST, committee_name ASC NULLS LAST, rep_key ASC
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
     `;
@@ -706,17 +705,17 @@ function participationOrder(group: string | null): number {
 }
 
 /**
- * Aggregated because the read regroups to (person, committee); the scope counts are constant across
- * the whole foundation cut, so `MAX` just carries them through the `GROUP BY`.
+ * One period's columns as the view publishes them. The `ALL_PROJECTS` caption columns are
+ * denormalized onto every row, so the alias drops the scope from the name the mapper reads.
  */
 function repSelectList(suffix: string): string {
   return [
-    `MAX(meetings_invited_count_${suffix}) AS meetings_invited_count_${suffix}`,
-    `MAX(meetings_attended_count_${suffix}) AS meetings_attended_count_${suffix}`,
-    `BOOLOR_AGG(has_never_attended_${suffix}) AS has_never_attended_${suffix}`,
-    `BOOLOR_AGG(is_lapsed_${suffix}) AS is_lapsed_${suffix}`,
-    `MAX(scope_reps_count_all_projects_${suffix}) AS scope_reps_count_${suffix}`,
-    `MAX(scope_never_attended_reps_count_all_projects_${suffix}) AS scope_never_attended_reps_count_${suffix}`,
+    `meetings_invited_count_${suffix}`,
+    `meetings_attended_count_${suffix}`,
+    `has_never_attended_${suffix}`,
+    `is_lapsed_${suffix}`,
+    `scope_reps_count_all_projects_${suffix} AS scope_reps_count_${suffix}`,
+    `scope_never_attended_reps_count_all_projects_${suffix} AS scope_never_attended_reps_count_${suffix}`,
   ].join(', ');
 }
 

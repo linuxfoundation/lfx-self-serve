@@ -809,23 +809,28 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
     expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false });
   });
 
-  // The view's grain is one row per person *per project*, but its caption counts are computed at
-  // (person, committee) — so the read has to regroup or the table outruns its own caption.
-  it('regroups to the grain the caption counts are computed at', async () => {
+  // The view owns these metrics. Re-deriving never-attended or lapsed from rolled-up project rows
+  // restates a definition dbt publishes, and OR-ing the per-project flags gets it wrong outright:
+  // someone who attended under one project and no-showed under another has attended.
+  it('reads the published rows and flags rather than aggregating them', async () => {
     await service.getRepresentatives(req, { foundationSlug: 'acme' });
 
-    expect(lastSql()).toContain('GROUP BY person_key, committee_id');
-    // `SUM` would double-count a committee that hangs off more than one project.
-    expect(lastSql()).toContain('MAX(meetings_invited_count_ytd)');
-    expect(lastSql()).toContain('BOOLOR_AGG(has_never_attended_ytd)');
+    expect(lastSql()).not.toContain('GROUP BY');
+    expect(lastSql()).not.toContain('BOOLOR_AGG(');
     expect(lastSql()).not.toContain('SUM(');
+    expect(lastSql()).not.toContain('MAX(');
+    expect(lastSql()).toContain('has_never_attended_ytd');
   });
 
-  // The person key may hold a lowercased email, so it never leaves the warehouse.
-  it('never selects the person key into the response', async () => {
+  // The person key may hold a lowercased email, so it is never read and never mapped. Asserting on
+  // the value, not the column name: the name alone could not appear whatever the SELECT asked for.
+  it('never reads the person key into the response', async () => {
+    execute.mockResolvedValueOnce({ rows: [repWarehouseRow({ PERSON_KEY: 'dana.fields@acme-motors.example' })] });
+
     const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
 
-    expect(JSON.stringify(response)).not.toContain('person_key');
+    expect(lastSql()).not.toContain('person_key');
+    expect(JSON.stringify(response)).not.toContain('dana.fields@acme-motors.example');
     expect(Object.keys(response.rows[0] ?? {})).not.toContain('personKey');
   });
 
