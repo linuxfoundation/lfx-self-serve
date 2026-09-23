@@ -14,9 +14,6 @@ import { CardComponent } from '@components/card/card.component';
 /** States whose wording must never carry an addressed organization's name (spec 050 DR-002 / 053 DR-001). */
 const UNHELD_ORG_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['no-access', 'wrong-organization', 'section-no-access', 'section-could-not-verify']);
 
-/** States that render the caller's own organization list (FR-008). */
-const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-organization', 'not-found-staff']);
-
 /**
  * Spec 053 — the one shared Org Lens empty state. Renders headline → reason → primary → secondary from
  * the copy registry; call sites choose a state, never a string (FR-001/FR-004).
@@ -103,11 +100,12 @@ export class OrgLensEmptyStateComponent {
   /** Hidden when it has been promoted to the primary slot. */
   protected readonly secondary = computed(() => (this.primary() === this.copy().secondary ? undefined : this.copy().secondary));
 
-  /** FR-008 — the caller's own organizations, honoured only for the states that list them. Empty renders nothing rather than an empty box. */
-  protected readonly orgList = computed(() => (ORG_LIST_STATES.has(this.state()) ? (this.values().orgList ?? []) : []));
-
-  /** The list is the primary control (`wrong-organization`: the way out is picking a held organization) — rendered under the primary's label, in the primary's slot. */
-  protected readonly orgListIsPrimary = computed(() => this.primary()?.action === 'org-list');
+  /**
+   * FR-008 — the caller's own organizations, listed only on `wrong-organization`, where picking one is
+   * the way out. The staff not-found state lists none: staff reach any organization through switcher
+   * search. Empty renders nothing rather than an empty box.
+   */
+  protected readonly orgList = computed(() => (this.state() === 'wrong-organization' ? (this.values().orgList ?? []) : []));
 
   protected onAction(action: OrgLensEmptyStateAction): void {
     if (action.action === 'retry') {
