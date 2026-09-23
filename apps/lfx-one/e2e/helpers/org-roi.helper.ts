@@ -252,6 +252,18 @@ export function orgRoiProjectDetailUrl(slug: string): string {
 }
 
 /**
+ * The fixture organization's Org Lens address for `path`, legacy (`/org/{path}`) or org-addressed
+ * (`/org/{MOCK_ACCOUNT_ID}/{path}`). Spec 050 rewrites a legacy address to the selected organization's
+ * form once the default selection lands, so which of the two a link or URL carries depends on that
+ * timing, not on the feature under test. Only those two forms match — never another organization's
+ * address and never a different page.
+ */
+export function orgLensAddressPattern(...path: string[]): RegExp {
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`/org/(?:${escape(MOCK_ACCOUNT_ID)}/)?${path.map(escape).join('/')}$`);
+}
+
+/**
  * The detail payload for one of the fixture's projects, wrapping the same row shape `/projects`
  * serves. Built from `MOCK_PROJECTS` rather than typed out again, so the drill-down and the table
  * it is reached from cannot disagree about a project's figures.
