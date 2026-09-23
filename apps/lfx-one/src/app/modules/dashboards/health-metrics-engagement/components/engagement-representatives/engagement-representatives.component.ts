@@ -98,35 +98,8 @@ export class EngagementRepresentativesComponent {
     computation: () => 0,
   });
 
-  // Keyed off the response alone because `lastAttendedDate` is all-time: `formatIsoDateLabel` builds
-  // a fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
-  private readonly dateLabelsByRow = computed(
-    () =>
-      new Map<HealthMetricsEngagementRepRow, string>(
-        this.response().rows.map((row) => [row, row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—'])
-      )
-  );
-  // Resolved once per response and period rather than per cell or per keystroke, so a keystroke
-  // only filters rows whose labels are already built.
-  private readonly rowViewsByRow = computed(() => {
-    const range = this.chrome.selectedRange();
-    const dateLabels = this.dateLabelsByRow();
-    return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
-      this.response().rows.map((row) => {
-        const period = selectHealthMetricsEngagementRepPeriod(row, range);
-
-        return [
-          row,
-          {
-            row,
-            period,
-            attendedLabel: `${period?.meetingsAttended ?? 0} / ${period?.meetingsInvited ?? 0}`,
-            lastAttendedLabel: dateLabels.get(row) ?? '—',
-          },
-        ];
-      })
-    );
-  });
+  private readonly dateLabelsByRow: Signal<Map<HealthMetricsEngagementRepRow, string>> = this.initDateLabelsByRow();
+  private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
   // The cut narrows rows the labels are already resolved for, so a keystroke only filters.
   protected readonly rowViews = computed<HealthMetricsEngagementRepRowView[]>(() => {
     const views = this.rowViewsByRow();
@@ -170,6 +143,42 @@ export class EngagementRepresentativesComponent {
   protected onTablePage(event: TablePageEvent): void {
     this.size.set(event.rows ?? this.size());
     this.first.set(event.first ?? 0);
+  }
+
+  // Keyed off the response alone because `lastAttendedDate` is all-time: `formatIsoDateLabel` builds
+  // a fresh `Intl` formatter per call, and the period pill must not pay for one per loaded row.
+  private initDateLabelsByRow(): Signal<Map<HealthMetricsEngagementRepRow, string>> {
+    return computed(
+      () =>
+        new Map<HealthMetricsEngagementRepRow, string>(
+          this.response().rows.map((row) => [row, row.lastAttendedDate ? formatIsoDateLabel(row.lastAttendedDate) : '—'])
+        )
+    );
+  }
+
+  // Resolved once per response and period rather than per cell or per keystroke, so a keystroke
+  // only filters rows whose labels are already built.
+  private initRowViewsByRow(): Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> {
+    return computed(() => {
+      const range = this.chrome.selectedRange();
+      const dateLabels = this.dateLabelsByRow();
+
+      return new Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>(
+        this.response().rows.map((row) => {
+          const period = selectHealthMetricsEngagementRepPeriod(row, range);
+
+          return [
+            row,
+            {
+              row,
+              period,
+              attendedLabel: `${period?.meetingsAttended ?? 0} / ${period?.meetingsInvited ?? 0}`,
+              lastAttendedLabel: dateLabels.get(row) ?? '—',
+            },
+          ];
+        })
+      );
+    });
   }
 
   private initQuery(): HealthMetricsEngagementRepQuery {
