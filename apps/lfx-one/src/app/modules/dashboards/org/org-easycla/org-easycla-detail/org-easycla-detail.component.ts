@@ -824,8 +824,10 @@ export class OrgEasyclaDetailComponent {
    * `serverAuthoredMessage`. The fallback copy names the value nobody would want under an Auto
    * ECLA line ("Could not turn Auto ECLA off"). The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
-   * A late answer is applied only while this page is still that organization and agreement.
-   * Leaving clears the pending flag so the next agreement's toggle is not stuck disabled.
+   * A late answer is applied only when it is still the in-flight write and this page is still
+   * that organization and agreement. Leaving clears the pending flag so the next agreement's
+   * toggle is not stuck disabled. Coming back to the agreement the write belongs to does not
+   * start a second write while the first is still running.
    *
    * Refused while a write is already in flight, or against a group with no pair project SFID
    * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
@@ -839,6 +841,12 @@ export class OrgEasyclaDetailComponent {
     if (!group?.signed || !orgUid) return;
 
     const signatureId = group.id;
+    const inFlight = this.autoEclaInFlight;
+    if (inFlight && this.autoEclaStillHere(inFlight)) {
+      this.autoEclaSaving.set(true);
+      return;
+    }
+
     const previous = this.autoEclaValue();
     if (previous === next) return;
 
@@ -859,14 +867,14 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe({
         next: (response) => {
-          if (!this.autoEclaStillHere(target)) return;
+          if (!this.autoEclaAnswerApplies(target)) return;
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
           // (which it does not, but if it did, the toggle should tell the truth).
           this.autoEclaOverride.set({ signatureId, value: response?.autoCreateEcla === true });
         },
         error: (error: HttpErrorResponse) => {
-          if (!this.autoEclaStillHere(target)) return;
+          if (!this.autoEclaAnswerApplies(target)) return;
           this.autoEclaOverride.set({ signatureId, value: previous });
           this.messageService.add({
             severity: 'error',
@@ -880,6 +888,11 @@ export class OrgEasyclaDetailComponent {
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
     return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
+  }
+
+  /** True when this response is still the write on screen, not an older one for the same agreement. */
+  private autoEclaAnswerApplies(target: { orgUid: string; signatureId: string }): boolean {
+    return this.autoEclaInFlight === target && this.autoEclaStillHere(target);
   }
 
   /**

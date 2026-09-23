@@ -1997,6 +1997,18 @@ describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failu
     expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'not-signed' });
     expect(gatewayFetch).toHaveBeenCalledTimes(1);
   });
+
+  it('refuses the write when two signatures share the company and CLA group, without calling the producer', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-a' }), upstreamEntry({ signatureID: 'signature-b' })));
+
+    await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-b', true)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AMBIGUOUS_MANAGER_TARGET',
+      message: 'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
+  });
 });
 
 describe('OrgClaService.updateEclaAutoCreate — the sanctions and ACL refusal', () => {

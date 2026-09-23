@@ -3057,4 +3057,54 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(addMessage).not.toHaveBeenCalled();
   });
+
+  it('does not start a second write when the manager returns to the agreement the first write is for', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+      autoEclaValue: () => boolean;
+    };
+
+    component.onAutoEclaToggle(true);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(false);
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('ignores an older response once a write for another organization is in flight', async () => {
+    const first = new Subject<{ autoCreateEcla: boolean }>();
+    const second = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaValue: () => boolean;
+    };
+
+    component.onAutoEclaToggle(true);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onAutoEclaToggle(true);
+    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+    expect(component.autoEclaValue()).toBe(true);
+    expect(addMessage).not.toHaveBeenCalled();
+  });
 });

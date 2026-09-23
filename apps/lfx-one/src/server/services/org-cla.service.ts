@@ -1442,17 +1442,30 @@ export class OrgClaService {
     entry: EasyClaCompanyClaGroup & { signatureID: string },
     operation: string
   ): void {
+    this.assertUnambiguousCompanyClaGroup(
+      entries,
+      entry,
+      operation,
+      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.'
+    );
+  }
+
+  /**
+   * Company + CLA-group URLs are not signature-scoped. Upstream resolves one signature for the
+   * pair, so a second signature on that pair would be the one a write for the first can change.
+   */
+  private assertUnambiguousCompanyClaGroup(
+    entries: readonly (EasyClaCompanyClaGroup & { signatureID: string })[],
+    entry: EasyClaCompanyClaGroup & { signatureID: string },
+    operation: string,
+    message: string
+  ): void {
     const companyId = entry.companyID?.trim() ?? '';
     const claGroupId = entry.claGroupID?.trim() ?? '';
     const peers = entries.filter((candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId);
     if (peers.length <= 1) return;
 
-    throw new MicroserviceError(
-      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
-      409,
-      'AMBIGUOUS_MANAGER_TARGET',
-      { operation, service: SERVICE }
-    );
+    throw new MicroserviceError(message, 409, 'AMBIGUOUS_MANAGER_TARGET', { operation, service: SERVICE });
   }
 
   private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
@@ -1490,6 +1503,17 @@ export class OrgClaService {
         operation,
         service: SERVICE,
       });
+    }
+
+    // The Auto ECLA producer loads one corporate signature for the company and CLA group. A
+    // second signature on that pair would be the record a toggle of the first can change.
+    if (operation === 'org_cla_update_ecla_auto_create') {
+      this.assertUnambiguousCompanyClaGroup(
+        entries,
+        entry,
+        operation,
+        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.'
+      );
     }
 
     return {
