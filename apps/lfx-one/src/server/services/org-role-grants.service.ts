@@ -2,10 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  LF_STAFF_TEAM_ID,
+  ACCESS_CHECK_BATCH_SIZE,
+  LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
+  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
+  ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+  ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
   ORG_ROLE_GRANTS_HARD_CAP,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   VALKEY_CACHE,
@@ -13,9 +17,11 @@ import {
 import {
   AccessAwareOrgsCacheEntry,
   AccessAwareOrgsResult,
+  AccessCheckRequest,
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
+  OrgLensStaffCheck,
   OrgRolePersona,
   QueryServiceResponse,
   ResolvedOrgRole,
@@ -23,6 +29,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -44,8 +51,19 @@ export class OrgRoleGrantsService {
     this.accessCheck = new AccessCheckService();
   }
 
-  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
-  public async getAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
+  /**
+   * Single source of truth for the caller's access-aware org universe. Served through the shared Valkey
+   * cache, keyed per caller username; upstream failures are never cached, a failed staff check only
+   * briefly, and the cache is fail-soft.
+   *
+   * `bypassCache` is the viewer's explicit Retry. It is honoured only against an entry Retry is offered
+   * for — a degraded roll-up or a failed staff check — and never lets a clean `ok` entry be recomputed:
+   * a client-passable flag would otherwise be a fan-out lever (coalescing dedupes concurrent calls, not
+   * sequential ones). A bypassed computation still coalesces per burst and still writes the entry every
+   * other reader sees, so a structurally degraded roll-up (traversal cap, index lag) is recomputed once
+   * per Retry, not on every page load.
+   */
+  public async getAccessAwareOrgs(req: Request, username: string, bypassCache = false): Promise<AccessAwareOrgsResult> {
     // Username is the caller's own identity (the "what can I see" principal), so keying by it is
     // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
     const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
@@ -53,7 +71,7 @@ export class OrgRoleGrantsService {
     if (cacheKey) {
       // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
       const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
-      if (cached) {
+      if (cached && !(bypassCache && (cached.degraded || cached.staffCheck === 'failed'))) {
         return OrgRoleGrantsService.deserializeAccessResult(cached);
       }
     }
@@ -71,9 +89,17 @@ export class OrgRoleGrantsService {
 
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
-      // Cache only successful resolutions; never cache upstream failures (they retry next request).
+      // Never cache an upstream failure (the roster never loaded; it retries next request). A failed
+      // staff check — transient by nature — is cached only under the short TTL: it shields the gate
+      // reads (every section request and the org-items list read this result) during an authorizer
+      // outage, while recovery (and the FR-011 correlation id, stored with the entry) is not pinned
+      // for the full TTL. The viewer's Retry recomputes once per click, coalesced per burst, and
+      // rewrites the entry. A degraded roll-up keeps the full TTL: its causes are often structural
+      // (traversal cap, missing index doc) and would otherwise recompute the whole walk on every page
+      // load; Retry bypasses the read for it instead (`bypassCache`).
       if (!result.upstreamFailed) {
-        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+        const ttl = result.staffCheck === 'failed' ? OrgRoleGrantsService.failedStaffCheckCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
+        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), ttl);
       }
       return result;
     })();
@@ -86,10 +112,42 @@ export class OrgRoleGrantsService {
     }
   }
 
-  /** Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`. */
-  public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff);
+  /**
+   * Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`.
+   *
+   * `upstreamFailed` folds into the single wire-level `degraded` flag because that flag predates the
+   * finer `lookupOutcome` (spec 053) and server gates still read it. Dropping it would hand an empty,
+   * unverifiable grant set to `assertCanManage` as an authoritative denial — a 403 where the caller is
+   * owed a 503. `lookupOutcome` carries the distinction the page needs: `failed` (roster never loaded)
+   * vs `partial` (roll-up incomplete).
+   */
+  public async getRoleGrants(req: Request, username: string, bypassCache = false): Promise<RoleGrantsResponse> {
+    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username, bypassCache);
+    const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
+    if (upstreamFailed) {
+      response.lookupOutcome = 'failed';
+    } else if (degraded) {
+      response.lookupOutcome = 'partial';
+    } else {
+      response.lookupOutcome = 'ok';
+    }
+    response.staffCheck = staffCheck;
+    if (staffCheck === 'failed' && correlationId) {
+      response.correlationId = correlationId;
+    }
+    return response;
+  }
+
+  /**
+   * LFXV2-3029 — the single "editor from any source" check: true for a direct writer grant OR a
+   * cascading (inherited) writer grant reachable through the connected component. Every
+   * organization edit surface is meant to widen along with this feature, so a gate that needs a
+   * hard "direct only" answer should not be added against this helper without a documented
+   * exception; a missed call site that still inlines `writers.includes(uid)` silently stays
+   * narrower than the platform authorizer now allows.
+   */
+  public static hasEditorAccess(grants: Pick<RoleGrantsResponse, 'writers' | 'cascadingWriters'>, orgUid: string): boolean {
+    return grants.writers.includes(orgUid) || grants.cascadingWriters.some((entry) => entry.uid === orgUid);
   }
 
   /** Builds the username-bound, namespaced, versioned cache key, or null when the username is not filter-safe. */
@@ -103,6 +161,11 @@ export class OrgRoleGrantsService {
   /** Shared-constant TTL converted from ms to whole seconds for the cache write. */
   private static cacheTtlSeconds(): number {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
+  }
+
+  /** Short TTL (whole seconds) for a failed staff check — the one transient result that is cached at all. */
+  private static failedStaffCheckCacheTtlSeconds(): number {
+    return Math.floor(ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS / 1000);
   }
 
   /**
@@ -121,8 +184,17 @@ export class OrgRoleGrantsService {
       typeof entry.loadedAt === 'string' &&
       typeof entry.upstreamFailed === 'boolean' &&
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
-      // deserializing to `undefined` and silently denying a staff caller for the rest of the TTL.
-      typeof entry.isStaff === 'boolean'
+      // deserializing to `undefined` and silently denying an LF-team caller for the rest of the TTL.
+      typeof entry.isStaff === 'boolean' &&
+      // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
+      // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
+      // connected-component classification. Rejecting it recomputes instead.
+      typeof entry.degraded === 'boolean' &&
+      // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
+      // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
+      // correlation id it was logged under — without it the page would render `Reference: —` — and
+      // only fail-closed: a check that did not complete can never have granted the LF-team affordance.
+      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false))
     );
   }
 
@@ -175,10 +247,13 @@ export class OrgRoleGrantsService {
       loadedAt: result.loadedAt,
       username: result.username,
       isStaff: result.isStaff,
+      degraded: result.degraded,
+      staffCheck: result.staffCheck,
+      ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
     };
   }
 
-  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). */
+  /** Rebuilds the Map-backed result from its serialized cache entry (insertion order preserved). Every field is validated by `isValidCacheEntry` first, so none needs a fallback here. */
   private static deserializeAccessResult(entry: AccessAwareOrgsCacheEntry): AccessAwareOrgsResult {
     return {
       resolved: new Map(entry.resolved),
@@ -187,11 +262,18 @@ export class OrgRoleGrantsService {
       loadedAt: entry.loadedAt,
       username: entry.username,
       isStaff: entry.isStaff,
+      degraded: entry.degraded,
+      staffCheck: entry.staffCheck,
+      correlationId: entry.correlationId,
     };
   }
 
   private async computeAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
     const loadedAt = new Date().toISOString();
+    // Spec 053: one id per computation, echoed into every warning below and returned on the wire only
+    // when the staff check failed. Not `req.id` — pino's request id is a per-process counter, so a
+    // caller quoting it back could not be found in the logs (see `ensureGwRequestId`).
+    const correlationId = randomUUID();
     const empty: AccessAwareOrgsResult = {
       resolved: new Map(),
       orgDocByUid: new Map(),
@@ -199,6 +281,8 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff: false,
+      degraded: false,
+      staffCheck: 'ok',
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -209,9 +293,9 @@ export class OrgRoleGrantsService {
     }
 
     // Started here so it overlaps the roster query rather than serialising behind it, and
-    // resolved on every path below: the staff grant is independent of the roster, so it must survive
-    // both "no grants" (the defining staff case) and a roster lookup failure.
-    const staffPromise = this.resolveIsStaff(req, username);
+    // resolved on every path below: the LF-team affordance is independent of the roster, so it must survive
+    // both "no grants" (the defining LF-team case) and a roster lookup failure.
+    const teamPromise = this.resolveIsStaff(req, username, correlationId);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -232,8 +316,8 @@ export class OrgRoleGrantsService {
         page_size: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff: await staffPromise };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, ...(await teamPromise), correlationId };
     }
 
     // Operator-visibility signal: when the caller has more direct grants than
@@ -244,7 +328,11 @@ export class OrgRoleGrantsService {
     // separately by `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` per direct parent — the cap here
     // is not a global upper bound on the resolved-map size.
     const rawGrantCount = settingsResponse?.resources?.length ?? 0;
-    if (rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP) {
+    // Dropping rows here makes the direct-grant list a lower bound, so it has to reach `degraded`
+    // below: otherwise a caller whose editor grant fell outside the cap is denied by
+    // `assertCanManage` as a verified 403 rather than an unverifiable 503.
+    const directRosterTruncated = rawGrantCount > ORG_ROLE_GRANTS_HARD_CAP;
+    if (directRosterTruncated) {
       logger.warning(req, 'get_org_role_grants', 'Raw direct-grant count exceeds supported maximum — truncating to hard cap', {
         username_length: username.length,
         raw_grant_count: rawGrantCount,
@@ -254,11 +342,25 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const isStaff = await staffPromise;
+    const { isStaff, staffCheck } = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff };
+      // "No grants" is only authoritative when the roster was complete. Every row here carries the
+      // caller as a member, but only `accepted` ones become grants, so a roster of pending invites
+      // wide enough to hit the cap can push the one accepted grant out of the slice — an empty
+      // answer that must not read as a verified denial.
+      return {
+        resolved: new Map(),
+        orgDocByUid: new Map(),
+        upstreamFailed: false,
+        loadedAt,
+        username,
+        isStaff,
+        degraded: directRosterTruncated,
+        staffCheck,
+        correlationId,
+      };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -267,45 +369,89 @@ export class OrgRoleGrantsService {
     try {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, isStaff, staffCheck, correlationId };
     }
 
-    let cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>;
+    // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
+    // component is missing from the answer. `fetchOrgDetailsByUids` degrades a failed chunk to a
+    // partial result rather than throwing, which makes the gap visible only as a count mismatch.
+    const directDocsIncomplete = directOrgDocs.size < directUids.size;
+
+    // LFXV2-3029 — discover every organization reachable from a direct grant by walking
+    // `parent_uid` upward and the `parent_b2b_org_uid` tag downward to a fixed point. Discovery
+    // only proposes candidates; nothing here grants a role — the authorizer decides that below.
+    let walk: { candidates: Map<string, { rootUid: string; rootName: string }>; docByUid: Map<string, B2bOrgIndexedDoc>; truncated: boolean };
+    let walkFailed = false;
     try {
-      const parentUids = Array.from(directUids).filter((uid) => directOrgDocs.get(uid)?.is_parent === true);
-      cascadingChildrenByParent = await this.fetchCascadingChildren(req, parentUids);
+      walk = await this.expandConnectedComponents(req, directUids, directOrgDocs);
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream cascading-children fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff };
+      // The walk only ever discovers *additional* orgs; the direct grants resolved above are
+      // already verified against the caller's own settings rows. Discarding them because roll-up
+      // expansion failed would revoke access the caller demonstrably holds, so the failure
+      // degrades the answer instead of emptying it.
+      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', {
+        err: error,
+        correlation_id: correlationId,
+      });
+      walk = { candidates: new Map(), docByUid: new Map(directOrgDocs), truncated: false };
+      walkFailed = true;
     }
 
-    const resolved = this.buildResolvedMap(directWriters, directAuditors, directOrgDocs, cascadingChildrenByParent);
-    const orgDocByUid = this.mergeOrgDocs(directOrgDocs, cascadingChildrenByParent);
+    // LFXV2-3029 — the authorizer, not the walk, decides who is actually granted.
+    // `checkAccessStrict` is used (not the lenient `checkAccess`) so an unverifiable batch is
+    // reported as `degraded: true` rather than silently reclassifying discovered organizations as
+    // denied — see `classifyCandidates`.
+    const { classified, degraded: classificationDegraded } = await this.classifyCandidates(req, walk.candidates);
 
-    return { resolved, orgDocByUid, upstreamFailed: false, loadedAt, username, isStaff };
+    const resolved = this.buildResolvedMap(directWriters, directAuditors, classified);
+    const orgDocByUid = this.mergeOrgDocs(directOrgDocs, classified, walk.docByUid);
+
+    return {
+      resolved,
+      orgDocByUid,
+      upstreamFailed: false,
+      loadedAt,
+      username,
+      isStaff,
+      degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
+      staffCheck,
+      correlationId,
+    };
   }
 
   /**
-   * Asks the platform authorizer whether the caller belongs to the LF staff team, which carries
-   * `auditor` on every `b2b_org` (member-service `docs/fga-contract.md`). Shares
-   * `LF_STAFF_TEAM_ID` with `PersonaDetectionService.checkLFStaff`, so the two authorization paths
-   * cannot drift onto different team names.
+   * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
+   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
+   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccessStrict` over both teams.
+   *
+   * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
+   * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
+   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
+   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
+   * gates (DR-002).
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed — `checkSingleAccess` already degrades to `false`, and the extra catch keeps
-   * an unexpected throw from failing the whole role-grants resolution for a caller who simply is not staff.
+   * principle. Fails closed on `isStaff` (`false`), but reports the failure as `staffCheck: 'failed'`
+   * (spec 053 FR-011) so the page can say "we could not confirm your staff access" instead of the
+   * employee no-access copy. `checkAccessStrict` is used so an authorizer outage surfaces as a throw
+   * rather than a silent all-false that would read as "not staff".
    */
-  private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
+  private async resolveIsStaff(req: Request, username: string, correlationId: string): Promise<{ isStaff: boolean; staffCheck: OrgLensStaffCheck }> {
     try {
-      return await this.accessCheck.checkSingleAccess(req, { resource: 'team', id: LF_STAFF_TEAM_ID, access: 'member' });
+      const membership = await this.accessCheck.checkAccessStrict(
+        req,
+        LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+      );
+      return { isStaff: LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true), staffCheck: 'ok' };
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'LF staff membership check failed; treating caller as non-staff', {
+      logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
+        correlation_id: correlationId,
       });
-      return false;
+      return { isStaff: false, staffCheck: 'failed' };
     }
   }
 
@@ -431,36 +577,38 @@ export class OrgRoleGrantsService {
     return map;
   }
 
-  /** D-004 — fetch of cascading children (one query per direct-granted parent), paginated to completion. Per-parent paginator stops at `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` (FR-017). Parents are processed through a bounded pool (`ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY`) so we never burst hundreds of concurrent `/query/resources` requests. */
-  private async fetchCascadingChildren(req: Request, parentUids: string[]): Promise<Map<string, B2bOrgIndexedDoc[]>> {
+  /** D-004 — fetch of cascading children (one query per direct-granted parent), paginated to completion. Per-parent paginator stops at `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` (FR-017) and reports that back so the caller can mark the answer a lower bound. Parents are processed through a bounded pool (`ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY`) so we never burst hundreds of concurrent `/query/resources` requests. */
+  private async fetchCascadingChildren(req: Request, parentUids: string[]): Promise<{ childrenByParent: Map<string, B2bOrgIndexedDoc[]>; truncated: boolean }> {
     const safeParentUids = this.filterSafeUids(req, parentUids, 'fetch_cascading_children');
-    if (safeParentUids.length === 0) return new Map();
+    if (safeParentUids.length === 0) return { childrenByParent: new Map(), truncated: false };
 
     // Collect by original index so the materialised Map preserves parentUids order
     // (direct-first, then cascading per parent) regardless of worker completion order.
-    const childrenByIndex: B2bOrgIndexedDoc[][] = new Array(safeParentUids.length);
+    const resultByIndex: { children: B2bOrgIndexedDoc[]; truncated: boolean }[] = new Array(safeParentUids.length);
     let cursor = 0;
 
     const worker = async (): Promise<void> => {
       while (cursor < safeParentUids.length) {
         const index = cursor++;
-        childrenByIndex[index] = await this.fetchChildrenForParent(req, safeParentUids[index]);
+        resultByIndex[index] = await this.fetchChildrenForParent(req, safeParentUids[index]);
       }
     };
 
     const poolSize = Math.min(ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY, safeParentUids.length);
     await Promise.all(Array.from({ length: poolSize }, () => worker()));
 
-    const results = new Map<string, B2bOrgIndexedDoc[]>();
+    const childrenByParent = new Map<string, B2bOrgIndexedDoc[]>();
+    let truncated = false;
     for (let i = 0; i < safeParentUids.length; i++) {
-      results.set(safeParentUids[i], childrenByIndex[i]);
+      childrenByParent.set(safeParentUids[i], resultByIndex[i].children);
+      truncated = truncated || resultByIndex[i].truncated;
     }
 
-    return results;
+    return { childrenByParent, truncated };
   }
 
-  /** Paginates a single direct-granted parent's cascading children to completion (or the per-parent hard cap). */
-  private async fetchChildrenForParent(req: Request, parentUid: string): Promise<B2bOrgIndexedDoc[]> {
+  /** Paginates a single direct-granted parent's cascading children to completion, or to the per-parent hard cap — reporting which, since a capped list is a lower bound the caller has to surface as `degraded`. */
+  private async fetchChildrenForParent(req: Request, parentUid: string): Promise<{ children: B2bOrgIndexedDoc[]; truncated: boolean }> {
     const children: B2bOrgIndexedDoc[] = [];
     let pageToken: string | undefined;
     let truncated = false;
@@ -484,13 +632,14 @@ export class OrgRoleGrantsService {
 
       for (const resource of response?.resources ?? []) {
         const childUid = this.extractUid(resource.id);
-        if (childUid && resource.data) {
-          children.push({ ...resource.data, uid: childUid } as B2bOrgIndexedDoc & { uid: string });
-          if (children.length >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
-            truncated = true;
-            break;
-          }
+        if (!childUid || !resource.data) continue;
+        // Checked before admitting, not after: a row we refuse is what makes the list short. The
+        // post-push form reported truncation whenever the cap coincided with the final child.
+        if (children.length >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP) {
+          truncated = true;
+          break;
         }
+        children.push({ ...resource.data, uid: childUid } as B2bOrgIndexedDoc & { uid: string });
       }
 
       if (truncated) break;
@@ -504,68 +653,294 @@ export class OrgRoleGrantsService {
       });
     }
 
-    return children;
+    return { children, truncated };
   }
 
-  /** D-005 — direct first (writer-wins on duplicate-direct), then cascading with highest-privilege-wins; direct-source preserved on tie to keep FR-011a's `canEdit` direct-only check intact. */
+  /**
+   * LFXV2-3029 — bidirectional connected-component walk. For each direct-granted organization,
+   * discovers every organization reachable by repeatedly following `parent_uid` upward and the
+   * `parent_b2b_org_uid` tag downward, iterating to a fixed point (a visited set guards against a
+   * cycle in the hierarchy data). Bounded per source grant by the existing (not a new)
+   * `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` constant.
+   *
+   * Discovery only proposes candidates and records the root grant that reached them (used as the
+   * provenance parent for the tooltip); `classifyCandidates` asks the authorizer before any role
+   * is assigned. A root already reachable from another root's walk still runs its own walk
+   * (simpler and correct, at the cost of some redundant upstream calls when two direct grants
+   * share a component) — `docByUid` is shared across roots so a node discovered once is never
+   * re-fetched.
+   *
+   * `ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP` bounds one root's walk;
+   * `ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP` bounds the candidate set across all of them, so
+   * a caller holding many direct grants in unrelated hierarchies cannot multiply the per-walk cap
+   * into an authorizer fan-out the size of the product of the two.
+   */
+  private async expandConnectedComponents(
+    req: Request,
+    directUids: Set<string>,
+    directOrgDocs: Map<string, B2bOrgIndexedDoc>
+  ): Promise<{ candidates: Map<string, { rootUid: string; rootName: string }>; docByUid: Map<string, B2bOrgIndexedDoc>; truncated: boolean }> {
+    const docByUid = new Map<string, B2bOrgIndexedDoc>(directOrgDocs);
+    // Deterministic provenance: when a candidate is reached from more than one root grant, keep
+    // the nearest (smallest BFS depth) root, tie-broken by root name so the choice never depends
+    // on `Set` iteration order (which JS does not guarantee across engines for a Set built from
+    // spread/union operations, even though V8 happens to preserve insertion order today).
+    const depthByCandidate = new Map<string, number>();
+    const candidates = new Map<string, { rootUid: string; rootName: string }>();
+    let truncated = false;
+
+    for (const rootUid of directUids) {
+      if (candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+        truncated = true;
+        break;
+      }
+
+      const rootName = directOrgDocs.get(rootUid)?.name ?? '';
+      const visited = new Set<string>([rootUid]);
+      let frontier = [rootUid];
+      let discovered = 0;
+      let depth = 0;
+
+      try {
+        while (frontier.length > 0 && discovered < ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP && candidates.size < ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+          depth++;
+          // Ascend: each frontier node's own parent_uid (its doc is already known — either a direct
+          // grant or discovered on a prior iteration of this walk).
+          const parentUids = [...new Set(frontier.map((uid) => docByUid.get(uid)?.parent_uid).filter((uid): uid is string => !!uid))];
+          const parentUidsToFetch = parentUids.filter((uid) => !docByUid.has(uid));
+
+          // Descend: children tagged `parent_b2b_org_uid:<uid>` for every frontier node that is
+          // flagged `is_parent` — the same hint the direct-grant path below uses to skip a wasted
+          // query for a node known to have no children.
+          const descendFrom = frontier.filter((uid) => docByUid.get(uid)?.is_parent === true);
+          const [parentDocs, childFetch] = await Promise.all([
+            parentUidsToFetch.length > 0 ? this.fetchOrgDetailsByUids(req, parentUidsToFetch) : Promise.resolve(new Map<string, B2bOrgIndexedDoc>()),
+            descendFrom.length > 0
+              ? this.fetchCascadingChildren(req, this.filterSafeUids(req, descendFrom, 'expand_connected_component'))
+              : Promise.resolve({ childrenByParent: new Map<string, B2bOrgIndexedDoc[]>(), truncated: false }),
+          ]);
+          // A parent whose child list was cut short by the per-parent cap leaves the component
+          // incomplete just as surely as the traversal caps below do. The upward half needs the same
+          // treatment for a different reason: `fetchOrgDetailsByUids` degrades a rejected chunk to a
+          // partial map instead of throwing, so a missing parent doc silently removes that parent and
+          // every ancestor above it from the walk, and a count mismatch is the only trace left.
+          truncated = truncated || childFetch.truncated || parentDocs.size < parentUidsToFetch.length;
+
+          const nextFrontier = new Set<string>();
+          for (const [uid, doc] of parentDocs) {
+            if (!docByUid.has(uid)) docByUid.set(uid, doc);
+          }
+          // Enqueue every parent whose doc we hold, not just the ones this iteration fetched. A
+          // parent already present in the shared `docByUid` — a direct grant, or a node discovered
+          // from another root — is filtered out of the fetch above, and skipping it here would
+          // dead-end the walk at exactly the nodes two grants in one hierarchy have in common.
+          for (const uid of parentUids) {
+            if (docByUid.has(uid)) nextFrontier.add(uid);
+          }
+          for (const [, children] of childFetch.childrenByParent) {
+            for (const child of children) {
+              const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
+              if (!childUid) continue;
+              if (!docByUid.has(childUid)) docByUid.set(childUid, child);
+              nextFrontier.add(childUid);
+            }
+          }
+
+          frontier = [];
+          for (const uid of nextFrontier) {
+            if (visited.has(uid)) continue;
+            if (discovered >= ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP || candidates.size >= ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP) {
+              truncated = true;
+              break;
+            }
+            visited.add(uid);
+            discovered++;
+            frontier.push(uid);
+            // A direct grant reached from *another* root is still classified: an org the caller
+            // directly audits can also be an inherited editor through a writer grant elsewhere in
+            // the same component, and authority-first precedence can only see that if the
+            // authorizer is asked about it. This walk's own root is excluded by `visited`.
+            const existingDepth = depthByCandidate.get(uid);
+            const existing = candidates.get(uid);
+            const isNearer = existingDepth === undefined || depth < existingDepth;
+            const isTieBreakWinner = depth === existingDepth && !!existing && rootName.localeCompare(existing.rootName) < 0;
+            if (isNearer || isTieBreakWinner) {
+              depthByCandidate.set(uid, depth);
+              candidates.set(uid, { rootUid, rootName });
+            }
+          }
+        }
+      } catch (error) {
+        // Roll-up is additive, so one root's failed page is not a reason to discard what the roots
+        // already walked contributed. Abandoning this root and reporting the answer as truncated
+        // keeps the rest of the caller's portfolio, instead of letting a single flaky child page
+        // hide every inherited grant they hold for the length of the cache TTL. Nothing is granted
+        // here either way — the authorizer still decides each surviving candidate.
+        logger.warning(req, 'expand_connected_component', 'Walk failed for one direct grant; keeping candidates from the others', {
+          err: error instanceof Error ? error.message : String(error),
+        });
+        truncated = true;
+        continue;
+      }
+
+      // The cap only truncated the component if something was actually left unexplored. A frontier
+      // of leaves means the walk had finished and the cap merely coincided with its last node —
+      // reporting truncation there would raise `degraded` on a complete answer, which now costs
+      // real access decisions rather than just a log line.
+      if (frontier.some((uid) => OrgRoleGrantsService.hasUnexploredEdge(docByUid.get(uid), docByUid))) {
+        truncated = true;
+      }
+    }
+
+    if (truncated) {
+      logger.warning(req, 'expand_connected_component', 'Connected-component cap reached — traversal truncated', {
+        per_grant_cap: ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
+        global_cap: ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP,
+        candidate_count: candidates.size,
+      });
+    }
+
+    return { candidates, docByUid, truncated };
+  }
+
+  /** True when a frontier node still has a hierarchy edge the walk never followed: children it was never asked for, or a parent whose doc is absent. A node admitted to the frontier has not been descended from yet, so `is_parent` alone means unexplored. */
+  private static hasUnexploredEdge(doc: B2bOrgIndexedDoc | undefined, docByUid: Map<string, B2bOrgIndexedDoc>): boolean {
+    if (!doc) return false;
+    if (doc.is_parent === true) return true;
+    return !!doc.parent_uid && !docByUid.has(doc.parent_uid);
+  }
+
+  /**
+   * LFXV2-3029 — asks the platform authorizer to classify traversal candidates; the walk never
+   * assigns a role itself. Checks both `writer` and `auditor` per candidate in one batched call
+   * (chunked internally at `ACCESS_CHECK_BATCH_SIZE`) — a writer candidate is also an auditor per
+   * the FGA model, so the two checks are independent lookups, not a fallback chain. A candidate
+   * that resolves to neither was reachable by the walk but is not actually granted (e.g. a stale
+   * hierarchy edge) and is excluded entirely.
+   *
+   * Uses `checkAccessStrict`, not the lenient `checkAccess`, so an unverifiable batch reports
+   * `degraded: true` instead of quietly reclassifying every candidate as denied — the
+   * organization-list path must say "this list may be incomplete", never "you have no access
+   * here" for an organization the caller held a moment ago.
+   */
+  private async classifyCandidates(
+    req: Request,
+    candidates: Map<string, { rootUid: string; rootName: string }>
+  ): Promise<{ classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>; degraded: boolean }> {
+    const classified = new Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>();
+    if (candidates.size === 0) return { classified, degraded: false };
+
+    const uids = [...candidates.keys()];
+    const requests: AccessCheckRequest[] = [];
+    for (const uid of uids) {
+      requests.push({ resource: 'b2b_org', id: uid, access: 'writer' });
+      requests.push({ resource: 'b2b_org', id: uid, access: 'auditor' });
+    }
+
+    let results: Map<string, boolean>;
+    try {
+      results = await this.runClassificationWaves(req, requests);
+    } catch (error) {
+      logger.warning(
+        req,
+        'get_org_role_grants',
+        'Authoritative classification of connected-component candidates failed; excluding them and reporting degraded',
+        {
+          candidate_count: uids.length,
+          err: error,
+        }
+      );
+      return { classified, degraded: true };
+    }
+
+    for (const uid of uids) {
+      const provenance = candidates.get(uid);
+      if (!provenance) continue;
+      const isWriter = results.get(`${uid}#writer`) === true;
+      const isAuditor = results.get(`${uid}#auditor`) === true;
+      if (isWriter) {
+        classified.set(uid, { role: 'writer', parentUid: provenance.rootUid, parentName: provenance.rootName });
+      } else if (isAuditor) {
+        classified.set(uid, { role: 'auditor', parentUid: provenance.rootUid, parentName: provenance.rootName });
+      }
+    }
+
+    return { classified, degraded: false };
+  }
+
+  /**
+   * Feeds the classification requests to the authorizer in bounded waves. `checkAccessStrict`
+   * chunks at `ACCESS_CHECK_BATCH_SIZE` internally but dispatches every chunk concurrently, so a
+   * large component would open one upstream connection per chunk from a single inbound request.
+   * Each wave is sized to hold the concurrency at `ORG_CANDIDATE_CLASSIFY_CONCURRENCY` chunks.
+   *
+   * A failing wave still propagates, so strict semantics are unchanged: the caller reports
+   * `degraded` rather than treating unverifiable candidates as denied.
+   */
+  private async runClassificationWaves(req: Request, requests: AccessCheckRequest[]): Promise<Map<string, boolean>> {
+    const waveSize = ACCESS_CHECK_BATCH_SIZE * ORG_CANDIDATE_CLASSIFY_CONCURRENCY;
+    if (requests.length <= waveSize) {
+      return this.accessCheck.checkAccessStrict(req, requests);
+    }
+
+    const results = new Map<string, boolean>();
+    for (let i = 0; i < requests.length; i += waveSize) {
+      const wave = await this.accessCheck.checkAccessStrict(req, requests.slice(i, i + waveSize));
+      for (const [key, value] of wave) {
+        results.set(key, value);
+      }
+    }
+    return results;
+  }
+
+  /**
+   * LFXV2-3029 — authority-first precedence: direct-writer, then inherited-writer, then
+   * direct-auditor, then inherited-auditor. This replaces the previous directness-first order:
+   * an inherited-writer now outranks a direct-auditor on the same organization ("editor wins" on
+   * a mixed grant) — a viewer grant on a subsidiary must not shadow the editing authority a
+   * roll-up grant confers on that same subsidiary.
+   */
   private buildResolvedMap(
     directWriters: Set<string>,
     directAuditors: Set<string>,
-    directOrgDocs: Map<string, B2bOrgIndexedDoc>,
-    cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>
+    classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>
   ): Map<string, ResolvedOrgRole> {
+    const rank: Record<OrgRolePersona, number> = { 'direct-writer': 4, 'inherited-writer': 3, 'direct-auditor': 2, 'inherited-auditor': 1 };
     const resolved = new Map<string, ResolvedOrgRole>();
 
+    const setIfHigher = (uid: string, entry: ResolvedOrgRole): void => {
+      const existing = resolved.get(uid);
+      if (!existing || rank[entry.roleSource] > rank[existing.roleSource]) {
+        resolved.set(uid, entry);
+      }
+    };
+
     for (const uid of directWriters) {
-      resolved.set(uid, { roleSource: 'direct-writer' });
+      setIfHigher(uid, { roleSource: 'direct-writer' });
     }
     for (const uid of directAuditors) {
-      if (!resolved.has(uid)) {
-        resolved.set(uid, { roleSource: 'direct-auditor' });
-      }
+      setIfHigher(uid, { roleSource: 'direct-auditor' });
     }
-
-    for (const [parentUid, children] of cascadingChildrenByParent) {
-      const parentDoc = directOrgDocs.get(parentUid);
-      const parentName = parentDoc?.name ?? '';
-      // FGA model (model.yaml line 369): "writer does NOT cascade — edit scope stays on the
-      // directly-assigned org only". Only `auditor` cascades via parent/child relations.
-      // Regardless of whether the parent grant is writer or auditor, children inherit auditor.
-      const inheritedRoleSource: OrgRolePersona = 'inherited-auditor';
-
-      for (const child of children) {
-        const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
-        if (!childUid) continue;
-
-        const existing = resolved.get(childUid);
-        if (!existing) {
-          resolved.set(childUid, { roleSource: inheritedRoleSource, parentUid, parentName });
-          continue;
-        }
-        // Direct grants (writer or auditor) always take precedence over inherited-auditor.
-        // If the child already has a direct or inherited entry, keep the existing one.
-      }
+    for (const [uid, entry] of classified) {
+      const roleSource: OrgRolePersona = entry.role === 'writer' ? 'inherited-writer' : 'inherited-auditor';
+      setIfHigher(uid, { roleSource, parentUid: entry.parentUid, parentName: entry.parentName });
     }
 
     return resolved;
   }
 
-  /** Build a uid→doc lookup covering both direct and cascading rows; direct entries win on collision. */
+  /** Build a uid→doc lookup covering both direct and classified-inherited rows; direct entries win on collision. Only classified (authorizer-granted) candidates are included — a denied-on-recheck candidate never leaks its doc into the switcher. */
   private mergeOrgDocs(
     directOrgDocs: Map<string, B2bOrgIndexedDoc>,
-    cascadingChildrenByParent: Map<string, B2bOrgIndexedDoc[]>
+    classified: Map<string, { role: 'writer' | 'auditor'; parentUid: string; parentName: string }>,
+    docByUid: Map<string, B2bOrgIndexedDoc>
   ): Map<string, B2bOrgIndexedDoc> {
     const merged = new Map<string, B2bOrgIndexedDoc>();
 
-    for (const [, children] of cascadingChildrenByParent) {
-      for (const child of children) {
-        const childUid = (child as B2bOrgIndexedDoc & { uid?: string }).uid;
-        if (childUid && !merged.has(childUid)) {
-          merged.set(childUid, child);
-        }
-      }
+    for (const uid of classified.keys()) {
+      const doc = docByUid.get(uid);
+      if (doc) merged.set(uid, doc);
     }
-
     for (const [uid, doc] of directOrgDocs) {
       merged.set(uid, doc);
     }
@@ -573,7 +948,13 @@ export class OrgRoleGrantsService {
     return merged;
   }
 
-  private toRoleGrantsResponse(resolved: Map<string, ResolvedOrgRole>, username: string, loadedAt: string, isStaff: boolean): RoleGrantsResponse {
+  private toRoleGrantsResponse(
+    resolved: Map<string, ResolvedOrgRole>,
+    username: string,
+    loadedAt: string,
+    isStaff: boolean,
+    degraded: boolean
+  ): RoleGrantsResponse {
     const writers: string[] = [];
     const auditors: string[] = [];
     const cascadingWriters: CascadingRoleGrant[] = [];
@@ -588,8 +969,8 @@ export class OrgRoleGrantsService {
           auditors.push(uid);
           break;
         case 'inherited-writer':
-          // Dead branch — the FGA model prevents writer from cascading (buildResolvedMap hard-codes
-          // 'inherited-auditor' for all cascading children); kept for OrgRolePersona exhaustiveness.
+          // No longer a dead branch: the FGA model change (LFXV2-3029) makes `writer` cascade,
+          // and `buildResolvedMap` now asks the authorizer instead of hard-coding 'inherited-auditor'.
           cascadingWriters.push({ uid, parentUid: role.parentUid ?? '', parentName: role.parentName ?? '' });
           break;
         case 'inherited-auditor':
@@ -598,7 +979,7 @@ export class OrgRoleGrantsService {
       }
     }
 
-    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt, isStaff };
+    return { writers, auditors, cascadingWriters, cascadingAuditors, username, loaded_at: loadedAt, isStaff, degraded };
   }
 
   /** Strip uids that would break query-service tag grammar before interpolating into `b2b_org_uid:` / `parent_b2b_org_uid:` tags. */

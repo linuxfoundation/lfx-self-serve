@@ -27,11 +27,19 @@ export class InputTextComponent {
   public icon = input<string>();
   public styleClass = input<string>();
   public readonly = input<boolean>(false);
-  public maxlength = input<number>();
+  /**
+   * Native character cap on the input, or `null` for no cap.
+   * @description Nullable so a caller can turn the cap on and off from a signal:
+   * `[attr.maxlength]` drops the attribute for a nullish value, which is what lifting the cap
+   * has to do. Leaving it out entirely means the same thing.
+   */
+  public maxlength = input<number | null>();
   /** Id of the element describing this input (e.g. its error message) — wired to `aria-describedby`. */
-  public describedBy = input<string>();
+  public describedBy = input<string | null>();
   /** Marks the control invalid for assistive tech; the visible error text is the caller's. */
   public invalid = input<boolean>(false);
+  /** Marks the control mandatory for assistive tech (wired to aria-required). */
+  public required = input<boolean>(false);
 
   /**
    * Combobox wiring, for the typeahead pickers that put a results list under this field.

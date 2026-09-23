@@ -52,23 +52,31 @@
           [totalGatingItems]="formation()?.gating_items_total ?? 0" />
 
         @for (rendered of renderedSections(); track rendered.section.key) {
-          <div class="bg-white border border-gray-200 rounded-xl overflow-hidden" [attr.data-testid]="'formation-checklist-panel-' + rendered.section.key">
-            <div class="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-200">
-              <span class="text-[11px] font-medium tracking-wide uppercase text-gray-500">{{ rendered.section.title }}</span>
+          <!-- `@container`: the panel's own width drives the rows' layout tiers (FORMATION_CHECKLIST_GRID_CLASSES). -->
+          <div
+            class="bg-white border border-gray-200 rounded-xl overflow-hidden @container"
+            [attr.data-testid]="'formation-checklist-panel-' + rendered.section.key">
+            <!-- Header strip. From @5xl it becomes the same grid as the rows (full template) so the
+                 Team / Assignee / Due captions sit over the columns they label; below that only the
+                 section title shows. aria-hidden captions: each row cell already carries its own
+                 sr-only "Team:/Assignee:/Due date:" prefix. -->
+            <div class="flex items-center px-4 py-2 bg-gray-50 border-b border-gray-200 @5xl:grid @5xl:gap-x-4" [ngClass]="gridClasses.full">
+              <span class="text-[11px] font-medium tracking-wide uppercase text-gray-500 @5xl:col-span-2">{{ rendered.section.title }}</span>
+              <span class="hidden @5xl:block text-[11px] text-gray-400" aria-hidden="true">Team</span>
+              <span class="hidden @5xl:block text-[11px] text-gray-400" aria-hidden="true">Assignee</span>
+              <span class="hidden @5xl:block text-[11px] text-gray-400" aria-hidden="true">Due</span>
             </div>
             @for (item of rendered.items; track item.uid) {
               <lfx-formation-checklist-row
                 [item]="item"
                 [submitting]="submittingItemUids().has(item.uid)"
                 [readOnly]="readOnly()"
+                [canWrite]="canWrite()"
+                [canSetStatus]="canSetStatus()"
                 (openDrawer)="onOpenDrawer($event)"
                 (actionTriggered)="onRowAction($event)"
                 (statusChanged)="onRowStatusChanged($event)"
-                (blockRequested)="onRowBlockRequested($event)"
-                (completeRequested)="onRowCompleteRequested($event)"
-                (acceptRequested)="onRowAcceptRequested($event)"
-                (reopenRequested)="onRowReopenRequested($event)"
-                (skipRequested)="onSkipRequested($event)" />
+                (reasonedStatusRequested)="onRowReasonedStatusRequested($event)" />
             }
           </div>
         }
@@ -80,8 +88,11 @@
 <lfx-formation-item-drawer
   [itemProjectUid]="drawerItemAddress()?.projectUid ?? null"
   [itemKey]="drawerItemAddress()?.itemKey ?? null"
+  [projectSlug]="drawerProjectSlug()"
   [mutationInFlight]="drawerItemMutationInFlight()"
   [skipInFlight]="drawerItemSkipInFlight()"
+  [canWrite]="canWrite()"
+  [canSetStatus]="canSetStatus()"
   [readOnly]="readOnly()"
   [(visible)]="drawerVisible"
   (itemChanged)="onDrawerItemChanged($event)"

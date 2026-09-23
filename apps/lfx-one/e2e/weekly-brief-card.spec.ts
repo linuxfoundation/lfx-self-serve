@@ -33,8 +33,7 @@
  *   (see helpers/global-setup.ts).
  * - The repo has no e2e LaunchDarkly override helper. For the flag-ON tests we mock
  *   only the WG weekly-brief endpoints and rely on the `wg-weekly-brief` LD flag being
- *   ON in the dev environment (mirroring how org-membership-documentation.spec.ts relies
- *   on the `org-lens-enabled` flag being ON — see that file's header).
+ *   ON in the dev environment.
  *   For the flag-OFF test we block the LaunchDarkly SDK endpoints so OpenFeature's
  *   provider fails to initialize and the flag falls back to its `false` default
  *   (see feature-flag.service.ts:getBooleanFlag — returns `defaultValue` when the
@@ -181,6 +180,11 @@ function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
     total_voting_repos: 0,
     project_uid: 'project-uid-wb',
     writer: true,
+    // Server-computed caller-scoped committee#auditor field (GH-2407) — the engagement gate
+    // (canAccessEngagement → engagementAccessible) reads this. The BFF returns auditor: true for
+    // any writer (writer implies auditor per the FGA model), so a real response for this caller
+    // carries it; omitted here it fails closed to false and the card under test never mounts.
+    auditor: true,
     join_mode: 'open',
     // committee-overview wraps its whole "not a visitor" content block (including the
     // weekly-brief card) in @if (!isVisitor()), and isVisitor() is `myRole() === null`.
@@ -202,7 +206,7 @@ function buildCommitteeFixture(overrides: Partial<Committee> = {}): Committee {
  * to the dev backend — the card only reads `committee.uid` and `canEdit`.
  */
 async function mockCommitteeShell(page: Page, committeeOverrides: Partial<Committee> = {}): Promise<void> {
-  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}`, async (route) => {
+  await page.route(`**/api/committees/${TEST_COMMITTEE_UID}*`, async (route) => {
     if (route.request().method() !== 'GET') {
       await route.fallback();
       return;

@@ -16,6 +16,22 @@ export const mockFormationTemplate: FormationTemplate = {
 };
 
 /**
+ * The announcement date the checklist read serves. Since #2719 the sidebar formation card renders
+ * it straight off this response ("Oct 25, 2026") rather than off the separate, `auditor`-gated
+ * project-settings read, so it is pinned here rather than computed from `Date.now()` — the card's
+ * assertion must not drift with the clock.
+ */
+export const MOCK_FORMATION_ANNOUNCEMENT_DATE = '2026-10-25';
+
+/**
+ * The other queue row's announcement date, pinned for the same reason and deliberately earlier
+ * than `MOCK_FORMATION_ANNOUNCEMENT_DATE`: the queue sorts by `announcement_date` ASC, so a
+ * `Date.now()`-derived value here would flip these two rows' relative order once the wall clock
+ * passed the pinned date — latent today, a foot-gun for the first order-sensitive assertion.
+ */
+export const MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE = '2026-09-28';
+
+/**
  * Mock formation data for Playwright tests (GH-1958). Keyed by parent project slug, mirroring
  * `projects.mock.ts`'s `mockProjects` convention — a checklist test navigates to a project whose
  * slug has both a `mockProjects` entry (a Formation-stage `stage`) and a `mockFormations` entry.
@@ -34,7 +50,7 @@ export const mockFormations: Record<string, Formation> = {
     sub_stage_raw: 'Formation - Engaged',
     lifecycle: 'live',
     lifecycle_raw: 'live',
-    announcement_date: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+    announcement_date: MOCK_FORMATION_ANNOUNCEMENT_DATE,
     is_activating: false,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: 2 gating items
     // (draft_project_record=done, contribution_agreement_executed=in_progress) — this same fixture
@@ -69,13 +85,13 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     parent_uid: mockFormations['cascade-data-alliance'].parent_uid,
     sub_stage: mockFormations['cascade-data-alliance'].sub_stage,
     sub_stage_raw: 'Formation - Engaged',
-    lifecycle: 'formation',
+    lifecycle: 'live',
     gates_cleared: false,
     is_activating: false,
     announcement_date: mockFormations['cascade-data-alliance'].announcement_date,
     // Mirrors mockFormationItems['formation:cascade-data-alliance']: draft_project_record=done,
     // contribution_agreement_executed=in_progress.
-    progress: { not_started: 0, in_progress: 1, blocked: 0, awaiting_acceptance: 0, done: 1, skipped: 0 },
+    progress: { not_started: 0, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
     blocked_item_titles: ['Contribution agreement executed'],
     assignees: [],
   },
@@ -88,11 +104,11 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     parent_uid: 'e19f1234-f567-4abc-b890-1234567890de',
     sub_stage: 'on_hold',
     sub_stage_raw: 'Formation - On Hold',
-    lifecycle: 'formation',
+    lifecycle: 'live',
     gates_cleared: false,
     is_activating: false,
     announcement_date: null,
-    progress: { not_started: 0, in_progress: 6, blocked: 0, awaiting_acceptance: 0, done: 0, skipped: 0 },
+    progress: { not_started: 0, in_progress: 6, blocked: 0, done: 0, skipped: 0 },
     blocked_item_titles: ['Intake review'],
     assignees: [],
   },
@@ -105,11 +121,135 @@ export const mockFormationsQueue: FormationQueueRow[] = [
     parent_uid: 'e19f1234-f567-4abc-b890-1234567890de',
     sub_stage: 'engaged',
     sub_stage_raw: 'Formation - Engaged',
-    lifecycle: 'formation',
+    lifecycle: 'live',
     gates_cleared: true,
     is_activating: true,
-    announcement_date: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-    progress: { not_started: 0, in_progress: 0, blocked: 0, awaiting_acceptance: 0, done: 4, skipped: 0 },
+    announcement_date: MOCK_FORMATION_QUEUE_EARLIER_ANNOUNCEMENT_DATE,
+    progress: { not_started: 0, in_progress: 0, blocked: 0, done: 4, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+];
+
+/**
+ * Queue rows covering every lifecycle the formation service can publish, for GH-2584's exclusion
+ * tests. Kept separate from {@link mockFormationsQueue} so the existing queue specs' counts stay
+ * as they are — this set exists to be filtered, that one to be rendered.
+ *
+ * `lifecycle` is the field under test, so each row states it explicitly rather than deriving it
+ * from `sub_stage_raw`: the whole point of GH-2584 is that the queue no longer infers one from the
+ * other, and a fixture that did infer it could not detect a regression back to stage-based
+ * filtering.
+ */
+export const mockFormationsQueueLifecycleMix: FormationQueueRow[] = [
+  {
+    formation_uid: 'formation:still-forming-fixture',
+    project_uid: 'f10f1234-f567-4abc-b890-1234567890a0',
+    project_name: 'Still Forming Initiative',
+    project_slug: 'still-forming-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: 'engaged',
+    sub_stage_raw: 'Formation - Engaged',
+    lifecycle: 'live',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 2, in_progress: 1, blocked: 0, done: 1, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+  {
+    // GH-2584's headline case. `frozen`, the same lifecycle Archived gets — the formation service
+    // treats leaving formation the same way whether the project succeeded or walked away.
+    formation_uid: 'formation:disengaged-fixture',
+    project_uid: 'f20f1234-f567-4abc-b890-1234567890a1',
+    project_name: 'Disengaged Initiative',
+    project_slug: 'disengaged-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: null,
+    sub_stage_raw: 'Formation - Disengaged',
+    lifecycle: 'frozen',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 4, in_progress: 0, blocked: 0, done: 2, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+  {
+    formation_uid: 'formation:activated-fixture',
+    project_uid: 'f30f1234-f567-4abc-b890-1234567890a2',
+    project_name: 'Activated Initiative',
+    project_slug: 'activated-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: null,
+    sub_stage_raw: 'Active',
+    lifecycle: 'completed',
+    gates_cleared: true,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 0, in_progress: 0, blocked: 0, done: 6, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+  {
+    formation_uid: 'formation:archived-fixture',
+    project_uid: 'f40f1234-f567-4abc-b890-1234567890a3',
+    project_name: 'Archived Initiative',
+    project_slug: 'archived-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: null,
+    sub_stage_raw: 'Archived',
+    lifecycle: 'frozen',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 3, in_progress: 0, blocked: 0, done: 3, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+  {
+    // Still forming, but at a sub-stage the queue's taxonomy has no tile for — the fail-open case
+    // (GH-2366). It must be listed and counted as unmapped, which is what keeps `tiles.unmapped`
+    // worth computing after GH-2584 removed the tile line that displayed it.
+    formation_uid: 'formation:unmapped-fixture',
+    project_uid: 'f50f1234-f567-4abc-b890-1234567890a4',
+    project_name: 'Unmapped Substage Initiative',
+    project_slug: 'unmapped-substage-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: null,
+    sub_stage_raw: 'Formation - Some New Substage',
+    lifecycle: 'live',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 5, in_progress: 1, blocked: 0, done: 0, skipped: 0 },
+    blocked_item_titles: [],
+    assignees: [],
+  },
+  {
+    // A Confidential formation, reaching the BFF because this caller holds permission on it. It is
+    // still forming, so it must be listed. Confidentiality is enforced by access control upstream,
+    // never by this filter — a row that gets here has already been authorized, and dropping it
+    // would hide the project from the only people entitled to act on it (GH-1954).
+    formation_uid: 'formation:confidential-fixture',
+    project_uid: 'f60f1234-f567-4abc-b890-1234567890a5',
+    project_name: 'Confidential Initiative',
+    project_slug: 'confidential-initiative',
+    is_foundation: false,
+    parent_uid: null,
+    sub_stage: null,
+    sub_stage_raw: 'Formation - Confidential',
+    lifecycle: 'live',
+    gates_cleared: false,
+    is_activating: false,
+    announcement_date: null,
+    progress: { not_started: 6, in_progress: 0, blocked: 0, done: 0, skipped: 0 },
     blocked_item_titles: [],
     assignees: [],
   },

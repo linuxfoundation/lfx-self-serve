@@ -12,6 +12,7 @@ import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
@@ -30,6 +31,9 @@ import type {
 import { foundationInitials, foundationLogoSquareClasses } from '../components/org-overview-foundations-and-projects/helpers/foundation-logo.helper';
 import { environment } from '@environments/environment';
 
+/** Active-membership row plus its detail-page router commands (`null` when the row carries no foundation slug). */
+type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[] | null };
+
 @Component({
   selector: 'lfx-org-memberships',
   standalone: true,
@@ -38,6 +42,7 @@ import { environment } from '@environments/environment';
 })
 export class OrgMembershipsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -108,7 +113,7 @@ export class OrgMembershipsComponent {
 
   protected readonly activeData = toSignal<OrgActiveMembershipsResponse | null>(this.activeResponse$, { initialValue: null });
   protected readonly summary = computed(() => this.activeData()?.summary);
-  protected readonly memberships: Signal<ActiveMembershipRow[]> = computed(() => this.initMemberships());
+  protected readonly memberships: Signal<ActiveMembershipLinkedRow[]> = computed(() => this.initMemberships());
 
   protected readonly pageState: Signal<OrgMembershipsPageState> = computed(() => this.initPageState());
 
@@ -195,9 +200,11 @@ export class OrgMembershipsComponent {
     return 'ready';
   }
 
-  private initMemberships(): ActiveMembershipRow[] {
+  private initMemberships(): ActiveMembershipLinkedRow[] {
     return (this.activeData()?.memberships ?? []).map((m) => ({
       ...m,
+      // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+      membershipLink: m.foundationSlug ? this.orgLens.orgLensLink('memberships', m.foundationSlug) : null,
       initials: foundationInitials(m.foundationName),
       tierRange: `${this.formatDateShort(m.tierStartDate)} – ${this.formatDateShort(m.tierEndDate)}`,
       memberSinceFormatted: this.formatDateShort(m.memberSince),

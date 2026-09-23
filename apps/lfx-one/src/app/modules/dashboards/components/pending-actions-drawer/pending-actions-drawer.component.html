@@ -40,7 +40,22 @@
             </div>
             <!-- Middle: meeting/action name -->
             <div class="flex-1 min-w-0">
-              @if (item.buttonLink) {
+              @if (item.isFormationItem) {
+                <!-- Formation item (#2732): bold title over a gray meta line — project · due · required for Active. The
+                     title wraps rather than truncating, so no hover-only `title` tooltip is needed to reach the full text. -->
+                <div class="flex flex-col gap-0.5 min-w-0">
+                  <span class="text-sm font-semibold text-gray-900" data-testid="pending-actions-drawer-title">{{ item.text }}</span>
+                  <span class="text-xs text-gray-500" data-testid="pending-actions-drawer-formation-meta">
+                    <span data-testid="pending-actions-drawer-formation-project">{{ item.badge }}</span>
+                    @if (item.formationDueLabel) {
+                      <span data-testid="pending-actions-drawer-formation-due"> · due {{ item.formationDueLabel }}</span>
+                    }
+                    @if (item.formationIsGating) {
+                      <span data-testid="pending-actions-drawer-formation-gating"> · required for Active</span>
+                    }
+                  </span>
+                </div>
+              } @else if (item.buttonLink) {
                 <a
                   [href]="item.buttonLink"
                   target="_blank"
@@ -115,37 +130,26 @@
                     data-testid="pending-actions-drawer-invitation-decline" />
                 </div>
               } @else if (item.isFormationItem) {
+                <!-- Formation item (#2732): status chip plus one navigation to the checklist with this item's panel
+                     open; this drawer closes as the navigation starts. Nothing here mutates the item. -->
                 <div class="flex items-center gap-2">
-                  @if (item.formationItemAction !== 'status_only' && item.formationItemStatus === 'not_started') {
-                    <lfx-button
-                      size="small"
-                      severity="primary"
-                      label="Claim"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
-                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to claim this item.' : undefined"
-                      (onClick)="onClaimFormationItem(item)"
-                      data-testid="pending-actions-drawer-formation-claim" />
-                  }
-                  @if (
-                    item.formationItemAction !== 'status_only' && (item.formationItemStatus === 'not_started' || item.formationItemStatus === 'in_progress')
-                  ) {
-                    <lfx-button
-                      size="small"
-                      severity="secondary"
-                      [outlined]="true"
-                      label="Block…"
-                      [disabled]="formationMutationRowKeys().has(item.rowKey) || item.formationCanWrite === false"
-                      [tooltip]="item.formationCanWrite === false ? 'You need write access to this project to block this item.' : undefined"
-                      (onClick)="onBlockFormationItemRequested(item)"
-                      data-testid="pending-actions-drawer-formation-block" />
+                  @if (item.formationStatusLabel && item.formationStatusSeverity) {
+                    <lfx-tag
+                      [value]="item.formationStatusLabel"
+                      [severity]="item.formationStatusSeverity"
+                      [rounded]="true"
+                      data-testid="pending-actions-drawer-formation-status" />
                   }
                   <lfx-button
                     size="small"
                     severity="secondary"
-                    [text]="true"
-                    label="Open"
-                    (onClick)="onOpenFormationItem(item)"
-                    data-testid="pending-actions-drawer-formation-open" />
+                    [outlined]="true"
+                    [label]="item.buttonText"
+                    [routerLink]="item.formationViewCommands ?? undefined"
+                    [queryParams]="item.formationViewQueryParams ?? {}"
+                    [ariaLabel]="item.formationViewAriaLabel ?? undefined"
+                    (onClick)="onClose()"
+                    data-testid="pending-actions-drawer-formation-view" />
                 </div>
               } @else if (item.buttonLink) {
                 <lfx-button
@@ -171,7 +175,7 @@
             </div>
             <!-- Dismiss — skeleton while RSVP meeting data is loading, real button once ready. Invitations are resolved
                  server-side (Accept/Decline), never cookie-dismissed, so they render no Dismiss control. Formation items
-                 are owned by the assignee's Claim/Block/Open actions, not a generic dismiss, so they're excluded too. -->
+                 are resolved on the checklist and stay until done or skipped (#1956, #2732), so they're excluded too. -->
             @if (!item.isInvitation && !item.isFormationItem) {
               @if (item.isRsvpInline && (item.isMeetingLoading || !item.meeting)) {
                 <p-skeleton width="4.5rem" height="1.25rem" styleClass="shrink-0" />

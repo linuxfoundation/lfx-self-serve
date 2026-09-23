@@ -12,7 +12,6 @@ const TOAST_TIMEOUT = 10_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Motors';
-const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 const ALEX_EMAIL = 'alex.chen@acme-motors.example';
 const JORDAN_EMAIL = 'jordan.reyes@acme-motors.example';
@@ -92,7 +91,7 @@ async function stubAccountContext(page: Page, opts: { writers: string[] } = { wr
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_UID }],
+        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_UID }],
         isRootWriter: false,
       }),
     })
@@ -152,9 +151,6 @@ async function gotoBoardTab(page: Page): Promise<void> {
   await page.goto(PEOPLE_BOARD_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 
-  if (!page.url().includes('/org/people')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/people redirected away');
-  }
   await expect(page.getByTestId('org-people-panel-board')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 

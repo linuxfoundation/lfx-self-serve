@@ -22,7 +22,8 @@ apps/lfx-one/src/app/modules/
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
 │   ├── meetings-dashboard/     # Main meetings route component
-│   ├── meeting-manage/         # Meeting create/edit
+│   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
+│   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-join/           # Public meeting join page
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
@@ -55,6 +56,8 @@ apps/lfx-one/src/app/modules/
 ```
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
+>
+> **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard and the current shipping default — `/meetings/create` and `/meetings/:id/edit` load it unconditionally. `meeting-composer/` is the v2 drawer, raised in place of the wizard from the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog only when the `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`, default `false`) is on for that user. The wizard stays in place until v2 is validated and the flag is retired.
 
 ### Key Principles
 
@@ -189,6 +192,63 @@ The primary layout that wraps every authenticated route (header + sidebar + cont
 ### ProfileLayoutComponent
 
 Wraps the `/profile` sub-tree to render tabbed profile pages (overview, edit, affiliations, developer, email, password). Used only by profile-feature routes.
+
+### Tab shells: signal state vs. child routes
+
+Most tabbed pages hold the active tab in a signal and swap content with `@if` — `marketing-impact`, `campaigns`, `org-contributions` and `org-project-detail-tab-bar` all work this way. Prefer that: it is simpler, and a tab that is just a panel does not need a URL.
+
+Reach for **child routes** only when each tab is a page in its own right — its own lazy chunk, its own title, and its own deep-link target. `foundation/health-metrics` is the one such shell today:
+
+```typescript
+// apps/lfx-one/src/app/app.routes.ts (excerpt)
+{
+  path: 'foundation/health-metrics',
+  loadComponent: () => import('./modules/dashboards/health-metrics-gate/health-metrics-gate.component')...,
+  children: [
+    // No `redirectTo` on the empty child: `/foundation/health-metrics` must keep its exact URL,
+    // because with the feature flag off the gate renders the legacy page and mounts no outlet.
+    { path: '', pathMatch: 'full', loadComponent: ... },           // Overview
+    { path: 'engagement', title: '...', loadComponent: ... },      // Engagement (Level 2)
+  ],
+}
+```
+
+Two rules this shell establishes:
+
+- **Chrome that outlives a tab switch is a component-provided service, never `providedIn: 'root'`.** `HealthMetricsChromeService` is listed in the gate's `providers`, so every child route inherits the same instance through the node injector — the selected period and the measured sticky-header height survive tab switches, and both reset when the user leaves the page. A root-provided service would leak that state across unrelated visits.
+- **`routerLinkActive` needs `queryParams: 'ignored'`.** Tab links carry no query params while the URL always carries `foundationSlug`, so the default matching never marks a tab active. Pass an explicit `IsActiveMatchOptions`, using `paths: 'exact'` for the empty-path tab and `paths: 'subset'` for the rest.
+
+For the scroll-spy used inside a Level 2 page, five rules apply, each attributed to the component that established it:
+
+- Observe heading **sentinels** rather than whole sections — two whole sections light at once mid-scroll (`account-settings.component.ts`).
+- Keep an `intersecting` Set, so exactly one item is ever active (`account-settings.component.ts`).
+- Give a short last section an end sentinel with a **non-zero height** (`account-settings.component.ts`), and observe it only once the area genuinely overflows (`health-metrics-engagement.component.ts`). A zero-height sentinel never intersects; one in a non-scrolling area intersects immediately and lights the last item at rest.
+- Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes (`health-metrics-engagement.component.ts`, whose observer is rebuilt as the sticky offset and the pane's overflow change).
+- Release a fragment deep link only once **every** async section that can change the pane's height has settled (`health-metrics-engagement.component.ts`, `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the container binds both — a listed section that never emits `settled` holds every deep link until the TTL.
+
+Each async section of a Level 2 page owns its own read, and every one of them faces the same
+ordering problem: the foundation is not selected on the first pass. The rule the engagement sections
+share is a **per-component `foundationSeen` latch** — a plain closure variable, not shared state —
+set the first time a query carries a non-empty slug, with the response tap writing
+`loading.set(!foundationSeen)` and gating its `settled` emission on the same flag:
+
+- Before any foundation resolves, the skeleton holds. Clearing `loading` there would let the table
+  caption an unread scope as a measured empty one, which is a different and much more confident
+  claim than "still loading".
+- That first empty-slug pass must **not** emit `settled`. It would drop every section out of the
+  container's wait set before a single read has run, releasing the pending fragment — and
+  `onSectionReading` cannot re-arm a key that is already cleared, so the deep link lands at the wrong
+  offset once the real read reflows the pane. A read that never gets a foundation is bounded by the
+  pending-section TTL instead.
+- A foundation **cleared after** a read still settles, because the latch stays set. Without it the
+  section wedges on the skeleton forever, and — since the container holds a fragment deep link until
+  every listed section reports — it would also hold every deep link until the TTL.
+
+Known limitation: once latched, a scope cleared after a read renders the _measured-empty_ card
+rather than a neutral one. Distinguishing the third state ("no foundation selected") belongs to the
+page-wide neutral state, not to four per-section copies of the same computed.
+
+A Level 2 page whose content column scrolls on its own (`health-metrics-engagement`) bounds that column to the viewport and gives the observer that element as its `root`, with a `0px 0px -70% 0px` margin — the sticky-header offset only belongs in the margin when the window is what scrolls. Detect the container at runtime (computed `overflow-y` plus `scrollHeight > clientHeight`) rather than assuming it, so the same code falls back to window scroll at narrow widths.
 
 ## 🎨 Component Development Pattern
 

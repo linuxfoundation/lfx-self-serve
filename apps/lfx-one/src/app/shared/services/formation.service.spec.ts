@@ -30,6 +30,71 @@ describe('FormationService', () => {
     req.flush({});
   });
 
+  it('getFormationPeople GETs /api/projects/:slug/formation/people, URI-encoding the slug', () => {
+    service.getFormationPeople('cascade/data alliance').subscribe();
+
+    const req = http.expectOne('/api/projects/cascade%2Fdata%20alliance/formation/people');
+    expect(req.request.method).toBe('GET');
+    req.flush({ state: 'loaded', people: [] });
+  });
+
+  it('getFormationPeople degrades an HTTP failure to the unavailable shape instead of erroring (#2724)', async () => {
+    const result = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush('nope', { status: 500, statusText: 'Server Error' });
+
+    await expect(result).resolves.toEqual({ state: 'unavailable', people: [] });
+  });
+
+  // #2772: the item drawer replays this read on every open, so the card and the drawer share one answer per slug.
+  it('getFormationPeople memoises a loaded answer per slug — a later reader replays it with no second request', async () => {
+    const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    await first;
+
+    const second = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+
+    http.expectNone('/api/projects/cascade-data-alliance/formation/people');
+    await expect(second).resolves.toEqual({ state: 'loaded', people: [] });
+  });
+
+  it('invalidateFormationPeople drops the memo so the next reader reads afresh', async () => {
+    const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    await first;
+
+    service.invalidateFormationPeople('cascade-data-alliance');
+    service.getFormationPeople('cascade-data-alliance').subscribe();
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+  });
+
+  it('invalidateFormationPeople with no slug drops every memo — what the settings-cache invalidation calls', async () => {
+    const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    await first;
+    const second = new Promise((resolve) => service.getFormationPeople('other-project').subscribe(resolve));
+    http.expectOne('/api/projects/other-project/formation/people').flush({ state: 'loaded', people: [] });
+    await second;
+
+    service.invalidateFormationPeople();
+    service.getFormationPeople('cascade-data-alliance').subscribe();
+    service.getFormationPeople('other-project').subscribe();
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+    http.expectOne('/api/projects/other-project/formation/people').flush({ state: 'loaded', people: [] });
+  });
+
+  it('getFormationPeople never keeps an unavailable answer, so a transient failure is retried', async () => {
+    const first = new Promise((resolve) => service.getFormationPeople('cascade-data-alliance').subscribe(resolve));
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush('nope', { status: 500, statusText: 'Server Error' });
+    await first;
+
+    service.getFormationPeople('cascade-data-alliance').subscribe();
+
+    http.expectOne('/api/projects/cascade-data-alliance/formation/people').flush({ state: 'loaded', people: [] });
+  });
+
   it('getFormationItem GETs /api/formations/:projectUid/items/:itemKey, URI-encoding both', () => {
     service.getFormationItem('project/1', 'item key').subscribe();
 
@@ -38,76 +103,43 @@ describe('FormationService', () => {
     req.flush({});
   });
 
-  it('completeFormationItem PATCHes .../complete with optional notes', () => {
-    service.completeFormationItem('project-1', 'item-1', 'done early').subscribe();
-
-    const req = http.expectOne('/api/formations/project-1/items/item-1/complete');
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ notes: 'done early' });
-    req.flush({});
-  });
-
-  it('skipFormationItem PATCHes .../skip with the reason', () => {
-    service.skipFormationItem('project-1', 'item-1', 'blocked upstream').subscribe();
-
-    const req = http.expectOne('/api/formations/project-1/items/item-1/skip');
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ reason: 'blocked upstream' });
-    req.flush({});
-  });
-
-  it('requestFormationItem PATCHes .../request with an empty body', () => {
-    service.requestFormationItem('project-1', 'item-1').subscribe();
-
-    const req = http.expectOne('/api/formations/project-1/items/item-1/request');
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({});
-    req.flush({});
-  });
-
-  it('updateFormationItemStatus PATCHes .../status with the status and optional note', () => {
-    service.updateFormationItemStatus('project-1', 'item-1', 'blocked', 'waiting on legal').subscribe();
-
-    const req = http.expectOne('/api/formations/project-1/items/item-1/status');
-    expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ status: 'blocked', note: 'waiting on legal' });
-    req.flush({});
-  });
-
-  it('updateFormationItem PATCHes the bare item address with the given patch', () => {
-    service.updateFormationItem('project-1', 'item-1', { notes: 'x', due_date: null }).subscribe();
+  it('updateFormationItem PATCHes the bare item address with If-Match and the note/evidence_link patch', () => {
+    service.updateFormationItem('project-1', 'item-1', '5', { note: 'x' }).subscribe();
 
     const req = http.expectOne('/api/formations/project-1/items/item-1');
     expect(req.request.method).toBe('PATCH');
-    expect(req.request.body).toEqual({ notes: 'x', due_date: null });
-    req.flush({});
+    expect(req.request.headers.get('If-Match')).toBe('5');
+    expect(req.request.body).toEqual({ note: 'x' });
+    req.flush({ item: {}, etag: '6' });
   });
 
-  it('acceptFormationItem POSTs .../accept with an optional note', () => {
-    service.acceptFormationItem('project-1', 'item-1', 'looks good').subscribe();
+  it('updateFormationItemAssignment POSTs .../assignment with If-Match and the assignee/due_date patch', () => {
+    service.updateFormationItemAssignment('project-1', 'item-1', '5', { assignee: 'sam.chen', due_date: '' }).subscribe();
 
-    const req = http.expectOne('/api/formations/project-1/items/item-1/accept');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/assignment');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ note: 'looks good' });
-    req.flush({});
+    expect(req.request.headers.get('If-Match')).toBe('5');
+    expect(req.request.body).toEqual({ assignee: 'sam.chen', due_date: '' });
+    req.flush({ item: {}, etag: '6' });
   });
 
-  it('rejectFormationItem POSTs .../reject with the required note', () => {
-    service.rejectFormationItem('project-1', 'item-1', 'missing evidence').subscribe();
+  it('updateFormationItemStatus POSTs .../status with If-Match and the status/reason patch', () => {
+    service.updateFormationItemStatus('project-1', 'item-1', '5', { status: 'blocked', reason: 'waiting on legal' }).subscribe();
 
-    const req = http.expectOne('/api/formations/project-1/items/item-1/reject');
+    const req = http.expectOne('/api/formations/project-1/items/item-1/status');
     expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ note: 'missing evidence' });
-    req.flush({});
+    expect(req.request.headers.get('If-Match')).toBe('5');
+    expect(req.request.body).toEqual({ status: 'blocked', reason: 'waiting on legal' });
+    req.flush({ item: {}, etag: '6' });
   });
 
-  it('reopenFormationItem POSTs .../reopen with an optional note', () => {
-    service.reopenFormationItem('project-1', 'item-1').subscribe();
+  it('returns the item and etag from the write response body', () => {
+    let result: { item: unknown; etag: string | null } | undefined;
+    service.updateFormationItemStatus('project-1', 'item-1', '5', { status: 'done' }).subscribe((r) => (result = r));
 
-    const req = http.expectOne('/api/formations/project-1/items/item-1/reopen');
-    expect(req.request.method).toBe('POST');
-    expect(req.request.body).toEqual({ note: undefined });
-    req.flush({});
+    http.expectOne('/api/formations/project-1/items/item-1/status').flush({ item: { uid: 'item-1', status: 'done' }, etag: '6' });
+
+    expect(result).toEqual({ item: { uid: 'item-1', status: 'done' }, etag: '6' });
   });
 
   it('getFormationsQueue GETs /api/formations with sub_stage/search only when provided', () => {
@@ -183,22 +215,22 @@ describe('FormationService', () => {
     ]);
   });
 
-  it('a mutation method invalidates my-formation-work on success', () => {
+  it('a write method invalidates my-formation-work on success', () => {
     service.getMyFormationWork().subscribe();
     http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
-    service.completeFormationItem('project-1', 'item-1').subscribe();
-    http.expectOne('/api/formations/project-1/items/item-1/complete').flush({});
+    service.updateFormationItemStatus('project-1', 'item-1', '1', { status: 'done' }).subscribe();
+    http.expectOne('/api/formations/project-1/items/item-1/status').flush({ item: {}, etag: '2' });
 
     http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
   });
 
-  it('a mutation method does not invalidate my-formation-work when the request errors', () => {
+  it('a write method does not invalidate my-formation-work when the request errors', () => {
     service.getMyFormationWork().subscribe();
     http.expectOne('/api/user/formation-work').flush({ formations: [], items: [], state: 'complete' });
 
-    service.completeFormationItem('project-1', 'item-1').subscribe({ error: () => undefined });
-    http.expectOne('/api/formations/project-1/items/item-1/complete').error(new ProgressEvent('error'));
+    service.updateFormationItemStatus('project-1', 'item-1', '1', { status: 'done' }).subscribe({ error: () => undefined });
+    http.expectOne('/api/formations/project-1/items/item-1/status').error(new ProgressEvent('error'));
 
     http.expectNone('/api/user/formation-work');
   });

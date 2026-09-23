@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ALLOWED_ORG_LOGO_MIME_TYPES, HTTP_HEADERS, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
+import {
+  ALLOWED_ORG_LOGO_MIME_TYPES,
+  HTTP_HEADERS,
+  ORG_ACCOUNT_ID_PATTERN,
+  ORG_ROLE_GRANTS_CORRELATION_HEADER,
+  ORG_ROLE_GRANTS_REFRESH_PARAM,
+} from '@lfx-one/shared/constants';
 import {
   MemberServiceB2bOrgResponse,
   MemberServiceB2bOrgUpdateBody,
@@ -17,6 +23,7 @@ import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { OrgLensAddressesService } from '../services/org-lens-addresses.service';
 import { OrgRoleGrantsService } from '../services/org-role-grants.service';
+import { OrgSlugResolverService } from '../services/org-slug-resolver.service';
 import { getEffectiveUsername } from '../utils/auth-helper';
 
 /** BFF for org-identity routes: `/me/role-grants` + account-id-keyed canonical-record endpoint. See contracts/bff-org-*.md. */
@@ -24,11 +31,13 @@ export class OrgIdentityController {
   private readonly orgRoleGrantsService: OrgRoleGrantsService;
   private readonly microserviceProxy: MicroserviceProxyService;
   private readonly orgLensAddressesService: OrgLensAddressesService;
+  private readonly orgSlugResolver: OrgSlugResolverService;
 
   public constructor() {
     this.orgRoleGrantsService = new OrgRoleGrantsService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.orgLensAddressesService = new OrgLensAddressesService();
+    this.orgSlugResolver = new OrgSlugResolverService(this.microserviceProxy);
   }
 
   /** `GET /api/orgs/me/role-grants` — caller's writer/auditor uid sets (contracts/bff-org-role-grants.md). */
@@ -45,13 +54,81 @@ export class OrgIdentityController {
         });
       }
 
-      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username);
+      // Spec 053: the viewer's explicit Retry asks for a recompute — skip the cache read, still write.
+      const bypassCache = req.query[ORG_ROLE_GRANTS_REFRESH_PARAM] === '1';
+      const result: RoleGrantsResponse = await this.orgRoleGrantsService.getRoleGrants(req, username, bypassCache);
 
-      logger.success(req, 'get_org_role_grants', startTime, { writer_count: result.writers.length, auditor_count: result.auditors.length });
+      logger.success(req, 'get_org_role_grants', startTime, {
+        writer_count: result.writers.length,
+        auditor_count: result.auditors.length,
+        lookup_outcome: result.lookupOutcome,
+        staff_check: result.staffCheck,
+      });
 
       res.setHeader('Cache-Control', 'no-store');
+      // Spec 053 FR-011: the reference the page shows must be findable in the logs. It is the id the
+      // service logged with the failing computation — which, within the short cache window, may be an
+      // earlier request's — so it travels in its own header rather than as this request's `X-Request-Id`.
+      if (result.correlationId) {
+        res.setHeader(ORG_ROLE_GRANTS_CORRELATION_HEADER, result.correlationId);
+      }
       res.json(result);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Spec 050 — `GET /api/orgs/resolve/:segment[?prefer=<uid>]`. Resolves an Org Lens address
+   * segment (lowercase slug or 18-char SFID) to the organization it names, for this caller only:
+   * query-service applies per-row `auditor` filtering upstream, so "no such org" and "no access"
+   * are the same 404 (DR-002). `prefer` — the caller's current selection — breaks a same-slug tie
+   * (DR-007 §4); when it cannot, 409 tells the client to treat the address as not found. See
+   * contracts/bff-org-slug-transport.md §3.
+   */
+  public async resolveSegment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'resolve_org_segment');
+    res.setHeader('Cache-Control', 'private, no-store');
+
+    try {
+      const segment = req.params['segment'] ?? '';
+      this.assertNonEmpty(segment, 'segment', 'resolve_org_segment', req.path);
+      const preferRaw = req.query['prefer'];
+      const prefer = typeof preferRaw === 'string' && preferRaw.length > 0 ? preferRaw : undefined;
+
+      const resolution = await this.orgSlugResolver.resolveSegment(req, segment, prefer);
+      const segmentKind = ORG_ACCOUNT_ID_PATTERN.test(segment.trim()) ? 'sfid' : 'slug';
+
+      const cache = resolution.cache;
+      if (resolution.outcome === 'hit') {
+        logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'hit', cache, uid: resolution.org.uid });
+        res.json(resolution.org);
+        return;
+      }
+      if (resolution.outcome === 'ambiguous') {
+        // Never log the segment's owners here — the caller has not resolved to any of them.
+        logger.success(req, 'resolve_org_segment', startTime, {
+          segment_kind: segmentKind,
+          outcome: 'ambiguous',
+          cache,
+          has_prefer: !!prefer,
+          status_code: 409,
+        });
+        res.status(409).json({ error: 'Organization address is ambiguous' });
+        return;
+      }
+      logger.success(req, 'resolve_org_segment', startTime, { segment_kind: segmentKind, outcome: 'miss', cache, status_code: 404 });
+      res.status(404).json({ error: 'Organization not found' });
+    } catch (error) {
+      // Any query-service failure ⇒ 502 (FR-020: the client lets an SFID through and treats a slug
+      // as not found). Query-service answers "no rows" with an empty 200, so an upstream 4xx — a
+      // routing 404, a 409, a 429 — is a transport failure, never an answer about the address; only
+      // the resolver's own outcomes (200/404/409) and local validation (400) may carry those codes.
+      if (error instanceof MicroserviceError) {
+        logger.warning(req, 'resolve_org_segment', 'Upstream failure', { err: error, upstream_status: error.statusCode, outcome: 'upstream_error' });
+        res.status(502).json({ error: 'Upstream query-service failure' });
+        return;
+      }
       next(error);
     }
   }
@@ -387,6 +464,9 @@ export class OrgIdentityController {
       updatedAt: raw.updated_at ?? null,
       parentUid: raw.parent_uid ?? null,
       isMember: raw.is_member ?? false,
+      // Spec 050: URL-identity slug derived by member-service from the org name; the uid→slug
+      // fallback for a selection that is not in the current org-items list.
+      slug: raw.slug ?? null,
     };
   }
 }

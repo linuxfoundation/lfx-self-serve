@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CLA_MANAGER_REQUEST_TYPES, ORG_CLA_APPROVAL_CRITERIA, ORG_CLA_DETAIL_TABS } from '../constants/cla.constants';
+import type {
+  CLA_MANAGER_REQUEST_TYPES,
+  ORG_CLA_APPROVAL_CRITERIA,
+  ORG_CLA_DETAIL_TABS,
+  ORG_CLA_INVALIDATION_REASONS,
+  ORG_CLA_MANAGER_REFUSALS,
+  ORG_CLA_PERMISSION_ACTIONS,
+} from '../constants/cla.constants';
 import type { TagSeverity } from './components.interface';
 
 // UI-facing shapes for the read-only "CLAs" view (Me lens → Profile tab).
@@ -643,6 +650,12 @@ export interface OrgClaGroup {
   /** Covered projects, in the upstream's `projectName` order. May be empty. */
   projects: OrgClaGroupProject[];
   /**
+   * First covered-project SFID from upstream, captured before nameless projects are dropped
+   * from `projects` for display. Approval-list ACS pair — the same id `resolveClaGroupContext`
+   * keys the PUT on. Absent when upstream sent no project SFID.
+   */
+  pairProjectSfid?: string;
+  /**
    * RFC3339 instant the CCLA was signed. Carried for the agreement detail view.
    *
    * Absent on an agreement that is not signed, and the absence is load-bearing: the source
@@ -738,16 +751,27 @@ export interface OrgClaCoverageDialogData {
 }
 
 /**
- * One hand-off request for a corporate CLA (#1983).
+ * One hand-off request for a corporate CLA (#1983 / #2365).
  *
  * The organization is deliberately absent: it comes from the grant-checked `:orgUid` path
  * segment. So is the return address, which the BFF derives from the request — EasyCLA stores it
  * and later redirects to it verbatim, so a client-supplied one would be an open redirect.
+ *
+ * Two shapes, discriminated by `sendAsEmail`. Self-sign carries the two attestations and never
+ * the mail fields. Send-by-email carries the named signatory and never the attestations — the
+ * producer skips that gate when `send_as_email` is set (#2590), and this request does not invent
+ * them.
  */
-export interface OrgClaSignRequest {
+export type OrgClaSignRequest = OrgClaSelfSignRequest | OrgClaSendByEmailRequest;
+
+interface OrgClaSignRequestBase {
   /** From the chosen search result. Keys the corporate signature upstream. */
   projectSfid: string;
   claGroupId: string;
+}
+
+export interface OrgClaSelfSignRequest extends OrgClaSignRequestBase {
+  sendAsEmail?: false;
   /**
    * The signatory's own checkbox state at the moment they continued — never a literal, never
    * inferred from having reached this step. The two attestations are the legally operative part
@@ -755,6 +779,12 @@ export interface OrgClaSignRequest {
    */
   authorityAcked: boolean;
   embargoAcked: boolean;
+}
+
+export interface OrgClaSendByEmailRequest extends OrgClaSignRequestBase {
+  sendAsEmail: true;
+  authorityName: string;
+  authorityEmail: string;
 }
 
 /**
@@ -773,9 +803,9 @@ export interface OrgClaSignResponse {
   /**
    * Where the signatory completes the ceremony. Navigated to as returned, never composed.
    *
-   * Never empty on this path: upstream leaves it empty only for a request sent as an email to a
-   * named signatory, which this route does not make, so an empty value is a failure rather than
-   * a state to render.
+   * Empty when the request was sent as an email to a named signatory (#2365). Never empty on
+   * self-sign: that path treats a missing address as a failed hand-off rather than a state to
+   * render, because navigating to one would send the signatory to this application's own root.
    */
   signUrl: string;
   /**
@@ -800,6 +830,23 @@ export interface OrgClaSignAttestations {
   embargoAcked: boolean;
 }
 
+/**
+ * What attestation closes with when the viewer is not the signatory (#2365).
+ *
+ * Distinct from the two checkboxes: those are a legal assertion this path does not collect.
+ * A boolean flag rather than `null`, because `onClose` already uses `null` for cancel.
+ */
+export interface OrgClaSendByEmailChoice {
+  sendByEmail: true;
+}
+
+export type OrgClaAttestationClose = OrgClaSignAttestations | OrgClaSendByEmailChoice;
+
+/** What the Org Lens attestation dialog is given so Continue can re-check the pair. */
+export interface OrgClaAttestationDialogData {
+  orgUid: string;
+  projectSfid: string;
+}
 /** What the Org Lens CLA group picker is given. */
 export interface OrgClaGroupSelectDialogData {
   orgUid: string;
@@ -869,6 +916,27 @@ export interface OrgClaSignHandoffDialogData {
   projectSfid: string;
   claGroupId: string;
   attestations: OrgClaSignAttestations;
+}
+
+/**
+ * What the send-by-email dialog is given (#2365). No attestations: this path names a signatory
+ * rather than collecting the self-sign checkboxes (#2590).
+ *
+ * `onRequestStarted` is how the dialog tells the opener that Send has posted. Until then the
+ * opener closes this on an organization or route change, because no mail has been asked for.
+ * After that a signature is being created, and closing would hide the result and allow a
+ * second send.
+ *
+ * `onMailed` is how it tells the opener the POST succeeded, so Close cannot re-enable Identify
+ * someone else against the same unsigned preview.
+ */
+export interface OrgClaSendByEmailDialogData {
+  orgUid: string;
+  projectSfid: string;
+  claGroupId: string;
+  companyName: string;
+  onRequestStarted?: () => void;
+  onMailed?: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -980,3 +1048,200 @@ export interface OrgClaApprovalEntriesDialogData {
    */
   existing: OrgClaApprovalEntry[];
 }
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+//
+// The Organization Lens Contributor Acknowledgments tab lists the ECLA signatures the producer
+// holds under one CCLA (company × CLA Group), with a per-row invalidate. Two invariants shape the
+// contract:
+//
+//   1. **Never drop a row for a missing LF Login.** The identity fallback chain below is what lets
+//      the column always render a visible value.
+//   2. **`githubUsername` and `gitlabUsername` are display logins, not stable identifiers.** They
+//      are user-changeable, so nothing in the UI keys on them. The stable identifier is
+//      `signatureId` — the per-ack signature id the producer uses to address an invalidate.
+// ---------------------------------------------------------------------------
+
+/**
+ * One acknowledgment as the table renders it.
+ *
+ * Every field except `signatureId`, `cclaVersion`, and `approved` is optional; missing attributes
+ * render as an em-dash rather than dropping the row. The row is Invalidated when `approved` is
+ * false OR any of `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy
+ * rows can carry the stamps with `approved: true`; the stamps are authoritative).
+ */
+export interface OrgClaContributorAcknowledgment {
+  /** Per-ack signature id. Stable. Used to address an invalidate. */
+  signatureId: string;
+  /** LF Login username, when known. */
+  lfLogin?: string;
+  /** GitHub username (login). Display only; NOT a stable identifier. */
+  githubUsername?: string;
+  /** GitLab username (login). Display only; NOT a stable identifier. */
+  gitlabUsername?: string;
+  email?: string;
+  /** DocuSign name the contributor signed under. */
+  name?: string;
+  /**
+   * The CCLA version the acknowledgment was recorded against.
+   *
+   * Normalized to a `v`-prefixed string ("v1", "v2.1", …) at the mapper; a value already prefixed
+   * with `v`/`V` is returned unchanged. An empty version renders as an em-dash at the row.
+   */
+  cclaVersion: string;
+  /** When the acknowledgment was recorded, when the producer reported it. */
+  signedOn?: string;
+  /** False when the signature is invalidated. Default true for legacy rows the producer omits. */
+  approved: boolean;
+  invalidatedAt?: string;
+  /** Username of the acting CLA manager or admin who invalidated the acknowledgment. */
+  invalidatedBy?: string;
+  /** Reason recorded with the invalidation. Free text from the invalidator. */
+  invalidationReason?: string;
+}
+
+/**
+ * The paginated acknowledgment list for one CCLA.
+ *
+ * `signatureId` is the CCLA signature id from the route parameter (the agreement this list belongs
+ * to), NOT any per-row `signatureId` inside `list`. `canEdit` is server-decided from the CCLA's
+ * manager roster and MUST NOT be inferred client-side.
+ */
+export interface OrgClaContributorAcknowledgmentList {
+  signatureId: string;
+  list: OrgClaContributorAcknowledgment[];
+  /**
+   * Whether the caller may invalidate rows on this agreement.
+   *
+   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
+   * producer sent no roster at all — matching the sibling approval-list posture.
+   */
+  canEdit: boolean;
+  resultCount: number;
+  totalCount: number;
+  /** Producer's opaque cursor for the next page, or `null` when there is no next page. */
+  nextKey: string | null;
+}
+
+/**
+ * One rendered acknowledgment row. The producer's `signatureId` on `ack` is the stable per-ack key.
+ * `identity` is the display chosen for the LF Login / GitHub or GitLab ID column.
+ */
+export interface OrgClaAcknowledgmentRow {
+  ack: OrgClaContributorAcknowledgment;
+  name: string;
+  identity: {
+    display: string;
+    href: string | null;
+    ariaLabel: string;
+  };
+  cclaVersion: string;
+  signedOnLabel: string;
+  invalidated: boolean;
+  invalidatedTooltip: string;
+  /**
+   * Whether this row can be invalidated at all, independent of who is asking.
+   *
+   * False for a row whose `signatureId` is empty. The list mapper drops a producer row without
+   * one, and an empty id would address the producer with an empty path segment.
+   */
+  invalidatable: boolean;
+  invalidatePending: boolean;
+  /** Accessible name for the per-row Invalidate control, computed while mapping the row. */
+  invalidateAriaLabel: string;
+}
+
+/** Producer enum, derived from the runtime tuple in `cla.constants`. */
+export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[number];
+
+/**
+ * Body posted to the BFF invalidate endpoint.
+ *
+ * Both fields are optional at the contract level — the producer accepts an empty body — but the
+ * UI dialog requires a reason before it lets the caller confirm. `note` is trimmed and length-
+ * capped at the server; anything past the cap is refused as 400, not truncated.
+ */
+export interface OrgClaInvalidateAcknowledgmentRequest {
+  reason?: OrgClaInvalidationReason;
+  note?: string;
+}
+
+/** What the acknowledgments panel hands the confirmation dialog. */
+export interface OrgClaInvalidateAcknowledgmentDialogData {
+  /** Identity the panel already resolved. The dialog does not repeat that fallback chain. */
+  contributor: string;
+}
+
+/**
+ * What the BFF returns once the producer has invalidated the acknowledgment.
+ *
+ * A receipt, not a row. The producer's own response echoes an identity triple — CLA Group id,
+ * internal company id, EasyCLA user id — and none of the three crosses to the browser: the same
+ * boundary the list mapper holds, where the row deliberately does not carry the ids the write
+ * paths are addressed by. What is left is the per-ack signature id the browser already supplied,
+ * which is enough to correlate the receipt with the row that was acted on.
+ *
+ * The producer stamps `invalidatedAt` / `invalidatedBy` and reports neither here, so the new row
+ * state cannot be derived from this. The tab refetches instead.
+ */
+export interface OrgClaInvalidateAcknowledgmentResult {
+  /** The per-ack signature id that was invalidated. */
+  signatureId: string;
+}
+
+/**
+ * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
+ *
+ * The browser posts one of these, never a raw ACS string. The server interpolates the permission
+ * the gateway already enforces.
+ */
+export type OrgClaPermissionAction = (typeof ORG_CLA_PERMISSION_ACTIONS)[number];
+
+export interface OrgClaPermissionCheckRequest {
+  action: OrgClaPermissionAction;
+  /**
+   * Project or foundation Salesforce id for the pair check. Required for both actions.
+   */
+  projectSfid?: string;
+}
+
+export interface OrgClaPermissionCheckResponse {
+  allowed: boolean;
+}
+
+export interface OrgClaManager {
+  lfUsername: string;
+  name?: string;
+  email?: string;
+  addedOn?: string;
+}
+
+export interface OrgClaManagerList {
+  signatureId: string;
+  managers: OrgClaManager[];
+}
+
+export interface OrgClaManagerRow {
+  manager: OrgClaManager;
+  displayName: string;
+  removeLabel: string;
+  mailtoHref: string | null;
+}
+
+export interface OrgClaManagerAddRequest {
+  firstName: string;
+  lastName: string;
+  email: string;
+}
+
+/** Field-level errors from {@link validateOrgClaManagerAdd}; empty keys mean valid. */
+export interface OrgClaManagerAddValidation {
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+}
+
+export type OrgClaManagerAddField = keyof OrgClaManagerAddRequest;
+
+export type OrgClaManagerRefusal = (typeof ORG_CLA_MANAGER_REFUSALS)[number];

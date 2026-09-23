@@ -99,15 +99,9 @@ export class ProjectService {
    * Note the two identifiers cache under separate keys for the same project.
    */
   public getProject(slugOrUid: string, current: boolean = true, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project | null> {
-    const cacheKey = `${slugOrUid}:${current}${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
+    const cacheKey = `${slugOrUid}:${current}${this.roleCheckCacheSuffix(options)}`;
     if (!this.projectCache.has(cacheKey)) {
-      let params: HttpParams | undefined;
-      if (options?.meetingCoordinator) {
-        params = new HttpParams().set('meeting_coordinator', 'true');
-      }
-      if (options?.auditor) {
-        params = (params ?? new HttpParams()).set('auditor', 'true');
-      }
+      const params = this.buildRoleCheckParams(options);
       const project$ = this.http.get<Project>(`/api/projects/${slugOrUid}`, { params }).pipe(
         // Evict on source error, before catchError/shareReplay: shareReplay keeps its source
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
@@ -118,6 +112,13 @@ export class ProjectService {
         catchError((error) => {
           console.error('Failed to fetch project:', error);
           return of(null);
+        }),
+        // Same failed-role-check eviction as getProjectStrict, upstream of shareReplay so a canceled
+        // navigation still evicts — a pinned blip would otherwise replay access-lost all session.
+        tap((project) => {
+          if (project !== null && this.roleCheckFailed(project, options)) {
+            this.projectCache.delete(cacheKey);
+          }
         }),
         shareReplay(1),
         tap((project) => {
@@ -143,27 +144,39 @@ export class ProjectService {
   /**
    * Slug-or-uid lookup that propagates HTTP failures instead of mapping them to null,
    * for callers that must distinguish a missing project (400/404) from an upstream
-   * outage (5xx) — e.g. the newsletter reader's SSR 404 signaling and the newsletter
-   * access guard's confirmed-missing degradation (GH-1570). shareReplay-cached like
+   * outage (5xx) — e.g. the newsletter reader's SSR 404 signaling, the newsletter
+   * access guard's confirmed-missing degradation (GH-1570), and writerGuard's
+   * transient-vs-denial classification (GH-2176). shareReplay-cached like
    * getProject so a deep link's stacked callers (the guard's mount- and child-route
    * invocations, then route reconciliation) share one request per identifier; the
    * entry evicts on error so a transient failure retries on the next lookup instead
    * of replaying for the session. Cached separately from getProject's null-mapping
    * entries and side-effect free (does not touch the active-project state). Note the
    * slug and uid forms cache under separate keys for the same project.
+   * `options` mirrors getProject's role-check query params, with matching `:mc`/`:aud`
+   * cache-key suffixes so a role-scoped entry never collides with the plain one.
    */
-  public getProjectStrict(slugOrUid: string): Observable<Project> {
-    if (!this.strictProjectCache.has(slugOrUid)) {
-      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`).pipe(
+  public getProjectStrict(slugOrUid: string, options?: { meetingCoordinator?: boolean; auditor?: boolean }): Observable<Project> {
+    const cacheKey = `${slugOrUid}${this.roleCheckCacheSuffix(options)}`;
+    if (!this.strictProjectCache.has(cacheKey)) {
+      const params = this.buildRoleCheckParams(options);
+      const project$ = this.http.get<Project>(`/api/projects/${encodeURIComponent(slugOrUid)}`, { params }).pipe(
         // Evict on source error, before shareReplay pins it — shareReplay keeps its source
         // subscription alive after downstream unsubscribes (refCount: false), so a canceled
         // navigation could otherwise pin the error for the session (same race as getProject).
-        tap({ error: () => this.strictProjectCache.delete(slugOrUid) }),
+        tap({ error: () => this.strictProjectCache.delete(cacheKey) }),
+        // Evict the failed-role-check shape (a requested field absent on HTTP 200), or the cache
+        // replays the blip all session and the guard's "try again" can't succeed.
+        tap((project) => {
+          if (this.roleCheckFailed(project, options)) {
+            this.strictProjectCache.delete(cacheKey);
+          }
+        }),
         shareReplay(1)
       );
-      this.strictProjectCache.set(slugOrUid, project$);
+      this.strictProjectCache.set(cacheKey, project$);
     }
-    return this.strictProjectCache.get(slugOrUid)!;
+    return this.strictProjectCache.get(cacheKey)!;
   }
 
   public getProjectSfid(uid: string): Observable<string | null> {
@@ -280,5 +293,37 @@ export class ProjectService {
   public deleteProjectDocument(projectUid: string, documentId: string, documentType: 'folder' | 'link'): Observable<void> {
     const params = new HttpParams().set('type', documentType);
     return this.http.delete<void>(`/api/projects/${projectUid}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
+  /**
+   * True when a requested role-check field came back absent — the BFF omits the field when its FGA
+   * check fails (HTTP 200, not an error), so absence on a requested check means "unknown", not "no
+   * role". Writers skip the checks server-side and unrequested checks legitimately omit the field.
+   */
+  private roleCheckFailed(project: Project, options?: { meetingCoordinator?: boolean; auditor?: boolean }): boolean {
+    if (project.writer === true) {
+      return false;
+    }
+    return (options?.meetingCoordinator === true && project.meetingCoordinator === undefined) || (options?.auditor === true && project.auditor === undefined);
+  }
+
+  /**
+   * Role-check query params shared by getProject/getProjectStrict — one builder so a future
+   * role flag can't be added to one lookup but not the other.
+   */
+  private buildRoleCheckParams(options?: { meetingCoordinator?: boolean; auditor?: boolean }): HttpParams | undefined {
+    let params: HttpParams | undefined;
+    if (options?.meetingCoordinator) {
+      params = new HttpParams().set('meeting_coordinator', 'true');
+    }
+    if (options?.auditor) {
+      params = (params ?? new HttpParams()).set('auditor', 'true');
+    }
+    return params;
+  }
+
+  /** Cache-key suffix for the role-check variants — a role-scoped entry never collides with the plain one. */
+  private roleCheckCacheSuffix(options?: { meetingCoordinator?: boolean; auditor?: boolean }): string {
+    return `${options?.meetingCoordinator ? ':mc' : ''}${options?.auditor ? ':aud' : ''}`;
   }
 }

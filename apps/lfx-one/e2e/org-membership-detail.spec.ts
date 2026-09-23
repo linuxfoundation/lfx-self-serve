@@ -13,7 +13,6 @@
  *
  * Prerequisites:
  * - Dev server running on localhost:4200 (or whatever Playwright config baseURL points to)
- * - User authenticated and has the `org-lens-enabled` LaunchDarkly flag on
  * - Organization context has at least one membership (the existing /org/memberships list has rows)
  *
  * Mock semantics (v1): every foundationId returns the same `sharedKeyContacts` payload, so

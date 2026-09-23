@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export const ORG_LENS_ENABLED_FLAG = 'org-lens-enabled';
 export const AKRITES_ENABLED_FLAG = 'akrites-enabled';
 export const MKTG_OS_AGENTS_ENABLED_FLAG = 'mktg-os-agents-enabled';
 export const MY_CLAS_ENABLED_FLAG = 'my-clas-enabled';
@@ -118,6 +117,21 @@ export const MENTORSHIP_ENABLED_FLAG = 'mentorship-enabled';
 export const HEALTH_METRICS_OVERVIEW_ENABLED_FLAG = 'health-metrics-overview-enabled';
 
 /**
+ * Dark-launch gate for the embedded Gatewaze admin pilot — the route trees (see
+ * GW_EMBED_ROUTE_PREFIXES) that
+ * mounts the `@gatewaze/admin-embed` React app natively (no iframe) inside LFX One. Default false:
+ * this is a pilot for a small cohort, and the route guard fails closed like `akritesEnabledGuard`
+ * and `mentorshipEnabledGuard` rather than open, since the embed is not ready for general users.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`, which is the OpenFeature Web
+ * SDK and never runs server-side, so it cannot gate an Express handler. The BFF proxy
+ * (`/api/gw/*`) is gated independently, server-side, by `ServerFeatureFlag.GatewazeEmbedEnabled`
+ * (`server-feature-flag.helper.ts`) — an env-var kill switch that also defaults off. Both must be
+ * enabled for the pilot to actually be reachable.
+ */
+export const GATEWAZE_EMBED_ENABLED_FLAG = 'gatewaze-embed-enabled';
+
+/**
  * `localStorage` key holding a `Record<string, boolean>` of locally-forced flag values, read by
  * `FeatureFlagService.getBooleanFlag` in **non-production builds only**.
  *
@@ -141,11 +155,22 @@ export const FEATURE_FLAG_OVERRIDE_STORAGE_KEY = 'lfx-feature-flag-overrides';
 export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
 
 /**
+ * The shorter readiness budget for a guard whose route renders correctly without the flag and only
+ * *redirects* when it is on (`formationOverviewRedirectGuard`, #2754). The page under it is already
+ * settled and interactive while the guard waits, so a slow provider must not be allowed to yank it
+ * from under the user ten seconds in: past this budget the guard fails open and the page stays.
+ * `waitForReady` still answers immediately when the provider is already ready or in ERROR, so this
+ * only bounds the tail.
+ */
+export const FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS = 3_000;
+
+/**
  * Gates the Formation Checklist Epic 1 surfaces (GH-1955/1958/1959/1962) — the project dashboard's
  * Formation badge/subtitle/sidebar card, the project selector's Formation tag, the Formation
- * checklist section, and the Formations queue (epic #1965). (A stage-scoped Formation nav item was
- * tried and removed on review — see the comment on `projectLensItems` in `sidebar-nav.service.ts`
- * — since it had nowhere distinct to route to.) Staged targeting (named users, then LF Staff, then
+ * checklist section, and the Formations queue (epic #1965). It also gates the project lens's
+ * Formation-only sidebar and the `/project/overview` → `/project/formation` landing redirect for a
+ * project in a Formation stage (#2754; `SidebarNavService` and `formationOverviewRedirectGuard`,
+ * both on `isFormationStageGate`). Staged targeting (named users, then LF Staff, then
  * all), same rule as MARKETING_OPS_FGA_ENABLED_FLAG — never "all users" in one step. Default false
  * so an unflagged evaluation renders the pre-Formation UI. The checklist and queue now read the
  * real `lfx-v2-formation-service` backend; this flag is the sole rollout gate for the UI.
@@ -157,3 +182,24 @@ export const FEATURE_FLAG_READY_TIMEOUT_MS = 10_000;
  * whether Self Serve *renders* Formation-specific UI around already-reachable data.
  */
 export const FORMATION_ENABLED_FLAG = 'formation-enabled';
+
+/**
+ * Gates the Meetings v2 surfaces (epic #1451) — the in-context meeting composer that replaces the
+ * pre-v2 create/edit wizard at every entry point it is wired into. Both implementations ship
+ * together and live side by side: this flag decides which one a given user renders, so the pre-v2
+ * wizard stays fully functional and is what everyone sees until the flag is turned on for them.
+ *
+ * Scoped to meetings v2 rather than to the composer specifically — later meetings-v2 work is
+ * expected to sit behind the same gate.
+ *
+ * Default false so an unevaluated flag renders the pre-v2 wizard. This is the deliberate exception
+ * to "default to current behavior": the DEFAULT here *is* current behavior, because v2 is the new
+ * surface and false is what keeps it dark. LaunchDarkly targeting (a named tester list, dev and
+ * prod configured identically) is the rollout switch, never the code default — flipping this
+ * constant would ship v2 to everyone.
+ *
+ * **UI-only** — evaluated through `FeatureFlagService.getBooleanFlag`. Does not gate the BFF or any
+ * endpoint: both paths write the same already-authorized `/api/meetings` surface behind the same
+ * `writerGuard`, so this flag only controls which UI renders, never what a user may do.
+ */
+export const MEETING_V2_ENABLED_FLAG = 'meeting-v2-enabled';

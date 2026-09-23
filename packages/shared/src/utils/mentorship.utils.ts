@@ -15,8 +15,14 @@ import {
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
+  MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES,
+  MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS,
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MENTORSHIP_MENTEE_TASK_STATUS_CLASSES,
+} from '../constants/mentorship-mentee.constants';
 import { MENTORSHIP_MENTOR_INTRODUCTION_MAX, MENTORSHIP_MENTOR_RESUME_EXTENSIONS } from '../constants/mentorship-mentor.constants';
 import {
   MENTORSHIP_APPLICANT_ACTIONS,
@@ -36,16 +42,23 @@ import type {
   MentorshipApplicantTaskRow,
   MentorshipApplicationProgress,
   MentorshipEnrollFieldErrors,
-  MentorshipEnrollRequest,
   MentorshipEnrollStep,
+  MentorshipEnrollValidationInput,
   MentorshipMenteeAction,
+  MentorshipMenteeApplication,
+  MentorshipMenteeApplyIds,
+  MentorshipMenteeApplicationView,
   MentorshipMenteeRegisterFieldErrors,
   MentorshipMenteeRegisterForm,
   MentorshipMenteeStatus,
+  MentorshipMenteeTask,
+  MentorshipMenteeTaskStatus,
+  MentorshipMenteeTaskView,
   MentorshipMentorProgram,
   MentorshipMentorProgramDetail,
   MentorshipMentorProgramLists,
   MentorshipMentorProgramTabCounts,
+  MentorshipMentorReviewTask,
   MentorshipMentorRegisterFieldErrors,
   MentorshipMentorRegisterForm,
   MentorshipNoteDisplay,
@@ -60,7 +73,7 @@ import type {
   MentorshipRowAction,
   MentorshipTermDateErrors,
 } from '../interfaces/mentorship.interface';
-import { formatIsoDateLabel, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
+import { formatIsoDateLabel, formatRelativeTime, monthYearToIsoDate, toLocalDateOnlyString } from './date-time.utils';
 import { stripHtml } from './html-utils';
 import { normalizeToUrl } from './url.utils';
 
@@ -160,7 +173,14 @@ export function getMentorshipTermDateErrors(
   return errors;
 }
 
-export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): MentorshipEnrollFieldErrors {
+/**
+ * Field-keyed validation errors for a single enroll wizard step.
+ *
+ * **Note:** The `details` step validates `projectId` against `MOCK_MENTORSHIP_LF_PROJECTS`
+ * — a temporary mock-backed allowlist that must be replaced with server-side validation
+ * when the upstream mentorship-service project endpoint is wired up (see GH-2717).
+ */
+export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): MentorshipEnrollFieldErrors {
   if (step === 'details') {
     const errors: MentorshipEnrollFieldErrors = {};
     if (isBlank(form.name)) {
@@ -168,7 +188,14 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
     } else if (form.name.trim().length < MENTORSHIP_ENROLL_NAME_MIN || form.name.trim().length > MENTORSHIP_ENROLL_NAME_MAX) {
       errors.name = `Program name should be between ${MENTORSHIP_ENROLL_NAME_MIN} and ${MENTORSHIP_ENROLL_NAME_MAX} characters.`;
     }
-    if (isBlank(form.projectId)) errors.projectId = 'Select a Linux Foundation project.';
+    const projectId = form.projectId.trim();
+    if (!projectId) {
+      errors.projectId = 'Select a Linux Foundation project.';
+    } else if (!MOCK_MENTORSHIP_LF_PROJECTS.some((project) => project.id === projectId)) {
+      // Temporary mock-backed allowlist — replace with server-side validation
+      // when the upstream mentorship-service project endpoint is wired up (GH-2717).
+      errors.projectId = 'Select a valid Linux Foundation project.';
+    }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
     if (mentorshipDescriptionLength(form.description) === 0) {
       errors.description = 'Program description is required.';
@@ -279,6 +306,36 @@ export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegister
   return errors;
 }
 
+function trimmedParam(params: { get(name: string): string | null }, name: string): string {
+  return params.get(name)?.trim() ?? '';
+}
+
+/**
+ * Both apply-link ids, or `null` when either query param is missing or blank.
+ * Callers that navigate back to `/mentorship/mentee/apply` use this so a partial
+ * link is not treated as a complete return target.
+ */
+export function mentorshipMenteeApplyIds(params: { get(name: string): string | null }): MentorshipMenteeApplyIds | null {
+  const programId = trimmedParam(params, 'programId');
+  const programTermId = trimmedParam(params, 'programTermId');
+  if (!programId || !programTermId) return null;
+  return { programId, programTermId };
+}
+
+/**
+ * Copies whichever apply-link ids are present. The register redirect uses this
+ * so a refresh of the register page keeps `programId` and `programTermId` in
+ * the address bar even when only one of them arrived.
+ */
+export function mentorshipMenteeApplyQueryParams(params: { get(name: string): string | null }): Partial<MentorshipMenteeApplyIds> {
+  const programId = trimmedParam(params, 'programId');
+  const programTermId = trimmedParam(params, 'programTermId');
+  const queryParams: Partial<MentorshipMenteeApplyIds> = {};
+  if (programId) queryParams.programId = programId;
+  if (programTermId) queryParams.programTermId = programTermId;
+  return queryParams;
+}
+
 /**
  * Empty seed for the Become a Mentee form. Kept beside the validator so
  * form-shape drift stays in one place — the field list here must line up with
@@ -349,7 +406,7 @@ export function isMentorshipTermsAccepted(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
-export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollRequest): boolean {
+export function isMentorshipEnrollStepValid(step: MentorshipEnrollStep, form: MentorshipEnrollValidationInput): boolean {
   return Object.keys(getMentorshipEnrollStepErrors(step, form)).length === 0;
 }
 
@@ -396,25 +453,6 @@ export function parseMentorshipDateOnly(value: string): Date | null {
 
 export function toMentorshipDateOnly(value: Date): string {
   return toLocalDateOnlyString(value);
-}
-
-/**
- * URL-safe slug from a program name. Empty names fall back to `program`.
- *
- * The first `.replace` collapses every run of non-alphanumerics into a single
- * `-`, so at most one leading and one trailing `-` can remain. Trimming those
- * with `slice` instead of a `/^-+|-+$/g` alternation removes the polynomial
- * ReDoS surface CodeQL flags (`js/polynomial-redos`) even when `name` comes
- * from an unvalidated caller — the shared util has no length guard of its own.
- */
-export function mentorshipProgramSlug(name: string): string {
-  let slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-');
-  if (slug.startsWith('-')) slug = slug.slice(1);
-  if (slug.endsWith('-')) slug = slug.slice(0, -1);
-  return slug || 'program';
 }
 
 export function buildMentorshipProgramTabCounts(lists: MentorshipProgramLists): MentorshipProgramTabCounts {
@@ -464,9 +502,13 @@ export function buildMentorshipProgramDetail(program: MentorshipProgram, lists: 
   };
 }
 
-export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
+export function mentorshipMentorSubmittedTaskCount(mentees: MentorshipProgramMentee[]): number {
+  return mentees.reduce((count, mentee) => count + (mentee.tasks ?? []).filter((task) => task.status === 'submitted').length, 0);
+}
+
+export function buildMentorshipMentorProgramTabCounts(lists: MentorshipMentorProgramLists): MentorshipMentorProgramTabCounts {
   return {
-    tasks: program.stats.tasksToReview,
+    tasks: mentorshipMentorSubmittedTaskCount(lists.mentees),
     mentees: lists.mentees.length,
     applicants: lists.applicants.length,
   };
@@ -475,9 +517,66 @@ export function buildMentorshipMentorProgramTabCounts(program: MentorshipMentorP
 export function buildMentorshipMentorProgramDetail(program: MentorshipMentorProgram, lists: MentorshipMentorProgramLists): MentorshipMentorProgramDetail {
   return {
     program,
-    tabCounts: buildMentorshipMentorProgramTabCounts(program, lists),
+    tabCounts: buildMentorshipMentorProgramTabCounts(lists),
     ...lists,
   };
+}
+
+/**
+ * Flatten current-mentee tasks the mentor Tasks tab can show: `submitted` (Awaiting
+ * Review) and `completed` (Approved). Newest `updatedOn` first.
+ */
+export function mentorshipMentorReviewTasks(mentees: MentorshipProgramMentee[]): MentorshipMentorReviewTask[] {
+  const rows: MentorshipMentorReviewTask[] = [];
+
+  for (const mentee of mentees) {
+    for (const task of mentee.tasks ?? []) {
+      if (task.status !== 'submitted' && task.status !== 'completed') continue;
+      rows.push({
+        id: `${mentee.id}__${task.id}`,
+        menteeId: mentee.id,
+        menteeName: mentee.name,
+        menteeEmail: mentee.email,
+        avatarUrl: mentee.avatarUrl,
+        taskName: task.name,
+        description: task.description,
+        status: task.status,
+        termName: mentee.termName,
+        updatedOn: task.updatedOn,
+        hasSubmission: !!task.hasSubmission,
+      });
+    }
+  }
+
+  return rows.sort((left, right) => right.updatedOn.localeCompare(left.updatedOn));
+}
+
+/**
+ * Relative `updatedOn` copy for a Tasks-tab card. Delegates to `formatRelativeTime`
+ * for the shared bucketing, then layers the `Yesterday` alias and long-form hours
+ * phrasing on top so the subtitle matches the design.
+ */
+export function formatMentorshipReviewUpdatedLabel(iso: string): string {
+  // Date-only strings (`YYYY-MM-DD`) are parsed as UTC midnight by the Date
+  // constructor. Append `T00:00:00Z` to keep them in UTC so the result is
+  // identical on the SSR server and the browser (no hydration mismatch).
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00Z` : iso;
+  const date = new Date(normalized);
+  if (!Number.isFinite(date.getTime())) return 'unknown';
+
+  const diffMs = Date.now() - date.getTime();
+  const diffDay = Math.floor(diffMs / 86_400_000);
+  if (diffDay === 1) return 'Yesterday';
+
+  const base = formatRelativeTime(date);
+
+  // Expand the short `N hr ago` phrasing to `N hours ago` for the Tasks-tab design.
+  const hrMatch = /^(\d+) hr ago$/.exec(base);
+  if (hrMatch) {
+    return hrMatch[1] === '1' ? '1 hour ago' : `${hrMatch[1]} hours ago`;
+  }
+
+  return base;
 }
 
 /** Case-insensitive match on name or email. Empty search matches everyone. */
@@ -666,4 +765,125 @@ export function mentorshipPersonInitials(name: string): string {
   const first = tokens[0][0];
   const second = tokens[1]?.[0] ?? tokens[0][1] ?? '';
   return (first + second).toUpperCase();
+}
+
+// ---------------------------------------------------------------------------
+// Mentee tasks tab — task/application view models
+// ---------------------------------------------------------------------------
+
+/**
+ * Normalise a task status to a status-dropdown value. The dropdown only offers
+ * `pending` / `in_progress` / `submitted`, so the two backend aliases collapse:
+ * `incomplete` → `pending` and `complete` → `submitted` (both display the same).
+ *
+ * The parameter is typed to the status union, so the `default` branch is a
+ * runtime guard for values that reach here without compile-time checking — an
+ * unvalidated BFF payload or a cast — mapping them to `pending` rather than
+ * letting an unknown status render blank/unstyled.
+ */
+export function normalizeMentorshipMenteeTaskStatus(status: MentorshipMenteeTaskStatus): MentorshipMenteeTaskStatus {
+  switch (status) {
+    case 'incomplete':
+      return 'pending';
+    case 'complete':
+      return 'submitted';
+    case 'pending':
+    case 'in_progress':
+    case 'submitted':
+      return status;
+    default:
+      return 'pending';
+  }
+}
+
+/** Count tasks in a submitted/complete state. */
+export function countSubmittedMentorshipMenteeTasks(tasks: readonly { status: MentorshipMenteeTaskStatus }[]): number {
+  return tasks.filter((task) => task.status === 'submitted' || task.status === 'complete').length;
+}
+
+/**
+ * Build a display-ready task row from the fields both mentee phases share, so the
+ * template reads flat fields instead of recomputing presentation logic in bindings.
+ * `submitFile` is `null` (no submission), `'required'` (needs upload), or a URL
+ * (file already uploaded).
+ */
+export function buildMentorshipMenteeTaskView(input: {
+  id: string;
+  title: string;
+  description: string;
+  status: MentorshipMenteeTaskStatus;
+  submitFile: string | null;
+  fileUrl?: string;
+  dueDate?: string;
+  submittedDate?: string;
+}): MentorshipMenteeTaskView {
+  // Normalise once so an unrecognised runtime status resolves to a real option
+  // for `status`, `statusClass`, `submitted`, and `inProgress` alike — otherwise
+  // it would read as `pending` in the dropdown yet render unstyled and vanish
+  // under the Pending filter (which matches on the normalised status).
+  const status = normalizeMentorshipMenteeTaskStatus(input.status);
+  const submitted = status === 'submitted';
+  const hasUploadedFile = (input.submitFile === 'required' && !!input.fileUrl) || (!!input.submitFile && input.submitFile !== 'required');
+  // The uploaded-file URL can live on either `fileUrl` or directly on `submitFile`
+  // (the documented `null` / `'required'` / URL contract). Fall back to `submitFile`
+  // so View/Download render for the URL-on-submitFile shape too.
+  const submitFileUrl = input.submitFile && input.submitFile !== 'required' ? input.submitFile : null;
+  return {
+    id: input.id,
+    title: input.title,
+    description: input.description,
+    status,
+    submitted,
+    inProgress: status === 'in_progress',
+    statusClass: MENTORSHIP_MENTEE_TASK_STATUS_CLASSES[status],
+    hasUploadedFile,
+    needsUpload: input.submitFile === 'required' && !input.fileUrl,
+    fileUrl: input.fileUrl ?? submitFileUrl,
+    dueDate: input.dueDate ?? null,
+    submittedDate: input.submittedDate ?? null,
+  };
+}
+
+/** Build the applicant-phase application cards (each with its prerequisite task rows). */
+export function buildMentorshipMenteeApplicationViews(applications: MentorshipMenteeApplication[]): MentorshipMenteeApplicationView[] {
+  return applications.map((app) => ({
+    id: app.id,
+    programName: app.programName,
+    projectName: app.projectName,
+    termName: app.term.name,
+    statusLabel: MENTORSHIP_MENTEE_APPLICATION_STATUS_LABELS[app.status] ?? '',
+    statusBadgeClass: MENTORSHIP_MENTEE_APPLICATION_STATUS_CLASSES[app.status] ?? '',
+    // Use one consistent source: when the tab-only `tasks` list is present, count/size it;
+    // otherwise fall back to the overview's precomputed counts so both tabs agree.
+    submittedCount: app.tasks ? countSubmittedMentorshipMenteeTasks(app.tasks) : app.prerequisiteTasksCompleted,
+    totalCount: app.tasks ? app.tasks.length : app.prerequisiteTasksTotal,
+    tasks: (app.tasks ?? []).map((task) =>
+      buildMentorshipMenteeTaskView({
+        id: task.id,
+        title: task.name,
+        description: task.description,
+        status: task.status,
+        submitFile: task.submitFile,
+        fileUrl: task.fileUrl,
+        dueDate: task.dueDate,
+        submittedDate: task.submittedOn,
+      })
+    ),
+  }));
+}
+
+/** Build the accepted-phase flat task rows. */
+export function buildMentorshipMenteeTaskViews(tasks: MentorshipMenteeTask[]): MentorshipMenteeTaskView[] {
+  return tasks.map((task) =>
+    buildMentorshipMenteeTaskView({
+      id: task.id,
+      title: task.title,
+      description: task.description,
+      status: task.status,
+      submitFile: task.submitFile,
+      fileUrl: task.fileUrl,
+      dueDate: task.dueDate,
+      submittedDate: task.submittedDate,
+    })
+  );
 }

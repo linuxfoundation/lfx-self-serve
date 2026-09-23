@@ -231,7 +231,12 @@ export class DocumentFormComponent {
       return new FormGroup({
         url: new FormControl('', [Validators.required, this.httpUrlValidator]),
         name: new FormControl('', [Validators.required]),
-        description: new FormControl(''),
+        // The 2000 matches the `[maxlength]` the template hands the textarea. That binding is
+        // itself a validator — `MaxLengthValidator`'s selector is `[maxlength][formControlName]`
+        // — so typing past the cap already invalidates this control and `form.valid` already
+        // gates the submit. Declared here so the rule survives the control being filled any way
+        // other than by typing, where the attribute stops applying but the cap still holds.
+        description: new FormControl('', [Validators.maxLength(2000)]),
         parent_uid: new FormControl<string | null>(this.defaultParentUid),
       });
     }
@@ -239,7 +244,7 @@ export class DocumentFormComponent {
     if (this.isFile()) {
       // No `name` control — per-file display name lives on each PendingDocumentFile instead.
       return new FormGroup({
-        description: new FormControl(''),
+        description: new FormControl('', [Validators.maxLength(2000)]),
         parent_uid: new FormControl<string | null>(this.defaultParentUid),
       });
     }

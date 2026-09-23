@@ -1,0 +1,35 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col" data-testid="formation-sub-item-list">
+  @if (showSummary()) {
+    <div class="flex items-center gap-2.5 pb-3 mb-1 border-b border-gray-100">
+      <lfx-formation-progress-ring size="md" [done]="summary().counts.done" [total]="summary().totalItems" />
+      <span class="text-sm font-medium text-gray-900" data-testid="formation-sub-item-list-summary">{{ summaryLabel() }}</span>
+    </div>
+  }
+  <!-- Display-only rows: #2775 replaces each marker with a checkbox toggle in place. -->
+  <ul class="flex flex-col m-0 p-0 list-none">
+    @for (row of rows(); track row.uid) {
+      <li class="flex items-center gap-2.5 py-1.5 text-sm" [attr.data-testid]="'formation-sub-item-row-' + row.uid">
+        <!-- A w-5 miniature (17.5px at the app's 14px root) of the drawer's status tile: filled with a check for done, a ring otherwise (FORMATION_SUB_ITEM_MARKERS). -->
+        <span
+          class="inline-flex items-center justify-center w-5 h-5 rounded-full shrink-0"
+          [ngClass]="row.marker.markerClass"
+          aria-hidden="true"
+          data-testid="formation-sub-item-marker">
+          @if (row.marker.icon; as icon) {
+            <!-- text-[10px]: the check has to fit the w-5 (17.5px) disc — an exact size, per .claude/rules/styling.md. -->
+            <i class="text-[10px]" [ngClass]="icon"></i>
+          }
+        </span>
+        <!-- Titles are upstream-supplied and the list renders at drawer and inline-panel widths, so they wrap rather than truncate. -->
+        <span class="min-w-0" [ngClass]="row.marker.titleClass" data-testid="formation-sub-item-title">{{ row.title }}</span>
+        <!-- Inline after the title, not pushed to the row's far edge: the panel spans the whole row, so a
+             right-aligned label would sit half a screen from the title it describes. Always in the
+             accessibility tree; sr-only where the marker already says it (done, not started). -->
+        <span class="shrink-0" [ngClass]="row.labelClass" data-testid="formation-sub-item-status">{{ row.statusLabel }}</span>
+      </li>
+    }
+  </ul>
+</div>

@@ -9,7 +9,7 @@
 
 import { expect, test } from '@playwright/test';
 
-import { getMockFormation, getMockFormationItems, mockFormationTemplate } from './fixtures/mock-data';
+import { getMockFormation, getMockFormationItems, mockFormationActivity, mockFormationTemplate } from './fixtures/mock-data';
 import {
   buildBaseProject,
   DATA_LOAD_TIMEOUT,
@@ -51,6 +51,22 @@ test.describe('Formation checklist section — structural contract', () => {
       const strip = page.getByTestId('formation-readiness-strip');
       await expect(strip.getByTestId('formation-readiness-strip-counts')).toBeAttached();
       await expect(strip.getByTestId('formation-readiness-strip-gating')).toBeAttached();
+    });
+
+    test('carries no announcement-date block — it moved to the page sidebar (GH-2702)', async ({ page }) => {
+      await expect(page.getByTestId('formation-readiness-strip-announcement')).toHaveCount(0);
+    });
+  });
+
+  test.describe('Page sidebar (GH-2702)', () => {
+    test('nests the checklist section and the formation card under the two-column wrapper', async ({ page }) => {
+      const columns = page.getByTestId('formation-page-columns');
+      await expect(columns.getByTestId('formation-checklist-section')).toBeAttached();
+
+      const sidebar = columns.getByTestId('formation-page-sidebar');
+      await expect(sidebar).toBeAttached();
+      await expect(sidebar.getByTestId('formation-card')).toBeAttached();
+      await expect(sidebar.getByTestId('formation-people-card')).toBeAttached();
     });
   });
 
@@ -112,17 +128,51 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await control.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('request action renders its gated control per can_complete', async ({ page }) => {
+    // The seeded `request`-action item (`domain_and_dns_transfer`) is `status: 'blocked'`, but the
+    // gated control only renders under `isActionable()` (`!readOnly() && status === 'in_progress'`)
+    // — the mock's real status never exercises this control at all. Serve it flipped to `in_progress`
+    // here, same route-fulfill override the evidence-link test below uses, so the assertion actually
+    // runs against a rendered control (code review, GH-2576).
+    test('request action renders its gated control per available_actions (GH-2576)', async ({ page }) => {
       const requestItem = ITEMS.find((item) => item.action === 'request');
       if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const actionableItem = { ...requestItem, status: 'in_progress' as const };
+      const itemsWithActionable = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? actionableItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithActionable, can_write: true, can_set_status: true }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
 
       const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
       await expect(control).toBeAttached();
-      if (requestItem.can_complete) {
-        await expect(control.locator('button')).toBeEnabled();
-      } else {
-        await expect(control.locator('button')).toBeDisabled();
-      }
+      // `requestFormationItem` moves status to `blocked`, the same write `mark_blocked` gates
+      // (`FormationChecklistRowComponent.canPerformGatedAction`).
+      await expect(control.locator('button')).toBeEnabled();
+    });
+
+    test('request action renders a disabled gated control when mark_blocked is absent (GH-2576)', async ({ page }) => {
+      const requestItem = ITEMS.find((item) => item.action === 'request');
+      if (!requestItem) throw new Error('Expected a seeded request-action item.');
+      const disabledItem = { ...requestItem, status: 'in_progress' as const, available_actions: [] };
+      const itemsWithDisabled = ITEMS.map((candidate) => (candidate.uid === requestItem.uid ? disabledItem : candidate));
+
+      await page.route('**/api/projects/*/formation', (route) =>
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithDisabled, can_write: true, can_set_status: true }),
+        })
+      );
+      await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
+
+      const control = page.getByTestId(`formation-checklist-row-request-${requestItem.uid}`);
+      await expect(control).toBeAttached();
+      await expect(control.locator('button')).toBeDisabled();
     });
 
     test('provisionable action renders its gated control and lists its sub-items in the drawer', async ({ page }) => {
@@ -156,6 +206,47 @@ test.describe('Formation checklist section — structural contract', () => {
       if (!ownedItem) throw new Error('Expected a seeded item with an owner_team.');
       await expect(page.getByTestId(`formation-checklist-row-owner-chip-${ownedItem.uid}`)).toBeAttached();
     });
+
+    // #2774: the audience icon renders only for the external-involving audiences (`external`/`both`);
+    // `internal` and a null (unrecognized) audience both render nothing. Inline predicate rather than
+    // the shared `isFormationItemExternal` — e2e must not import the `utils` barrel (GH-2381).
+    test('audience icon renders for an external-involving item and not for an internal or null one', async ({ page }) => {
+      const externalItem = ITEMS.find((item) => item.audience === 'external' || item.audience === 'both');
+      const internalItem = ITEMS.find((item) => item.audience === 'internal');
+      const noAudienceItem = ITEMS.find((item) => item.audience === null);
+      if (!externalItem || !internalItem || !noAudienceItem) throw new Error('Expected seeded items with external/both, internal and null audiences.');
+
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${externalItem.uid}`)).toBeAttached();
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${internalItem.uid}`)).toHaveCount(0);
+      await expect(page.getByTestId(`formation-checklist-row-audience-chip-${noAudienceItem.uid}`)).toHaveCount(0);
+    });
+
+    // #2689/#2774: team, assignee and due-date cells render on every row (an unset value still
+    // renders its placeholder cell), so the section header's captions always have columns under them.
+    test('every row nests a team cell, an assignee cell and a due-date cell', async ({ page }) => {
+      for (const item of ITEMS) {
+        await expect(page.getByTestId(`formation-checklist-row-owner-chip-${item.uid}`)).toBeAttached();
+        await expect(page.getByTestId(`formation-checklist-row-assignee-${item.uid}`)).toBeAttached();
+        await expect(page.getByTestId(`formation-checklist-row-due-date-${item.uid}`)).toBeAttached();
+      }
+    });
+
+    // #2774: sub-items surface as a disclosure whose panel opens inside the row's own wrapper.
+    test('a row with sub-items nests a collapsed disclosure whose panel opens inside the row', async ({ page }) => {
+      const subItemsItem = ITEMS.find((item) => (item.sub_items ?? []).length > 0);
+      if (!subItemsItem) throw new Error('Expected a seeded item with sub-items.');
+
+      const trigger = page.getByTestId(`formation-checklist-row-sub-items-${subItemsItem.uid}`);
+      await expect(trigger).toHaveAttribute('aria-expanded', 'false');
+      await expect(page.getByTestId(`formation-checklist-row-sub-items-panel-${subItemsItem.uid}`)).toHaveCount(0);
+
+      await trigger.click();
+
+      await expect(trigger).toHaveAttribute('aria-expanded', 'true');
+      const panel = page.getByTestId(`formation-checklist-row-${subItemsItem.uid}`).getByTestId(`formation-checklist-row-sub-items-panel-${subItemsItem.uid}`);
+      await expect(panel).toBeAttached();
+      await expect(panel.locator('[data-testid^="formation-sub-item-row-"]')).toHaveCount(subItemsItem.sub_items.length);
+    });
   });
 
   test.describe('Item drawer structural nesting', () => {
@@ -176,20 +267,66 @@ test.describe('Formation checklist section — structural contract', () => {
       expect(await closeButton.evaluate((el) => el.tagName)).toBe('BUTTON');
     });
 
-    test('an item with a real link nests a safely-attributed anchor under the links container', async ({ page }) => {
+    // #2732: arriving with `?item=<template_item_key>` yields the same nested drawer with no click.
+    test('a deep-linked item nests the same drawer containers without any row click', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.goto(`/project/formation?project=${FORMATION_PROJECT_SLUG}&item=${item.template_item_key}`, { waitUntil: 'domcontentloaded' });
+
+      const drawer = page.getByTestId('formation-item-drawer');
+      await expect(drawer).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(drawer.getByTestId('formation-item-drawer-notes')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-assignee')).toBeAttached();
+      await expect(drawer.getByTestId('formation-item-drawer-history')).toBeAttached();
+      await expect(page).toHaveURL(new RegExp(`/project/formation\\?project=${FORMATION_PROJECT_SLUG}$`));
+    });
+
+    // #2594: the assignee picker lists the people on this formation — typing nests option rows from
+    // that list, and a pending invitee's option nests the note explaining it cannot be picked.
+    test('the assignee picker nests scoped-people options, with a note on a pending invitee', async ({ page }) => {
+      const item = ITEMS[0];
+      await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
+
+      // The drawer's panel is portaled out of its <p-drawer> host, so its contents are page-level
+      // locators, never descendants of the drawer's own testid.
+      const search = page.getByTestId('formation-item-drawer-assignee-search').locator('input');
+      await expect(search).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await search.fill('jordan');
+
+      const option = page.getByRole('option', { name: /Jordan Lee/ });
+      await expect(option).toBeAttached();
+      await expect(option.getByTestId('formation-item-drawer-assignee-search-option-note')).toBeAttached();
+    });
+
+    test('an item with a real evidence link nests a safely-attributed anchor under the links container', async ({ page }) => {
       const item = ITEMS[0];
       const safeHref = 'https://example.com/formation/linked-doc';
-      const itemsWithLink = ITEMS.map((candidate) =>
-        candidate.uid === item.uid ? { ...candidate, links: [{ label: 'Linked doc', href: safeHref }] } : candidate
-      );
+      const itemsWithLink = ITEMS.map((candidate) => (candidate.uid === item.uid ? { ...candidate, evidence_link: safeHref } : candidate));
 
       await page.route('**/api/projects/*/formation', (route) =>
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink }),
+          body: JSON.stringify({ formation: FORMATION, template: mockFormationTemplate, items: itemsWithLink, can_write: true, can_set_status: true }),
         })
       );
+      // The drawer fetches item detail from a separate GET (`/api/formations/:projectUid/items/:itemKey`)
+      // — overriding only the list route above leaves this endpoint on the default mock, which serves
+      // the original fixture item with `evidence_link: null`, so the assertion below would never see a
+      // rendered link (Copilot review, GH-2576).
+      await page.route('**/api/formations/*/items/*', async (route) => {
+        if (route.request().method() !== 'GET') return route.fallback();
+        const segments = new URL(route.request().url()).pathname.split('/');
+        const itemsIndex = segments.indexOf('items');
+        const projectUid = decodeURIComponent(segments[itemsIndex - 1] ?? '');
+        const itemKey = decodeURIComponent(segments[itemsIndex + 1] ?? '');
+        const matched = itemsWithLink.find((candidate) => candidate.project_uid === projectUid && candidate.template_item_key === itemKey);
+        if (!matched) return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ item: matched, history: mockFormationActivity[matched.uid] ?? [], history_state: 'complete' }),
+        });
+      });
       await gotoProjectFormation(page, FORMATION_PROJECT_SLUG);
       await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
 
@@ -197,9 +334,10 @@ test.describe('Formation checklist section — structural contract', () => {
       await expect(drawer).toBeVisible();
       await expect(drawer.getByTestId('formation-item-drawer-links')).toBeAttached();
 
-      const link = drawer.getByTestId(`formation-item-drawer-link-${safeHref}`);
+      const link = drawer.getByTestId('formation-item-drawer-evidence-link');
       await expect(link).toBeAttached();
       expect(await link.evaluate((el) => el.tagName)).toBe('A');
+      await expect(link).toHaveAttribute('href', safeHref);
       await expect(link).toHaveAttribute('target', '_blank');
       await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
     });
@@ -211,7 +349,33 @@ test.describe('Formation checklist section — structural contract', () => {
       await page.getByTestId(`formation-checklist-row-title-${itemWithHistory.uid}`).click();
       const history = page.getByTestId('formation-item-drawer-history');
       await expect(history).toBeVisible();
-      await expect(history.getByText('No activity yet.')).toHaveCount(0);
+      await expect(history.getByText('No activity yet')).toHaveCount(0);
+    });
+
+    // #2801: the empty and failed-load states are distinct surfaces — a bordered "No activity yet"
+    // card, and an error card whose Try again re-runs the item fetch — so each gets its own guard.
+    test('an item without history nests the empty-activity card', async ({ page }) => {
+      const itemWithoutHistory = ITEMS.find((item) => !mockFormationActivity[item.uid]?.length);
+      if (!itemWithoutHistory) throw new Error('Expected a seeded item without activity history.');
+
+      await page.getByTestId(`formation-checklist-row-title-${itemWithoutHistory.uid}`).click();
+      const empty = page.getByTestId('formation-item-drawer-history-empty');
+      await expect(empty).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(empty).toContainText('No activity yet');
+    });
+
+    test('a failed item load nests the error card, and Try again re-fetches the item', async ({ page }) => {
+      const item = ITEMS[0];
+      // Fail only the first detail GET; the retry falls through to the default mock registered by the fixture.
+      await page.route('**/api/formations/*/items/*', (route) => route.fulfill({ status: 500, contentType: 'application/json', body: '{}' }), { times: 1 });
+
+      await page.getByTestId(`formation-checklist-row-title-${item.uid}`).click();
+      const error = page.getByTestId('formation-item-drawer-error');
+      await expect(error).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+
+      await page.getByTestId('formation-item-drawer-retry').locator('button').click();
+      await expect(error).toBeHidden();
+      await expect(page.getByTestId('formation-item-drawer-history')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     });
   });
 

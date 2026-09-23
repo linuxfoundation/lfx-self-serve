@@ -2,22 +2,177 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { TRANSIENT_RETRY_DELAY_MS } from '@lfx-one/shared/constants';
+import {
+  ERROR_CODES,
+  MAX_PLAIN_TEXT_BODY_LENGTH,
+  STATUS_DERIVED_SERVER_ERROR_CODES,
+  TRANSIENT_RETRY_DELAY_MS,
+  VALIDATION_FAILED_MESSAGE_PREFIX,
+} from '@lfx-one/shared/constants';
 import { MonoTypeOperatorFunction, retry, throwError, timer } from 'rxjs';
 
 /**
+ * The message an error body offers for display, or `undefined` when it offers none. Every policy the
+ * two readers below share lives here rather than in each of them: which key wins, when a 5xx body is
+ * discarded and the one code that overrides that (see `getHttpErrorDetail` for both), and what a
+ * plain-text body is worth. The only thing left to a caller is `plainString`, which is genuinely a
+ * per-caller call.
+ *
+ * `error` is read as well as `message` because `error` is the key the envelope actually sends —
+ * `BaseApiError.toResponse()` emits `{ error, code }` and no `message`. A handful of controllers do
+ * hand-write a `message` key (`crowdfunding.controller.ts`, `clas.controller.ts`,
+ * `email-verification.service.ts`), and upstream Goa bodies use it, so both are read.
+ *
+ * A field reason wins over a `VALIDATION_ERROR` whose top-level message is one `ServiceValidationError`
+ * built itself: exactly `VALIDATION_FAILED_MESSAGE_PREFIX` (the `fromFieldErrors` default) or that
+ * prefix plus " for " (what `forField` mints). The two ends share the constant so a server-side reword
+ * fails loudly. `forField` interpolates the *wire key* — "Validation failed for invitee_email" — and
+ * leaves the readable reason ("Member ID is required") in the field array. The match is those two
+ * shapes rather than any `startsWith`, so a human message that happens to open with the same words
+ * ("Validation failed. Please check the highlighted fields.") is not demoted. The branch is also
+ * reachable from upstream: `getCodeForStatus(422)` gives a `MicroserviceError` the same code, and
+ * `toResponse()` forwards both the Goa message and `errors`, so a Go service whose top-level message
+ * happens to be one of those two shapes gets its field reasons preferred too — the wanted outcome.
+ *
+ * The consequence for the server is that a `forField` *reason* is now what a user reads. Most are
+ * already written that way ("Committee ID is required"), but not all: the newsletter schedule and
+ * cancel-schedule handlers reach `extractErrorMessage` at `newsletter-manage.component.ts` and
+ * `newsletter-list.component.ts`, and their `parseIfMatch` / `validateScheduleOverride` guards read
+ * like assertions to a developer ("If-Match header is required", "scheduled_at must be an RFC3339
+ * timestamp string or null"). Those guards fire on requests this app shouldn't be making, so a user
+ * seeing one means something upstream of the message is already wrong — but the string is now what
+ * they see, and it should be written for them. Same for the `fromFieldErrors` reasons on the same
+ * routes, which the field-array preference also promotes (those calls pass exactly the prefix).
+ *
+ * Any other top-level message under that code wins over the field array, on the grounds that a caller
+ * who wrote one wrote it for a person — as the public-registration guards do. That is a property of
+ * today's call sites, not a rule the type system enforces: several `fromFieldErrors` callers pass a
+ * developer string instead (`weekly-brief.controller.ts`, `'Upload request validation failed'` in
+ * `project.controller.ts` and `committee.controller.ts`). None of them reaches either reader today, and
+ * routing one here means rewording its message first.
+ *
+ * `errors` is shape-checked rather than trusted: `MicroserviceError.toResponse()` forwards it verbatim
+ * from an upstream Go service, so it can arrive as a string or an object. Throwing here would mean a
+ * caller's `catchError` shows no toast at all. Only the first usable reason is taken, deliberately: the
+ * destination is a one-line toast, and a server that wants to name several fields at once already has
+ * `joinAsSentenceList` to write one message that does — which is what `public-meeting.controller.ts`
+ * does for the registration form. When `errors` yields nothing usable the answer is `undefined`,
+ * not the top-level message: that message is already known to be a wire key at this point, so falling
+ * back to it would put "Validation failed for invitee_email" in front of a user — the string this
+ * whole branch exists to suppress. `undefined` gets the caller its status hint or its own fallback.
+ *
+ * A thrown `Error` is not an error body at all. The app runs `provideHttpClient(withFetch())`, and
+ * Angular's fetch backend puts the raw thrown value in `HttpErrorResponse.error` — so a dropped
+ * connection, an abort, a request timeout, or a body that failed to parse arrives here as an `Error`
+ * whose `message` is "Failed to fetch", "signal timed out", or "Unexpected token … in JSON". Those read
+ * as an object with a `message` key, which is exactly the shape this function is looking for, and the
+ * status is 0 (or a 2xx on a parse failure) so the 5xx skip doesn't cover them either. The check is
+ * `instanceof`, so an `Error` minted in another realm (an SSR worker, an iframe) would slip past it and
+ * have its `message` read; nothing in this app produces one, and the fallback for a missed case is a
+ * developer string in a toast rather than a crash.
+ *
+ * `serverErrors: 'skip'` discards every 5xx body but an advisory; `'read'` narrows that to the bodies
+ * nothing authored — one labelled by a `STATUS_DERIVED_SERVER_ERROR_CODES` code, or one that is not
+ * even JSON. Only `serverAuthoredMessage` passes `'read'`, and only because its callers have already
+ * established that the server hand-wrote the message — see the note there. Every other reader keeps
+ * the blanket skip.
+ *
+ * `plainString: 'read'` lets a caller take a plain-text body as the message — `getHttpErrorDetail` has
+ * a per-status hint that is better, `extractErrorMessage` does not. Either way the body has to read like
+ * one sentence about the request. Angular's `parseBody` hands back the raw response *text* for any
+ * non-2xx body that isn't JSON, so what arrives can be a proxy's whole HTML page, a JSON document the
+ * server sent under the wrong content type, or a stack trace — putting any of those in a toast is the
+ * failure this function exists to prevent. Hence the markup, structure, newline, and length checks; the
+ * length cap is generous enough for a real sentence and short enough that a document can't pass. The
+ * length and newline halves apply to a string found *inside* an object body too, because that string
+ * isn't necessarily this server's: `MicroserviceError.fromMicroserviceResponse` takes its message from
+ * the upstream body at any status, so an arbitrarily long or multi-line Go-service string reaches the
+ * `error` key on a 4xx. Only the leading-`<{[` check is specific to the raw-text path, where the payload
+ * is whatever the proxy in front of us decided to return rather than a key someone chose to fill.
+ */
+function readErrorBodyMessage(body: unknown, status: number, plainString: 'read' | 'ignore', serverErrors: 'skip' | 'read'): string | undefined {
+  const isObjectBody = !!body && typeof body === 'object' && !(body instanceof Error);
+  const bodyCode = isObjectBody ? (body as { code?: unknown }).code : undefined;
+
+  // The one code that survives the 5xx gate outright — see `getHttpErrorDetail` for why a code, and
+  // not a status, is what can prove the message was written for a reader.
+  const isAdvisory = bodyCode === ERROR_CODES.SERVICE_ADVISORY;
+  // Nobody chose this message: the status picked the code, so `message`/`error` is the envelope's own
+  // log line or an upstream service's wording. A non-object body counts as well — a 5xx that isn't
+  // even JSON came from a proxy or a bare `res.send`, never from a controller writing copy.
+  const isStatusLabelled = !isObjectBody || (typeof bodyCode === 'string' && (STATUS_DERIVED_SERVER_ERROR_CODES as readonly string[]).includes(bodyCode));
+
+  if (status >= 500 && !isAdvisory && (serverErrors === 'skip' || isStatusLabelled)) {
+    return undefined;
+  }
+
+  const withinOneLine = (text: string): string | undefined =>
+    text.length > 0 && text.length <= MAX_PLAIN_TEXT_BODY_LENGTH && !text.includes('\n') ? text : undefined;
+
+  if (typeof body === 'string') {
+    if (plainString === 'ignore') {
+      return undefined;
+    }
+
+    const text = body.trim();
+    return /^[<{[]/.test(text) ? undefined : withinOneLine(text);
+  }
+
+  if (!body || typeof body !== 'object' || body instanceof Error) {
+    return undefined;
+  }
+
+  const nonBlank = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+  const { message, error, code, errors } = body as { message?: string; error?: string; code?: string; errors?: unknown };
+  const top = [message, error].find(nonBlank)?.trim();
+  const isSelfBuilt = top === undefined || top === VALIDATION_FAILED_MESSAGE_PREFIX || top.startsWith(`${VALIDATION_FAILED_MESSAGE_PREFIX} for `);
+  const isWireKeyed = code === ERROR_CODES.VALIDATION_ERROR && isSelfBuilt;
+
+  if (isWireKeyed) {
+    const entries = Array.isArray(errors) ? errors : [];
+    const reason = entries
+      .map((entry) => (entry && typeof entry === 'object' ? (entry as { message?: unknown }).message : undefined))
+      .find(nonBlank)
+      ?.trim();
+    return reason === undefined ? undefined : withinOneLine(reason);
+  }
+
+  return top === undefined ? undefined : withinOneLine(top);
+}
+
+/**
  * Extracts a user-friendly error message from an HttpErrorResponse.
- * Prefers the upstream service message when available; falls back to
+ * Prefers the server's own message when the body carries one; falls back to
  * status-code hints, then the provided fallback string.
+ *
+ * Reading only `message` — a key the envelope does not send — left every branch below on its hard-coded
+ * string, so a server reason never reached the committee call sites. See `readErrorBodyMessage`.
+ *
+ * A 5xx body is not read unless it says it was written for a reader. Every 5xx body traced to these
+ * call sites is either the envelope's own "Internal server error" or an upstream Go service message
+ * that `MicroserviceError` passes through verbatim — neither tells the user anything, and both would
+ * displace the caller's fallback, which at least names the action that failed ("Failed to remove
+ * member. Please try again."). That is the default, and it stays.
+ *
+ * The exception is `ERROR_CODES.SERVICE_ADVISORY` — the `code` allowlist this note used to call for,
+ * narrowed to one code. Provenance is what the skip actually wants and a status cannot tell it, but a
+ * code can: `MicroserviceError.fromMicroserviceResponse` always derives its code from the status via
+ * `getCodeForStatus`, so a forwarded 503 is always `SERVICE_UNAVAILABLE` and can never arrive carrying
+ * `SERVICE_ADVISORY`. A body with that code is positive proof this server hand-wrote the message for
+ * the person reading it — the same reasoning `upstream-error.utils.ts` uses to tell a minted failure
+ * from a forwarded one. Setting it is a deliberate act at the throw site; the meeting-invite writes in
+ * `profile.controller.ts` are the first, and every other 5xx, minted or forwarded, is still discarded.
+ * The hand-written messages that stay silent for now (`ACCESS_CHECK_UNAVAILABLE`, `FORWARD_SET_FAILED`,
+ * `ROLE_GRANTS_UNAVAILABLE` in `org-lens-access.service.ts`) reach neither reader today; routing one
+ * here is a matter of setting the code at its throw site.
+ *
+ * Below 500 the body is usually a validation or permission reason written about the request, which is
+ * worth showing. Not always: `MicroserviceError` forwards an upstream Go message verbatim at any
+ * status, so a Goa-shaped string can still reach a 4xx toast. Showing it beats a status hint that says
+ * nothing about which field or permission was at fault.
  */
 export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): string {
-  // Read the server text through the hasServerAuthoredMessage + extractErrorMessage pair:
-  // the BFF answers errors in two shapes (direct { message } controllers and the error-class
-  // { error } path — see hasServerAuthoredMessage below), plus ServiceValidationError's
-  // field-level errors[].message. Reading err.error?.message alone silently drops every
-  // error-class response, and unguarded extractErrorMessage has the documented
-  // unreachable-fallback flaw that leaks the "Http failure response for …" debug string.
-  const upstream = hasServerAuthoredMessage(err) ? extractErrorMessage(err, '') : undefined;
+  const upstream = readErrorBodyMessage(err.error, err.status, 'ignore', 'skip');
 
   switch (err.status) {
     case 409:
@@ -28,8 +183,6 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
       return upstream ?? 'You do not have permission to perform this action.';
     case 422:
       return upstream ?? 'The request contained invalid data. Please check your input.';
-    case 400:
-      return upstream ?? fallback;
     default:
       return upstream ?? fallback;
   }
@@ -40,25 +193,27 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
  * a thrown Error, or any other value. Used by components that catch errors
  * from `firstValueFrom(...)` or RxJS `catchError` and need to surface a
  * single string to the UI.
+ *
+ * See `readErrorBodyMessage` for which key in the body is read, and why, and for the 5xx skip these two
+ * share — "Internal server error" and a forwarded Go-service string tell a user nothing, and the
+ * caller's fallback at least names the action that failed. A body carrying `ERROR_CODES.SERVICE_ADVISORY`
+ * is the one 5xx that gets through, and this reader is where it lands today: the meeting-invite retry
+ * guidance shown by `account-settings.component.ts`.
+ *
+ * Unlike `getHttpErrorDetail` this one does read a plain-text body: it has no per-status hint layer, so
+ * a 4xx sentence written about the request is the best thing on offer. `readErrorBodyMessage` still
+ * refuses one that reads like a proxy's HTML page.
+ *
+ * When the body yields nothing, the caller's `fallback` wins over `HttpErrorResponse.message`.
+ * Angular fills that property in for every failure with a string built for a developer reading a
+ * console — "Http failure response for /public/api/...: 0 Unknown Error" — so preferring it would
+ * put a URL and a status code in front of a user on exactly the failures the body has nothing to say
+ * about: a network drop, or a 500 with no envelope. Call sites are expected to pass a
+ * written-for-a-human fallback; that is the one to show.
  */
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (error instanceof HttpErrorResponse) {
-    const body = error.error as { message?: string; error?: string; errors?: { message?: string }[] } | string | null;
-    if (typeof body === 'string' && body.trim().length > 0) return body;
-    if (body && typeof body === 'object') {
-      // ServiceValidationError's `errors[].message` (server) carries the specific, actionable
-      // detail for the failing field — the top-level message/error is often a generic
-      // "Validation failed for <field>" wrapper, so prefer the field-level detail when present.
-      // `body` is unknown runtime data cast through a type assertion, not a runtime guarantee —
-      // `errors` could be any shape (e.g. a string), so Array.isArray guards before searching it.
-      const fieldDetail = Array.isArray(body.errors)
-        ? body.errors.find((e): e is { message: string } => !!e && typeof e.message === 'string' && e.message.trim().length > 0)
-        : undefined;
-      if (fieldDetail) return fieldDetail.message;
-      const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
-      if (candidate) return candidate;
-    }
-    return error.message || fallback;
+    return readErrorBodyMessage(error.error, error.status, 'read', 'skip') ?? fallback;
   }
 
   if (error instanceof Error && error.message) return error.message;
@@ -108,9 +263,57 @@ export function committeeLeaveErrorMessage(err: HttpErrorResponse, committeeName
  * non-empty `HttpErrorResponse.message` ("Http failure response for …"), so its own fallback is
  * unreachable for a body-less response — the HTTP debugging string reaches the screen instead.
  * Anywhere the fallback is user-facing copy, this is the composition that is actually wanted.
+ *
+ * This is the one reader that replaces the blanket 5xx skip with a narrower gate, and the asymmetry is
+ * the point. The skip exists because a 5xx body reached `getHttpErrorDetail` and `extractErrorMessage`
+ * from call sites that had not chosen it — an envelope's own "Internal server error", or a Go service
+ * string `MicroserviceError` forwards verbatim — and displaced a fallback that at least named the
+ * failed action. Those two readers keep it. Here the body has already cleared
+ * `hasServerAuthoredMessage`, so something filled `message` or `error`; what is left to decide is
+ * whether a *person* filled it, and `readErrorBodyMessage`'s `'read'` mode answers that from the
+ * `code` rather than the status. A 5xx labelled by `STATUS_DERIVED_SERVER_ERROR_CODES`, or one that
+ * isn't JSON at all, still falls back — `hasServerAuthoredMessage` accepts the unhandled-error
+ * envelope `{ error: 'Internal server error', code: 'INTERNAL_ERROR' }` on its shape alone, and that
+ * string must never displace an action-named fallback.
+ *
+ * What gets through is the hand-written 5xx: no `code`, or a semantic one its author picked.
+ * `audience-builder.controller.ts` answers a failed compose with `res.status(502).json(partial)`,
+ * whose `error` names the suppression and master lists it had already created — the only record an
+ * operator gets of what to clean up, and `AudienceComposeMasterPartial` carries no `code`, so it
+ * survives the gate. The org-identity logo writes are the same shape. The mentorship and org-profile
+ * *loads* are not: they reach the central error handler, so they are always status-labelled and keep
+ * their own fallback copy, which is already written for a reader.
+ *
+ * Holding the rest shut are the shape guards inside `readErrorBodyMessage`, and those apply at every
+ * status: a proxy's HTML page, a JSON document sent under the wrong content type, a stack trace and
+ * anything multi-line or over `MAX_PLAIN_TEXT_BODY_LENGTH` are all still refused, so none of them can
+ * reach a toast through here either.
  */
 export function serverAuthoredMessage(error: unknown, fallback: string): string {
-  return hasServerAuthoredMessage(error) ? extractErrorMessage(error, fallback) : fallback;
+  if (!hasServerAuthoredMessage(error)) {
+    return fallback;
+  }
+  if (error instanceof HttpErrorResponse) {
+    return readErrorBodyMessage(error.error, error.status, 'read', 'read') ?? fallback;
+  }
+  return extractErrorMessage(error, fallback);
+}
+
+/**
+ * Whether a 400 was authored by this BFF's own validation rather than relayed from upstream.
+ *
+ * A 400 status does not say who wrote the message. `gatewayFetch` rethrows a non-OK upstream
+ * response under the upstream's own status, with a message it composes from the wire
+ * (`<operation failed>: 400 Bad Request`), so a caller that keys on the status alone will put
+ * that string on screen. `ServiceValidationError` is the only source of `VALIDATION_ERROR`, and
+ * it is a BFF class — upstream codes never reach `code`, which `getCodeForStatus` derives from
+ * the status. So the code is the discriminator, and the status is not.
+ */
+export function isBffValidationError(error: unknown): boolean {
+  if (!(error instanceof HttpErrorResponse) || error.status !== 400) return false;
+
+  const body = error.error as { code?: unknown } | null;
+  return body?.code === ERROR_CODES.VALIDATION_ERROR;
 }
 
 /**

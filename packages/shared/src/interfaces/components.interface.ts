@@ -4,7 +4,7 @@
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 import type { CommitteeOrganizationReference } from './committee.interface';
-import type { FormationItemAction, FormationItemStatus } from './formation.interface';
+import type { FormationItemStatus } from './formation.interface';
 import type { Meeting } from './meeting.interface';
 import type { Vote } from './poll.interface';
 
@@ -577,51 +577,48 @@ export interface PendingActionItem {
   inviteRequiresOrganization?: boolean;
   /** Weekly-brief action-item UID (set on BriefAction action types). Gives HiddenActionsService's identifier scheme a stable per-item key instead of falling back to type+badge+text. */
   briefActionUid?: string;
-  /** Project uid the formation item belongs to (set on FormationItem action types). Paired with `formationItemKey` to address the Claim/Block-with-note mutation and open the item drawer. */
+  /** Project uid the formation item belongs to (set on FormationItem action types). Pairs with `formationItemKey` as the item's address; the row's link itself is built from `formationProjectSlug`. */
   formationProjectUid?: string;
-  /** `template_item_key` — the write address, together with `formationProjectUid` (set on FormationItem action types). */
+  /** Owning project slug (set on FormationItem action types) — drives `?project=` on the row's checklist link (#2732), mirroring `inviteProjectSlug`. */
+  formationProjectSlug?: string;
+  /** `template_item_key` (set on FormationItem action types) — the stable key the checklist's `?item=` deep link takes (`FORMATION_ITEM_QUERY_PARAM`, #2732). */
   formationItemKey?: string;
   /** Formation item uid (set on FormationItem action types). Gives HiddenActionsService's identifier scheme, and `getRowKey`, a stable per-item key. */
   formationItemUid?: string;
-  /** Current status (set on FormationItem action types) — drives whether the row still offers Claim (only when `not_started`). */
+  /** Current status (set on FormationItem action types) — drives the row's status chip via `FORMATION_ITEM_STATUS_LABELS` / `FORMATION_ITEM_STATUS_SEVERITY` (#2732). */
   formationItemStatus?: FormationItemStatus;
-  /** Whether the item is gating (set on FormationItem action types) — drives the "Required for Active" marker. */
+  /** Whether the item is gating (set on FormationItem action types) — drives the "required for Active" segment of the row's meta line. */
   formationIsGating?: boolean;
-  /**
-   * The item's action kind (set on FormationItem action types) — `assertItemProjectWriteAccess`
-   * aside, `FormationService.updateFormationItemStatus` rejects every manual status transition for
-   * `status_only` items regardless of write access, so Claim/Block must never render for them; the
-   * row falls back to Open/the link only.
-   */
-  formationItemAction?: FormationItemAction;
-  /**
-   * Whether the caller has project `writer` access (set on FormationItem action types) —
-   * Claim/Block both hard-require `project.writer` server-side (`assertItemProjectWriteAccess`),
-   * so an `auditor`-only assignee would otherwise see an actionable button that always 403s.
-   * Drives whether the row's Claim/Block controls render as clickable vs. disabled-with-tooltip.
-   */
-  formationCanWrite?: boolean;
 }
 
 /**
- * Payload emitted when a Pending Actions row's Open action requests the shared
- * `formation-item-drawer` (GH-1956) — carried from `pending-actions`/`pending-actions-drawer` through
- * `dashboard-formation-item-drawer-host.open()`. `canWrite` mirrors `PendingActionItem.formationCanWrite`
- * so the host can render the drawer's Mark complete/Save/Skip controls read-only for an auditor-only
- * assignee — those mutations hard-require project `writer` server-side, and the drawer's own
- * `can_complete` gate does not account for that (it only encodes the gating-item LF-staff check).
+ * The per-row view a Pending Actions surface precomputes for a FormationItem row (#2732) — shared
+ * by the dashboard list and its "View all" drawer through `buildFormationPendingActionView`, so
+ * neither template calls a function and the two can't drift. All-null with `isFormationItem: false`
+ * for every other row type.
  */
-export interface FormationItemOpenRequest {
-  projectUid: string;
-  itemKey: string;
-  canWrite?: boolean;
+export interface FormationPendingActionView {
+  /** True when the row is a FormationItem carrying both the project slug and item key its link needs. */
+  isFormationItem: boolean;
+  /** `[FORMATION_CHECKLIST_PATH]` — bound to the View item button's `routerLink`; null when not a linkable formation row. */
+  formationViewCommands: string[] | null;
+  /** `{ project, item }` — the checklist's `?project=` plus the `?item=` deep link (`FORMATION_ITEM_QUERY_PARAM`). */
+  formationViewQueryParams: Record<string, string> | null;
+  /** Precomputed `aria-label` for the View item control ("View {title} on the formation checklist") — built in TS so the template never concatenates. */
+  formationViewAriaLabel: string | null;
+  /** Status chip label from `FORMATION_ITEM_STATUS_LABELS`. */
+  formationStatusLabel: string | null;
+  /** Status chip tone from `FORMATION_ITEM_STATUS_SEVERITY`. */
+  formationStatusSeverity: TagSeverity | null;
+  /** "Aug 31" — the row's `date` (a DATE-ONLY string) via `formatIsoDateShortLabel`; null when absent or malformed. */
+  formationDueLabel: string | null;
 }
 
 /**
  * Pending action decorated with template-friendly view state
  * @description Extends PendingActionItem with precomputed flags so the dashboard template can avoid function calls in `@for ... track` and conditional bindings.
  */
-export interface DecoratedPendingAction extends PendingActionItem {
+export interface DecoratedPendingAction extends PendingActionItem, FormationPendingActionView {
   /** Stable row identifier used for `@for ... track` and to scope expanded-RSVP state */
   rowKey: string;
   /** True when the action is an RSVP that should expand inline (RSVP type with a meetingUid) */
@@ -656,12 +653,10 @@ export interface DecoratedPendingAction extends PendingActionItem {
   inviteViewCommands: string[] | null;
   /** Precomputed `?project=` query params for the invitation view link; null when no project slug resolved. */
   inviteViewQueryParams: { project: string } | null;
-  /** True when the action is a FormationItem (GH-1956) — drives the inline Claim button and the "Required for Active" marker. */
-  isFormationItem: boolean;
 }
 
 /** Pending action row for the right-side drawer — adds inline-RSVP flags and per-row meeting-fetch state. */
-export interface DrawerActionRow extends PendingActionItem {
+export interface DrawerActionRow extends PendingActionItem, FormationPendingActionView {
   /** Stable row identifier used for `@for ... track` */
   rowKey: string;
   /** True when the action is an RSVP that should render inline RSVP buttons (RSVP type with a meetingUid and no fetch failure) */
@@ -680,8 +675,6 @@ export interface DrawerActionRow extends PendingActionItem {
   acceptAriaLabel: string;
   /** Precomputed `aria-label` for the Decline control ("Decline invite to {inviteGroupName}") — built in TS so the template never calls a method. */
   declineAriaLabel: string;
-  /** True when the action is a formation checklist item (GH-1956); renders Claim / Block… / Open instead of the generic CTA. */
-  isFormationItem: boolean;
 }
 
 /** Lighter pending-action row used by committee-overview's static list — adds a stable `@for ... track` key. */
@@ -744,19 +737,65 @@ export interface DashboardMeetingCardProps {
 }
 
 /**
- * Dashboard quick link
- * @description Navigation shortcut displayed in the dashboard header for write-enabled users
+ * The half of a dashboard quick link that every variant carries
+ * @description Not used directly — {@link DashboardQuickLink} pairs it with whichever action the
+ * link performs.
  */
-export interface DashboardQuickLink {
+interface DashboardQuickLinkBase {
   /** Display label for the quick link */
   label: string;
   /** FontAwesome icon class (e.g. 'fa-light fa-calendar') */
   icon: string;
-  /** Router link path segments */
-  route: string[];
+  /**
+   * Whether the current user can use this link. Omitted means always visible.
+   * @description Read inside a computed, so it must be a signal read or an equivalently reactive
+   * expression rather than a value captured at construction.
+   */
+  visible?: () => boolean;
   /** Pre-computed data-testid slug (e.g. 'create-meeting') */
   testId: string;
 }
+
+/**
+ * Dashboard quick link
+ * @description Navigation shortcut displayed in the dashboard sidebar. Each link carries its own
+ * visibility predicate, because the permission a link needs is the permission of the thing it opens
+ * — not a single permission shared by the whole row.
+ *
+ * A union rather than one interface with two optional keys: a link either navigates or runs a
+ * command, and the template picks its element from which one is set. Declaring both optional made
+ * "exactly one of these" a sentence in a doc comment that nothing checked, and a link with neither
+ * still compiled — rendering an anchor whose `routerLink` is `undefined`, which still emits an
+ * `href` and still takes focus, so it reads as a working link and does nothing when activated.
+ */
+export type DashboardQuickLink = DashboardQuickLinkBase &
+  (
+    | {
+        /** Router link path segments. */
+        route: string[];
+        command?: never;
+        hasPopup?: never;
+      }
+    | {
+        route?: never;
+        /**
+         * Click handler for links that open something over the current page rather than navigate.
+         * @description Renders a button instead of an anchor, so nothing about the row promises a
+         * destination it doesn't have. Receives the click, because an overlay that positions itself
+         * against the control that opened it can only find that control through the event — and only
+         * while it is still being dispatched.
+         */
+        command: (event: Event) => void;
+        /**
+         * What the command opens, announced to assistive tech as `aria-haspopup`.
+         * @description Declared by the link rather than assumed by the template: what a command
+         * opens is the command's own business, and a template that hard-codes `dialog` for every
+         * button announces one for a command that opens nothing. Omitted means the button opens no
+         * overlay.
+         */
+        hasPopup?: 'dialog' | 'menu';
+      }
+  );
 
 /**
  * Committee selector option

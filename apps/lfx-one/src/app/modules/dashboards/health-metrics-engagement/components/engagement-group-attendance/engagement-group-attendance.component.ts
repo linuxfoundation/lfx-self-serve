@@ -1,0 +1,249 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, linkedSignal, output, PLATFORM_ID, type Signal, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router } from '@angular/router';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { TableComponent } from '@components/table/table.component';
+import { TagComponent } from '@components/tag/tag.component';
+import {
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+} from '@lfx-one/shared/constants';
+import { buildHealthMetricsEngagementGroupTrend, formatIsoDateLabel, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, distinctUntilChanged, of, skip, switchMap, tap } from 'rxjs';
+
+import { EngagementAttendanceBarComponent } from '../engagement-attendance-bar/engagement-attendance-bar.component';
+import { EngagementGroupAttendanceDrawerComponent } from '../engagement-group-attendance-drawer/engagement-group-attendance-drawer.component';
+import { EngagementSparklineComponent } from '../engagement-sparkline/engagement-sparkline.component';
+import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
+
+import type {
+  FilterPillOption,
+  HealthMetricsEngagementGroupAttendance,
+  HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementGroupQuery,
+  HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementGroupRowView,
+  HealthMetricsEngagementGroupTypeFilter,
+} from '@lfx-one/shared/interfaces';
+
+/**
+ * `#committees` — every group ranked dormant-first then lowest attendance. The rank is the view's
+ * `SORT_RANK_<period>` applied server-side: sorting the page client-side would only rank 25 rows.
+ */
+@Component({
+  selector: 'lfx-engagement-group-attendance',
+  imports: [
+    EmptyStateComponent,
+    FilterPillsComponent,
+    TableComponent,
+    TagComponent,
+    EngagementAttendanceBarComponent,
+    EngagementGroupAttendanceDrawerComponent,
+    EngagementSparklineComponent,
+  ],
+  templateUrl: './engagement-group-attendance.component.html',
+})
+export class EngagementGroupAttendanceComponent {
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly chrome = inject(HealthMetricsChromeService);
+  private readonly route = inject(ActivatedRoute);
+  private readonly router = inject(Router);
+  private readonly platformId = inject(PLATFORM_ID);
+
+  /**
+   * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
+   * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected — and
+   * renders no badge rather than a believable zero.
+   */
+  public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
+  public readonly settled = output<void>();
+  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  public readonly reading = output<void>();
+
+  protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({
+    id: filter.key,
+    label: filter.label,
+  }));
+
+  private readonly initialParams = this.route.snapshot.queryParamMap;
+
+  protected readonly groupType = signal<HealthMetricsEngagementGroupTypeFilter>(this.parseInitialGroupType());
+  /**
+   * Every scope change restarts paging. The period and foundation come from the page header, which
+   * cannot know this table's page, and a page from the wider scope sits past the end of a smaller one.
+   */
+  protected readonly page = linkedSignal<string, number>({
+    source: computed(() => `${this.projectContextService.selectedFoundation()?.slug ?? ''}|${this.chrome.selectedRange()}|${this.groupType()}`),
+    computation: (_scope, previous) => (previous === undefined ? this.parseInitialPage() : 1),
+  });
+  protected readonly size = signal<number>(HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE);
+  protected readonly loading = signal<boolean>(true);
+  /** A failed read is not an empty foundation, and the empty state below asserts the difference. */
+  protected readonly loadFailed = signal<boolean>(false);
+  protected readonly selectedRow = signal<HealthMetricsEngagementGroupRow | null>(null);
+  protected readonly drawerVisible = signal<boolean>(false);
+
+  protected readonly query: Signal<HealthMetricsEngagementGroupQuery> = computed(() => this.initQuery());
+  protected readonly response: Signal<HealthMetricsEngagementGroupAttendance> = this.initResponse();
+
+  protected readonly rows = computed(() => this.response().rows);
+  // Resolved here rather than per cell: the template only reads signals, and the period lookup and
+  // trend build run once per row per response instead of on every change-detection pass.
+  protected readonly rowViews = computed<HealthMetricsEngagementGroupRowView[]>(() => {
+    const range = this.chrome.selectedRange();
+    return this.rows().map((row) => ({
+      row,
+      period: selectHealthMetricsEngagementGroupPeriod(row, range),
+      trend: buildHealthMetricsEngagementGroupTrend(row),
+      lastMetLabel: row.lastMetDate ? formatIsoDateLabel(row.lastMetDate) : '—',
+    }));
+  });
+  protected readonly totalRecords = computed(() => this.response().totalRecords);
+  protected readonly first = computed(() => (this.page() - 1) * this.size());
+  protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
+
+  public constructor() {
+    if (isPlatformBrowser(this.platformId)) {
+      toObservable(this.query)
+        .pipe(
+          // `skip(1)` drops the state just read out of the URL — navigating back to it would be a
+          // no-op write during hydration.
+          skip(1),
+          distinctUntilChanged((a, b) => a.groupType === b.groupType && a.page === b.page),
+          takeUntilDestroyed()
+        )
+        .subscribe((query) => this.syncUrl(query));
+    }
+  }
+
+  protected onFilterChange(key: string): void {
+    this.groupType.set(this.toGroupType(key));
+  }
+
+  protected onTablePage(event: { first?: number; rows?: number }): void {
+    const rows = event.rows ?? this.size();
+    this.size.set(rows);
+    this.page.set(Math.floor((event.first ?? 0) / rows) + 1);
+  }
+
+  protected onRowSelect(row: HealthMetricsEngagementGroupRow): void {
+    this.selectedRow.set(row);
+    this.drawerVisible.set(true);
+  }
+
+  private initQuery(): HealthMetricsEngagementGroupQuery {
+    return {
+      foundationSlug: this.projectContextService.selectedFoundation()?.slug ?? '',
+      projectSlug: null,
+      groupType: this.groupType(),
+      range: this.chrome.selectedRange(),
+      page: this.page(),
+      size: this.size(),
+    };
+  }
+
+  private initResponse(): Signal<HealthMetricsEngagementGroupAttendance> {
+    if (!isPlatformBrowser(this.platformId)) {
+      // `loading` stays at its static `true` so the serialized skeleton matches the pre-hydration DOM.
+      return computed(() => HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    }
+
+    // Latches on the first non-empty slug, as on the Overview: before any foundation resolves the
+    // skeleton holds, while one cleared after a read still settles instead of wedging on it.
+    let foundationSeen = false;
+
+    return toSignal(
+      toObservable(this.query).pipe(
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
+        tap((query) => {
+          foundationSeen = foundationSeen || query.foundationSlug !== '';
+          this.loading.set(true);
+          this.loadFailed.set(false);
+          this.countsChange.emit(null);
+          this.reading.emit();
+        }),
+        // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
+        // request for the previous one.
+        switchMap((query) =>
+          (query.foundationSlug ? this.analyticsService.getEngagementGroupAttendance(query) : of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT)).pipe(
+            // Caught per query so a failure ends this read without tearing down the outer pipeline;
+            // `AnalyticsService` has already logged the error before rethrowing it.
+            catchError(() => {
+              this.loadFailed.set(true);
+              return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+            }),
+            tap((response) => {
+              // An out-of-range page is not a settled read: the clamp fires a follow-up fetch, so
+              // `loading` stays set and no counts are reported until the page that has rows arrives.
+              if (this.clampPage(response.totalRecords)) {
+                // The clamp can land before the sync subscription's first emission, which `skip(1)`
+                // drops as already-in-the-URL state — so the replacement page is written back here.
+                this.syncUrl(this.query());
+                return;
+              }
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
+              // the table cannot caption an unread scope as "no rows".
+              this.loading.set(!foundationSeen);
+              // No foundation means no read happened, so the default's zeroes are not a measured count.
+              this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
+              // Held until a foundation has been seen: settling an unread section releases the
+              // container's pending deep link before any real read can re-arm it.
+              if (foundationSeen) this.settled.emit();
+            })
+          )
+        )
+      ),
+      { initialValue: HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT }
+    );
+  }
+
+  private syncUrl(query: HealthMetricsEngagementGroupQuery): void {
+    void this.router.navigate([], {
+      relativeTo: this.route,
+      queryParams: {
+        groupType: query.groupType === 'all' ? null : query.groupType,
+        groupPage: query.page > 1 ? query.page : null,
+      },
+      queryParamsHandling: 'merge',
+      preserveFragment: true,
+      replaceUrl: true,
+    });
+  }
+
+  /**
+   * A `?groupPage=` past the end of the filtered set selects nothing while the totals join still
+   * reports the real count — an empty table under "34 groups". Land on the last page that has rows,
+   * and report the clamp so the caller can hold this read open for the page that replaces it.
+   */
+  private clampPage(totalRecords: number): boolean {
+    const lastPage = Math.max(1, Math.ceil(totalRecords / this.size()));
+    if (totalRecords === 0 || this.page() <= lastPage) return false;
+
+    this.page.set(lastPage);
+    return true;
+  }
+
+  private parseInitialGroupType(): HealthMetricsEngagementGroupTypeFilter {
+    return this.toGroupType(this.initialParams.get('groupType') ?? 'all');
+  }
+
+  private parseInitialPage(): number {
+    const page = Number(this.initialParams.get('groupPage'));
+    return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
+  }
+
+  private toGroupType(key: string): HealthMetricsEngagementGroupTypeFilter {
+    const match = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.find((filter) => filter.key === key);
+    return match ? match.key : 'all';
+  }
+}

@@ -24,28 +24,15 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
-import { getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
+import { buildFormationPendingActionView, getEntityCommands, invitationRequiresOrganization } from '@lfx-one/shared/utils';
 import { InvitationAcceptFlowService } from '@shared/services/invitation-accept-flow.service';
 import { InvitationService } from '@shared/services/invitation.service';
-import { FormationService } from '@shared/services/formation.service';
-import { ReasonPromptDialogComponent } from '@components/reason-prompt-dialog/reason-prompt-dialog.component';
 import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ToastModule } from 'primeng/toast';
-import { take, timer } from 'rxjs';
+import { timer } from 'rxjs';
 
-import type {
-  DecoratedPendingAction,
-  FormationItemOpenRequest,
-  Meeting,
-  MeetingRsvp,
-  PendingActionItem,
-  PendingDecline,
-  ReasonPromptDialogResult,
-  RsvpResponse,
-  Vote,
-} from '@lfx-one/shared/interfaces';
+import type { DecoratedPendingAction, Meeting, MeetingRsvp, PendingActionItem, PendingDecline, RsvpResponse, Vote } from '@lfx-one/shared/interfaces';
 
 /** Deferred-undo window (ms) before an optimistic decline is committed upstream. */
 const INVITE_DECLINE_UNDO_MS = 5000;
@@ -67,7 +54,6 @@ const INVITE_UNDO_TOAST_KEY = 'pending-actions-undo';
     ToastModule,
     RouterLink,
   ],
-  providers: [DialogService],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
 })
@@ -77,8 +63,6 @@ export class PendingActionsComponent {
   private readonly voteService = inject(VoteService);
   private readonly invitationService = inject(InvitationService);
   private readonly invitationAcceptFlow = inject(InvitationAcceptFlowService);
-  private readonly formationService = inject(FormationService);
-  private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
@@ -86,7 +70,7 @@ export class PendingActionsComponent {
 
   protected readonly buttonIcons = PENDING_ACTION_BUTTON_ICON;
   protected readonly typeLabels = PENDING_ACTION_LABEL;
-  /** GH-1956 — mirrors the flag gate on `lfx-my-formations-card` / the "In formation" tile so a
+  /** GH-1956 — mirrors the flag gate on the "In formation" tile (and the My Formations route, #2753) so a
    *  user with the flag off never sees FormationItem rows here either, even though the server
    *  aggregator itself is unflagged (see `FORMATION_ENABLED_FLAG`'s doc comment). */
   protected readonly formationFlagEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
@@ -97,10 +81,6 @@ export class PendingActionsComponent {
   public readonly actionClick = output<PendingActionItem>();
   // Emits the voteUid when a Vote pending-action needs the cast drawer (multi-question or ranked poll).
   public readonly castVoteRequested = output<string>();
-  // Emits {projectUid, itemKey} when a FormationItem row's Open (or Block with note's underlying
-  // item) needs the existing formation-item-drawer (GH-1956) — the parent dashboard hosts
-  // `dashboard-formation-item-drawer-host` and opens it on this event.
-  public readonly formationItemRequested = output<FormationItemOpenRequest>();
 
   protected readonly drawerVisible = model<boolean>(false);
 
@@ -116,9 +96,6 @@ export class PendingActionsComponent {
   private readonly loadingMeetingUids = signal<ReadonlySet<string>>(new Set());
   private readonly loadingVoteUids = signal<ReadonlySet<string>>(new Set());
   private readonly failedMeetingUids = signal<ReadonlySet<string>>(new Set());
-  // Rows with an in-flight Claim (or Block with note) mutation — disables the row's buttons so a
-  // second click can't fire a duplicate PATCH while the first is still in flight.
-  protected readonly formationMutationRowKeys = signal<ReadonlySet<string>>(new Set());
 
   // The decline currently inside its deferred-undo window — drives the Undo affordance in the toast. Null when no decline is pending.
   protected readonly pendingDecline = signal<PendingDecline | null>(null);
@@ -330,91 +307,6 @@ export class PendingActionsComponent {
     this.invitationService.unmarkResolved(pending.inviteUid);
     this.pendingDecline.set(null);
     this.messageService.clear(INVITE_UNDO_TOAST_KEY);
-  }
-
-  // Claim a formation checklist item assigned to the caller (GH-1956): not_started -> in_progress,
-  // no note. The row stays on the list afterward (only done/skipped items drop off) — a successful
-  // claim just re-fetches pending actions so the row's status/actions catch up, mirroring how
-  // handleRsvpSubmit/handleVoteSubmitted refresh via actionClick rather than mutating the row locally.
-  protected onClaimFormationItem(item: DecoratedPendingAction): void {
-    const projectUid = item.formationProjectUid;
-    const itemKey = item.formationItemKey;
-    if (!projectUid || !itemKey) return;
-
-    const rowKey = this.getRowKey(item);
-    if (this.formationMutationRowKeys().has(rowKey)) return;
-    this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
-
-    this.formationService
-      .updateFormationItemStatus(projectUid, itemKey, 'in_progress')
-      .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe({
-        next: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Claimed', detail: `You claimed "${item.text}"`, life: 5000 });
-          this.actionClick.emit(item);
-        },
-        error: () => {
-          this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-          this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't claim — try again.", life: 5000 });
-        },
-      });
-  }
-
-  /**
-   * Block with note (GH-1956): the item drawer has no block-with-reason control of its own — the
-   * only place `blocked` is reachable today is `formation-checklist-section.component.ts`'s
-   * status-menu "Mark blocked…", a required-reason confirm dialog against the same plain
-   * `updateFormationItemStatus(..., 'blocked', reason)` endpoint. This mirrors that pattern rather
-   * than opening the drawer, whose own "note" field (`editForm.notes`) is a general free-text field
-   * unrelated to a status transition. `formationItemRequested` (opening the drawer) is reserved for
-   * the row's separate **Open** action.
-   */
-  protected onBlockFormationItemRequested(item: DecoratedPendingAction): void {
-    const projectUid = item.formationProjectUid;
-    const itemKey = item.formationItemKey;
-    if (!projectUid || !itemKey) return;
-
-    const rowKey = this.getRowKey(item);
-    const ref = this.dialogService.open(ReasonPromptDialogComponent, {
-      header: 'Mark blocked',
-      width: '480px',
-      modal: true,
-      data: {
-        prompt: `Marking "${item.text}" blocked requires a reason. This is logged in the item's history.`,
-        placeholder: 'What is blocking this item?',
-        confirmLabel: 'Mark blocked',
-      },
-    });
-
-    ref?.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: ReasonPromptDialogResult | undefined) => {
-      if (!result?.reason || this.formationMutationRowKeys().has(rowKey)) return;
-      this.formationMutationRowKeys.update((s) => new Set(s).add(rowKey));
-
-      this.formationService
-        .updateFormationItemStatus(projectUid, itemKey, 'blocked', result.reason)
-        .pipe(takeUntilDestroyed(this.destroyRef))
-        .subscribe({
-          next: () => {
-            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-            this.messageService.add({ key: 'pending-actions-toast', severity: 'success', summary: 'Marked blocked', life: 5000 });
-            this.actionClick.emit(item);
-          },
-          error: () => {
-            this.formationMutationRowKeys.update((s) => this.removeFromSet(s, rowKey));
-            this.messageService.add({ key: 'pending-actions-toast', severity: 'error', summary: "Couldn't mark this item blocked — try again.", life: 5000 });
-          },
-        });
-    });
-  }
-
-  // Open (GH-1956): opens the existing formation-item-drawer via the parent-hosted
-  // dashboard-formation-item-drawer-host, same precedent as castVoteRequested/dashboard-cast-drawer-host.
-  protected onOpenFormationItem(item: DecoratedPendingAction): void {
-    const projectUid = item.formationProjectUid;
-    const itemKey = item.formationItemKey;
-    if (!projectUid || !itemKey) return;
-    this.formationItemRequested.emit({ projectUid, itemKey, canWrite: item.formationCanWrite });
   }
 
   protected openDrawer(): void {
@@ -724,7 +616,6 @@ export class PendingActionsComponent {
         // Require committeeUid too — the invitation branch builds a routerLink to the group
         // and calls accept/decline with it, so a row missing it would render /groups/undefined.
         const isInvitation = item.type === 'Invitation' && !!item.inviteUid && !!item.committeeUid;
-        const isFormationItem = item.type === 'FormationItem' && !!item.formationProjectUid && !!item.formationItemKey;
         const inviteGroupName = item.inviteGroupName ?? item.badge;
         // Canonical tier-prefixed view link (GH-1566): the invited group's own `inviteIsFoundation`
         // picks /foundation vs /project; rows without tier data keep the flat /groups/:uid fallback.
@@ -747,7 +638,8 @@ export class PendingActionsComponent {
           isVoteInlineExpanded,
           voteUsesDrawer: voteUsesDrawerVal,
           isInvitation,
-          isFormationItem,
+          // Formation rows (#2732): link, status chip and due label — shared with the "View all" drawer.
+          ...buildFormationPendingActionView(item),
           acceptAriaLabel: `Accept invite to ${inviteGroupName}`,
           declineAriaLabel: `Decline invite to ${inviteGroupName}`,
           inviteViewCommands,

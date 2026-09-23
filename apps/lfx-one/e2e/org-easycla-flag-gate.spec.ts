@@ -12,7 +12,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  *
  * `org-lens-cla-m3-enabled` needs no LaunchDarkly targeting — both cases pin it through the same
  * `stubFeatureFlags` localStorage override the ROI specs use (GH-1655). Pinning is what makes the
@@ -28,6 +27,7 @@ import {
   CLA_GROUPS_ROUTE,
   EASYCLA_URL,
   fulfillJson,
+  MOCK_ACCOUNT_ID,
   MOCK_ACCOUNT_NAME,
   PAGE_LOAD_TIMEOUT,
   stubAccountContext,
@@ -61,12 +61,6 @@ async function deepLinkToEasycla(page: Page, flagEnabled: boolean): Promise<void
 
   await page.goto(EASYCLA_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  // A redirect away from the whole lens means `org-lens-enabled` is off for this user, which is a
-  // missing prerequisite rather than a failure of the flag under test.
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 test.describe('Org Lens EasyCLA dark-launch gate', () => {
@@ -97,7 +91,11 @@ test.describe('Org Lens EasyCLA dark-launch gate', () => {
   test('renders the page and the nav item once the flag is on', async ({ page }) => {
     await deepLinkToEasycla(page, true);
 
-    await expect(page).toHaveURL(/\/org\/easycla/, { timeout: PAGE_LOAD_TIMEOUT });
+    // A bare legacy deep link is canonicalized by the default selection shortly after hydration
+    // (spec 050): the organization is inserted into the address. The mock organization publishes
+    // no slug, so its segment is the SFID. Asserting the final shape exactly, so a regression that
+    // left the leftover address in place — or inserted a different organization — would fail here.
+    await expect(page).toHaveURL(new RegExp(`/org/${MOCK_ACCOUNT_ID}/easycla$`), { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-title')).toContainText(MOCK_ACCOUNT_NAME);
     await expect(page.getByTestId('org-easycla-empty-state')).toBeVisible();

@@ -7,23 +7,27 @@ import {
   AKRITES_ENABLED_FLAG,
   COMMITTEE_LABEL,
   DOCUMENT_LABEL,
+  FORMATION_CHECKLIST_PATH,
   FORMATION_ENABLED_FLAG,
+  GATEWAZE_EMBED_ENABLED_FLAG,
+  GW_EMBED_FOUNDATION_NEWSLETTERS_LINK,
+  GW_EMBED_PROJECT_NEWSLETTERS_LINK,
   MAILING_LIST_LABEL,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   MENTORSHIP_ENABLED_FLAG,
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
 } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { isFormationStageGate } from '@lfx-one/shared/utils';
+import { isFormationStageGate, isGwEmbedAllowedForSlug } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
@@ -46,25 +50,32 @@ export class SidebarNavService {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly userService = inject(UserService);
   private readonly writerGrantsService = inject(WriterGrantsService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
 
   /** The section EasyCLA is inserted into; matched by label because the tree is built inline. */
   private readonly orgEngagementSectionLabel = 'Organization Engagement';
+  /** The Me lens section My Formations (#2753) is appended to; matched by label for the same reason. */
+  private readonly meEngagementSectionLabel = 'My Engagement';
 
-  /** Dark-launch gate; falls back to Me Lens nav when off. */
-  private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
   /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off, matching `mentorshipEnabledGuard`. */
   private readonly isMentorshipEnabled = this.featureFlagService.getBooleanFlag(MENTORSHIP_ENABLED_FLAG, false);
   /** Dark-launch gate for the Marketing OS marketplace; hides the nav item on project and foundation lenses when off. */
   private readonly isMktgOsAgentsEnabled = this.featureFlagService.getBooleanFlag(MKTG_OS_AGENTS_ENABLED_FLAG, false);
+  /** Pilot gate: decides whether the Communications links point at the embed or at LFX's own pages. */
+  private readonly isGatewazeEmbedEnabled = this.featureFlagService.getBooleanFlag(GATEWAZE_EMBED_ENABLED_FLAG, false);
   /** Dark-launch gate for the Org Lens ROI Metrics page; hides its org-lens nav entry when off. */
   private readonly isOrgLensRoiEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ROI_ENABLED_FLAG, false);
   /** Dark-launch gate for the M3 org-lens CLA module; hides the EasyCLA nav entry when off. */
   private readonly isOrgLensClaM3Enabled = this.featureFlagService.getBooleanFlag(ORG_LENS_CLA_M3_ENABLED_FLAG, false);
   /** Dual-gated with `ServerFeatureFlag.MarketingOpsFga` — unlocks Marketing nav for marketing_auditor/campaign_manager grants (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
-  /** Dark-launch gate for the formation checklist route (GH-1958); hides the nav item when off. */
+  /**
+   * Dark-launch gate for the formation routes (GH-1958, #2753); hides the project checklist, foundation
+   * queue and Me-lens My Formations nav items when off. With it on, a Formation-stage project's sidebar
+   * is the checklist item alone (#2754).
+   */
   private readonly isFormationEnabled = this.featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false);
 
   /**
@@ -83,6 +94,19 @@ export class SidebarNavService {
 
   private readonly activeLens = this.lensService.activeLens;
 
+  /**
+   * True while `formationOverviewRedirectGuard` has let the selected project's `/project/overview`
+   * stand — flag off, or LaunchDarkly not ready within its budget (#2754). The nav then keeps its full
+   * shape in step with the dashboard the guard admitted, rather than collapsing to Formation-only
+   * under it once the provider catches up. Cleared when navigation leaves the overview
+   * (`formationOverviewReleaseGuard`) and before every run of the redirect guard, so it never
+   * applies on a page where the formation experience hides the nav.
+   */
+  private readonly formationOverviewAllowed = computed((): boolean => {
+    const slug = this.projectContextService.formationOverviewAllowedSlug();
+    return slug !== null && slug === this.projectContextService.selectedProject()?.slug;
+  });
+
   // Newsletter nav visibility: ED persona always sees it; non-ED users see it
   // when they have writer (or owner-equivalent) permission on the currently
   // active foundation/project. canWrite() is reactive to context changes.
@@ -94,20 +118,36 @@ export class SidebarNavService {
       case 'foundation':
         return this.foundationLensItems();
       case 'project': {
+        // A project in a Formation stage (GH-1958, #2754) gets a Formation-only sidebar: nothing else
+        // in the lens is meaningful while it forms, so the checklist is the single entry — for every
+        // persona, hybrid marketing-grant users included: the Marketing section they regained in this
+        // lens under LFXV2-2235 (see the end of this case) is knowingly withheld while the project is
+        // forming, a product decision on #2754. Dark-launched behind the formation flag plus
+        // `isFormationStageGate` on the active project: the same conjunction
+        // `formationOverviewRedirectGuard` uses to send `/project/overview` to the checklist, so the
+        // nav and the landing route never disagree. With the flag on, the nav's shape depends on the
+        // stage, so while that fetch is still in flight nothing is rendered rather than the full nav
+        // that the resolved stage may then collapse (a click in that window would reach a route the
+        // formation experience hides). Flag off never waits: the full nav is the answer regardless —
+        // as it is for a dashboard the redirect guard let stand (`formationOverviewAllowed`): the nav
+        // stays in step with that page rather than collapsing under it once the flag arrives late.
+        if (this.isFormationEnabled() && !this.formationOverviewAllowed()) {
+          if (!this.projectContextService.activeProjectStageResolved()) {
+            return [];
+          }
+          if (isFormationStageGate(this.projectContextService.activeProjectStage())) {
+            return [this.formationNavItem];
+          }
+        }
         // Governance (Votes / Surveys / Permissions) is always surfaced under Project lens —
         // matching Foundation lens behavior. Authorization for write actions (add user,
         // edit role, remove, etc.) is enforced server-side and by per-page UI gating where
         // implemented; pre-existing gaps in those gates are tracked separately.
         // Mktg OS agents is dark-launched: when its flag is on, the entry is inserted between
-        // Documents (last of projectLensItemsTail) and the Governance section in the project sidebar.
+        // Documents (last of projectLensItems) and the Governance section in the project sidebar.
         const mktgOsItems = this.isMktgOsAgentsEnabled() ? [this.mktgOsAgentsNavItem] : [];
-        // Formation (GH-1958) is dark-launched behind its own flag plus a Formation sub-stage check on
-        // the active project — inserted directly under Dashboard, ahead of Meetings, hence the
-        // head/tail split of projectLensItems rather than an append like mktgOsItems above.
-        const showFormationNav = this.isFormationEnabled() && isFormationStageGate(this.projectContextService.activeProjectStage());
-        const formationItems = showFormationNav ? [this.formationNavItem] : [];
-        const base = [...this.projectLensItemsHead, ...formationItems, ...this.projectLensItemsTail, ...mktgOsItems, this.projectGovernanceSection];
-        const withComms = this.canSeeNewsletters() ? [...base, this.projectCommunicationsSection] : base;
+        const base = [...this.projectLensItems, ...mktgOsItems, this.projectGovernanceSection];
+        const withComms = this.canSeeNewsletters() ? [...base, this.buildProjectCommunicationsSection()] : base;
         // Marketing-only FGA users who are also hybrid personas (e.g. a project role plus a
         // marketing_auditor/campaign_manager grant) land here via getAllowedLensIds()/isHybridPersona
         // rather than the foundation lens — they must still reach Campaign Impact/Campaigns
@@ -116,23 +156,27 @@ export class SidebarNavService {
         return marketingSection ? [...withComms, marketingSection] : withComms;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.visibleOrgLensItems() : this.visibleMeLensItems();
+        return this.visibleOrgLensItems();
       default:
         return this.visibleMeLensItems();
     }
   });
 
   private readonly visibleOrgLensItems = computed((): SidebarMenuItem[] => {
-    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(this.orgLensItems) : this.orgLensItems;
+    const base = this.orgLensItems();
+    const items = this.isOrgLensClaM3Enabled() ? this.withEasyclaNavItem(base) : base;
     if (!this.isOrgLensRoiEnabled()) return items;
-    const projectsIndex = items.findIndex((item) => item.routerLink === '/org/projects');
+    const projectsIndex = items.findIndex((item) => item.routerLink === this.orgLensNavigation.orgLensPath('projects'));
+    const roi = this.orgRoiNavItem();
     // Append rather than prepend if Projects ever goes away, so ROI can't silently jump to the top.
-    if (projectsIndex === -1) return [...items, this.orgRoiNavItem];
+    if (projectsIndex === -1) return [...items, roi];
     const afterProjects = projectsIndex + 1;
-    return [...items.slice(0, afterProjects), this.orgRoiNavItem, ...items.slice(afterProjects)];
+    return [...items.slice(0, afterProjects), roi, ...items.slice(afterProjects)];
   });
 
-  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched).
+  // Me Lens nav with feature-flagged sections stripped (Security/Akrites and Mentorship are dark-launched),
+  // then My Formations (#2753) appended to My Engagement while `formation-enabled` is on — the first
+  // item-level gate on this lens; the section gates subtract whole sections by label.
   private readonly visibleMeLensItems = computed((): SidebarMenuItem[] => {
     const hiddenSections = new Set<string>();
     if (!this.isAkritesEnabled()) {
@@ -142,7 +186,8 @@ export class SidebarNavService {
       hiddenSections.add('Mentorship');
     }
 
-    return hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
+    const items = hiddenSections.size > 0 ? this.meLensItems.filter((item) => !hiddenSections.has(item.label)) : this.meLensItems;
+    return this.isFormationEnabled() ? this.withMyFormationsNavItem(items) : items;
   });
 
   // --- Me Lens Items ---
@@ -155,7 +200,7 @@ export class SidebarNavService {
       routerLink: '/',
     },
     {
-      label: 'My Engagement',
+      label: this.meEngagementSectionLabel,
       isSection: true,
       expanded: true,
       items: [
@@ -461,6 +506,12 @@ export class SidebarNavService {
       });
 
       if (this.canSeeNewsletters()) {
+        // Same gate as the project lens: the flag decides the surface, the tenant allowlist decides
+        // whether the embed is offered at all. AAIF is a foundation, so this is the mount it
+        // actually uses — without this the foundation sidebar kept pointing at LFX's own page even
+        // where the embed was live.
+        const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedFoundation()?.slug);
+
         items.push({
           label: 'Communications',
           isSection: true,
@@ -469,7 +520,7 @@ export class SidebarNavService {
             {
               label: 'Newsletters',
               icon: 'fa-light fa-paper-plane',
-              routerLink: '/foundation/newsletters',
+              routerLink: embedEnabled ? GW_EMBED_FOUNDATION_NEWSLETTERS_LINK : '/foundation/newsletters',
               testId: 'sidebar-foundation-newsletters',
             },
           ],
@@ -579,16 +630,13 @@ export class SidebarNavService {
     };
   });
 
-  // --- Project Lens Items (base), split so Formation (GH-1958) can be spliced in directly under Dashboard ---
-  private readonly projectLensItemsHead: SidebarMenuItem[] = [
+  // --- Project Lens Items (base) ---
+  private readonly projectLensItems: SidebarMenuItem[] = [
     {
       label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/project/overview',
     },
-  ];
-
-  private readonly projectLensItemsTail: SidebarMenuItem[] = [
     {
       label: 'Meetings',
       icon: 'fa-light fa-calendar',
@@ -611,12 +659,20 @@ export class SidebarNavService {
     },
   ];
 
-  // --- Project — Formation checklist (GH-1958; dark-launched, inserted directly under Dashboard) ---
+  // --- Project — Formation checklist (GH-1958; dark-launched, the only item for a Formation-stage project — #2754) ---
   private readonly formationNavItem: SidebarMenuItem = {
     label: 'Formation',
     icon: 'fa-light fa-list-check',
-    routerLink: '/project/formation',
+    routerLink: FORMATION_CHECKLIST_PATH,
     testId: 'sidebar-project-formation',
+  };
+
+  // --- Me — My Formations page (#2753; dark-launched, appended to My Engagement) ---
+  private readonly myFormationsNavItem: SidebarMenuItem = {
+    label: 'My Formations',
+    icon: 'fa-light fa-list-check',
+    routerLink: '/formations',
+    testId: 'sidebar-my-formations',
   };
 
   // --- Foundation — Formations queue (GH-1958; dark-launched, auditor-only) ---
@@ -666,90 +722,83 @@ export class SidebarNavService {
     ],
   };
 
-  // Project-lens Communications section (ED-only); appended dynamically in sidebarItems().
-  private readonly projectCommunicationsSection: SidebarMenuItem = {
-    label: 'Communications',
-    isSection: true,
-    expanded: true,
-    items: [
-      {
-        label: 'Newsletters',
-        icon: 'fa-light fa-paper-plane',
-        routerLink: '/project/newsletters',
-        testId: 'sidebar-project-newsletters',
-      },
-    ],
-  };
-
-  private readonly orgRoiNavItem: SidebarMenuItem = {
+  private readonly orgRoiNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'ROI Metrics',
     icon: 'fa-light fa-chart-mixed-up-circle-dollar',
-    routerLink: '/org/roi',
+    routerLink: this.orgLensNavigation.orgLensPath('roi'),
     testId: 'sidebar-org-roi',
-  };
+  }));
 
-  private readonly orgEasyclaNavItem: SidebarMenuItem = {
+  private readonly orgEasyclaNavItem: Signal<SidebarMenuItem> = computed(() => ({
     label: 'EasyCLA',
     icon: 'fa-light fa-file-signature',
-    routerLink: '/org/easycla',
+    routerLink: this.orgLensNavigation.orgLensPath('easycla'),
     testId: 'sidebar-org-easycla',
-  };
+  }));
 
-  private readonly orgLensItems: SidebarMenuItem[] = [
-    {
-      label: 'Dashboard',
-      icon: 'fa-light fa-grid-2',
-      routerLink: '/org/overview',
-    },
-    {
-      label: 'Memberships',
-      icon: 'fa-light fa-folder-bookmark',
-      routerLink: '/org/memberships',
-    },
-    {
-      label: 'Projects',
-      icon: 'fa-light fa-folder',
-      routerLink: '/org/projects',
-    },
-    // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
-    // top-level item or a section when re-enabled.
-    {
-      label: this.orgEngagementSectionLabel,
-      isSection: true,
-      expanded: true,
-      items: [
-        {
-          label: 'People',
-          icon: 'fa-light fa-people-group',
-          routerLink: '/org/people',
-        },
-        {
-          label: 'Code Contributions',
-          icon: 'fa-light fa-code',
-          routerLink: '/org/contributions',
-        },
-        {
-          label: 'Events',
-          icon: 'fa-light fa-ticket',
-          routerLink: '/org/events',
-        },
-        {
-          label: 'Training & Certification',
-          icon: 'fa-light fa-graduation-cap',
-          routerLink: '/org/training',
-        },
-        { label: 'Meetings', icon: 'fa-light fa-video', routerLink: '/org/meetings' },
-        { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: '/org/groups' },
-      ],
-    },
-    // Org admin — divider only (no section label); Profile sits under it.
-    {
-      label: 'Organization Profile',
-      icon: 'fa-light fa-memo',
-      routerLink: '/org/profile',
-      dividerBefore: true,
-    },
-  ];
+  /**
+   * Org Lens items address the selected organization (`/org/{segment}/{page}`, spec 050 US2) and
+   * re-render on every switch; while nothing is selected they fall back to the legacy `/org/{page}`
+   * form, which the default-organization redirect resolves.
+   */
+  private readonly orgLensItems: Signal<SidebarMenuItem[]> = computed((): SidebarMenuItem[] => {
+    const org = (page: string): string => this.orgLensNavigation.orgLensPath(page);
+    return [
+      {
+        label: 'Dashboard',
+        icon: 'fa-light fa-grid-2',
+        routerLink: org('overview'),
+      },
+      {
+        label: 'Memberships',
+        icon: 'fa-light fa-folder-bookmark',
+        routerLink: org('memberships'),
+      },
+      {
+        label: 'Projects',
+        icon: 'fa-light fa-folder',
+        routerLink: org('projects'),
+      },
+      // INFO: Future Epic implementation — the Governance page is hidden until built. Restore as a
+      // top-level item or a section when re-enabled.
+      {
+        label: this.orgEngagementSectionLabel,
+        isSection: true,
+        expanded: true,
+        items: [
+          {
+            label: 'People',
+            icon: 'fa-light fa-people-group',
+            routerLink: org('people'),
+          },
+          {
+            label: 'Code Contributions',
+            icon: 'fa-light fa-code',
+            routerLink: org('contributions'),
+          },
+          {
+            label: 'Events',
+            icon: 'fa-light fa-ticket',
+            routerLink: org('events'),
+          },
+          {
+            label: 'Training & Certification',
+            icon: 'fa-light fa-graduation-cap',
+            routerLink: org('training'),
+          },
+          { label: 'Meetings', icon: 'fa-light fa-video', routerLink: org('meetings') },
+          { label: COMMITTEE_LABEL.plural, icon: 'fa-light fa-users-rectangle', routerLink: org('groups') },
+        ],
+      },
+      // Org admin — divider only (no section label); Profile sits under it.
+      {
+        label: 'Organization Profile',
+        icon: 'fa-light fa-memo',
+        routerLink: org('profile'),
+        dividerBefore: true,
+      },
+    ];
+  });
 
   /**
    * The M3 prototype places EasyCLA inside Organization Engagement, between Code Contributions
@@ -759,10 +808,67 @@ export class SidebarNavService {
   private withEasyclaNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
     return items.map((item) => {
       if (!item.isSection || item.label !== this.orgEngagementSectionLabel || !item.items) return item;
-      const afterContributions = item.items.findIndex((child) => child.routerLink === '/org/contributions') + 1;
+      const afterContributions = item.items.findIndex((child) => child.routerLink === this.orgLensNavigation.orgLensPath('contributions')) + 1;
       const at = afterContributions === 0 ? item.items.length : afterContributions;
-      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem, ...item.items.slice(at)] };
+      return { ...item, items: [...item.items.slice(0, at), this.orgEasyclaNavItem(), ...item.items.slice(at)] };
     });
+  }
+
+  /**
+   * Appends My Formations (#2753) as the last child of the Me lens's My Engagement section —
+   * mirrors `withEasyclaNavItem`. Only called while `formation-enabled` is on, so the static
+   * `meLensItems` tree stays flag-free.
+   */
+  private withMyFormationsNavItem(items: SidebarMenuItem[]): SidebarMenuItem[] {
+    return items.map((item) => {
+      if (!item.isSection || item.label !== this.meEngagementSectionLabel || !item.items) return item;
+      return { ...item, items: [...item.items, this.myFormationsNavItem] };
+    });
+  }
+
+  /**
+   * Project-lens Communications section; appended dynamically in sidebarItems().
+   *
+   * Visibility is `canSeeNewsletters()` — ED persona or writer — matching the route guards on both
+   * embed mounts. Only the link TARGETS depend on the pilot flag, for the reason below.
+   *
+   * Built per-call rather than held as a constant because the embed's routes only *match* while
+   * `gatewaze-embed-enabled` is on — `gatewazeEmbedEnabledGuard` is a CanMatch that redirects to
+   * `/` otherwise. A fixed link to the embed would therefore bounce every ED and writer to the
+   * dashboard whenever the flag is off (its default), and take LFX's own newsletters page out of
+   * the sidebar with it. The visibility of this section and the target of its links have to be
+   * gated on the same thing.
+   */
+  private buildProjectCommunicationsSection(): SidebarMenuItem {
+    // Flag AND tenant. Gatewaze serves one tenant's content, so offering the embed from another
+    // foundation would open THAT foundation's chrome around AAIF's newsletters. The slug check is
+    // the data-isolation half; the flag is only the rollout half.
+    // The PROJECT slot only, even though AAIF is a foundation. It occupies the project selection
+    // on this mount, so this still shows the embed for the tenant it is meant for — which is what
+    // an earlier version was reaching for when it accepted either slot.
+    //
+    // Accepting either was wrong here. `selectedFoundation` persists across lens switches, so a
+    // user who had visited AAIF in the Foundation Lens and then opened an unrelated project got
+    // Newsletters retargeted at the embed for that other tenant —
+    // the same class of stale-context bug as the route guard, reached from the sidebar instead.
+    const embedEnabled = this.isGatewazeEmbedEnabled() && isGwEmbedAllowedForSlug(this.projectContextService.selectedProject()?.slug);
+
+    return {
+      label: 'Communications',
+      isSection: true,
+      expanded: true,
+      items: [
+        {
+          label: 'Newsletters',
+          icon: 'fa-light fa-paper-plane',
+          // With the flag on this points at the embedded Gatewaze newsletters module instead of
+          // LFX's own page. Both are gated identically, so this chooses the surface, not the
+          // audience — keep the conditional: the embed's routes only match while the flag is on.
+          routerLink: embedEnabled ? GW_EMBED_PROJECT_NEWSLETTERS_LINK : '/project/newsletters',
+          testId: 'sidebar-project-newsletters',
+        },
+      ],
+    };
   }
 
   private initCanSeeNewsletters(): Signal<boolean> {

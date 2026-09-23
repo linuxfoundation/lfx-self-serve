@@ -7,14 +7,13 @@
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="20rem" />
     </section>
-  } @else if (hasNoOrgAccess()) {
-    <section class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-easycla-no-access-state">
-      <h2 class="text-base font-semibold text-gray-900">Organization Lens is not available</h2>
-      <p class="max-w-md text-sm text-gray-600">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
-        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-no-access-contact-support">contact us</button>.
-      </p>
-    </section>
+  } @else if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-easycla-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!hasCompany()) {
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"
@@ -63,7 +62,7 @@
       title="This CLA Group can't be previewed here yet"
       subtitle="Your organization hasn't signed a corporate CLA for this CLA Group. To review and sign it, start from your EasyCLA page."
       ctaLabel="Back to EasyCLA"
-      [ctaRoute]="['/org/easycla']" />
+      [ctaRoute]="easyclaListLink()" />
   } @else if (notFound()) {
     <lfx-empty-state
       data-testid="org-easycla-detail-not-found-state"
@@ -71,7 +70,7 @@
       title="This CLA was not found"
       subtitle="It may have been removed, or the link is for a different organization."
       ctaLabel="Back to EasyCLA"
-      [ctaRoute]="['/org/easycla']" />
+      [ctaRoute]="easyclaListLink()" />
   } @else if (claGroup(); as group) {
     <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="org-easycla-detail-breadcrumb" />
 
@@ -249,7 +248,7 @@
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.
             -->
-            <div>
+            <div class="flex flex-wrap items-center gap-3">
               <lfx-button
                 [label]="notStartedCopy.startLabel"
                 icon="fa-light fa-file-signature"
@@ -257,6 +256,25 @@
                 [ariaLabel]="startAriaLabel()"
                 (onClick)="startClaProcess()"
                 data-testid="org-easycla-detail-start-cla" />
+              <!--
+                The same refusal reason as Start, but this control keeps its own visible name.
+                Reusing startAriaLabel() would announce "Start the CLA process" for a link that
+                still reads Identify someone else.
+
+                aria-disabled rather than [disabled]: a native-disabled button leaves the tab
+                order, so a keyboard or screen-reader user would never hear the reason the
+                accessible name carries. requireSignableContext() refuses the activation instead
+                (same pattern as org-meetings-time-range).
+              -->
+              <button
+                type="button"
+                class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
+                [attr.aria-disabled]="startDisabled() ? true : null"
+                [attr.aria-label]="identifySomeoneElseAriaLabel()"
+                (click)="identifySomeoneElse()"
+                data-testid="org-easycla-detail-identify-someone-else">
+                {{ notStartedCopy.identifySomeoneElseLabel }}
+              </button>
             </div>
           </div>
         }
@@ -278,6 +296,15 @@
             data-testid="org-easycla-detail-download" />
         }
       </section>
+    } @else if (activeTab() === 'managers' && claGroup(); as group) {
+      <div role="tabpanel" [id]="'org-easycla-detail-tab-panel-managers'" [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-managers'">
+        <lfx-org-easycla-managers
+          [orgUid]="selectedOrgUid()"
+          [signatureId]="group.id"
+          [signed]="group.signed"
+          [claGroup]="group"
+          (managerCountChanged)="onManagerCountChanged($event)" />
+      </div>
     } @else if (activeTab() === 'approval' && claGroup()?.signed) {
       <section
         role="tabpanel"
@@ -285,6 +312,14 @@
         aria-labelledby="org-easycla-detail-tab-trigger-approval"
         data-testid="org-easycla-detail-approval">
         <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
+      </section>
+    } @else if (activeTab() === 'acknowledgments' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-acknowledgments"
+        aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
+        data-testid="org-easycla-detail-acknowledgments">
+        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
       </section>
     } @else {
       <section
@@ -294,14 +329,13 @@
         class="py-8"
         data-testid="org-easycla-detail-tab-empty">
         <!--
-          The CLA Managers and Approval List tabs on an unsigned agreement, where signing is what
-          creates the content: the signatory becomes the initial CLA Manager, and approval entries
-          are what that manager then maintains. Left bare, the panel reads as a page that failed to
-          load rather than as a state — the same gap the empty Overview had. One lock icon for both,
-          because "locked until signed" is what each panel is actually saying.
-
-          The remaining tabs stay bare. They are unbuilt for every agreement, signed or not, so
-          "once this CLA is signed" would promise content signing does not produce.
+          The CLA Managers, Approval List, and Contributor Acknowledgments tabs on an unsigned
+          agreement, where signing is what creates the content: the signatory becomes the initial
+          CLA Manager, approval entries are what that manager maintains, and acknowledgments are
+          what contributors place against the resulting rules. Left bare, the panel reads as a
+          page that failed to load rather than as a state — the same gap the empty Overview had.
+          One lock icon for all three, because "locked until signed" is what each panel is actually
+          saying.
         -->
         @if (lockedTab(); as locked) {
           <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />

@@ -1,26 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, OnInit, output } from '@angular/core';
-import { ButtonComponent } from '@components/button/button.component';
-import { MessageComponent } from '@components/message/message.component';
-import { TagComponent } from '@components/tag/tag.component';
+import { Component, computed, input, output } from '@angular/core';
 import { MeetingTemplate, MeetingType } from '@lfx-one/shared';
 import { MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-agenda-template-selector',
-  imports: [ButtonComponent, MessageComponent, TagComponent],
   templateUrl: './agenda-template-selector.component.html',
 })
-export class AgendaTemplateSelectorComponent implements OnInit {
+export class AgendaTemplateSelectorComponent {
   // Inputs
   public readonly meetingType = input.required<MeetingType>();
-  public readonly visible = input.required<boolean>();
 
   // Outputs
   public readonly templateSelected = output<MeetingTemplate>();
-  public readonly closeSelector = output<void>();
 
   // Computed properties
   public readonly availableTemplates = computed(() => {
@@ -36,16 +30,8 @@ export class AgendaTemplateSelectorComponent implements OnInit {
     }));
   });
 
-  public ngOnInit(): void {
-    // Component initialization if needed
-  }
-
   public selectTemplate(template: MeetingTemplate): void {
     this.templateSelected.emit(template);
-  }
-
-  public close(): void {
-    this.closeSelector.emit();
   }
 
   private getPreview(content: string): string {

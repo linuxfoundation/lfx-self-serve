@@ -1,0 +1,92 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-3.5" data-testid="meeting-composer-preview">
+  <span class="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Preview</span>
+
+  <div class="flex items-start gap-2.5">
+    <div class="flex w-[26px] shrink-0 flex-col overflow-hidden rounded border border-gray-200 text-center">
+      <span class="bg-blue-600 text-[8px] font-bold uppercase leading-[13px] text-white" aria-hidden="true">{{ dateChip().month }}</span>
+      <span class="text-[11px] font-bold leading-[15px] text-gray-900" aria-hidden="true">{{ dateChip().day }}</span>
+    </div>
+
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <span class="truncate text-sm font-semibold text-gray-900" data-testid="meeting-composer-preview-title">{{ title() }}</span>
+      @if (whenSummary(); as when) {
+        <span class="text-xs text-gray-500" data-testid="meeting-composer-preview-when">{{ when }}</span>
+      } @else {
+        <span class="flex h-4 items-center">
+          <span class="sr-only">Date and time not set</span>
+          <span class="h-[7px] w-2/3 rounded-full bg-gray-100" aria-hidden="true"></span>
+        </span>
+      }
+    </div>
+  </div>
+
+  <div class="h-px bg-gray-100"></div>
+
+  <!-- Flat icon + value rows: the design carries no field labels here, so an unset row reads as a bar -->
+  <ul class="flex flex-col gap-2">
+    <li class="flex items-center gap-2">
+      <!-- The chosen type's own icon, with the neutral hexagon standing in until a type is picked: the
+           row used to carry that hexagon for every type, which said nothing the label wasn't already
+           saying. -->
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400" [ngClass]="typeRow()?.icon ?? 'fa-light fa-hexagon'" aria-hidden="true"></i>
+      @if (typeRow(); as type) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-type">{{ type.label }}</span>
+      } @else {
+        <span class="sr-only">Meeting type not set</span>
+        <span class="h-[7px] w-[65%] rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
+
+    @if (visibility(); as visibilityRow) {
+      <li class="flex items-center gap-2">
+        <span
+          class="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-[7px] text-white"
+          [style.background-color]="visibilityRow.color"
+          aria-hidden="true">
+          <i [ngClass]="visibilityRow.icon"></i>
+        </span>
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-visibility">{{ visibilityRow.label }}</span>
+      </li>
+    }
+
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-arrows-repeat" aria-hidden="true"></i>
+      @if (recurrenceLabel(); as recurrence) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-recurrence">{{ recurrence }}</span>
+      } @else {
+        <span class="sr-only">Schedule not set</span>
+        <span class="h-[7px] w-1/2 rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
+
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-video" aria-hidden="true"></i>
+      @if (platformLabel(); as platform) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-platform">{{ platform }}</span>
+      } @else {
+        <span class="sr-only">Platform not set</span>
+        <span class="h-[7px] w-[45%] rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
+
+    @for (feature of features(); track feature.label) {
+      <li class="flex items-center gap-2" data-testid="meeting-composer-preview-feature">
+        <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400" [ngClass]="feature.icon" aria-hidden="true"></i>
+        <span class="truncate text-[11px] text-gray-700">{{ feature.label }}</span>
+      </li>
+    }
+
+    <li class="flex items-center gap-2">
+      <i class="w-3.5 shrink-0 text-center text-[11px] font-light text-gray-400 fa-light fa-user" aria-hidden="true"></i>
+      @if (guestLabel(); as guests) {
+        <span class="truncate text-[11px] text-gray-700" data-testid="meeting-composer-preview-guests">{{ guests }}</span>
+      } @else {
+        <span class="sr-only">No guests invited yet</span>
+        <span class="h-[7px] w-[55%] rounded-full bg-gray-100" aria-hidden="true"></span>
+      }
+    </li>
+  </ul>
+</section>

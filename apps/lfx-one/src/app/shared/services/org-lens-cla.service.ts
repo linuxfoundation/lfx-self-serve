@@ -7,12 +7,22 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
+  OrgClaContributorAcknowledgmentList,
   OrgClaGroupList,
+  OrgClaInvalidateAcknowledgmentRequest,
+  OrgClaInvalidateAcknowledgmentResult,
+  OrgClaManager,
+  OrgClaManagerAddRequest,
+  OrgClaManagerList,
+  OrgClaPermissionAction,
+  OrgClaPermissionCheckRequest,
+  OrgClaPermissionCheckResponse,
   OrgClaSignRequest,
   OrgClaSignResponse,
   PdfUrlResponse,
 } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { strictHttpParams } from '@shared/utils/http-params.utils';
+import { Observable, catchError, map, of } from 'rxjs';
 
 /**
  * Client for the Org Lens EasyCLA list (#1978).
@@ -53,15 +63,33 @@ export class OrgLensClaService {
   }
 
   /**
-   * Opens the corporate signing session (#1983).
+   * Opens the corporate signing session (#1983 / #2365).
    *
-   * `request` carries the signatory's two attestations as they actually stood when they
-   * continued. Nothing on this path substitutes a literal for them, and nothing should: the
-   * server compares against `true` and refuses anything else, which is only meaningful if what
-   * arrives is what the signatory set.
+   * Self-sign carries the two attestations as they actually stood when Continue was pressed.
+   * Send-by-email carries the named signatory and `sendAsEmail: true` — never a hardcoded ack.
    */
   public requestCorporateSignature(orgUid: string, request: OrgClaSignRequest): Observable<OrgClaSignResponse> {
     return this.http.post<OrgClaSignResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/sign`, request);
+  }
+
+  /**
+   * Whether ACS allows this viewer the typed write for this organization and pair.
+   *
+   * Fail closed: a missing body, a non-boolean, or an HTTP error is `false`, so a timeout cannot
+   * continue Sign. The server interpolates the ACS string; this posts only the typed action.
+   */
+  public checkPermission(orgUid: string, action: OrgClaPermissionAction, projectSfid: string): Observable<boolean> {
+    const body: OrgClaPermissionCheckRequest = {
+      action,
+      ...(projectSfid ? { projectSfid } : {}),
+    };
+    return this.http.post<OrgClaPermissionCheckResponse>(`/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/permissions/checks`, body).pipe(
+      map((response) => response?.allowed === true),
+      catchError((error: unknown) => {
+        console.error('Organization Lens CLA permission check failed', error);
+        return of(false);
+      })
+    );
   }
 
   /** The approval list of one agreement — the rules deciding who it covers (#1985). */
@@ -81,7 +109,67 @@ export class OrgLensClaService {
     return this.http.put<OrgClaApprovalList>(this.approvalListUrl(orgUid, signatureId), update);
   }
 
+  public getManagers(orgUid: string, signatureId: string): Observable<OrgClaManagerList> {
+    return this.http.get<OrgClaManagerList>(`${this.managersUrl(orgUid, signatureId)}`);
+  }
+
+  public addManager(orgUid: string, signatureId: string, request: OrgClaManagerAddRequest): Observable<OrgClaManager> {
+    return this.http.post<OrgClaManager>(`${this.managersUrl(orgUid, signatureId)}`, request);
+  }
+
+  public removeManager(orgUid: string, signatureId: string, lfUsername: string): Observable<void> {
+    return this.http.delete<void>(`${this.managersUrl(orgUid, signatureId)}/${encodeURIComponent(lfUsername)}`);
+  }
+
+  /**
+   * Paginated contributor acknowledgments (ECLA signatures) for one CCLA (#1986).
+   *
+   * The `search` term is forwarded to the server as a query parameter and applied by the producer
+   * — filtering is not scoped to the rows already loaded. `nextKey`-driven Load-more fetches the
+   * next page. `pageSize` is clamped server-side, so passing an out-of-range value is a hint the
+   * server rewrites rather than an error the client has to handle.
+   */
+  public getContributorAcknowledgments(
+    orgUid: string,
+    signatureId: string,
+    options: { search?: string; pageSize?: number; nextKey?: string | null } = {}
+  ): Observable<OrgClaContributorAcknowledgmentList> {
+    let params = strictHttpParams();
+    if (options.search) params = params.set('search', options.search);
+    if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
+    if (options.nextKey) params = params.set('nextKey', options.nextKey);
+    return this.http.get<OrgClaContributorAcknowledgmentList>(this.acknowledgmentsUrl(orgUid, signatureId), { params });
+  }
+
+  /**
+   * Invalidates one acknowledgment on this CCLA (#2807).
+   *
+   * Refused server-side while impersonating, before the org-lens grant check runs. The response is
+   * a receipt carrying only the acknowledgment id — the producer stamps the invalidation
+   * timestamp and actor and reports neither — so the caller refetches rather than deriving the
+   * row's new state from it.
+   */
+  public invalidateAcknowledgment(
+    orgUid: string,
+    signatureId: string,
+    acknowledgmentSignatureId: string,
+    request: OrgClaInvalidateAcknowledgmentRequest
+  ): Observable<OrgClaInvalidateAcknowledgmentResult> {
+    return this.http.post<OrgClaInvalidateAcknowledgmentResult>(
+      `${this.acknowledgmentsUrl(orgUid, signatureId)}/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+      request
+    );
+  }
+
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
+  }
+
+  private managersUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/managers`;
+  }
+
+  private acknowledgmentsUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/acknowledgments`;
   }
 }

@@ -11,7 +11,6 @@ const DATA_LOAD_TIMEOUT = 30_000;
 const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Motors';
-const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 // SC-001 dev-mode budget multiplier — `ng serve` adds 3–10× per interaction vs the production build.
 const PERF_DEV_MULTIPLIER = 5;
@@ -91,7 +90,7 @@ async function stubAccountContext(page: Page, opts: { writers: string[]; auditor
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_UID }],
+        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_UID }],
         isRootWriter: false,
       }),
     })
@@ -127,9 +126,6 @@ async function gotoCommitteeTab(page: Page): Promise<void> {
   await page.goto(PEOPLE_COMMITTEE_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
 
-  if (!page.url().includes('/org/people')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/people redirected away');
-  }
   await expect(page.getByTestId('org-people-panel-committee')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }
 

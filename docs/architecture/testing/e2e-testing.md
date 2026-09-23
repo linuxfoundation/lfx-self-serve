@@ -1,6 +1,6 @@
 # End-to-End Testing Architecture
 
-E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite has grown to ~104 spec files across most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
+E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. The suite covers most feature modules (badges, meetings, committees, org dashboards, formation checklist, docs, etc.); new specs should follow the same patterns as the representative examples below.
 
 ## Current State
 
@@ -13,6 +13,12 @@ apps/lfx-one/
 │   ├── profile-identities-verify-robust.spec.ts     # structural
 │   ├── formation-checklist.spec.ts                  # content-based
 │   ├── formation-checklist-robust.spec.ts           # structural
+│   ├── pending-actions-formation-item.spec.ts       # content-based — Me-lens row → checklist ?item= deep link (#2732)
+│   ├── pending-actions-formation-item-robust.spec.ts # structural
+│   ├── formation-sidebar.spec.ts                    # content-based — Formation-only project sidebar + overview redirect (#2754)
+│   ├── formation-sidebar-robust.spec.ts             # structural
+│   ├── my-formations.spec.ts                        # content-based — Me-lens My Formations page (#2753)
+│   ├── my-formations-robust.spec.ts                 # structural
 │   ├── docs/                                        # docs-module specs (accessibility, lifecycle, search, ...)
 │   ├── fixtures/
 │   │   └── mock-data/
@@ -22,6 +28,7 @@ apps/lfx-one/
 │       ├── auth.helper.ts           # Auth0 login helper
 │       ├── api-mock.helper.ts       # page.route() utilities
 │       ├── formation-api-mock.helper.ts # page.route() utilities for the formation checklist/queue
+│       ├── formation-checklist.helper.ts # navigation + route-mock bundles for the checklist hosts, the Me-dashboard formation row and the My Formations page
 │       └── global-setup.ts          # runs once before the suite, saves auth state
 ├── playwright/
 │   └── .auth/user.json              # auth state produced by global-setup (gitignored)

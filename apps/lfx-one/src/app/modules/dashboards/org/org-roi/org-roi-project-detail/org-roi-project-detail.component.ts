@@ -1,10 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { afterNextRender, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { ChartComponent } from '@components/chart/chart.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import {
   lfxColors,
@@ -14,11 +16,20 @@ import {
   ORG_LENS_ROI_METHOD_LABELS,
   ORG_LENS_ROI_NO_VALUE,
 } from '@lfx-one/shared/constants';
-import type { OrgLensRoiMethod, OrgLensRoiProjectAnnual, OrgLensRoiProjectDetail, OrgLensRoiProjectYearRow, StatCardItem } from '@lfx-one/shared/interfaces';
+import type {
+  OrgLensRoiMethod,
+  OrgLensRoiProjectAnnual,
+  OrgLensRoiProjectDetail,
+  OrgLensRoiProjectYearRow,
+  OrgLensSectionOutcome,
+  StatCardItem,
+} from '@lfx-one/shared/interfaces';
 import { formatCurrency, formatPercent } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, tap } from 'rxjs';
@@ -29,11 +40,12 @@ const EMPTY_DETAIL: { detail: OrgLensRoiProjectDetail | null; annual: OrgLensRoi
 /** One project's ROI, reached from the projects table (LFXV2-2980). */
 @Component({
   selector: 'lfx-org-roi-project-detail',
-  imports: [ChartComponent, StatCardGridComponent, RouterLink, SkeletonModule],
+  imports: [ChartComponent, OrgLensEmptyStateComponent, StatCardGridComponent, RouterLink, SkeletonModule],
   templateUrl: './org-roi-project-detail.component.html',
 })
 export class OrgRoiProjectDetailComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
@@ -47,6 +59,9 @@ export class OrgRoiProjectDetailComponent {
    * numbers without saying so.
    */
   protected readonly method = signal<OrgLensRoiMethod>(ORG_LENS_ROI_DEFAULT_METHOD);
+
+  // Hoisted from the template: a method call there allocates a new command array on every change-detection pass (frontend-checklist §4).
+  protected readonly roiLink: Signal<string[]> = computed(() => this.orgLens.orgLensLink('roi'));
 
   protected readonly methodLabel: Signal<string> = computed(() => ORG_LENS_ROI_METHOD_LABELS[this.method()]);
 
@@ -69,10 +84,20 @@ export class OrgRoiProjectDetailComponent {
   protected readonly hasAnalyticsId: Signal<boolean> = computed(() => !!this.accountContext.selectedAccount()?.accountId);
 
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  protected readonly forbidden = signal(false);
+  /**
+   * How the last request ended (spec 053 FR-014/FR-015). Never `empty`: a project with no ROI row
+   * answers 404, which is `missing` below — showing zeros would assert a measurement never made.
+   */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
   /** The 404 path: this organization has no ROI row for the slug. Distinct from a failed read. */
   protected readonly missing = signal(false);
+  /** Bumped by Retry; part of the request key so the same organization, project and method re-issue the read. */
+  private readonly attempt = signal(0);
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  /** The shared state to render instead of the figures, or `null` when the last read succeeded. */
+  protected readonly emptyState = computed(() => sectionEmptyState(this.loadOutcome()));
 
   private readonly payload = this.initPayload();
 
@@ -106,7 +131,7 @@ export class OrgRoiProjectDetailComponent {
     return detail.orgUid === selected && detail.project.projectSlug === this.projectSlug() && detail.method === this.method();
   });
 
-  protected readonly showsFigures: Signal<boolean> = computed(() => !this.forbidden() && !this.failed() && !this.missing() && this.payloadMatchesRoute());
+  protected readonly showsFigures: Signal<boolean> = computed(() => this.loadOutcome() === 'records' && !this.missing() && this.payloadMatchesRoute());
 
   /** Falls back to the slug rather than the stale payload's name, for the same window. */
   protected readonly projectName: Signal<string> = computed(
@@ -122,7 +147,9 @@ export class OrgRoiProjectDetailComponent {
    */
   protected readonly hasOrgLensProject: Signal<boolean> = computed(() => this.detail()?.hasOrgLensProject === true);
 
-  protected readonly orgProjectLink: Signal<string> = computed(() => `/org/projects/${this.detail()?.project.projectSlug ?? this.projectSlug()}`);
+  protected readonly orgProjectLink: Signal<string[]> = computed(() =>
+    this.orgLens.orgLensLink('projects', this.detail()?.project.projectSlug ?? this.projectSlug())
+  );
 
   /** Five figures, read from the payload — roi, bcr and profit are defined once in the metric layer. */
   protected readonly cards: Signal<StatCardItem[]> = computed(() => {
@@ -258,14 +285,26 @@ export class OrgRoiProjectDetailComponent {
     afterNextRender(() => this.restoreMethod());
   }
 
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
+
   private initPayload(): Signal<{ detail: OrgLensRoiProjectDetail | null; annual: OrgLensRoiProjectAnnual | null }> {
-    // A typed triple rather than a delimited string, so nothing has to be parsed back out or cast.
+    // A typed record rather than a delimited string, so nothing has to be parsed back out or cast.
     // The dedup a string key gave for free is restored explicitly: the selected-account object is
     // rewritten in place, so this recomputes on changes that leave every field identical.
     const request$ = toObservable(
-      computed(() => ({ orgUid: this.accountContext.selectedAccount()?.accountId ?? '', projectSlug: this.projectSlug(), method: this.method() }))
+      computed(() => ({
+        orgUid: this.accountContext.selectedAccount()?.accountId ?? '',
+        projectSlug: this.projectSlug(),
+        method: this.method(),
+        attempt: this.attempt(),
+      }))
     ).pipe(
-      distinctUntilChanged((previous, next) => previous.orgUid === next.orgUid && previous.projectSlug === next.projectSlug && previous.method === next.method)
+      distinctUntilChanged(
+        (previous, next) =>
+          previous.orgUid === next.orgUid && previous.projectSlug === next.projectSlug && previous.method === next.method && previous.attempt === next.attempt
+      )
     );
 
     return toSignal(
@@ -273,8 +312,7 @@ export class OrgRoiProjectDetailComponent {
         filter(({ orgUid, projectSlug }) => !!orgUid && !!projectSlug),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
           this.missing.set(false);
         }),
         switchMap(({ orgUid, projectSlug, method }) =>
@@ -286,13 +324,10 @@ export class OrgRoiProjectDetailComponent {
             catchError((error: unknown) => {
               console.error('Failed to load ROI project detail', error);
               this.loading.set(false);
-              const status = (error as { status?: number })?.status;
-              // Three outcomes, kept apart: no grant, no such project for this organization, and
-              // everything else. Collapsing the 404 into the error state would tell a viewer to
-              // retry a request that cannot succeed.
-              if (status === 403) this.forbidden.set(true);
-              else if (status === 404) this.missing.set(true);
-              else this.failed.set(true);
+              // The 404 is kept apart from the shared classification: collapsing it into the
+              // could-not-load state would tell a viewer to retry a request that cannot succeed.
+              if (error instanceof HttpErrorResponse && error.status === 404) this.missing.set(true);
+              else this.loadOutcome.set(classifySectionError(error));
               return of(EMPTY_DETAIL);
             })
           )

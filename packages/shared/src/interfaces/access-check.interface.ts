@@ -42,7 +42,9 @@ export type AccessCheckResourceType =
   | 'groupsio_service'
   | 'groupsio_mailing_list'
   | 'groupsio_member'
-  | 'team';
+  | 'team'
+  /** LFXV2-3029 — b2b_org, so the BFF can ask the authorizer to classify connected-component candidates instead of re-deriving the hierarchy rule locally. No access-type change needed: `writer` and `auditor` are already in the union below. */
+  | 'b2b_org';
 export type AccessCheckAccessType =
   | 'writer'
   | 'viewer'
@@ -53,11 +55,4 @@ export type AccessCheckAccessType =
   | 'member'
   | 'marketing_auditor'
   | 'campaign_manager'
-  | 'marketing_ops'
-  /**
-   * TODO(#1957): not yet a real FGA relation — `lfx-v2-formation-service`/`lfx-v2-helm` haven't
-   * shipped the `formation_item` type or its `gate_writer` relation. Added now so the frontend/BFF
-   * types are ready; until then `FormationItemAccessService.canComplete` fabricates this value from
-   * a real LF-staff check rather than an actual `checkSingleAccess` call.
-   */
-  | 'gate_writer';
+  | 'marketing_ops';

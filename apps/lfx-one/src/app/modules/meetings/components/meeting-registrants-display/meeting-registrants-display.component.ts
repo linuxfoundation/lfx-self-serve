@@ -316,11 +316,15 @@ export class MeetingRegistrantsDisplayComponent {
               // available (non-recurring meetings). See LFXV2-2864.
               const meeting = this.meeting() as Meeting;
               const occurrenceId = resolveRsvpOccurrenceId(meeting);
-              // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
+              // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views.
+              // The organizer branch asks for committee enrichment because the group filter compares
+              // `registrant.committee_uid` against `meeting.committees[].uid` (v2) — unenriched, the field
+              // still holds the upstream v1 SFID and no option would ever match. The `/my` endpoint
+              // enriches unconditionally, so it needs no flag.
               const includeRsvp = this.inviteResponsesEnabled();
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(meeting.id, includeRsvp, occurrenceId)
-                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId);
+                : this.meetingService.getMeetingRegistrants(meeting.id, includeRsvp, occurrenceId, false, undefined, true);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
@@ -366,7 +370,12 @@ export class MeetingRegistrantsDisplayComponent {
           return combineLatest([
             // Use the canonical occurrence resource id — project/foundation past cards can carry a
             // distinct meeting.id, which would otherwise fail-soft to [] (empty organizer set).
-            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(catchError(() => of([] as PastMeetingParticipant[]))),
+            this.meetingService.getPastMeetingParticipants(getPastMeetingResourceId(meeting)).pipe(
+              tap((rawParticipants) => {
+                this.totalCountChange.emit(rawParticipants.length);
+              }),
+              catchError(() => of([] as PastMeetingParticipant[]))
+            ),
             committeeMembers$,
           ]).pipe(
             map(([participants, committeeMembers]) => {

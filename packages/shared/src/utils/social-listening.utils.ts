@@ -47,7 +47,7 @@ import type {
 } from '../interfaces/social-listening.interface';
 import type { StatCardDelta, StatCardDeltaDirection } from '../interfaces/stat-card.interface';
 import { normalizeSnowflakeTimestamp } from './date-time.utils';
-import { capitalizeFirst } from './string.utils';
+import { capitalizeFirst, formatTag } from './string.utils';
 
 /** Trims, lowercases + dedupes keywords so filter state and payloads stay canonical (the server trims at its boundary too). */
 export const normalizeKeywords = (keywords: string[]): string[] => [...new Set(keywords.map((keyword) => keyword.trim().toLowerCase()).filter(Boolean))];
@@ -168,18 +168,6 @@ export function mapAuthorsToOptions(authors: SocialListeningMentionAuthor[]): Au
     const config = MENTION_PLATFORM_CONFIG[normalizePlatformKey(a.PLATFORM)];
     return { ...a, platformIcon: config.icon, platformIconClass: config.colorClass };
   });
-}
-
-/** Formats a raw tag for display (`ai_agents` -> `AI Agents`). Standalone so non-template consumers share it with the `formatTag` pipe (rule: pipes wrap a function). */
-export function formatTag(value: string): string {
-  if (!value) {
-    return '';
-  }
-
-  return value
-    .split('_')
-    .map((word) => (word === 'ai' ? 'AI' : word.charAt(0).toUpperCase() + word.slice(1)))
-    .join(' ');
 }
 
 /** Re-adds selected authors missing from the rescoped options as placeholders, so the multiselect chip label still resolves. */

@@ -18,7 +18,7 @@ import {
   mockProjectAnnual,
   mockProjectDetail,
   NO_VALUE,
-  orgRoiProjectDetailUrl,
+  orgLensAddressPattern,
   stubOrgLensContext,
 } from './helpers/org-roi.helper';
 
@@ -200,7 +200,7 @@ test.describe('Org Lens ROI project detail — onward link', () => {
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
     const link = page.getByTestId('org-roi-project-detail-onward-link');
-    await expect(link).toHaveAttribute('href', `/org/projects/${DETAIL_PROJECT.slug}`);
+    await expect(link).toHaveAttribute('href', orgLensAddressPattern('projects', DETAIL_PROJECT.slug));
     await expect(page.getByTestId('org-roi-project-detail-onward-unavailable')).toHaveCount(0);
   });
 
@@ -231,8 +231,10 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
     await stubOrgLensContext(page, { projectDetailStatus: 403 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toBeVisible();
-    await expect(page.getByTestId('org-roi-project-detail-error')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-project-detail-empty-state');
+    await expect(state).toBeVisible();
+    await expect(state).toHaveAttribute('data-state', 'section-no-access');
+    await expect(state).toContainText('You do not have access to this organization');
     await expect(page.getByTestId('org-roi-project-detail-not-found')).toHaveCount(0);
   });
 
@@ -240,8 +242,13 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
     await stubOrgLensContext(page, { projectDetailStatus: 503 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
 
-    await expect(page.getByTestId('org-roi-project-detail-error')).toBeVisible();
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toHaveCount(0);
+    const state = page.getByTestId('org-roi-project-detail-empty-state');
+    await expect(state).toBeVisible();
+    // The gate's 503 states it could not check (`ROLE_GRANTS_UNAVAILABLE`) — could-not-verify, with Retry.
+    await expect(state).toHaveAttribute('data-state', 'section-could-not-verify');
+    await expect(state).toContainText('Access could not be verified');
+    await expect(state).not.toContainText('You do not have access');
+    await expect(page.getByTestId('org-roi-project-detail-empty-retry')).toBeVisible();
   });
 
   test('leaks no ROI figure in any response on the refused path', async ({ page }) => {
@@ -260,7 +267,7 @@ test.describe('Org Lens ROI project detail — refusals and absence', () => {
 
     await stubOrgLensContext(page, { projectDetailStatus: 403 });
     await gotoOrgRoiProjectDetail(page, DETAIL_PROJECT.slug);
-    await expect(page.getByTestId('org-roi-project-detail-forbidden')).toBeVisible();
+    await expect(page.getByTestId('org-roi-project-detail-empty-state')).toHaveAttribute('data-state', 'section-no-access');
 
     const settled = await Promise.all(bodies);
     expect(settled.length).toBeGreaterThan(0);
@@ -279,7 +286,7 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
     await page.getByTestId('org-roi-projects-section-tab-table').click();
     await page.getByTestId(`org-roi-projects-table-link-prj-${DETAIL_PROJECT.slug}`).click();
 
-    await expect(page).toHaveURL(new RegExp(`${orgRoiProjectDetailUrl(DETAIL_PROJECT.slug)}$`));
+    await expect(page).toHaveURL(orgLensAddressPattern('roi', 'projects', DETAIL_PROJECT.slug));
     await expect(page.getByTestId('org-roi-project-detail-title')).toHaveText(DETAIL_PROJECT.name);
   });
 
@@ -300,6 +307,6 @@ test.describe('Org Lens ROI projects table — navigation to detail', () => {
     await expect(row).toContainText(formatCurrency(DETAIL_PROJECT.expenditure));
 
     await row.click();
-    await expect(page).toHaveURL(new RegExp(`${orgRoiProjectDetailUrl(DETAIL_PROJECT.slug)}$`));
+    await expect(page).toHaveURL(orgLensAddressPattern('roi', 'projects', DETAIL_PROJECT.slug));
   });
 });

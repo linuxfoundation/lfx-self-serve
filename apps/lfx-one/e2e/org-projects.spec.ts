@@ -145,7 +145,6 @@ async function stubOrgContext(
               {
                 accountId: TEST_ACCOUNT_ID,
                 accountName: 'Red Hat LLC',
-                accountSlug: 'red-hat-llc',
                 membershipTier: '',
                 uid: TEST_ORG_UID,
               },
@@ -202,10 +201,6 @@ async function gotoOrgProjectsPage(
   await page.goto(options.url ?? ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/projects')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-  }
 }
 
 test.describe('Org Projects', () => {
@@ -273,7 +268,7 @@ test.describe('Org Projects', () => {
   test('renders no-access, load-error, and empty-workspace states', async ({ page }) => {
     await gotoOrgProjectsPage(page, { hasAccess: false });
     await expect(page.getByTestId('org-projects-no-access-state')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
-    await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-projects-no-access-title')).toHaveText('No organization linked to your account');
     await expect(page.getByTestId('org-projects-no-access-contact-support')).toBeVisible();
 
     await page.unrouteAll({ behavior: 'ignoreErrors' });
@@ -416,9 +411,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
 
     const row = page.getByTestId('org-projects-row-kubernetes');
     await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -448,9 +440,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
 
     const row = page.getByTestId('org-projects-row-flowwave');
     await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -476,9 +465,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
 
     const row = page.getByTestId('org-projects-row-kubernetes');
     await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -516,9 +502,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
 
     const badge = page.getByTestId('org-projects-health-seapath');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -545,9 +528,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(ORG_PROJECTS_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
 
     const badge = page.getByTestId('org-projects-health-cnab');
     await expect(badge).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
@@ -673,9 +653,6 @@ test.describe('Org Projects', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto(`${ORG_PROJECTS_URL}?workspace=custom`, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
     await expect(page.getByTestId('org-projects-row-existing')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-projects-row-kubernetes')).toHaveCount(0);
 

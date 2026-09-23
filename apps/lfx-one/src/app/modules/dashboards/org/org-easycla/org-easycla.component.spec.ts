@@ -3,13 +3,14 @@
 
 import '@angular/compiler';
 
-import { ApplicationRef, signal } from '@angular/core';
+import { ApplicationRef, computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import type { Account, OrgClaGroup, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
@@ -26,12 +27,19 @@ describe('OrgEasyclaComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000Te2ovAAB', accountName: 'Vertex Robotics' };
 
   const selectedAccount = signal<{ uid?: string | null; accountName: string } | null>(null);
+  // Mirrors AccountContextService.selectedUrlSegment: the SFID, since these accounts carry no slug.
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
   const hasOrgSelectorAccess = signal(true);
   const grantsLoaded = signal(true);
   const personaLoaded = signal(true);
   const navLoaded = signal(true);
+  const correlationId = signal<string | null>(null);
+  // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
+  const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
+  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retrying: signal(false), retry: vi.fn() };
 
   const getClaGroups = vi.fn();
+  const checkPermission = vi.fn();
   const openDialog = vi.fn();
 
   function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
@@ -63,11 +71,12 @@ describe('OrgEasyclaComponent', () => {
       providers: [
         provideRouter([]),
         provideNoopAnimations(),
-        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
         { provide: PersonaService, useValue: { personaLoaded } },
         { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-        { provide: OrgLensClaService, useValue: { getClaGroups } },
+        { provide: OrgLensEmptyStateService, useValue: emptyStateService },
+        { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
         MessageService,
       ],
     }).compileComponents();
@@ -107,7 +116,9 @@ describe('OrgEasyclaComponent', () => {
     navLoaded.set(true);
     getClaGroups.mockReset();
     openDialog.mockReset();
+    checkPermission.mockReset();
     getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [] }));
+    checkPermission.mockReturnValue(of(true));
   });
 
   describe('page chrome', () => {
@@ -148,7 +159,7 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('select an organization first');
     });
 
-    // `hasNoOrgAccess()` reads false while the grants and persona are still resolving, so without
+    // `pageState()` reads null while the grants and persona are still resolving, so without
     // this gate a viewer holding no grant can start the flow inside the loading window and reach a
     // refusal the page would otherwise have prevented.
     it('cannot be used while the organization context is still resolving', async () => {
@@ -191,15 +202,15 @@ describe('OrgEasyclaComponent', () => {
       expect(button?.getAttribute('aria-label')).toContain('could not be loaded');
     });
 
-    // Not disabled for a viewer who lacks signing authority. The CLA service decides that per
-    // project and organization and explains its refusal in words; this layer cannot know it, and
-    // guessing would hide the control from people who do hold the authority.
-    it('offers the control without pre-judging the viewer’s signing authority', async () => {
-      const fixture = await render();
-      const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
+    // Pair grain lives on attestation Continue. A company-level inventory would hide Sign from
+    // viewers who can see the page, which is the wrong gate.
+    it('still offers Sign CLA when ACS would deny a company-level grant', async () => {
+      checkPermission.mockReturnValue(of(false));
 
-      expect(button?.disabled).toBe(false);
-      expect(button?.getAttribute('aria-label')).toBe('Sign a corporate CLA');
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-sign-cla')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.disabled).toBe(false);
     });
   });
 
@@ -245,12 +256,13 @@ describe('OrgEasyclaComponent', () => {
         providers: [
           provideRouter([]),
           provideNoopAnimations(),
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}) } } },
-          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap({}), pathFromRoot: [] } } },
+          { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-          { provide: OrgLensClaService, useValue: { getClaGroups } },
+          { provide: OrgLensEmptyStateService, useValue: emptyStateService },
+          { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
           MessageService,
         ],
       })
@@ -338,7 +350,7 @@ describe('OrgEasyclaComponent', () => {
       // The state key is spelled out rather than taken from the constant, deliberately. It is
       // written into a history entry that outlives the deployment that wrote it, so renaming it
       // silently breaks in-app back and forward into a preview opened before the deploy.
-      expect(navigate).toHaveBeenCalledWith(['/org/easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
+      expect(navigate).toHaveBeenCalledWith(['/org', SELECTED_ACCOUNT.uid, 'easycla', chosen.claGroupId], { state: { orgClaSignSelection: chosen } });
     });
 
     it('goes nowhere when no CLA group was chosen', async () => {
@@ -444,11 +456,12 @@ describe('OrgEasyclaComponent', () => {
           providers: [
             provideRouter([]),
             provideNoopAnimations(),
-            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess } },
-            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+            { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess, selectedUrlSegment } },
+            { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
             { provide: PersonaService, useValue: { personaLoaded } },
             { provide: OrgNavigationService, useValue: { loaded: navLoaded, resetAndReload: vi.fn() } },
-            { provide: OrgLensClaService, useValue: { getClaGroups } },
+            { provide: OrgLensEmptyStateService, useValue: emptyStateService },
+            { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
             MessageService,
           ],
         })
@@ -582,7 +595,7 @@ describe('OrgEasyclaComponent', () => {
      * company but no Org Lens grant, and it is the one the other no-access cases miss by clearing
      * `selectedAccount` — which disables the control for the unrelated reason that there is
      * nothing to sign for. With the company left in place, only an access term can disable it.
-     * Without one, the page offered "Organization Lens is not available" and a live Sign CLA
+     * Without one, the page offered the no-organization state and a live Sign CLA
      * button together, and every request the flow made would be refused by the server.
      */
     it('does not offer Sign CLA to a caller with a company but no org access', async () => {
@@ -592,7 +605,7 @@ describe('OrgEasyclaComponent', () => {
 
       const button = byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button');
       expect(button?.disabled).toBe(true);
-      expect(button?.getAttribute('aria-label')).toContain('Organization Lens is not available');
+      expect(button?.getAttribute('aria-label')).toContain('No organization linked to your account');
     });
 
     it('withholds both answers until the grant and persona fetches have returned', async () => {
@@ -641,7 +654,7 @@ describe('OrgEasyclaComponent', () => {
       expect(byTestId(fixture, 'org-easycla-empty-state')).toBeNull();
       const link = byTestId(fixture, 'org-easycla-card-link') as HTMLAnchorElement | null;
       // Addressed by CLA Group, with this row's signature narrowing it (#2364).
-      expect(link?.getAttribute('href')).toContain('/org/easycla/cla-group-uuid-1?sig=a');
+      expect(link?.getAttribute('href')).toContain(`/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=a`);
     });
 
     /**
@@ -660,7 +673,10 @@ describe('OrgEasyclaComponent', () => {
       const fixture = await render();
       const hrefs = allByTestId(fixture, 'org-easycla-card-link').map((link) => (link as HTMLAnchorElement).getAttribute('href'));
 
-      expect(hrefs).toEqual(['/org/easycla/cla-group-uuid-1?sig=sig-a', '/org/easycla/cla-group-uuid-1?sig=sig-b']);
+      expect(hrefs).toEqual([
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-a`,
+        `/org/${SELECTED_ACCOUNT.uid}/easycla/cla-group-uuid-1?sig=sig-b`,
+      ]);
     });
 
     /**
@@ -1065,7 +1081,11 @@ describe('OrgEasyclaComponent', () => {
       };
     }
 
-    async function renderReturnedFrom(namedOrg: string | null, catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT], opts: { holdPin?: boolean } = {}) {
+    async function renderReturnedFrom(
+      namedOrg: string | null,
+      catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT],
+      opts: { holdPin?: boolean; orgSegment?: string } = {}
+    ) {
       const setAccount = vi.fn();
       const refreshCanonicalRecord = vi.fn().mockResolvedValue(undefined);
       const items = signal(catalogue.map(toCatalogueItem));
@@ -1083,22 +1103,40 @@ describe('OrgEasyclaComponent', () => {
           provideNoopAnimations(),
           {
             provide: AccountContextService,
-            useValue: { selectedAccount, hasOrgSelectorAccess, availableAccounts: signal([]), setAccount, refreshCanonicalRecord },
+            useValue: {
+              selectedAccount,
+              hasOrgSelectorAccess,
+              selectedUrlSegment,
+              availableAccounts: signal([]),
+              setAccount,
+              adoptFromAddress: setAccount,
+              refreshCanonicalRecord,
+            },
           },
-          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded } },
+          { provide: OrgRoleGrantsService, useValue: { loaded: grantsLoaded, correlationId } },
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
-          { provide: OrgLensClaService, useValue: { getClaGroups } },
-          { provide: ActivatedRoute, useValue: { snapshot: { queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}) } } },
+          { provide: OrgLensEmptyStateService, useValue: emptyStateService },
+          { provide: OrgLensClaService, useValue: { getClaGroups, checkPermission } },
+          {
+            provide: ActivatedRoute,
+            useValue: {
+              snapshot: {
+                queryParamMap: convertToParamMap(namedOrg ? { org: namedOrg } : {}),
+                // Legacy mount by default (no `orgSegment` ancestor); the org-addressed mount when given.
+                pathFromRoot: opts.orgSegment ? [{ paramMap: convertToParamMap({ orgSegment: opts.orgSegment }) }, { paramMap: convertToParamMap({}) }] : [],
+              },
+            },
+          },
           MessageService,
         ],
       })
         .overrideComponent(OrgEasyclaComponent, { set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] } })
         .compileComponents();
 
+      // Spied before the component exists: the addressed-mount strip runs from the constructor.
+      vi.spyOn(TestBed.inject(Router), 'navigate').mockImplementation(navigate);
       const fixture = TestBed.createComponent(OrgEasyclaComponent);
-      const router = TestBed.inject(Router);
-      vi.spyOn(router, 'navigate').mockImplementation(navigate);
       fixture.detectChanges();
       await fixture.whenStable();
       fixture.detectChanges();
@@ -1118,6 +1156,22 @@ describe('OrgEasyclaComponent', () => {
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
       expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
       expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+    });
+
+    // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
+    // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is not
+    // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
+    it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
+      const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], {
+        orgSegment: 'containership-inc',
+      });
+
+      expect(setAccount).not.toHaveBeenCalled();
+      expect(refreshCanonicalRecord).not.toHaveBeenCalled();
+      expect(navigate).toHaveBeenCalledWith(
+        [],
+        expect.objectContaining({ queryParams: { org: null, signed: null }, queryParamsHandling: 'merge', replaceUrl: true })
+      );
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
@@ -1184,7 +1238,7 @@ describe('OrgEasyclaComponent', () => {
     it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
       const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
 
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     // Left in place it would keep re-asserting an organization the viewer cannot have, on a page
@@ -1235,7 +1289,7 @@ describe('OrgEasyclaComponent', () => {
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(resetAndReload).not.toHaveBeenCalled();
-      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null }, replaceUrl: true }));
+      expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
 
     it('touches nothing on an ordinary visit that carries no organization', async () => {

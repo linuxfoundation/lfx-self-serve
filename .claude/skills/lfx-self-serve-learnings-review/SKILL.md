@@ -126,7 +126,7 @@ If `extra` was applied, note it.
 
 ## Scope boundaries — NOT this agent's job
 
-- **PR-shape sanity** (branch / JIRA / commits / DCO+GPG / rebase / diff size) → `/lfx-self-serve-pr-readiness`.
+- **PR-shape sanity** (branch / GitHub Issue / commits / DCO+GPG / rebase / diff size) → `/lfx-self-serve-pr-readiness`.
 - **Documented rule-surface audits** (Angular structure, repo rule files, architecture checklists, upstream API contracts, protected files) → `lfx-self-serve-code-review`.
 - **Generic code-review intuition** not grounded in a KB pattern entry → drop.
 

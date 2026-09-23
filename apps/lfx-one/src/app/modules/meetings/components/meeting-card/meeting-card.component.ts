@@ -3,6 +3,7 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import {
   Component,
   computed,
@@ -19,7 +20,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import {
   MeetingDeleteConfirmationComponent,
@@ -30,6 +31,7 @@ import {
   MeetingDeleteTypeSelectionComponent,
 } from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MeetingOrganizerComponent } from '@app/modules/meetings/components/meeting-organizer/meeting-organizer.component';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -56,6 +58,7 @@ import {
   MeetingOccurrence,
   MeetingRecurrence,
   MEETING_TYPE_CONFIGS,
+  MEETING_V2_ENABLED_FLAG,
   MeetingHostCandidate,
   PastMeeting,
   PastMeetingAttachment,
@@ -71,6 +74,7 @@ import { SummaryModalComponent } from '@components/summary-modal/summary-modal.c
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -80,7 +84,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, distinctUntilChanged, filter, finalize, map, of, pairwise, skip, switchMap, take, tap, timer } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingMaterialsDrawerComponent } from '../meeting-materials-drawer/meeting-materials-drawer.component';
@@ -120,6 +124,9 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
+  private readonly composer = inject(MeetingComposerService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly router = inject(Router);
 
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
@@ -141,13 +148,25 @@ export class MeetingCardComponent implements OnInit {
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public transcript: WritableSignal<PastMeetingTranscript | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
-  public drawerGuestCount: WritableSignal<number> = signal(0);
+  /**
+   * What the registrants drawer counted, or `null` while it has not counted yet.
+   * @description `null` and `0` are different answers here, which is why this is not a plain `signal(0)`.
+   * `0` is the drawer reporting an empty list; `null` is the drawer not having reported at all, and the
+   * header reads it as "use the meeting's own number" ({@link MeetingCardComponent} template) rather
+   * than printing a zero over a list it has not seen. The distinction is what a past meeting depends on:
+   * its participant list is fetched by the drawer, so between opening the drawer and that fetch landing
+   * there is a window where a `0` would be a claim nobody made. It is set back to `null` on
+   * {@link refreshMeeting} for the same reason — a reloaded meeting has no drawer answer any more.
+   */
+  public drawerGuestCount: WritableSignal<number | null> = signal(null);
   private readonly optimisticInvited: WritableSignal<boolean> = signal(false);
   // Host-flagged people surfaced by the registrants drawer, fed to the organizer chip so it
   // resolves the same organizer set the drawer badges (see resolvedHostsChange).
   public drawerHosts: WritableSignal<MeetingHostCandidate[]> = signal<MeetingHostCandidate[]>([]);
   public attachments: Signal<(MeetingAttachment | PastMeetingAttachment)[]> = signal([]);
   public materialsDrawerVisible = signal(false);
+  /** Set while the pre-open write-access probe is in flight, so the edit button cannot be double-fired. */
+  public checkingEditAccess: WritableSignal<boolean> = signal(false);
 
   // Computed values for template
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
@@ -220,6 +239,21 @@ export class MeetingCardComponent implements OnInit {
   public readonly showAiSummaryBadge: Signal<boolean> = computed(() => (this.pastMeeting() ? this.hasSummary() : this.hasAiCompanion()));
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
   protected readonly pastMeetingResourceId: Signal<string> = computed(() => getPastMeetingResourceId(this.meeting()));
+
+  /**
+   * Whether meetings v2 is the edit surface for this user.
+   * @description Read as a signal so the card settles on its own once LaunchDarkly resolves, and
+   * defaulted to `false` so a slow or unreachable provider sends the edit button to the pre-v2
+   * full-page editor rather than a composer this user isn't targeted for. See
+   * `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
+
+  // The two signals below are the flag-off edit target. They carry the same URL and query params
+  // the edit button held before v2; the difference is that `onEditMeeting()` now navigates with
+  // them after the permission probe resolves, instead of the template binding them as a
+  // `routerLink`. Query params matter: `writerGuard` resolves write access from `?project=`, and
+  // the pre-v2 editor reads `?committee_uid=` for committee-scoped meetings.
   public readonly editQueryParams: Signal<Record<string, string>> = computed(() => {
     const meeting = this.meeting();
     const params: Record<string, string> = {};
@@ -299,6 +333,61 @@ export class MeetingCardComponent implements OnInit {
         takeUntilDestroyed(this.destroyRef)
       )
       .subscribe(() => this.optimisticInvited.set(false));
+  }
+
+  /**
+   * Re-checks edit permission on the meeting itself before opening the edit surface.
+   * @description `meeting().organizer` is whatever the list payload said when the card first rendered,
+   * so an organizer whose access was revoked since then keeps an edit button until the page reloads.
+   * The re-check asks the meeting detail for a fresh `organizer` rather than re-deriving the answer
+   * from the parent project: the permission model inherits `organizer` from Project Writer, Project
+   * Meeting Coordinator *and* Committee Writer, so a committee writer legitimately holds it while
+   * holding nothing at project level, and the API's own guard is evaluated against the meeting
+   * (`docs/architecture/frontend/permission-persona-navigation-model-preread.md:128-143`). Rebuilding
+   * that inheritance out of project permissions is the documented anti-pattern, and it would deny an
+   * edit upstream allows.
+   *
+   * `skipCache: true` is what makes this a re-check at all — the detail cache would otherwise replay
+   * whatever a previous read left behind. It also primes the entry the composer reads next, so the
+   * probe costs the edit flow no extra round trip.
+   */
+  public onEditMeeting(): void {
+    if (this.checkingEditAccess()) {
+      return;
+    }
+
+    const meeting = this.meeting();
+
+    this.checkingEditAccess.set(true);
+    this.meetingService
+      .getMeetingDetail(meeting.id, { skipCache: true })
+      .pipe(
+        finalize(() => this.checkingEditAccess.set(false)),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe({
+        next: (fresh) => {
+          if (fresh.organizer !== true) {
+            this.denyEdit();
+            return;
+          }
+
+          // The probe runs on both sides of `MEETING_V2_ENABLED_FLAG` — it is a permission re-check,
+          // not a v2 feature — so only the surface it opens differs. Flag off goes to the pre-v2
+          // full-page editor through the router, which is what this button did before v2.
+          if (!this.meetingsV2Enabled()) {
+            void this.router.navigate(this.editCommands(), { queryParams: this.editQueryParams() });
+            return;
+          }
+
+          this.composer.open({
+            mode: 'edit',
+            meetingUid: meeting.id,
+            projectUid: meeting.project_uid,
+          });
+        },
+        error: (error: unknown) => this.reportEditProbeFailure(error),
+      });
   }
 
   public ngOnInit(): void {
@@ -579,7 +668,7 @@ export class MeetingCardComponent implements OnInit {
         take(1),
         tap((meeting) => {
           this.additionalRegistrantsCount.set(0);
-          this.drawerGuestCount.set(0);
+          this.drawerGuestCount.set(null);
           this.meeting.set(meeting);
         })
       )
@@ -689,7 +778,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initRsvpToggleLabel(): Signal<string> {
     return computed(() => {
-      if (this.showMyRsvp()) return 'Show Guests';
+      if (this.showMyRsvp()) return 'Hide My RSVP';
       if (this.userHasRsvp()) return 'Update My RSVP';
       return 'Set My RSVP';
     });
@@ -842,6 +931,51 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
+  private denyEdit(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Editing unavailable',
+      detail: 'You no longer have permission to edit this meeting.',
+    });
+  }
+
+  /**
+   * Says which of the three things went wrong, rather than always offering a retry.
+   * @description The probe's own failure modes are not interchangeable. A 403 is the access loss
+   * this re-check exists to catch, and a 404 means the card is showing a meeting somebody already
+   * deleted — both are permanent, so inviting another attempt just fails again. Everything else — a
+   * 5xx, a dropped connection — really is a probe that could not run, and calling that a revoked
+   * permission sends the organizer looking for an access problem they do not have. Mirrors the split
+   * the composer's own load path makes on the same two statuses.
+   */
+  private reportEditProbeFailure(error: unknown): void {
+    const status = error instanceof HttpErrorResponse ? error.status : null;
+
+    if (status === 403) {
+      this.denyEdit();
+      return;
+    }
+
+    if (status === 404) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Editing unavailable',
+        detail: 'This meeting no longer exists.',
+      });
+      return;
+    }
+
+    this.warnEditCheckUnavailable();
+  }
+
+  private warnEditCheckUnavailable(): void {
+    this.messageService.add({
+      severity: 'warn',
+      summary: 'Could not open the editor',
+      detail: 'We could not check your access to this meeting. Please try again.',
+    });
+  }
+
   private initMeetingDescription(): Signal<string> {
     return computed(() => {
       const occurrence = this.occurrence();
@@ -861,7 +995,7 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meeting();
       const meetingBaseCount = resolveMeetingBaseCount(meeting) ?? 0;
       const meetingTotalCount = meetingBaseCount + this.additionalRegistrantsCount();
-      return Math.max(meetingTotalCount, this.drawerGuestCount());
+      return Math.max(meetingTotalCount, this.drawerGuestCount() ?? 0);
     });
   }
 

@@ -1,0 +1,149 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section
+  class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+  data-testid="org-easycla-acknowledgments"
+  [attr.aria-busy]="loading() ? true : null">
+  <header class="flex flex-col gap-1">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-acknowledgments-heading">{{ heading }}</h2>
+      @if (!loading() && !showErrorState() && loadedList()) {
+        <p class="text-sm text-gray-500" data-testid="org-easycla-acknowledgments-count">
+          @if (totalCount() > 0) {
+            {{ resultCount() }} of {{ totalCount() }}
+          }
+        </p>
+      }
+    </div>
+    <p class="text-sm text-gray-500">Employees who've acknowledged they're covered by this CLA.</p>
+  </header>
+
+  <form [formGroup]="filterForm" (submit)="$event.preventDefault()" class="max-w-md" data-testid="org-easycla-acknowledgments-search">
+    <!-- The placeholder is not a label: it disappears as soon as anything is typed, leaving a
+         screen reader with an unnamed field.
+
+         `[id]` is bound rather than written as a plain attribute, for the reason the approval-list
+         search documents — a static `id` lands on the wrapper's host element as well as its native
+         input, so `for` resolves to the wrapper and labels nothing. -->
+    <label class="sr-only" for="org-easycla-acknowledgments-search-input">Search contributors</label>
+    <lfx-input-text
+      [form]="filterForm"
+      control="search"
+      [id]="'org-easycla-acknowledgments-search-input'"
+      placeholder="Search contributors…"
+      icon="fa-light fa-search"
+      styleClass="w-full pr-7" />
+  </form>
+
+  @if (loading()) {
+    <div class="flex flex-col gap-2" data-testid="org-easycla-acknowledgments-loading">
+      @for (r of loadingRows; track r) {
+        <p-skeleton height="2.75rem" />
+      }
+    </div>
+  } @else if (showErrorState()) {
+    <lfx-empty-state
+      data-testid="org-easycla-acknowledgments-error-state"
+      icon="fa-light fa-triangle-exclamation"
+      title="We couldn't load the acknowledgments"
+      [subtitle]="'Refresh the page to try again.'" />
+  } @else if (showEmptyState()) {
+    <lfx-empty-state data-testid="org-easycla-acknowledgments-empty" icon="fa-light fa-users" [title]="emptyCopy.title" [subtitle]="emptyCopy.subtitle" />
+  } @else {
+    <div class="overflow-x-auto">
+      <table class="min-w-full border-collapse text-sm" data-testid="org-easycla-acknowledgments-table">
+        <thead>
+          <tr class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <th class="px-3 py-2">{{ columnHeaders.name }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.identity }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.cclaVersion }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.signedOn }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.state }}</th>
+            @if (canEdit()) {
+              <th class="px-3 py-2 text-right"><span class="sr-only">Actions</span></th>
+            }
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.ack.signatureId) {
+            <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-easycla-acknowledgment-row-' + row.ack.signatureId">
+              <td class="px-3 py-2 font-medium text-gray-900" data-testid="org-easycla-acknowledgment-name">{{ row.name }}</td>
+              <td class="px-3 py-2 text-gray-700">
+                @if (row.identity.href) {
+                  <a
+                    [href]="row.identity.href"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-blue-600 hover:underline"
+                    [attr.aria-label]="row.identity.ariaLabel"
+                    data-testid="org-easycla-acknowledgment-identity"
+                    >{{ row.identity.display }}</a
+                  >
+                } @else {
+                  <span data-testid="org-easycla-acknowledgment-identity">{{ row.identity.display }}</span>
+                }
+              </td>
+              <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-acknowledgment-version">{{ row.cclaVersion }}</td>
+              <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-acknowledgment-signed-on">{{ row.signedOnLabel }}</td>
+              <td class="px-3 py-2">
+                @if (row.invalidated) {
+                  <lfx-tag
+                    [value]="stateLabels.invalidated"
+                    severity="secondary"
+                    icon="fa-light fa-ban"
+                    [tooltip]="row.invalidatedTooltip"
+                    data-testid="org-easycla-acknowledgment-state-invalidated" />
+                } @else {
+                  <lfx-tag
+                    [value]="stateLabels.acknowledged"
+                    severity="success"
+                    icon="fa-light fa-circle-check"
+                    data-testid="org-easycla-acknowledgment-state-acknowledged" />
+                }
+              </td>
+              @if (canEdit()) {
+                <td class="px-3 py-2 text-right">
+                  @if (!row.invalidated) {
+                    <lfx-button
+                      [label]="actionCopy.label"
+                      icon="fa-light fa-ban"
+                      severity="danger"
+                      [text]="true"
+                      size="small"
+                      [disabled]="!row.invalidatable || row.invalidatePending"
+                      [loading]="row.invalidatePending"
+                      [ariaLabel]="row.invalidateAriaLabel"
+                      [tooltip]="row.invalidatable ? undefined : actionCopy.unavailableTooltip"
+                      (onClick)="onInvalidate(row)"
+                      data-testid="org-easycla-acknowledgment-invalidate" />
+                  }
+                </td>
+              }
+            </tr>
+          } @empty {
+            <tr>
+              <td [attr.colspan]="canEdit() ? 6 : 5" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
+                No acknowledgments match your search.
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+
+    @if (hasNextPage()) {
+      <div class="flex justify-center">
+        <lfx-button
+          label="Load more"
+          icon="fa-light fa-chevron-down"
+          severity="secondary"
+          [outlined]="true"
+          [disabled]="loadingMoreSignal()"
+          [loading]="loadingMoreSignal()"
+          (onClick)="loadMore()"
+          data-testid="org-easycla-acknowledgments-load-more" />
+      </div>
+    }
+  }
+</section>

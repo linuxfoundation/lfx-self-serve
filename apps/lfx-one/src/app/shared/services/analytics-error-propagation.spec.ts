@@ -40,6 +40,26 @@ describe('AnalyticsService — a failed request must reach the caller', () => {
     { name: 'getMemberRetention', url: '/api/analytics/member-retention', call: () => service.getMemberRetention('aaif') },
     { name: 'getEngagedCommunity', url: '/api/analytics/engaged-community', call: () => service.getEngagedCommunity('aaif') },
     { name: 'getWebActivitiesSummary', url: '/api/analytics/web-activities-summary', call: () => service.getWebActivitiesSummary('aaif', undefined, 'last-6') },
+    {
+      name: 'getEngagementGroupAttendance',
+      url: '/api/analytics/engagement-group-attendance',
+      // Its empty state claims the foundation has no matching groups, so a zero-filled response
+      // reads as measured absence.
+      call: () => service.getEngagementGroupAttendance({ foundationSlug: 'aaif', projectSlug: null, groupType: 'all', range: 'YTD', page: 1, size: 25 }),
+    },
+    {
+      name: 'getEngagementOrgParticipation',
+      url: '/api/analytics/engagement-org-participation',
+      // An empty table renders "no organizations", which would state a failed read as measured fact.
+      call: () => service.getEngagementOrgParticipation({ foundationSlug: 'aaif' }),
+    },
+    {
+      name: 'getEngagementNonMemberParticipation',
+      url: '/api/analytics/engagement-non-member-participation',
+      // Its empty table renders "no non-member organizations", so a swallowed failure would read as
+      // a measured absence of non-member attendance.
+      call: () => service.getEngagementNonMemberParticipation({ foundationSlug: 'aaif' }),
+    },
   ];
 
   for (const { name, url, call } of endpoints) {

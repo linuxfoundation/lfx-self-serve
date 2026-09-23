@@ -12,6 +12,7 @@ import {
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
+  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
@@ -41,7 +42,8 @@ import type {
   CampaignDeliveryType,
   CampaignIndexDoc,
   CampaignProgramType,
-  CampaignTab,
+  CampaignEmailTab,
+  CampaignPaidTab,
   CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
@@ -55,6 +57,7 @@ import { firstValueFrom, skip, Subscription, take } from 'rxjs';
 import { HubSpotTemplateLabelPipe } from '../../../shared/pipes/hubspot-template-label.pipe';
 import { HubSpotUpdatedAtPipe } from '../../../shared/pipes/hubspot-updated-at.pipe';
 import { SelectComponent } from '../../../shared/components/select/select.component';
+import { AudienceBuilderTabComponent } from './components/audience-builder-tab/audience-builder-tab.component';
 import { ImplementationTabComponent } from './components/implementation-tab/implementation-tab.component';
 import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-tab.component';
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
@@ -72,6 +75,7 @@ import { PlanningTabComponent } from './components/planning-tab/planning-tab.com
     PlanningTabComponent,
     ImplementationTabComponent,
     MonitoringTabComponent,
+    AudienceBuilderTabComponent,
     OptimizationTabComponent,
     HubSpotUpdatedAtPipe,
     HubSpotTemplateLabelPipe,
@@ -122,7 +126,7 @@ export class CampaignsComponent {
   private readonly idlePersistence: CampaignBriefPersistenceState = { status: 'off', briefId: null, message: null, approved: false };
 
   /** The Paid Marketing side's current tab. Email keeps its own — see the delivery-type effect. */
-  protected readonly selectedTab = signal<CampaignTab>('planning');
+  protected readonly selectedTab = signal<CampaignPaidTab>('planning');
 
   /**
    * The Email side's current tab.
@@ -131,7 +135,7 @@ export class CampaignsComponent {
    * exclusion is the whole reason this signal exists separately, so the compiler should be the
    * thing that enforces it. `selectTab` narrows before assigning.
    */
-  protected readonly selectedEmailTab = signal<Exclude<CampaignTab, 'optimization'>>('planning');
+  protected readonly selectedEmailTab = signal<Exclude<CampaignEmailTab, 'optimization'>>('planning');
   protected readonly selectedProgramType = signal<CampaignProgramType>('events');
   protected readonly selectedDeliveryType = signal<CampaignDeliveryType>('paid-marketing');
   protected readonly briefOutput = signal<CampaignBriefOutput | null>(null);
@@ -504,10 +508,11 @@ export class CampaignsComponent {
    * The foundation the current `briefPersistence` was filed under.
    *
    * A foundation switch does NOT re-create this component. The sidebar navigates only on a lens
-   * change or off an entity page (`sidebar.component.ts` `redirectOnContextSwitch`), and
-   * `/foundation/campaigns` is neither — it is a two-segment route in the foundation lens, so
-   * picking another foundation runs `setFoundation`, which moves the `?project=` param with
-   * `Location.replaceState` and nothing else. The page stays mounted and `activeContext()`
+   * change, off an entity page, or off the Project lens landing/checklist pages
+   * (`sidebar.component.ts` `contextSwitchTarget`), and `/foundation/campaigns` is none of those —
+   * it is a two-segment route in the foundation lens, so picking another foundation runs
+   * `setFoundation`, which moves the `?project=` param with `Location.replaceState` and nothing
+   * else. The page stays mounted and `activeContext()`
    * changes underneath it.
    *
    * That makes the slug part of what identifies the brief being described, exactly like the
@@ -1229,7 +1234,7 @@ export class CampaignsComponent {
    * reusing `MonitoringTabComponent` look safe. It is not — its `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
-  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_TABS.filter((t) => t.id !== 'optimization');
+  protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_EMAIL_TABS;
 
   /**
    * Rows from the brief's metrics read, narrowed to the email channel.
@@ -1661,7 +1666,7 @@ export class CampaignsComponent {
    * ordinary pointer or Tab press, but not of a programmatic `.click()`, which is exactly what
    * an E2E locator resolving a duplicated testid performs.
    */
-  protected selectTab(tab: CampaignTab, owner: CampaignDeliveryType): void {
+  protected selectTab(tab: CampaignEmailTab, owner: CampaignDeliveryType): void {
     if (owner === 'email') {
       // Narrowed, never cast: `selectedEmailTab` excludes 'optimization' by type, and the only
       // way to arrive here with it is a caller iterating the wrong list — the very bug the
@@ -1684,6 +1689,13 @@ export class CampaignsComponent {
           this.loadEmailMetrics();
         }
       }
+      return;
+    }
+    // Narrowed, never cast — the same rule the email branch above follows. The paid tablist is
+    // built from CAMPAIGN_TABS, which holds no 'audience' entry, so arriving here with it means
+    // a caller iterated the wrong list. Selecting it would leave the paid flow on a tab it
+    // renders no panel for, which is precisely what the split tab unions exist to reject.
+    if (tab === 'audience') {
       return;
     }
     this.selectedTab.set(tab);

@@ -272,7 +272,7 @@ import { ProjectInterface } from '@lfx-one/shared/interfaces';
 
 - Services use `@Injectable({ providedIn: 'root' })`
 - Use `inject(HttpClient)` for HTTP — never constructor injection
-- GET requests use `catchError(() => of(defaultValue))` to prevent error propagation
+- GET requests use `catchError(() => of(defaultValue))` to prevent error propagation — **except when the default response would read as measured fact.** A GET whose empty/zero-filled default is indistinguishable in the UI from a real "nothing here" answer must log and rethrow (`catchError((error) => { console.error(...); return throwError(() => error); })`) so the consumer can render a failure state instead of asserting an absence. See `apps/lfx-one/src/app/shared/services/analytics-error-propagation.spec.ts`, which pins that contract.
 - POST/PUT/DELETE use `take(1)` for one-shot subscriptions
 - **Every `HttpClient` call targets a real `/api/...` endpoint** that exists in the backend routes — no mock data, placeholder URLs, or fabricated paths. API paths are relative (`/api/...`); the proxy handles routing.
 - **Snowflake metric definitions belong in `lf-dbt`.** LFX One server services own retrieval and may use parameterized filters, sorting, pagination, and the narrow display-scope roll-up allowed by the canonical rule. Do not define metrics with `CASE`, arithmetic, or transformations in embedded SQL. Full rule: [shared-and-sql-checklist §10](./shared-and-sql-checklist.md#10-no-business-logic-in-embedded-snowflake-sql-should-fix).
@@ -366,6 +366,7 @@ In changed `.ts` files:
 
 - Silent `catchError` — `catchError(() => of([]))` or `catchError(() => EMPTY)` without any logging before the fallback. Every `catchError` should log via `logger` or `console.error` at minimum. (See also section 13 — GET requests use `catchError(() => of(defaultValue))`; that pattern still requires logging.)
 - Duplicate/layered error handling — when a service method already has `catchError` returning a default (e.g. `of([])`), a component-level `catchError` on the same stream is unreachable dead code. Handle errors in one place.
+- Exception — a service that logs and rethrows (the section 13 "measured fact" case). The component's `catchError` is then the only place the failed state can be recorded, so it sets that state instead of returning the default, and the silent-`catchError` rule above does not apply to it.
 - Inconsistent fallback values — mixing `EMPTY` and `of([])` in the same service. Pick one pattern.
 - Removed error logging — check `git diff` for removed `console.error` or `logger.error` calls that weren't replaced.
 

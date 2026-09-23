@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="mentorship-mentee-apply">
+  <div class="flex flex-col gap-6 pb-8">
+    <lfx-button
+      [label]="backLabel"
+      icon="fa-light fa-chevron-left"
+      iconPos="left"
+      [text]="true"
+      size="small"
+      styleClass="!text-blue-600 !px-0 self-start mt-3"
+      routerLink="/mentorship/mentee/overview"
+      data-testid="mentorship-mentee-apply-back" />
+
+    @if (!hasLoaded()) {
+      <lfx-route-loading data-testid="mentorship-mentee-apply-loading" />
+    } @else if (missingParams()) {
+      <lfx-empty-state
+        icon="fa-light fa-link"
+        [title]="missingTitle"
+        [subtitle]="missingSubtitle"
+        [withCard]="false"
+        data-testid="mentorship-mentee-apply-missing" />
+    } @else if (loadError(); as error) {
+      <lfx-empty-state
+        icon="fa-light fa-triangle-exclamation"
+        [title]="loadErrorTitle"
+        [subtitle]="error"
+        ctaLabel="Retry"
+        ctaIcon="fa-light fa-rotate-right"
+        [withCard]="false"
+        (ctaClick)="retry()"
+        data-testid="mentorship-mentee-apply-error" />
+    } @else if (page(); as view) {
+      <header class="flex flex-col gap-1">
+        <h1 class="text-3xl font-semibold text-gray-900" data-testid="mentorship-mentee-apply-title">{{ titlePrefix }}{{ view.target.programName }}</h1>
+        <p class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-subtitle">{{ view.target.projectName }} · {{ view.target.termName }}</p>
+      </header>
+
+      <lfx-mentorship-profile-card />
+
+      <lfx-mentorship-mentee-profile-details
+        [profile]="view.profile.profile"
+        [title]="profileTitle"
+        [subtitle]="profileSubtitle"
+        (editClick)="onEditProfile()" />
+
+      <lfx-mentorship-mentee-apply-demographics [demographics]="view.profile.demographics" (editClick)="onEditDemographics()" />
+      @if (!profileCreated()) {
+        <lfx-mentorship-mentee-before-you-apply />
+      }
+      <div class="border-t border-gray-200 px-6 py-4 md:px-8 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <lfx-button
+          [label]="cancelLabel"
+          severity="secondary"
+          size="small"
+          [text]="true"
+          styleClass="!px-0 self-start"
+          [routerLink]="cancelRoute"
+          data-testid="mentorship-mentee-apply-cancel" />
+        <div class="flex items-center justify-end gap-4">
+          @if (!profileCreated()) {
+            <span class="text-sm text-gray-500" data-testid="mentorship-mentee-apply-remaining">{{ remaining() }} {{ remainingLabel }}</span>
+          }
+          <lfx-button
+            [label]="submitLabel"
+            icon="fa-light fa-paper-plane"
+            iconPos="left"
+            severity="primary"
+            size="small"
+            [disabled]="remaining() > 0 && !profileCreated()"
+            (onClick)="onSubmit()"
+            data-testid="mentorship-mentee-apply-submit" />
+        </div>
+      </div>
+    }
+  </div>
+
+  <lfx-mentorship-mentee-profile-edit-drawer />
+  <lfx-mentorship-mentee-demographics-edit-drawer [(visible)]="demographicsOpen" />
+</div>

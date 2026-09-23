@@ -2,11 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -15,14 +16,21 @@ import { OrgOverviewInvolvementComponent } from '../components/org-overview-invo
 
 @Component({
   selector: 'lfx-org-overview',
-  imports: [TagComponent, SkeletonModule, OpenIntercomDirective, OrgOverviewInvolvementComponent, OrgOverviewFoundationsAndProjectsComponent],
+  imports: [
+    TagComponent,
+    SkeletonModule,
+    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
+    OrgOverviewInvolvementComponent,
+    OrgOverviewFoundationsAndProjectsComponent,
+  ],
   templateUrl: './org-overview.component.html',
 })
 export class OrgOverviewComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly selectedAccount = this.accountContextService.selectedAccount;
 
@@ -30,8 +38,12 @@ export class OrgOverviewComponent {
 
   protected readonly tierLabel: Signal<string | null> = computed(() => this.selectedAccount().membershipTier || null);
 
-  /** Page is "loaded" once BOTH dependencies have returned their first response. Prevents an FOEC race. */
-  protected readonly loaded: Signal<boolean> = computed(() => this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded());
+  /**
+   * Page is "loaded" once the org list has answered and the empty-state classifier has settled (its
+   * `settled` covers the role-grants and persona loads). Prevents an FOEC race: before this, the
+   * skeleton — never a state, never the legacy invite-status prompt.
+   */
+  protected readonly loaded: Signal<boolean> = computed(() => this.orgNavigationService.loaded() && this.emptyState.settled());
 
   /** True ONLY after both dependencies have completed their initial load and the user genuinely has no selectable org. Drives the empty-state render. */
   protected readonly isEmpty: Signal<boolean> = computed(
@@ -39,27 +51,18 @@ export class OrgOverviewComponent {
   );
 
   /**
-   * Splits the empty state by caller. For staff an empty list is the expected starting point, not a
+   * Splits the empty state by caller. For LF-team callers an empty list is the expected starting point, not a
    * missing invitation: they reach organizations through switcher search, so the invite-status copy
    * would send them to their admin over something working as designed.
    */
   protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
 
   /**
-   * True once the role-grants fetch has completed and the caller has no org access. Reuses the shared
-   * `AccountContextService.hasOrgSelectorAccess` predicate so this gate cannot drift from the sidebar
-   * org-selector visibility rule — direct writer/auditor grants or a persona-seeded account count;
-   * indirect grants do not (the selector is direct-only, so a user with only indirect access never
-   * triggers the selector's list fetch and would otherwise stay on the skeleton forever).
-   *
-   * "Completed" here means each async request has returned its first response — these are one-shot
-   * loads on page init, not eventually-consistent streams. We also wait on the personas fetch: for
-   * users whose org seeds arrive only via the async personas response (empty `auth.organizations` at
-   * SSR), role grants can return empty before personas seed `availableAccounts`, so gating on
-   * `personaLoaded()` prevents a one-tick flash of the not-available message. Both requests always
-   * resolve, so this never re-introduces an indefinite skeleton.
+   * Spec 053 — the page-level state replacing the page (`could-not-load`, `staff-check-failed`,
+   * `no-organization`), or `null` when the page itself renders. Decided by the shared classifier so
+   * this gate cannot drift from the other Org Lens pages or from the sidebar org-selector rule.
    */
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContextService.hasOrgSelectorAccess()
-  );
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId: Signal<string | null> = this.orgRoleGrantsService.correlationId;
 }

@@ -1,0 +1,28 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<nav class="flex flex-col gap-1 lg:sticky" [style.top.px]="topPx()" aria-label="Engagement sections" data-testid="engagement-sub-nav">
+  @for (item of items(); track item.key) {
+    <button
+      type="button"
+      class="flex flex-col gap-0.5 rounded-lg px-2 py-2 text-left"
+      [ngClass]="item.key === activeKey() ? 'text-blue-600' : 'text-gray-600 hover:text-gray-900'"
+      [attr.aria-current]="item.key === activeKey() ? 'true' : null"
+      [attr.data-testid]="'engagement-sub-nav-' + item.key"
+      (click)="sectionPicked.emit(item.key)">
+      <span class="flex items-baseline justify-between gap-2">
+        <span class="text-[13px] font-medium">{{ item.label }}</span>
+        @if (item.count !== null) {
+          <span class="text-[12px] tabular-nums text-gray-400">{{ item.count }}</span>
+        }
+      </span>
+      @if (item.note) {
+        <span class="text-[11px] text-gray-400">{{ item.note }}</span>
+      }
+    </button>
+  }
+
+  <p class="mt-2 border-t border-gray-100 px-2 pt-3 text-[11px] text-gray-400" data-testid="engagement-sub-nav-cross-reference-note">
+    {{ crossReferenceNote }}
+  </p>
+</nav>

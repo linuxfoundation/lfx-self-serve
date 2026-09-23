@@ -29,7 +29,8 @@ import {
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
-  HealthMetricsOverviewRevenue,
+  HealthMetricsOverviewKpisByRange,
+  HealthMetricsOverviewRevenueByRange,
   MembershipTierResponse,
   OrgContributorsMonthlyResponse,
   OrgContributorsProjectDistributionResponse,
@@ -55,6 +56,7 @@ import {
   EmailCtrResponse,
   EngagedCommunitySizeResponse,
   FlywheelConversionResponse,
+  HealthMetricsOverviewFoundationSummary,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
@@ -79,12 +81,20 @@ import {
   RevenueImpactResponse,
   MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
+  HealthMetricsEngagementGroupAttendance,
+  HealthMetricsEngagementGroupQuery,
+  HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberQuery,
+  HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementOrgQuery,
+  HealthMetricsEngagementParticipationQuery,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
   DEFAULT_FOUNDATION_PROJECTS_DETAIL_GROUPED,
   HEALTH_METRICS_NPS_DEFAULT_SUMMARY,
-  HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
 } from '@lfx-one/shared/constants';
 import { mapV1BandToV2, mapV1DistributionToV2 } from '@lfx-one/shared/utils';
 import { catchError, map, Observable, of, shareReplay, throwError } from 'rxjs';
@@ -1081,6 +1091,105 @@ export class AnalyticsService {
   }
 
   /**
+   * Get one page of the Health Metrics Engagement "Group attendance" table
+   * @param query - Foundation, project scope, group-type cut, period and page
+   * @returns Observable of the page, already ranked dormant-first by the server
+   */
+  public getEngagementGroupAttendance(query: HealthMetricsEngagementGroupQuery): Observable<HealthMetricsEngagementGroupAttendance> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      groupType: query.groupType,
+      range: query.range,
+      page: String(query.page),
+      size: String(query.size),
+    };
+    if (query.projectSlug) {
+      params['projectSlug'] = query.projectSlug;
+    }
+
+    // Errors propagate: the section's empty state asserts this foundation has no matching groups, so
+    // a swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementGroupAttendance>('/api/analytics/engagement-group-attendance', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-group-attendance failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Meeting participation" roll-up and meeting-type table
+   * @param query - Foundation and period
+   * @returns Observable of the roll-up row plus one row per meeting-type group
+   */
+  public getEngagementMeetingParticipation(query: HealthMetricsEngagementParticipationQuery): Observable<HealthMetricsEngagementMeetingParticipation> {
+    const params: Record<string, string> = {
+      foundationSlug: query.foundationSlug,
+      range: query.range,
+    };
+
+    // Errors propagate: a null total renders "no participation data for this foundation", so a
+    // swallowed failure would state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementMeetingParticipation>('/api/analytics/engagement-meeting-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-meeting-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Organization participation" table
+   * @param query - Foundation scope; the period, search and lapsed cut all resolve client-side
+   * @returns Observable of every organization with all four periods and the caption counts
+   */
+  public getEngagementOrgParticipation(query: HealthMetricsEngagementOrgQuery): Observable<HealthMetricsEngagementOrgParticipation> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
+    // state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementOrgParticipation>('/api/analytics/engagement-org-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-org-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Non-member participation" table
+   * @param query - Foundation scope; the period pill resolves client-side
+   * @returns Observable of every non-member organization with all four periods and the caption count
+   */
+  public getEngagementNonMemberParticipation(query: HealthMetricsEngagementNonMemberQuery): Observable<HealthMetricsEngagementNonMemberParticipation> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
+    // state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementNonMemberParticipation>('/api/analytics/engagement-non-member-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-non-member-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the health-metrics-overview "Foundation" rail summary
+   * @param foundationSlug - Foundation slug for Snowflake filter
+   * @returns Observable of the foundation profile summary
+   */
+  public getFoundationProfileSummary(foundationSlug: string): Observable<HealthMetricsOverviewFoundationSummary> {
+    const params: Record<string, string> = { foundationSlug };
+    return this.http.get<HealthMetricsOverviewFoundationSummary>('/api/analytics/foundation-profile-summary', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] foundation-profile-summary failed', { foundationSlug, error });
+        return of(HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT);
+      })
+    );
+  }
+
+  /**
    * Get participating organizations summary (membership counts + engagement breakdown)
    * @param foundationSlug - Foundation slug for Snowflake project_slug filter
    * @returns Observable of participating orgs summary response
@@ -1290,14 +1399,36 @@ export class AnalyticsService {
     );
   }
 
-  public getHealthOverviewRevenue(foundationSlug: string, range: string = 'YTD'): Observable<HealthMetricsOverviewRevenue> {
-    const params: Record<string, string> = { foundationSlug };
-    if (range && range !== 'YTD') {
-      params['range'] = range;
-    }
-    return this.http
-      .get<HealthMetricsOverviewRevenue>('/api/analytics/health-overview-revenue', { params })
-      .pipe(catchError(() => of(HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY)));
+  /**
+   * Fetches every selectable period's revenue summary in one call — `HEALTH_OVERVIEW_REVENUE` carries
+   * the period as a column suffix, so the period selector projects this map instead of refetching.
+   */
+  public getHealthOverviewRevenue(foundationSlug: string): Observable<HealthMetricsOverviewRevenueByRange> {
+    const params = { foundationSlug };
+    // Empty map on failure: callers index by the selected range and fall back to the zero-filled
+    // default for a missing key, so an absent entry already means "no data for this period".
+    return this.http.get<HealthMetricsOverviewRevenueByRange>('/api/analytics/health-overview-revenue', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-revenue failed', { foundationSlug, error });
+        return of({});
+      })
+    );
+  }
+
+  /**
+   * Fetches the live Events/Training/Members/Non-Members/Code area-state rows from `HEALTH_OVERVIEW_KPIS`,
+   * for every selectable period in one call. Engagement isn't part of that table's contract, so callers
+   * merge each period's rows with a fixture row for that area. Degrades to an empty map on failure — the
+   * caller then renders a neutral no-data placeholder for the live areas, never their fixture numbers.
+   */
+  public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
+    const params = { foundationSlug };
+    return this.http.get<HealthMetricsOverviewKpisByRange>('/api/analytics/health-overview-kpis', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] health-overview-kpis failed', { foundationSlug, error });
+        return of({});
+      })
+    );
   }
 
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {

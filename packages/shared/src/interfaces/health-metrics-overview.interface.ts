@@ -8,6 +8,7 @@ import type {
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
+import type { HealthMetricsRange } from './dashboard-metric.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -32,8 +33,71 @@ export interface HealthMetricsAreaState {
   statLabel: string;
   statSource: string;
   classification: HealthMetricsOverviewClassification;
+  /**
+   * ISO date, or '' when the area was never evaluated (e.g. a neutral placeholder tile) OR when
+   * its source table simply carries no evaluation timestamp at all (e.g. `HEALTH_OVERVIEW_KPIS`,
+   * a point-in-time read) — '' is not proof an evaluation never happened, only that no date is
+   * available to show.
+   */
   evaluatedAt: string;
+  /**
+   * False to hide the status chip entirely (distinct from a 'none' classification's "Awaiting data"
+   * chip) — e.g. events with neither a registration goal nor a computed status. Omitted/true renders
+   * the chip normally. Synthesized by the service layer (e.g. `project.service.ts`'s
+   * `getHealthOverviewKpis`) — unlike every other field on this interface, it has no backing
+   * `hm_area_state` column.
+   */
+  showStatus?: boolean;
 }
+
+/**
+ * One period's slice of a `HEALTH_OVERVIEW_KPIS` row (LFXV2-3365), projected out of a
+ * {@link HealthOverviewAllPeriodsRow} by `getHealthOverviewKpis`. Field names are the underlying
+ * columns' uppercase aliases with the period suffix stripped. Five fields
+ * (events/training/contributors-prefixed) vary by period; the four members/non-members fields are
+ * point-in-time and repeat identically across every range.
+ */
+export interface HealthOverviewKpisRow {
+  EVENTS_PCT_OF_REGISTRATION_GOAL: number | null;
+  EVENTS_STATUS: string | null;
+  CERTIFICATIONS_EARNED_COUNT: number | null;
+  TRAINING_STATUS: string | null;
+  CONTRIBUTORS_COUNT: number | null;
+  MEMBERS_RENEWING_90D_VALUE_USD: number | null;
+  MEMBERS_STATUS: string | null;
+  NON_MEMBERS_PIPELINE_VALUE_USD: number | null;
+  NON_MEMBERS_STATUS: string | null;
+}
+
+/**
+ * One period's slice of a `HEALTH_OVERVIEW_REVENUE` row (LFXV2-3365). Field names are the underlying
+ * columns' uppercase aliases with the period suffix stripped. `REVENUE_DOMAIN` is period-invariant and
+ * stays out of {@link HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS}, which the service generates the SELECT
+ * list from and type-checks its readers against. Revenue has no single projection helper the way the
+ * KPI side does, so a new field needs its own reader — see `ProjectService.revenueAlias`.
+ */
+export interface HealthOverviewRevenueRow {
+  REVENUE_USD: number | null;
+  FOUNDATION_TOTAL_REVENUE_USD: number | null;
+}
+
+/**
+ * Raw all-periods row from `HEALTH_OVERVIEW_KPIS` / `HEALTH_OVERVIEW_REVENUE`. Both tables key on
+ * `foundation_slug` alone and expose the period as a column suffix, so one read covers every range:
+ * period-suffixed columns are aliased `<COLUMN>__<RANGE>` (one per selectable range) and the
+ * period-invariant ones keep their bare alias. Projected per range by the service layer.
+ */
+export type HealthOverviewAllPeriodsRow = Record<string, number | string | null>;
+
+/**
+ * Per-range KPI area states from one all-periods read. Keyed only by the ranges the period selector
+ * offers (`buildHealthMetricsOverviewPeriods()`) — `HealthMetricsRange` carries a fifth member these
+ * tables have no columns for, so callers must handle a missing key.
+ */
+export type HealthMetricsOverviewKpisByRange = Partial<Record<HealthMetricsRange, HealthMetricsAreaState[]>>;
+
+/** Per-range revenue summaries from one all-periods read. Same partial-key caveat as {@link HealthMetricsOverviewKpisByRange}. */
+export type HealthMetricsOverviewRevenueByRange = Partial<Record<HealthMetricsRange, HealthMetricsOverviewRevenue>>;
 
 /**
  * Mirrors the `hm_findings` dbt table (LFXV2-3364) — one row per triggered rule per area/entity.
@@ -103,6 +167,8 @@ export interface HealthMetricsOverviewTileViewModel {
   evaluatedAt: string;
   /** Set only for the `code` area — tile renders an "LFX Insights" link instead of a status word. */
   insightsUrl?: string;
+  /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
+  showStatus?: boolean;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
@@ -180,9 +246,12 @@ export interface HealthMetricsOverviewRevenue {
   streams: { key: string; value: number }[];
 }
 
-/** Rail "Foundation" block raw data (LFXV2-3364 stand-in) — mirrors the design's `RAIL[CUR]` plus `d.code.projects`. */
+/**
+ * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
+ * doc). No `size` field: the doc's table has no backing column for it and it was dropped rather
+ * than fabricated. `nextRenewals` reflects the table's only renewal window, 90 days (not 30).
+ */
 export interface HealthMetricsOverviewFoundationSummary {
-  size: string;
   projects: number;
   tiers: string;
   board: string;

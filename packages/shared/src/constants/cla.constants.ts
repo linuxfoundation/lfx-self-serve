@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaDetailTab, OrgClaGroup, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -212,6 +212,7 @@ export const ORG_CLA_NOT_STARTED_COPY = {
   ],
   downloadLabel: 'Download a copy of the CCLA for review (non-executable)',
   startLabel: 'Start the CLA process',
+  identifySomeoneElseLabel: 'Not the right person to sign? Identify someone else →',
 } as const;
 
 /**
@@ -221,16 +222,18 @@ export const ORG_CLA_NOT_STARTED_COPY = {
 export const ORG_CLA_REVIEW_COPY_FILENAME = 'Corporate_Contributor_License_Agreement.pdf';
 
 /**
- * Where EasyCLA returns a signatory after signing a corporate CLA (#1983). Mirrors the `easycla`
- * child route under /org in the org dashboard routes.
- *
- * Sibling of `MY_CLAS_PATH` for the same reason that one is shared: the BFF derives the return
- * address from the request Host, and the two hand-offs must not disagree on where they land.
+ * The leftover EasyCLA address, `/org/easycla` (#1983). Still routed for three consumers:
+ * corporate-signing returns minted before lfx-self-serve#2743 deployed, returns minted by any
+ * replica still running the previous release, and — while the `ORG_EASYCLA_RETURN_IN_PATH` rollout
+ * gate is off (the shipped default) — every return this release mints (`legacyOrgEasyclaReturnPath`).
+ * Not used for new in-app links (those go through `OrgLensNavigationService`). Removal (#2743
+ * item 4) is one release after the gate has been on for a full signing-session lifetime, not one
+ * release after this deploy.
  */
 export const ORG_EASYCLA_PATH = '/org/easycla';
 
 /**
- * Query parameter naming which corporate agreement a `ORG_EASYCLA_PATH` group address is about,
+ * Query parameter naming which corporate agreement an `/org/{org}/easycla/{claGroupId}` address is about,
  * when the group id alone does not say (#2364).
  *
  * The path segment is the CLA Group, which identifies an agreement *template* rather than one
@@ -250,7 +253,7 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 
 /**
  * Key the picker's chosen CLA Group travels under, in the router state of the navigation to that
- * group's `ORG_EASYCLA_PATH` address (#1983, #2364).
+ * group's `/org/{org}/easycla/{claGroupId}` address (#1983, #2364).
  *
  * State rather than the address, because the address holds nothing that could be resolved into the
  * agreement this page has to name: the CLA service exposes no fetch-a-CLA-group-by-id endpoint —
@@ -264,18 +267,18 @@ export const ORG_EASYCLA_SIGNATURE_PARAM = 'sig';
 export const ORG_CLA_SIGN_SELECTION_STATE = 'orgClaSignSelection';
 
 /**
- * Query parameter naming the organization a corporate signing session was opened for, carried on
- * the CLA Group address EasyCLA returns the signatory to (#1983, #2352).
+ * Legacy query parameter naming the organization a corporate signing session was opened for, on
+ * return addresses of the leftover shape (`legacyOrgEasyclaReturnPath`). Spec 050 moves the
+ * organization into the path (`orgEasyclaReturnPath`, lfx-self-serve#2743) behind the
+ * `ORG_EASYCLA_RETURN_IN_PATH` rollout gate (`ServerFeatureFlag.OrgEasyclaReturnInPath`); until that
+ * gate is on, the BFF still writes this parameter. The Org Lens page reads it on the leftover
+ * `/org/easycla/…` mount only — never under `/org/:orgSegment/easycla`, where the path is the
+ * authority — and keeps reading it for one release after the gate flips, so a signing trip opened
+ * against the old shape lands on the right organization when it comes back.
  *
- * The return is a cross-site navigation, and which organization is selected survives only in a
- * `SameSite=Lax` cookie. When that cookie does not come back the page falls to the first
- * organization in the viewer's list, so a signatory who signed for one company returns looking at
- * another — reading as though the signature landed on the wrong organization.
- *
- * Shared because the BFF writes it and the Org Lens page reads it. **It names an organization; it
- * does not grant one.** The page resolves it against the viewer's own authorized organizations and
- * ignores anything absent from that list, so a crafted link cannot select an organization the
- * viewer does not hold.
+ * **It names an organization; it does not grant one.** The page resolves it against the viewer's
+ * own authorized organizations and ignores anything absent from that list, so a crafted link cannot
+ * select an organization the viewer does not hold.
  */
 export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
 
@@ -295,6 +298,16 @@ export const ORG_EASYCLA_RETURN_ORG_PARAM = 'org';
  * address would.
  */
 export const ORG_EASYCLA_RETURN_SIGNED_PARAM = 'signed';
+
+/**
+ * The corporate-signing return parameters (`?org=`, `?signed=`) nulled for a `queryParamsHandling:
+ * 'merge'` navigation — the one shape every strip uses (the switch off an EasyCLA address, the
+ * wait's settle, the addressed-mount strip), so the set cannot drift between them.
+ */
+export const ORG_EASYCLA_RETURN_PARAMS_RESET: Readonly<Record<string, null>> = Object.freeze({
+  [ORG_EASYCLA_RETURN_ORG_PARAM]: null,
+  [ORG_EASYCLA_RETURN_SIGNED_PARAM]: null,
+});
 
 /** The only value {@link ORG_EASYCLA_RETURN_SIGNED_PARAM} is written with; any other is ignored. */
 export const ORG_EASYCLA_RETURN_SIGNED_VALUE = '1';
@@ -333,6 +346,56 @@ export const CCLA_SIGN_COPY = {
     },
     continueLabel: 'Continue',
     cancelLabel: 'Cancel',
+    /** Leaves attestation for the send-by-email path (#2365). Verbatim from the M3 prototype. */
+    notAuthorizedLabel: 'I am not authorized',
+  },
+  /**
+   * Name + email the CCLA to a signatory who is not the requester (#2365).
+   *
+   * Verbatim from the M3 prototype, with the company name interpolated. Distinct from the
+   * #1984 CLA Manager modal: this names a signatory, not a manager, and does not collect the
+   * self-sign attestation checkboxes.
+   */
+  sendByEmail: {
+    header: 'Identify who should sign',
+    body: (company: string): string =>
+      `Tell us who's authorized to sign this CLA for ${company}, and we'll send them an email requesting that they review and sign it as the authorized signatory. You'll remain ${company}'s Initial CLA Manager once they complete the signature.`,
+    nameLabel: 'Name',
+    namePlaceholder: 'Full name',
+    emailLabel: 'Email address',
+    emailPlaceholder: 'name@company.com',
+    sendLabel: 'Send Signature Request Email',
+    cancelLabel: 'Cancel',
+    missingFields: 'Enter a name and email address to continue.',
+    /**
+     * Per-field text, shown once the field holds something that cannot be sent.
+     *
+     * Send is disabled while either field fails, so the form cannot be submitted to get the
+     * browser's own validation — without these, a one-character name or a malformed address
+     * leaves the button dead with nothing said, and nothing at all for a screen reader.
+     *
+     * The name text names the bound rather than saying "invalid", because the bound is the part
+     * the manager cannot guess: it is the producer's, and two characters is short enough to look
+     * like a working value.
+     *
+     * Both bounds get a message. The field carries no native `maxlength`, which would stop input
+     * by UTF-16 unit and so cut a non-BMP name off at half the cap this form actually allows —
+     * the length here is counted in code points, as the producer counts it.
+     */
+    nameError: (min: number): string => `Enter the signatory's full name — at least ${min} characters.`,
+    nameTooLongError: (max: number): string => `The signatory's name must be ${max} characters or fewer.`,
+    emailError: 'Enter a complete email address, like name@company.com.',
+    sendingHeader: 'Sending signature request…',
+    successHeader: 'Signature Request Email Sent',
+    successBody: (email: string): string =>
+      `An email has been sent to ${email}, requesting that they sign the CLA. You may want to follow up with them to confirm they review and sign it.`,
+    closeLabel: 'Close',
+    failureHeader: 'Unable to send signature request',
+    /**
+     * Only for a failure the CLA service did not explain. Distinct from `failure.body`, which
+     * talks about preparing a CLA — the self-sign outcome this dialog is not.
+     */
+    failureBody: 'We could not send this signature request right now. Please try again, or contact support if the problem continues.',
   },
   preparing: {
     header: 'Configuring CLA Manager Settings…',
@@ -378,6 +441,15 @@ export const CCLA_SIGN_COPY = {
     alreadySignedDisabledReason: 'Your organization has already signed a corporate CLA for this CLA group.',
   },
   /**
+   * ACS deny on attestation Continue. Toast so the dialog can stay open; EasyCLA v4 still
+   * enforces the write. Not the Corporate Console 403 page — that copy read as a hard block
+   * after the viewer had just affirmed they were authorized to sign.
+   */
+  forbidden: {
+    summary: "Can't start signing",
+    detail: "You aren't designated to sign this corporate CLA for your organization.",
+  },
+  /**
    * Shown on the CLA Group detail page when the signatory has come back from signing and the
    * agreement is not in their organization's list yet.
    *
@@ -388,6 +460,22 @@ export const CCLA_SIGN_COPY = {
    */
   returnWait: 'Confirming your signature with EasyCLA. This can take a few seconds.',
 } as const;
+
+/**
+ * ACS actions the Organization Lens EasyCLA permission hop accepts (#1980).
+ *
+ * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
+ * string, and the client posts these literals rather than assembling ACS permissions itself.
+ */
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete'] as const;
+
+export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
+export const ACS_CLA_SIGN_ACTION = 'create';
+export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
+export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_MANAGER_DELETE_RESOURCE = 'cla_manager_delete';
+export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
+export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**
  * Tab order of the Organization Lens CLA Group detail page. `OrgClaDetailTab` is derived from
@@ -421,14 +509,15 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers and Approval List tabs hold nothing until the agreement is signed, taken
- * verbatim from the M3 prototype's locked panels.
+ * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
+ * agreement is signed, taken verbatim from the M3 prototype's locked panels.
  *
- * Only these two tabs. Both describe a role and a rule set that come into existence *with* the
- * signature — the signatory becomes the initial CLA Manager, and approval entries are what that
- * manager then maintains — so on an unsigned agreement there is nothing to list rather than a list
- * that failed to load. The remaining tabs are unbuilt for every agreement, signed or not, and
- * saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
+ * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
+ * entries are what that manager maintains, and acknowledgments are what contributors then place
+ * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
+ * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
+ * and saying "once this CLA is signed" on them would promise content signing does not produce.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
@@ -436,13 +525,13 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
  * the empty Overview had.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
-  managers: {
-    title: 'CLA Managers become available once this CLA is signed',
-    subtitle: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
-  },
   approval: {
     title: 'The approval list becomes available once this CLA is signed',
     subtitle: 'Sign this CLA first, then add approval list entries to automatically cover matching contributors.',
+  },
+  acknowledgments: {
+    title: 'No contributor acknowledgments yet',
+    subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
   },
 };
 
@@ -478,6 +567,31 @@ export const ORG_CLA_APPROVAL_CRITERIA = [
 export const ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES = 100;
 
 /**
+ * Cap on the named-signatory field for send-by-email (#2365).
+ *
+ * Shared so the dialog and the BFF refuse at the same length. Both count code points, as the
+ * producer does — the dialog through `maxCodePointsValidator`, never a native `maxlength`, which
+ * counts UTF-16 units and would halve the cap for a non-BMP name. The producer allows 255; this is
+ * the Self Serve bound, and the BFF names it when a request still exceeds it.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MAX_LENGTH = 200;
+
+/**
+ * Floor on the same field, mirroring the producer's `authority_name` `minLength: 2`.
+ *
+ * The producer's own handler only refuses a blank after trimming, so the minimum is enforced a
+ * layer above it by generated request validation — which answers a status this BFF does not
+ * relabel, so the body is dropped and the dialog falls back to its generic failure copy. Refusing
+ * a single character here is what turns that dead end into a message naming the field.
+ *
+ * Only the minimum is mirrored, not the producer's `authority_email` pattern. That pattern caps
+ * the TLD at ten letters and omits `'` from the local part, so mirroring it would reject
+ * `.international` addresses and names like `o'brien@…` as *our* validation error for a
+ * constraint that belongs upstream.
+ */
+export const ORG_CLA_AUTHORITY_NAME_MIN_LENGTH = 2;
+
+/**
  * The heading the approval-list tab carries.
  *
  * Verbatim from the design, which takes it from the console being replaced. It is a misleading
@@ -500,4 +614,180 @@ export const ORG_CLA_APPROVAL_RECEIPT = {
   added: { summary: 'Approval list updated', detail: (count: number) => (count === 1 ? 'The entry was added.' : `${count} entries were added.`) },
   edited: { summary: 'Approval list updated', detail: () => 'The entry was updated. Acknowledgements matching the previous value were invalidated.' },
   removed: { summary: 'Entry removed', detail: () => 'The entry was removed. Acknowledgements it covered were invalidated.' },
+} as const;
+
+export const ORG_CLA_MANAGER_REFUSALS = ['no-lf-login', 'lf-username-required', 'not-authorized', 'last-manager', 'already-manager', 'unknown'] as const;
+
+export const ORG_CLA_MANAGER_REFUSAL_COPY: Record<OrgClaManagerRefusal, string> = {
+  'no-lf-login': 'This person needs an LF Login account before they can be added as a CLA Manager. Ask them to create one, then try again.',
+  'lf-username-required':
+    'This person has an LF Login account but has not chosen an LF username yet. Ask them to finish setting up their LF Login username, then try again.',
+  'not-authorized': 'You do not have permission to change the CLA Managers for this CLA.',
+  'last-manager': 'A CLA must always have at least one CLA Manager, so this person cannot be removed. Add another CLA Manager first.',
+  'already-manager': 'This person is already a CLA Manager for this CLA.',
+  unknown: 'Something went wrong. Please try again.',
+};
+
+export const ORG_CLA_MANAGERS_COPY = {
+  heading: 'CLA Managers',
+  addAction: 'Add CLA Manager',
+  intro:
+    "CLA Managers maintain this CLA's approval list. If a CLA Manager also plans to contribute code themselves, they should add themselves to the Approved List.",
+  unsignedTitle: 'CLA Managers become available once this CLA is signed',
+  unsignedBody: 'The person who coordinates signing becomes the initial CLA Manager once this CLA is signed. Additional managers can be added afterward.',
+  loadFailed: 'Could not load the CLA Managers for this CLA.',
+  retry: 'Try again',
+  empty: 'This CLA has no CLA Managers yet.',
+  lastManagerHint: 'A CLA must always have at least one CLA Manager.',
+  addDialogTitle: 'Add CLA Manager',
+  addDialogIntro: "Add someone as a CLA Manager for this CLA. They'll be able to maintain its approval list and manage contributor approvals.",
+  addedTitle: 'CLA Manager added',
+  removeAction: 'Remove',
+  removeBlockedLabel: 'Remove. A CLA must always have at least one CLA Manager.',
+} as const;
+
+export const ORG_CLA_MANAGER_REMOVE_COPY = {
+  title: (name: string): string => `Remove ${name} as CLA Manager?`,
+  self: 'You are removing yourself as a CLA Manager for this CLA. You will lose the ability to manage its approval list and add or remove other CLA Managers — this takes effect immediately.',
+  other: (name: string): string => `${name} will no longer be able to manage this CLA's approval list or add other CLA Managers.`,
+} as const;
+
+/** Name-part bounds, matching what the CLA service accepts. */
+export const ORG_CLA_MANAGER_NAME_MIN = 2;
+export const ORG_CLA_MANAGER_NAME_MAX = 30;
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+// ---------------------------------------------------------------------------
+
+/**
+ * The heading the Contributor Acknowledgments tab carries.
+ *
+ * Matches the label the corporate CLA console uses for the same list, so a CLA manager migrating
+ * between the two surfaces reads the same words.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments';
+
+/**
+ * Cap on the acknowledgment page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the CLA
+ * manager fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN = 1;
+
+/**
+ * Empty-state copy for a signed agreement with no acknowledgments yet.
+ *
+ * The title matches the M3 prototype's single empty state. The subtitle deliberately does NOT
+ * repeat "once this CLA is signed" (that wording is reserved for the locked/unsigned state in
+ * `ORG_CLA_LOCKED_TAB_COPY`) — the agreement is already signed on this path, so the answer is
+ * simply "not yet". Parent story #1973 AC4 forbids the smiley icon the prototype used; render the
+ * text with no decorative imagery.
+ */
+export const ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY = {
+  title: 'No contributor acknowledgments yet',
+  subtitle: 'No employee has acknowledged this agreement yet.',
+} as const;
+
+/** Column headers for the Contributor Acknowledgments table. */
+export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
+  name: 'Name',
+  identity: 'LF Login/GitHub or GitLab ID',
+  cclaVersion: 'CCLA Version',
+  signedOn: 'Acknowledged On',
+  state: 'Status',
+  actions: '',
+} as const;
+
+/**
+ * Two visible acknowledgment states.
+ *
+ * The M3 prototype's third amber "Not Authorized" state is deliberately out of scope for #1986;
+ * its design is unresolved. Do not add a third entry here without a locked contract decision.
+ */
+export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
+  acknowledged: 'Acknowledged',
+  invalidated: 'Invalidated',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
+
+/**
+ * Reasons a CLA manager can pick when invalidating an acknowledgment.
+ *
+ * The producer accepts these four enum values; the free-text note is separate. The tuple order
+ * is the UI order the picker presents them in.
+ */
+export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
+
+/**
+ * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ *
+ * Counted in code points, not UTF-16 units: go-swagger validates `maxLength` with
+ * `utf8.RuneCountInString`. The dialog uses `maxCodePointsValidator` and carries no native
+ * `maxlength`, which would stop a non-BMP note at half this cap.
+ */
+export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
+
+/**
+ * Labels for the invalidation-reason picker (#1986, #2807).
+ *
+ * The four values match the producer's enum. Copy is the CLA manager's wording, not the
+ * producer's slug — a manager clicking "Signed in error" understands the outcome; the producer
+ * receives `signed-in-error`.
+ */
+export const ORG_CLA_INVALIDATION_REASON_LABELS = {
+  'signed-in-error': 'Signed in error',
+  'should-be-corporate': 'Should be corporate',
+  compliance: 'Compliance concern',
+  other: 'Other',
+} as const;
+
+/**
+ * Confirmation-dialog copy for a row invalidate.
+ *
+ * The warning names the outcome directly: the producer marks the acknowledgment invalidated and
+ * revokes the contributor's coverage under this CLA. That is what the CLA manager is confirming;
+ * hiding it behind "will no longer be recognized" would leave the click reversible-looking when
+ * it is not.
+ */
+export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
+  header: 'Invalidate this acknowledgment?',
+  warning:
+    'This contributor will lose coverage under this CLA. Their acknowledgment is marked invalidated on the record, and they will need to re-acknowledge before their next contribution can be accepted.',
+  reasonLabel: 'Reason',
+  reasonPlaceholder: 'Choose a reason',
+  noteLabel: 'Note (optional)',
+  notePlaceholder: 'Add context for the audit trail.',
+  noteTooLong: `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`,
+  cancel: 'Cancel',
+  confirm: 'Invalidate acknowledgment',
+} as const;
+
+/**
+ * Toast copy for the outcome of an invalidate.
+ *
+ * The success detail names the contributor as the row displayed them, so the receipt is legible
+ * on a list where several rows can otherwise look alike. The failure detail is the fallback only
+ * — a message the BFF sent is preferred verbatim, because it is the producer's own sentence about
+ * why this particular write was refused.
+ */
+export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
+  successSummary: 'Acknowledgment invalidated',
+  successDetail: (contributor: string): string => `${contributor} is no longer covered by this CLA.`,
+  failureSummary: 'Invalidate failed',
+  failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
+} as const;
+
+/** Label and accessible name for the per-row Invalidate control. */
+export const ORG_CLA_INVALIDATE_ACTION_COPY = {
+  label: 'Invalidate',
+  ariaLabel: (contributor: string): string => `Invalidate the acknowledgment for ${contributor}`,
+  /** Shown instead of the control when the producer sent a row with no per-ack id to address. */
+  unavailableTooltip: 'This acknowledgment has no record id, so it cannot be invalidated here.',
 } as const;

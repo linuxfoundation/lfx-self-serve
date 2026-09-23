@@ -23,6 +23,11 @@ class TestHostComponent {}
  * refusal — which is also what makes the service's openMessenger('') spec a backstop rather
  * than a production path — and a widget script that fails to load after the click surfaces
  * the same toast through the load-error callback wired into openMessenger().
+ *
+ * The host below deliberately provides nothing but MessageService and IntercomService: the
+ * directive must not reach for user or session state of its own (who the on-demand boot
+ * identifies as is IntercomService's staged identity), or every component that renders a
+ * support CTA would have to provide that whole dependency chain in its own TestBed.
  */
 describe('OpenIntercomDirective', () => {
   let fixture: ComponentFixture<TestHostComponent>;

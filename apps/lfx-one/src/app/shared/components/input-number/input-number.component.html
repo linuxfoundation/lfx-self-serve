@@ -1,6 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!--
+  The id is written with `[attr.id]` rather than `[id]`. A property binding assigns whatever the
+  expression evaluates to, and `input<string>()` with no default is `undefined` for every caller
+  that passes neither `inputId` nor `id` — which the DOM stringifies, leaving those inputs sharing
+  a single `id="undefined"`. An attribute binding drops the attribute instead.
+-->
+
 <ng-container [formGroup]="form()">
   @if (icon()) {
     <p-iconfield>
@@ -8,26 +15,30 @@
       <input
         pInputText
         type="number"
-        [id]="id()"
+        [attr.id]="inputId() || id() || null"
         [formControlName]="control()"
         [pSize]="size()!"
         [placeholder]="placeholder() ?? ''"
         [class]="styleClass()"
         class="w-full"
         [autocomplete]="autocomplete()"
+        [attr.aria-describedby]="describedBy() || null"
+        [attr.aria-invalid]="invalid() ? true : null"
         [attr.data-test]="dataTest()" />
     </p-iconfield>
   } @else {
     <input
       pInputText
       type="number"
-      [id]="id()"
+      [attr.id]="inputId() || id() || null"
       [formControlName]="control()"
       [pSize]="size()!"
       [placeholder]="placeholder() ?? ''"
       [class]="styleClass()"
       class="w-full"
       [autocomplete]="autocomplete()"
+      [attr.aria-describedby]="describedBy() || null"
+      [attr.aria-invalid]="invalid() ? true : null"
       [attr.data-test]="dataTest()" />
   }
 </ng-container>

@@ -7,11 +7,12 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Router } from '@angular/router';
 import { MARKETING_OPS_FGA_ENABLED_FLAG, SELECTED_FOUNDATION_COOKIE_KEY, SELECTED_PROJECT_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { ProjectStage } from '@lfx-one/shared/enums';
-import { Project, ProjectContext } from '@lfx-one/shared/interfaces';
+import { MeetingWriteAccess, Project, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel, isBoardScopedPersona, isFormationStage, isSameProjectContext } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
-import { catchError, combineLatest, filter, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, map, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
+import { hasMeetingWriteAccess } from '../utils/write-access.util';
 import { CookieRegistryService } from './cookie-registry.service';
 import { FeatureFlagService } from './feature-flag.service';
 import { LensService } from './lens.service';
@@ -134,9 +135,51 @@ export class ProjectContextService {
    * `activeContext`, not a derivation of it. That call is cached per slug for the service's
    * lifetime (shared with `projectQueryParamGuard`'s own read), so the value reflects the project's
    * stage as of its first fetch this session, not a live re-check on every context change. `null`
-   * while resolving, absent, or unauthenticated.
+   * while resolving, absent, or unauthenticated — `activeProjectStageResolved` tells those apart.
    */
-  public readonly activeProjectStage: Signal<string | null> = this.initActiveProjectStage();
+  public readonly activeProjectStage: Signal<string | null> = computed(() => this.activeProjectStageFetch() ?? null);
+
+  /**
+   * False from a context change until that context's stage fetch answers (#2754). `SidebarNavService`
+   * renders no project-lens items in that window rather than a nav shape the resolved stage may then
+   * collapse. Unlike `activeProject`, this pipeline does clear the previous value when a fetch starts:
+   * nothing reads a transient null here as an access loss (contrast `initActiveProjectDetails`).
+   */
+  public readonly activeProjectStageResolved: Signal<boolean> = computed(() => this.activeProjectStageFetch() !== undefined);
+
+  /** `undefined` while a stage fetch is in flight for the current context; otherwise the resolved stage, or `null`. */
+  private readonly activeProjectStageFetch: Signal<string | null | undefined> = this.initActiveProjectStageFetch();
+
+  private readonly formationOverviewAllowed = signal<string | null>(null);
+  /**
+   * The Formation-stage project whose `/project/overview` `formationOverviewRedirectGuard` let stand
+   * instead of redirecting to the checklist — the flag was off, pinned off, or LaunchDarkly was not
+   * ready within `FEATURE_FLAG_REDIRECT_READY_TIMEOUT_MS` (#2754). `SidebarNavService` keeps that
+   * project's full nav while this names the selected project, so a provider that only becomes ready
+   * after the guard gave up (or a flag flipped on live) cannot collapse the nav to Formation-only
+   * under a dashboard the guard already admitted. The record describes that one dashboard and never
+   * outlives it: every browser run of the redirect guard clears it before deciding (only its
+   * fail-open branch writes a slug), and `formationOverviewReleaseGuard` clears it when navigation
+   * leaves the overview. Compared against the selected project, so another project's decision
+   * never applies.
+   */
+  public readonly formationOverviewAllowedSlug: Signal<string | null> = this.formationOverviewAllowed.asReadonly();
+
+  /**
+   * Meeting-authoring permission for the current active context, paired with the context uid it was
+   * resolved against: writer *or* meeting coordinator.
+   * @description Distinct from {@link canWrite}, which is writer-only. A meeting coordinator can create
+   * and edit meetings without being a project writer, so gating a meeting action on `canWrite` locks out
+   * a legitimate coordinator — including from the meeting they just created. Lives here rather than in
+   * one dashboard so every meeting surface asks the same question.
+   *
+   * Most callers want {@link canWriteMeetings}. Read this pair only to distinguish a *revoked* grant
+   * from the active context moving to another project — see {@link MeetingWriteAccess}.
+   */
+  public readonly meetingWriteAccess: Signal<MeetingWriteAccess> = this.initMeetingWriteAccess();
+
+  /** {@link meetingWriteAccess} without the context it was resolved against. */
+  public readonly canWriteMeetings: Signal<boolean> = computed(() => this.meetingWriteAccess().canWrite);
 
   /** Salesforce 18-char ID for the active foundation — resolves PCC deep-link targets. `null` while resolving or unavailable. */
   public readonly selectedFoundationSfid: Signal<string | null> = this.initSelectedFoundationSfid();
@@ -198,6 +241,11 @@ export class ProjectContextService {
     this.routeLensKind.set(kind);
   }
 
+  /** Records `formationOverviewRedirectGuard`'s latest `/project/overview` landing decision — see {@link formationOverviewAllowedSlug}. */
+  public setFormationOverviewAllowedSlug(slug: string | null): void {
+    this.formationOverviewAllowed.set(slug);
+  }
+
   public clearFoundation(): void {
     this.foundationSelection.set(null);
     this.persistToCookie(this.foundationStorageKey, null);
@@ -208,6 +256,30 @@ export class ProjectContextService {
     this.projectSelection.set(null);
     this.persistToCookie(this.projectStorageKey, null);
     this.syncProjectQueryParam(null);
+  }
+
+  /**
+   * Whether the signed-in user may author meetings in one named project.
+   * @description The ambient `canWriteMeetings` answers this for the active context only, which is
+   * the wrong question whenever a surface acts on a project it isn't currently sitting in — a
+   * group-scoped meeting create, or a toast offering to reopen a meeting saved somewhere else. Same
+   * two-step writer -> meeting-coordinator probe, exposed for an explicit slug or uid.
+   * @param slugOrUid Project slug or uid; `ProjectService.getProject` accepts either.
+   */
+  public meetingWriteAccessFor(slugOrUid: string): Observable<boolean> {
+    // Upstream skips the `meeting_coordinator` FGA check outright for writers, so the second request
+    // could only echo the first for them. Only a non-writer actually needs it.
+    return this.projectService.getProject(slugOrUid, false).pipe(
+      switchMap((project) => {
+        if (project?.writer === true) {
+          return of(true);
+        }
+        return this.projectService
+          .getProject(slugOrUid, false, { meetingCoordinator: true })
+          .pipe(map((coordinatorProject) => hasMeetingWriteAccess(coordinatorProject)));
+      }),
+      catchError(() => of(false))
+    );
   }
 
   /**
@@ -357,17 +429,53 @@ export class ProjectContextService {
     );
   }
 
-  private initActiveProjectStage(): Signal<string | null> {
+  private initActiveProjectStageFetch(): Signal<string | null | undefined> {
     return toSignal(
       combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
         switchMap(([ctx, authenticated]) => {
           if (!ctx?.slug || !authenticated) {
             return of(null);
           }
-          return this.projectService.getProject(ctx.slug, false).pipe(map((project) => project?.stage ?? null));
+          return this.projectService.getProject(ctx.slug, false).pipe(
+            map((project): string | null => project?.stage ?? null),
+            // Marks the fetch as in flight the moment the context changes; a cached slug answers
+            // synchronously, so consumers never observe the marker for a project already seen.
+            startWith(undefined)
+          );
         })
       ),
-      { initialValue: null }
+      { initialValue: undefined }
+    );
+  }
+
+  private initMeetingWriteAccess(): Signal<MeetingWriteAccess> {
+    return toSignal(
+      combineLatest([toObservable(this.activeContext), toObservable(this.userService.authenticated)]).pipe(
+        switchMap(([ctx, authenticated]) => {
+          // The uid is carried through the pipeline rather than read back out of `activeContextUid()`
+          // so the answer and the context it answers for change in one step. Composed outside, they
+          // do not: the uid moves as soon as the context does, while the answer trails a round trip
+          // behind, and for that gap the previous project's verdict reads as the new project's.
+          const contextUid = ctx?.uid ?? '';
+
+          // Anonymous/public routes have no session — /api/projects/:slug would just 401 (LFXV2-3266),
+          // same as the two siblings above. It also puts the recompute back: gated on the context
+          // alone this ran once per navigation and never again, so a session that settled after the
+          // context — or was lost mid-visit — left the answer computed against the wrong one. The
+          // unauthenticated result is `false` either way, via the `catchError` below; what changes is
+          // that it is no longer a wasted round trip, and that it re-evaluates when the session does.
+          if (!ctx?.slug || !authenticated) {
+            return of({ contextUid, canWrite: false });
+          }
+          // Two requests rather than one `?meeting_coordinator=true` fetch, and cheaper than it
+          // looks: the plain `getProject(slug, false)` response is already in ProjectService's
+          // cache on every navigation — `projectQueryParamGuard` fetches that exact key — while
+          // `:mc` is a separate cache entry and so a genuine extra round trip on the SSR critical
+          // path of every page.
+          return this.meetingWriteAccessFor(ctx.slug).pipe(map((canWrite) => ({ contextUid, canWrite })));
+        })
+      ),
+      { initialValue: { contextUid: '', canWrite: false } }
     );
   }
 

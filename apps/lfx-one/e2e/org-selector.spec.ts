@@ -19,18 +19,22 @@
  * - S13: Snowflake lens regression guard
  * - S14: /org/overview empty state renders without redirect
  * - S15: /org/overview no-access state renders instead of the skeleton
- * - S17: staff with zero assigned orgs still gets the switcher, no redirect or error toast
+ * - S17: LF-team caller with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
+ * - S20: LF-team caller (lf-staff or lf-contractor) sees the switcher + catalogue search, opens an
+ *        org they hold no grant on read-only, and is refused on the access write (spec 044)
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD for a user
  *   with FGA access to at least one b2b_org in the dev sandbox
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
+import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+
+import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
 const SIDEBAR_TIMEOUT = 30_000;
@@ -55,7 +59,7 @@ function skipWhenAuthMissing(page: Page): void {
   }
 }
 
-// The search input is a staff-only affordance, so opening the panel can no longer wait on it
+// The search input is an LF-team-only affordance, so opening the panel can no longer wait on it
 // unconditionally; an administrator's panel legitimately has none.
 async function openSelector(page: Page, options: { expectSearch?: boolean } = {}) {
   // Sidebar may be tucked behind a mobile hamburger on mobile-chrome — the trigger lives
@@ -69,15 +73,17 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
   }
 }
 
-// Skip a staff-only scenario when the bootstrap identity does not actually hold the lf-staff grant.
-async function skipWhenNotStaff(page: Page): Promise<void> {
+// Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
+// wire is the two-team population (`lf-staff` or `lf-contractor`, see `LF_TEAM_IDS`) — the field
+// name is kept for wire compatibility.
+async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
-    test.skip(true, `Skipping staff scenario — /api/orgs/me/role-grants returned ${response.status()}`);
+    test.skip(true, `Skipping LF-team scenario — /api/orgs/me/role-grants returned ${response.status()}`);
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping staff scenario — TEST_USERNAME is not an lf-staff member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff or lf-contractor member');
   }
 }
 
@@ -94,8 +100,8 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
 
   // S2 — server-side search hits /api/nav/org-items?name=… and re-renders rows
   test('S2: typing in the search input triggers a debounced /api/nav/org-items?name= request', async ({ page }) => {
-    // The input this scenario types into is now rendered only for staff.
-    await skipWhenNotStaff(page);
+    // The input this scenario types into is rendered only for LF-team callers.
+    await skipWhenNotLfTeam(page);
     await openSelector(page, { expectSearch: true });
 
     // Wait for the first natural-order page to populate so we have a baseline to verify the
@@ -149,7 +155,7 @@ test.describe('Org Selector — authorized user smoke set (S1/S2/S5)', () => {
     await firstRow.click();
 
     // Popover closes — the row list should disappear from the DOM. Asserted on the list rather than
-    // the search input, which is absent for a non-staff persona whether the panel is open or not.
+    // the search input, which is absent for a non-LF-team persona whether the panel is open or not.
     await expect(page.getByTestId('org-selector-list')).not.toBeVisible({ timeout: 5_000 });
 
     // Canonical fetch fires against the account-id (SFID) keyed `/api/orgs/uid/` route
@@ -335,16 +341,13 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
 
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
-
     // The page must NOT bounce back to / when the user is already inside /org/*.
     // Wait for the page to fully settle (data-loaded=true) so the empty-state — gated on `loaded` —
     // can render. This also asserts the FOEC guard: empty-state never appears mid-load.
     const root = page.getByTestId('org-overview-page');
     await expect(root).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(root).toHaveAttribute('data-loaded', 'true', { timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.locator('main')).toHaveCount(1);
     expect(page.url()).toContain('/org/overview');
     await expect(root).toHaveAttribute('data-empty', 'true');
     await expect(page.getByTestId('org-overview-empty-state')).toBeVisible();
@@ -352,11 +355,50 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
   });
 });
 
+// GH-2220 — each of the 12 templates that dropped a nested <main> must still
+// render exactly one document landmark. S14 already covers /org/overview; this
+// matrix walks the rest so a page-level <main> cannot come back on a route the
+// overview assertion never visits.
+const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: string }[] = [
+  { name: 'org-overview', path: '/org/overview', stayOn: /\/org\/overview/, root: 'org-overview-page' },
+  { name: 'org-people', path: '/org/people', stayOn: /\/org\/people/, root: 'org-people-page' },
+  { name: 'org-contributions', path: '/org/contributions', stayOn: /\/org\/contributions/, root: 'org-contributions-page' },
+  { name: 'org-events', path: '/org/events', stayOn: /\/org\/events/, root: 'org-events-page' },
+  { name: 'org-training', path: '/org/training', stayOn: /\/org\/training/, root: 'org-training-page' },
+  { name: 'org-meetings', path: '/org/meetings', stayOn: /\/org\/meetings/, root: 'org-meetings-page' },
+  { name: 'org-groups', path: '/org/groups', stayOn: /\/org\/groups/, root: 'org-groups-page' },
+  { name: 'org-profile', path: '/org/profile', stayOn: /\/org\/profile/, root: 'org-profile-page' },
+  { name: 'org-projects', path: '/org/projects', stayOn: /\/org\/projects(?:\/|$|\?)/, root: 'org-projects-page' },
+  { name: 'org-roi', path: '/org/roi', stayOn: /\/org\/roi(?:\/|$|\?)/, root: 'org-roi-page' },
+  { name: 'org-roi-project-detail', path: '/org/roi/projects/cascade', stayOn: /\/org\/roi\/projects\//, root: 'org-roi-project-detail-page' },
+  { name: 'foundation-projects', path: '/foundation/projects', stayOn: /\/foundation\/projects/, root: 'foundation-projects-page' },
+];
+
+test.describe('Org and foundation pages — single main landmark (GH-2220)', () => {
+  for (const route of SINGLE_MAIN_ROUTES) {
+    test(`exactly one main landmark on ${route.name}`, async ({ page }) => {
+      await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
+      await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await page.goto(route.path, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      if (!route.stayOn.test(new URL(page.url()).pathname)) {
+        test.skip(true, `${route.path} redirected away — flag or access gate`);
+      }
+
+      await expect(page.getByTestId(route.root)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+      await expect(page.locator('main')).toHaveCount(1);
+    });
+  }
+});
+
 // S15 — no-access disclosure: a user whose role-grants settle empty (no direct
 // writer/auditor grant) AND who has no persona-seeded accounts must land on a
-// definitive "Organization Lens is not available" state on /org/overview — never an
-// endless loading skeleton. Stubs mirror S9 (the visibility gate's two inputs) so the
-// assertion is hermetic to the bootstrap user's real grants.
+// definitive no-organization state ("No organization linked to your account", spec 053
+// registry) on /org/overview — never an endless loading skeleton. Stubs mirror S9 (the
+// visibility gate's two inputs) so the assertion is hermetic to the bootstrap user's real grants.
 test.describe('Org Selector — /org/overview no-access state (S15)', () => {
   test('S15: empty role-grants + no persona-seeds renders the no-access state, not the skeleton', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -394,10 +436,6 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
 
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
-
     // hasNoOrgAccess settles to true once the stubbed (empty) role-grants resolve — independent of the
     // org-selector list fetch, which never fires for a zero-grants user. The no-access branch must win
     // over the loading skeleton.
@@ -406,7 +444,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
     await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
@@ -503,8 +541,8 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
         body: JSON.stringify({
           writers: [],
           auditors: [],
-          // The gate is now "no grants AND not staff". `isStaff` is stated
-          // explicitly so this stays a real assertion: a staff caller with zero grants must see the
+          // The gate is now "no grants AND not LF team". `isStaff` is stated
+          // explicitly so this stays a real assertion: an LF-team caller with zero grants must see the
           // switcher (S17), and only the conjunction hides it.
           isStaff: false,
           username: 'e2e-zero-grants',
@@ -542,22 +580,16 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
   });
 });
 
-// Staff scenarios (S17–S19). These drive /org/overview rather than APP_HOME because the
+// LF-team scenarios (S17–S20). These drive /org/overview rather than APP_HOME because the
 // org-selector slot is ANDed with the me-lens parent input (`sidebar.component.ts`
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
 const ORG_LENS_HOME = '/org/overview';
 
-function skipWhenOrgLensOff(page: Page): void {
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-  }
-}
-
-// S17 — a staff caller with zero assigned orgs must still get the switcher, and must land on
+// S17 — an LF-team caller with zero assigned orgs must still get the switcher, and must land on
 // a usable page rather than being bounced away or shown a failure toast. This is the case that was
 // previously indistinguishable from "no access".
-test.describe('Org Selector — staff with zero assigned orgs (S17)', () => {
-  test('S17: staff with no grants sees the switcher on /org/overview with no redirect or error toast', async ({ page }) => {
+test.describe('Org Selector — LF-team caller with zero assigned orgs (S17)', () => {
+  test('S17: LF-team caller with no grants sees the switcher on /org/overview with no redirect or error toast', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
@@ -594,14 +626,13 @@ test.describe('Org Selector — staff with zero assigned orgs (S17)', () => {
     );
 
     await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
-    skipWhenOrgLensOff(page);
 
     const slot = page.getByTestId('org-selector-slot');
     await expect(slot).toBeAttached({ timeout: SIDEBAR_TIMEOUT });
     await expect(slot).toHaveAttribute('data-visible', 'true', { timeout: SIDEBAR_TIMEOUT });
     await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
 
-    // The staff affordance is the search input — an empty list must not read as "no access".
+    // The LF-team affordance is the search input — an empty list must not read as "no access".
     await openSelector(page, { expectSearch: true });
 
     // Prompt copy, not "No organizations found": nothing has failed, the caller simply hasn't searched.
@@ -619,7 +650,7 @@ test.describe('Org Selector — catalogue search minimum length (S18)', () => {
   test('S18: a two-character search returns discovered rows where a one-character search returns none', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    await skipWhenNotStaff(page);
+    await skipWhenNotLfTeam(page);
 
     const discoveredCount = async (term: string): Promise<number> => {
       const response = await page.request.get(`/api/nav/org-items?name=${encodeURIComponent(term)}`);
@@ -640,7 +671,7 @@ test.describe('Org Selector — catalogue search minimum length (S18)', () => {
 // S19 — once a catalogue search returns rows the list splits into two labelled
 // sections, and discovered rows carry a membership chip. Stubbed so the assertion does not depend on
 // what the dev catalogue happens to hold.
-test.describe('Org Selector — staff sections and membership chips (S19)', () => {
+test.describe('Org Selector — LF-team sections and membership chips (S19)', () => {
   test('S19: discovered rows render under their own heading and carry a membership chip', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
@@ -700,7 +731,6 @@ test.describe('Org Selector — staff sections and membership chips (S19)', () =
     );
 
     await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
-    skipWhenOrgLensOff(page);
     await openSelector(page, { expectSearch: true });
 
     // Sectioning and chips are search-result context (FR-007/US2.5): they must not appear on the
@@ -727,22 +757,89 @@ test.describe('Org Selector — staff sections and membership chips (S19)', () =
   });
 });
 
+// S20 — LF-team global auditor (spec 044). Both `lf-staff` and `lf-contractor` hold `auditor` on
+// every b2b_org, so a team member reaches the switcher + catalogue search and may open any org
+// read-only; team membership never confers edit (FR-010), so the access write is refused. The
+// code path is identical for both teams, so a contractor-only identity is not required in CI —
+// contractor-specific verification is the post-release step (spec 044 T038a).
+test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
+  test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
+    await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
+    skipWhenAuthMissing(page);
+    await skipWhenNotLfTeam(page);
+
+    // An org the caller holds NO roster grant on of any kind — direct or cascading, writer or
+    // auditor — found through the LF-team catalogue. Only an org outside every granted set exercises
+    // the authorizer-only read path; a roster auditor grant would satisfy the gate on its own.
+    const grants = (await (await page.request.get('/api/orgs/me/role-grants')).json()) as {
+      writers: string[];
+      auditors: string[];
+      cascadingWriters: { uid: string }[];
+      cascadingAuditors: { uid: string }[];
+      degraded: boolean;
+    };
+    if (grants.degraded) {
+      // The four arrays are only a lower bound; an omitted grant could put the chosen org on the
+      // roster path and silently test the wrong branch.
+      test.skip(true, 'Role-grants roll-up degraded — cannot prove the target is outside every granted set');
+      return;
+    }
+    const grantedSet = new Set([
+      ...grants.writers,
+      ...grants.auditors,
+      ...grants.cascadingWriters.map((entry) => entry.uid),
+      ...grants.cascadingAuditors.map((entry) => entry.uid),
+    ]);
+    const catalogue = await page.request.get('/api/nav/org-items?name=linux');
+    expect(catalogue.status()).toBe(200);
+    const { items } = (await catalogue.json()) as { items: { uid: string; accountId: string | null; name: string }[] };
+    const target = items.find((item) => !grantedSet.has(item.uid) && item.accountId);
+    if (!target) {
+      test.skip(true, 'No catalogue org outside the caller granted set — cannot exercise the authorizer-only read path');
+      return;
+    }
+
+    // The switcher is hidden on '/' (see ORG_LENS_HOME above), so drive the org lens like S17/S19.
+    await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
+
+    // Affordance: the catalogue search input renders only for LF-team callers.
+    await openSelector(page, { expectSearch: true });
+    await page.getByTestId('org-search-input').fill(target.name.slice(0, 12));
+    const row = page.getByTestId(`org-item-${target.uid}`);
+    await expect(row).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await row.click();
+
+    // Read: the profile renders for an org with no roster grant (authorizer-backed gate, DR-001)
+    // and exposes no edit affordance — `org-profile-edit-button` is rendered only under `canEdit()`.
+    await page.goto('/org/profile', { waitUntil: 'domcontentloaded' });
+    await expect(page.getByTestId('org-profile-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-profile-load-error')).toHaveCount(0);
+    await expect(page.getByTestId('org-profile-edit-button'), 'LF-team read access must not surface the profile edit affordance').toHaveCount(0);
+
+    // Read views gate through the same helper: an org-level aggregate resolves (200), never 403.
+    const read = await page.request.get(`/api/orgs/${target.uid}/lens/events/summary`, { failOnStatusCode: false });
+    expect(read.status(), 'authorizer-entitled read must be served').toBe(200);
+
+    // Write: the same caller is refused on the access-management write (FR-010 / SC-005). A valid
+    // body is sent so the request reaches the permission gate rather than body validation.
+    const write = await page.request.post(`/api/orgs/${target.uid}/lens/access/users`, {
+      data: { email: 'e2e-lf-team-readonly@example.com', role: 'viewer' },
+      failOnStatusCode: false,
+    });
+    expect(write.status(), 'team membership must never confer edit').toBe(403);
+  });
+});
+
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
-// Me-lens sections (LFXV2-2789). The org lens is gated by a browser-only LaunchDarkly flag,
-// so SSR clamps to the me lens and used to emit a me-lens menu; hydrating that against the
-// client-resolved org menu left "My Engagement" / "My Growth" sections interleaved with org
-// items. The sidebar now withholds the concrete menu until afterNextRender, so the resolved
-// menu is built entirely from client state and must contain org items only.
+// Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
+// flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
+// hydrating one against the other used to leave "My Engagement" / "My Growth" sections
+// interleaved with org items. The sidebar now withholds the concrete menu until
+// afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
   test('S16: hard-refreshing /org/overview resolves to org-lens nav only, no Me-lens sections', async ({ page }) => {
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-
-    // Flag off (or no org access) redirects away from /org/* — this regression only applies when
-    // the org lens is actually active, so skip otherwise (same gate as S14/S15).
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
 
     // Wait for the sidebar to hydrate past the loading skeleton and render the resolved org menu.
     await expect(page.getByTestId('sidebar'), 'sidebar should be visible').toBeVisible({ timeout: SIDEBAR_TIMEOUT });

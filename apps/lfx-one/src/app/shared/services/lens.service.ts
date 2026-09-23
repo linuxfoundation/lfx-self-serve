@@ -11,7 +11,6 @@ import {
   LENS_DEFAULT_ROUTES,
   MARKETING_OPS_FGA_ENABLED_FLAG,
   NAV_LENS_COOKIE_KEY,
-  ORG_LENS_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import { Lens, LensGrantInputs, LensOption, NavLens } from '@lfx-one/shared/interfaces';
 import { deriveAllowedLenses, isHybridLensUser } from '@lfx-one/shared/utils';
@@ -34,8 +33,6 @@ export class LensService {
   private readonly writerGrantsService = inject(WriterGrantsService);
   private readonly router = inject(Router);
 
-  /** Dark-launch gate; off by default until the LaunchDarkly flag is flipped. */
-  private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Client-side counterpart to `ServerFeatureFlag.MarketingOpsFga` (LFXV2-2235/LFXV2-2236). */
   private readonly isMarketingOpsFgaEnabled = this.featureFlagService.getBooleanFlag(MARKETING_OPS_FGA_ENABLED_FLAG, false);
 
@@ -145,6 +142,25 @@ export class LensService {
       .subscribe(() => this.contextLensOverride.set(null));
   }
 
+  /**
+   * Drops a {@link setContextLens} override whose flow ended without navigating.
+   *
+   * The self-clear above waits on a terminal Router event, which the create picker's meeting
+   * branch never produces: the composer is an overlay raised over the page the rail was on, so
+   * nothing navigates and the override outlives the pick. It would then still be standing on the
+   * organizer's NEXT navigation — evaluated by `lensRedirectGuard` before the NavigationEnd that
+   * clears it — routing one journey under a lens their persona was never allowed.
+   * `MeetingComposerHostComponent` calls this when the composer closes, giving that branch the
+   * end-of-flow the others get from navigating. A no-op when no override stands.
+   *
+   * Only the override is dropped: `selectedLens` stays where the pick put it, and `activeLens`
+   * re-derives it through `getAllowedLensIds()` again, so a lens the persona can't hold falls
+   * back to `DEFAULT_LENS` on its own.
+   */
+  public clearContextLens(): void {
+    this.contextLensOverride.set(null);
+  }
+
   private applyLensSelection(lens: Lens): void {
     if ((lens === 'foundation' || lens === 'project') && lens !== this.navLensSelection()) {
       this.navLensSelection.set(lens);
@@ -206,7 +222,6 @@ export class LensService {
       isRootWriter: this.personaService.isRootWriter(),
       hasWriterFoundation: this.writerGrantsService.hasWriterFoundation(),
       hasWriterProject: this.writerGrantsService.hasWriterProject(),
-      isOrgLensEnabled: this.isOrgLensEnabled(),
       isLFStaff: this.personaService.isLFStaff(),
       hasMarketingGrant: this.isMarketingOpsFgaEnabled() && (this.personaService.isMarketingAuditor() || this.personaService.isCampaignManager()),
       isRootAuditor: this.personaService.isAuditor(),

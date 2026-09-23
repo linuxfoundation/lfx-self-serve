@@ -5,6 +5,8 @@ import { EnvironmentProviders, inject, provideAppInitializer, TransferState } fr
 import { datadogRum } from '@datadog/browser-rum';
 import { environment } from '@environments/environment';
 
+import { redactAuthFragment, redactInviteToken } from '@lfx-one/shared/utils';
+
 import { getRuntimeConfig } from './runtime-config.provider';
 
 /**
@@ -32,6 +34,32 @@ async function initializeDataDogRum(): Promise<void> {
     datadogRum.init({
       applicationId: dataDogRumApplicationId,
       clientToken: dataDogRumClientId,
+      // RUM's first view event captures window.location.href as it is at startup, and the
+      // Gatewaze embed's LFID sign-in returns to `#access_token=…&refresh_token=…`. The component
+      // that clears that fragment runs in afterNextRender, long after this initializer, so without
+      // redaction here a Supabase access AND refresh token reach a third-party analytics sink.
+      //
+      // Redacting here rather than clearing the address bar before init, which is the more obvious
+      // fix and is wrong: GwModuleOutletComponent.adoptAuthFragment reads window.location.hash to
+      // establish the embed session, so clearing it early would stop the tokens reaching Datadog
+      // by breaking sign-in altogether. The fragment must survive in the address bar until the
+      // outlet consumes it; what must not happen is RUM reporting it.
+      //
+      // Covers the referrer too, which carries the previous URL and would otherwise leak the same
+      // fragment on the next view.
+      //
+      // Invite landing puts a single-factor accept credential in `?token=` rather than the hash.
+      // redactAuthFragment does not touch the query string, so redactInviteToken runs after it.
+      beforeSend: (event) => {
+        const view = (event as { view?: { url?: string; referrer?: string } }).view;
+        if (view?.url) {
+          view.url = redactInviteToken(redactAuthFragment(view.url, window.location.origin), window.location.origin);
+        }
+        if (view?.referrer) {
+          view.referrer = redactInviteToken(redactAuthFragment(view.referrer, window.location.origin), window.location.origin);
+        }
+        return true;
+      },
       site: environment.datadog.site,
       service: environment.datadog.service,
       env: environment.datadog.env,

@@ -4,6 +4,7 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
+import type { HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
@@ -103,6 +104,42 @@ export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**
+ * Areas `getHealthOverviewKpis` returns live rows for (LFXV2-3365): the service builds its returned
+ * rows by iterating this set, and the component uses the same set to decide when a missing/failed
+ * row means "show a neutral placeholder" rather than "fall back to the fixture".
+ */
+export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set([
+  'evt',
+  'trn',
+  'mem',
+  'non',
+  'code',
+]);
+
+/**
+ * Period-suffixed `HEALTH_OVERVIEW_KPIS` columns, in their aliased uppercase form. `ProjectService`
+ * builds the all-periods SELECT list and projects each period's row from this one list, so the alias
+ * it emits and the key it later reads can't drift into a silent "no data" render for every period.
+ */
+export const HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS = [
+  'EVENTS_PCT_OF_REGISTRATION_GOAL',
+  'EVENTS_STATUS',
+  'CERTIFICATIONS_EARNED_COUNT',
+  'TRAINING_STATUS',
+  'CONTRIBUTORS_COUNT',
+] as const satisfies readonly (keyof HealthOverviewKpisRow)[];
+
+/**
+ * Period-suffixed `HEALTH_OVERVIEW_REVENUE` columns, in their aliased uppercase form. Same contract as
+ * {@link HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS}: `ProjectService` lowercases these for the source column
+ * and aliases them per range, so the emitted alias and the key it reads back can't drift.
+ */
+export const HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS = [
+  'REVENUE_USD',
+  'FOUNDATION_TOTAL_REVENUE_USD',
+] as const satisfies readonly (keyof HealthOverviewRevenueRow)[];
+
+/**
  * Rail revenue-stream metadata, keyed to match `railHTML()`'s fixed 3-stream legend. Colors mirror
  * the design's `STREAM_COLOR` map (`#009aff`/`#00bc7d`/`#8e51ff`) — the closest `lfxColors` scales
  * to those hexes are blue/emerald/violet-500, so the rail never hard-codes a hex value.
@@ -119,9 +156,10 @@ export const HEALTH_METRICS_OVERVIEW_DATA_SOURCES = ['Membership', 'Meetings', '
 /**
  * Period selector (design's `.per`) — the 4 most recent options from {@link buildHealthMetricsYearOptions}
  * (3 completed years + YTD). Dropping the oldest option also keeps this in sync with
- * `HEALTH_OVERVIEW_REVENUE`, which only exposes 4 period-suffix columns (no 4th-year-back variant) —
- * see `getHealthOverviewRevenue`'s range validation. Call fresh per use, not once at module load, so
- * the labels stay correct across a calendar-year rollover in a long-running SSR process.
+ * `HEALTH_OVERVIEW_REVENUE` and `HEALTH_OVERVIEW_KPIS`, which only expose 4 period-suffix columns (no
+ * 4th-year-back variant) — `ProjectService` generates its all-periods column list from this very set,
+ * so a 5th option here would emit a column neither table has. Call fresh per use, not once at module
+ * load, so the labels stay correct across a calendar-year rollover in a long-running SSR process.
  */
 export function buildHealthMetricsOverviewPeriods(): HealthMetricsYearOption[] {
   return buildHealthMetricsYearOptions().slice(-4);

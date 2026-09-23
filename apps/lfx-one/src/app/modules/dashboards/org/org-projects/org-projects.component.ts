@@ -65,14 +65,19 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MenuComponent } from '@components/menu/menu.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { SelectComponent } from '@components/select/select.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { TableComponent } from '@components/table/table.component';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 import { PersonaService } from '@shared/services/persona.service';
+
+/** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
+type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
 
 @Component({
   selector: 'lfx-org-projects',
@@ -86,7 +91,7 @@ import { PersonaService } from '@shared/services/persona.service';
     InputTextComponent,
     MenuComponent,
     MultiSelectComponent,
-    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
     PopoverModule,
     RouterLink,
     SelectComponent,
@@ -103,11 +108,13 @@ export class OrgProjectsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // Configuration
   protected readonly pageSizeOptions = [...ORG_PROJECTS_PAGE_SIZE_OPTIONS];
@@ -183,11 +190,12 @@ export class OrgProjectsComponent {
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
-  protected readonly hasNoOrgAccess = computed(
-    () => this.orgRoleGrants.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrants.correlationId;
   protected readonly orgContextLoaded = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrants.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrants.loaded() && this.personaService.personaLoaded())
   );
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => this.initSortField());
@@ -224,7 +232,8 @@ export class OrgProjectsComponent {
    */
   protected readonly canManageWorkspaces = computed(() => {
     const uid = this.accountContext.selectedAccount()?.uid;
-    return !!uid && this.orgRoleGrants.writerSet().has(uid);
+    // LFXV2-3029 — widened to roll-up-derived editors, not just a direct grant.
+    return !!uid && this.orgRoleGrants.editorSet().has(uid);
   });
   protected readonly canAddProjects = computed(() => this.canManageWorkspaces() && !!this.selectedWorkspace() && !this.loading() && !this.error());
   protected readonly addProjectDisabledReason = computed(() => this.initAddProjectDisabledReason());
@@ -789,14 +798,17 @@ export class OrgProjectsComponent {
   }
 
   // Enrich each sorted project with presentation values so the template only reads properties (no in-template logic).
-  private initRows(): Signal<OrgProjectsTableRow[]> {
+  private initRows(): Signal<OrgProjectsLinkedRow[]> {
     return computed(() =>
       this.sortedProjects().map((project) => {
+        // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+        const projectLink = this.orgLens.orgLensLink('projects', project.slug);
         // Fallback rows (org has no metrics row for the project) render org-relative metrics as "Unavailable".
         // A `full` row — including a participating project with no code activity — renders every metric for real.
         const orgMetricsUnavailable = this.isOrgMetricsUnavailable(project);
         return {
           ...project,
+          projectLink,
           orgMetricsUnavailable,
           insightsUrl: buildInsightsUrl(`/project/${project.slug}`),
           // Fallback rows have no org-scoped influence data; render neutral (no bars, "Unavailable") rather

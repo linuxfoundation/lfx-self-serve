@@ -17,6 +17,7 @@ import { isBoardScopedPersona, isProjectScopedPersona } from '@lfx-one/shared/ut
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, Observable, of, take, tap } from 'rxjs';
 
+import { isBrowserInviteLandingPath } from '../utils/invite-landing.util';
 import { AccountContextService } from './account-context.service';
 import { CookieRegistryService } from './cookie-registry.service';
 
@@ -170,6 +171,9 @@ export class PersonaService {
     this.personaLoaded = signal(false);
 
     afterNextRender(() => {
+      if (isBrowserInviteLandingPath()) {
+        return;
+      }
       this.refreshFromApi();
     });
   }

@@ -13,8 +13,8 @@ Before starting any new feature or task, always start from the latest `main`:
 ```bash
 git checkout main
 git pull
-git checkout -b <type>/LFXV2-<ticket-number>   # JIRA-tracked work
-git checkout -b <type>/issue-<issue-number>    # GitHub Issue-tracked work
+git checkout -b <type>/issue-<issue-number>    # GitHub Issue in this repo
+git checkout -b <type>/<repo>-<issue-number>   # GitHub Issue in a sibling product repo
 ```
 
 If you already have a working branch, ensure it's rebased on the latest `main` before proceeding.
@@ -39,7 +39,8 @@ If you already have a working branch, ensure it's rebased on the latest `main` b
 
 **M2M tokens represent the application, not a user.** They should be used only for:
 
-- **Public-facing endpoints where no user session exists** (e.g. public meeting pages or public meeting registration)
+- **Public-facing endpoints where no user session exists** (e.g. the anonymous reads behind a public meeting page — the meeting itself, its occurrences, a past meeting, a join URL)
+  - Being mounted under `/public/api` is not the test; having no session is. `POST /public/api/meetings/register` sits on that surface and still requires a session and the caller's own bearer token, because it registers the caller **as themselves** and upstream reads their identity off their token. It uses an M2M token only for the meeting lookup that decides whether the meeting is public and unrestricted — the privileged-upstream-call case below, not this one
 - **Explicit privileged upstream calls** from an authenticated route, _after_ the route has validated the user's access/authorization in-app, and only for the specific upstream request that requires application-level credentials (e.g. certain meeting registrant or invitation checks)
 
 In the authenticated-route case, always:
@@ -105,13 +106,9 @@ When editing files in `docs/`:
 - **Keep ops debugging commands only if architecture-relevant** — kubectl/snowsql commands belong in runbooks, not architecture docs
 - **Remove specific benchmark numbers** — values like "Current: ~1.5MB ✅" go stale and are hard to maintain
 
-## JIRA
-
-- The JIRA project key for this is `LFXV2`. All tickets associated to this repo should generally be in there.
-- JIRA sprint field is `customfield_10020`. When creating tickets, assign to the current user and current sprint.
-
 ## GitHub Issues
 
-- Some work is tracked directly as GitHub Issues on `linuxfoundation/lfx-self-serve` instead of JIRA — e.g. items filed under an epic (like the [August 2026 Bugs Epic](https://github.com/linuxfoundation/lfx-self-serve/issues/1294)) and tracked on the [LFX Self Serve Kanban board](https://github.com/orgs/linuxfoundation/projects/17).
-- File new issues with `gh issue create`, set `--type` (e.g. `Bug`), `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve Kanban Board"` so it lands on the board.
-- Reference GitHub Issues in branches as `issue-<issue-number>`, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-self-serve#1331`) when the ticket isn't in this repo (see `.claude/rules/commit-workflow.md`); don't file a duplicate JIRA ticket for work already tracked as a GitHub Issue.
+- Work owned by this repo is tracked as GitHub Issues on `linuxfoundation/lfx-self-serve`. Do **not** create Jira tickets.
+- File new issues owned by this repo with `gh issue create`, set `--label` (e.g. `bug`), and optionally `--parent <epic-number>` when it belongs under an epic, and `--project "LFX Self Serve - Main Kanban Board"` so it lands on the board (that exact name — `gh` fails the whole create if the project title does not match).
+- Reference GitHub Issues in branches as `issue-<issue-number>`, or as `<repo>-<issue-number>` (e.g. `lfx-mentorship-123`) for an issue in a sibling product repo, and in commits/PR bodies as `#<issue-number>` or the fully-qualified `org/repo#<issue-number>` path (e.g. `linuxfoundation/lfx-mentorship#123`) when the issue isn't in this repo (see `.claude/rules/commit-workflow.md`).
+- Work on another product's feature that lands in this repo is tracked in that product's repo — file it there with `gh issue create --repo linuxfoundation/<repo>` rather than opening a duplicate here.

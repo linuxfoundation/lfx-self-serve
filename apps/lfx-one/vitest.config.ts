@@ -20,11 +20,14 @@ export default defineConfig({
       // the tsconfig `@lfx-one/shared/*` path alias at build time. Mirrored here for specs.
       '@lfx-one/shared/constants/pdf.constants': fileURLToPath(new URL('../../packages/shared/src/constants/pdf.constants.ts', import.meta.url)),
       '@lfx-one/shared/utils/impersonation.utils': fileURLToPath(new URL('../../packages/shared/src/utils/impersonation.utils.ts', import.meta.url)),
+      '@lfx-one/shared/utils/org-lens-url.utils': fileURLToPath(new URL('../../packages/shared/src/utils/org-lens-url.utils.ts', import.meta.url)),
       '@lfx-one/shared': fileURLToPath(new URL('../../packages/shared/src', import.meta.url)),
     },
   },
   test: {
-    include: ['src/server/**/*.spec.ts'],
+    // scripts/ is build tooling that produces shipped assets (the contained embed stylesheet), so
+    // its pure transforms are unit-tested here too — same plain-Node environment, no DOM needed.
+    include: ['src/server/**/*.spec.ts', 'scripts/**/*.spec.mjs'],
     environment: 'node',
   },
 });

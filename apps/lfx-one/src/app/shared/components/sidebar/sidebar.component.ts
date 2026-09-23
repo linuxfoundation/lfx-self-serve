@@ -10,9 +10,16 @@ import { LensTabsComponent } from '@components/lens-tabs/lens-tabs.component';
 import { OrgSelectorComponent } from '@components/org-selector/org-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
-import { MY_CLAS_ENABLED_FLAG, OPEN_PROFILE_BANNER_LINK_CLICKED, ORG_LENS_ENABLED_FLAG, PERSONA_OPTIONS, PERSONA_PRIORITY } from '@lfx-one/shared/constants';
+import {
+  FORMATION_CHECKLIST_PATH,
+  LENS_DEFAULT_ROUTES,
+  MY_CLAS_ENABLED_FLAG,
+  OPEN_PROFILE_BANNER_LINK_CLICKED,
+  PERSONA_OPTIONS,
+  PERSONA_PRIORITY,
+} from '@lfx-one/shared/constants';
 import { LensItem, NavLens, PersonaType, ProfileTab, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs, lensItemToProjectContext, toTitleCase } from '@lfx-one/shared/utils';
+import { buildProfileTabs, lensItemToProjectContext, orgLensDestinationKey, toTitleCase } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { DataDogRumService } from '@services/datadog-rum.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -32,6 +39,14 @@ const PERSONA_ICONS: Partial<Record<PersonaType, string>> = {
   'board-member': 'fa-light fa-building-columns',
   maintainer: 'fa-light fa-code',
   contributor: 'fa-light fa-code',
+};
+
+/** `SidebarMenuItem` as rendered: derived test id, external-link flag and `@for` track key filled in at every level. */
+type DecoratedSidebarMenuItem = Omit<SidebarMenuItem, 'items'> & {
+  testId: string;
+  trackKey: string;
+  external: boolean | undefined;
+  items?: DecoratedSidebarMenuItem[];
 };
 
 @Component({
@@ -69,16 +84,14 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
-  /** Parent lens hint for the org-selector slot; ANDed with the flag + grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
+  /** Parent lens hint for the org-selector slot; ANDed with the grants/seeds gate to produce `effectiveShowOrgSelector` (spec 020 D-005). */
   public readonly showOrgSelector = input<boolean>(false);
   public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
   public readonly selectorPanelOpen = model<boolean>(false);
 
-  /** Final org-selector visibility — `parent input ∧ flag ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
+  /** Final org-selector visibility — `parent input ∧ (writers ∨ auditors ∨ personaSeeds)` per research.md D-005. */
   protected readonly effectiveShowOrgSelector: Signal<boolean> = this.initEffectiveShowOrgSelector();
-
-  private readonly orgLensFlag: Signal<boolean> = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
@@ -98,9 +111,9 @@ export class SidebarComponent {
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
 
-  // Browser-only hydration gate. The org lens is enabled by a browser-only LaunchDarkly flag, so the
-  // server render always clamps to the me lens and would emit a me-lens menu; hydrating that against a
-  // client-resolved org menu leaves stale me-lens nodes on screen. Holding the concrete menu back until
+  // Browser-only hydration gate. Org-lens menu items are still shaped by browser-only LaunchDarkly
+  // flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one; hydrating
+  // one against the other leaves stale nodes on screen. Holding the concrete menu back until
   // afterNextRender means the server and the first client render both show the loading skeleton
   // (skeleton→skeleton reconciles cleanly), then the real menu is inserted as a post-hydration update.
   protected readonly hydrated = signal(false);
@@ -119,26 +132,9 @@ export class SidebarComponent {
   protected readonly profileTabs: Signal<ProfileTab[]> = computed(() => buildProfileTabs(this.myClasEnabled()));
   protected readonly profileMenu = viewChild<Popover>('profileMenu');
 
-  protected readonly itemsWithTestIds = computed(() =>
-    this.items().map((item) => ({
-      ...item,
-      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-      external: item.url ? this.isExternalUrl(item.url) : undefined,
-      items: item.items?.map((childItem) => ({
-        ...childItem,
-        testId: childItem.testId || `sidebar-item-${childItem.label.toLowerCase().replace(/\s+/g, '-')}`,
-        external: childItem.url ? this.isExternalUrl(childItem.url) : undefined,
-      })),
-    }))
-  );
+  protected readonly itemsWithTestIds = computed(() => this.items().map((item) => this.decorate(item)));
 
-  protected readonly footerItemsWithTestIds = computed(() =>
-    this.footerItems().map((item) => ({
-      ...item,
-      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-      external: item.url ? this.isExternalUrl(item.url) : undefined,
-    }))
-  );
+  protected readonly footerItemsWithTestIds = computed(() => this.footerItems().map((item) => this.decorate(item)));
 
   // Paired with items ref so lens switches auto-reset group expansion without needing an effect().
   private readonly expandedGroupOverrides = signal<{ itemsRef: SidebarMenuItem[]; overrides: Record<string, boolean> }>({
@@ -203,38 +199,55 @@ export class SidebarComponent {
     // foundations out when the foundation lens is visible). Treat a foundation row as a project context
     // for those users — setLens('foundation') would be a no-op and the selection would silently fail.
     const foundationAllowed = this.lensService.availableLenses().some((option) => option.id === 'foundation');
-    if (item.isFoundation && foundationAllowed) {
-      this.projectContextService.setFoundation(context);
-      this.lensService.setLens('foundation');
+    const asFoundation = item.isFoundation && foundationAllowed;
+    this.lensService.setLens(asFoundation ? 'foundation' : 'project');
+    // Decide the navigation before the context syncs the URL: a navigation owns the destination, so
+    // the switch must not also `replaceState` the current history entry — that rewrote the page the
+    // user came from to the new slug, and Back then landed on a URL the landing-page guards bounce
+    // forward (Bugbot on #2757). Only a switch that keeps the page syncs `?project=` in place.
+    const target = this.contextSwitchTarget();
+    if (asFoundation) {
+      this.projectContextService.setFoundation(context, target === null);
     } else {
-      this.projectContextService.setProject(context);
-      this.lensService.setLens('project');
+      this.projectContextService.setProject(context, target === null);
     }
-    this.redirectOnContextSwitch(context.slug);
+    if (target) {
+      this.router.navigate([`/${target}`, 'overview'], { queryParams: { project: context.slug } });
+    }
   }
 
-  // Keep the URL's lens prefix in sync with the selected context so a hard refresh restores it
-  // (syncLensFromRoute + projectQueryParamGuard). Redirect on lens-type change or off an entity page.
-  private redirectOnContextSwitch(projectSlug: string): void {
-    const segments = this.router.url.split('?')[0].split('/').filter(Boolean);
+  /**
+   * The lens whose overview a context switch must navigate to, or `null` when the switch keeps the
+   * current page and only re-targets it. Keeps the URL's lens prefix in sync with the selected
+   * context so a hard refresh restores it (syncLensFromRoute + projectQueryParamGuard): navigate on a
+   * lens-type change, off an entity page, or off the Project lens landing/checklist pages.
+   */
+  private contextSwitchTarget(): NavLens | null {
+    // Primary-outlet segments, not a split of the raw URL: `Router.url` serializes `path?query#fragment`,
+    // so a fragment with no query string would otherwise stay glued to the last segment (same
+    // approach as `MentorPageComponent.resolveActiveTab`).
+    const segments = this.router.parseUrl(this.router.url).root.children['primary']?.segments.map((segment) => segment.path) ?? [];
     const currentPrefix = segments[0];
     if (currentPrefix !== 'project' && currentPrefix !== 'foundation') {
-      return;
+      return null;
     }
-    // activeLens() reflects setLens() synchronously; pass the slug explicitly since router.url lags
-    // location.replaceState, so queryParamsHandling:'preserve' would carry stale params.
-    const targetLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
+    // activeLens() reflects setLens() synchronously, clamped to what the persona may use.
+    const targetLens: NavLens = this.activeLens() === 'foundation' ? 'foundation' : 'project';
     const lensTypeChanged = currentPrefix !== targetLens;
     const onEntityPage = segments.length === 3;
-    if (lensTypeChanged || onEntityPage) {
-      this.router.navigate([`/${targetLens}`, 'overview'], { queryParams: { project: projectSlug } });
-    }
+    // The Project lens landing page is decided per project by `formationOverviewRedirectGuard`
+    // (#2754): a formation-stage project lands on its checklist, anything else on the dashboard. A
+    // same-lens switch otherwise keeps the page and only rewrites `?project=` (`Location.replaceState`,
+    // which never re-runs guards), so on the two pages that decision owns, re-enter the lens through
+    // a real navigation and let the guard choose again for the new project.
+    const currentPath = `/${segments.join('/')}`;
+    const onLandingDecisionPage = targetLens === 'project' && (currentPath === LENS_DEFAULT_ROUTES.project || currentPath === FORMATION_CHECKLIST_PATH);
+    return lensTypeChanged || onEntityPage || onLandingDecisionPage ? targetLens : null;
   }
 
   private initEffectiveShowOrgSelector(): Signal<boolean> {
     return computed<boolean>(() => {
       if (!this.showOrgSelector()) return false;
-      if (!this.orgLensFlag()) return false;
       // Direct writer/auditor grants or a persona-seeded org list. The persona-seeds fallback keeps
       // the selector visible for users on dev sandbox accounts that have a seeded org list but no
       // settings-doc grants in the upstream b2b_org_settings docs.
@@ -280,6 +293,27 @@ export class SidebarComponent {
 
       return [toTag(this.personaService.currentPersona())];
     });
+  }
+
+  /** Test id, external-link flag and `@for` track key for an item and, recursively, its children. */
+  private decorate(item: SidebarMenuItem): DecoratedSidebarMenuItem {
+    return {
+      ...item,
+      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
+      trackKey: this.trackKey(item),
+      external: item.url ? this.isExternalUrl(item.url) : undefined,
+      items: item.items?.map((childItem) => this.decorate(childItem)),
+    };
+  }
+
+  /**
+   * Stable per-destination identity for the `@for` loops. The destination, not the address: Org Lens
+   * links carry the selected organization (`/org/{segment}/{page}`, spec 050), so tracking by the
+   * raw `routerLink` would key every row on the organization and a switch would tear down and
+   * rebuild the whole nav — re-baking every Font Awesome icon on the way — when only the hrefs moved.
+   */
+  private trackKey(item: SidebarMenuItem): string {
+    return item.routerLink ? orgLensDestinationKey(item.routerLink) : (item.url ?? item.label);
   }
 
   private isExternalUrl(url: string): boolean {

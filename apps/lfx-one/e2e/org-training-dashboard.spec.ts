@@ -44,7 +44,6 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: 'Red Hat LLC',
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -62,7 +61,6 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
         {
           accountId: MOCK_ACCOUNT_ID,
           accountName: 'Red Hat LLC',
-          accountSlug: 'red-hat-llc',
           membershipTier: 'Gold',
         },
       ]),
@@ -164,10 +162,6 @@ async function gotoOrgTrainingPage(page: Page): Promise<void> {
   await page.goto(ORG_TRAINING_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/training')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/training redirected away');
-  }
 }
 
 test.describe('Org Training Dashboard', () => {

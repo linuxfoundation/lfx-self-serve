@@ -4,13 +4,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { FORMATION_ORPHAN_SECTION } from '../constants/formation.constants';
-import type { FormationItem, FormationItemStatus, FormationTemplateSection } from '../interfaces/formation.interface';
+import type { FormationItem, FormationItemStatus, FormationSubItem, FormationTemplateSection } from '../interfaces/formation.interface';
 import {
+  buildFormationProgressSegments,
   collectFormationOrphanItems,
   deriveFormationReadinessSummary,
+  formatFormationAnnouncementCountdown,
   formatFormationAnnouncementLabel,
+  formatFormationProgressSummary,
   formatFormationRelativeDayCount,
+  formatFormationSubItemsDoneLabel,
+  getFormationAnnouncementTiming,
+  getFormationCalendarDayOffset,
   groupFormationItemsBySection,
+  sumFormationProgress,
 } from './formation-checklist.utils';
 
 let uidCounter = 0;
@@ -28,16 +35,17 @@ function item(partial: Partial<FormationItem> & { status: FormationItemStatus })
     status: partial.status,
     is_gating: partial.is_gating ?? false,
     owner_team: partial.owner_team ?? null,
+    audience: partial.audience ?? null,
     owner: partial.owner ?? null,
     due_date: partial.due_date ?? null,
     action: partial.action ?? 'manual',
     action_href: partial.action_href ?? null,
     detail: partial.detail ?? null,
     notes: partial.notes ?? null,
-    links: partial.links ?? [],
+    evidence_link: partial.evidence_link ?? null,
     sub_items: partial.sub_items ?? [],
     skip_reason: partial.skip_reason ?? null,
-    can_complete: partial.can_complete ?? true,
+    available_actions: partial.available_actions ?? [],
     created_at: partial.created_at ?? '',
     updated_at: partial.updated_at ?? '',
   };
@@ -71,7 +79,6 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 1,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 2,
       skipped: 1,
     });
@@ -96,6 +103,24 @@ describe('deriveFormationReadinessSummary', () => {
     expect(typeof summary.counts.toString).toBe('function');
   });
 
+  // #2774: the row's sub-item disclosure and lfx-formation-sub-item-list tally an item's sub_items
+  // through the same function — anything with a `status` counts, not only a full FormationItem.
+  it('tallies an item’s sub-items the same way, keeping their order as segments', () => {
+    const subItems: FormationSubItem[] = [
+      { uid: 'sub_a', title: 'A', status: 'done' },
+      { uid: 'sub_b', title: 'B', status: 'not_started' },
+      { uid: 'sub_c', title: 'C', status: 'in_progress' },
+    ];
+
+    const summary = deriveFormationReadinessSummary(subItems);
+
+    expect(summary.segments).toEqual(['done', 'not_started', 'in_progress']);
+    expect(summary.totalItems).toBe(3);
+    expect(summary.counts.done).toBe(1);
+    expect(summary.counts.not_started).toBe(1);
+    expect(summary.counts.in_progress).toBe(1);
+  });
+
   it('returns zeroed counts and no segments for an empty item list', () => {
     const summary = deriveFormationReadinessSummary([]);
 
@@ -105,10 +130,21 @@ describe('deriveFormationReadinessSummary', () => {
       not_started: 0,
       in_progress: 0,
       blocked: 0,
-      awaiting_acceptance: 0,
       done: 0,
       skipped: 0,
     });
+  });
+});
+
+describe('formatFormationSubItemsDoneLabel (#2774)', () => {
+  it('reads "N of M sub-items done" off a tally', () => {
+    const summary = deriveFormationReadinessSummary([
+      { uid: 'a', title: 'A', status: 'done' },
+      { uid: 'b', title: 'B', status: 'not_started' },
+      { uid: 'c', title: 'C', status: 'done' },
+    ] as FormationSubItem[]);
+
+    expect(formatFormationSubItemsDoneLabel(summary)).toBe('2 of 3 sub-items done');
   });
 });
 
@@ -267,5 +303,108 @@ describe('formatFormationAnnouncementLabel', () => {
 
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((o) => o?.timeZone === 'UTC')).toBe(true);
+  });
+});
+
+describe('getFormationCalendarDayOffset', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is the signed calendar-day gap, independent of the time of day', () => {
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 8, 21)))).toBe(0);
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 2, 23)))).toBe(-182);
+    expect(getFormationCalendarDayOffset(new Date(Date.UTC(2026, 10, 2)))).toBe(42);
+  });
+});
+
+describe('getFormationAnnouncementTiming', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('classifies a past, same-day and upcoming date', () => {
+    expect(getFormationAnnouncementTiming('2026-03-23')).toBe('past');
+    expect(getFormationAnnouncementTiming('2026-09-21')).toBe('today');
+    expect(getFormationAnnouncementTiming('2026-11-02')).toBe('upcoming');
+  });
+
+  it('is unset for a missing or unparseable date', () => {
+    expect(getFormationAnnouncementTiming(null)).toBe('unset');
+    expect(getFormationAnnouncementTiming(undefined)).toBe('unset');
+    expect(getFormationAnnouncementTiming('not-a-date')).toBe('unset');
+  });
+
+  // Upstream's is_activating requires a date once every gating item is done, so a cleared
+  // formation without one is the single "unset" that deserves a prompt instead of a muted dash.
+  it('is needed — not unset — when the gates are cleared and there is no date', () => {
+    expect(getFormationAnnouncementTiming(null, true)).toBe('needed');
+    expect(getFormationAnnouncementTiming('2026-03-23', true)).toBe('past');
+  });
+});
+
+describe('formatFormationAnnouncementCountdown', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-21T17:23:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reads direction-explicit and sentence-cased, since it stands on its own line', () => {
+    expect(formatFormationAnnouncementCountdown('2026-03-23')).toBe('182 days ago');
+    expect(formatFormationAnnouncementCountdown('2026-09-20')).toBe('1 day ago');
+    expect(formatFormationAnnouncementCountdown('2026-09-21')).toBe('Today');
+    expect(formatFormationAnnouncementCountdown('2026-09-22')).toBe('In 1 day');
+    expect(formatFormationAnnouncementCountdown('2026-11-02')).toBe('In 42 days');
+  });
+
+  it('is null for a missing or unparseable date', () => {
+    expect(formatFormationAnnouncementCountdown(null)).toBeNull();
+    expect(formatFormationAnnouncementCountdown('2026-13-01')).toBeNull();
+  });
+});
+
+describe('buildFormationProgressSegments', () => {
+  it('emits one width-weighted segment per non-zero bucket, resolved work first', () => {
+    const segments = buildFormationProgressSegments({ not_started: 10, in_progress: 1, blocked: 2, done: 3, skipped: 1 });
+
+    expect(segments.map((segment) => segment.status)).toEqual(['done', 'in_progress', 'blocked', 'skipped', 'not_started']);
+    expect(segments.map((segment) => segment.count)).toEqual([3, 1, 2, 1, 10]);
+    expect(segments.reduce((sum, segment) => sum + segment.widthPercent, 0)).toBeCloseTo(100);
+    expect(segments[0].colorClass).toBe('bg-emerald-600');
+    expect(segments[2].colorClass).toBe('bg-red-500');
+  });
+
+  it('skips empty buckets and is empty for an empty checklist', () => {
+    expect(buildFormationProgressSegments({ not_started: 4, done: 0 }).map((segment) => segment.status)).toEqual(['not_started']);
+    expect(buildFormationProgressSegments({})).toEqual([]);
+    expect(buildFormationProgressSegments({ done: 0, not_started: 0 })).toEqual([]);
+  });
+});
+
+describe('formatFormationProgressSummary', () => {
+  it('lists every non-zero bucket literally, skipped kept apart from done', () => {
+    expect(formatFormationProgressSummary({ not_started: 10, in_progress: 1, blocked: 2, done: 3, skipped: 1 })).toBe(
+      '17 items · 3 done · 1 in progress · 2 blocked · 1 skipped · 10 not started'
+    );
+    expect(formatFormationProgressSummary({ done: 1 })).toBe('1 item · 1 done');
+  });
+
+  it('names an empty checklist rather than reading "0 items"', () => {
+    expect(formatFormationProgressSummary({})).toBe('No checklist items');
+    expect(sumFormationProgress({})).toBe(0);
   });
 });

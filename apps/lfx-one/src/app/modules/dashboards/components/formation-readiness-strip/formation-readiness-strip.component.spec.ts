@@ -1,10 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormationItem } from '@lfx-one/shared/interfaces';
-import { ProjectContextService } from '@services/project-context.service';
 import { describe, expect, it } from 'vitest';
 
 import { FormationReadinessStripComponent } from './formation-readiness-strip.component';
@@ -22,16 +20,17 @@ function buildItem(overrides: Partial<FormationItem>): FormationItem {
     status: 'not_started',
     is_gating: false,
     owner_team: null,
+    audience: null,
     owner: null,
     due_date: null,
     action: 'manual',
     action_href: null,
     detail: null,
     notes: null,
-    links: [],
+    evidence_link: null,
     sub_items: [],
     skip_reason: null,
-    can_complete: true,
+    available_actions: [],
     created_at: '2026-01-01T00:00:00Z',
     updated_at: '2026-01-01T00:00:00Z',
     version: 1,
@@ -45,16 +44,6 @@ describe('FormationReadinessStripComponent', () => {
   const render = async (items: FormationItem[], openGatingItems: number, totalGatingItems: number): Promise<void> => {
     await TestBed.configureTestingModule({
       imports: [FormationReadinessStripComponent],
-      providers: [
-        {
-          provide: ProjectContextService,
-          useValue: {
-            activeProjectAnnouncementDate: signal<string | null>(null),
-            activeProjectAnnouncementDateLoading: signal(false),
-            activeProjectAnnouncementDateHasError: signal(false),
-          },
-        },
-      ],
     }).compileComponents();
 
     fixture = TestBed.createComponent(FormationReadinessStripComponent);
@@ -70,6 +59,7 @@ describe('FormationReadinessStripComponent', () => {
   const activatingText = (): string | null =>
     fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-activating-text"]')?.textContent ?? null;
   const countsText = (): string | null => fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-counts"]')?.textContent ?? null;
+  const requiredLegend = (): HTMLElement | null => fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-required-legend"]');
 
   /**
    * GH-2329 regression guard: a skipped gating item is checklist-complete (nothing left for a human
@@ -95,6 +85,26 @@ describe('FormationReadinessStripComponent', () => {
     expect(gatingText()).toBeNull();
   });
 
+  // #2774: the rows mark gating items with a red asterisk; the "Required for Active" caption carries
+  // the same mark so it doubles as the legend — only while there are open gates for it to point at.
+  it('marks the "Required for Active" caption with the rows’ red asterisk legend while gates are open', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true }), buildItem({ uid: '2', status: 'not_started', is_gating: true })];
+    await render(items, 1, 2);
+
+    const legend = requiredLegend();
+    expect(legend?.textContent).toBe('*');
+    expect(legend?.className).toContain('text-red-500');
+    expect(legend?.getAttribute('aria-hidden')).toBe('true');
+    expect(gatingText()).toContain('1 of 2 open');
+  });
+
+  it('omits the asterisk legend in the "all done" branch', async () => {
+    const items = [buildItem({ uid: '1', status: 'done', is_gating: true })];
+    await render(items, 0, 1);
+
+    expect(requiredLegend()).toBeNull();
+  });
+
   it('tallies `skipped` as its own checklist-completion bucket, separate from `done`', async () => {
     const items = [
       buildItem({ uid: '1', status: 'done', is_gating: true }),
@@ -106,6 +116,15 @@ describe('FormationReadinessStripComponent', () => {
     const text = countsText();
     expect(text).toContain('1 of 3 done');
     expect(text).toContain('1 skipped');
+  });
+
+  // GH-2702: the announcement date moved to the formation-page sidebar (`lfx-formation-card`) — the
+  // strip must no longer render its own copy on either checklist host.
+  it('renders no announcement date block', async () => {
+    await render([buildItem({ uid: '1' })], 0, 1);
+
+    expect(fixture.nativeElement.querySelector('[data-testid="formation-readiness-strip-announcement"]')).toBeNull();
+    expect(fixture.nativeElement.textContent).not.toContain('Announcement date');
   });
 
   // GH-2440: the strip's four-column single-row layout overlapped itself at phone width. These

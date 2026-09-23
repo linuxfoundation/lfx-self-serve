@@ -10,22 +10,41 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
-import { ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import type { OrgClaGroup, OrgClaGroupList } from '@lfx-one/shared/interfaces';
+import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
+import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import type {
+  OrgClaApprovalList,
+  OrgClaContributorAcknowledgment,
+  OrgClaContributorAcknowledgmentList,
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaManager,
+  OrgClaManagerList,
+} from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
 
-export const EASYCLA_URL = '/org/easycla';
+/** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
+export const EASYCLA_URL = ORG_EASYCLA_PATH;
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 export const MOCK_ACCOUNT_NAME = 'Acme Motors';
-export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
+
+/** Pair-check hop for attestation Continue and approval-list mutations (#1980). Stub allowed or attestation / mutations fail closed. */
+export const PERMISSIONS_CHECKS_ROUTE = '**/api/orgs/*/lens/cla-groups/permissions/checks';
+
+export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-list';
+
+export const MANAGERS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers';
+export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*';
+
+/** Contributor acknowledgments for one agreement. Query string carries search and nextKey. */
+export const ACKNOWLEDGMENTS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/acknowledgments**';
 
 /**
  * The detail page's presigned-URL route.
@@ -79,12 +98,12 @@ export async function stubAccountContext(page: Page): Promise<void> {
     personas: ['contributor'],
     personaProjects: {},
     projects: [],
-    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
     isRootWriter: false,
   });
 
   await fulfillJson(page, '**/api/analytics/org-lens-account-context*', [
-    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: 'Gold' },
+    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: 'Gold' },
   ]);
 
   await fulfillJson(page, '**/api/orgs/me/role-grants', {
@@ -103,7 +122,48 @@ export async function stubAccountContext(page: Page): Promise<void> {
     total: 1,
   });
 
+  // Spec 050: an org-addressed EasyCLA address (`/org/{segment}/easycla/…`) goes through the
+  // resolver on arrival. The mock organization publishes no slug, so its canonical address is the
+  // SFID form — which is also what the BFF mints for a signing return.
+  await page.route('**/api/orgs/resolve/*', (route) => {
+    const segment = decodeURIComponent(new URL(route.request().url()).pathname.split('/').pop() ?? '');
+    if (segment !== MOCK_ACCOUNT_ID) {
+      return route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ error: 'Organization not found' }) });
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ uid: MOCK_ACCOUNT_ID, slug: null, name: MOCK_ACCOUNT_NAME }) });
+  });
+  await page.route('**/api/orgs/uid/*', (route) => {
+    if (route.request().method() !== 'GET') return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        uid: MOCK_ACCOUNT_ID,
+        accountId: MOCK_ACCOUNT_ID,
+        name: MOCK_ACCOUNT_NAME,
+        slug: null,
+        parentUid: null,
+        isMember: true,
+        logoUrl: null,
+      }),
+    });
+  });
+
   await page.context().addCookies([{ name: ACCOUNT_COOKIE_KEY, value: JSON.stringify({ uid: MOCK_ACCOUNT_ID }), domain: 'localhost', path: '/' }]);
+}
+
+/**
+ * ACS pair-check hop for attestation Continue and approval-list mutations. Existing org-easycla e2e
+ * stubs this allowed; a denied stub refuses Review and Sign and hides Add/Edit/Remove. Sign CLA
+ * itself stays offered. Picker Continue and Start do not POST this hop.
+ */
+export async function stubPermissionChecks(page: Page, allowed = true): Promise<void> {
+  await page.route(PERMISSIONS_CHECKS_ROUTE, (route) => {
+    if (route.request().method() !== 'POST') {
+      return route.fallback();
+    }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ allowed }) });
+  });
 }
 
 /**
@@ -112,12 +172,10 @@ export async function stubAccountContext(page: Page): Promise<void> {
  * The visit to `/` first, then a reload, is the sequence the other Org Lens specs use to get an
  * authenticated app running before the guarded URL is requested.
  */
-export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>): Promise<void> {
-  // Both flags, not just this feature's. `/org/*` sits behind the parent lens flag as well, so
-  // pinning only the child leaves these tests at the mercy of a remote flag: wherever it is off
-  // they skip rather than fail, and a suite that skips reports the same green as one that ran.
-  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>, permissionAllowed = true): Promise<void> {
+  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
+  await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -126,12 +184,6 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 
   await page.goto(EASYCLA_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  // A redirect away from the whole lens means `org-lens-enabled` is off for this user, which is a
-  // missing prerequisite rather than a failure of anything these specs are about.
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 /**
@@ -145,14 +197,22 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * page renders for a given row and would otherwise fail on the list. The one case that is about
  * the card click navigates from the list itself.
  *
- * @param page Playwright page to drive.
- * @param claGroupId CLA Group the address is about — the authoritative half.
- * @param stubList Installs the CLA Group list response this case needs.
- * @param signatureId Narrows the group to one agreement; omit unless the case is about that choice.
+ * @param page - Playwright page to drive.
+ * @param claGroupId - CLA Group the address is about — the authoritative half.
+ * @param stubList - Installs the CLA Group list response this case needs.
+ * @param signatureId - Narrows the group to one agreement; omit unless the case is about that choice.
+ * @param permissionAllowed - ACS pair-check stub. Defaults true so mutation cases stay writable unless the case is about a deny.
  */
-export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList: (page: Page) => Promise<void>, signatureId?: string): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+export async function gotoEasyclaDetail(
+  page: Page,
+  claGroupId: string,
+  stubList: (page: Page) => Promise<void>,
+  signatureId?: string,
+  permissionAllowed = true
+): Promise<void> {
+  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
+  await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -162,10 +222,6 @@ export async function gotoEasyclaDetail(page: Page, claGroupId: string, stubList
   const query = signatureId ? `?${ORG_EASYCLA_SIGNATURE_PARAM}=${encodeURIComponent(signatureId)}` : '';
   await page.goto(`${EASYCLA_URL}/${claGroupId}${query}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 /**
@@ -270,4 +326,246 @@ export function skipWithoutCredentials(): void {
   if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
     test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
   }
+}
+
+// ---------------------------------------------------------------------------
+// The Approval List tab (GH-2410)
+// ---------------------------------------------------------------------------
+
+/** An editable list. Cases override the entries they are about. */
+export function approvalList(overrides: Partial<OrgClaApprovalList> = {}): OrgClaApprovalList {
+  return {
+    signatureId: STUB_SIGNATURE_ID,
+    entries: [],
+    canEdit: true,
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs both verbs on the approval-list path. PUT is never optional: aborting anything that is
+ * not GET or PUT is how a missed intercept stays a failed test rather than a write against a
+ * real agreement.
+ */
+export async function stubApprovalList(page: Page, options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}): Promise<void> {
+  const getBody = options.get ?? approvalList();
+  const putBody = options.put ?? getBody;
+
+  await page.route(APPROVAL_LIST_ROUTE, (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(getBody) });
+    }
+    if (method === 'PUT') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(putBody) });
+    }
+    return route.abort();
+  });
+}
+
+export function isApprovalListPut(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/approval-list') && request.method() === 'PUT';
+}
+
+export function countPutRequests(page: Page): { readonly count: number } {
+  let putCount = 0;
+  page.on('request', (request) => {
+    if (isApprovalListPut(request)) {
+      putCount += 1;
+    }
+  });
+  return {
+    get count() {
+      return putCount;
+    },
+  };
+}
+
+export async function gotoApproval(page: Page, options: { get?: OrgClaApprovalList; put?: OrgClaApprovalList } = {}): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubApprovalList(p, options);
+  });
+  await openApprovalTab(page);
+}
+
+/** Opens the Approval List tab. The panel mounts only after this click, and only when signed. */
+export async function openApprovalTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-approval').click();
+  await expect(page.getByTestId('org-easycla-approval-list')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+/** The dialog's value field. Same `data-test` quirk as the list search box. */
+export function approvalDialogValue(page: Page, index = 0): Locator {
+  return page.locator(`[data-test="org-easycla-approval-dialog-value-${index}"]`);
+}
+
+// ---------------------------------------------------------------------------
+// The CLA Managers tab (#1984)
+// ---------------------------------------------------------------------------
+
+export function manager(overrides: Partial<OrgClaManager> = {}): OrgClaManager {
+  return {
+    lfUsername: 'kwame.mensah',
+    name: 'Kwame Mensah',
+    email: 'contributor@example.org',
+    addedOn: '2024-05-02T11:00:00Z',
+    ...overrides,
+  };
+}
+
+export function managerList(overrides: Partial<OrgClaManagerList> = {}): OrgClaManagerList {
+  return {
+    signatureId: STUB_SIGNATURE_ID,
+    managers: [manager(), manager({ lfUsername: 'ada.porter', name: 'Ada Porter', email: 'ada.porter@example.org' })],
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs GET/POST/DELETE on the managers path. Mutations never reach a real CLA service.
+ */
+export async function stubManagers(
+  page: Page,
+  options: { initial?: OrgClaManagerList; afterPost?: OrgClaManagerList; afterDelete?: OrgClaManagerList; postBody?: OrgClaManager } = {}
+): Promise<void> {
+  let current = options.initial ?? managerList();
+  const postResponse = options.postBody ?? manager({ lfUsername: 'new.manager', name: 'New Manager', email: 'new.manager@example.org' });
+
+  await page.route(MANAGERS_ROUTE, (route) => {
+    const method = route.request().method();
+    if (method === 'GET') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(current) });
+    }
+    if (method === 'POST') {
+      current = options.afterPost ?? managerList({ managers: [...current.managers, postResponse] });
+      return route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(postResponse) });
+    }
+    return route.abort();
+  });
+
+  await page.route(MANAGER_DELETE_ROUTE, (route) => {
+    if (route.request().method() !== 'DELETE') {
+      return route.fallback();
+    }
+    current = options.afterDelete ?? managerList({ managers: current.managers.slice(1) });
+    return route.fulfill({ status: 204 });
+  });
+}
+
+export function isManagersPost(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/managers') && request.method() === 'POST' && !request.url().match(/\/managers\/[^/?]+$/);
+}
+
+export function isManagersDelete(request: { url(): string; method(): string }): boolean {
+  return request.url().includes('/managers/') && request.method() === 'DELETE';
+}
+
+export function countManagerWriteRequests(page: Page): { readonly postCount: number; readonly deleteCount: number } {
+  let postCount = 0;
+  let deleteCount = 0;
+  page.on('request', (request) => {
+    if (isManagersPost(request)) postCount += 1;
+    if (isManagersDelete(request)) deleteCount += 1;
+  });
+  return {
+    get postCount() {
+      return postCount;
+    },
+    get deleteCount() {
+      return deleteCount;
+    },
+  };
+}
+
+export async function gotoManagers(
+  page: Page,
+  options: { initial?: OrgClaManagerList; afterPost?: OrgClaManagerList; afterDelete?: OrgClaManagerList; postBody?: OrgClaManager } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubManagers(p, options);
+  });
+  await openManagersTab(page);
+}
+
+export async function openManagersTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-managers').click();
+  await expect(page.getByTestId('org-easycla-managers')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+export function addManagerFirstName(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-first-name"]');
+}
+
+export function addManagerLastName(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-last-name"]');
+}
+
+export function addManagerEmail(page: Page): Locator {
+  return page.locator('[data-test="org-easycla-add-manager-email"]');
+}
+
+// ---------------------------------------------------------------------------
+// The Contributor Acknowledgments tab (#2806)
+// ---------------------------------------------------------------------------
+
+export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
+  return {
+    signatureId: 'ecla-sig-1',
+    name: 'Ada Lovelace',
+    lfLogin: 'ada',
+    cclaVersion: 'v2.1',
+    signedOn: '2026-03-11T09:20:00Z',
+    approved: true,
+    ...overrides,
+  };
+}
+
+export function acknowledgmentList(overrides: Partial<OrgClaContributorAcknowledgmentList> = {}): OrgClaContributorAcknowledgmentList {
+  return {
+    signatureId: 'signature-uuid-1',
+    list: [acknowledgment()],
+    canEdit: true,
+    resultCount: 1,
+    totalCount: 1,
+    nextKey: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs GET on the acknowledgments path. A search term and a nextKey select a different page
+ * when the case supplied one, so Load more and search are real requests against the stub.
+ */
+export async function stubAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  const initial = options.initial ?? acknowledgmentList({ list: [], resultCount: 0, totalCount: 0 });
+
+  await page.route(ACKNOWLEDGMENTS_ROUTE, (route) => {
+    if (route.request().method() !== 'GET') return route.abort();
+    const url = new URL(route.request().url());
+    const search = url.searchParams.get('search')?.trim() ?? '';
+    const nextKey = url.searchParams.get('nextKey')?.trim() ?? '';
+    const body = search && options.search ? options.search : nextKey && options.next ? options.next : initial;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+export async function gotoAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubAcknowledgments(p, options);
+  });
+  await openAcknowledgmentsTab(page);
+}
+
+export async function openAcknowledgmentsTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-acknowledgments').click();
+  await expect(page.getByTestId('org-easycla-acknowledgments')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }

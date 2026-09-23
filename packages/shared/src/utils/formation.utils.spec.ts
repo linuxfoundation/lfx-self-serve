@@ -7,12 +7,16 @@ import { ProjectStage } from '../enums/project-stage.enum';
 import type { FormationActivity } from '../interfaces/formation.interface';
 import {
   deriveFormationEntityType,
+  formatFormationOwnerTeam,
   getFormationActivityDisplay,
   getFormationQueueStageDisplay,
+  isFormationItemExternal,
   isFormationLifecycleLive,
   normalizeFormationActivityAction,
+  normalizeFormationItemAudience,
   normalizeFormationLifecycle,
   normalizeFormationSubStage,
+  resolveFormationActionHref,
 } from './formation.utils';
 
 describe('deriveFormationEntityType', () => {
@@ -96,6 +100,64 @@ describe('normalizeFormationLifecycle (GH-2328)', () => {
   });
 });
 
+describe('normalizeFormationItemAudience (#2689)', () => {
+  it('maps each canonical member through verbatim', () => {
+    expect(normalizeFormationItemAudience('internal')).toBe('internal');
+    expect(normalizeFormationItemAudience('external')).toBe('external');
+    expect(normalizeFormationItemAudience('both')).toBe('both');
+  });
+
+  it('returns null for null/undefined/empty', () => {
+    expect(normalizeFormationItemAudience(null)).toBeNull();
+    expect(normalizeFormationItemAudience(undefined)).toBeNull();
+    expect(normalizeFormationItemAudience('')).toBeNull();
+  });
+
+  // Tolerant, unlike lifecycle: an off-taxonomy value only hides a display chip, so it maps to
+  // null rather than failing anything. 'manual' is the real off-taxonomy value old fixtures carried.
+  it('returns null for an off-taxonomy value', () => {
+    expect(normalizeFormationItemAudience('manual')).toBeNull();
+    expect(normalizeFormationItemAudience('constructor')).toBeNull();
+  });
+});
+
+describe('isFormationItemExternal (#2774)', () => {
+  it('is true for the two audiences that involve people outside the LF', () => {
+    expect(isFormationItemExternal('external')).toBe(true);
+    expect(isFormationItemExternal('both')).toBe(true);
+  });
+
+  // internal and "no audience" both hide the row's globe icon — neither is an external signal.
+  it('is false for internal, null and undefined', () => {
+    expect(isFormationItemExternal('internal')).toBe(false);
+    expect(isFormationItemExternal(null)).toBe(false);
+    expect(isFormationItemExternal(undefined)).toBe(false);
+  });
+});
+
+describe('formatFormationOwnerTeam (#2689)', () => {
+  it('resolves curated members through the label map', () => {
+    expect(formatFormationOwnerTeam('brand_counsel')).toBe('Brand Counsel');
+    expect(formatFormationOwnerTeam('product_ops')).toBe('Product Ops');
+  });
+
+  // The case the curated map exists for: generic title-casing would render "It".
+  it('resolves the acronym member to its cased form', () => {
+    expect(formatFormationOwnerTeam('it')).toBe('IT');
+  });
+
+  it('falls back to formatTag for off-enum upstream values', () => {
+    expect(formatFormationOwnerTeam('PMO')).toBe('PMO');
+    expect(formatFormationOwnerTeam('legal_review')).toBe('Legal Review');
+  });
+
+  // Object.hasOwn guard: a value colliding with an Object.prototype member must fall through to
+  // formatTag, never resolve to a function off the prototype chain.
+  it('treats a prototype-member name as an ordinary off-enum value', () => {
+    expect(formatFormationOwnerTeam('constructor')).toBe('Constructor');
+  });
+});
+
 describe('isFormationLifecycleLive (GH-2328)', () => {
   it('is true only for live', () => {
     expect(isFormationLifecycleLive('live')).toBe(true);
@@ -115,7 +177,15 @@ describe('isFormationLifecycleLive (GH-2328)', () => {
 
 describe('getFormationQueueStageDisplay (GH-2366)', () => {
   it('renders the canonical label/severity for a mapped sub-stage', () => {
-    expect(getFormationQueueStageDisplay('engaged', 'Formation - Engaged')).toEqual({ label: 'Formation · Engaged', severity: 'accent' });
+    expect(getFormationQueueStageDisplay('engaged', 'Formation - Engaged')).toEqual({ label: 'Engaged', severity: 'accent' });
+  });
+
+  // Three distinct tones, not one violet pill: early conversations read informational, a parked
+  // formation reads as a prompt. The short labels drop the upstream "Formation - " prefix — both
+  // list surfaces that render them are already titled Formations.
+  it('gives each mapped sub-stage its own severity', () => {
+    expect(getFormationQueueStageDisplay('exploratory', 'Formation - Exploratory')).toEqual({ label: 'Exploratory', severity: 'info' });
+    expect(getFormationQueueStageDisplay('on_hold', 'Formation - On Hold')).toEqual({ label: 'On hold', severity: 'warn' });
   });
 
   it('renders the raw upstream value verbatim, muted, for an unmapped sub-stage', () => {
@@ -235,5 +305,29 @@ describe('getFormationActivityDisplay (GH-2372)', () => {
 
   it('returns a null detail when before/after are absent', () => {
     expect(getFormationActivityDisplay(entry({ before: null, after: null })).detail).toBeNull();
+  });
+});
+
+describe('resolveFormationActionHref (#2801)', () => {
+  it('returns no destination for a missing href', () => {
+    expect(resolveFormationActionHref(null)).toEqual({ external: null, internal: null });
+    expect(resolveFormationActionHref(undefined)).toEqual({ external: null, internal: null });
+    expect(resolveFormationActionHref('')).toEqual({ external: null, internal: null });
+  });
+
+  it('routes a same-origin relative path to internal', () => {
+    expect(resolveFormationActionHref('/project/settings')).toEqual({ external: null, internal: '/project/settings' });
+  });
+
+  it('treats a protocol-relative value as neither an in-app path nor a valid external URL', () => {
+    expect(resolveFormationActionHref('//evil.example/x')).toEqual({ external: null, internal: null });
+  });
+
+  it('routes a valid absolute http(s) URL to external', () => {
+    expect(resolveFormationActionHref('https://example.com/docs')).toEqual({ external: 'https://example.com/docs', internal: null });
+  });
+
+  it('drops a dangerous scheme', () => {
+    expect(resolveFormationActionHref('javascript:alert(1)')).toEqual({ external: null, internal: null });
   });
 });

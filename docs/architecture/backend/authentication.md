@@ -92,6 +92,8 @@ Two distinct identifiers travel on the OIDC user (`req.oidc.user`), and choosing
 - **`sub`** identifies the **Auth0 identity record**. It carries a connection prefix (`auth0|`, `github|`, `samlp|`, …), so the same person can have different `sub` values across connections. Treat it as an opaque token — never parse it, and never display it as if it were a username. Stripping the connection prefix is misleading: the bare value only coincidentally matches the LFID handle today and is not guaranteed to, so a stripped `sub` is not a substitute for `username`. `getEffectiveSub(req)` remains in use at a handful of call sites — e.g. `badges.controller.ts`, `cla.service.ts`, and three of `profile.controller.ts`'s four call sites resolve identity via the auth-service (which also accepts a username or email), `mktg-agents.controller.ts` binds chat sessions to their creator via internal owner tokens (`createSessionOwnerToken`/`verifySessionOwnerToken`), and `weekly-brief.service.ts` uses it as a stable, non-PII identifier for indefinitely-retained server log records (see "When to use which" below) — this list is illustrative, not exhaustive; check `getEffectiveSub` call sites directly rather than trusting a stale count here.
 - **`username`** identifies the **LF person** by their LFID login handle (bare form, no prefix) and is what most upstream microservices index on going forward. Org role grants (`org-identity.controller.ts`, `org-navigation.service.ts`, `org-role-grants.service.ts`) query `b2b_org_settings` with `tags: ['member:${username}']` where `username` comes from `getEffectiveUsername(req)`. On surveys, `creator_username` holds the bare nickname and `creator_id` is set from the `https://sso.linuxfoundation.org/claims/username` claim.
 
+  The role-grants response also reports how well that lookup went — `lookupOutcome`, `staffCheck`, `correlationId` (spec 053) — so the UI can tell an outage from a denial; see [Org Lens empty states](../frontend/lens-system.md#org-lens-empty-states).
+
 ### ID token vs access token — where the claims actually live
 
 Auth0 issues **two** JWTs per session, and they carry identity differently. This split is the central complication of the `sub` → `username` migration.
@@ -254,6 +256,14 @@ The system includes a custom login route (`/login`) that provides:
 - **URL Validation**: Ensures secure redirect destinations
 - **State Management**: Handles authentication state transitions
 - **Return-to Functionality**: Redirects users to their intended destination after login
+
+### Flow C CSRF State Storage (#1938)
+
+`express-openid-connect`'s session middleware reads the whole session once per request and blind-overwrites it on every response — no dirty check, no CAS. A concurrent request that loaded the session before Flow C's `/auth/start` wrote `profileAuthState` and finishes after it silently drops that write, producing `invalid_state` on the Auth0 callback.
+
+`AuthStateService` (`apps/lfx-one/src/server/services/auth-state.service.ts`) sidesteps this by keying the CSRF nonce in its own short-TTL Valkey record (`auth-state:v1:<nonce>`, 600s TTL) instead of `req.appSession`, independent of `SESSION_STORE_ENABLED`. The callback consumes (looks up and deletes) the record by nonce and requires it belong to the authenticated user, rather than comparing against the session. When `VALKEY_URL` is unset, `AuthStateService` falls back to session-based storage so Flow C keeps working — that fallback retains the original race, and it also persists the issuing sub as `profileAuthSub` so the callback controller's same-sub check can compare against it even without Valkey (the comparison itself lives in the callback controller, not in `AuthStateService`).
+
+**Rollout note:** this nonce cutover has two rolling-deploy/rollback incompatibilities. First, the Valkey-vs-session storage switch itself: a pod running the old code cannot read a nonce written to Valkey by a new pod, and a new pod treats an old pod's session-only nonce as an authoritative Valkey miss. Second, when Valkey is unavailable, an old pod's session-stored nonce carries no `profileAuthSub` — a new pod reading it during a mixed-version window resolves an empty sub and rejects the callback with `invalid_state`. Either case forces the affected login to restart. Deploying this change requires a no-overlap rollout (and rollback plan) for Flow C traffic; it does not have cross-version compatibility built in.
 
 ## 🤖 Machine-to-Machine (M2M) Authentication
 

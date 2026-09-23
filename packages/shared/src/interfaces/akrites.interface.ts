@@ -530,6 +530,17 @@ export interface AkritesTriageColumnState {
   error: boolean;
 }
 
+/**
+ * SSR-serialized state for the Akrites triage board (GH-2080), following the same TransferState
+ * pattern as {@link PublicGroupDirectoryPageState}: seeds the client's first paint from the
+ * server's resolved branch so hydration keeps the SSR-rendered board on screen instead of tearing
+ * it down for a skeleton until the client refetch resolves.
+ */
+export interface AkritesTriageBoardPageState {
+  loading: boolean;
+  board: Record<AkritesTriageStatus, AkritesTriageColumnState> | null;
+}
+
 // ===== Scatter / Risk Matrix =====
 
 export interface CdpScatterPoint {

@@ -3,14 +3,11 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { inject, PLATFORM_ID } from '@angular/core';
-import { toObservable } from '@angular/core/rxjs-interop';
 import { CanMatchFn, Router, UrlTree } from '@angular/router';
-import { FORMATION_ENABLED_FLAG } from '@lfx-one/shared/constants';
-import { isFormationStageGate } from '@lfx-one/shared/utils';
-import { catchError, filter, firstValueFrom, of, timeout } from 'rxjs';
 
 import { FeatureFlagService } from '../services/feature-flag.service';
 import { ProjectService } from '../services/project.service';
+import { isFormationChecklistProject, resolveFormationFlag } from '../utils/formation-checklist-gate.util';
 
 function queryProject(value: unknown): string | undefined {
   if (typeof value === 'string' && value.length > 0) {
@@ -44,6 +41,11 @@ function deniedOverview(router: Router, slug: string | undefined): UrlTree {
  * SSR defers to the browser (LaunchDarkly never initializes server-side); the browser run waits for
  * provider readiness and fails closed on timeout, since this is a dark launch and failing open would
  * expose the checklist to anyone whenever LaunchDarkly is slow.
+ *
+ * Flag first, then stage, so a flag-off evaluation never fetches the project. Both checks are the
+ * shared `formation-checklist-gate.util` halves that `formationOverviewRedirectGuard` also evaluates
+ * on `/project/overview` (stage first there, since that route must not wait on LaunchDarkly for
+ * the non-formation majority) — one gate, so the two routes can never disagree and bounce (#2754).
  */
 export const formationProjectEnabledGuard: CanMatchFn = async () => {
   const platformId = inject(PLATFORM_ID);
@@ -55,36 +57,15 @@ export const formationProjectEnabledGuard: CanMatchFn = async () => {
   const featureFlagService = inject(FeatureFlagService);
   const router = inject(Router);
   const projectService = inject(ProjectService);
-
-  const override = featureFlagService.getFlagOverride(FORMATION_ENABLED_FLAG);
-  if (override !== undefined && !override) {
-    return deniedOverview(router, resolveSlug(router));
-  }
-
-  if (override === undefined) {
-    if (!featureFlagService.providerReady()) {
-      const ready = await firstValueFrom(
-        toObservable(featureFlagService.providerReady).pipe(
-          filter((isReady): isReady is true => isReady === true),
-          timeout(5000),
-          catchError(() => of(false))
-        )
-      );
-      if (!ready) {
-        return deniedOverview(router, resolveSlug(router));
-      }
-    }
-
-    if (!featureFlagService.getBooleanFlag(FORMATION_ENABLED_FLAG, false)()) {
-      return deniedOverview(router, resolveSlug(router));
-    }
-  }
-
   const slug = resolveSlug(router);
+
+  if (!(await resolveFormationFlag(featureFlagService, 'formationProjectEnabledGuard'))) {
+    return deniedOverview(router, slug);
+  }
+
   if (!slug) {
     return deniedOverview(router, undefined);
   }
 
-  const project = await firstValueFrom(projectService.getProject(slug, false));
-  return isFormationStageGate(project?.stage) ? true : deniedOverview(router, slug);
+  return (await isFormationChecklistProject(projectService, slug)) ? true : deniedOverview(router, slug);
 };

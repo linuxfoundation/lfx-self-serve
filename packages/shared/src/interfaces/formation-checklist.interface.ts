@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ButtonSeverity, TagSeverity } from './components.interface';
+import type { Project } from './project.interface';
 import type {
   FormationActivity,
   FormationItem,
@@ -12,14 +13,16 @@ import type {
 } from './formation.interface';
 
 /**
- * The readiness strip's per-item segment bar and status tally — everything
- * `deriveFormationReadinessSummary` computes client-side from the raw item list.
- * `isActivating`/`openGatingItems`/`totalGatingItems` are not part of this shape: they come
- * straight from the server (`Formation.is_activating`/`gating_items_open`/`gating_items_total`),
- * so consumers read those off the formation directly instead of through this interface.
+ * A per-entry segment bar and status tally — everything `deriveFormationReadinessSummary`
+ * computes client-side from a list of status-bearing entries: the checklist's items for the
+ * readiness strip, or one item's `sub_items` for the row disclosure and
+ * `lfx-formation-sub-item-list` (#2774). `isActivating`/`openGatingItems`/`totalGatingItems` are
+ * not part of this shape: they come straight from the server
+ * (`Formation.is_activating`/`gating_items_open`/`gating_items_total`), so consumers read those off
+ * the formation directly instead of through this interface.
  */
 export interface FormationReadinessSummary {
-  /** One entry per checklist item, in template order — the literal per-item segment bar (not a 2-color fill/total bar). */
+  /** One entry per input entry, in the input list's order — the literal per-entry segment bar (not a 2-color fill/total bar). */
   segments: FormationItemStatus[];
   totalItems: number;
   counts: Record<FormationItemStatus, number>;
@@ -66,6 +69,31 @@ export interface FormationsQueueFilterState {
   search: string;
 }
 
+/**
+ * Where a formation's announcement date sits relative to today, for the queue's countdown line
+ * (`getFormationAnnouncementTiming`). `unset` covers both a missing date and one that fails to
+ * parse. `needed` is `unset` while `gates_cleared` is true: every gating item is done, so the
+ * missing date is now the only thing between the formation and Active (upstream's `is_activating`
+ * requires one) — the one "unset" that deserves a prompt rather than a muted dash.
+ */
+export type FormationAnnouncementTiming = 'past' | 'today' | 'upcoming' | 'unset' | 'needed';
+
+/**
+ * One proportional segment of the queue's per-row progress bar (`buildFormationProgressSegments`)
+ * — a status bucket with a non-zero count, in `FORMATION_PROGRESS_SEGMENT_RANK` order. Distinct from
+ * {@link FormationReadinessSummary.segments}, which is one entry per item in template order: the
+ * queue projection only carries per-status counts, so it renders one width-weighted segment per
+ * status instead of one per item.
+ */
+export interface FormationProgressSegment {
+  status: FormationItemStatus;
+  count: number;
+  /** `count / total * 100`, unrounded — bound straight to `[style.width.%]`. */
+  widthPercent: number;
+  /** `FORMATION_ITEM_SEGMENT_COLORS[status]`, resolved once here so the template does a property read. */
+  colorClass: string;
+}
+
 /** `FormationChecklistSectionComponent`'s top-level view state. */
 export type FormationChecklistPageState = 'loading' | 'error' | 'no-template' | 'no-items' | 'ready';
 
@@ -99,6 +127,61 @@ export interface FormationLinkRowActionConfig {
 }
 
 /**
+ * `FORMATION_ITEM_STATUS_GLYPHS`'s value shape — the FontAwesome class and Tailwind text color the
+ * item drawer's header status tile shows for an item status (#2801). Until #2818 it also led every
+ * `lfx-formation-sub-item-list` row; those now draw {@link FormationSubItemMarker}s instead.
+ */
+export interface FormationItemStatusGlyph {
+  icon: string;
+  colorClass: string;
+}
+
+/**
+ * `FORMATION_SUB_ITEM_MARKERS`'s value shape (#2818) — how `lfx-formation-sub-item-list` renders one
+ * sub-item row per status: the round marker's classes (`markerClass`; `w-5`, 17.5px at this app's
+ * 14px root), the icon inside it
+ * (`icon`, `null` for the hollow rings), the title's text color (`titleClass`) and the status
+ * label's classes (`labelClass` — literally `sr-only` where the marker already says it, so the
+ * label stays in the accessibility tree without repeating on screen).
+ */
+export interface FormationSubItemMarker {
+  icon: string | null;
+  markerClass: string;
+  titleClass: string;
+  labelClass: string;
+}
+
+/**
+ * `lfx-formation-progress-ring`'s `size` input (#2818) — `sm` sits inline in the checklist row's
+ * sub-items disclosure trigger, `md` leads the drawer's sub-items summary. The keys of
+ * `FORMATION_PROGRESS_RING_SIZE_CLASSES`.
+ */
+export type FormationProgressRingSize = 'sm' | 'md';
+
+/**
+ * The one safe binding an API-sourced `FormationItem.action_href` resolves to — see
+ * `resolveFormationActionHref`. A same-origin relative path lands in `internal` (bind
+ * `[routerLink]`); an absolute `http(s)` URL lands in `external` (bind `[href]` + `target="_blank"`).
+ * Both `null` means no safe destination.
+ */
+export interface FormationActionHrefTargets {
+  external: string | null;
+  internal: string | null;
+}
+
+/**
+ * `FormationItemDrawerComponent`'s `editForm` value, read through `getRawValue()` so a disabled
+ * due-date control is still present (#2801). The component's `canWrite()` gate is what actually
+ * keeps a disabled control from reading as cleared; the raw read is defense in depth for the
+ * `readOnly && canWrite` state, where the control is disabled but that gate does not fire.
+ */
+export interface FormationItemDrawerFormValue {
+  notes: string | null;
+  ownerUsername: string | null;
+  dueDate: Date | null;
+}
+
+/**
  * `FormationsTableComponent`'s render row — {@link FormationQueueRow} plus the pre-resolved stage
  * chip label/severity/gating summary, so the `#body` template (where PrimeNG types the row context
  * `any`) does a plain property read instead of a method call that re-executes on every
@@ -108,28 +191,76 @@ export interface FormationLinkRowActionConfig {
  * `gating_items_total`/`parent_formation_name`/`subtitle`) — the real indexed queue projection
  * doesn't publish any of those, so this now extends {@link FormationQueueRow} instead and derives
  * the gating "N of M" summary from `progress` + `gates_cleared`. The one-level indentation this
- * used to drive off `parent_formation_name` has no data source upstream and is dropped with it —
- * the Type column (from `deriveFormationEntityType`, unaffected by this gap) still distinguishes a
- * `child_project` row, just without visual indentation.
+ * used to drive off `parent_formation_name` has no data source upstream and was dropped with it,
+ * as was the Type column itself (LFXV2-3386). {@link entityTypeLabel} is not that column coming
+ * back: it is a sub-line derived live from `is_foundation`/`parent_uid` via
+ * `deriveFormationEntityType` — the same derivation the "N foundations · N projects" tile already
+ * trusts — not a read of the unpublished `parent_formation_name`.
  */
 export interface FormationTableRow extends FormationQueueRow {
   stageLabel: string;
   stageSeverity: TagSeverity;
+  /** `FORMATION_ENTITY_TYPE_LABELS[deriveFormationEntityType(row)]` — "Foundation" / "Project" / "Child project", the name cell's sub-line. */
   entityTypeLabel: string;
   /** `formatAnnouncementDateLabel(announcement_date)` — e.g. "Jul 14, 2026", or "Not set". */
   announcementLabel: string;
-  /** `progress.done` — the completed count for the "N of M" gating summary. */
+  /** The date line's text-colour class — muted for a plain `unset`, so an absent date reads as absence rather than as data. */
+  announcementLabelClass: string;
+  announcementTiming: FormationAnnouncementTiming;
+  /**
+   * The Announcement cell's second line: `formatFormationAnnouncementCountdown` ("182 days ago" /
+   * "Today" / "In 42 days"), `FORMATION_ANNOUNCEMENT_NEEDED_LABEL` for a `needed` timing, or `null`
+   * for a plain `unset`.
+   */
+  announcementDetail: string | null;
+  /** `FORMATION_ANNOUNCEMENT_TIMING_CLASS[announcementTiming]` — the second line's text-colour class. */
+  announcementDetailClass: string;
+  /** `progress.done + progress.skipped` — the completed count for the "N of M" summary (a skipped item is resolved, not remaining work). */
   doneCount: number;
-  /** Sum of every `progress` bucket — the "M" in the "N of M" gating summary. */
+  /** Sum of every `progress` bucket — the "M" in the "N of M" summary. */
   totalCount: number;
+  /** `buildFormationProgressSegments(progress)` — empty for a `0 of 0` row, which renders an empty track. */
+  progressSegments: FormationProgressSegment[];
+  /** `formatFormationProgressSummary(progress)` — the bar's `aria-label` and tooltip, e.g. "17 items · 3 done · 1 in progress · 2 blocked · 11 not started". */
+  progressSummary: string;
+  /** `blocked_item_titles.length` — `0` renders the Blocking cell's "Gates cleared" chip or dash instead. */
+  blockedCount: number;
+  /** "N blocked" — the Blocking cell's danger chip label; `''` when nothing is blocked. */
+  blockedLabel: string;
+  /** Every blocked title joined with " · " — the chip's tooltip, so a row with three blockers still lists all three. */
+  blockedTitlesLabel: string;
+  /** `blocked_item_titles[0] ?? null` — the single line under the chip. */
+  firstBlockedTitle: string | null;
 }
 
 /**
- * `FormationChecklistRowComponent`'s status-menu output payload for the two "plain" transitions
- * that carry no extra data — `blocked` rides on its own `blockRequested` output instead (it needs
- * an optional note via `ReasonPromptDialogComponent`), and completion rides on `completeRequested`.
+ * `FormationDetailComponent`'s project-load state (LFXV2-3386). `error` is a transient failure
+ * (gateway 5xx, network) with a Retry affordance; a 400/404 lands as `{ error: false,
+ * project: null }` — the permanent not-found branch — following `newsletter-reader.component.ts`'s
+ * classification so an outage never masquerades as a missing project.
+ */
+export interface FormationDetailPageState {
+  loading: boolean;
+  error: boolean;
+  project: Project | null;
+}
+
+/**
+ * `FormationChecklistRowComponent`'s status-menu output payload for the two transitions upstream
+ * never requires a `reason` for (`in_progress`/`done`) — every other target
+ * (`blocked`/`skipped`/`not_started`) always requires one and rides on `reasonedStatusRequested`
+ * instead, which opens `ReasonPromptDialogComponent` first.
  */
 export interface FormationRowStatusChange {
   item: FormationItem;
-  status: Extract<FormationItemStatus, 'not_started' | 'in_progress'>;
+  status: Extract<FormationItemStatus, 'in_progress' | 'done'>;
+}
+
+/** The three targets upstream always requires a `reason` for (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`, GH-2576 Phase 2). */
+export type ReasonedFormationStatus = Extract<FormationItemStatus, 'blocked' | 'skipped' | 'not_started'>;
+
+/** `FormationChecklistRowComponent`'s `reasonedStatusRequested` output payload — the counterpart to {@link FormationRowStatusChange} for the three targets that always need a reason. */
+export interface FormationRowReasonedStatusChange {
+  item: FormationItem;
+  status: ReasonedFormationStatus;
 }

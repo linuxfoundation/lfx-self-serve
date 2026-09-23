@@ -7,10 +7,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
 vi.mock('@lfx-one/shared/constants', () => ({
-  LF_STAFF_TEAM_ID: 'lf-staff',
+  // Batch size and classify concurrency are stubbed tiny (production: 100 / 8) so the wave-sizing
+  // test below can cross a wave boundary with a handful of candidates. Only
+  // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
+  ACCESS_CHECK_BATCH_SIZE: 2,
+  LF_TEAM_IDS: ['lf-staff', 'lf-contractor'],
   ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
+  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
+  ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
-  ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 500,
+  // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
+  // can reach them with a handful of mocked docs. Every other test in this file uses leaf orgs
+  // (`is_parent: false`, no `parent_uid`), so the walk never runs and the values don't matter.
+  ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 4,
+  ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
   ORG_ROLE_GRANTS_HARD_CAP: 500,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
   VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access' },
@@ -20,9 +30,10 @@ vi.mock('@lfx-one/shared/utils', () => ({
   isFilterSafeIdentifier: (value: string) => /^[a-z0-9_-]+$/i.test(value),
 }));
 
-const { proxyRequest, checkSingleAccess, getJson, setJson } = vi.hoisted(() => ({
+const { proxyRequest, checkAccess, checkAccessStrict, getJson, setJson } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
-  checkSingleAccess: vi.fn(),
+  checkAccess: vi.fn(),
+  checkAccessStrict: vi.fn(),
   getJson: vi.fn(),
   setJson: vi.fn(),
 }));
@@ -35,7 +46,8 @@ vi.mock('./microservice-proxy.service', () => ({
 }));
 vi.mock('./access-check.service', () => ({
   AccessCheckService: class {
-    public checkSingleAccess = checkSingleAccess;
+    public checkAccess = checkAccess;
+    public checkAccessStrict = checkAccessStrict;
   },
 }));
 vi.mock('./valkey.service', () => ({ valkeyService: { getJson, setJson }, cacheKeyNamespace: () => 'test' }));
@@ -45,46 +57,152 @@ const { OrgRoleGrantsService } = await import('./org-role-grants.service');
 const req = {} as Request;
 const USERNAME = 'staffer';
 
+/** The one batched membership question `resolveIsStaff` asks, in `LF_TEAM_IDS` order. */
+const TEAM_REQUESTS = [
+  { resource: 'team', id: 'lf-staff', access: 'member' },
+  { resource: 'team', id: 'lf-contractor', access: 'member' },
+];
+
+/** Authorizer answer for that batch, keyed the way `checkAccessStrict` keys its result map. */
+function teamMembership(staff: boolean, contractor = false): Map<string, boolean> {
+  return new Map([
+    ['lf-staff#member', staff],
+    ['lf-contractor#member', contractor],
+  ]);
+}
+
+type AccessBatch = { resource: string; id: string; access: string }[];
+
+/** The team-membership probe is the only batch made entirely of `team` resources; everything else is candidate classification. */
+function isTeamBatch(requests: AccessBatch): boolean {
+  return requests.length > 0 && requests.every((r) => r.resource === 'team');
+}
+
+// Spec 053: the team check runs through `checkAccessStrict` (so an authorizer outage is a throw, not a
+// silent all-false), which it now shares with candidate classification. The two answers are kept
+// separately and dispatched by batch shape so a test can drive one without disturbing the other.
+let teamAnswer: () => Promise<Map<string, boolean>>;
+let classifyAnswer: (requests: AccessBatch) => Promise<Map<string, boolean>>;
+
+function setTeamAnswer(answer: Map<string, boolean>): void {
+  teamAnswer = async () => answer;
+}
+
+/** Strict calls that were the team probe. */
+function teamCalls(): unknown[][] {
+  return checkAccessStrict.mock.calls.filter((call) => isTeamBatch(call[1] as AccessBatch));
+}
+
+/** Strict calls that were candidate classification. */
+function classifyCalls(): unknown[][] {
+  return checkAccessStrict.mock.calls.filter((call) => !isTeamBatch(call[1] as AccessBatch));
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   getJson.mockResolvedValue(null);
   setJson.mockResolvedValue(undefined);
-  // Default: caller holds no roster grants — the defining staff shape, and the path that used to
-  // short-circuit before the staff answer was reached.
+  // Default: caller holds no roster grants — the defining LF-team shape, and the path that used to
+  // short-circuit before the team answer was reached.
   proxyRequest.mockResolvedValue({ resources: [] });
+  setTeamAnswer(teamMembership(false));
+  classifyAnswer = async () => new Map();
+  checkAccessStrict.mockImplementation(async (_req: unknown, requests: AccessBatch) => (isTeamBatch(requests) ? teamAnswer() : classifyAnswer(requests)));
+  checkAccess.mockResolvedValue(new Map());
 });
 
-describe('OrgRoleGrantsService — LF staff determination', () => {
+describe('OrgRoleGrantsService — LF team determination', () => {
   it('reports isStaff for a caller with no roster grants at all', async () => {
-    checkSingleAccess.mockResolvedValue(true);
+    setTeamAnswer(teamMembership(true));
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
-    expect(checkSingleAccess).toHaveBeenCalledWith(req, { resource: 'team', id: 'lf-staff', access: 'member' });
+    expect(teamCalls()).toHaveLength(1);
+    expect(teamCalls()[0]).toEqual([req, TEAM_REQUESTS]);
     expect(response.isStaff).toBe(true);
     expect(response.writers).toEqual([]);
     expect(response.auditors).toEqual([]);
   });
 
-  it('reports isStaff false for a non-staff caller', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+  it('reports isStaff false for a caller in neither LF team', async () => {
+    setTeamAnswer(teamMembership(false));
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
     expect(response.isStaff).toBe(false);
   });
 
-  // The guard against a future refactor turning a degraded check into an optimistic one.
-  it('fails closed when the access check throws', async () => {
-    checkSingleAccess.mockRejectedValue(new Error('access-check unreachable'));
+  // Spec 044 / DR-002: contractors are a population, not a role — the same affordance lights for them.
+  it('reports isStaff for a contractor-only caller', async () => {
+    setTeamAnswer(teamMembership(false, true));
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.isStaff).toBe(true);
+  });
+
+  // FR-010 (spec 044): team membership is read-only. The write gate (`OrgLensAccessService.
+  // assertCanManage`) decides through `hasEditorAccess`, which reads writer grants only — an
+  // LF-team caller with no writer grant on the org is not an editor, whatever `isStaff` says.
+  it('never confers edit capability: an LF-team caller without a writer grant is not an editor', async () => {
+    setTeamAnswer(teamMembership(true, true));
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.isStaff).toBe(true);
+    expect(OrgRoleGrantsService.hasEditorAccess(response, 'any-org')).toBe(false);
+  });
+
+  // The guard against a future refactor turning a degraded check into an optimistic one. Spec 053
+  // FR-011: the failure is *reported* (`staffCheck`, `correlationId`) so the page can say "could not
+  // confirm" instead of the employee copy. The failing result is cached only under the short TTL,
+  // with the id that was logged, so a caller pressing Retry during an authorizer outage does not
+  // re-run the uncached fan-out on every click and recovery is not pinned for the full TTL.
+  it('fails closed when the access check throws, reports it, and caches the failing result briefly with its reference', async () => {
+    teamAnswer = async () => {
+      throw new Error('access-check unreachable');
+    };
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
     expect(response.isStaff).toBe(false);
+    expect(response.staffCheck).toBe('failed');
+    expect(response.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ staffCheck: 'failed', correlationId: response.correlationId }), 5);
+  });
+
+  it('serves a briefly cached failed staff check with the reference it was logged under', async () => {
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: USERNAME,
+      isStaff: false,
+      degraded: false,
+      staffCheck: 'failed',
+      correlationId: 'cached-reference',
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.staffCheck).toBe('failed');
+    expect(response.correlationId).toBe('cached-reference');
+    expect(teamCalls()).toHaveLength(0);
+  });
+
+  it('reports staffCheck ok and no correlation id when the check answers', async () => {
+    setTeamAnswer(teamMembership(false));
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.staffCheck).toBe('ok');
+    expect(response.correlationId).toBeUndefined();
+    expect(response.lookupOutcome).toBe('ok');
   });
 
   it('still resolves isStaff when the roster lookup fails, since the two are independent upstreams', async () => {
-    checkSingleAccess.mockResolvedValue(true);
+    setTeamAnswer(teamMembership(true));
     proxyRequest.mockRejectedValue(new Error('query-service down'));
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -96,7 +214,7 @@ describe('OrgRoleGrantsService — LF staff determination', () => {
   it('does not run the check for a username outside the filter-safe allowlist', async () => {
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, 'not safe!');
 
-    expect(checkSingleAccess).not.toHaveBeenCalled();
+    expect(teamCalls()).toHaveLength(0);
     expect(result.isStaff).toBe(false);
   });
 });
@@ -146,7 +264,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   }
 
   it('requests one row above the hard cap so overflow is detectable — via the `page_size` contract key', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxy(HARD_CAP);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -160,7 +278,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('does NOT emit the overflow warning at exactly the cap', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxy(HARD_CAP);
     const { logger: mockedLogger } = await import('./logger.service');
 
@@ -174,7 +292,7 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
   });
 
   it('emits ONE overflow warning and truncates to the cap before partitioning when the caller has more direct grants than supported', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxy(HARD_CAP + 1);
     const { logger: mockedLogger } = await import('./logger.service');
 
@@ -198,6 +316,116 @@ describe('OrgRoleGrantsService — direct-grant cap contract', () => {
     expect(detailsCalls.length).toBeGreaterThan(0);
     const allDetailsTags = detailsCalls.flatMap((c) => ((c[4] as { tags?: string[] }).tags ?? []) as string[]);
     expect(allDetailsTags.length).toBeLessThanOrEqual(HARD_CAP);
+  });
+
+  // Truncating the roster makes the grant list a lower bound. Without this the write gate reads a
+  // dropped editor grant as a verified denial (403) instead of an unverifiable one (503).
+  it('reports degraded when the direct roster overflowed the cap', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(HARD_CAP + 1);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(true);
+  });
+
+  it('caches a clean result under the full TTL', async () => {
+    setTeamAnswer(teamMembership(false));
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false, staffCheck: 'ok' }), 30);
+  });
+
+  // A degraded roll-up is often structural (cap, index lag); a short TTL would recompute the whole
+  // walk on every page load for exactly the heaviest callers. It keeps the full TTL — the viewer's
+  // Retry bypasses the cache read instead.
+  it('caches a degraded result under the full TTL', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(HARD_CAP + 1);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: true, staffCheck: 'ok' }), 30);
+  });
+
+  // A client-passable flag must not be a fan-out lever: only an entry Retry is offered for (degraded
+  // or failed staff check) can be bypassed; a clean entry is served from cache regardless.
+  it('bypassCache is ignored for a clean cached result', async () => {
+    setTeamAnswer(teamMembership(false));
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'cached',
+      username: USERNAME,
+      isStaff: false,
+      degraded: false,
+      staffCheck: 'ok',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME, true);
+
+    expect(result.loadedAt).toBe('cached');
+    expect(teamCalls()).toHaveLength(0);
+    expect(setJson).not.toHaveBeenCalled();
+  });
+
+  it('bypassCache recomputes past a degraded cached result and still writes the fresh one', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(1);
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'stale',
+      username: USERNAME,
+      isStaff: false,
+      degraded: true,
+      staffCheck: 'ok',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME, true);
+
+    expect(result.degraded).toBe(false);
+    expect(result.resolved.size).toBe(1);
+    expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ degraded: false }), 30);
+  });
+
+  // Every roster row carries the caller as a member, but only `accepted` rows become grants, so a
+  // long enough run of pending invites can push the one accepted grant out of the slice. The empty
+  // answer that follows must not reach the gates as a verified denial.
+  it('reports degraded when truncation leaves no accepted grant at all', async () => {
+    setTeamAnswer(teamMembership(false));
+    const pendingUids = Array.from({ length: HARD_CAP }, (_, i) => `pending-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      if (params && (params as { type?: string }).type === 'b2b_org_settings') {
+        return {
+          resources: [
+            ...pendingUids.map((uid) => ({
+              id: `b2b_org_settings:${uid}`,
+              data: { members: [{ username: USERNAME, role: 'writer' as const, invite_status: 'pending' }] },
+            })),
+            makeSettingsResource('accepted-late'),
+          ],
+        };
+      }
+      return { resources: [] };
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.resolved.size).toBe(0);
+    expect(result.degraded).toBe(true);
+  });
+
+  it('does NOT report degraded at exactly the cap — a full-but-complete roster is authoritative', async () => {
+    setTeamAnswer(teamMembership(false));
+    seedProxy(HARD_CAP);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(false);
   });
 });
 
@@ -243,7 +471,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   }
 
   it('serializes into a single request when the caller sits at or below the chunk boundary', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxyForChunking(CHUNK_SIZE);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -254,7 +482,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('splits into two requests when the caller crosses the chunk boundary by one', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxyForChunking(CHUNK_SIZE + 1);
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -267,7 +495,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('splits into HARD_CAP / CHUNK_SIZE requests at the ceiling, each bounded by CHUNK_SIZE', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     seedProxyForChunking(HARD_CAP);
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
@@ -282,7 +510,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('degrades to a partial result when one chunk fails — the other chunks still land', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
     // First b2b_org chunk resolves; second chunk rejects — mirrors a single-chunk upstream blip.
     let detailsCallCount = 0;
@@ -311,7 +539,7 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
   });
 
   it('fails closed when EVERY details chunk rejects — refuses to cache an empty grant list as success', async () => {
-    checkSingleAccess.mockResolvedValue(false);
+    setTeamAnswer(teamMembership(false));
     const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
     proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
       const type = params ? (params as { type?: string }).type : undefined;
@@ -333,11 +561,299 @@ describe('OrgRoleGrantsService — fetchOrgDetailsByUids URL-length chunking', (
     expect(result.upstreamFailed).toBe(true);
     expect(setJson).not.toHaveBeenCalled();
   });
+
+  // The wire response carries no separate transport-failure field, so an upstream failure that
+  // does not reach `degraded` arrives at the write gate as an authoritative denial: 403 for a
+  // caller who is owed a 503.
+  it('folds upstreamFailed into the wire-level degraded flag', async () => {
+    setTeamAnswer(teamMembership(false));
+    const orgUids = Array.from({ length: CHUNK_SIZE + 1 }, (_, i) => `org-${i.toString().padStart(4, '0')}`);
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = params ? (params as { type?: string }).type : undefined;
+      if (type === 'b2b_org_settings') {
+        return { resources: orgUids.map(makeSettingsResource) };
+      }
+      if (type === 'b2b_org') {
+        throw new Error('every chunk down');
+      }
+      return { resources: [] };
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.degraded).toBe(true);
+  });
+});
+
+describe('OrgRoleGrantsService — connected-component walk, classification & degraded contract', () => {
+  // The walk caps are stubbed at 4 (per root) / 6 (global) at the top of this file so the
+  // cap-boundary cases below are reachable with a handful of docs.
+  const PER_ROOT_CAP = 4;
+
+  interface Doc {
+    name: string;
+    is_parent?: boolean;
+    parent_uid?: string;
+  }
+
+  /**
+   * Drives `proxyRequest` from a declarative hierarchy, distinguishing the three query shapes the
+   * service actually issues: the settings roster, the `b2b_org_uid:` detail fetch, and the
+   * `parent_b2b_org_uid:` child fetch. `missingDocs` omits a uid from the detail fetch without
+   * failing the request (an unindexed org); `failChildrenFor` rejects one parent's child page.
+   */
+  function seedHierarchy(options: {
+    grants: { uid: string; role: 'writer' | 'auditor' }[];
+    docs: Record<string, Doc>;
+    children?: Record<string, string[]>;
+    missingDocs?: string[];
+    failChildrenFor?: string;
+  }): void {
+    const { grants, docs, children = {}, missingDocs = [], failChildrenFor } = options;
+
+    proxyRequest.mockImplementation(async (_req: unknown, _service: unknown, _path: unknown, _method: unknown, params?: Record<string, unknown>) => {
+      const type = (params as { type?: string } | undefined)?.type;
+      const tags = ((params as { tags?: string[] } | undefined)?.tags ?? []) as string[];
+
+      if (type === 'b2b_org_settings') {
+        return {
+          resources: grants.map(({ uid, role }) => ({
+            id: `b2b_org_settings:${uid}`,
+            data: { members: [{ username: USERNAME, role, invite_status: 'accepted' }] },
+          })),
+        };
+      }
+      if (type !== 'b2b_org') {
+        return { resources: [] };
+      }
+
+      const parentTag = tags.find((tag) => tag.startsWith('parent_b2b_org_uid:'));
+      if (parentTag) {
+        const parentUid = parentTag.slice('parent_b2b_org_uid:'.length);
+        if (parentUid === failChildrenFor) {
+          throw new Error(`children fetch failed for ${parentUid}`);
+        }
+        return { resources: (children[parentUid] ?? []).map((uid) => ({ id: `b2b_org:${uid}`, data: { uid, ...docs[uid] } })) };
+      }
+
+      const requested = tags.map((tag) => tag.slice('b2b_org_uid:'.length));
+      return {
+        resources: requested.filter((uid) => docs[uid] && !missingDocs.includes(uid)).map((uid) => ({ id: `b2b_org:${uid}`, data: { uid, ...docs[uid] } })),
+      };
+    });
+  }
+
+  /** The authorizer grants `writer` on everything it is asked about — i.e. a deployed FGA model in which `writer` cascades across the hierarchy. */
+  function classifyEveryCandidateAsWriter(): void {
+    classifyAnswer = async (requests) => new Map(requests.map((r) => [`${r.id}#${r.access}`, r.access === 'writer']));
+  }
+
+  /** A root, its `is_parent` flag, and `childCount` leaf children — the shape the cap boundary is expressed in. */
+  function seedParentWithChildren(childCount: number): void {
+    const childUids = Array.from({ length: childCount }, (_, i) => `child-${i}`);
+    const docs: Record<string, Doc> = { root: { name: 'Root Co', is_parent: true } };
+    for (const uid of childUids) {
+      docs[uid] = { name: `Child ${uid}`, parent_uid: 'root' };
+    }
+    seedHierarchy({ grants: [{ uid: 'root', role: 'writer' }], docs, children: { root: childUids } });
+  }
+
+  beforeEach(() => {
+    setTeamAnswer(teamMembership(false));
+  });
+
+  it('routes provenance through a parent that another root already discovered', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      // Roster order sets the walk order: `zeta` runs first, `alpha` second.
+      grants: [
+        { uid: 'zeta', role: 'writer' },
+        { uid: 'alpha', role: 'writer' },
+      ],
+      docs: {
+        zeta: { name: 'Zeta Holdings', parent_uid: 'parentco' },
+        alpha: { name: 'Alpha Holdings', parent_uid: 'parentco' },
+        parentco: { name: 'Parent Co', is_parent: true },
+        cousin: { name: 'Cousin Co', parent_uid: 'parentco' },
+      },
+      children: { parentco: ['zeta', 'alpha', 'cousin'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // `parentco` is already in the shared doc map by the time alpha's walk asks for it. Enqueueing
+    // only newly-FETCHED parents left alpha's walk dead on arrival, so the whole component kept
+    // zeta's provenance and the nearest-root tie-break (alpha sorts first) could never win.
+    expect(response.cascadingWriters.find((entry) => entry.uid === 'cousin')?.parentName).toBe('Alpha Holdings');
+    expect(response.degraded).toBe(false);
+  });
+
+  it('lets an inherited writer outrank a direct auditor on the same organization', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'sub', role: 'auditor' },
+      ],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // Excluding every directly-granted uid from the candidate set made this precedence
+    // unreachable: `sub` was never classified, so it stayed a direct auditor and the caller kept
+    // read-only access to a subsidiary their parent-org grant lets them edit.
+    expect(response.cascadingWriters.map((entry) => entry.uid)).toContain('sub');
+    expect(response.auditors).not.toContain('sub');
+    expect(OrgRoleGrantsService.hasEditorAccess(response, 'sub')).toBe(true);
+  });
+
+  it('keeps verified direct grants when authoritative classification fails, and reports degraded', async () => {
+    classifyAnswer = async () => {
+      throw new Error('authorizer unreachable');
+    };
+    seedHierarchy({
+      grants: [{ uid: 'top', role: 'writer' }],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    expect(response.writers).toEqual(['top']);
+    expect(response.cascadingWriters).toEqual([]);
+    expect(response.degraded).toBe(true);
+  });
+
+  it('keeps verified direct grants when the walk itself fails, rather than emptying the whole answer', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'sub', role: 'auditor' },
+      ],
+      docs: { top: { name: 'Top Co', is_parent: true }, sub: { name: 'Sub Co', parent_uid: 'top' } },
+      children: { top: ['sub'] },
+      failChildrenFor: 'top',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // One failed child page used to reject out of the walk and return an EMPTY grant map with
+    // `upstreamFailed`, revoking grants the roster had already confirmed. Roll-up expansion is
+    // additive, so its failure degrades the answer instead of discarding it.
+    expect(result.upstreamFailed).toBe(false);
+    expect(result.resolved.get('top')?.roleSource).toBe('direct-writer');
+    expect(result.resolved.get('sub')?.roleSource).toBe('direct-auditor');
+    expect(result.degraded).toBe(true);
+  });
+
+  // One flaky page under one grant must not hide inherited grants the caller holds through an
+  // entirely separate hierarchy: roll-up is additive, and each surviving candidate is still
+  // decided by the authorizer rather than by the walk.
+  it("keeps inherited grants discovered from other roots when one root's walk fails", async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'broken-root', role: 'writer' },
+        { uid: 'healthy-root', role: 'writer' },
+      ],
+      docs: {
+        'broken-root': { name: 'Broken Co', is_parent: true },
+        'healthy-root': { name: 'Healthy Co', is_parent: true },
+        'healthy-child': { name: 'Healthy Child', parent_uid: 'healthy-root' },
+      },
+      children: { 'broken-root': ['whatever'], 'healthy-root': ['healthy-child'] },
+      failChildrenFor: 'broken-root',
+    });
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // The healthy hierarchy's inherited org survives the other root's failure.
+    expect(result.resolved.get('healthy-child')?.roleSource).toBe('inherited-writer');
+    expect(result.resolved.get('broken-root')?.roleSource).toBe('direct-writer');
+    expect(result.resolved.get('healthy-root')?.roleSource).toBe('direct-writer');
+    // Still a lower bound: the broken root's component was never fully explored.
+    expect(result.degraded).toBe(true);
+  });
+
+  it('reports degraded when a direct grant has no indexed organization document to walk from', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [
+        { uid: 'top', role: 'writer' },
+        { uid: 'orphan', role: 'writer' },
+      ],
+      docs: { top: { name: 'Top Co' }, orphan: { name: 'Orphan Co', parent_uid: 'hidden' } },
+      missingDocs: ['orphan'],
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // Without the doc, `orphan`'s component is never walked — the answer is a lower bound even
+    // though every chunk of the details fetch "succeeded".
+    expect(response.writers).toEqual(expect.arrayContaining(['top', 'orphan']));
+    expect(response.degraded).toBe(true);
+  });
+
+  // The upward lookup degrades a rejected chunk to a partial map rather than throwing, so a missing
+  // parent doc drops that parent and every ancestor above it while the walk carries on. Only the
+  // count mismatch is left to notice it by.
+  it('reports degraded when the upward parent lookup comes back short', async () => {
+    classifyEveryCandidateAsWriter();
+    seedHierarchy({
+      grants: [{ uid: 'child', role: 'writer' }],
+      docs: { child: { name: 'Child Co', parent_uid: 'parent' }, parent: { name: 'Parent Co', is_parent: true } },
+      missingDocs: ['parent'],
+    });
+
+    const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+
+    // The caller's own verified grant survives; the unreachable ancestor makes the rest a lower bound.
+    expect(response.writers).toEqual(['child']);
+    expect(response.degraded).toBe(true);
+  });
+
+  it('does not report truncation when the cap coincides with the last node of a complete component', async () => {
+    seedParentWithChildren(PER_ROOT_CAP);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // Truncation was flagged whenever the cap was hit with a non-empty frontier, even when that
+    // frontier held nothing but fully-explored leaves. `degraded` now drives 503s, so a complete
+    // answer must not raise it.
+    expect(result.degraded).toBe(false);
+  });
+
+  it('reports truncation when the cap actually leaves part of the component unexplored', async () => {
+    seedParentWithChildren(PER_ROOT_CAP + 1);
+
+    const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    expect(result.degraded).toBe(true);
+  });
+
+  it('splits the authorizer fan-out into bounded waves instead of one unbounded dispatch', async () => {
+    classifyEveryCandidateAsWriter();
+    seedParentWithChildren(PER_ROOT_CAP);
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    // `checkAccessStrict` chunks internally but dispatches every chunk at once, so handing it the
+    // whole component in one call opens one upstream connection per chunk — thousands of them for
+    // a large hierarchy. Each call here must stay within one wave (batch size × concurrency = 4).
+    const waveSizes = classifyCalls().map((call) => (call[1] as { id: string }[]).length);
+    expect(waveSizes.length).toBeGreaterThan(1);
+    expect(Math.max(...waveSizes)).toBeLessThanOrEqual(4);
+    // Every candidate is still probed for both relations, across the waves combined.
+    expect(waveSizes.reduce((a, b) => a + b, 0)).toBe(PER_ROOT_CAP * 2);
+  });
 });
 
 describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   it('writes isStaff into the cached entry', async () => {
-    checkSingleAccess.mockResolvedValue(true);
+    setTeamAnswer(teamMembership(true));
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -345,17 +861,26 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
   });
 
   it('serves isStaff from a cache hit without re-checking', async () => {
-    getJson.mockResolvedValue({ resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: true });
+    getJson.mockResolvedValue({
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: USERNAME,
+      isStaff: true,
+      degraded: false,
+      staffCheck: 'ok',
+    });
 
     const result = await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
     expect(result.isStaff).toBe(true);
-    expect(checkSingleAccess).not.toHaveBeenCalled();
+    expect(teamCalls()).toHaveLength(0);
   });
 
   // The guard is private, so exercise it where it is actually injected: the getJson call site.
   it('rejects a pre-change entry that has no isStaff, so it recomputes instead of answering undefined', async () => {
-    checkSingleAccess.mockResolvedValue(true);
+    setTeamAnswer(teamMembership(true));
 
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
@@ -363,6 +888,40 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     const legacyEntry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME };
 
     expect(guard(legacyEntry)).toBe(false);
-    expect(guard({ ...legacyEntry, isStaff: false })).toBe(true);
+    expect(guard({ ...legacyEntry, isStaff: false, degraded: false, staffCheck: 'ok' })).toBe(true);
+  });
+
+  // A `v1`-era entry came from the direct/downward-only resolver, so treating its absent
+  // `degraded` as `false` would present an incomplete grant list as a complete classification.
+  it('rejects an entry with no degraded flag, so a legacy roll-up is never read back as complete', async () => {
+    setTeamAnswer(teamMembership(true));
+
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
+    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false };
+
+    expect(guard(entry)).toBe(false);
+    expect(guard({ ...entry, degraded: true, staffCheck: 'ok' })).toBe(true);
+  });
+
+  // Spec 053: an entry written before `staffCheck` existed would deserialize to `undefined` and hide
+  // the staff-check state for the TTL; the guard rejects it so it recomputes.
+  it('rejects an entry with no staffCheck, so a pre-053 entry is recomputed', async () => {
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
+    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false, degraded: false };
+
+    expect(guard(entry)).toBe(false);
+    expect(guard({ ...entry, staffCheck: 'ok' })).toBe(true);
+    expect(guard({ ...entry, staffCheck: 'bogus' })).toBe(false);
+    // A stored failure is served only with the reference it was logged under; without one the page
+    // would render `Reference: —` for the (short) TTL.
+    expect(guard({ ...entry, staffCheck: 'failed' })).toBe(false);
+    expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref' })).toBe(true);
+    // Fail-closed on read as on write: a check that did not complete can never have granted the
+    // LF-team affordance, so an entry claiming both is corrupt and recomputes.
+    expect(guard({ ...entry, staffCheck: 'failed', correlationId: 'ref', isStaff: true })).toBe(false);
   });
 });

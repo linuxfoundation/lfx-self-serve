@@ -4,23 +4,34 @@
 import {
   FORMATION_ACTIVITY_ACTION_LABELS,
   FORMATION_ITEM_STATUS_LABELS,
+  FORMATION_OWNER_TEAM_LABELS,
   FORMATION_SUB_STAGE_LABELS,
   FORMATION_SUB_STAGE_SEVERITY,
   UPSTREAM_SUB_STAGE_TO_FORMATION_SUB_STAGE,
 } from '../constants/formation.constants';
 import type { TagSeverity } from '../interfaces/components.interface';
+import type { FormationActionHrefTargets } from '../interfaces/formation-checklist.interface';
 import type {
   Formation,
   FormationActivity,
   FormationActivityAction,
   FormationEntityType,
+  FormationItem,
+  FormationItemAudience,
+  FormationItemExternalAudience,
   FormationItemStatus,
+  FormationKnownAvailableAction,
   FormationLifecycle,
   FormationSubStage,
 } from '../interfaces/formation.interface';
+import { formatTag } from './string.utils';
+import { isRelativeInAppPath, isValidUrl } from './url.utils';
 
 /** The exact {@link FormationLifecycle} members — the fail-closed match set for {@link normalizeFormationLifecycle}. */
 const FORMATION_LIFECYCLE_VALUES: ReadonlySet<string> = new Set<FormationLifecycle>(['live', 'completed', 'frozen']);
+
+/** The exact {@link FormationItemAudience} members — the tolerant match set for {@link normalizeFormationItemAudience}. */
+const FORMATION_ITEM_AUDIENCE_VALUES: ReadonlySet<string> = new Set<FormationItemAudience>(['internal', 'external', 'both']);
 
 /**
  * Derives the Formations queue's Type-column taxonomy from the two inputs the formation service
@@ -91,6 +102,41 @@ export function normalizeFormationLifecycle(rawLifecycle: string | null | undefi
 }
 
 /**
+ * Normalizes `UpstreamFormationItem.checklist_type` to the canonical {@link FormationItemAudience}
+ * union (#2689). `null` for anything off-taxonomy — deliberately tolerant like
+ * {@link normalizeFormationSubStage}, NOT fail-closed like {@link normalizeFormationLifecycle}:
+ * audience is display metadata only (the service never filters a response by it and nothing gates
+ * on it), so an unrecognized value just means "no audience chip", never a behavior downgrade.
+ */
+export function normalizeFormationItemAudience(rawAudience: string | null | undefined): FormationItemAudience | null {
+  if (!rawAudience || !FORMATION_ITEM_AUDIENCE_VALUES.has(rawAudience)) {
+    return null;
+  }
+  return rawAudience as FormationItemAudience;
+}
+
+/**
+ * Whether an audience involves people outside the LF (#2774) — `external` or `both`. A type guard
+ * so `FORMATION_ITEM_AUDIENCE_TOOLTIPS[audience]` indexes without a cast; `internal`, `null` and
+ * `undefined` all read false, which is what hides the row's globe icon for them.
+ */
+export function isFormationItemExternal(audience: FormationItemAudience | null | undefined): audience is FormationItemExternalAudience {
+  return audience === 'external' || audience === 'both';
+}
+
+/**
+ * `FormationChecklistRowComponent`'s owner-team chip label resolver (#2689): the curated
+ * {@link FORMATION_OWNER_TEAM_LABELS} first (generic title-casing gets acronyms wrong — `it` must
+ * read "IT", not "It"), then `formatTag` for the off-enum values upstream can send (see
+ * `FormationItem.owner_team`'s TODO(#1957) — e.g. `PMO` passes through unchanged, `legal_review` →
+ * "Legal Review"). `Object.hasOwn`, not a bare index, for the same prototype-collision reason as
+ * {@link normalizeFormationSubStage}.
+ */
+export function formatFormationOwnerTeam(team: string): string {
+  return Object.hasOwn(FORMATION_OWNER_TEAM_LABELS, team) ? FORMATION_OWNER_TEAM_LABELS[team as keyof typeof FORMATION_OWNER_TEAM_LABELS] : formatTag(team);
+}
+
+/**
  * The single fail-closed "may this formation be mutated" check (GH-2328) — both the server's
  * `requireLiveFormation` gate and the client's read-only render call this instead of each writing
  * their own `=== 'live'` comparison, so the two can't drift. Written as an explicit `'live'` check,
@@ -110,7 +156,8 @@ export function isFormationLifecycleLive(lifecycle: FormationLifecycle | null): 
  * queue at all (#2328). An empty `rawSubStage` (nothing upstream sent) has nothing honest to echo,
  * so it falls back to an em dash.
  *
- * `MyFormationsCardComponent` also calls this (GH-1956) — `getMyFormationWork`'s formation-aggregate
+ * `decorateMyFormation` (`formation-me.utils.ts`, the My Formations page's row builder — GH-1956,
+ * #2753) also calls this — `getMyFormationWork`'s formation-aggregate
  * query reads the same `formation` projection `FormationsTableComponent` does, normalized through
  * {@link normalizeFormationSubStage} in `formation.service.ts` before either consumer sees a row, so
  * the same unmapped-stage handling applies to both surfaces rather than each guessing independently.
@@ -185,4 +232,45 @@ export function getFormationActivityDisplay(entry: FormationActivity): { summary
       // skip_reason_changed, item_updated — the changed value isn't in the feed at all.
       return { summary, detail: null };
   }
+}
+
+/**
+ * Whether `item.available_actions` currently includes `action` (GH-2576) — the affordance-gating
+ * check every UI control derives its enabled/disabled state from, replacing the deleted
+ * `FormationItem.can_complete` boolean. Advisory only: `available_actions` describes the item, not
+ * the caller (two viewers get an identical list — see the field's own doc comment), so this is a
+ * hint for what the item's current state permits, not a caller-permission check. The service still
+ * refuses a disallowed write regardless of what this returns `true` for.
+ *
+ * Known Phase 1 gap, confirmed via two-round review against the deployed service's transition graph
+ * (GH-2576): for every one of the five actions this UI consults (`mark_in_progress`, `mark_done`,
+ * `mark_blocked`, `skip`, `back_to_not_started`), the caller-scoped relation upstream actually
+ * requires is `formation_team_member`, which has no frontend signal. Availability is per-status, not
+ * universal — upstream does not publish all five together for every status (a `done` item, for
+ * example, offers only `back_to_not_started` and `mark_in_progress` among them). The accurate
+ * invariant is narrower: each gated control's corresponding action is published in the statuses
+ * where that control currently renders, which is why this check still resolves `true` in every
+ * reachable UI state. There is today no live scenario in which this function's result differs from a
+ * hard-coded `true` for those five actions — the disabled path only activates once a future
+ * caller-scoped signal (or an upstream item-state distinction this UI doesn't yet know about) makes
+ * it possible to differ. Kept wired rather than removed for exactly that forward-compatibility; see
+ * the call sites' `[disabled]` bindings, which deliberately carry no "why disabled" copy since that
+ * state cannot occur today. Closing the underlying gap needs a `formation_team_member` signal on the
+ * frontend, tracked as Phase 2 follow-up work.
+ */
+export function formationItemHasAction(item: Pick<FormationItem, 'available_actions'>, action: FormationKnownAvailableAction): boolean {
+  return item.available_actions.some((entry) => entry.action === action);
+}
+
+/**
+ * Splits an API-sourced `action_href` into the one binding it may safely take (see
+ * `FormationItem.action_href`'s doc comment): a same-origin relative path goes to `internal` (bind
+ * `[routerLink]`); an absolute value must pass `isValidUrl` to reach `external` (bind `[href]` +
+ * `target="_blank"`). Both `null` means no safe destination. Shared by the checklist row's action
+ * button and the item drawer's Links section (#2801) so the two can never validate differently.
+ */
+export function resolveFormationActionHref(href: string | null | undefined): FormationActionHrefTargets {
+  if (!href) return { external: null, internal: null };
+  if (isRelativeInAppPath(href)) return { external: null, internal: href };
+  return { external: isValidUrl(href) ? href : null, internal: null };
 }

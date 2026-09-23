@@ -5,9 +5,17 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import {
+  ORG_CATALOGUE_SEARCH_MIN_CHARS,
+  ORG_LENS_LIST_INCOMPLETE_NOTICE,
+  ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
+  ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
+} from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
@@ -26,7 +34,9 @@ import { distinctUntilChanged, filter } from 'rxjs';
 export class OrgSelectorComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly orgNavigationService = inject(OrgNavigationService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -43,7 +53,7 @@ export class OrgSelectorComponent {
   private keyDownListener: ((event: KeyboardEvent) => void) | null = null;
 
   /**
-   * True from `onPopoverShow` (non-staff branch) until `focusInitialOption` successfully places
+   * True from `onPopoverShow` (non-LF-team branch) until `focusInitialOption` successfully places
    * focus on a row. When the panel opens before the first item batch arrives (`/api/nav/org-items`
    * is async), the initial microtask in `focusInitialOption` sees an empty listbox and no-ops;
    * a `toObservable(items)` subscription set up in the constructor re-runs the focus placement
@@ -70,6 +80,28 @@ export class OrgSelectorComponent {
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
   protected readonly hasMore: Signal<boolean> = this.orgNavigationService.hasMore;
 
+  /**
+   * Spec 053 FR-010 — the caller's list is a lower bound (roll-up expansion was incomplete) but the
+   * selected organization did load, so the page renders and the switcher carries the notice instead.
+   */
+  protected readonly listIncomplete: Signal<boolean> = this.emptyState.listIncomplete;
+  protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
+  protected readonly listRetrying: Signal<boolean> = this.emptyState.retrying;
+  protected readonly listRetryLabel: Signal<string> = computed(() =>
+    this.listRetrying() ? ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL : ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL
+  );
+
+  /**
+   * LFXV2-3029 — a single per-caller decision evaluated across the caller's whole resolved set,
+   * not per organization: true when ANY organization the caller can see carries a parent or child
+   * association (an inherited grant can only exist because of one). A single list must never mix
+   * suffixed and unsuffixed "(Original)"/"(Inherited)" labels — a caller with no hierarchy
+   * anywhere in their grants sees plain "Org Admin Editor"/"Org Admin Viewer" labels.
+   */
+  protected readonly hasHierarchyAssociation: Signal<boolean> = computed(
+    () => this.orgRoleGrantsService.inheritedWriterSet().size > 0 || this.orgRoleGrantsService.inheritedAuditorSet().size > 0
+  );
+
   protected readonly selectedRolePersona: Signal<OrgRolePersona | null> = computed(() => {
     const uid = this.selectedAccountUid();
     if (!uid) return null;
@@ -81,7 +113,7 @@ export class OrgSelectorComponent {
       this.orgRoleGrantsService.inheritedAuditorSet()
     );
   });
-  protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona()));
+  protected readonly selectedRoleLabel: Signal<string> = computed(() => this.personaToLabel(this.selectedRolePersona(), this.hasHierarchyAssociation()));
   protected readonly selectedRoleIcon: Signal<string> = computed(() => this.personaToIcon(this.selectedRolePersona()));
   protected readonly selectedRoleTooltip: Signal<string> = computed(() => {
     const uid = this.selectedAccountUid();
@@ -98,6 +130,7 @@ export class OrgSelectorComponent {
     const inheritedWriterSet = this.orgRoleGrantsService.inheritedWriterSet();
     const inheritedAuditorSet = this.orgRoleGrantsService.inheritedAuditorSet();
     const parentNameByUid = this.orgRoleGrantsService.parentNameByUid();
+    const showSuffix = this.hasHierarchyAssociation();
     return this.items().map((item) => {
       const persona = this.resolvePersona(item.uid, writerSet, auditorSet, inheritedWriterSet, inheritedAuditorSet);
       // Prefer the BFF-attached `parentName` on the item (D-006 in-memory join) — fall back to the
@@ -106,18 +139,18 @@ export class OrgSelectorComponent {
       return {
         item,
         isSelected: !!selectedUid && selectedUid === item.uid,
-        roleLabel: this.personaToLabel(persona),
+        roleLabel: this.personaToLabel(persona, showSuffix),
         roleIcon: this.personaToIcon(persona),
         roleTooltip: this.personaToTooltip(persona, parentName),
       };
     });
   });
 
-  /** Gates the catalogue-search affordance; only staff can reach beyond their own rows. */
+  /** Gates the catalogue-search affordance; only LF-team callers can reach beyond their own rows. */
   protected readonly isStaff: Signal<boolean> = this.orgRoleGrantsService.isStaff;
 
   /**
-   * A staff caller's list is legitimately empty until the catalogue is queried, and the catalogue is
+   * An LF-team caller's list is legitimately empty until the catalogue is queried, and the catalogue is
    * only queried at `ORG_CATALOGUE_SEARCH_MIN_CHARS`. "No organizations found" there reads as a
    * permissions failure rather than an invitation, so prompt instead; the not-found copy is reserved
    * for a search that genuinely matched nothing.
@@ -132,15 +165,15 @@ export class OrgSelectorComponent {
    *
    * Claimed only while a catalogue search is actually running: `upstreamFailed` covers any upstream
    * failure, including a role-grants outage and a request that never carried a username, so keying the
-   * copy off the flag alone would blame search for failures search had no part in — telling a non-staff
-   * caller that search is unavailable when they have no search input at all, and telling a staff caller
+   * copy off the flag alone would blame search for failures search had no part in — telling a non-LF-team
+   * caller that search is unavailable when they have no search input at all, and telling an LF-team caller
    * the same instead of prompting them to search, which still works.
    */
   protected readonly searchFailed: Signal<boolean> = computed(() => this.orgNavigationService.upstreamFailed() && this.isStaff() && !this.showSearchPrompt());
 
   /**
    * True once the caller has actually run a catalogue search (FR-007/US2.5: sectioning is specified as
-   * a consequence of searching). `isAssigned === false` alone is not sufficient: a staff caller's
+   * a consequence of searching). `isAssigned === false` alone is not sufficient: an LF-team caller's
    * cookie-restored selection is resolved from the catalogue and pinned to the list on load, with no
    * search having run, and would otherwise carry the same flag and falsely trigger sectioning on an
    * unsearched list.
@@ -151,8 +184,8 @@ export class OrgSelectorComponent {
 
   /**
    * Rows in BFF order (assigned first, then discovered), with a section heading attached to the first
-   * row of each group. Sectioning turns on only during an active search, so a non-staff caller, a
-   * staff caller who hasn't searched, and a staff caller whose restored pin alone is discovered all
+   * row of each group. Sectioning turns on only during an active search, so a non-LF-team caller, an
+   * LF-team caller who hasn't searched, and an LF-team caller whose restored pin alone is discovered all
    * keep today's single flat list. Attaching the heading to a row rather than rendering it from a
    * group count is what guarantees a heading can never appear above an empty group.
    */
@@ -217,28 +250,44 @@ export class OrgSelectorComponent {
   }
 
   protected selectItem(item: OrgItem): void {
+    // Spec 050 FR-014 / US2 scenario 4: picking the organization already selected changes nothing —
+    // no account emission (which page consumers refetch on), no canonical fetch, no navigation. The
+    // one exception is the not-found dead end, where the selection is the cookie's or a default that
+    // never made it into the address: the pick is still the viewer's way out, to that organization's
+    // overview. The `isOnNotFound()` guard is load-bearing, not belt-and-braces — on a legacy
+    // `/org/{page}` address a `'switch'` for the same organization would insert the segment, which
+    // FR-014 forbids for a same-organization pick.
+    if (item.uid === this.selectedAccountUid()) {
+      if (this.orgLensNavigation.isOnNotFound()) {
+        this.orgLensNavigation.navigateToSelectedOrg('switch');
+      }
+      this.popoverRef()?.hide();
+      return;
+    }
     const account: Account = {
       // Spec 002: selection is keyed by `uid`, which now carries the org account id (SFID) — persisted to
       // the cookie + sent to all /api/orgs/:orgUid/lens/* routes. `accountId` carries the same value for
       // display/analytics; the canonical fetch + Snowflake enrichment populate display fields.
       accountId: item.accountId ?? '',
       accountName: item.name,
-      // Slug and tier are org-specific — never carry over the previously selected org's values.
-      // Snowflake enrichment (refreshFromSnowflake) and canonical-record reconciliation populate
-      // them when authoritative data arrives; empty defaults match PLACEHOLDER_ACCOUNT semantics.
-      accountSlug: '',
+      // Tier is org-specific — never carry over the previously selected org's value. Snowflake
+      // enrichment (refreshFromSnowflake) populates it when authoritative data arrives; the empty
+      // default matches PLACEHOLDER_ACCOUNT semantics. `slug` below is the indexed row's, never Snowflake's.
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      // Spec 050: URL identity for `/org/{segment}/…` — from the indexed doc, never derived here.
+      slug: item.slug ?? null,
     };
     this.accountContextService.setAccount(account);
     // Spec 020 US4 — fire-and-forget canonical record reconciliation. setAccount has already
     // applied the optimistic update; the canonical fetch patches the snapshot in-place when it
-    // arrives. Failures are logged BFF-side and produce no UI toast (FR-020).
-    this.accountContextService.refreshCanonicalRecord(account).catch(() => {
-      // Errors are already logged inside refreshCanonicalRecord — swallow here so the
-      // floating promise doesn't reach the browser console.
-    });
+    // arrives. It settles either way: failures are logged (no UI toast, FR-020) and leave the
+    // indexed snapshot.
+    void this.accountContextService.refreshCanonicalRecord(account);
+    // Spec 050 US2: the address names the organization on screen — stay on this Org Lens page,
+    // re-addressed to the new selection (no-op outside Org Lens).
+    this.orgLensNavigation.navigateToSelectedOrg('switch');
     // Resolved from the viewChild rather than a template argument so the keyboard handler can
     // drive selection directly (it has no access to template reference variables).
     this.popoverRef()?.hide();
@@ -256,8 +305,8 @@ export class OrgSelectorComponent {
       this.bootstrapOrgList();
     }
     this.attachKeyboardHandler();
-    // Non-staff callers land on the currently-selected option so Arrow keys can immediately navigate;
-    // staff callers keep the pAutoFocus search input as their entry point per current UX.
+    // Non-LF-team callers land on the currently-selected option so Arrow keys can immediately navigate;
+    // LF-team callers keep the pAutoFocus search input as their entry point per current UX.
     if (!this.isStaff()) {
       this.pendingInitialFocus = true;
       this.focusInitialOption();
@@ -273,6 +322,16 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /** FR-010 Retry — the one shared Retry: role-grants lookup, then the list from its first page. */
+  protected retryList(): void {
+    // The control stays focusable while busy (aria-disabled, not disabled) so keyboard and screen-reader
+    // users keep their place; this guard is what stops a second click from starting another retry.
+    if (this.listRetrying()) {
+      return;
+    }
+    this.emptyState.retry();
   }
 
   /**
@@ -305,10 +364,10 @@ export class OrgSelectorComponent {
     // document-scoped so it can catch events fired on the `appendTo="body"` popover DOM (which
     // lives outside this component's subtree), but that scope also picks up keys pressed on
     // unrelated controls while the panel happens to be open — stealing Arrow/Home/End, and
-    // breaking caret/text nav in inputs like the staff search field.
+    // breaking caret/text nav in inputs like the LF-team search field.
     if (!this.isEventInsidePanel(event)) return;
 
-    // Escape always closes the panel — including from the staff search input.
+    // Escape always closes the panel — including from the LF-team search input.
     if (event.key === 'Escape') {
       event.preventDefault();
       this.closeAndRestoreFocus();
@@ -330,7 +389,7 @@ export class OrgSelectorComponent {
     }
 
     // All other option-nav keys only apply when an option is actually focused. Firing them on
-    // the staff search input would break its caret navigation (Home/End) and its native Enter
+    // the LF-team search input would break its caret navigation (Home/End) and its native Enter
     // handling, and would yank focus off the input mid-typing.
     if (!targetIsOption) return;
 
@@ -468,7 +527,7 @@ export class OrgSelectorComponent {
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 
-  /** Spec 022 — direct sources take precedence over inherited so the Edit Profile gate (FR-011a) stays direct-only. Defense-in-depth alongside the BFF's disjointness merge. */
+  /** LFXV2-3029 — authority-first precedence, shared with the default-organization ranking (`resolveOrgRolePersona`). */
   private resolvePersona(
     uid: string,
     writerSet: Set<string>,
@@ -476,46 +535,53 @@ export class OrgSelectorComponent {
     inheritedWriterSet: Set<string>,
     inheritedAuditorSet: Set<string>
   ): OrgRolePersona | null {
-    if (writerSet.has(uid)) return 'direct-writer';
-    if (auditorSet.has(uid)) return 'direct-auditor';
-    if (inheritedWriterSet.has(uid)) return 'inherited-writer';
-    if (inheritedAuditorSet.has(uid)) return 'inherited-auditor';
-    return null;
+    return resolveOrgRolePersona(uid, { writerSet, inheritedWriterSet, auditorSet, inheritedAuditorSet });
   }
 
-  /** Product-naming label per persona: direct → "Org Admin Editor / Viewer". Inherited rows are always view-only (FGA: writer never cascades), so both inherited variants use the "Viewer (inherited)" label to avoid implying edit capability (Clarifications Q2). */
-  private personaToLabel(persona: OrgRolePersona | null): string {
+  /**
+   * LFXV2-3029 — product naming, agreed with the team (Sep 2026): "Org Admin Editor"/"Org Admin
+   * Viewer" for a direct grant, "Org Admin Editor (Inherited)"/"Org Admin Viewer (Inherited)" for a
+   * roll-up-derived grant. `inherited-writer` is no longer a dead branch: the FGA model change
+   * makes `writer` cascade, so a roll-up grant now confers real edit authority, not view-only.
+   *
+   * `showOriginalSuffix` conditions the "(Original)" suffix on a direct row: a single per-caller
+   * decision across the caller's whole resolved set, never per organization — see
+   * `hasHierarchyAssociation`. `(Inherited)` always renders on an inherited row regardless, since an
+   * inherited row cannot exist without a hierarchy association.
+   */
+  private personaToLabel(persona: OrgRolePersona | null, showOriginalSuffix: boolean): string {
     switch (persona) {
       case 'direct-writer':
-        return 'Org Admin Editor';
+        return showOriginalSuffix ? 'Org Admin Editor (Original)' : 'Org Admin Editor';
       case 'direct-auditor':
-        return 'Org Admin Viewer';
-      // inherited-writer can't occur (FGA prevents writer cascade); kept for type exhaustiveness and
-      // labeled as Viewer so the badge never implies edit access if the variant ever surfaces.
+        return showOriginalSuffix ? 'Org Admin Viewer (Original)' : 'Org Admin Viewer';
       case 'inherited-writer':
+        return 'Org Admin Editor (Inherited)';
       case 'inherited-auditor':
-        return 'Org Admin Viewer (inherited)';
+        return 'Org Admin Viewer (Inherited)';
       default:
         return '';
     }
   }
 
-  /** Direct writer → pen (edit); everyone else (direct/inherited viewer + the impossible inherited-writer) → eye. Inherited rows are view-only, so they never get the edit icon. */
+  /** Editor (direct or inherited) → pen; viewer (direct or inherited) → eye. `inherited-writer` now gets the edit icon since a roll-up editor can actually edit. */
   private personaToIcon(persona: OrgRolePersona | null): string {
-    if (persona === 'direct-writer') return 'fa-light fa-pen-to-square';
-    if (persona === 'direct-auditor' || persona === 'inherited-auditor' || persona === 'inherited-writer') return 'fa-light fa-eye';
+    if (persona === 'direct-writer' || persona === 'inherited-writer') return 'fa-light fa-pen-to-square';
+    if (persona === 'direct-auditor' || persona === 'inherited-auditor') return 'fa-light fa-eye';
     return '';
   }
 
-  /** Inherited-only tooltip text. Empty string for direct rows so PrimeNG hides the tooltip. Per FGA model, only auditor cascades — writer never cascades to children. */
-  private personaToTooltip(persona: OrgRolePersona | null, parentName: string): string {
-    if (!parentName) return '';
-    if (persona === 'inherited-auditor') {
-      return `View-only access inherited from ${parentName}`;
-    }
-    // inherited-writer is kept as a dead branch for type exhaustiveness; FGA model prevents it.
-    if (persona === 'inherited-writer') {
-      return `View-only access inherited from ${parentName}`;
+  /**
+   * Inherited-only tooltip text; empty string for a direct row so PrimeNG hides the tooltip.
+   * Names the source organization without asserting a role or assuming it is a parent (the
+   * source can be a sibling or child too) — a role-specific "View-only access inherited from…"
+   * wording would misdescribe an inherited-writer row, which is now a real editor grant, not
+   * view-only.
+   */
+  private personaToTooltip(persona: OrgRolePersona | null, sourceOrgName: string): string {
+    if (!sourceOrgName) return '';
+    if (persona === 'inherited-writer' || persona === 'inherited-auditor') {
+      return `Inherited from your access to ${sourceOrgName}`;
     }
     return '';
   }

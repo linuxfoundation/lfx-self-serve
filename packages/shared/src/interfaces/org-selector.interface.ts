@@ -22,8 +22,14 @@ export interface OrgItem {
   parentName?: string | null;
   /** LF membership status from the indexed doc; supplementary detail behind the membership chip. `omitempty` upstream, so absent for many orgs and the UI must degrade to the bare chip. */
   status?: string | null;
-  /** False only for a row surfaced by staff catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
+  /** False only for a row surfaced by LF-team catalogue search that the caller holds no role of their own on. Absent means true, preserving today's meaning for pre-existing callers. */
   isAssigned?: boolean;
+  /**
+   * Lowercase URL-identity slug from the indexed `b2b_org` doc (`data.slug`, derived by member-service
+   * from the org name, spec 050 DR-007). Null/absent when the org has none — callers fall back to
+   * `uid` for the `/org/{segment}/…` address (spec 050, DR-001). Never generated client-side.
+   */
+  slug?: string | null;
 }
 
 /** Row projection with role-decoration + selection metadata resolved once per render. */
@@ -93,7 +99,7 @@ export interface CascadingRoleGrant {
 
 /** Wire shape returned by `GET /api/orgs/me/role-grants` — writers/auditors are disjoint (writer-wins). */
 export interface RoleGrantsResponse {
-  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets and drives the Profile `canEdit` direct-only gate (FR-011a). */
+  /** Direct writer-role `b2b_org.uid` values (`writers[].username === caller && invite_status === 'accepted'`); disjoint from auditors/cascading sets. Since LFXV2-3029 this is the direct-only *persona* answer for the selector badge, NOT the edit gate — edit capability is `writers` ∪ `cascadingWriters`, read through `editorSet` on the client and `OrgRoleGrantsService.hasEditorAccess` on the server. */
   writers: string[];
   /** `b2b_org.uid` values where caller has direct `auditor` AND is NOT a direct writer on the same org. */
   auditors: string[];
@@ -105,8 +111,52 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
-  /** Caller belongs to `team:lf-staff` and so holds `auditor` on every `b2b_org`. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a staff caller who also administers orgs has both. `false` whenever the determination could not be completed. */
+  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`, `lf-contractor`) — the global-auditor population that holds `auditor` on every `b2b_org` (spec 044). Field name retained for wire compatibility; it is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org. Distinct from `PersonaResult.isLFStaff`, which stays staff-only. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a team caller who also administers orgs has both. `false` whenever the determination could not be completed. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
+  degraded: boolean;
+  /**
+   * Spec 053 (FR-020) — why the arrays above may be incomplete. `failed`: the roster never loaded and
+   * the answer is unknown; `partial`: direct grants loaded but the inherited roll-up is a lower bound;
+   * `ok`: complete. Optional for rolling deploys: absent ⇒ derive from `degraded` (`true` → `partial`).
+   */
+  lookupOutcome?: OrgLensLookupOutcome;
+  /**
+   * Spec 053 (FR-011) — whether the LF-team membership check answered. `failed` means it threw and
+   * `isStaff` is a fail-closed `false`, so the client MUST render the staff-check state and never the
+   * employee no-access copy. Absent ⇒ `ok`.
+   */
+  staffCheck?: OrgLensStaffCheck;
+  /**
+   * Spec 053 (FR-011) — random per-computation UUID, present only when `staffCheck === 'failed'`; the
+   * same id is logged with that computation's lookup warnings and sent as the `X-Correlation-Id`
+   * response header (`ORG_ROLE_GRANTS_CORRELATION_HEADER`), so a caller quoting it can be found. Never
+   * `req.id` (a per-process counter). It is the id logged by the computation that produced the result
+   * — within the short failed-check cache window (`ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS`)
+   * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
+   */
+  correlationId?: string;
+}
+
+/** Spec 053 — completeness of the caller's organization-list lookup. */
+export type OrgLensLookupOutcome = 'ok' | 'partial' | 'failed';
+
+/** Spec 053 — whether the LF-team membership check answered. */
+export type OrgLensStaffCheck = 'ok' | 'failed';
+
+/**
+ * Response of `GET /api/orgs/resolve/:segment` (spec 050). Resolves a `/org/{segment}/…` address
+ * segment — a lowercase slug or an 18-char SFID — to the organization it names, **only** when the
+ * caller can read it: resolution rides query-service with the caller's context, so an organization
+ * the caller does not hold is a 404 indistinguishable from an unknown segment (DR-002).
+ */
+export interface OrgResolveResponse {
+  /** Org account id (18-char SFID). */
+  uid: string;
+  /** Lowercase URL-identity slug; null when the org has none (address uses `uid`). */
+  slug: string | null;
+  /** Display name — only ever returned for an org the caller has just proven `auditor` on. */
+  name: string;
 }
 
 /** Canonical org record returned by `GET /api/orgs/:accountId` (member-service snake_case → camelCase). Spec 002: keyed by the org account id (18-char SFID). */
@@ -129,6 +179,8 @@ export interface OrgCanonicalRecord {
   updatedAt?: string | null;
   /** Parent org account id (18-char SFID); null for top-level orgs. */
   parentUid?: string | null;
+  /** Lowercase URL-identity slug from member-service; null when the org has none (spec 050). */
+  slug?: string | null;
   isMember: boolean;
 }
 
@@ -233,6 +285,16 @@ export interface B2bOrgIndexedDoc {
   is_parent?: boolean;
   /** Member-service `LF_Membership_Status__c` (`json:"status,omitempty"`), published whole by the indexer. Frequently absent. */
   status?: string | null;
+  /** LFXV2-3029 — already published by the indexer; the upward-traversal edge for the connected-component walk. Absent for top-level orgs. */
+  parent_uid?: string | null;
+  /** Spec 050 — lowercase URL-identity slug derived by member-service from the org name (spec 050 DR-007); absent when the name yields none. */
+  slug?: string | null;
+  /** LFXV2-3029 — denormalized parent name/logo, already published; avoids a second lookup for the source-organization name in the provenance tooltip. Absent for top-level orgs. */
+  parent_detail?: {
+    uid?: string | null;
+    name?: string | null;
+    logo_url?: string | null;
+  } | null;
 }
 
 /** One accepted-or-pending member entry in the flattened `members[]` indexer view (member-service `b2bOrgMemberView`). */
@@ -278,6 +340,8 @@ export interface MemberServiceB2bOrgResponse {
   website?: string | null;
   primary_domain?: string | null;
   logo_url?: string | null;
+  /** Spec 050 — lowercase slug derived from the org name by member-service (DR-007); `omitempty` upstream. */
+  slug?: string | null;
   industry?: string | null;
   sector?: string | null;
   number_of_employees?: number | null;
@@ -291,6 +355,14 @@ export interface MemberServiceB2bOrgResponse {
 
 /** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
 export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
+
+/** The four grant sets a viewer holds on organizations, direct and roll-up-derived, as `OrgRoleGrantsService` publishes them. Input to `resolveOrgRolePersona` and the default-organization ranking. */
+export interface OrgRoleGrantSets {
+  writerSet: ReadonlySet<string>;
+  inheritedWriterSet: ReadonlySet<string>;
+  auditorSet: ReadonlySet<string>;
+  inheritedAuditorSet: ReadonlySet<string>;
+}
 
 /** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
 export interface ResolvedOrgRole {
@@ -313,8 +385,14 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-  /** Caller holds the LF staff grant. Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  /** Caller is a member of an LF team (`LF_TEAM_IDS`; global auditor population). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
+  /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
+  degraded: boolean;
+  /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
+  staffCheck: OrgLensStaffCheck;
+  /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
+  correlationId?: string;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -324,6 +402,12 @@ export interface AccessAwareOrgsCacheEntry {
   upstreamFailed: boolean;
   loadedAt: string;
   username: string;
-  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for a staff caller. */
+  /** Required, so an entry written before this field existed fails the shape guard and is recomputed rather than answering `undefined` for an LF-team caller. */
   isStaff: boolean;
+  /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
+  degraded: boolean;
+  /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
+  staffCheck: OrgLensStaffCheck;
+  /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true`) fails the shape guard. */
+  correlationId?: string;
 }

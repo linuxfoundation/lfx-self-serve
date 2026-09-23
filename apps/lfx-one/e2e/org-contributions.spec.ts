@@ -12,7 +12,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  * - S3's company-email assertions pin `org-lens-private-release` ON via the same
  *   `stubFeatureFlags` localStorage override used by the ROI specs (GH-1655) — no LaunchDarkly
  *   targeting needed for this one
@@ -145,7 +144,6 @@ async function stubOrgContext(page: Page): Promise<void> {
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: 'Red Hat LLC',
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -163,7 +161,6 @@ async function stubOrgContext(page: Page): Promise<void> {
         {
           accountId: MOCK_ACCOUNT_ID,
           accountName: 'Red Hat LLC',
-          accountSlug: 'red-hat-llc',
           logoUrl: null,
           cdevOrgId: null,
           cdevOrgName: null,
@@ -221,10 +218,6 @@ async function gotoContributions(page: Page, response: OrgContributionsResponse 
   await page.goto(CONTRIBUTIONS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/contributions')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/contributions redirected away');
-  }
 
   await expect(page.getByTestId('org-contributions-page')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
 }

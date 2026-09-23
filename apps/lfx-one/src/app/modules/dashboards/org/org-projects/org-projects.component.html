@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<main class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-projects-page">
+<div class="container mx-auto flex flex-col gap-6 px-4 sm:px-6 lg:px-8" data-testid="org-projects-page">
   <!-- Page Header -->
   <header class="flex flex-col gap-2" data-testid="org-projects-header">
     <h1 class="font-display font-light text-2xl" data-testid="org-projects-title">
@@ -16,19 +16,13 @@
     </p>
   </header>
 
-  @if (hasNoOrgAccess()) {
-    <section
-      class="flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16 text-center"
-      data-testid="org-projects-no-access-state">
-      <div class="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-500">
-        <i class="fa-light fa-lock text-2xl" aria-hidden="true"></i>
-      </div>
-      <h2 class="text-base font-semibold text-gray-900" data-testid="org-projects-no-access-title">Organization Lens is not available</h2>
-      <p class="max-w-md text-sm text-gray-600" data-testid="org-projects-no-access-description">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
-        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-projects-no-access-contact-support">contact us</button>.
-      </p>
-    </section>
+  @if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-projects-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!orgContextLoaded()) {
     <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="org-projects-loading">
       <div class="flex flex-col gap-3 px-5 py-4 border-b border-gray-100 lg:flex-row lg:items-center">
@@ -267,7 +261,7 @@
                       </div>
                     } @else {
                       <a
-                        [routerLink]="['/org/projects', project.slug]"
+                        [routerLink]="project.projectLink"
                         class="flex items-center gap-2 text-left"
                         [attr.aria-label]="'View ' + project.name + ' project detail'">
                         <lfx-avatar [image]="project.logoUrl" [label]="project.name" shape="square" styleClass="w-7 h-7 text-xs" />
@@ -390,7 +384,7 @@
                     }}</span>
                   } @else {
                     <a
-                      [routerLink]="['/org/projects', project.slug]"
+                      [routerLink]="project.projectLink"
                       [queryParams]="contributorsDrawerQueryParams"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.contributorsAriaLabel"
@@ -406,7 +400,7 @@
                     }}</span>
                   } @else {
                     <a
-                      [routerLink]="['/org/projects', project.slug]"
+                      [routerLink]="project.projectLink"
                       class="rounded text-sm font-medium !text-gray-900 hover:!text-gray-900 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                       [attr.aria-label]="project.participantsAriaLabel"
                       [attr.data-testid]="'org-projects-participants-' + project.slug"
@@ -434,7 +428,7 @@
       </div>
     </lfx-card>
   }
-</main>
+</div>
 
 <!-- Shared popup action menu — items rebuilt per row on open -->
 <lfx-menu #rowActionMenu [model]="rowMenuItems" [popup]="true" appendTo="body" data-testid="org-projects-row-action-menu" />

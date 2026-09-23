@@ -130,12 +130,6 @@ export const MOCK_MENTORSHIP_LF_PROJECTS: readonly MentorshipLfProject[] = [
 
 export const EMPTY_MENTORSHIP_LF_PROJECTS_RESPONSE: MentorshipLfProjectsResponse = { data: [], total: 0 };
 
-/** @deprecated Prefer `MOCK_MENTORSHIP_LF_PROJECTS` — kept so existing enroll/BFF mappings keep working. */
-export const MENTORSHIP_PROJECT_OPTIONS: ReadonlyArray<{ value: string; label: string }> = MOCK_MENTORSHIP_LF_PROJECTS.map((project) => ({
-  value: project.id,
-  label: project.name,
-}));
-
 /**
  * Canonical skill / technology catalog used by the enroll wizard.
  * Ported from menv3 `app/config/skills.ts`.

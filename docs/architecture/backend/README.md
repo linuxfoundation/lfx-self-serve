@@ -40,18 +40,20 @@ Request → Controller → Service → Microservice/Data Layer
 
 ## Documentation
 
-| Document                                            | Topics                                                                          |
-| --------------------------------------------------- | ------------------------------------------------------------------------------- |
-| [SSR Server](./ssr-server.md)                       | Express.js configuration, Angular SSR integration, static assets, health checks |
-| [Authentication](./authentication.md)               | Auth0 integration, selective auth middleware, M2M tokens, session management    |
-| [Logging & Monitoring](./logging-monitoring.md)     | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
-| [Error Handling](./error-handling-architecture.md)  | Error classification, ServiceValidationError, error middleware                  |
-| [Server Helpers](./server-helpers.md)               | Validation type guards, pagination helper, polling, URL validation              |
-| [Pagination](./pagination.md)                       | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
-| [AI Service](./ai-service.md)                       | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
-| [NATS Integration](./nats-integration.md)           | Inter-service messaging, project slug resolution, lazy connections              |
-| [Snowflake Integration](./snowflake-integration.md) | Analytics queries, connection pooling, query deduplication                      |
-| [Public Meetings](./public-meetings.md)             | Unauthenticated meeting access, M2M token flow                                  |
+| Document                                                          | Topics                                                                          |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [SSR Server](./ssr-server.md)                                     | Express.js configuration, Angular SSR integration, static assets, health checks |
+| [Authentication](./authentication.md)                             | Auth0 integration, selective auth middleware, M2M tokens, session management    |
+| [Logging & Monitoring](./logging-monitoring.md)                   | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
+| [Error Handling](./error-handling-architecture.md)                | Error classification, ServiceValidationError, error middleware                  |
+| [Server Helpers](./server-helpers.md)                             | Validation type guards, pagination helper, polling, URL validation              |
+| [Pagination](./pagination.md)                                     | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
+| [AI Service](./ai-service.md)                                     | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
+| [NATS Integration](./nats-integration.md)                         | Inter-service messaging, project slug resolution, lazy connections              |
+| [Snowflake Integration](./snowflake-integration.md)               | Analytics queries, connection pooling, query deduplication                      |
+| [Public Meetings](./public-meetings.md)                           | Unauthenticated meeting access, M2M token flow                                  |
+| [EasyCLA Org Lens role-bridge](./easycla-org-lens-role-bridge.md) | Who sees Sign CLA vs who can mutate the approval list; ACS hop, not Help Center |
+| [Gatewaze Embed Proxy](./gw-proxy.md)                             | Wildcard BFF proxy, authorization, header policy, body limits, 413 drain        |
 
 ### Committee Management
 

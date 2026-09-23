@@ -15,9 +15,12 @@
   [panelStyleClass]="panelStyleClass()"
   [dataTestId]="dataTestId()"
   [inputId]="inputId()"
+  [describedBy]="describedBy()"
+  [invalid]="invalid()"
   [showClear]="showClear() && !readonly()"
   [readonly]="readonly()"
   optionLabel="displayName"
+  optionDisabled="disabled"
   size="small"
   appendTo="body"
   (completeMethod)="onSearchComplete($event)"
@@ -25,22 +28,29 @@
   (onClear)="onSearchClear()"
   (onBlur)="onSearchBlur()">
   <ng-template #item let-user>
-    <div class="w-full flex justify-between items-center gap-2">
+    <!-- optionDisabled only styles the row and marks it aria-disabled; a pick on it is refused in onUserSelected. -->
+    <div class="w-full flex justify-between items-center gap-2" [class.cursor-not-allowed]="user.disabled">
       <div class="flex flex-col">
+        <!-- A row with no name leads with its address instead of repeating it on the line below. -->
         <div class="text-sm flex gap-1 items-center">
-          <span> {{ user.first_name }} {{ user.last_name }} </span>
+          <span>{{ user.fullName || user.email }}</span>
           @if (user.organization?.name) {
             <span class="text-xs text-gray-500"> ({{ user.organization?.name }}) </span>
           }
         </div>
-        <span class="text-xs text-gray-500">{{ user.email }}</span>
+        @if (user.fullName) {
+          <span class="text-xs text-gray-500">{{ user.email }}</span>
+        }
+        @if (user.note) {
+          <span class="text-xs text-amber-700" [attr.data-testid]="dataTestId() + '-option-note'">{{ user.note }}</span>
+        }
       </div>
     </div>
   </ng-template>
   <!-- Empty template -->
   <ng-template #empty>
     <div class="p-3 text-center">
-      <p class="text-sm text-gray-600">No users found</p>
+      <p class="text-sm text-gray-600" [attr.data-testid]="dataTestId() + '-empty'">{{ emptyMessage() }}</p>
     </div>
   </ng-template>
 

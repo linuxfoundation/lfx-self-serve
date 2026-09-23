@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { createFormationAllAvailableActions } from '@lfx-one/shared/constants';
 import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
 
 /**
@@ -9,6 +10,7 @@ import { FormationActivity, FormationItem } from '@lfx-one/shared/interfaces';
  * `community-and-launch`) closely enough to exercise every row action kind (manual/link/
  * provisionable/request/status_only) and both empty/populated states.
  */
+
 export const mockFormationItems: Record<string, FormationItem[]> = {
   'formation:cascade-data-alliance': [
     {
@@ -23,16 +25,17 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       status: 'done',
       is_gating: true,
       owner_team: 'PMO',
+      audience: 'internal',
       owner: { username: 'alex.rivera', name: 'Alex Rivera' },
       due_date: null,
       action: 'link',
       action_href: 'https://example.com/formation/project-record',
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -48,16 +51,21 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       status: 'in_progress',
       is_gating: true,
       owner_team: 'Formation',
-      owner: { username: 'sam.chen', name: 'Sam Chen' },
-      due_date: null,
+      audience: 'both',
+      // Username-shaped on purpose: the BFF mapper sets name === assignee username (upstream sends
+      // a bare username, no display-name resolution), so this is what production actually renders
+      // on the row — a fixture with a friendly name here would mask that (#2689 review).
+      owner: { username: 'sam.chen', name: 'sam.chen' },
+      // Far-future on purpose: renders the neutral (gray) due-date color deterministically.
+      due_date: '2030-03-31',
       action: 'manual',
       action_href: null,
       detail: 'Awaiting legal review, then DocuSign.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: false,
+      available_actions: [],
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -72,17 +80,19 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       title: 'Domain and DNS transfer',
       status: 'blocked',
       is_gating: false,
-      owner_team: 'Community',
+      // Snake_case enum value on purpose: exercises the curated-label humanization ("Brand Counsel").
+      owner_team: 'brand_counsel',
+      audience: 'external',
       owner: null,
       due_date: null,
       action: 'request',
       action_href: null,
       detail: 'Northbridge Systems owns the domain.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -98,19 +108,23 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       status: 'not_started',
       is_gating: false,
       owner_team: 'PMO',
+      // null on purpose: the row must render no audience chip for an unrecognized/missing upstream value.
+      audience: null,
       owner: null,
       due_date: null,
       action: 'provisionable',
       action_href: null,
       detail: null,
       notes: null,
-      links: [],
+      evidence_link: null,
+      // Mixed statuses on purpose (#2818): the one seeded sub-item list exercises the done / in-progress / to-do markers.
       sub_items: [
-        { uid: 'sub:announce', title: 'announce@', status: 'not_started' },
-        { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
+        { uid: 'sub:announce', title: 'announce@', status: 'done' },
+        { uid: 'sub:tsc', title: 'tsc@', status: 'in_progress' },
+        { uid: 'sub:dev', title: 'dev@', status: 'not_started' },
       ],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },
@@ -126,16 +140,17 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       status: 'not_started',
       is_gating: false,
       owner_team: 'Formation',
+      audience: 'internal',
       owner: null,
       due_date: null,
       action: 'status_only',
       action_href: null,
       detail: 'Flipped in the admin tool once gating items are done.',
       notes: null,
-      links: [],
+      evidence_link: null,
       sub_items: [],
       skip_reason: null,
-      can_complete: true,
+      available_actions: createFormationAllAvailableActions(),
       created_at: new Date(0).toISOString(),
       updated_at: new Date(0).toISOString(),
     },

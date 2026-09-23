@@ -1,23 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
-import { MENTORSHIP_MENTEE_INTRODUCTION_MAX } from '../constants/mentorship-mentee.constants';
+import {
+  MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+  MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
+  MOCK_MENTORSHIP_MENTEE_TASKS,
+} from '../constants/mentorship-mentee.constants';
 import { createEmptyMentorshipMentorForm, MENTORSHIP_MENTOR_INTRODUCTION_MAX } from '../constants/mentorship-mentor.constants';
 import { MENTORSHIP_PROGRAM_AVATAR_PALETTE } from '../constants/mentorship.constants';
 import type { MentorshipMentorRegisterForm, MentorshipProgramMentee } from '../interfaces/mentorship.interface';
 import {
+  buildMentorshipMenteeApplicationViews,
+  buildMentorshipMenteeTaskView,
+  buildMentorshipMenteeTaskViews,
   buildMentorshipProgramDetail,
+  countSubmittedMentorshipMenteeTasks,
   createEmptyMentorshipMenteeForm,
+  normalizeMentorshipMenteeTaskStatus,
   formatMentorshipDateRange,
   formatMentorshipMonthYear,
   formatMentorshipShortMonthYear,
   filterMentorshipApplicantTasks,
   formatMentorshipApplicantTaskDueLabel,
   formatMentorshipTaskProgress,
+  formatMentorshipReviewUpdatedLabel,
   mentorshipMenteeTaskCompletion,
+  mentorshipMentorReviewTasks,
+  mentorshipMentorSubmittedTaskCount,
   mentorshipApplicantHasTasks,
   mentorshipApplicantTaskRows,
   getMentorshipEnrollStepErrors,
@@ -44,7 +56,6 @@ import {
   mentorshipNoteDisplay,
   mentorshipPersonAvatarClass,
   mentorshipPersonInitials,
-  mentorshipProgramSlug,
   mentorshipRowActions,
   parseMentorshipDateOnly,
   parseMentorshipMonthYear,
@@ -52,6 +63,18 @@ import {
 } from './mentorship.utils';
 
 describe('getMentorshipEnrollStepErrors', () => {
+  /** Creates a form with all details-step fields filled to valid values. Override only the field under test. */
+  const createValidDetailsForm = (): ReturnType<typeof createEmptyMentorshipEnrollForm> => {
+    const form = createEmptyMentorshipEnrollForm();
+    form.name = 'GridFlow Mentorship';
+    form.projectId = 'proj-gridflow';
+    form.technologies = ['GO'];
+    form.description = '<p>Build a pipeline.</p>';
+    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
+    form.logoFileName = 'logo.png';
+    return form;
+  };
+
   it('requires the details fields from the Nuxt enroll wizard', () => {
     const errors = getMentorshipEnrollStepErrors('details', createEmptyMentorshipEnrollForm());
 
@@ -125,38 +148,48 @@ describe('getMentorshipEnrollStepErrors', () => {
   });
 
   it('treats a filled details step as valid', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
+    expect(isMentorshipEnrollStepValid('details', createValidDetailsForm())).toBe(true);
+  });
 
-    expect(isMentorshipEnrollStepValid('details', form)).toBe(true);
+  it('rejects an unknown projectId that is not in the known project options', () => {
+    const form = createValidDetailsForm();
+    form.projectId = 'proj-unknown-not-in-allowlist';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
+  });
+
+  it('rejects a whitespace-only projectId as blank', () => {
+    const form = createValidDetailsForm();
+    form.projectId = '   ';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a Linux Foundation project.');
+  });
+
+  it('accepts a valid projectId with surrounding whitespace after trimming', () => {
+    const form = createValidDetailsForm();
+    form.projectId = '  proj-gridflow  ';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBeUndefined();
+  });
+
+  it('rejects a case-variant of a valid projectId (IDs are case-sensitive)', () => {
+    const form = createValidDetailsForm();
+    form.projectId = 'PROJ-GRIDFLOW';
+
+    expect(getMentorshipEnrollStepErrors('details', form).projectId).toBe('Select a valid Linux Foundation project.');
   });
 
   it('rejects a non-numeric CII project ID', () => {
-    const form = createEmptyMentorshipEnrollForm();
-    form.name = 'GridFlow Mentorship';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
-    form.repositoryUrl = 'https://github.com/lfenergy/gridflow';
-    form.logoFileName = 'logo.png';
+    const form = createValidDetailsForm();
     form.ciiProjectId = 'abc';
 
     expect(getMentorshipEnrollStepErrors('details', form).ciiProjectId).toBe('Invalid CII Project ID');
   });
 
   it('rejects a short program name and an invalid repository URL', () => {
-    const form = createEmptyMentorshipEnrollForm();
+    const form = createValidDetailsForm();
     form.name = 'Go';
-    form.projectId = 'proj-gridflow';
-    form.technologies = ['GO'];
-    form.description = '<p>Build a pipeline.</p>';
     form.repositoryUrl = 'not-a-url';
-    form.logoFileName = 'logo.png';
 
     expect(getMentorshipEnrollStepErrors('details', form).name).toContain('between 3 and 100');
     expect(getMentorshipEnrollStepErrors('details', form).repositoryUrl).toBe('The link must be a valid URL.');
@@ -346,35 +379,6 @@ describe('mentorship term dates', () => {
   it('rejects dates that do not exist on the calendar', () => {
     expect(parseMentorshipDateOnly('2026-02-31')).toBeNull();
     expect(parseMentorshipDateOnly('not-a-date')).toBeNull();
-  });
-});
-
-describe('mentorshipProgramSlug', () => {
-  it('slugifies a program name', () => {
-    expect(mentorshipProgramSlug('GridFlow: Time-Series Ingestion')).toBe('gridflow-time-series-ingestion');
-  });
-
-  it('falls back when the name is empty', () => {
-    expect(mentorshipProgramSlug('   ')).toBe('program');
-  });
-
-  it('strips leading and trailing separators', () => {
-    expect(mentorshipProgramSlug('---abc---')).toBe('abc');
-    expect(mentorshipProgramSlug('!!!Hello, World!!!')).toBe('hello-world');
-  });
-
-  it('falls back when the name is only separators', () => {
-    expect(mentorshipProgramSlug('---')).toBe('program');
-    expect(mentorshipProgramSlug('!!!')).toBe('program');
-  });
-
-  // Regression guard for the CodeQL js/polynomial-redos alert on the previous
-  // /^-+|-+$/g regex — long runs of dashes must slugify in linear time.
-  it('handles adversarially long dash runs quickly', () => {
-    const start = Date.now();
-    const input = `${'-'.repeat(10_000)}abc${'-'.repeat(10_000)}`;
-    expect(mentorshipProgramSlug(input)).toBe('abc');
-    expect(Date.now() - start).toBeLessThan(100);
   });
 });
 
@@ -625,6 +629,76 @@ describe('program detail helpers', () => {
     expect(mentorshipMenteeTaskCompletion({})).toEqual({ completed: 0, total: 0, percent: 0 });
   });
 
+  it('flattens submitted and completed mentee tasks for the mentor Tasks tab', () => {
+    const mentees: MentorshipProgramMentee[] = [
+      {
+        id: 'mnt_1',
+        name: 'Hana Suzuki',
+        email: 'hana@example.com',
+        status: 'accepted',
+        termName: 'Fall 2026',
+        tasks: [
+          {
+            id: 'tsk_new',
+            name: 'Backpressure design note',
+            description: 'Wrote up two options.',
+            status: 'submitted',
+            prerequisite: false,
+            createdOn: '2026-09-10',
+            updatedOn: '2026-09-17T10:00:00.000Z',
+            hasSubmission: true,
+          },
+          {
+            id: 'tsk_old',
+            name: 'Resume',
+            description: 'Upload a resume.',
+            status: 'completed',
+            prerequisite: false,
+            createdOn: '2026-07-01',
+            updatedOn: '2026-08-15',
+            hasSubmission: true,
+          },
+          {
+            id: 'tsk_hidden',
+            name: 'Blog',
+            description: 'Draft.',
+            status: 'in-progress',
+            prerequisite: false,
+            createdOn: '2026-08-20',
+            updatedOn: '2026-09-10',
+          },
+        ],
+      },
+    ];
+
+    expect(mentorshipMentorSubmittedTaskCount(mentees)).toBe(1);
+
+    const rows = mentorshipMentorReviewTasks(mentees);
+    expect(rows.map((row) => row.id)).toEqual(['mnt_1__tsk_new', 'mnt_1__tsk_old']);
+    expect(rows[0]).toMatchObject({
+      menteeName: 'Hana Suzuki',
+      taskName: 'Backpressure design note',
+      status: 'submitted',
+      termName: 'Fall 2026',
+      hasSubmission: true,
+    });
+  });
+
+  it('labels recent review timestamps with hours and Yesterday', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-17T10:00:00.000Z')).toBe('2 hours ago');
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-16T12:00:00.000Z')).toBe('Yesterday');
+
+    // Date-only strings are normalized to UTC midnight (`T00:00:00Z`), which is
+    // timezone-independent and SSR-safe. At the frozen clock (2026-09-17T12:00Z)
+    // the diff is exactly 12 hours regardless of the host timezone.
+    expect(formatMentorshipReviewUpdatedLabel('2026-09-17')).toBe('12 hours ago');
+
+    vi.useRealTimers();
+  });
+
   it('detects applicants with assigned tasks and resolves task row labels', () => {
     expect(mentorshipApplicantHasTasks({ tasks: [], tasksTotal: 0 })).toBe(false);
     expect(mentorshipApplicantHasTasks({ tasksTotal: 3 })).toBe(true);
@@ -824,5 +898,160 @@ describe('getMentorshipMenteeRegisterErrors', () => {
     ] as const) {
       expect(errors).not.toHaveProperty(key);
     }
+  });
+});
+
+describe('normalizeMentorshipMenteeTaskStatus', () => {
+  it('collapses the backend aliases to dropdown values', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('incomplete')).toBe('pending');
+    expect(normalizeMentorshipMenteeTaskStatus('complete')).toBe('submitted');
+  });
+
+  it('passes selectable statuses through unchanged', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('pending')).toBe('pending');
+    expect(normalizeMentorshipMenteeTaskStatus('in_progress')).toBe('in_progress');
+    expect(normalizeMentorshipMenteeTaskStatus('submitted')).toBe('submitted');
+  });
+
+  it('defaults an unrecognised status to pending', () => {
+    expect(normalizeMentorshipMenteeTaskStatus('mystery' as never)).toBe('pending');
+  });
+});
+
+describe('countSubmittedMentorshipMenteeTasks', () => {
+  it('counts only submitted and complete tasks', () => {
+    const count = countSubmittedMentorshipMenteeTasks([
+      { status: 'submitted' },
+      { status: 'complete' },
+      { status: 'pending' },
+      { status: 'in_progress' },
+      { status: 'incomplete' },
+    ]);
+    expect(count).toBe(2);
+  });
+
+  it('returns 0 for an empty list', () => {
+    expect(countSubmittedMentorshipMenteeTasks([])).toBe(0);
+  });
+});
+
+describe('buildMentorshipMenteeTaskView', () => {
+  it('flags a submitted task with an uploaded file', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't1',
+      title: 'Submit resume',
+      description: 'Upload your resume',
+      status: 'submitted',
+      submitFile: 'https://files.example.com/r.pdf',
+      fileUrl: 'https://files.example.com/r.pdf',
+      submittedDate: '2026-09-12T00:00:00Z',
+    });
+    expect(view.submitted).toBe(true);
+    expect(view.inProgress).toBe(false);
+    expect(view.hasUploadedFile).toBe(true);
+    expect(view.needsUpload).toBe(false);
+    expect(view.fileUrl).toBe('https://files.example.com/r.pdf');
+    expect(view.submittedDate).toBe('2026-09-12T00:00:00Z');
+    expect(view.statusClass).not.toBe('');
+  });
+
+  it('flags a task that still needs an upload', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't2',
+      title: 'Coding challenge',
+      description: 'Complete the challenge',
+      status: 'in_progress',
+      submitFile: 'required',
+      dueDate: '2026-09-30T00:00:00Z',
+    });
+    expect(view.inProgress).toBe(true);
+    expect(view.submitted).toBe(false);
+    expect(view.hasUploadedFile).toBe(false);
+    expect(view.needsUpload).toBe(true);
+    expect(view.fileUrl).toBeNull();
+    expect(view.dueDate).toBe('2026-09-30T00:00:00Z');
+    expect(view.submittedDate).toBeNull();
+  });
+
+  it('treats a task with no submission requirement as neither uploaded nor pending upload', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't3',
+      title: 'Read the guide',
+      description: 'No file needed',
+      status: 'pending',
+      submitFile: null,
+    });
+    expect(view.hasUploadedFile).toBe(false);
+    expect(view.needsUpload).toBe(false);
+  });
+
+  it('surfaces a submitFile URL as the file URL when fileUrl is absent', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't4',
+      title: 'Uploaded via submitFile',
+      description: 'The URL lives on submitFile only',
+      status: 'submitted',
+      submitFile: 'https://files.example.com/only-submitfile.pdf',
+    });
+    expect(view.hasUploadedFile).toBe(true);
+    expect(view.needsUpload).toBe(false);
+    expect(view.fileUrl).toBe('https://files.example.com/only-submitfile.pdf');
+  });
+
+  it('normalises an unrecognised status to a real, styled option', () => {
+    const view = buildMentorshipMenteeTaskView({
+      id: 't5',
+      title: 'Unknown status',
+      description: 'From an unrecognised backend value',
+      status: 'mystery' as never,
+      submitFile: null,
+    });
+    // Falls back to a selectable value so the dropdown, badge styling, and the
+    // Pending filter all agree instead of leaving it blank/unstyled.
+    expect(view.status).toBe('pending');
+    expect(view.submitted).toBe(false);
+    expect(view.inProgress).toBe(false);
+    expect(view.statusClass).not.toBe('');
+  });
+});
+
+describe('buildMentorshipMenteeApplicationViews', () => {
+  it('maps applications into display-ready cards with task rows', () => {
+    const views = buildMentorshipMenteeApplicationViews(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications);
+    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT.applications.length);
+    const [first] = views;
+    expect(first.programName).toBeTruthy();
+    expect(first.statusLabel).toBeTruthy();
+    expect(first.totalCount).toBeGreaterThan(0);
+    expect(first.submittedCount).toBeLessThanOrEqual(first.totalCount);
+  });
+
+  it('falls back to the overview counts when the tab-only tasks list is absent', () => {
+    const [view] = buildMentorshipMenteeApplicationViews([
+      {
+        id: 'app_no_tasks',
+        programId: 'prog_x',
+        orgAbbreviation: 'XX',
+        projectName: 'Project X',
+        term: { id: 'term_x', name: 'Fall 2026' },
+        programName: 'Program X',
+        status: 'in-progress',
+        lastTaskUpdatedOn: 'Jul 1, 2026',
+        decisionExpectedDate: 'Aug 1, 2026',
+        prerequisiteTasksCompleted: 2,
+        prerequisiteTasksTotal: 5,
+      },
+    ]);
+    expect(view.submittedCount).toBe(2);
+    expect(view.totalCount).toBe(5);
+    expect(view.tasks).toEqual([]);
+  });
+});
+
+describe('buildMentorshipMenteeTaskViews', () => {
+  it('maps every accepted task into a view', () => {
+    const views = buildMentorshipMenteeTaskViews(MOCK_MENTORSHIP_MENTEE_TASKS.data);
+    expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
+    expect(views.every((v) => typeof v.statusClass === 'string')).toBe(true);
   });
 });

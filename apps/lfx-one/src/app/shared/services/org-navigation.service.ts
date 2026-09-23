@@ -2,15 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient, HttpParams } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
-import { LENS_DEFAULT_ROUTES, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { computed, DestroyRef, inject, Injectable, Injector, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { NavigationCancel, NavigationEnd, NavigationError, NavigationSkipped, Router } from '@angular/router';
+import { LENS_DEFAULT_ROUTES, ORG_ROLE_AUTHORITY_ORDER, ORG_SELECTOR_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { Account, OrgItem, OrgItemsResponse, OrgListPage, OrgListState, TaggedOrgListPage } from '@lfx-one/shared/interfaces';
+import { isActiveStatus } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
-import { catchError, debounceTime, distinctUntilChanged, EMPTY, filter, map, merge, Observable, of, scan, skip, Subject, switchMap, tap } from 'rxjs';
+import {
+  catchError,
+  debounceTime,
+  distinctUntilChanged,
+  EMPTY,
+  filter,
+  from,
+  map,
+  merge,
+  Observable,
+  of,
+  scan,
+  skip,
+  Subject,
+  Subscription,
+  switchMap,
+  take,
+  tap,
+} from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
+import { OrgLensNavigationService } from './org-lens-navigation.service';
 import { LensService } from './lens.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
@@ -24,9 +44,20 @@ export class OrgNavigationService {
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly orgLensNavigation = inject(OrgLensNavigationService);
+  private readonly injector = inject(Injector);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  private readonly destroyRef = inject(DestroyRef);
+
+  /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
+  private readonly firstPageLandedGenerationInternal = signal<number>(0);
 
   private readonly state: OrgListState = this.createOrgListState();
+
+  /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
+  private pendingDefaultWrite: Subscription | null = null;
+  /** The one default still waiting for the grant set to settle (`whenGrantsSettled`); cleared when it fires, when a later default supersedes it, or when `resetAndReload` starts a new page. */
+  private pendingDefaultSelectionSub: Subscription | null = null;
 
   /** Lazy hint passed on first-load to surface the cookie-restored selection (the org account id / SFID). */
   private restoredSelectedUid: string | null = null;
@@ -36,6 +67,14 @@ export class OrgNavigationService {
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
   public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
+  /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
+  public readonly generation: Signal<number> = this.state.generation.asReadonly();
+  /**
+   * Generation of the last first page that landed (success or the empty page a failed reset emits).
+   * Next-page fetches reuse the active generation, so `loading` alone cannot tell "the first page is
+   * still in flight" from "the viewer is scrolling"; this can.
+   */
+  public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -56,8 +95,35 @@ export class OrgNavigationService {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;
     }
+    // A reload supersedes a default still waiting on grants from the previous page: that page is
+    // no longer the answer, and the new page's own pending selection decides.
+    this.pendingDefaultSelectionSub?.unsubscribe();
+    this.pendingDefaultSelectionSub = null;
     this.state.pendingDefaultSelection.set(true);
     this.state.reload$.next();
+  }
+
+  /**
+   * Spec 053 Retry — re-fetch the first page **without** bootstrap semantics: the page that lands is
+   * not allowed to default-select another organization or clear the current one (`clearAccount`), which
+   * `resetAndReload` arms through `pendingDefaultSelection`. Retry's contract is "try the same thing
+   * again"; a first page that comes back empty mid-outage must leave the viewer's selection exactly
+   * where it was (FR-022–FR-024 silent-substitution rule).
+   *
+   * One qualification: a bootstrap still in flight keeps its own pending intent — the flag is left
+   * untouched, never forced either way — so the refreshed page (which supersedes the bootstrap's
+   * request) is consumed under the bootstrap's semantics, exactly as the bootstrap's own page would
+   * have been. The guarantee above is therefore "Retry adds no selection semantics of its own".
+   *
+   * Returns the generation of the fetch it started (bumped synchronously by the first-page pipeline),
+   * so a caller can tell its own fetch apart from a later search or reset.
+   */
+  public refreshList(selectedUid?: string | null): number {
+    if (selectedUid) {
+      this.restoredSelectedUid = selectedUid;
+    }
+    this.state.reload$.next();
+    return this.state.generation();
   }
 
   private createOrgListState(): OrgListState {
@@ -146,6 +212,9 @@ export class OrgNavigationService {
           nextPageToken.set(page.nextPageToken);
           upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
+          if (page.reset) {
+            this.firstPageLandedGenerationInternal.set(generation());
+          }
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }
@@ -235,8 +304,17 @@ export class OrgNavigationService {
   /** Fires once per first-page response when a reload is pending; routes empty pages through the FR-004 "No access" toast+redirect. */
   private handlePendingSelection(page: OrgListPage, pendingDefaultSelection: WritableSignal<boolean>): void {
     pendingDefaultSelection.set(false);
+    // Spec 050: the organization the address named was access-verified for this viewer by the
+    // resolver a moment ago. Whether or not it appears on the first org-items page (inherited or
+    // catalogue-only access, an empty assigned list), it stays selected — defaulting here would be
+    // the silent substitution deep links remove. Only the *address* pin is honoured here: a default
+    // pin (below) came from this very list, so a later authoritative page re-runs the selection —
+    // that is how a revoked organization is released instead of kept for the session.
+    if (this.accountContextService.isAdoptedFromAddress()) {
+      return;
+    }
     if (page.items.length === 0) {
-      // For staff an empty list is never a loss of access, so the "No access" toast + cleared
+      // For LF-team callers an empty list is never a loss of access, so the "No access" toast + cleared
       // selection + redirect would be wrong: it reads as being signed out, and it navigates away from
       // the search box that is the way in. Deliberately not conditioned on the search term being
       // blank: a search typed before the bootstrap response lands can be the response that resolves
@@ -251,26 +329,179 @@ export class OrgNavigationService {
     }
 
     const current = this.accountContextService.selectedAccount();
-    if (current.uid && page.items.some((item) => item.uid === current.uid)) {
-      return;
+    if (current.uid) {
+      const match = page.items.find((item) => item.uid === current.uid);
+      if (match) {
+        // A selection restored from the cookie or a persona seed carries no URL-identity slug; the
+        // indexed row's is the one addresses resolve against (spec 050). Apply it whenever the
+        // tri-state differs — `undefined` (not known) becomes the row's value or an indexed `null`, a
+        // stale slug becomes the current one — so in-app addresses see the indexed segment and the
+        // path guard, which keys its no-round-trip shortcut on the slug being *known*, can take it.
+        // Compared as normalized slugs, not raw strings: a case-only difference is the same address.
+        const indexedSlug = match.slug?.trim().toLowerCase() ?? null;
+        const heldSlug = typeof current.slug === 'string' ? current.slug.trim().toLowerCase() : current.slug;
+        if (heldSlug !== indexedSlug) {
+          this.accountContextService.setIndexedSlug(indexedSlug);
+        }
+        // Pinned before the address is written (lfx-self-serve#2570): the persona refresh can land
+        // between here and the page's render, and for a grant-only (staff) viewer it carries no
+        // seeds — unpinned, that resets the selection to the placeholder under the address just
+        // written, and the page renders empty for the organization the bar names.
+        this.accountContextService.pinSelection('default');
+        // Spec 050 US2: a restored selection on a legacy `/org/{page}` address is the same uncopyable
+        // bar as a default's — written the same way. A default never touches an addressed page or the
+        // not-found dead end, so this is a no-op everywhere but the bare legacy form.
+        this.writeDefaultAddress();
+        return;
+      }
     }
 
     const matchingAccountItem = current.accountId ? page.items.find((item) => item.accountId === current.accountId) : undefined;
-    this.selectDefaultOrg(matchingAccountItem ?? page.items[0]);
+    if (!matchingAccountItem && current.uid && this.orgLensNavigation.isOnAddressedPage()) {
+      // The selection is not on this authoritative page, but the address names it. A default from
+      // the list would leave that address in place — `writeDefaultAddress` never rewrites an
+      // addressed page — with another organization rendering under it: the silent substitution
+      // spec 050 exists to prevent. The selection stays what the address names; the data behind it
+      // is FGA-gated. Sending a revoked address to `/org/not-found`, as a resolver miss does, is the
+      // follow-up (lfx-self-serve#2793).
+      return;
+    }
+    if (matchingAccountItem) {
+      this.selectDefaultOrg(matchingAccountItem);
+      return;
+    }
+    // The default ranks rows by the viewer's grants, which arrive on a separate request
+    // (`/api/orgs/me/role-grants`) whose landing order against org-items is not guaranteed. Deciding
+    // against a not-yet-loaded grant set would silently fall back to the first row — the very bug
+    // this ranks against — so the choice waits until grants have settled (loaded, or failed: a
+    // failure leaves the sets empty and the membership/list-order bands decide). While it waits, a
+    // selection can be made by someone else — the path guard or the EasyCLA return adopting an
+    // address, or the viewer picking in the selector — so the deferred default re-checks before it
+    // writes: a selection that *changed* since the wait began, or one now pinned by an address, wins
+    // over the default. The selection as it was when the wait began does not — that is the one this
+    // default is replacing (unlisted on the authoritative page, or the placeholder).
+    const uidWhenDeferred = current.uid ?? null;
+    this.whenGrantsSettled(() => {
+      const now = this.accountContextService.selectedAccount().uid ?? null;
+      if (this.accountContextService.isAdoptedFromAddress() || now !== uidWhenDeferred) {
+        return;
+      }
+      this.selectDefaultOrg(this.defaultOrgFrom(page.items));
+    });
+  }
+
+  private whenGrantsSettled(then: () => void): void {
+    // A newer default always supersedes an older one still waiting, whichever path this one takes.
+    this.pendingDefaultSelectionSub?.unsubscribe();
+    this.pendingDefaultSelectionSub = null;
+    if (this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null) {
+      then();
+      return;
+    }
+    this.pendingDefaultSelectionSub = toObservable(
+      computed(() => this.orgRoleGrantsService.loaded() || this.orgRoleGrantsService.error() !== null),
+      { injector: this.injector }
+    )
+      .pipe(filter(Boolean), take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.pendingDefaultSelectionSub = null;
+        then();
+      });
+  }
+
+  /**
+   * DR-005 rung 4, "first in the list", refined (lfx-self-serve#2570). DR-005 is the default-organization
+   * precedence record in the umbrella workspace:
+   * https://github.com/linuxfoundation/workspace-org-lens/blob/main/specs/050-org-lens-deep-link/decisions/DR-005-default-org-precedence.md
+   * The list
+   * is alphabetical and carries inherited rows beside direct ones, so a bare `/org/overview` for an
+   * admin whose only direct grant is the parent organization used to land on an expired, non-member
+   * subsidiary that sorted first. The default ranks rows **authority-first**, reading the one shared
+   * order the selector's persona badge also reads (`ORG_ROLE_AUTHORITY_ORDER`, LFXV2-3029): direct
+   * writer → inherited writer → direct auditor → inherited auditor → no grant (a staff viewer's
+   * catalogue). Within the winning
+   * band the viewer's own assigned rows come before discovered ones, an active member before other
+   * members before non-members, and ties keep the list's own order. A grant set that never loaded
+   * (error) leaves every band empty and the membership/list-order rules decide.
+   */
+  private defaultOrgFrom(items: OrgItem[]): OrgItem {
+    const grants = this.orgRoleGrantsService;
+    const sets = {
+      writerSet: grants.writerSet(),
+      inheritedWriterSet: grants.inheritedWriterSet(),
+      auditorSet: grants.auditorSet(),
+      inheritedAuditorSet: grants.inheritedAuditorSet(),
+    };
+    const winning = ORG_ROLE_AUTHORITY_ORDER.map(([, set]) => items.filter((item) => sets[set].has(item.uid))).find((band) => band.length > 0) ?? items;
+    const assigned = winning.filter((item) => item.isAssigned !== false);
+    const band = assigned.length > 0 ? assigned : winning;
+    return band.find((item) => item.isMember && isActiveStatus(item.status)) ?? band.find((item) => item.isMember) ?? band[0];
   }
 
   private selectDefaultOrg(item: OrgItem): void {
     const account = this.toAccountFromOrgItem(item);
     this.accountContextService.setAccount(account);
-    this.accountContextService.refreshCanonicalRecord(account).catch(() => {
-      // AccountContextService already logs canonical fetch failures; selection remains on the indexed snapshot.
-    });
+    // The default is what the address is written from next, so it is pinned like an adopted one
+    // (lfx-self-serve#2570): the persona refresh that lands after this — with no seeds at all for a
+    // grant-only viewer — must not replace it. Pinned at selection time, not at the write, because
+    // that refresh can also land in the gap before the write; unpinned it would clear the selection,
+    // the write would find no segment, and the legacy address would stay put, empty.
+    this.accountContextService.pinSelection('default');
+    // Fire-and-forget: it settles either way (failures are logged inside and leave the indexed snapshot).
+    void this.accountContextService.refreshCanonicalRecord(account);
+    // Spec 050 US2: a default picked while already inside Org Lens is written into a legacy address
+    // (`/org/{page}` → `/org/{segment}/{page}`) so the bar is copyable from the first paint on. As a
+    // default — not a switch — it replaces the entry, never leaves `/org/not-found`, and never
+    // overrides an address that already names an organization.
+    this.writeDefaultAddress();
+  }
+
+  /**
+   * The `'default'` re-address reads the router's *current* address. If a navigation is in flight
+   * when the org-items page lands (the viewer clicked a link while the bootstrap fetch was pending),
+   * that address is the one being left, not the one being entered — so the write waits until the
+   * router is idle and then re-reads: a legacy destination still gets its organization, an addressed
+   * one is left alone by the default's own rules (and its guard has decided it by then). "Idle", not
+   * "first settle event": a guard redirect or a superseding click cancels one navigation and starts
+   * the next in the same tick, and `router.url` still names the page being left until that one lands.
+   * The router clears its current navigation in the transition's `finalize`, *after* it emits
+   * `NavigationEnd`/`Cancel`/`Error` — so idleness is checked one microtask after each settle event,
+   * once that finalize has run, and a settle that left another navigation in flight keeps waiting.
+   */
+  private writeDefaultAddress(): void {
+    // One pending write at most: a later bootstrap (selector re-enabled, CLA return) supersedes an
+    // earlier one still waiting, so a stale deferred write cannot fire an unrelated re-address later.
+    this.pendingDefaultWrite?.unsubscribe();
+    this.pendingDefaultWrite = null;
+    if (!this.router.getCurrentNavigation()) {
+      this.orgLensNavigation.navigateToSelectedOrg('default');
+      return;
+    }
+    this.pendingDefaultWrite = this.router.events
+      .pipe(
+        filter(
+          (event) =>
+            event instanceof NavigationEnd || event instanceof NavigationCancel || event instanceof NavigationError || event instanceof NavigationSkipped
+        ),
+        switchMap(() => from(Promise.resolve())),
+        filter(() => !this.router.getCurrentNavigation()),
+        take(1),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.pendingDefaultWrite = null;
+        this.orgLensNavigation.navigateToSelectedOrg('default');
+      });
   }
 
   private handleEmptyOrgResponse(page: OrgListPage): void {
-    const toast = page.upstreamFailed
-      ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
-      : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
+    // A degraded roll-up is an unknown, not an absence: the grant list is a lower bound because
+    // classification failed or hit a cap, so "You do not have access to any organizations" would
+    // state as fact the one thing the server could not determine. Reported as an outage instead.
+    const toast =
+      page.upstreamFailed || this.orgRoleGrantsService.degraded()
+        ? { severity: 'error', summary: 'Unable to load', detail: 'We were unable to load your organizations. Please try again in a moment.' }
+        : { severity: 'info', summary: 'No access', detail: 'You do not have access to any organizations.' };
 
     this.messageService.add(toast);
     this.accountContextService.clearAccount();
@@ -291,10 +522,10 @@ export class OrgNavigationService {
     return {
       accountId: item.accountId ?? '',
       accountName: item.name,
-      accountSlug: '',
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
+      slug: item.slug ?? null,
     };
   }
 }

@@ -20,7 +20,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
 import { expect, Page, test } from '@playwright/test';
@@ -176,8 +175,8 @@ test.describe('Org Lens EasyCLA list — content', () => {
     const projects = page.getByTestId('org-easycla-coverage-project');
     await expect(projects).toHaveCount(2, { timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-coverage-title')).toHaveText('Projects covered by Nimbus Foundation CLA');
-    expect(page.url()).toContain('/org/easycla');
-    expect(page.url()).not.toContain('/org/easycla/sig-1');
+    expect(page.url()).toMatch(/\/org\/(?:[^/]+\/)?easycla/);
+    expect(page.url()).not.toContain('/easycla/sig-1');
 
     await page.getByTestId('org-easycla-coverage-close').click();
     await expect(projects).toHaveCount(0);
@@ -246,5 +245,12 @@ test.describe('Org Lens EasyCLA list — content', () => {
     await expect(page.getByTestId('org-easycla-error-state')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-easycla-empty-state')).toHaveCount(0);
     await expect(page.getByTestId('org-easycla-card')).toHaveCount(0);
+  });
+
+  test('still offers Sign CLA when ACS would deny a company-level grant', async ({ page }) => {
+    await gotoEasyclaList(page, stubList(nineClaGroups()), false);
+
+    await expect(page.getByTestId('org-easycla-page')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('org-easycla-sign-cla')).toBeVisible();
   });
 });

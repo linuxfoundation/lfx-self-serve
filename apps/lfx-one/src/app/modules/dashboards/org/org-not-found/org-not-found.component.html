@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Rendered inside MainLayout's padded content area (left nav stays visible) — no page-level background/padding here. -->
+<div class="max-w-4xl mx-auto flex flex-col gap-4" data-testid="org-not-found">
+  @if (settled()) {
+    <!-- Spec 053 FR-007/FR-008 — decided by the caller's OWN list only; the addressed organization is never named. -->
+    <lfx-org-lens-empty-state
+      [state]="state()"
+      [testId]="'org-not-found'"
+      [values]="{ orgList: orgList(), correlationId: correlationId() }"
+      [retrying]="retrying()"
+      (orgSelected)="pick($event)"
+      (retry)="retry()" />
+  } @else {
+    <section class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-gray-300 bg-white py-16" data-testid="org-not-found-loading">
+      <p-skeleton width="3rem" height="3rem" borderRadius="9999px" />
+      <p-skeleton width="18rem" height="1.25rem" />
+      <p-skeleton width="24rem" height="0.875rem" />
+    </section>
+  }
+</div>

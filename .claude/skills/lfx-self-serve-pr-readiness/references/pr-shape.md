@@ -11,21 +11,21 @@ Each item lists its `rule:` ID (used in finding JSON), severity, the check, the 
 
 ## 1. `pr-shape/branch-name` — SHOULD_FIX
 
-**Check:** the current branch matches `<type>/LFXV2-<number>` (JIRA) or `<type>/issue-<number>` (GitHub Issue) per `.claude/rules/commit-workflow.md`.
+**Check:** the current branch matches `<type>/issue-<number>` (GitHub Issue in this repo) or `<type>/<repo>-<number>` (GitHub Issue in another repo, e.g. `feat/lfx-mentorship-123`) per `.claude/rules/commit-workflow.md`.
 
-Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(LFXV2-[0-9]+|issue-[0-9]+)$`
+Regex: `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)/(issue-[0-9]+|[a-z0-9][a-z0-9._-]*-[0-9]+)$`
 
-**Failure message:** `Branch name '<branch>' does not match '<type>/LFXV2-<number>' or '<type>/issue-<number>'.`
+**Failure message:** `Branch name '<branch>' does not match '<type>/issue-<number>' or '<type>/<repo>-<number>'.`
 
-**Suggestion:** `git branch -m <type>/LFXV2-<ticket>` or `git branch -m <type>/issue-<issue>` — e.g. `git branch -m feat/LFXV2-1827` or `git branch -m feat/issue-1331`.
+**Suggestion:** `git branch -m <type>/issue-<issue>` or `git branch -m <type>/<repo>-<issue>` — e.g. `git branch -m feat/issue-1331` or `git branch -m feat/lfx-mentorship-123`.
 
-## 2. `pr-shape/jira` — SHOULD_FIX
+## 2. `pr-shape/issue` — SHOULD_FIX
 
-**Check:** at least one commit subject, commit body, or PR body contains a `LFXV2-XXX` reference, a `#XXX` GitHub Issue reference, or a fully-qualified `org/repo#XXX` GitHub Issue reference (e.g. `linuxfoundation/lfx-self-serve#1331`). Extract with `grep -oE 'LFXV2-[0-9]+|#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'`.
+**Check:** at least one commit subject, commit body, or PR body contains a `#XXX` GitHub Issue reference or a fully-qualified `org/repo#XXX` GitHub Issue reference (e.g. `linuxfoundation/lfx-self-serve#1331`). Extract with `grep -oE '#[0-9]+|[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[0-9]+'`.
 
-**Failure message:** `No LFXV2-XXX, #XXX, or org/repo#XXX reference found in commit messages or PR body. All work must be tracked in JIRA or a GitHub Issue.`
+**Failure message:** `No #XXX or org/repo#XXX GitHub Issue reference found in commit messages or PR body. All work must be tracked in a GitHub Issue.`
 
-**Suggestion:** Add the ticket reference to a commit message (`git commit --amend`) or to the PR body (post-PR) — `LFXV2-XXX` for JIRA, `#XXX` or `org/repo#XXX` for a GitHub Issue.
+**Suggestion:** Add the issue reference to a commit message (`git commit --amend`) or to the PR body (post-PR) — `#XXX` or `org/repo#XXX` for a GitHub Issue.
 
 ## 3. `pr-shape/conventional-commit` — SHOULD_FIX
 
@@ -90,13 +90,13 @@ Note: `U` is acceptable (good signature with an untrusted key); GitHub's "Verifi
 
 ## 8. `pr-shape/pr-title` — SHOULD_FIX
 
-**Check (post-PR only):** the PR title matches `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)(\([a-z0-9-]+\))?: .+$`, lowercase, MUST NOT include `LFXV2-XXX` or `#XXX`. `chore` is invalid.
+**Check (post-PR only):** the PR title matches `^(feat|fix|docs|style|refactor|perf|test|build|ci|revert)(\([a-z0-9-]+\))?: .+$`, lowercase, MUST NOT include `#XXX`. `chore` is invalid.
 
-**Failure message:** `PR title '<title>' violates conventional-commit format. Title must be lowercase, use a valid type (not 'chore'), and must NOT include the ticket reference (JIRA or GitHub Issue — it lives in commits and PR body).`
+**Failure message:** `PR title '<title>' violates conventional-commit format. Title must be lowercase, use a valid type (not 'chore'), and must NOT include the issue reference (it lives in commits and PR body).`
 
 **Suggestion (example):**
 
-- Invalid: `Fix: LFXV2-123 fix login bug`
+- Invalid: `Fix: #123 fix login bug`
 - Valid: `fix(auth): resolve login redirect on session expiry`
 
 ## 9. `pr-shape/external-refs` — SHOULD_FIX

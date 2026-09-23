@@ -5,6 +5,7 @@ import { FORMATION_QUEUE_SUB_STAGES } from '@lfx-one/shared/constants';
 import type { FormationSubStage } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
+import { parseIfMatch } from '../helpers/if-match.helper';
 import { validateFoundationUidParameter, validateItemKeyParameter, validateUidParameter } from '../helpers/validation.helper';
 import { formationService } from '../services/formation.service';
 import { logger } from '../services/logger.service';
@@ -18,6 +19,24 @@ export const getProjectFormation = async (req: Request, res: Response, next: Nex
   try {
     const result = await formationService.getProjectFormation(req, slug);
     logger.success(req, 'get_project_formation', startTime, { slug, item_count: result.items.length });
+    return res.json(result);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * `GET /projects/:slug/formation/people` — the checklist sidebar's people card (#2724). Same
+ * masking checklist read as {@link getProjectFormation}; the settings read behind it degrades to
+ * `state: 'unavailable'` for a caller it 403s rather than failing here.
+ */
+export const getFormationPeople = async (req: Request, res: Response, next: NextFunction) => {
+  const { slug } = req.params;
+  const startTime = logger.startOperation(req, 'get_formation_people', { slug });
+
+  try {
+    const result = await formationService.getFormationPeople(req, slug);
+    logger.success(req, 'get_formation_people', startTime, { slug, state: result.state, count: result.people.length });
     return res.json(result);
   } catch (error) {
     return next(error);
@@ -45,71 +64,11 @@ export const getFormationItem = async (req: Request, res: Response, next: NextFu
 };
 
 /**
- * `gate_writer` is enforced inside `formationService.completeFormationItem` (`assertCanComplete`),
- * not a route-level middleware — unlike `requireAuditor`, the gate depends on `item.is_gating`,
- * which must be fetched before a decision can be made. It throws `AuthorizationError`, which
- * propagates to `next(error)` below like any other service error.
+ * `PATCH /formations/:projectUid/items/:itemKey` — note/evidence_link (GH-2576 Phase 2). Requires
+ * `If-Match`; no BFF-side write-access check — see `formationService.updateFormationItem`'s doc
+ * comment for the guard-tier audit this corrects. Returns `{item, etag}` and also sets the `ETag`
+ * response header, so a caller holding either already holds the version for its next write.
  */
-export const completeFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'complete_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'complete_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'complete_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.completeFormationItem(req, projectUid, itemKey, req.body?.notes);
-    logger.success(req, 'complete_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const skipFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'skip_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'skip_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'skip_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.skipFormationItem(req, projectUid, itemKey, req.body?.reason);
-    logger.success(req, 'skip_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const requestFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'request_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'request_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'request_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.requestFormationItem(req, projectUid, itemKey);
-    logger.success(req, 'request_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
 export const updateFormationItem = async (req: Request, res: Response, next: NextFunction) => {
   const { projectUid, itemKey } = req.params;
   const startTime = logger.startOperation(req, 'update_formation_item', { projectUid, itemKey });
@@ -122,17 +81,46 @@ export const updateFormationItem = async (req: Request, res: Response, next: Nex
   }
 
   try {
-    const result = await formationService.updateFormationItem(req, projectUid, itemKey, req.body ?? {});
-    logger.success(req, 'update_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
+    const ifMatch = parseIfMatch(req, 'update_formation_item');
+    const { item, etag, item_state } = await formationService.updateFormationItem(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    if (etag) res.set('ETag', etag);
+    logger.success(req, 'update_formation_item', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
   } catch (error) {
     return next(error);
   }
 };
 
 /**
- * Handles the three "plain" status-chip transitions (not_started/in_progress/blocked) — the row's
- * status menu (GH-1958 finding #2). Completion and skip keep their own dedicated endpoints above.
+ * `POST /formations/:projectUid/items/:itemKey/assignment` — assignee/due_date (GH-2576 Phase 2,
+ * new route). Requires `If-Match`. `assignee_not_on_project` (#2594) passes through unvalidated.
+ */
+export const updateFormationItemAssignment = async (req: Request, res: Response, next: NextFunction) => {
+  const { projectUid, itemKey } = req.params;
+  const startTime = logger.startOperation(req, 'update_formation_item_assignment', { projectUid, itemKey });
+
+  if (!validateUidParameter(projectUid, req, next, { operation: 'update_formation_item_assignment' })) {
+    return;
+  }
+  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'update_formation_item_assignment' })) {
+    return;
+  }
+
+  try {
+    const ifMatch = parseIfMatch(req, 'update_formation_item_assignment');
+    const { item, etag, item_state } = await formationService.updateFormationItemAssignment(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    if (etag) res.set('ETag', etag);
+    logger.success(req, 'update_formation_item_assignment', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * `POST /formations/:projectUid/items/:itemKey/status` — status/reason/sub_items (GH-2576 Phase 2).
+ * Requires `If-Match`. The rule that stops an assignee closing their own item is enforced entirely
+ * by the API gateway (`writer_guard` + `member` on `team:formation`); nothing here re-checks it.
  */
 export const updateFormationItemStatus = async (req: Request, res: Response, next: NextFunction) => {
   const { projectUid, itemKey } = req.params;
@@ -146,74 +134,11 @@ export const updateFormationItemStatus = async (req: Request, res: Response, nex
   }
 
   try {
-    const result = await formationService.updateFormationItemStatus(req, projectUid, itemKey, req.body?.status, req.body?.note);
-    logger.success(req, 'update_formation_item_status', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-/**
- * New in GH-2267 Phase 2 — mirrors upstream's `accept`/`reject`/`reopen` actions (design.go items
- * 4-6). Fixture-era gating substitutes `gate_writer` for the real `team:formation` check; see
- * `formationService.acceptFormationItem`'s doc comment.
- */
-export const acceptFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'accept_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'accept_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'accept_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.acceptFormationItem(req, projectUid, itemKey, req.body?.note);
-    logger.success(req, 'accept_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const rejectFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'reject_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'reject_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'reject_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.rejectFormationItem(req, projectUid, itemKey, req.body?.note);
-    logger.success(req, 'reject_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
-  } catch (error) {
-    return next(error);
-  }
-};
-
-export const reopenFormationItem = async (req: Request, res: Response, next: NextFunction) => {
-  const { projectUid, itemKey } = req.params;
-  const startTime = logger.startOperation(req, 'reopen_formation_item', { projectUid, itemKey });
-
-  if (!validateUidParameter(projectUid, req, next, { operation: 'reopen_formation_item' })) {
-    return;
-  }
-  if (!validateItemKeyParameter(itemKey, req, next, { operation: 'reopen_formation_item' })) {
-    return;
-  }
-
-  try {
-    const result = await formationService.reopenFormationItem(req, projectUid, itemKey, req.body?.note);
-    logger.success(req, 'reopen_formation_item', startTime, { projectUid, itemKey });
-    return res.json(result);
+    const ifMatch = parseIfMatch(req, 'update_formation_item_status');
+    const { item, etag, item_state } = await formationService.updateFormationItemStatus(req, projectUid, itemKey, ifMatch, req.body ?? {});
+    if (etag) res.set('ETag', etag);
+    logger.success(req, 'update_formation_item_status', startTime, { projectUid, itemKey, item_state });
+    return res.json({ item, etag, item_state });
   } catch (error) {
     return next(error);
   }

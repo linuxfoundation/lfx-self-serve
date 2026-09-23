@@ -9,8 +9,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the org membership resolver cache. Bump `v1`→`v2` on a breaking shape change so reads/writes move to a fresh namespace and stale entries age out via TTL. */
   ORG_MEMBERSHIP_NAMESPACE: 'org-membership:v1',
 
-  /** Domain + schema-version segment for the org access / role-grants cache. */
-  ORG_ACCESS_NAMESPACE: 'org-access:v1',
+  /** Domain + schema-version segment for the org access / role-grants cache. `v2`: `resolved` now carries connected-component (upward + cascading) roles alongside the required `degraded` completeness flag, so no entry written by the direct/downward-only resolver can be read back under the new semantics. */
+  ORG_ACCESS_NAMESPACE: 'org-access:v2',
 
   /** Domain + schema-version segment for the per-org Snowflake-backed Org Lens cache (shared across callers). */
   ORG_LENS_SNOWFLAKE_NAMESPACE: 'org-lens-sf:v1',
@@ -47,6 +47,9 @@ export const VALKEY_CACHE = {
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
+
+  /** Domain + schema-version segment for Flow C's (profile Auth0 Management API) CSRF state nonce, keyed by the nonce itself rather than by user or session — see #1938. Kept out of `req.appSession` because express-openid-connect blind-overwrites the whole session on every response; a concurrent request finishing after `/auth/start` silently drops the nonce it wrote. */
+  AUTH_STATE_NAMESPACE: 'auth-state:v1',
 
   /** Domain + schema-version segment for the per-user meeting-invite-email lock (LFXV2 #2241) — serializes `rejectIdentity`'s guard-then-unlink sequence against a concurrent `setMeetingInviteEmail` for the same user. */
   MEETING_INVITE_LOCK_NAMESPACE: 'meeting-invite-lock:v1',
@@ -159,6 +162,9 @@ export const VALKEY_CACHE = {
   /** TTL for a session whose `cookie.maxAge` is present but already non-positive (already past absolute expiry) — expires it out of Valkey immediately instead of handing it the multi-day fallback above. */
   SESSION_EXPIRED_TTL_SECONDS: 1,
 
+  /** TTL for a Flow C auth-state nonce (#1938) — generously bounded for a single OAuth round trip; the only cleanup mechanism for a nonce abandoned mid-flow. */
+  AUTH_STATE_TTL_SECONDS: 600,
+
   /** Per-op cap; a slower cache resolves to a miss so the request fetches directly (well below the ~30s upstream timeout). */
   OP_TIMEOUT_MS: 250,
 
@@ -167,6 +173,9 @@ export const VALKEY_CACHE = {
 
   /** Connection timeout for the lazy client (ioredis's own `connectTimeout`) — this is the real ceiling on a cold `.connect()` handshake, independent of any outer per-op `withTimeout()` race. Matches `SESSION_OP_TIMEOUT_MS` so the session store's larger op budget can actually be spent on the handshake instead of being truncated by a shorter internal connect cap. */
   CONNECT_TIMEOUT_MS: 3000,
+
+  /** Per-op cap for the Flow C auth-state record (#1938). Same rationale as `SESSION_OP_TIMEOUT_MS`: this is an authoritative CSRF check, not a cache that can cheaply degrade, so it must survive the lazy client's cold-connect handshake rather than race a cache-tuned budget. */
+  AUTH_STATE_OP_TIMEOUT_MS: 3000,
 
   /** Per-op cap for a lock acquire/release. Like the session store, a lock op is fail-closed-adjacent (a timeout is treated as "backend unavailable", not silently retried), so this matches `SESSION_OP_TIMEOUT_MS` rather than the cache's much tighter `OP_TIMEOUT_MS` — a lock op is a write that must survive the lazy client's cold-connect handshake, not a read that can cheaply degrade to a miss. */
   LOCK_OP_TIMEOUT_MS: 3000,

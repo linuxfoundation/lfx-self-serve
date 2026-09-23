@@ -1,0 +1,100 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="py-8 flex flex-col gap-4" data-testid="org-easycla-managers">
+  @if (!signed()) {
+    <lfx-empty-state icon="fa-light fa-user-shield" [title]="copy.unsignedTitle" [subtitle]="copy.unsignedBody" data-testid="org-easycla-managers-unsigned" />
+  } @else {
+    <div class="flex items-start justify-between gap-4">
+      <div class="flex flex-col gap-1">
+        <h2 class="text-lg font-semibold text-gray-900 m-0">{{ copy.heading }}</h2>
+        <p class="text-sm text-gray-600 m-0 max-w-3xl">{{ copy.intro }}</p>
+      </div>
+      @if (canAdd()) {
+        <lfx-button
+          [label]="copy.addAction"
+          icon="fa-light fa-plus"
+          [disabled]="writing() || loading()"
+          (onClick)="openAdd()"
+          data-testid="org-easycla-managers-add" />
+      }
+    </div>
+
+    @if (loading()) {
+      <div class="flex flex-col gap-2" data-testid="org-easycla-managers-loading">
+        @for (row of [1, 2, 3]; track row) {
+          <p-skeleton height="3rem" />
+        }
+      </div>
+    } @else if (loadFailed()) {
+      <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" data-testid="org-easycla-managers-error">
+        <ng-template #content>
+          <div class="flex items-center justify-between gap-4 w-full">
+            <span>{{ copy.loadFailed }}</span>
+            <lfx-button [label]="copy.retry" severity="secondary" [outlined]="true" (onClick)="retry()" data-testid="org-easycla-managers-retry" />
+          </div>
+        </ng-template>
+      </lfx-message>
+    } @else if (empty()) {
+      <lfx-empty-state icon="fa-light fa-user-shield" [title]="copy.empty" data-testid="org-easycla-managers-empty" />
+    } @else if (rows(); as rows) {
+      <table class="w-full text-sm" data-testid="org-easycla-managers-table">
+        <thead>
+          <tr class="text-left text-gray-500 border-b border-gray-200">
+            <th scope="col" class="py-2 font-medium">Manager</th>
+            <th scope="col" class="py-2 font-medium">Role</th>
+            <th scope="col" class="py-2 font-medium"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows; track row.manager.lfUsername) {
+            <tr class="border-b border-gray-100" data-testid="org-easycla-managers-row">
+              <td class="py-3">
+                <div class="flex flex-col">
+                  <span class="font-medium text-gray-900" data-testid="org-easycla-managers-name">{{ row.displayName }}</span>
+                  @if (row.mailtoHref) {
+                    <a class="text-gray-500 hover:underline" [href]="row.mailtoHref" data-testid="org-easycla-managers-email">{{ row.manager.email }}</a>
+                  } @else if (row.manager.email?.trim()) {
+                    <span class="text-gray-500" data-testid="org-easycla-managers-email">{{ row.manager.email }}</span>
+                  }
+                </div>
+              </td>
+              <td class="py-3">
+                <span class="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-700">CLA Manager</span>
+              </td>
+              <td class="py-3 text-right">
+                @if (canRemove()) {
+                  @if (lastManager()) {
+                    <div class="flex flex-col items-end gap-1">
+                      <lfx-button
+                        [label]="copy.removeAction"
+                        severity="danger"
+                        [text]="true"
+                        [disabled]="true"
+                        [ariaLabel]="copy.removeBlockedLabel"
+                        data-testid="org-easycla-managers-remove-blocked" />
+                      <span class="text-xs text-gray-500 max-w-xs text-right" data-testid="org-easycla-managers-last-manager-hint">{{
+                        copy.lastManagerHint
+                      }}</span>
+                    </div>
+                  } @else {
+                    <lfx-button
+                      [label]="copy.removeAction"
+                      severity="danger"
+                      [text]="true"
+                      [disabled]="writing() || loading()"
+                      [ariaLabel]="row.removeLabel"
+                      (onClick)="confirmRemove(row.manager)"
+                      data-testid="org-easycla-managers-remove" />
+                  }
+                }
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+
+  <p-confirmdialog />
+</section>

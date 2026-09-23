@@ -24,17 +24,22 @@ import { catchError, debounceTime, distinctUntilChanged, filter, map, of, skip, 
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
+import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
+
+/** Group view-model plus its foundation membership-page router commands (`null` when the group carries no project_slug). */
+type OrgLensGroupRow = OrgLensGroupVm & { membershipLink: string[] | null };
 
 @Component({
   selector: 'lfx-org-groups',
@@ -44,7 +49,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
     GroupSeatHoldersDrawerComponent,
     InputTextComponent,
     NgTemplateOutlet,
-    OpenIntercomDirective,
+    OrgLensEmptyStateComponent,
     PersonDetailDrawerComponent,
     RouterLink,
     SelectComponent,
@@ -56,6 +61,7 @@ import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders
 })
 export class OrgGroupsComponent {
   private readonly accountContext = inject(AccountContextService);
+  private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly personaService = inject(PersonaService);
@@ -63,6 +69,7 @@ export class OrgGroupsComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly platformId = inject(PLATFORM_ID);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly behavioralClassConfig = BEHAVIORAL_CLASS_CONFIG;
@@ -110,12 +117,13 @@ export class OrgGroupsComponent {
   protected readonly statGridClass = `${this.statGridBase} lg:[grid-template-columns:repeat(var(--cols),minmax(0,1fr))]`;
 
   // ── Auth / access guards (mirrors org-meetings pattern) ───────────────────
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  // Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016).
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   // Committee-service B2B endpoints are scoped by org uid, not the Snowflake accountId — mirrors
@@ -146,7 +154,7 @@ export class OrgGroupsComponent {
 
   protected readonly groups: Signal<OrgLensGroupSummary[]> = computed(() => this.groupsData()?.groups ?? []);
   // Not read from the template — filteredGroups() is what the @for actually iterates.
-  private readonly groupsWithClass: Signal<OrgLensGroupVm[]> = this.initGroupsWithClass();
+  private readonly groupsWithClass: Signal<OrgLensGroupRow[]> = this.initGroupsWithClass();
   protected readonly totalGroups: Signal<number> = computed(() => this.groupsData()?.total_groups ?? 0);
   protected readonly totalSeats: Signal<number> = computed(() => this.groupsData()?.total_seats ?? 0);
 
@@ -159,7 +167,7 @@ export class OrgGroupsComponent {
   private readonly foundationLabelsBySlug: Signal<Map<string, string>> = this.initFoundationLabelsBySlug();
   protected readonly foundationOptions: Signal<OrgDropdownOption[]> = this.initFoundationOptions();
   protected readonly typeOptions: Signal<OrgDropdownOption[]> = this.initTypeOptions();
-  protected readonly filteredGroups: Signal<OrgLensGroupVm[]> = this.initFilteredGroups();
+  protected readonly filteredGroups: Signal<OrgLensGroupRow[]> = this.initFilteredGroups();
   // Single source of truth for the export button's disabled state and its tooltip/aria explanation,
   // so every binding that reads it can't drift apart (mirrors showRoster's rationale above).
   protected readonly hasNoRowsToExport: Signal<boolean> = computed(() => this.filteredGroups().length === 0);
@@ -213,11 +221,11 @@ export class OrgGroupsComponent {
     }
     const header = [this.committeeLabel.singular, 'Foundation', 'Type', 'Our Seats', `${this.committeeLabel.singular} UID`];
     const body = rows.map((g) => [g.name, g.projectLabel, BEHAVIORAL_CLASS_CONFIG[g.cls].label, g.org_seat_count, g.uid]);
-    // accountSlug is normalized to '' (not null/undefined) during org-switch/enrichment windows
-    // (see account-context.service.ts's PLACEHOLDER_ACCOUNT and toAccount()) — `||`, not `??`, so
-    // that empty string also falls back rather than producing a bare "org-lens-groups--<date>.csv".
-    const slug = this.accountContext.selectedAccount().accountSlug || 'org';
-    downloadCsv(`org-lens-groups-${slug}-${localDateStamp()}.csv`, [header, ...body]);
+    // The same `/org/{segment}/…` segment the page's own address uses (slug, else SFID). Null when the
+    // selection carries neither a usable slug nor an SFID (placeholder, or a uid that isn't SFID-shaped);
+    // it then falls back rather than producing "org-lens-groups--<date>.csv".
+    const segment = this.accountContext.selectedUrlSegment() ?? 'org';
+    downloadCsv(`org-lens-groups-${segment}-${localDateStamp()}.csv`, [header, ...body]);
   }
 
   // Browser-only (GH-1809). Angular's server render waits for application stability — including any
@@ -254,7 +262,7 @@ export class OrgGroupsComponent {
     );
   }
 
-  private initGroupsWithClass(): Signal<OrgLensGroupVm[]> {
+  private initGroupsWithClass(): Signal<OrgLensGroupRow[]> {
     return computed(() =>
       this.groups().map((g) => {
         const cls = getGroupBehavioralClass(g.category);
@@ -263,8 +271,10 @@ export class OrgGroupsComponent {
         const ariaLabel = `${g.name}, ${BEHAVIORAL_CLASS_CONFIG[cls].label}, ${g.org_seat_count} ${seatWord}` + (projectLabel ? `, ${projectLabel}` : '');
         // See org-groups.component.html for why this links to /org/memberships, not /org/projects.
         const projectAriaLabel = projectLabel ? `View ${projectLabel} membership details` : '';
+        // Hoisted from the template: a method call there allocates a new command array per row on every change-detection pass (frontend-checklist §4).
+        const membershipLink = g.project_slug ? this.orgLens.orgLensLink('memberships', g.project_slug) : null;
         const seatHoldersTriggerAriaLabel = `View ${g.org_seat_count} seat holder${g.org_seat_count === 1 ? '' : 's'} for ${g.name}`;
-        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, seatHoldersTriggerAriaLabel };
+        return { ...g, cls, projectLabel, ariaLabel, projectAriaLabel, membershipLink, seatHoldersTriggerAriaLabel };
       })
     );
   }
@@ -327,7 +337,7 @@ export class OrgGroupsComponent {
     });
   }
 
-  private initFilteredGroups(): Signal<OrgLensGroupVm[]> {
+  private initFilteredGroups(): Signal<OrgLensGroupRow[]> {
     return computed(() => {
       const v = this.filterValues();
       const q = v.search.trim().toLowerCase();

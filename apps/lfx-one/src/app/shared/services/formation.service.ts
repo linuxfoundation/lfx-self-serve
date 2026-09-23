@@ -5,13 +5,15 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import type {
   FormationChecklistResponse,
-  FormationItem,
   FormationItemDetail,
   FormationItemStatus,
+  FormationItemWriteResult,
+  FormationPeopleResponse,
   FormationSubStage,
   FormationsQueueResponse,
   MyFormationWorkResponse,
 } from '@lfx-one/shared/interfaces';
+import { createUnavailableFormationPeopleResponse } from '@lfx-one/shared/constants';
 import { BehaviorSubject, catchError, Observable, of, shareReplay, switchMap, take, tap } from 'rxjs';
 
 /** Builds the `/api/formations/:projectUid/items/:itemKey` base path shared by every item route (GH-2267 Phase 2). */
@@ -45,76 +47,117 @@ export class FormationService {
     shareReplay({ bufferSize: 1, refCount: true })
   );
 
+  /** Per-slug memo behind {@link getFormationPeople}. */
+  private readonly formationPeople = new Map<string, Observable<FormationPeopleResponse>>();
+
   public getProjectFormation(projectSlug: string): Observable<FormationChecklistResponse> {
     return this.http.get<FormationChecklistResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation`);
+  }
+
+  /**
+   * `GET /api/projects/:slug/formation/people` — the checklist sidebar's people card (#2724) and,
+   * since #2772, the item drawer's assignee picker on every open. Memoised per slug: the BFF read
+   * behind it re-runs the checklist gate, the settings read and a per-person metadata fan-out, so
+   * both hosts share one answer. The memo lives as long as this root-provided service — the whole
+   * SPA session, across navigations and projects; nothing clears it on route change. It is dropped
+   * only by {@link invalidateFormationPeople}, which `PermissionsService.invalidateProjectSettings`
+   * calls for every permission, staff and invite write (the list is a projection of the project
+   * settings that cache holds), and by an `unavailable` answer, which is never kept so a transient
+   * failure is retried by the next reader. Degrades to that `unavailable` shape on any HTTP failure
+   * (repo GET convention), which the card renders as its unavailable state — the same shape the BFF
+   * itself returns when the caller cleared the checklist read but upstream refused the settings read.
+   */
+  public getFormationPeople(projectSlug: string): Observable<FormationPeopleResponse> {
+    const memoised = this.formationPeople.get(projectSlug);
+    if (memoised) {
+      return memoised;
+    }
+
+    const read$: Observable<FormationPeopleResponse> = this.http
+      .get<FormationPeopleResponse>(`/api/projects/${encodeURIComponent(projectSlug)}/formation/people`)
+      .pipe(
+        catchError((error: unknown) => {
+          console.error('[FormationService] Failed to load formation people', error);
+          return of(createUnavailableFormationPeopleResponse());
+        }),
+        tap((response) => {
+          // Only this read's own entry — an invalidate-then-re-read may already have replaced it.
+          if (response.state === 'unavailable' && this.formationPeople.get(projectSlug) === read$) {
+            this.formationPeople.delete(projectSlug);
+          }
+        }),
+        // Completed HTTP source: the buffer outlives the subscribers (the drawer closes between reads).
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    this.formationPeople.set(projectSlug, read$);
+    return read$;
+  }
+
+  /**
+   * Drops the people memo so the next {@link getFormationPeople} reads afresh — one slug, or every
+   * slug when none is given. The settings cache that feeds this list is keyed by project uid while
+   * the memo is keyed by slug, so its invalidation clears everything rather than mapping between
+   * the two; the memo is cheap to rebuild and a stale list is the failure this exists to prevent.
+   */
+  public invalidateFormationPeople(projectSlug?: string): void {
+    if (projectSlug === undefined) {
+      this.formationPeople.clear();
+      return;
+    }
+    this.formationPeople.delete(projectSlug);
+  }
+
+  /**
+   * Auditor-gated twin of {@link getProjectFormation} for the foundation formations drill-down
+   * (LFXV2-3386): identical response from the same BFF controller, but `requireAuditor`-gated
+   * server-side so the queue's root-auditor contract holds during SSR too — the drill-down route's
+   * client guard alone can't stop a non-auditor's first server render (#2690 review).
+   */
+  public getQueueFormationChecklist(projectSlug: string): Observable<FormationChecklistResponse> {
+    return this.http.get<FormationChecklistResponse>(`/api/formations/${encodeURIComponent(projectSlug)}/checklist`);
   }
 
   public getFormationItem(projectUid: string, itemKey: string): Observable<FormationItemDetail> {
     return this.http.get<FormationItemDetail>(itemPath(projectUid, itemKey));
   }
 
-  public completeFormationItem(projectUid: string, itemKey: string, notes?: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/complete`, { notes }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  public skipFormationItem(projectUid: string, itemKey: string, reason: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/skip`, { reason }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  public requestFormationItem(projectUid: string, itemKey: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/request`, {}).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  /** The three "plain" status transitions (not_started / in_progress / blocked) — completion and skip keep their own dedicated endpoints. */
-  public updateFormationItemStatus(projectUid: string, itemKey: string, status: FormationItemStatus, note?: string): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(`${itemPath(projectUid, itemKey)}/status`, { status, note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
+  /**
+   * `PATCH /api/formations/:projectUid/items/:itemKey` — note/evidence_link (GH-2576 Phase 2).
+   * `ifMatch` is the item's current `version` as a bare-digit string (`String(item.version)`); the
+   * response's `etag` is that same version's successor, ready to use as the next call's `ifMatch`
+   * without a re-fetch.
+   */
   public updateFormationItem(
     projectUid: string,
     itemKey: string,
-    patch: { notes?: string; owner_username?: string; due_date?: string | null }
-  ): Observable<FormationItem> {
-    return this.http.patch<FormationItem>(itemPath(projectUid, itemKey), patch).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+    ifMatch: string,
+    patch: { note?: string; evidence_link?: string }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(itemPath(projectUid, itemKey), 'PATCH', ifMatch, patch);
   }
 
-  /** New in GH-2267 Phase 2 — mirrors upstream's `accept` action; see `formationService.acceptFormationItem` (server) for the gating detail. */
-  public acceptFormationItem(projectUid: string, itemKey: string, note?: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/accept`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+  /** `POST /api/formations/:projectUid/items/:itemKey/assignment` — assignee/due_date (GH-2576 Phase 2, new route). Empty string clears either field. */
+  public updateFormationItemAssignment(
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { assignee?: string; due_date?: string }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(`${itemPath(projectUid, itemKey)}/assignment`, 'POST', ifMatch, patch);
   }
 
-  /** New in GH-2267 Phase 2 — `note` is required upstream (minLength 1); the BFF/service enforce it, this method just forwards it. */
-  public rejectFormationItem(projectUid: string, itemKey: string, note: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/reject`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
-  }
-
-  /** New in GH-2267 Phase 2 — reverses a done/skipped/awaiting-acceptance item back to in_progress. */
-  public reopenFormationItem(projectUid: string, itemKey: string, note?: string): Observable<FormationItem> {
-    return this.http.post<FormationItem>(`${itemPath(projectUid, itemKey)}/reopen`, { note }).pipe(
-      tap(() => this.invalidateMyFormationWork()),
-      take(1)
-    );
+  /**
+   * `POST /api/formations/:projectUid/items/:itemKey/status` — status/reason/sub_items (GH-2576
+   * Phase 2). `reason` is required by upstream only for specific targets
+   * (blocked/skipped/back-to-not_started) — this method doesn't pre-validate that, it just forwards.
+   */
+  public updateFormationItemStatus(
+    projectUid: string,
+    itemKey: string,
+    ifMatch: string,
+    patch: { status?: FormationItemStatus; reason?: string; sub_items?: unknown }
+  ): Observable<FormationItemWriteResult> {
+    return this.writeItem(`${itemPath(projectUid, itemKey)}/status`, 'POST', ifMatch, patch);
   }
 
   public getFormationsQueue(subStage?: FormationSubStage, search?: string, foundationUid?: string): Observable<FormationsQueueResponse> {
@@ -126,21 +169,38 @@ export class FormationService {
   }
 
   /**
-   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller.
-   * `my-formations-card` and the multi-persona "In formation" tile both call this independently on
-   * the same dashboard; `shareReplay({ refCount: true })` collapses that into one HTTP request per
-   * navigation instead of two, and tears the subscription down (re-fetching on the next subscribe)
-   * once the last consumer unsubscribes. The source is `refreshMyFormationWork$`, not the bare
-   * `HttpClient` call, so `invalidateMyFormationWork()` (wired into every status-changing mutation
-   * above, plus the item drawer's completion/skip paths) re-runs the fetch and pushes the new
-   * response straight to whichever card/tile is already on screen — no re-navigation needed.
+   * GH-1956 Me lens — formations with at least one checklist item assigned to the caller. Consumed
+   * by the My Formations page (`my-formations.component.ts`, #2753) and by the multi-persona
+   * dashboard's "In formation" tile; `shareReplay({ refCount: true })` collapses concurrent
+   * subscribers into one HTTP request per navigation, and tears the subscription down (re-fetching
+   * on the next subscribe) once the last consumer unsubscribes. The source is
+   * `refreshMyFormationWork$`, not the bare `HttpClient` call, so `invalidateMyFormationWork()`
+   * (wired into every write method above, the item drawer's completion/skip paths, and the page's
+   * Retry) re-runs the fetch and pushes the new response straight to whichever page/tile is already
+   * on screen — no re-navigation needed.
    */
   public getMyFormationWork(): Observable<MyFormationWorkResponse> {
     return this.myFormationWork$;
   }
 
-  /** Re-fetches `getMyFormationWork()` and republishes it to every live subscriber. Called automatically by the mutation methods above. */
+  /** Re-fetches `getMyFormationWork()` and republishes it to every live subscriber. Called automatically by the write methods above. */
   public invalidateMyFormationWork(): void {
     this.refreshMyFormationWork$.next();
+  }
+
+  /**
+   * Shared transport for the three write routes above — sends `If-Match`, reads the response body's
+   * `{item, etag}` (the BFF mirrors the etag into both the body and the `ETag` response header; the
+   * body is what every caller here actually needs). Every call invalidates the cached "My formations"
+   * work stream, same as every mutation did pre-GH-2576.
+   */
+  private writeItem(url: string, method: 'PATCH' | 'POST', ifMatch: string, body: Record<string, unknown>): Observable<FormationItemWriteResult> {
+    const options = { headers: { 'If-Match': ifMatch } };
+    const request$ =
+      method === 'PATCH' ? this.http.patch<FormationItemWriteResult>(url, body, options) : this.http.post<FormationItemWriteResult>(url, body, options);
+    return request$.pipe(
+      tap(() => this.invalidateMyFormationWork()),
+      take(1)
+    );
   }
 }

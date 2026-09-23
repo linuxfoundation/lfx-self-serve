@@ -3,9 +3,9 @@
 
 import '@angular/compiler';
 
-import { MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS, MOCK_MENTORSHIP_MENTOR_PROGRAMS } from '@lfx-one/shared/constants';
+import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -27,30 +27,60 @@ function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
 }
 
+describe('MentorshipService — read-only contract', () => {
+  let service: InstanceType<typeof MentorshipService>;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns a stable program list across consecutive reads', async () => {
+    const first = await service.getPrograms(buildReq());
+    const second = await service.getPrograms(buildReq());
+
+    expect(first.total).toBe(second.total);
+    expect(first.total).toBeGreaterThan(0);
+    expect(first.data.map((p) => p.id)).toEqual(second.data.map((p) => p.id));
+  });
+});
+
 describe('MentorshipService.getMentorProgram', () => {
   let service: InstanceType<typeof MentorshipService>;
 
   beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-17T12:00:00.000Z'));
     service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   it('resolves by primary id and returns a fully-built detail (program + tab counts + lists)', async () => {
     const detail = await service.getMentorProgram(buildReq(), 'mp_gridflow_fall26');
 
-    const source = MOCK_MENTORSHIP_MENTOR_PROGRAMS.find((program) => program.id === 'mp_gridflow_fall26')!;
+    const source = getMockMentorshipMentorPrograms().find((program) => program.id === 'mp_gridflow_fall26')!;
     // Detail carries the raw program plus the derived tab counts and the mentee & applicant lists.
     expect(detail.program.id).toBe(source.id);
     expect(detail.program.slug).toBe(source.slug);
     expect(detail.program.name).toBe(source.name);
 
     // Tab counts and rows come from the id-keyed mentor lists (term-filtered), not
-    // the admin slug map. `tasks` still comes from `stats.tasksToReview`.
-    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS[source.id];
+    // the admin slug map. `tasks` is the submitted-task count on those mentees.
+    const lists = getMockMentorshipMentorProgramLists()[source.id];
     expect(detail.tabCounts).toEqual({
       tasks: source.stats.tasksToReview,
       mentees: lists.mentees.length,
       applicants: lists.applicants.length,
     });
+    expect(detail.program.stats.tasksToReview).toBe(detail.tabCounts.tasks);
     expect(detail.program.stats.mentees).toBe(lists.mentees.length);
     expect(detail.program.stats.applicants).toBe(lists.applicants.length);
     expect(detail.mentees).toEqual(lists.mentees);
@@ -66,7 +96,7 @@ describe('MentorshipService.getMentorProgram', () => {
 
   it('does not join a Fall mentor card to Winter applicant rows stored under the same slug', async () => {
     const detail = await service.getMentorProgram(buildReq(), 'mp_apicurio_fall26');
-    const lists = MOCK_MENTORSHIP_MENTOR_PROGRAM_LISTS['mp_apicurio_fall26'];
+    const lists = getMockMentorshipMentorProgramLists()['mp_apicurio_fall26'];
     expect(detail.applicants).toEqual(lists.applicants);
     expect(detail.applicants.some((applicant) => applicant.termName === 'Winter 2026')).toBe(false);
     expect(detail.tabCounts.applicants).toBe(detail.applicants.length);
@@ -74,7 +104,7 @@ describe('MentorshipService.getMentorProgram', () => {
   });
 
   it('resolves by slug for callers that route via the URL-friendly identifier', async () => {
-    const source = MOCK_MENTORSHIP_MENTOR_PROGRAMS[0];
+    const source = getMockMentorshipMentorPrograms()[0];
     const detail = await service.getMentorProgram(buildReq(), source.slug);
     expect(detail.program.id).toBe(source.id);
   });
@@ -105,5 +135,27 @@ describe('MentorshipService.getMentorProgram', () => {
     expect(detail.mentees.map((mentee) => mentee.id)).toEqual(['mnt_thanos_1', 'mnt_thanos_2']);
     expect(detail.tabCounts.mentees).toBe(detail.mentees.length);
     expect(detail.program.stats.mentees).toBe(detail.mentees.length);
+  });
+});
+
+describe('MentorshipService.getMenteeApplyTarget', () => {
+  let service: InstanceType<typeof MentorshipService>;
+
+  beforeEach(() => {
+    service = new MentorshipService();
+  });
+
+  it('resolves the program name, project, and the requested term', async () => {
+    const target = await service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'trm_apicurio_winter26');
+
+    expect(target).toEqual({
+      programName: 'Apicurio Registry: Prompt Template Playground',
+      projectName: 'CNCF',
+      termName: 'Winter 2026',
+    });
+  });
+
+  it('rejects an unknown term on a known program', async () => {
+    await expect(service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'missing-term')).rejects.toBeInstanceOf(ResourceNotFoundError);
   });
 });

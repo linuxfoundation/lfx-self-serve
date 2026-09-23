@@ -3,18 +3,20 @@
 
 import { isPlatformBrowser } from '@angular/common';
 import { Component, computed, inject, PLATFORM_ID, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { IcalSubscribeDialogComponent } from '@app/modules/committees/components/ical-subscribe-dialog/ical-subscribe-dialog.component';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
+import { MeetingComposerService } from '@app/modules/meetings/meeting-composer/meeting-composer.service';
+import { MeetingCreateMenuComponent } from '@app/modules/meetings/meeting-composer/meeting-create-menu.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { environment } from '@environments/environment';
 import { EventClickArg, EventInput } from '@fullcalendar/core';
-import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { Lens, MeLensMeetingFilters, Meeting, MeetingCalendarClickProps, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
+import { MEETING_RECORDING_COUNT_FETCH_CONCURRENCY, MEETING_TYPE_CONFIGS, MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { Lens, MeetingCalendarClickProps, MeLensMeetingFilters, Meeting, PageResult, PastMeeting, ProjectContext, ViewMode } from '@lfx-one/shared/interfaces';
 import {
   getCurrentOrNextOccurrence,
   getLargestSessionShareUrl,
@@ -27,14 +29,13 @@ import {
   resolveMeetingCalendarClickRoute,
   sortPastMeetingsDescending,
 } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
-import { hasMeetingWriteAccess } from '@shared/utils/write-access.util';
 import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import {
@@ -53,6 +54,7 @@ import {
   Observable,
   of,
   scan,
+  skip,
   Subject,
   switchMap,
   take,
@@ -73,6 +75,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
     EmptyStateComponent,
     FullCalendarComponent,
     SkeletonModule,
+    MeetingCreateMenuComponent,
   ],
   providers: [DialogService],
   templateUrl: './meetings-dashboard.component.html',
@@ -80,8 +83,8 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 })
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly projectService = inject(ProjectService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);
@@ -89,6 +92,7 @@ export class MeetingsDashboardComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly platformId = inject(PLATFORM_ID);
   private readonly dialogService = inject(DialogService);
+  private readonly composer = inject(MeetingComposerService);
 
   public readonly activeLens: Signal<Lens> = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
@@ -126,7 +130,15 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
-  protected readonly canWriteMeetings: Signal<boolean> = this.initCanWriteMeetings();
+  protected readonly canWriteMeetings: Signal<boolean> = this.projectContextService.canWriteMeetings;
+  /**
+   * Whether meetings v2 is the create surface for this user.
+   * @description Read as a signal so the header settles on its own once LaunchDarkly resolves, and
+   * defaulted to `false` so a slow or unreachable provider leaves the pre-v2 `/meetings/create`
+   * button in place rather than a dropdown into a composer this user isn't targeted for. See
+   * `MEETING_V2_ENABLED_FLAG`.
+   */
+  protected readonly meetingsV2Enabled: Signal<boolean> = this.featureFlagService.getBooleanFlag(MEETING_V2_ENABLED_FLAG, false);
   protected readonly publicCalendarUrl: Signal<string | null> = this.initPublicCalendarUrl();
   protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
@@ -255,12 +267,33 @@ export class MeetingsDashboardComponent {
     this.calendarLoading = computed(() =>
       this.activeLens() === 'me' ? this.meetingsLoading() || this.pastMeetingsLoading() : this.fpUpcomingLoading() || this.fpPastLoading()
     );
+
+    // The composer saves in place instead of navigating, so this list is what the organizer looks at
+    // straight after creating a meeting — refetch rather than leave the new meeting missing from it.
+    // `skip(1)` drops the value `toObservable` replays on subscribe. The counter is monotonic and lives in
+    // a root service, so on any mount after the first save that replay is a non-zero count describing a
+    // save this instance already loaded — refetching on it would double every request the streams below
+    // just made.
+    // `false`: the composer only creates or edits an upcoming meeting, which cannot change whether a
+    // past meeting has a recording. Dropping the whole per-uid cache here would re-run
+    // `getPastMeetingRecording()` for every past meeting in the 30-day window on each save.
+    toObservable(this.composer.saveCount)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => this.refreshMeetings(false));
   }
 
-  public refreshMeetings(): void {
+  /**
+   * Refetches both meeting lists. `clearRecordingCache` also drops the per-uid past-meeting
+   * recording cache, which costs one `getPastMeetingRecording()` call per past meeting in the
+   * window on the next render — so only callers that can actually have changed recording
+   * availability (a card edit or delete, which the past list renders too) ask for it.
+   */
+  public refreshMeetings(clearRecordingCache = true): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
-    this.meetingService.clearPastMeetingRecordingCache();
+    if (clearRecordingCache) {
+      this.meetingService.clearPastMeetingRecordingCache();
+    }
     this.refresh$.next();
   }
 
@@ -369,21 +402,6 @@ export class MeetingsDashboardComponent {
       }
       return `/projects/${encodeURIComponent(slug)}/calendar`;
     });
-  }
-
-  private initCanWriteMeetings(): Signal<boolean> {
-    return toSignal(
-      toObservable(this.projectContextService.activeContext).pipe(
-        switchMap((ctx) => {
-          if (!ctx?.slug) return of(false);
-          return this.projectService.getProject(ctx.slug, false, { meetingCoordinator: true }).pipe(
-            map((project) => hasMeetingWriteAccess(project)),
-            catchError(() => of(false))
-          );
-        })
-      ),
-      { initialValue: false }
-    );
   }
 
   private initializeUpcomingMeetings(): Signal<Meeting[]> {

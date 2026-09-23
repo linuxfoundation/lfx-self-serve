@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMember, MeetingRegistrant, QueryServiceResponse, UserSearchParams, UserSearchResponse, UserSearchResult } from '@lfx-one/shared/interfaces';
+import { dedupeUserSearchResults } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -23,6 +24,9 @@ export class SearchService {
     const queryParams = {
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
+      // Relevance ordering for a name typeahead — without it upstream sorts `name_asc` and the
+      // closest match can land on a later page (see `UserSearchParams.sort`).
+      ...(params.sort ? { sort: params.sort } : {}),
       type: params.type,
     };
 
@@ -81,29 +85,17 @@ export class SearchService {
 
     // Deduplicate by username (LFID — stable across registrations) or email
     // (fallback) — the upstream query service returns one row per registration
-    // or committee membership, so the same person can appear many times.
+    // or committee membership, so the same person can appear many times. The
+    // rule lives in the shared `dedupeUserSearchResults`, which the frontend
+    // also applies when it merges two lookups for one query, so there is one
+    // definition of "same person".
     // NOTE: r.uid is the per-row record ID (not a user ID), so it cannot be
     // used as a dedup key — two rows for the same person always have different uids.
-    // NOTE: searchUsers() issues a single upstream call, so `seen` correctly covers
-    // the full result set. If this endpoint ever walks multiple pages (page_token),
-    // `seen` must be hoisted to span all pages — otherwise duplicates can reappear
-    // at page boundaries.
-    const seen = new Set<string>();
-    const results = mapped.filter((r) => {
-      const username = r.username?.trim().toLowerCase();
-      const email = r.email?.trim().toLowerCase();
-      let key: string;
-      if (username) {
-        key = `username:${username}`;
-      } else if (email) {
-        key = `email:${email}`;
-      } else {
-        return true; // no stable identifier to deduplicate on, keep the entry
-      }
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
+    // NOTE: searchUsers() issues a single upstream call, so one pass correctly
+    // covers the full result set. If this endpoint ever walks multiple pages
+    // (page_token), the dedupe must span all pages — otherwise duplicates can
+    // reappear at page boundaries.
+    const results = dedupeUserSearchResults(mapped);
 
     return {
       results,

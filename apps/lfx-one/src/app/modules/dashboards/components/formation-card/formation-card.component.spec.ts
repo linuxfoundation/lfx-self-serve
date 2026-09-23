@@ -3,7 +3,7 @@
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { signal } from '@angular/core';
-import { Project, ProjectSettings } from '@lfx-one/shared/interfaces';
+import { Formation, Project, ProjectSettings } from '@lfx-one/shared/interfaces';
 import { getFormationSubStageLabel } from '@lfx-one/shared/utils';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -56,6 +56,7 @@ function settings(): ProjectSettings {
 describe('FormationCardComponent', () => {
   let fixture: ComponentFixture<FormationCardComponent>;
   let getProjectSpy: ReturnType<typeof vi.fn>;
+  let getProjectSfidSpy: ReturnType<typeof vi.fn>;
 
   async function render(
     stage: string,
@@ -182,6 +183,128 @@ describe('FormationCardComponent', () => {
 
     await render('Formation - Engaged', false, { settingsResult: of({ ...settings(), announcement_date: '' }) });
     expect(text()).toContain('Not set');
+  });
+
+  // #2719: both checklist hosts pass the response their section just fetched, so the card costs no
+  // extra request and is visible to whoever could read the checklist. On the foundation drill-down
+  // ProjectContextService describes the PARENT FOUNDATION, so reading it here at all would pair the
+  // foundation's slug with a child project's checklist — the throwing provider below is what keeps
+  // that regression from reappearing.
+  describe('formation input (#2719)', () => {
+    /**
+     * Every member the card reads in context mode, each of which throws. A Proxy would be terser
+     * but Angular's injector profiler touches `constructor` on a provided value, so it would trip
+     * on wiring rather than on a real read.
+     */
+    function throwingProjectContext(): Record<string, never> {
+      const members = [
+        'activeProject',
+        'activeProjectFormationSubStage',
+        'activeProjectAnnouncementDate',
+        'activeProjectAnnouncementDateLoading',
+        'activeProjectAnnouncementDateHasError',
+      ];
+      const stub = {};
+      for (const member of members) {
+        Object.defineProperty(stub, member, {
+          get: () => {
+            throw new Error(`FormationCardComponent read ProjectContextService.${member} while its formation input was set`);
+          },
+        });
+      }
+      return stub as Record<string, never>;
+    }
+
+    function formation(overrides: Partial<Formation> = {}): Formation {
+      return {
+        parent_project_uid: 'child-uid',
+        parent_project_slug: 'child-project',
+        parent_project_name: 'Child Project',
+        is_foundation: false,
+        parent_uid: null,
+        template_uid: 'template:test',
+        template_version: 1,
+        sub_stage: null,
+        sub_stage_raw: 'Formation - Engaged',
+        lifecycle: null,
+        lifecycle_raw: '',
+        announcement_date: '2026-10-25',
+        is_activating: false,
+        gating_items_open: 0,
+        gating_items_total: 0,
+        blocking_item_title: null,
+        subtitle: null,
+        ...overrides,
+      };
+    }
+
+    async function renderWithInput(value: Formation, admin: { sfid?: string | null; auditor?: boolean } = {}): Promise<void> {
+      TestBed.resetTestingModule();
+      getProjectSpy = vi.fn(() => of(project('Formation - Engaged', { auditor: admin.auditor ?? false })));
+      getProjectSfidSpy = vi.fn(() => of(admin.sfid ?? null));
+      await TestBed.configureTestingModule({
+        imports: [FormationCardComponent],
+        providers: [
+          { provide: ProjectService, useValue: { getProjectSfid: getProjectSfidSpy, getProject: getProjectSpy } },
+          { provide: ProjectContextService, useValue: throwingProjectContext() },
+        ],
+      }).compileComponents();
+
+      fixture = TestBed.createComponent(FormationCardComponent);
+      fixture.componentRef.setInput('formation', value);
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('renders the sub-stage, announcement date and slug from the response, never from the project context', async () => {
+      await renderWithInput(formation());
+
+      expect(text()).toContain('Engaged');
+      expect(text()).toContain('Oct 25, 2026');
+      expect(text()).toContain('child-project');
+      expect(text()).not.toContain('project-one');
+    });
+
+    // The admin-tool link is the one cross-project field the card resolves itself, and the only
+    // one that can leak an identity: both probes key off `FormationCardView.uid`, which in input
+    // mode comes from `parent_project_uid`. A regression to `uid: null` would hide the link rather
+    // than fail, so the whole chain (uid -> auditor probe -> SFID -> href) is asserted here — this
+    // is the mixing hazard #2719 exists for, and the other input-mode specs stub the SFID to null.
+    it('resolves the admin-tool link from the response uid — the CHILD project, not the context', async () => {
+      await renderWithInput(formation(), { sfid: 'child-sfid', auditor: true });
+
+      expect(getProjectSpy).toHaveBeenCalledWith('child-uid', false, { auditor: true });
+      expect(getProjectSfidSpy).toHaveBeenCalledWith('child-uid');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-tool-link"]').getAttribute('href')).toBe(
+        'https://pcc.dev.platform.linuxfoundation.org/project/child-sfid'
+      );
+    });
+
+    it('hides the admin-tool link when the response carries no uid, instead of probing the wrong project', async () => {
+      await renderWithInput(formation({ parent_project_uid: undefined }), { sfid: 'child-sfid', auditor: true });
+
+      expect(getProjectSpy).not.toHaveBeenCalled();
+      expect(getProjectSfidSpy).not.toHaveBeenCalled();
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card-admin-links"]')).toBeNull();
+    });
+
+    it('falls back to "Not set" when the response carries no announcement date, without the loading or error states', async () => {
+      // The BFF degrades a failed (auditor-gated) settings read to null rather than failing the
+      // checklist, so a null date here is an expected value, not an error — and nothing is still
+      // in flight, because the date arrived with the response.
+      await renderWithInput(formation({ announcement_date: null }));
+
+      expect(text()).toContain('Not set');
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card-error"]')).toBeNull();
+      expect(fixture.nativeElement.querySelector('p-skeleton')).toBeNull();
+    });
+
+    it('omits the sub-stage pill when the raw stage is not a Formation sub-stage', async () => {
+      await renderWithInput(formation({ sub_stage_raw: 'Active' }));
+
+      expect(fixture.nativeElement.querySelector('[data-testid="formation-card"]')).not.toBeNull();
+      expect(text()).not.toContain('Engaged');
+    });
   });
 
   it('shows the error state when the settings fetch fails, without hiding data that already loaded (the sub-stage pill, slug, and admin links)', async () => {

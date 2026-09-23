@@ -227,6 +227,8 @@ export class OrgDependencyDrawerComponent {
 - **Loading spinner**: `fa-light fa-spinner-third fa-spin`
 - **Empty state**: Icon + descriptive text in a bordered container
 - **Test IDs**: `data-testid` on the drawer and key sections
+- **Sticky footer**: `ng-template #footer` for actions that must stay visible while the body scrolls, with `[pt]="{ footer: { class: 'border-t border-gray-200' } }"` for the divider. The template must stay statically declared (PrimeNG resolves it through a ContentChild query) — hide it with a `pt` class when it has nothing to show, not with an `@if` around the template (see `formation-item-drawer`).
+- **Dialog semantics**: `p-drawer` announces as an unnamed `complementary` landmark even with a mask, and never moves focus in. A modal drawer sets `[pt]="{ root: { role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': '<title id>' } }"`, focuses its title (`tabindex="-1"`) from `(onShow)`, and hands focus back to the trigger on close. PrimeNG only emits `(onHide)` for its own Escape/mask close, never for a programmatic `visible.set(false)`, so the restore hook follows how the drawer closes: `group-seat-holders-drawer` restores from `(onHide)` and deliberately skips programmatic closes (an org switch closes it and its trigger is gone by then); `formation-item-drawer` subscribes to `toObservable(visible)` filtered to `false` (a subscription, not an `effect()`, per the frontend checklist) because its own close button and the section's post-write close are programmatic and must still hand focus back.
 
 ## List Display
 
@@ -258,6 +260,20 @@ Drawer components follow the standard component organization:
 6. Computed signals and data loading signals
 7. Protected methods (`onClose()`)
 8. Private initializer functions (`initDrawerData()`, `initChartData()`)
+
+## Opening a Drawer From a Query Param
+
+Two shapes exist for landing a user inside a drawer from a URL:
+
+- **URL-synced** — the drawer's open/closed state mirrors a query param for as long as it is open, and closing it clears the param. `my-newsletters` does this with `?issue=` (see its `onDrawerVisibleChange`). Use it when the drawer is a destination worth bookmarking or sharing.
+- **Consumed once** — the param is a one-shot instruction: open this thing on arrival, then forget it. `FormationChecklistSectionComponent` does this with `?item=<template_item_key>` (`FORMATION_ITEM_QUERY_PARAM`), which the Me-lens pending-action row and the formation-service item-assigned email link to (#2727, #2732, #2573, #2616). Use it when the drawer is one of many over a shared surface and a stale URL would misrepresent the page.
+
+The consumed-once shape has four rules, all in `formation-checklist-section.component.ts`'s `initDeepLink`:
+
+1. **Browser only.** Guard with `isPlatformBrowser`; the server render never opens a modal or rewrites the URL (a server-side `router.navigate` risks an NG0500 hydration mismatch).
+2. **Read once, at mount.** The value is navigation intent, not reactive state: read it from the route snapshot in the constructor. A fresh navigation to the page creates a fresh component and a fresh read.
+3. **Wait for the first terminal state, then strip in place.** Act on the first `ready` / `no-template` / `no-items` state, then `router.navigate([], { queryParams: { <param>: null }, queryParamsHandling: 'merge', replaceUrl: true })`. Once-only becomes structural: a refresh, Back or a post-mutation reload cannot re-trigger it, and the URL never claims something is open when it isn't. The `error` state is deliberately not terminal, so an in-page Retry can still honour the link.
+4. **Fail quietly, never echo.** An unknown value (a stale link) opens nothing and is still stripped; the caller-controlled text is never rendered or logged.
 
 ## Insights Handoff & Deep-Linking
 

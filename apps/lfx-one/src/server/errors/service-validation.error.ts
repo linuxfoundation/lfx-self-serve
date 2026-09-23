@@ -8,6 +8,13 @@ import { BaseApiError } from './base.error';
 /**
  * Error class for service-level validation failures
  * Matches the format that microservices would return for validation errors
+ *
+ * The `Validation failed` messages below are a wire contract, not just copy: the frontend reads the
+ * prefix to know the top-level message names a wire key and the readable reason is in `errors[]`
+ * (`readErrorBodyMessage`, shared by both frontend readers). They are written out rather than interpolated from
+ * `VALIDATION_FAILED_MESSAGE_PREFIX` because most server specs stub `@lfx-one/shared/constants`
+ * wholesale; `service-validation.error.spec.ts` pins them against that constant instead, so a reword
+ * on either side fails loudly.
  */
 export class ServiceValidationError extends BaseApiError {
   public readonly validationErrors: ValidationError[];
@@ -118,6 +125,30 @@ export class ConflictError extends BaseApiError {
     } = {}
   ) {
     super(message, 409, code, options);
+  }
+}
+
+/**
+ * Error class for a 400 upstream write-route rejection that still carries a machine-readable
+ * `reason` (`blocked_reason_required`/`skip_reason_required`/`return_reason_required`/
+ * `no_fields_to_update`/`link_scheme_invalid`/`due_date_invalid`/`assignee_not_on_project`/etc,
+ * GH-2576 Phase 2) — `lfx-v2-formation-service` classifies most of its reason enum as
+ * `ErrInvalidRequest` (400), not `ErrConflict` (409); only `checklist_read_only`/`invalid_transition`
+ * are genuinely 409 (see {@link ConflictError}). Distinguished from {@link ServiceValidationError}
+ * (this BFF's own pre-request field validation) since this one names an upstream reason as its
+ * `code`, not a field.
+ */
+export class InvalidRequestError extends BaseApiError {
+  public constructor(
+    message: string,
+    code: string,
+    options: {
+      operation?: string;
+      service?: string;
+      path?: string;
+    } = {}
+  ) {
+    super(message, 400, code, options);
   }
 }
 

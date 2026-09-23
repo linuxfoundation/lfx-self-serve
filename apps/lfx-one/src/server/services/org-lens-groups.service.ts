@@ -57,7 +57,8 @@ export class OrgLensGroupsService {
     const startedAt = Date.now();
     const cacheKey = qualification === 'org-grant' ? buildOrgGroupsCacheKey(orgUid) : null;
 
-    // Staff-only caller, or an org uid too unsafe to key on: resolve directly and store nothing.
+    // Auditor-entitled caller (no grant resolved on this org), or an org uid too unsafe to key on:
+    // resolve directly and store nothing.
     if (cacheKey === null) {
       const response = await this.resolveGroups(req, orgUid);
       this.logGroupsRequest(req, orgUid, response, startedAt, 'uncached');

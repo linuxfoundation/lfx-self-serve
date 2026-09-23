@@ -25,6 +25,9 @@ export * from './auth.interface';
 // Session store interfaces
 export * from './session-store.interface';
 
+// Auth-state (Flow C CSRF nonce) interfaces
+export * from './auth-state.interface';
+
 // API interfaces
 export * from './api.interface';
 
@@ -146,6 +149,12 @@ export * from './navigation.interface';
 // Org selector (spec 020) — paginated FGA-filtered org list + role grants + canonical record
 export * from './org-selector.interface';
 
+// Org Lens empty states (spec 053) — registry state names, actions, section outcomes
+export * from './org-lens-empty-state.interface';
+
+// Org Lens URL scheme (spec 050) — address intent
+export * from './org-lens-url.interface';
+
 // Persona detection interfaces
 export * from './persona-detection.interface';
 
@@ -176,6 +185,9 @@ export * from './impersonation.interface';
 
 // Health Metrics interfaces
 export * from './health-metrics.interface';
+
+// Health Metrics Engagement page (LFXV2-3366) interfaces
+export * from './health-metrics-engagement.interface';
 
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
@@ -348,6 +360,9 @@ export * from './icp.interface';
 // Social Listening interfaces (LFXV2-3002)
 export * from './social-listening.interface';
 
+// Gatewaze admin embed host-context contract (embedded React-in-Angular pilot)
+export * from './gw-embed.interface';
+
 // Per-user preference store + BFF wire contracts (LFXV2-3002 Block 0)
 export * from './user-preference.interface';
 
@@ -356,3 +371,4 @@ export * from './feature-flag.interface';
 
 // Formation checklist + Formations queue interfaces (GH-1958)
 export * from './formation-checklist.interface';
+export * from './formation-people.interface';

@@ -6,9 +6,11 @@ import { HttpParams } from '@angular/common/http';
 import {
   CANCELLED_COLOR,
   COMMITTEE_TO_MEETING_VOTING_STATUS,
+  MAINTAINER_MEETING_TYPES,
   MEETING_ORGANIZER_SKIP_IDENTIFIERS,
   MEETING_TO_COMMITTEE_VOTING_STATUS,
   MEETING_TYPE_COLORS,
+  MEETING_TYPE_OPTIONS,
   PAST_MEETING_CALENDAR_COLOR,
   PAST_SURVEY_CALENDAR_COLOR,
   PAST_VOTE_CALENDAR_COLOR,
@@ -18,11 +20,12 @@ import {
   VOTE_COLOR,
 } from '../constants';
 import { lfxColors } from '../constants/colors.constants';
-import { CommitteeMemberVotingStatus, RecurrenceType } from '../enums';
+import { CommitteeMemberVotingStatus, MeetingType, RecurrenceType } from '../enums';
 import { PollStatus } from '../enums/poll.enum';
 import type {
   BuildMeetingOccurrenceRouteOptions,
   CalendarColor,
+  CardSelectorOption,
   CustomRecurrencePattern,
   Meeting,
   MeetingAllowedVotingStatus,
@@ -39,6 +42,7 @@ import type {
   PastMeeting,
   PastMeetingSummary,
   PastMeetingTranscript,
+  PersonaType,
   PublicMeetingOccurrencesResponse,
   QueryServiceItem,
   RecurrenceSummary,
@@ -1443,6 +1447,35 @@ export function normalizeMeetingApiVotingStatuses(statuses: ReadonlyArray<string
 }
 
 /**
+ * Whether the voting-status filter applies to the current group selection.
+ * @description Uses option metadata when every selected group is present in `options`. An empty
+ * selection is not missing metadata — there is nothing to filter. When any selected group is
+ * unresolved (empty or failed options load, or a mixed known/unknown set), a non-empty saved
+ * filter is metadata-independent evidence that voting filtering was configured. Fail-safe is
+ * "keep the filter": too few guests is visible, too many is not.
+ */
+export function meetingSelectionHasVotingFilter(
+  selectedIds: ReadonlyArray<string>,
+  options: ReadonlyArray<{ uid: string; enable_voting?: boolean }>,
+  savedVotingStatusCount: number
+): boolean {
+  if (selectedIds.length === 0) {
+    return false;
+  }
+
+  const optionUids = new Set(options.map((option) => option.uid));
+  const allResolved = selectedIds.every((id) => optionUids.has(id));
+  const selected = new Set(selectedIds);
+  const known = options.filter((option) => selected.has(option.uid));
+
+  if (!allResolved) {
+    return known.some((option) => option.enable_voting) || savedVotingStatusCount > 0;
+  }
+
+  return known.some((option) => option.enable_voting);
+}
+
+/**
  * Reconciles an optimistic "additional registrants" pad against a freshly-refetched roster.
  *
  * The join page bumps `pad` immediately when a guest is added (before query-service indexing has
@@ -1481,4 +1514,19 @@ export function reconcileOptimisticPad(state: { pad: number; before: number | nu
   const absorbed = Math.max(0, state.current - state.before);
   const pad = Math.max(0, state.pad - absorbed);
   return { pad, before: pad === 0 ? null : state.current };
+}
+
+/**
+ * Meeting types the given persona may pick when creating a meeting.
+ * @description Shared by every create surface — the composer's type select and the dashboard's Quick
+ * start menu — so a persona can't reach a type through one entry point that the other hides.
+ * `hydratedMeetingType` is the type already stored on the meeting being edited: it stays selectable
+ * even when the persona couldn't have created it, or editing would silently drop it.
+ */
+export function getSelectableMeetingTypeOptions(persona: PersonaType, hydratedMeetingType: MeetingType | null = null): CardSelectorOption<MeetingType>[] {
+  if (persona !== 'maintainer') {
+    return MEETING_TYPE_OPTIONS;
+  }
+
+  return MEETING_TYPE_OPTIONS.filter((option) => MAINTAINER_MEETING_TYPES.includes(option.value) || option.value === hydratedMeetingType);
 }

@@ -3,9 +3,6 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { MentorshipEnrollRequest } from '@lfx-one/shared/interfaces';
-import { getMentorshipEnrollStepErrors } from '@lfx-one/shared/utils';
-
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
@@ -23,57 +20,6 @@ const parseIntQuery = (val: unknown): number | undefined => {
   const parsed = Number.parseInt(raw, 10);
   return Number.isFinite(parsed) ? parsed : undefined;
 };
-
-function asString(value: unknown): string {
-  return typeof value === 'string' ? value : '';
-}
-
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
-}
-
-function parseEnrollBody(body: unknown): MentorshipEnrollRequest {
-  const raw = body && typeof body === 'object' ? (body as Record<string, unknown>) : {};
-  const termsRaw = Array.isArray(raw['terms']) ? raw['terms'] : [];
-  const prereqRaw = Array.isArray(raw['prerequisites']) ? raw['prerequisites'] : [];
-
-  return {
-    importProgramId: asString(raw['importProgramId']),
-    name: asString(raw['name']),
-    projectId: asString(raw['projectId']),
-    technologies: asStringArray(raw['technologies']),
-    description: asString(raw['description']),
-    repositoryUrl: asString(raw['repositoryUrl']),
-    websiteUrl: asString(raw['websiteUrl']),
-    ciiProjectId: asString(raw['ciiProjectId']),
-    codeOfConductUrl: asString(raw['codeOfConductUrl']),
-    logoFileName: asString(raw['logoFileName']),
-    skills: asStringArray(raw['skills']),
-    terms: termsRaw
-      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-      .map((item) => ({
-        id: asString(item['id']),
-        name: asString(item['name']),
-        startDate: asString(item['startDate']),
-        endDate: asString(item['endDate']),
-        applicationStartDate: asString(item['applicationStartDate']),
-        applicationEndDate: asString(item['applicationEndDate']),
-      })),
-    prerequisites: prereqRaw
-      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
-      .map((item) => ({
-        id: asString(item['id']),
-        name: asString(item['name']),
-        description: asString(item['description']),
-        required: item['required'] === true,
-        requireFile: item['requireFile'] === true,
-        challengeUrl: asString(item['challengeUrl']),
-        custom: item['custom'] === true,
-        dueDate: asString(item['dueDate']),
-      })),
-    termsAccepted: raw['termsAccepted'] === true,
-  };
-}
 
 export class MentorshipController {
   private readonly mentorshipService = new MentorshipService();
@@ -233,40 +179,6 @@ export class MentorshipController {
     }
   }
 
-  // POST /api/mentorship/programs
-  public async enrollProgram(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'enroll_mentorship_program');
-
-    try {
-      if (!(await getUsernameFromAuth(req))) {
-        throw new AuthenticationError('User authentication required', { operation: 'enroll_mentorship_program' });
-      }
-
-      const form = parseEnrollBody(req.body);
-
-      // Run every wizard step so a client that skipped validation cannot persist a partial enrollment.
-      const errors = {
-        ...getMentorshipEnrollStepErrors('details', form),
-        ...getMentorshipEnrollStepErrors('setup', form),
-        ...getMentorshipEnrollStepErrors('prerequisites', form),
-      };
-      const firstError = Object.values(errors)[0];
-      if (firstError) {
-        throw ServiceValidationError.forField(Object.keys(errors)[0] ?? 'form', firstError, {
-          operation: 'enroll_mentorship_program',
-        });
-      }
-
-      const program = await this.mentorshipService.enrollProgram(req, form);
-
-      logger.success(req, 'enroll_mentorship_program', startTime, { id: program.id });
-
-      res.status(201).json(program);
-    } catch (error) {
-      next(error);
-    }
-  }
-
   // GET /api/mentorship/invitable-users
   public async getInvitableUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_invitable_users');
@@ -284,6 +196,115 @@ export class MentorshipController {
 
       logger.success(req, 'get_mentorship_invitable_users', startTime, { result_count: users.data.length });
       res.json(users);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mentee endpoints
+  // ---------------------------------------------------------------------------
+
+  // GET /api/mentorship/mentee/has-profile
+  public async hasMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'has_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'has_mentorship_mentee_profile' });
+      }
+
+      const result = await this.mentorshipService.hasMenteeProfile(req);
+      logger.success(req, 'has_mentorship_mentee_profile', startTime, { hasProfile: result.hasProfile });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/overview
+  public async getMenteeOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_overview');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_overview' });
+      }
+
+      const rawPhase = parseTrimmedString(req.query['phase']);
+      const validPhases = ['empty', 'applicant', 'accepted'] as const;
+      if (rawPhase !== undefined && !validPhases.includes(rawPhase as (typeof validPhases)[number])) {
+        throw ServiceValidationError.forField('phase', `phase must be one of: ${validPhases.join(', ')}`, {
+          operation: 'get_mentorship_mentee_overview',
+        });
+      }
+      const phase = rawPhase as (typeof validPhases)[number] | undefined;
+      const overview = await this.mentorshipService.getMenteeOverview(req, phase);
+      logger.success(req, 'get_mentorship_mentee_overview', startTime, { phase: overview.phase });
+      res.json(overview);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/tasks
+  public async getMenteeTasks(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_tasks');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_tasks' });
+      }
+
+      const tasks = await this.mentorshipService.getMenteeTasks(req);
+      logger.success(req, 'get_mentorship_mentee_tasks', startTime, { count: tasks.data.length });
+      res.json(tasks);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/profile
+  // Auth: logged-in user required (401 otherwise). Identity-scoped payload is tracked
+  // with the real Mentorship `user_profiles` read (linuxfoundation/lfx-self-serve#2764)
+  // — do not invent authorization against this shared mock.
+  public async getMenteeProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_profile');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_profile' });
+      }
+
+      const profile = await this.mentorshipService.getMenteeProfile(req);
+      logger.success(req, 'get_mentorship_mentee_profile', startTime, { history_count: profile.history.length });
+      res.json(profile);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/mentorship/mentee/apply-target?programId=&programTermId=
+  public async getMenteeApplyTarget(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_apply_target');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+
+      const programId = parseTrimmedString(req.query['programId']);
+      const programTermId = parseTrimmedString(req.query['programTermId']);
+      if (!programId) {
+        throw ServiceValidationError.forField('programId', 'programId is required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+      if (!programTermId) {
+        throw ServiceValidationError.forField('programTermId', 'programTermId is required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+
+      const target = await this.mentorshipService.getMenteeApplyTarget(req, programId, programTermId);
+      logger.success(req, 'get_mentorship_mentee_apply_target', startTime, { programId, programTermId });
+      res.json(target);
     } catch (error) {
       next(error);
     }

@@ -1,0 +1,57 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6" data-testid="formation-detail-container">
+  <!-- queryParamsHandling="preserve" keeps `?project=<foundation-slug>` on the way back, so the
+       queue re-resolves the same foundation selection this page was opened from. -->
+  <a
+    [routerLink]="['/foundation/formations']"
+    queryParamsHandling="preserve"
+    class="flex items-center gap-2 self-start text-sm text-blue-600 no-underline hover:underline"
+    data-testid="formation-detail-back">
+    <i class="fa-light fa-arrow-left" aria-hidden="true"></i>
+    <span>Formations</span>
+  </a>
+
+  @if (projectLoading()) {
+    <div class="flex flex-col gap-4" data-testid="formation-detail-loading">
+      <p-skeleton width="16rem" height="2rem" />
+      <p-skeleton width="100%" height="8rem" />
+    </div>
+  } @else if (loadFailed()) {
+    <div class="flex flex-col items-center gap-3 py-8 border border-red-200 bg-red-50 rounded-xl" data-testid="formation-detail-error">
+      <span class="text-sm text-red-700">Something went wrong loading this project.</span>
+      <button type="button" class="text-sm font-medium text-blue-600 hover:underline" (click)="onRetry()" data-testid="formation-detail-retry">Retry</button>
+    </div>
+  } @else if (postFormation()) {
+    <lfx-empty-state
+      icon="fa-light fa-list-check"
+      title="This project is no longer in formation"
+      subtitle="It has completed formation, so its checklist is no longer available."
+      data-testid="formation-detail-not-in-formation" />
+  } @else if (project(); as project) {
+    <h1 class="font-display font-light text-2xl m-0">{{ project.name }}</h1>
+    <!-- Same two-column shell as `/project/formation` (formation-page.component.html), and the cards
+         are fed the same way: from the checklist response the section beside it just fetched, so
+         the rail's slug, stage and date need no request of their own and ride the checklist's read
+         gate (#2719). Only the formation card's admin-tool link and the people
+         card's own list read (#2724) probe separately, and both fail closed/quiet. -->
+    <div class="flex flex-col xl:flex-row xl:items-start gap-10" data-testid="formation-detail-columns">
+      <div class="flex-1 min-w-0">
+        <lfx-formation-checklist-section [projectSlug]="project.slug" (responseLoaded)="onChecklistLoaded($event)" />
+      </div>
+      @if (activeChecklist(); as checklist) {
+        <aside class="flex flex-col gap-8 w-full shrink-0 xl:w-64" data-testid="formation-detail-sidebar">
+          <lfx-formation-card [formation]="checklist.formation" />
+          <lfx-formation-people-card [checklist]="checklist" />
+        </aside>
+      }
+    </div>
+  } @else {
+    <lfx-empty-state
+      icon="fa-light fa-folder-open"
+      title="Project not found"
+      subtitle="This formation's project could not be loaded."
+      data-testid="formation-detail-not-found" />
+  }
+</div>

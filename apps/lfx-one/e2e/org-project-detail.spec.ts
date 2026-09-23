@@ -14,7 +14,6 @@
  *
  * Prerequisites:
  * - Dev server running on the Playwright baseURL
- * - User authenticated with the `org-lens-enabled` flag on and an organization selected
  *
  * Data semantics: the live suites are served from Snowflake platinum via the BFF. `k8s` is the real
  * catalog slug for the Kubernetes project; a slug with no catalog row for the selected org returns null →
@@ -489,7 +488,6 @@ test.describe('Org Project Detail — hero health popup', () => {
             {
               accountId: TEST_ACCOUNT_ID,
               accountName: 'Acme Motors',
-              accountSlug: 'acme-motors',
               membershipTier: '',
               uid: TEST_ACCOUNT_ID,
             },
@@ -528,9 +526,6 @@ test.describe('Org Project Detail — hero health popup', () => {
   async function gotoHero(page: Page): Promise<void> {
     await page.goto('/org/projects/kubernetes', { waitUntil: 'domcontentloaded' });
     await expect(page).not.toHaveURL(/auth0\.com/);
-    if (!page.url().includes('/org/projects')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/projects redirected away');
-    }
   }
 
   test('opens the hero health popup on hover with the table-matching breakdown', async ({ page }) => {
