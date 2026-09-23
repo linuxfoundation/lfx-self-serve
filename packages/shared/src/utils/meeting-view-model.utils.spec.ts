@@ -1,0 +1,408 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// The resolvers pull meeting.utils, which transitively imports @angular/common/http (HttpParams) —
+// its declarations need the Angular JIT compiler when loaded outside an Angular bootstrap (as
+// under Vitest). Importing the compiler first provides that facade.
+import '@angular/compiler';
+
+import { describe, expect, it } from 'vitest';
+
+import { MeetingVisibility } from '../enums';
+import type { ActionSlotInput, ActionSlotKind, Meeting, MeetingOccurrence, MeetingTimeState, MeetingViewerRole } from '../interfaces';
+import { resolveActionSlot, resolvePrivacy, resolveTimeState, resolveViewerRole, resolveVisibleSections } from './meeting-view-model.utils';
+
+const START = '2026-06-01T10:00:00.000Z';
+
+/** Minimal meeting: one hour, default 10-minute early join, no occurrences. */
+function buildMeeting(overrides: Partial<Meeting> = {}): Meeting {
+  return {
+    uid: 'm-1',
+    start_time: START,
+    duration: 60,
+    ...overrides,
+  } as Meeting;
+}
+
+function buildOccurrence(overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence {
+  return {
+    occurrence_id: '1780308000',
+    start_time: START,
+    duration: 60,
+    ...overrides,
+  } as MeetingOccurrence;
+}
+
+function at(iso: string): Date {
+  return new Date(iso);
+}
+
+const PUBLIC_OPEN = resolvePrivacy(MeetingVisibility.PUBLIC, false);
+const PUBLIC_RESTRICTED = resolvePrivacy(MeetingVisibility.PUBLIC, true);
+const PRIVATE_OPEN = resolvePrivacy(MeetingVisibility.PRIVATE, false);
+
+const TIME_STATES: MeetingTimeState[] = ['before', 'live', 'ended'];
+const VIEWER_ROLES: MeetingViewerRole[] = ['visitor', 'outsider', 'registrant', 'organizer'];
+const ALL_KINDS: ActionSlotKind[] = ['join', 'rsvp', 'register', 'invitation-required', 'guest-join', 'tools', 'no-access', 'rsvp-unavailable', 'none'];
+
+function buildSlotInput(overrides: Partial<ActionSlotInput> = {}): ActionSlotInput {
+  return {
+    fullAccess: false,
+    inviteResponsesEnabled: true,
+    privacy: PUBLIC_OPEN,
+    timeState: 'before',
+    viewerRole: 'registrant',
+    ...overrides,
+  };
+}
+
+describe('resolveTimeState', () => {
+  it('reports "before" earlier than the early-join window', () => {
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T09:30:00.000Z'))).toBe('before');
+  });
+
+  it('reports "live" once the early-join window opens, ten minutes ahead of the start', () => {
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T09:50:00.000Z'))).toBe('live');
+  });
+
+  it('still reports "before" one minute outside the early-join window', () => {
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T09:49:00.000Z'))).toBe('before');
+  });
+
+  it('honours a meeting-specific early_join_time_minutes', () => {
+    const meeting = buildMeeting({ early_join_time_minutes: 30 });
+    expect(resolveTimeState(meeting, null, at('2026-06-01T09:40:00.000Z'))).toBe('live');
+  });
+
+  it('stays "live" through the 40-minute grace period after the scheduled end', () => {
+    // Scheduled end 11:00, grace period runs to 11:40.
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T11:39:00.000Z'))).toBe('live');
+  });
+
+  it('flips to "ended" once the grace period elapses', () => {
+    expect(resolveTimeState(buildMeeting(), null, at('2026-06-01T11:41:00.000Z'))).toBe('ended');
+  });
+
+  it('prefers the occurrence timing over the meeting when one is supplied', () => {
+    const occurrence = buildOccurrence({ start_time: '2026-06-08T10:00:00.000Z' });
+    // Past the parent meeting's own grace period, but a week before the occurrence.
+    expect(resolveTimeState(buildMeeting(), occurrence, at('2026-06-01T23:00:00.000Z'))).toBe('before');
+  });
+
+  it('returns "before" for a meeting with no start time rather than throwing', () => {
+    const meeting = buildMeeting({ start_time: undefined as unknown as string });
+    expect(resolveTimeState(meeting, null, at(START))).toBe('before');
+  });
+});
+
+describe('resolveViewerRole', () => {
+  it('calls an unauthenticated viewer a visitor', () => {
+    expect(resolveViewerRole({ authenticated: false, invited: false, organizer: false })).toBe('visitor');
+  });
+
+  it('ignores invited/organizer flags when unauthenticated', () => {
+    expect(resolveViewerRole({ authenticated: false, invited: true, organizer: true })).toBe('visitor');
+  });
+
+  it('ranks organizer above registrant when both flags are set', () => {
+    expect(resolveViewerRole({ authenticated: true, invited: true, organizer: true })).toBe('organizer');
+  });
+
+  it('calls an invited signed-in viewer a registrant', () => {
+    expect(resolveViewerRole({ authenticated: true, invited: true, organizer: false })).toBe('registrant');
+  });
+
+  it('calls a signed-in viewer with neither flag an outsider', () => {
+    expect(resolveViewerRole({ authenticated: true, invited: false, organizer: false })).toBe('outsider');
+  });
+});
+
+describe('resolvePrivacy', () => {
+  it('reuses the shared label and icon helpers for private + restricted', () => {
+    const privacy = resolvePrivacy(MeetingVisibility.PRIVATE, true);
+    expect(privacy.label).toBe('Private (Restricted)');
+    expect(privacy.icon).toBe('fa-light fa-lock');
+  });
+
+  it('marks a public unrestricted meeting open to the public', () => {
+    expect(resolvePrivacy(MeetingVisibility.PUBLIC, false).openToPublic).toBe(true);
+  });
+
+  it('does not treat a public but restricted meeting as open to the public', () => {
+    expect(resolvePrivacy(MeetingVisibility.PUBLIC, true).openToPublic).toBe(false);
+  });
+
+  it('does not treat a private unrestricted meeting as open to the public', () => {
+    expect(resolvePrivacy(MeetingVisibility.PRIVATE, false).openToPublic).toBe(false);
+  });
+
+  it('normalizes a null/undefined restricted flag to false', () => {
+    expect(resolvePrivacy(MeetingVisibility.PUBLIC, null).restricted).toBe(false);
+    expect(resolvePrivacy(MeetingVisibility.PUBLIC, undefined).restricted).toBe(false);
+  });
+
+  it('normalizes an undefined visibility to null and keeps the meeting closed to the public', () => {
+    const privacy = resolvePrivacy(undefined, false);
+    expect(privacy.visibility).toBeNull();
+    expect(privacy.openToPublic).toBe(false);
+  });
+});
+
+describe('resolveActionSlot', () => {
+  it('returns a named kind for every combination of the input axes', () => {
+    for (const timeState of TIME_STATES) {
+      for (const viewerRole of VIEWER_ROLES) {
+        for (const privacy of [PUBLIC_OPEN, PUBLIC_RESTRICTED, PRIVATE_OPEN]) {
+          for (const fullAccess of [true, false]) {
+            for (const inviteResponsesEnabled of [true, false]) {
+              const kind = resolveActionSlot({ timeState, viewerRole, privacy, fullAccess, inviteResponsesEnabled });
+              expect(ALL_KINDS).toContain(kind);
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it('never returns "rsvp" while invite responses are disabled', () => {
+    for (const timeState of TIME_STATES) {
+      for (const viewerRole of VIEWER_ROLES) {
+        for (const privacy of [PUBLIC_OPEN, PUBLIC_RESTRICTED, PRIVATE_OPEN]) {
+          for (const fullAccess of [true, false]) {
+            const kind = resolveActionSlot({ timeState, viewerRole, privacy, fullAccess, inviteResponsesEnabled: false });
+            expect(kind).not.toBe('rsvp');
+          }
+        }
+      }
+    }
+  });
+
+  // One row per non-obvious cell. The obvious cells are covered by the totality sweep above; these
+  // pin the decisions that a reader would otherwise have to infer from the template.
+  const CASES: { name: string; input: Partial<ActionSlotInput>; expected: ActionSlotKind }[] = [
+    { name: 'registrant before an RSVP-tracking meeting gets the RSVP card', input: { timeState: 'before', viewerRole: 'registrant' }, expected: 'rsvp' },
+    {
+      name: 'registrant before a pre-2024 meeting is told RSVP is unavailable, not shown an empty rail',
+      input: { timeState: 'before', viewerRole: 'registrant', inviteResponsesEnabled: false },
+      expected: 'rsvp-unavailable',
+    },
+    {
+      name: 'organizer before a pre-2024 meeting has nothing to offer rather than an unavailable RSVP',
+      input: { timeState: 'before', viewerRole: 'organizer', inviteResponsesEnabled: false },
+      expected: 'none',
+    },
+    {
+      name: 'signed-in outsider on a restricted meeting is told an invitation is required',
+      input: { timeState: 'before', viewerRole: 'outsider', privacy: PUBLIC_RESTRICTED },
+      expected: 'invitation-required',
+    },
+    {
+      name: 'signed-in outsider on a private meeting is told an invitation is required',
+      input: { timeState: 'before', viewerRole: 'outsider', privacy: PRIVATE_OPEN },
+      expected: 'invitation-required',
+    },
+    { name: 'signed-in outsider on an open meeting can self-register', input: { timeState: 'before', viewerRole: 'outsider' }, expected: 'register' },
+    {
+      name: 'signed-in outsider still gets register, not join, once an open meeting is live',
+      input: { timeState: 'live', viewerRole: 'outsider' },
+      expected: 'register',
+    },
+    {
+      name: 'signed-in outsider on a live restricted meeting still gets the invitation explanation',
+      input: { timeState: 'live', viewerRole: 'outsider', privacy: PUBLIC_RESTRICTED },
+      expected: 'invitation-required',
+    },
+    { name: 'visitor before an open meeting gets the register CTA', input: { timeState: 'before', viewerRole: 'visitor' }, expected: 'register' },
+    {
+      name: 'visitor before a restricted meeting gets nothing, because registration would be rejected',
+      input: { timeState: 'before', viewerRole: 'visitor', privacy: PUBLIC_RESTRICTED },
+      expected: 'none',
+    },
+    { name: 'visitor inside an open meeting join window gets the guest form', input: { timeState: 'live', viewerRole: 'visitor' }, expected: 'guest-join' },
+    {
+      name: 'visitor on a restricted meeting gets nothing, because an invitation prompt is unactionable anonymously',
+      input: { timeState: 'live', viewerRole: 'visitor', privacy: PUBLIC_RESTRICTED },
+      expected: 'none',
+    },
+    { name: 'registrant inside the join window joins', input: { timeState: 'live', viewerRole: 'registrant' }, expected: 'join' },
+    {
+      name: 'registrant joins a live meeting even without invite responses',
+      input: { timeState: 'live', viewerRole: 'registrant', inviteResponsesEnabled: false },
+      expected: 'join',
+    },
+    { name: 'organizer keeps post-meeting tools without full access', input: { timeState: 'ended', viewerRole: 'organizer' }, expected: 'tools' },
+    {
+      name: 'registrant with past-meeting access gets tools',
+      input: { timeState: 'ended', viewerRole: 'registrant', fullAccess: true },
+      expected: 'tools',
+    },
+    {
+      name: 'registrant without past-meeting access is told so rather than shown an empty page',
+      input: { timeState: 'ended', viewerRole: 'registrant' },
+      expected: 'no-access',
+    },
+    {
+      name: 'visitor on an ended open meeting with public artifacts gets tools',
+      input: { timeState: 'ended', viewerRole: 'visitor', fullAccess: true },
+      expected: 'tools',
+    },
+    { name: 'visitor on an ended meeting without artifacts gets no-access', input: { timeState: 'ended', viewerRole: 'visitor' }, expected: 'no-access' },
+    {
+      name: 'privacy does not override the ended branch',
+      input: { timeState: 'ended', viewerRole: 'outsider', privacy: PRIVATE_OPEN, fullAccess: true },
+      expected: 'tools',
+    },
+  ];
+
+  for (const testCase of CASES) {
+    it(testCase.name, () => {
+      expect(resolveActionSlot(buildSlotInput(testCase.input))).toBe(testCase.expected);
+    });
+  }
+});
+
+describe('resolveVisibleSections', () => {
+  it('hides every RSVP surface when invite responses are disabled', () => {
+    for (const viewerRole of VIEWER_ROLES) {
+      for (const timeState of TIME_STATES) {
+        const sections = resolveVisibleSections({ fullAccess: true, inviteResponsesEnabled: false, recurring: false, timeState, viewerRole });
+        expect(sections.rsvpSummary).toBe(false);
+        expect(sections.rsvpRosterFilter).toBe(false);
+        expect(sections.rsvpAvatarBadges).toBe(false);
+      }
+    }
+  });
+
+  it('shows the RSVP surfaces to a registrant on an RSVP-tracking meeting', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'before',
+      viewerRole: 'registrant',
+    });
+    expect(sections.rsvpSummary).toBe(true);
+    expect(sections.rsvpRosterFilter).toBe(true);
+    expect(sections.rsvpAvatarBadges).toBe(true);
+  });
+
+  it('withholds the RSVP surfaces from an outsider even when tracking is on', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'before',
+      viewerRole: 'outsider',
+    });
+    expect(sections.rsvpSummary).toBe(false);
+  });
+
+  it('hides the roster from anyone who is not on the meeting, because they have no count source', () => {
+    for (const viewerRole of ['visitor', 'outsider'] as MeetingViewerRole[]) {
+      const sections = resolveVisibleSections({ fullAccess: true, inviteResponsesEnabled: true, recurring: false, timeState: 'before', viewerRole });
+      expect(sections.people).toBe(false);
+    }
+  });
+
+  it('shows the roster to registrants and organizers', () => {
+    for (const viewerRole of ['registrant', 'organizer'] as MeetingViewerRole[]) {
+      const sections = resolveVisibleSections({ fullAccess: false, inviteResponsesEnabled: true, recurring: false, timeState: 'before', viewerRole });
+      expect(sections.people).toBe(true);
+    }
+  });
+
+  it('gates past agenda and materials on artifact access', () => {
+    const withAccess = resolveVisibleSections({
+      fullAccess: true,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'registrant',
+    });
+    const withoutAccess = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'registrant',
+    });
+    expect(withAccess.agenda).toBe(true);
+    expect(withAccess.materials).toBe(true);
+    expect(withoutAccess.agenda).toBe(false);
+    expect(withoutAccess.materials).toBe(false);
+  });
+
+  it('does not gate upcoming agenda and materials on artifact access', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'before',
+      viewerRole: 'outsider',
+    });
+    expect(sections.agenda).toBe(true);
+    expect(sections.materials).toBe(true);
+  });
+
+  it('shows post-meeting tools only once the meeting ended and access is granted', () => {
+    const ended = resolveVisibleSections({ fullAccess: true, inviteResponsesEnabled: true, recurring: false, timeState: 'ended', viewerRole: 'organizer' });
+    const live = resolveVisibleSections({ fullAccess: true, inviteResponsesEnabled: true, recurring: false, timeState: 'live', viewerRole: 'organizer' });
+    const endedNoAccess = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'registrant',
+    });
+    expect(ended.tools).toBe(true);
+    expect(live.tools).toBe(false);
+    expect(endedNoAccess.tools).toBe(false);
+  });
+
+  it('hides join details after the meeting ends', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: true,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'organizer',
+    });
+    expect(sections.joinDetails).toBe(false);
+  });
+
+  it('shows join details to people on an upcoming meeting and to nobody else', () => {
+    const registrant = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'live',
+      viewerRole: 'registrant',
+    });
+    const outsider = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'live',
+      viewerRole: 'outsider',
+    });
+    expect(registrant.joinDetails).toBe(true);
+    expect(outsider.joinDetails).toBe(false);
+  });
+
+  it('shows the occurrence strip only for recurring meetings', () => {
+    const base = { fullAccess: false, inviteResponsesEnabled: true, timeState: 'before' as MeetingTimeState, viewerRole: 'registrant' as MeetingViewerRole };
+    expect(resolveVisibleSections({ ...base, recurring: true }).occurrences).toBe(true);
+    expect(resolveVisibleSections({ ...base, recurring: false }).occurrences).toBe(false);
+  });
+
+  it('returns a boolean for every section on every viewer/time combination', () => {
+    for (const viewerRole of VIEWER_ROLES) {
+      for (const timeState of TIME_STATES) {
+        const sections = resolveVisibleSections({ fullAccess: false, inviteResponsesEnabled: true, recurring: false, timeState, viewerRole });
+        for (const value of Object.values(sections)) {
+          expect(typeof value).toBe('boolean');
+        }
+      }
+    }
+  });
+});

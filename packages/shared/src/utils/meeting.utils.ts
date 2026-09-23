@@ -60,6 +60,17 @@ const RECURRENCE_NEVER_ENDS_YEARS_OFFSET = 100;
 const FIFTY_YEARS_MS = 50 * 365.25 * 24 * 60 * 60 * 1000;
 
 /**
+ * Post-meeting grace period. A meeting stays joinable, and is not yet "ended", until this long
+ * after its scheduled end.
+ *
+ * Declared above every consumer because {@link getCurrentOrNextOccurrence}, {@link canJoinMeeting},
+ * {@link hasMeetingEnded} and {@link isOccurrencePast} must agree on it: the first three each
+ * inlined the same forty-minute literal, so changing the grace period took four independent edits
+ * and missing any one of them would silently split the join window from the "has ended" boundary.
+ */
+export const MEETING_END_BUFFER_MS = 40 * 60_000;
+
+/**
  * Produces an ISO string ~100 years from `now`, used as the "never ends"
  * placeholder on outgoing recurrence payloads. Stays well below year 2286
  * (where Unix-timestamp strings grow a digit and break lexicographic sorts
@@ -386,7 +397,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   const joinableOccurrence = activeOccurrences.find((occurrence) => {
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   });
@@ -548,21 +559,22 @@ export function getUpcomingMeetingStartTime(meeting: Meeting, occurrence?: Meeti
  * Check if a meeting can be joined based on current time
  * @param meeting The meeting object
  * @param occurrence Optional specific occurrence (for recurring meetings)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
  * @returns True if the meeting can be joined, false otherwise
  * @description
  * A meeting can be joined when:
  * - Current time is after (start time - early join time)
- * - Current time is before (start time + duration + 40 minute buffer)
+ * - Current time is before (start time + duration + {@link MEETING_END_BUFFER_MS})
  */
-export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null): boolean {
+export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null, now = new Date()): boolean {
   const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // If we have an occurrence, use its timing
   if (occurrence) {
-    const now = new Date();
     const startTime = new Date(occurrence.start_time);
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
 
     return now >= earliestJoinTime && now <= latestJoinTime;
   }
@@ -572,10 +584,9 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
     return false;
   }
 
-  const now = new Date();
   const startTime = new Date(meeting.start_time);
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
+  const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
 
   return now >= earliestJoinTime && now <= latestJoinTime;
 }
@@ -584,20 +595,19 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
  * Check if a meeting has ended (including 40-minute buffer)
  * @param meeting The meeting object
  * @param occurrence Optional occurrence for recurring meetings
- * @returns True if meeting has ended (current time > start time + duration + 40 minutes)
+ * @param now Clock override — defaults to the real current time; pass an explicit `Date` from
+ *   callers that must be deterministic (the meeting-details view model, tests)
+ * @returns True if meeting has ended (current time > start time + duration + {@link MEETING_END_BUFFER_MS})
  * @description
  * Determines if a meeting should be filtered from upcoming meetings list.
  * For recurring meetings, checks the specific occurrence.
  * For one-time meetings, checks the meeting start time.
  */
-export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
-  const now = new Date();
-  const buffer = 40 * 60000; // 40 minutes in milliseconds
-
+export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence, now = new Date()): boolean {
   // For recurring meetings with occurrence
   if (occurrence) {
     const startTime = new Date(occurrence.start_time);
-    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + MEETING_END_BUFFER_MS);
     return now > endTime;
   }
 
@@ -607,12 +617,9 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
   }
 
   const startTime = new Date(meeting.start_time);
-  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + MEETING_END_BUFFER_MS);
   return now > endTime;
 }
-
-/** Post-meeting buffer before an occurrence is treated as past (matches {@link hasMeetingEnded}). */
-export const MEETING_END_BUFFER_MS = 40 * 60_000;
 
 /**
  * Returns true when an occurrence's end time plus buffer has passed.
