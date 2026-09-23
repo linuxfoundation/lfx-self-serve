@@ -2952,6 +2952,20 @@ describe('OrgClaService.invalidateAcknowledgment — the receipt', () => {
     expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: 'ecla-sig-1' } });
   });
 
+  it('accepts an acknowledgment id the producer spells with different case or hyphens', async () => {
+    const acknowledgmentId = '11111111-1111-4111-8111-111111111111';
+    stageInvalidate([contributorPage({ list: [contributor({ signatureID: acknowledgmentId })] })], undefined, {
+      signature_id: acknowledgmentId.toUpperCase(),
+      cla_group_id: 'cla-group-uuid-1',
+      company_id: 'company-uuid-1',
+      user_id: 'user-uuid-9',
+    });
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', acknowledgmentId.replaceAll('-', ''), {});
+
+    expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: acknowledgmentId.toUpperCase() } });
+  });
+
   it('raises a 502 when the producer echoes a different acknowledgment id', async () => {
     stageInvalidate(undefined, undefined, { signature_id: 'ecla-sig-other' });
 

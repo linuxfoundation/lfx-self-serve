@@ -1210,8 +1210,11 @@ export class OrgClaService {
     // shared result type. An echoed signature id that names a different acknowledgment is not a
     // receipt for the write we sent. A body that omits the id still uses the id on the path,
     // because that path is what the producer addressed.
+    // Same rule as the corporate signing echo: the producer accepts hyphenated and unhyphenated
+    // spellings in either case, and answers in its own. A raw compare would 502 a write that
+    // already succeeded.
     const echoed = typeof upstream.signature_id === 'string' ? upstream.signature_id.trim() : '';
-    if (echoed && echoed !== acknowledgmentSignatureId) {
+    if (echoed && echoed !== acknowledgmentSignatureId && !isSameClaGroup(echoed, acknowledgmentSignatureId)) {
       throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream named a different acknowledgment', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_invalidate_acknowledgment',
         service: SERVICE,
@@ -1564,7 +1567,14 @@ export class OrgClaService {
         operation
       );
 
-      if (Array.isArray(page.list) && page.list.some((row) => row?.signatureID?.trim() === target)) return true;
+      if (
+        Array.isArray(page.list) &&
+        page.list.some((row) => {
+          const id = row?.signatureID?.trim();
+          return id === target || isSameClaGroup(id, target);
+        })
+      )
+        return true;
 
       const cursor = page.nextKey?.trim();
       if (!cursor) return false;
