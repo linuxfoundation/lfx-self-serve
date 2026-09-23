@@ -300,6 +300,16 @@ describe('compareVotesByRecency', () => {
     expect(uids(sorted)).toEqual(['old', 'garbage']);
   });
 
+  it('tiers a non-canonical-case ACTIVE vote into the active group — Vote.status casing is not runtime-guaranteed (poll.utils.ts)', () => {
+    const sorted = [
+      recencyVote({ uid: 'ended-new', status: PollStatus.ENDED, creation_time: '2025-06-01T00:00:00Z' }),
+      recencyVote({ uid: 'loud-active', status: 'ACTIVE' as PollStatus, creation_time: '2025-05-01T00:00:00Z' }),
+    ].sort(compareVotesByRecency);
+
+    // 'loud-active' leads despite being older and non-canonically cased.
+    expect(uids(sorted)).toEqual(['loud-active', 'ended-new']);
+  });
+
   it('breaks creation_time ties on uid ascending so pagination is deterministic', () => {
     const sorted = [
       recencyVote({ uid: 'bbb', creation_time: '2025-05-01T00:00:00Z' }),

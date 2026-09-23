@@ -9,6 +9,7 @@ import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import { PollStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
+import { normalizePollStatus } from './poll.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
 import type { CommitteeReference } from '../interfaces/committee.interface';
 import type {
@@ -424,16 +425,20 @@ export function resolveCursorWalkOutcome<T>(response: PaginatedResponse<T>, fetc
  * Canonical vote list ordering: active votes first, newest-created first within each tier
  * @description Shared by every vote list read (project/committee lists via the BFF's `getVotes`, and
  * Me-lens via `getMyVotes`) so all surfaces agree on one ordering (GH-1558). Tier 1: `status === ACTIVE`
- * before everything else (ended, disabled/draft). Tier 2: `creation_time` descending — a missing or
- * unparseable timestamp sorts as epoch 0, i.e. last within its tier. Remaining ties break on `uid`
- * ascending so offset pagination stays deterministic.
+ * before everything else (ended, disabled/draft) — normalized through `normalizePollStatus` first, since
+ * `Vote.status` is not runtime-guaranteed to be canonically cased (poll.utils.ts). Tier 2: `creation_time`
+ * descending — a missing or unparseable timestamp sorts as epoch 0, i.e. last within its tier. Remaining
+ * ties break on `uid` ascending so offset pagination stays deterministic.
  * @param a - First vote
  * @param b - Second vote
  * @returns Negative when `a` sorts before `b`, positive when after, zero when equivalent
  */
 export function compareVotesByRecency(a: Vote, b: Vote): number {
-  const tierA = a.status === PollStatus.ACTIVE ? 0 : 1;
-  const tierB = b.status === PollStatus.ACTIVE ? 0 : 1;
+  // normalizePollStatus, not a raw comparison — Vote.status arrives with inconsistent casing
+  // (poll.utils.ts's normalizePollStatus doc comment; committee-activity's mapVoteToEvent is the
+  // prior catch). A case-variant 'ACTIVE' must not sink into the ended/draft tier.
+  const tierA = normalizePollStatus(a.status) === PollStatus.ACTIVE ? 0 : 1;
+  const tierB = normalizePollStatus(b.status) === PollStatus.ACTIVE ? 0 : 1;
   if (tierA !== tierB) {
     return tierA - tierB;
   }

@@ -803,12 +803,7 @@ describe('VoteService', () => {
     });
 
     it('forwards filters/name/parent/tags upstream while stripping client page_size, page_token, and order', async () => {
-      fetchAllQueryResources.mockImplementation(
-        async (_req: unknown, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<IndexedVote>>): Promise<IndexedVote[]> => {
-          const page = await fetchPage();
-          return page.resources.map((r) => r.data);
-        }
-      );
+      drainPages();
       proxyRequest.mockResolvedValue({ resources: [], page_token: undefined });
 
       await service.getVotes(req, {
@@ -870,6 +865,47 @@ describe('VoteService', () => {
 
       expect(result.data).toHaveLength(50);
       expect(result.page_token).toBe('offset:50');
+    });
+
+    it('restarts at the first page when the page_token is garbage or foreign', async () => {
+      const rows = [
+        { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+        { vote_uid: 'v-1', name: 'B', status: 'ended', creation_time: '2025-06-01T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+      ];
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req, { page_size: '1', page_token: 'not-an-offset' });
+
+      expect(result.data.map((v) => v.uid)).toEqual(['v-0']);
+      expect(result.page_token).toBe('offset:1');
+    });
+
+    it('caps a client page_size at the upstream max so one response cannot pull an unbounded slice', async () => {
+      const rows = Array.from({ length: 1001 }, (_, i) => ({
+        vote_uid: `v-${String(i).padStart(4, '0')}`,
+        name: `Vote ${i}`,
+        status: 'ended',
+        creation_time: `2025-06-${String((i % 28) + 1).padStart(2, '0')}T00:00:00Z`,
+        project_uid: PROJECT_UID,
+        end_time: '2025-07-01T00:00:00Z',
+      }));
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      const result = await service.getVotes(req, { page_size: '5000' });
+
+      expect(result.data).toHaveLength(1000);
+      expect(result.page_token).toBe('offset:1000');
+    });
+
+    it('drains with failOnPartial so a failed later page surfaces as an error instead of a silently truncated list', async () => {
+      drainPages();
+      proxyRequest.mockRejectedValueOnce(new Error('upstream 500'));
+
+      await expect(service.getVotes(req)).rejects.toThrow('upstream 500');
+      // The behavioral contract is the helper's own (tested there); here we pin the wiring.
+      expect(fetchAllQueryResources).toHaveBeenCalledWith(req, expect.any(Function), { failOnPartial: true });
     });
 
     it('enriches only the returned slice, not the full drained set', async () => {

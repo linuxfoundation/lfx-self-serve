@@ -165,13 +165,18 @@ export class VoteService {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
 
-    const drained = await fetchAllQueryResources<IndexedVote>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        ...upstreamParams,
-        type: 'vote',
-        page_size: VoteService.voteListUpstreamPageSize,
-        ...(pageToken && { page_token: pageToken }),
-      })
+    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
+    // a later page failing must surface as an error, not a 200 with votes silently missing.
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...upstreamParams,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
     );
 
     const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
