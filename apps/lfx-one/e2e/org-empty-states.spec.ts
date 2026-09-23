@@ -15,8 +15,9 @@
  * - S3a–S3c: the two halves of #2090 — a held-but-partial lookup renders the page plus the switcher
  *   notice, an unheld partial or failed lookup renders the page-level could-not-load state.
  * - S4: staff check failed carries the correlation reference and never falls through.
- * - S5: an LF-staff session sees the search invite; a contractor-only session (not in
- *   `LF_TEAM_IDS` since the lfx-self-serve#2157 rollback) does not.
+ * - S5: an LF-staff session sees the search invite; a contractor holding an explicit org grant (not
+ *   in `LF_TEAM_IDS` since the rollback of lfx-self-serve#2157) keeps the switcher but loses
+ *   catalogue search.
  * - S7 lives in `org-projects.spec.ts` / `org-selector.spec.ts` (legacy wording updated in place).
  */
 
@@ -486,19 +487,29 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
     });
 
-    // lf-contractor is no longer in `LF_TEAM_IDS` (lfx-self-serve#2157 rollback), so the server
-    // answers `isStaff: false` for a contractor-only caller. With no explicit grant that is the
-    // ordinary no-organization case — no staff invite, no catalogue search.
-    test('S5 (contractor): a contractor-only session with no grants sees no-organization, not the staff search invite', async ({ page }) => {
-      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: false }) });
+    // Since the rollback of lfx-self-serve#2157, lf-contractor is not in `LF_TEAM_IDS`, so the server
+    // answers `isStaff: false` for a contractor. A contractor holding one explicit org grant keeps
+    // the switcher (they hold an org) but loses the catalogue search this rollback removes. The e2e
+    // stubs `isStaff` on the wire, so it pins the UI contract only; what fails if `lf-contractor` is
+    // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`).
+    test('S5 (contractor): a contractor with an explicit org grant keeps the switcher but gets no catalogue search', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isStaff: false, auditors: [ORG_A_UID] }),
+        orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+        resolvable: [HELD_ORG],
+      });
 
       await gotoOverview(page);
 
-      const state = overviewState(page);
-      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
       await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
-      await expect(page.locator('body')).not.toContainText('Search for an organization');
+      const trigger = page.getByTestId('org-selector');
+      await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await trigger.click();
+      await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-selector-list')).toContainText(ORG_A_NAME);
+      // The removed affordance: no LF-team catalogue search input.
+      await expect(page.getByTestId('org-search-input')).toHaveCount(0);
     });
   });
 

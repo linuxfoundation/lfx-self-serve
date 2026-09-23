@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import type { Request } from 'express';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type * as PersonaConstants from '../../../../../packages/shared/src/constants/persona.constants';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.

@@ -74,7 +74,7 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
 }
 
 // Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the lfx-self-serve#2157 rollback; the
+// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the rollback of lfx-self-serve#2157; the
 // field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
@@ -760,8 +760,10 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
 // S20 — LF-team global auditor. `lf-staff` holds `auditor` on every b2b_org, so a team member
 // reaches the switcher + catalogue search and may open any org read-only; team membership never
 // confers edit (FR-010), so the access write is refused. `lf-contractor` held the same grant under
-// spec 044 and was rolled back (lfx-self-serve#2157); the contractor-only case is covered by S5
-// (contractor) in org-empty-states.spec.ts.
+// spec 044 and was rolled back (lfx-self-serve#2157). What guards that is the unit spec
+// `org-role-grants.service.spec.ts` (contractor-only caller → `isStaff: false`, and the
+// `TEAM_REQUESTS` batch) — every e2e stubs `isStaff` on the wire, so no e2e can catch a re-widened
+// `LF_TEAM_IDS`. A live contractor-only check remains a post-deploy step (#2157 verification).
 test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
   test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
