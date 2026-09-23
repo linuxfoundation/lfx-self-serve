@@ -85,4 +85,15 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     // Auth check fires before phase validation — unauthenticated requests get 401.
     expect(res.status).toBe(401);
   });
+
+  it('rejects unauthenticated GET /api/mentorship/mentee/apply-target with 401', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target?programId=p1&programTermId=t1`);
+    expect(res.status).toBe(401);
+  });
+
+  it('requires auth before apply-target parameter validation runs', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/mentee/apply-target`);
+    // Auth check fires before missing-parameter validation — unauthenticated requests get 401, not 400.
+    expect(res.status).toBe(401);
+  });
 });
