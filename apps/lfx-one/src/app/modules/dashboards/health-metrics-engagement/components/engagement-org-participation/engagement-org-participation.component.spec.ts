@@ -104,6 +104,15 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(row.textContent).toContain('Aug 14, 2026');
   });
 
+  // The placeholder and the icon give the box no accessible name, so the label has to.
+  it('names the search box for assistive tech', async () => {
+    await render();
+
+    const label: HTMLLabelElement | null = fixture.nativeElement.querySelector('label[for="engagement-org-participation-search"]');
+    expect(label?.textContent?.trim()).toBe('Search organization');
+    expect(fixture.nativeElement.querySelector('input#engagement-org-participation-search')).not.toBeNull();
+  });
+
   // The period pill projects the loaded rows, so switching it must not cost another request.
   it('re-projects the loaded rows when the period changes, without re-reading', async () => {
     await render();
@@ -237,7 +246,7 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('reports no counts and still settles when no foundation is selected', async () => {
+  it('reports no counts and withholds the settle when no foundation is selected', async () => {
     const emitted: unknown[] = [];
     const lifecycle: string[] = [];
     selectedFoundation = signal<{ slug: string } | null>(null);
@@ -245,6 +254,28 @@ describe('EngagementOrgParticipationComponent', () => {
 
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
     expect(emitted).toEqual([null, null]);
-    expect(lifecycle).toEqual(['reading', 'settled']);
+    // Settling here would release the container's pending deep link before any read has reflowed
+    // the pane, and no later read can re-arm a fragment that is already gone.
+    expect(lifecycle).toEqual(['reading']);
+    // An unresolved foundation is not a measured empty scope — no read happened to call it empty,
+    // so the table holds its loading state rather than the section rendering empty or errored.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-table"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-error"]')).toBeNull();
+    expect(fixture.componentInstance['loading']()).toBe(true);
+  });
+
+  it('settles a foundation cleared after a read, rather than wedging on the skeleton', async () => {
+    await render();
+    expect(fixture.componentInstance['loading']()).toBe(false);
+
+    selectedFoundation.set(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
+    // the section loading forever with nothing left to resolve it.
+    expect(fixture.componentInstance['loading']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).not.toBeNull();
   });
 });
