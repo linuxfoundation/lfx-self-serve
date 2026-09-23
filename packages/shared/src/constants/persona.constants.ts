@@ -70,11 +70,11 @@ export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
- * LF team populations whose membership lights the Org Lens switcher and catalogue search.
- * Staff only: `lf-contractor` was granted org-wide read under spec 044 and rolled back — the
- * blanket `b2b_org` auditor grant is being removed, and the project-side ROOT auditor tuple it
- * was justified by is deleted by lfx-self-serve#2814 Release 2. Contractors keep explicit
- * per-org grants only (Manish Dixit, LFXV2-3071, 2026-08-10).
+ * LF teams whose membership lights the Org Lens switcher and catalogue search — `lf-staff` only.
+ * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
+ * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
+ * deleted by lfx-self-serve#2814 Release 2. `lf-staff`'s own org-wide grant is unaffected.
+ * Contractors keep explicit per-org grants only.
  *
  * Never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly,
  * so an explicitly-granted contractor still reads that org — this list only drives the affordance.

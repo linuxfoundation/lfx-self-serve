@@ -22,8 +22,8 @@
  * - S17: LF-team caller with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
- * - S20: LF-team caller (lf-staff or lf-contractor) sees the switcher + catalogue search, opens an
- *        org they hold no grant on read-only, and is refused on the access write (spec 044)
+ * - S20: LF-team caller (lf-staff) sees the switcher + catalogue search, opens an org they hold
+ *        no grant on read-only, and is refused on the access write
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -74,8 +74,8 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
 }
 
 // Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is the two-team population (`lf-staff` or `lf-contractor`, see `LF_TEAM_IDS`) — the field
-// name is kept for wire compatibility.
+// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the lfx-self-serve#2157 rollback; the
+// field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
@@ -83,7 +83,7 @@ async function skipWhenNotLfTeam(page: Page): Promise<void> {
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff or lf-contractor member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff member');
   }
 }
 
@@ -757,11 +757,11 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
   });
 });
 
-// S20 — LF-team global auditor (spec 044). Both `lf-staff` and `lf-contractor` hold `auditor` on
-// every b2b_org, so a team member reaches the switcher + catalogue search and may open any org
-// read-only; team membership never confers edit (FR-010), so the access write is refused. The
-// code path is identical for both teams, so a contractor-only identity is not required in CI —
-// contractor-specific verification is the post-release step (spec 044 T038a).
+// S20 — LF-team global auditor. `lf-staff` holds `auditor` on every b2b_org, so a team member
+// reaches the switcher + catalogue search and may open any org read-only; team membership never
+// confers edit (FR-010), so the access write is refused. `lf-contractor` held the same grant under
+// spec 044 and was rolled back (lfx-self-serve#2157); the contractor-only case is covered by S5
+// (contractor) in org-empty-states.spec.ts.
 test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
   test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });

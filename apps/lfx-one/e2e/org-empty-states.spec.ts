@@ -15,7 +15,8 @@
  * - S3a–S3c: the two halves of #2090 — a held-but-partial lookup renders the page plus the switcher
  *   notice, an unheld partial or failed lookup renders the page-level could-not-load state.
  * - S4: staff check failed carries the correlation reference and never falls through.
- * - S5: staff and contractor sessions are one wire shape, so the same body runs twice.
+ * - S5: an LF-staff session sees the search invite; a contractor-only session (not in
+ *   `LF_TEAM_IDS` since the lfx-self-serve#2157 rollback) does not.
  * - S7 lives in `org-projects.spec.ts` / `org-selector.spec.ts` (legacy wording updated in place).
  */
 
@@ -469,25 +470,36 @@ test.describe('Org Lens empty states (spec 053)', () => {
     });
   });
 
-  test.describe('page level — LF team parity (FR-012)', () => {
-    // Staff and contractor are one population on the wire (`isStaff` covers `lf-staff` and
-    // `lf-contractor`), so the same body runs for both; the assertions are identical by construction.
-    for (const session of ['staff', 'contractor'] as const) {
-      test(`S5 (${session}): an LF-team session with no selection sees the staff search invite, never a no-access state`, async ({ page }) => {
-        await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
+  test.describe('page level — LF team affordance (FR-012)', () => {
+    test('S5 (staff): an LF-team session with no selection sees the staff search invite, never a no-access state', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
 
-        await gotoOverview(page);
+      await gotoOverview(page);
 
-        await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
-        await expect(overviewState(page).root).toHaveCount(0);
-        await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
-        await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
-        // The switcher is the control that fills an LF-team member's empty list — it must be there.
-        await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      });
-    }
+      await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
+      await expect(overviewState(page).root).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
+      await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
+      // The switcher is the control that fills an LF-team member's empty list — it must be there.
+      await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+    });
+
+    // lf-contractor is no longer in `LF_TEAM_IDS` (lfx-self-serve#2157 rollback), so the server
+    // answers `isStaff: false` for a contractor-only caller. With no explicit grant that is the
+    // ordinary no-organization case — no staff invite, no catalogue search.
+    test('S5 (contractor): a contractor-only session with no grants sees no-organization, not the staff search invite', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: false }) });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'no-organization');
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText('Search for an organization');
+    });
   });
 
   // One section stands in for all of them (the shared component is the only renderer). The ROI
