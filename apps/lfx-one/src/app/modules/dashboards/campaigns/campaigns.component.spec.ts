@@ -4206,6 +4206,12 @@ describe('CampaignsComponent — email delivery channel', () => {
       ['zero-width-space body B', 'S', '<p>\u200B\u200B</p>'],
       ['soft-hyphen body B', 'S', '<p>\u00AD</p>'],
       ['Hangul-filler body B', 'S', '<p>\u3164</p>'],
+      // The SUBJECT half of the same predicate. `sanitizeDisplayText` reduces each of these to
+      // '' at the request boundary, so the controller drops the whole A/B triple -- while a bare
+      // `.trim()` on the client called them present and previewed two variants.
+      ['zero-width-space subject B', '\u200B\u200B', '<p>b</p>'],
+      ['soft-hyphen subject B', '\u00AD', '<p>b</p>'],
+      ['Hangul-filler subject B', '\u3164', '<p>b</p>'],
     ])('does not stage an A/B test for %s', async (_label, subjectB, bodyHtmlB) => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);

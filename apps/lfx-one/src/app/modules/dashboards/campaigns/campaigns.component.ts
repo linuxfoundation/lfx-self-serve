@@ -48,7 +48,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl, escapeHtml, hasVisibleHtmlText, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
+import { canonicalHttpUrl, escapeHtml, hasVisibleHtmlText, normalizeSponsors, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1239,7 +1239,12 @@ export class CampaignsComponent {
     // The SANITIZED body, because that is what ships. A body consisting only of a tracking pixel
     // sanitizes to '', so gating on the raw value would call it stageable and then send an empty
     // variant -- the same preview/draft drift this predicate exists to remove, one layer down.
-    () => this.abTestSubjectB().trim() !== '' && hasVisibleHtmlText(this.abTestBodyHtmlBPreview())
+    // BOTH halves judged the way the controller judges them. The body half already used the
+    // shared predicate; the subject half used a bare `.trim()`, which keeps a subject of only
+    // zero-width spaces, a soft hyphen or a Hangul filler -- all of which
+    // `sanitizeDisplayText` reduces to '' at the boundary, so the controller drops the whole
+    // A/B triple and stages a single-variant send while the preview shows two variants.
+    () => sanitizeDisplayText(this.abTestSubjectB()) !== '' && hasVisibleHtmlText(this.abTestBodyHtmlBPreview())
   );
 
   /**
