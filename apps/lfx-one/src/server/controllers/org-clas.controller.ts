@@ -616,6 +616,7 @@ export class OrgClasController {
       });
       res.json(page);
     } catch (error) {
+      logger.error(req, 'get_org_cla_activity_log', startTime, error instanceof Error ? error : new Error('get_org_cla_activity_log failed'), {});
       next(error);
     }
   }
