@@ -716,9 +716,10 @@ export interface OrgClaGroup {
    * the CLA Group detail Overview; the producer stores it on the corporate signature record and
    * enforces it in the invalidation-and-restore path.
    *
-   * Optional because absence carries meaning: it is only carried on a signed row. Unsigned,
-   * not-started, sanctioned, and picker-preview rows omit it, which is the same gate the Overview
-   * uses to decide whether the toggle renders at all. Absent from an upstream field maps to
+   * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
+   * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
+   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
+   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
    * `false` at the mapper, matching the producer's own default.
    */
   autoCreateEcla?: boolean;

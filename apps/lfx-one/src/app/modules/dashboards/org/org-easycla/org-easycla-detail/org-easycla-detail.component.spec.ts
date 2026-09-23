@@ -2872,8 +2872,8 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     };
   }
 
-  async function render(claGroup: OrgClaGroup = row()): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
-    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup] }));
+  async function render(claGroup: OrgClaGroup = row(), groups?: OrgClaGroup[]): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups ?? [claGroup] }));
 
     TestBed.resetTestingModule();
     await TestBed.configureTestingModule({
@@ -3106,5 +3106,33 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
     expect(component.autoEclaValue()).toBe(true);
     expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  it('rolls the optimistic value back without a toast when the refusal arrives on another agreement in the same project', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false });
+    const there = row({ id: 'signature-uuid-2', autoCreateEcla: false });
+    const fixture = await render(here, [here, there]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).not.toHaveBeenCalled();
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(false);
   });
 });

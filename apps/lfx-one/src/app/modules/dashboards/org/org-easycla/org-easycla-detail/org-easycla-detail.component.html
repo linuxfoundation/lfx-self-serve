@@ -288,13 +288,13 @@
         -->
         @if (showAutoEclaToggle()) {
           <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
-            <p-toggleSwitch
-              inputId="org-easycla-detail-auto-ecla-toggle"
-              [ngModel]="autoEclaValue()"
-              (ngModelChange)="onAutoEclaToggle($event)"
+            <lfx-toggle
+              id="org-easycla-detail-auto-ecla-toggle"
+              [checked]="autoEclaValue()"
+              (checkedChange)="onAutoEclaToggle($event)"
               [disabled]="autoEclaPending()"
               ariaLabel="Automatically add contributors to this Corporate CLA when re-adding them"
-              [attr.data-test]="'org-easycla-detail-auto-ecla-toggle'" />
+              dataTest="org-easycla-detail-auto-ecla-toggle" />
             <div class="flex flex-col gap-1">
               <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">
                 Auto-approve when re-adding a contributor

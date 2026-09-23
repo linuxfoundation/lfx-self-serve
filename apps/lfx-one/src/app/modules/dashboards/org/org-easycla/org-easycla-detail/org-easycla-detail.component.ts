@@ -45,11 +45,10 @@ import {
   orgClaPreviewGroup,
   isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
-import { FormsModule } from '@angular/forms';
+import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import {
   catchError,
   combineLatest,
@@ -105,7 +104,6 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     BreadcrumbComponent,
     ButtonComponent,
     EmptyStateComponent,
-    FormsModule,
     MessageComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
@@ -113,7 +111,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
-    ToggleSwitchModule,
+    ToggleComponent,
   ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
@@ -824,10 +822,12 @@ export class OrgEasyclaDetailComponent {
    * `serverAuthoredMessage`. The fallback copy names the value nobody would want under an Auto
    * ECLA line ("Could not turn Auto ECLA off"). The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
-   * A late answer is applied only when it is still the in-flight write and this page is still
-   * that organization and agreement. Leaving clears the pending flag so the next agreement's
-   * toggle is not stuck disabled. Coming back to the agreement the write belongs to does not
-   * start a second write while the first is still running.
+   * The override is reconciled while this request is still the in-flight one, including after
+   * the manager moves to another agreement on the same project — that move does not clear a
+   * signature-keyed override. The toast is shown only while this page is still that agreement.
+   * Leaving clears the pending flag so the next agreement's toggle is not stuck disabled.
+   * Coming back to the agreement the write belongs to does not start a second write while the
+   * first is still running.
    *
    * Refused while a write is already in flight, or against a group with no pair project SFID
    * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
@@ -867,15 +867,16 @@ export class OrgEasyclaDetailComponent {
       )
       .subscribe({
         next: (response) => {
-          if (!this.autoEclaAnswerApplies(target)) return;
+          if (this.autoEclaInFlight !== target) return;
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
           // (which it does not, but if it did, the toggle should tell the truth).
           this.autoEclaOverride.set({ signatureId, value: response?.autoCreateEcla === true });
         },
         error: (error: HttpErrorResponse) => {
-          if (!this.autoEclaAnswerApplies(target)) return;
+          if (this.autoEclaInFlight !== target) return;
           this.autoEclaOverride.set({ signatureId, value: previous });
+          if (!this.autoEclaStillHere(target)) return;
           this.messageService.add({
             severity: 'error',
             summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
@@ -888,11 +889,6 @@ export class OrgEasyclaDetailComponent {
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
     return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
-  }
-
-  /** True when this response is still the write on screen, not an older one for the same agreement. */
-  private autoEclaAnswerApplies(target: { orgUid: string; signatureId: string }): boolean {
-    return this.autoEclaInFlight === target && this.autoEclaStillHere(target);
   }
 
   /**
