@@ -335,4 +335,32 @@ describe('ComposerGuestsComponent', () => {
       expect(formService.guests().map((entry) => entry.email)).toEqual(['second@example.com']);
     });
   });
+  /**
+   * Covers what this section hands the group picker as the organizer's saved sharing decision.
+   * @description The picker mounts after the load has settled, so it never sees the hydration
+   * emission and cannot tell a create nobody touched from a meeting saved with sharing off. This
+   * computed is the only thing that tells it apart.
+   */
+  describe('saved attendee visibility passed to the group picker', () => {
+    const resolve = (meeting: Partial<Meeting> | null): boolean | null => {
+      formService.meeting.set(meeting ? ({ meeting_type: 'Technical', restricted: false, ...meeting } as Meeting) : null);
+      return component['savedAttendeeVisibility']();
+    };
+
+    it('reports no decision while creating, where there is no saved meeting', () => {
+      expect(resolve(null)).toBeNull();
+    });
+
+    it('reports no decision for a board meeting carrying a stale opt-in', () => {
+      expect(resolve({ meeting_type: 'Board', show_meeting_attendees: true })).toBeNull();
+    });
+
+    it('reports an opt-out for a meeting whose flag the API omitted', () => {
+      expect(resolve({ show_meeting_attendees: undefined })).toBe(false);
+    });
+
+    it('reports the saved opt-in of an unlocked meeting', () => {
+      expect(resolve({ show_meeting_attendees: true })).toBe(true);
+    });
+  });
 });

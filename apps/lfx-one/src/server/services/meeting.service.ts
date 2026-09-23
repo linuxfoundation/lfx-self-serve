@@ -44,6 +44,7 @@ import {
 import {
   buildRecurrenceNeverEndDate,
   getPastMeetingTranscriptUrl,
+  isShowMeetingAttendeesLocked,
   isUnresolvableParticipantName,
   mapITXResponseToMeetingRsvp,
   normalizeIndexedMeetingAiSummary,
@@ -539,6 +540,12 @@ export class MeetingService {
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
+    // Defense in depth: the form disables this control, but a direct API caller must not be able
+    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
+    if (isShowMeetingAttendeesLocked(createPayload.meeting_type, createPayload.restricted)) {
+      createPayload.show_meeting_attendees = false;
+    }
+
     const sanitizedPayload = logger.sanitize({ createPayload });
     logger.debug(req, 'create_meeting', 'Creating meeting payload', sanitizedPayload);
 
@@ -602,6 +609,23 @@ export class MeetingService {
       organizers: Array.from(organizersSet),
       ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
+
+    // A blank type is not a type change: the body is unvalidated, so `meeting_type: ""` would
+    // otherwise read as "not Board" and lift the lock off a board meeting that is still one.
+    const submittedType = typeof meetingData.meeting_type === 'string' ? meetingData.meeting_type.trim() : meetingData.meeting_type;
+    const meetingType = submittedType || existingMeeting.meeting_type;
+    const restricted = meetingData.restricted ?? existingMeeting.restricted;
+    // Defense in depth: the form disables this control, but a direct API caller must not be able
+    // to opt a board/restricted meeting into sharing its guest list in calendar invites.
+    if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
+      updatePayload.show_meeting_attendees = false;
+    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
+      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+      // omits, and a row written before the lock existed can still hold `true`, so the stale value
+      // would survive the unlock and start sharing the guest list. A locked meeting never carried
+      // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
+      updatePayload.show_meeting_attendees = false;
+    }
 
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
