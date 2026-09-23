@@ -221,6 +221,7 @@ export class SnowflakeService {
             const expectedMissing = options?.expectMissingObject === true && SnowflakeService.isMissingObjectError(error);
             const expectedIdentifier = options?.expectInvalidIdentifier;
             const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
+            const poolQueueFull = isPoolQueueFullError(error);
 
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
@@ -236,21 +237,16 @@ export class SnowflakeService {
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
                 err: error,
               });
-            } else if (isPoolQueueFullError(error)) {
+            } else if (poolQueueFull) {
               // Local backpressure: the query never reached Snowflake, so counting it would let a
-              // traffic burst open the breaker and fail every query for the reset window.
+              // traffic burst open the breaker and fail every query for the reset window. Not logged
+              // here: the rethrown 500 is logged once by apiErrorHandler, with pool stats in errorBody.
               span.setStatus({
                 code: SpanStatusCode.ERROR,
                 message: error instanceof Error ? error.message : String(error),
               });
               span.setAttribute('snowflake.pool_queue_full', true);
               this.recordBackpressure();
-              logger.warning(undefined, 'snowflake_query', 'Query rejected by local connection pool — waiting queue full', {
-                query_hash: queryHash,
-                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
-                pool: this.getPoolStats(),
-                circuit_state: this.circuitState,
-              });
             } else {
               span.setStatus({
                 code: SpanStatusCode.ERROR,
@@ -275,6 +271,7 @@ export class SnowflakeService {
               errorBody: {
                 query_hash: queryHash,
                 duration_ms: Date.now() - startTime,
+                ...(poolQueueFull && { pool_queue_full: true, pool: this.getPoolStats(), circuit_state: this.circuitState }),
               },
               originalError: error instanceof Error ? error : undefined,
             });

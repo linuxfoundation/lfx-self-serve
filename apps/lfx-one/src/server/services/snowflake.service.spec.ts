@@ -33,6 +33,7 @@ import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
 import { SnowflakeCircuitState } from '@lfx-one/shared/enums';
 
 import { tracer } from '../server-tracer';
+import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
 describe('SnowflakeService query deduplication', () => {
@@ -99,6 +100,19 @@ describe('SnowflakeService circuit breaker', () => {
 
     expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
     expect(span.setAttribute).toHaveBeenCalledWith('snowflake.pool_queue_full', true);
+  });
+
+  it('carries pool stats on the thrown error instead of logging the queue rejection in the service', async () => {
+    const { service } = serviceWithPool(vi.fn(poolQueueFull));
+
+    await expect(service.execute('SELECT 1')).rejects.toMatchObject({
+      statusCode: 500,
+      code: 'SNOWFLAKE_QUERY_ERROR',
+      errorBody: { pool_queue_full: true, pool: { activeConnections: 20, waitingRequests: 10 } },
+    });
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(logger.warning).not.toHaveBeenCalled();
+    expect(span.recordException).not.toHaveBeenCalled();
   });
 
   it('still opens the circuit after repeated genuine Snowflake failures', async () => {

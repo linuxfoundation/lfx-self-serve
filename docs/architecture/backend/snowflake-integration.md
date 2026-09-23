@@ -848,7 +848,8 @@ Solution:
 ```
 
 The query never reached Snowflake, so this rejection does not count toward the circuit breaker's
-consecutive-failure threshold (it is logged as a warning with pool stats instead). Acquire timeouts
+consecutive-failure threshold. The request still fails with 500 `SNOWFLAKE_QUERY_ERROR`, logged once by
+`apiErrorHandler` with `error_body.pool_queue_full: true` and the pool stats at rejection time. Acquire timeouts
 still count, because they also occur when Snowflake is unreachable and no connection can be created.
 
 #### 3. Query Timeout
