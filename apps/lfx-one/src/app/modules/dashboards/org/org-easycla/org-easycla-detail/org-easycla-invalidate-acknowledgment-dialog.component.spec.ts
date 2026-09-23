@@ -129,14 +129,31 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     expect(fixture.nativeElement.querySelector('#org-easycla-invalidate-note')?.getAttribute('maxlength')).toBeNull();
   });
 
-  it('keeps Confirm disabled when the note is past the code-point cap', async () => {
+  it('keeps Confirm disabled when the note is past the code-point cap, and says why', async () => {
     const fixture = await render();
 
     chooseReason(fixture, 'other');
     fixture.componentInstance.form.controls.note.setValue('𠮷'.repeat(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH + 1));
     fixture.detectChanges();
 
+    const note = fixture.nativeElement.querySelector('#org-easycla-invalidate-note');
+    const error = fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-note-error"]');
+
     expect(confirmButton(fixture)?.disabled).toBe(true);
+    expect(error?.textContent?.trim()).toBe(`The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`);
+    expect(note?.getAttribute('aria-invalid')).toBe('true');
+    expect(note?.getAttribute('aria-describedby')).toBe('org-easycla-invalidate-note-error');
+  });
+
+  it('accepts a full-length note once surrounding whitespace is trimmed', async () => {
+    const fixture = await render();
+
+    chooseReason(fixture, 'other');
+    fixture.componentInstance.form.controls.note.setValue(`  ${'a'.repeat(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)}\n`);
+    fixture.detectChanges();
+
+    expect(confirmButton(fixture)?.disabled).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-note-error"]')).toBeNull();
   });
 
   it('names the contributor the panel resolved', async () => {

@@ -30,8 +30,15 @@
       control="note"
       inputId="org-easycla-invalidate-note"
       [placeholder]="copy.notePlaceholder"
+      [invalid]="noteTooLong()"
+      [describedBy]="noteTooLong() ? 'org-easycla-invalidate-note-error' : undefined"
       styleClass="w-full"
       dataTest="org-easycla-invalidate-dialog-note" />
+    @if (noteTooLong()) {
+      <p id="org-easycla-invalidate-note-error" role="alert" class="text-xs text-red-600 m-0" data-testid="org-easycla-invalidate-dialog-note-error">
+        {{ copy.noteTooLong }}
+      </p>
+    }
   </div>
 
   <div class="flex justify-end gap-2">

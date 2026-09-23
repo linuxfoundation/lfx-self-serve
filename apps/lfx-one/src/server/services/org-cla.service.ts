@@ -1199,7 +1199,7 @@ export class OrgClaService {
       }
     );
 
-    if (!upstream) {
+    if (!upstream || typeof upstream !== 'object') {
       throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation: 'org_cla_invalidate_acknowledgment',
         service: SERVICE,
@@ -1207,11 +1207,19 @@ export class OrgClaService {
     }
 
     // The producer's CLA Group id, internal company id and EasyCLA user id stop here — see the
-    // shared result type. The echoed signature id is preferred over the route parameter only when
-    // upstream actually sent one.
+    // shared result type. An echoed signature id that names a different acknowledgment is not a
+    // receipt for the write we sent. A body that omits the id still uses the id on the path,
+    // because that path is what the producer addressed.
+    const echoed = typeof upstream.signature_id === 'string' ? upstream.signature_id.trim() : '';
+    if (echoed && echoed !== acknowledgmentSignatureId) {
+      throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream named a different acknowledgment', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+      });
+    }
     return {
       outcome: 'invalidated',
-      result: { signatureId: upstream.signature_id?.trim() || acknowledgmentSignatureId },
+      result: { signatureId: echoed || acknowledgmentSignatureId },
     };
   }
 

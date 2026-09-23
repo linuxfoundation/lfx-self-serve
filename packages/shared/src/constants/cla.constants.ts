@@ -764,6 +764,7 @@ export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
   reasonPlaceholder: 'Choose a reason',
   noteLabel: 'Note (optional)',
   notePlaceholder: 'Add context for the audit trail.',
+  noteTooLong: `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`,
   cancel: 'Cancel',
   confirm: 'Invalidate acknowledgment',
 } as const;

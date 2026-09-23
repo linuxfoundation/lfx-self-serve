@@ -3,7 +3,7 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, Validators } from '@angular/forms';
 import {
   ORG_CLA_INVALIDATE_DIALOG_COPY,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
@@ -11,13 +11,27 @@ import {
   ORG_CLA_INVALIDATION_REASONS,
 } from '@lfx-one/shared/constants';
 import type { OrgClaInvalidateAcknowledgmentDialogData, OrgClaInvalidateAcknowledgmentRequest, OrgClaInvalidationReason } from '@lfx-one/shared/interfaces';
-import { maxCodePointsValidator } from '@lfx-one/shared/validators';
+import { codePointLength } from '@lfx-one/shared/utils';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
+
+/**
+ * The cap is the producer's, counted on the note that will actually be sent.
+ *
+ * `onConfirm` and the BFF both trim before measuring, so a trailing newline must not disable
+ * Confirm for a note that is within the cap once that whitespace is gone. The error key matches
+ * `maxCodePointsValidator` so the template has one shape to read.
+ */
+function trimmedNoteLength(control: AbstractControl): ValidationErrors | null {
+  if (typeof control.value !== 'string') return null;
+  const actualLength = codePointLength(control.value.trim());
+  if (actualLength <= ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH) return null;
+  return { maxCodePoints: { requiredLength: ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH, actualLength } };
+}
 
 /**
  * Confirmation for invalidating one contributor acknowledgment (#1986, #2807).
@@ -50,9 +64,9 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
 
   public readonly form = new FormGroup({
     reason: new FormControl<OrgClaInvalidationReason | null>(null, { validators: [Validators.required] }),
-    // Code points, not Validators.maxLength. The producer's maxLength counts runes, and a native
-    // maxlength on the textarea would stop a non-BMP note at half of that cap.
-    note: new FormControl<string>('', { nonNullable: true, validators: [maxCodePointsValidator(ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH)] }),
+    // Code points, not Validators.maxLength, and on the trimmed note. The producer's maxLength
+    // counts runes, and a native maxlength would stop a non-BMP note at half of that cap.
+    note: new FormControl<string>('', { nonNullable: true, validators: [trimmedNoteLength] }),
   });
 
   private readonly dialogConfig = inject<DynamicDialogConfig<OrgClaInvalidateAcknowledgmentDialogData>>(DynamicDialogConfig);
@@ -64,6 +78,10 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   // seeded as the initial value — without it Confirm would render enabled until the first edit.
   private readonly status = toSignal(this.form.statusChanges, { initialValue: this.form.status });
   protected readonly canConfirm = computed(() => this.status() === 'VALID');
+  protected readonly noteTooLong = computed(() => {
+    this.status();
+    return this.form.controls.note.hasError('maxCodePoints');
+  });
 
   protected onConfirm(): void {
     if (this.form.invalid) return;

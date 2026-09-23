@@ -2951,4 +2951,22 @@ describe('OrgClaService.invalidateAcknowledgment — the receipt', () => {
 
     expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: 'ecla-sig-1' } });
   });
+
+  it('raises a 502 when the producer echoes a different acknowledgment id', async () => {
+    stageInvalidate(undefined, undefined, { signature_id: 'ecla-sig-other' });
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('raises a 502 when the producer body is not an object', async () => {
+    stageInvalidate(undefined, undefined, 'ok');
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
 });
