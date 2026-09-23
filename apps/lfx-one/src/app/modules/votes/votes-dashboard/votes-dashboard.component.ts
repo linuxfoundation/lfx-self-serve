@@ -368,6 +368,10 @@ export class VotesDashboardComponent {
           }
           this.myVotesLoading.set(true);
           return this.voteService.getMyVotes().pipe(
+            // Optimistic merge (GH-2730), same overlay as the project lens: just-opened votes'
+            // known-active status over stale index rows. Unconditional here — the Me lens has no
+            // server-side status filter (its filtering is client-side over these rows).
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => {
               this.myVotesLoading.set(false);
               return of([] as Vote[]);

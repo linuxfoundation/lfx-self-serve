@@ -292,9 +292,13 @@ export class VoteManageComponent {
           .subscribe({
             error: (error) => {
               // The create failed during reading time — surface it now instead of after
-              // commitment. close() routes through the dialog's reject path, which discards the
-              // errored record (nothing was created — no compensating delete).
+              // commitment. ConfirmationService.close() only hides the dialog (it emits no
+              // rejectEvent in PrimeNG 20.4.0), so the reject path's cleanup runs manually here:
+              // reset the guard flag so the organizer can retry, and discard the errored record
+              // (nothing was created — no compensating delete).
               if (this.confirmingOpenVote()) {
+                this.confirmingOpenVote.set(false);
+                this.voteService.discardSpeculativeVote();
                 this.confirmationService.close();
                 this.messageService.add({
                   severity: 'error',

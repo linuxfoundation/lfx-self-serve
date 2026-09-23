@@ -383,22 +383,23 @@ describe('VoteManageComponent', () => {
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Deadline expired' }));
     });
 
-    it('a speculative create failure while the dialog is open closes the dialog and surfaces the error', async () => {
+    it('a speculative create failure while the dialog is open resets the guard, discards, closes, and surfaces the error', async () => {
       const pendingCreate$ = new Subject<Vote>();
       voteServiceMock.beginSpeculativeCreate.mockReturnValue(pendingCreate$.asObservable());
       const confirmationService = TestBed.inject(ConfirmationService);
       const closeSpy = vi.spyOn(confirmationService, 'close').mockImplementation(() => confirmationService);
-      await submitFromValidForm();
+      const fixture = await submitFromValidForm();
       expect(capturedConfirmation).not.toBeNull();
 
       pendingCreate$.error(new Error('create failed'));
 
+      // ConfirmationService.close() emits no rejectEvent in PrimeNG 20.4.0 (the dialog hides
+      // without running reject), so the error branch itself must run the reject path's cleanup:
+      // guard flag reset so the organizer can retry, errored slot discarded, dialog hidden.
+      expect(fixture.componentInstance.confirmingOpenVote()).toBe(false);
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalledTimes(1);
       expect(closeSpy).toHaveBeenCalled();
       expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
-      // The rendered dialog's reaction to close() routes through the same reject callback (CANCEL
-      // and REJECT share rejectEvent in PrimeNG 20.4.0) — simulate that side to pin the cleanup.
-      capturedConfirmation?.reject?.();
-      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
     });
 
     it('edit mode submits without any speculation — update then enable, component marks opened', async () => {
