@@ -7,7 +7,7 @@ import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angul
 import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { of, throwError } from 'rxjs';
+import { NEVER, of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
@@ -317,6 +317,22 @@ describe('EngagementRepresentativesComponent', () => {
     fixture.detectChanges();
 
     expect(emitted).toEqual([null, null]);
+  });
+
+  // A read in flight still holds the previous foundation's payload, so the pill must not republish it.
+  it('keeps the badge empty when the period changes while the next foundation is still loading', async () => {
+    const emitted: unknown[] = [];
+    await render(response(), (value) => emitted.push(value));
+    emitted.length = 0;
+
+    getEngagementRepresentatives.mockReturnValue(NEVER);
+    selectedFoundation.set({ slug: 'other' });
+    fixture.detectChanges();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    fixture.detectChanges();
+
+    expect(emitted).toEqual([null]);
   });
 
   it('settles even when the read fails, or the container holds a deep link forever', async () => {

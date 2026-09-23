@@ -86,7 +86,14 @@
           <td>
             <!-- Never-attended and lapsed are the view's own per-period flags, so the styling never
                  disagrees with the segment the reader picked. -->
-            <span class="text-sm" [class]="period?.neverAttended || period?.lapsed ? 'text-amber-600' : 'text-gray-800'">{{ view.lastAttendedLabel }}</span>
+            <span class="text-sm" [class]="period?.neverAttended || period?.lapsed ? 'text-amber-700' : 'text-gray-800'">
+              {{ view.lastAttendedLabel }}
+              @if (period?.neverAttended) {
+                <span class="sr-only">— never attended</span>
+              } @else if (period?.lapsed) {
+                <span class="sr-only">— lapsed</span>
+              }
+            </span>
           </td>
         </tr>
       </ng-template>

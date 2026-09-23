@@ -245,7 +245,9 @@ export class EngagementRepresentativesComponent {
 
   /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
   private emitCounts(): void {
-    if (this.loadFailed()) return;
+    // A read in flight still holds the previous foundation's payload, so a pill change mid-load
+    // would republish counts the badge has already been told to drop.
+    if (this.loadFailed() || this.loading()) return;
 
     this.countsChange.emit(selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange()));
   }
