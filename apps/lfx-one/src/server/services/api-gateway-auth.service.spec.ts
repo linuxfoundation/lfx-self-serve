@@ -546,6 +546,76 @@ describe('ApiGatewayAuthService', () => {
     expect(req.appSession!['refresh_token']).toBe('primary-refresh');
   });
 
+  it.each([400, 401, 403, 429, 500, 503])('cancels an HTTP %s code-exchange response without changing the session', async (status) => {
+    const req = request();
+    const state = await stateFor(req);
+    const session = structuredClone(req.appSession);
+    const cancel = vi.fn();
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('synthetic-provider-error'));
+        },
+        cancel,
+      }),
+      { status }
+    );
+    fetchMock.mockResolvedValue(response);
+
+    await expect(service.exchangeCode(req, 'synthetic-code', state)).rejects.toThrow('API Gateway authorization could not be completed');
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(response.bodyUsed).toBe(true);
+    expect(req.appSession).toEqual(session);
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+  });
+
+  it('waits for failed code-exchange response cancellation before reporting the error', async () => {
+    const req = request();
+    const state = await stateFor(req);
+    let finish: (() => void) | undefined;
+    const cancel = vi.fn(() => new Promise<void>((resolve) => (finish = resolve)));
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 400 }));
+
+    const pending = service.exchangeCode(req, 'synthetic-code', state).catch((error: unknown) => error);
+    await Promise.resolve();
+    const loggedBeforeCancellation = log.warning.mock.calls.length;
+    finish?.();
+    const error = await pending;
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(loggedBeforeCancellation).toBe(0);
+    expect(error).toEqual(new Error('API Gateway authorization could not be completed. Please try again.'));
+    expect(log.warning).toHaveBeenCalledOnce();
+  });
+
+  it('keeps a response-cancellation failure generic and out of logs', async () => {
+    const req = request();
+    const state = await stateFor(req);
+    const cancel = vi.fn().mockRejectedValue(new Error('secret-from-cancellation'));
+    fetchMock.mockResolvedValue(new Response(new ReadableStream<Uint8Array>({ cancel }), { status: 400 }));
+
+    const error = await service.exchangeCode(req, 'synthetic-code', state).catch((error: unknown) => error);
+
+    expect(cancel).toHaveBeenCalledOnce();
+    expect(error).toEqual(new Error('API Gateway authorization could not be completed. Please try again.'));
+    expect(JSON.stringify(log.warning.mock.calls.map((call) => call.slice(1)))).not.toContain('secret-from-cancellation');
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+  });
+
+  it('keeps a bodyless code-exchange failure generic', async () => {
+    const req = request();
+    const state = await stateFor(req);
+    fetchMock.mockResolvedValue(new Response(null, { status: 400 }));
+
+    await expect(service.exchangeCode(req, 'synthetic-code', state)).rejects.toThrow('API Gateway authorization could not be completed');
+
+    expect(req.appSession!.apiGatewayToken).toBeUndefined();
+    expect(req.appSession!.apiGatewayRefreshToken).toBeUndefined();
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+  });
+
   it('does not include token endpoint response bodies or transport messages in logs/errors', async () => {
     const req = request();
     const state = await stateFor(req);

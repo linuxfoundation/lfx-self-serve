@@ -134,7 +134,10 @@ export class ApiGatewayAuthService {
         redirect_uri: this.redirectUri,
         code_verifier: state.codeVerifier,
       });
-      if (!response.ok) throw new Error('Token exchange refused');
+      if (!response.ok) {
+        await response.body?.cancel();
+        throw new Error('Token exchange refused');
+      }
       const token: unknown = await response.json();
       const expiresAt = this.validateTokenResponse(token, state);
       if (
