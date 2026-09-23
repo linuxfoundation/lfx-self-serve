@@ -170,11 +170,16 @@ router.get('/keyword-performance', requireMarketingAuditor, (req, res, next) => 
 router.get('/social-media', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
 router.get('/social-media/monthly', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
-// North Star metrics endpoints (executive director dashboard)
-router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
-router.get('/member-acquisition', (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
-router.get('/engaged-community', (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
-router.get('/flywheel-conversion', (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
+// North Star metrics endpoints (executive director dashboard). These return confidential foundation
+// revenue/retention KPIs straight from Snowflake with the BFF's own credentials, so the BFF is the
+// only authorization point. They render in Marketing Overview alongside `event-growth`/`brand-reach`
+// (and the ED + LF Staff health-metrics flywheel card), so they share that audience's gate: LF Staff,
+// EDs scoped to the requested foundation, and marketing_auditor grantees. See note above on
+// `requireMarketingAuditorOrLfStaff`.
+router.get('/member-retention', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getMemberRetention(req, res, next));
+router.get('/member-acquisition', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
+router.get('/engaged-community', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
+router.get('/flywheel-conversion', requireMarketingAuditorOrLfStaff, (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
 
 // Health metrics page endpoints (ED + LF Staff) — the health-metrics route is gated client-side by
 // dashboardAccessGuard; requireDashboardAccess enforces the same policy server-side so the

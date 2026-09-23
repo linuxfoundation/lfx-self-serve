@@ -7,11 +7,14 @@ import '@angular/compiler';
 
 import express from 'express';
 import type { Server } from 'node:http';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { ServerFeatureFlag } from '../helpers/server-feature-flag.helper';
 
 /**
  * Router-level coverage for the `requireDashboardAccess` gate on the Health Metrics Overview
- * "Foundation" rail endpoints (LFXV2-3365).
+ * "Foundation" rail endpoints (LFXV2-3365) and the `requireMarketingAuditorOrLfStaff` gate on the
+ * North Star endpoints (linuxfoundation/lfx-self-serve-ops#43).
  *
  * The middleware has its own unit tests, but those call it directly — they would keep passing if
  * `router.get('/foundation-profile-summary', requireDashboardAccess, ...)` had the middleware
@@ -24,10 +27,11 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
  */
 
 const getPersonas = vi.fn();
+const checkRootMarketingAuditor = vi.fn();
 const execute = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { getPersonas },
+  personaDetectionService: { getPersonas, checkRootMarketingAuditor },
 }));
 vi.mock('../services/snowflake.service', () => ({
   SnowflakeService: {
@@ -125,3 +129,67 @@ describe.each([
     expect(getPersonas).toHaveBeenCalled();
   });
 });
+
+describe.each(['/member-retention', '/member-acquisition', '/engaged-community', '/flywheel-conversion'])(
+  'analytics router — North Star gate on %s',
+  (path) => {
+    afterEach(() => {
+      delete process.env[ServerFeatureFlag.MarketingOpsFga];
+    });
+
+    it('refuses a caller without ED, LF Staff or marketing access', async () => {
+      getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).toBe(403);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('refuses an ED scoped to a different foundation', async () => {
+      getPersonas.mockResolvedValue({
+        personas: ['executive-director'],
+        isLFStaff: false,
+        isRootWriter: false,
+        personaProjects: { 'executive-director': [{ projectSlug: 'kubernetes' }] },
+      });
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).toBe(403);
+      expect(execute).not.toHaveBeenCalled();
+    });
+
+    it('admits an ED scoped to the requested foundation', async () => {
+      getPersonas.mockResolvedValue({
+        personas: ['executive-director'],
+        isLFStaff: false,
+        isRootWriter: false,
+        personaProjects: { 'executive-director': [{ projectSlug: 'cncf' }] },
+      });
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).toBe(200);
+    });
+
+    it('admits LF Staff past the gate', async () => {
+      getPersonas.mockResolvedValue({ personas: [], isLFStaff: true, isRootWriter: false, personaProjects: {} });
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).toBe(200);
+    });
+
+    it('admits a root marketing_auditor grantee when marketing-ops FGA is on', async () => {
+      process.env[ServerFeatureFlag.MarketingOpsFga] = 'true';
+      getPersonas.mockResolvedValue({ personas: [], isLFStaff: false, isRootWriter: false, personaProjects: {} });
+      checkRootMarketingAuditor.mockResolvedValue(true);
+
+      const res = await fetch(`${baseUrl}/api/analytics${path}?foundationSlug=cncf`);
+
+      expect(res.status).toBe(200);
+      expect(checkRootMarketingAuditor).toHaveBeenCalled();
+    });
+  }
+);

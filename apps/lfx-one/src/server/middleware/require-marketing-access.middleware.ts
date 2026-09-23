@@ -33,7 +33,9 @@ const projectService = new ProjectService();
  * change, so flag-off preserves their prior behavior exactly. Every other route this middleware
  * now covers — the rest of `analytics.route.ts` (`email-ctr`, `social-reach`,
  * `keyword-performance`, `social-media`, `social-media/monthly`, `event-growth`, `brand-reach`,
- * `brand-health`, `revenue-impact`, `marketing-attribution`) and all of `campaigns.route.ts` —
+ * `brand-health`, `revenue-impact`, `marketing-attribution`, plus the North Star rows
+ * `member-retention`, `member-acquisition`, `engaged-community`, `flywheel-conversion` added later
+ * under linuxfoundation/lfx-self-serve-ops#43) and all of `campaigns.route.ts` —
  * previously had **no** authorization middleware. For those, flag-off is an intentional
  * tightening: they now 403 any non-ED caller rather than admitting everyone. The kill switch
  * restores the ED-only baseline, not the pre-PR open baseline. This tightening is covered by the
