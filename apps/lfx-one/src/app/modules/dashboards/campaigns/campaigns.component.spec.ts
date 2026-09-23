@@ -1865,6 +1865,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     selectedEmailTypeId: WritableSignal<string>;
     emailCopy: WritableSignal<EmailBriefCopy | null>;
     emailCtaDestination: Signal<string>;
+    generatedDestinations: Signal<string[]>;
+    emailBodyHtmlPreview: Signal<string>;
     emailCtaUnlinkedLabel: Signal<string>;
     emailHeroImageHost: Signal<string>;
     emailAudience: WritableSignal<CampaignAudience | null>;
@@ -2340,6 +2342,66 @@ describe('CampaignsComponent — email delivery channel', () => {
      * Shown as plain text rather than as a button, because a button would promise a link the
      * staged draft will not carry.
      */
+    /**
+     * The client is the ONLY layer that compares the generator's destination with the brief's.
+     * The service has `briefId`, not the brief; the controller trusts `buttonUrl` off the
+     * request. So if `generatedDestinations` reads `copy.ctaUrl` raw instead of the validated
+     * `emailCtaDestination()`, a model that invents a host whitelists ITS OWN phishing domain
+     * and the body anchor pointing there survives into the preview and the staged draft.
+     *
+     * That is the exact vector this allow-list exists to close, and nothing pinned it.
+     */
+    it('does not let an invented CTA url whitelist its own host for body links', () => {
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        // The model invented a destination AND wrote a body anchor to the same host.
+        body: '<p>Join <a href="https://evil.example/phish">here</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      // Nothing is vouched for, because the generated url is not the brief's.
+      expect(internals().generatedDestinations()).toEqual([]);
+      // ...so the body anchor loses its href while keeping its words.
+      expect(internals().emailBodyHtmlPreview()).not.toContain('evil.example');
+      expect(internals().emailBodyHtmlPreview()).toContain('here');
+    });
+
+    it('keeps a body link on the host the brief vouches for', () => {
+      // The control for the case above: narrowing the list must not drop legitimate links.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Join <a href="https://events.linuxfoundation.org/kubecon-eu-2026/register">here</a></p>',
+        cta: 'Register now',
+        ctaUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+      } as unknown as EmailBriefCopy);
+      fixture.detectChanges();
+
+      expect(internals().generatedDestinations()).toEqual(['https://events.linuxfoundation.org/kubecon-eu-2026/']);
+      expect(internals().emailBodyHtmlPreview()).toContain('href="https://events.linuxfoundation.org/kubecon-eu-2026/register"');
+    });
+
     it('shows a refused CTA as plain text instead of dropping it silently', () => {
       selectEmail();
       internals().emailBriefOutput.set({

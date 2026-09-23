@@ -376,10 +376,12 @@ function hasScheme(href: string): boolean {
   // NORMALIZED first -- see `normalizeHrefForJudgement`. Testing the raw string sends a value a
   // browser reads as host-bearing down the relative branch, which returns it UNJUDGED.
   //
-  // For the protocol-relative spellings sanitize-html's `allowProtocolRelative: false` is a
-  // second layer, but NOT for the rest: it folds no backslashes and strips no interior control
-  // characters, so for `ht<TAB>tps://` and `/\host` this is the only thing standing between a
-  // model-invented destination and the recipient's inbox.
+  // Several layers overlap here, and the normalisation is not the only one: sanitize-html's
+  // `allowProtocolRelative: false` refuses `//host`, and `canonicalHttpUrl` goes through
+  // `new URL()`, whose WHATWG parser strips interior tab/LF/CR and folds `\` on its own. What
+  // this function uniquely decides is whether the href takes the RELATIVE branch at all -- and
+  // that branch returns an href unjudged, so getting the classification wrong is what would
+  // matter.
   return hasSchemeNormalized(normalizeHrefForJudgement(href));
 }
 

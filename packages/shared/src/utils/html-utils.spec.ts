@@ -742,9 +742,14 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     // WHATWG removes tab, LF and CR from ANYWHERE in a url before parsing, so each of these is
     // `evil.example` to a browser while a regex anchored on `^https?:` sees a relative path.
     //
-    // Unlike the protocol-relative cases above, these DO bind: sanitize-html does not fold
-    // backslashes or strip interior control characters, so this is the only layer that refuses
-    // them. Mutation-verified -- reverting the normalisation fails exactly these.
+    // WHAT THIS PINS, precisely. Removing the interior tab/LF/CR strip or the backslash fold
+    // leaves the suite green, because `canonicalHttpUrl` calls `new URL()` and WHATWG does both
+    // itself -- `canonicalHttpUrl('ht<TAB>tps://evil.example/p')` returns
+    // `https://evil.example/p`, which the HOST allow-list then refuses. Those two steps are
+    // redundant defence, not the only line.
+    //
+    // The parts that DO bind are the Unicode-whitespace end-strip and judging on the normalized
+    // string rather than the raw one: reverting either fails six cases each.
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
