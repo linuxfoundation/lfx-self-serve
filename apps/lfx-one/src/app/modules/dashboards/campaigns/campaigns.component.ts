@@ -48,7 +48,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl, hasVisibleHtmlText, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
+import { canonicalHttpUrl, escapeHtml, hasVisibleHtmlText, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1200,6 +1200,21 @@ export class CampaignsComponent {
    *
    * Staging uses this same normalized value, so the preview and the draft cannot disagree.
    */
+  /**
+   * Variant A's body with body links judged against the VALIDATED destination.
+   *
+   * `copy.body` arrives from the service already stripped of resource-loading markup and with its
+   * anchors judged against the generator's own button url -- but the service has only `briefId`,
+   * not the brief, so it cannot check that url against the brief's registration url. A model that
+   * invents `button.url = https://evil.example` alongside an anchor to that host therefore gets
+   * both past the service.
+   *
+   * `emailCtaDestination` is where that check lives, and it is client-side. Re-running the same
+   * filter here with the validated list closes the gap and makes A's preview agree with what the
+   * controller stages -- exactly as `abTestBodyHtmlBPreview` does for B.
+   */
+  protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
+
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
@@ -1350,6 +1365,26 @@ export class CampaignsComponent {
     // CTA arose in the first place.
     if (!this.emailCopy()?.ctaUrl) return '';
     return (this.emailCopy()?.cta ?? '').trim();
+  });
+
+  /**
+   * The body that STAGES, which is the preview's body plus any call to action that lost its link.
+   *
+   * The server keeps a button's label inline in `body` only when the section carried NO url (its
+   * filter is `!section.url`). A url that was supplied and then REFUSED -- a hallucinated host, a
+   * whitespace string -- takes the label out of `body` on the server and sends no native button
+   * here, so the call to action vanished from the staged draft while the preview still showed it
+   * as `emailCtaUnlinkedLabel`. The preview was telling the truth about intent and the draft was
+   * losing the content.
+   *
+   * Appended as plain text, matching how the server renders an unlinked button: the label is the
+   * content, and only the link is missing.
+   */
+  protected readonly emailBodyHtmlForSend = computed<string>(() => {
+    const body = this.emailBodyHtmlPreview();
+    const unlinked = this.emailCtaUnlinkedLabel();
+    if (unlinked === '') return body;
+    return `${body}<div class="lfx-block lfx-button"><strong>${escapeHtml(unlinked)}</strong></div>`;
   });
 
   /**
@@ -2638,6 +2673,10 @@ export class CampaignsComponent {
     // live lets a generation that completes mid-stage make them disagree -- shipping a hero or
     // button whose body came from a copy that no longer exists. One moment in time, one config.
     const copy = this.emailCopy();
+    // Snapshotted WITH `copy`, not read live at the payload below. `persistBrief` resolves on a
+    // later tick, and a regeneration can clear `emailCopy` while staging is in flight -- a live
+    // computed would then return '' and stage an empty body over the one the operator approved.
+    const bodyHtmlForSend = this.emailBodyHtmlForSend();
     // No separate bodyIsStageable snapshot: emailHeroImageUrl, emailSponsors and emailCtaLabel
     // each already require it, so snapshotting them captures the body condition too. A fifth
     // variable would only be a second place for the same fact to live.
@@ -2724,7 +2763,7 @@ export class CampaignsComponent {
         // — but it would also mean every staging call claimed to carry copy it did not have.
         hubspotConfig: {
           sourceEmailId,
-          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body, preheader: copy.preheader }),
+          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: bodyHtmlForSend, preheader: copy.preheader }),
           // The AI-generated CTA rides along as the native HubSpot button widget's text/url, not
           // embedded inline in `body` — `copy.cta` is the button's label; its destination is the
           // same registration URL the rest of the brief already points at. Sent only when the AI

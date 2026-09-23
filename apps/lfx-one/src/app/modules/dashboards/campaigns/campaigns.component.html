@@ -307,7 +307,10 @@
                         first-party content. If a `bypassSecurityTrust*` is ever added to this
                         module, this binding must be re-reviewed before it lands.
                       -->
-                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
+                      <div
+                        class="prose prose-sm max-w-none text-sm text-gray-800"
+                        [innerHTML]="emailBodyHtmlPreview()"
+                        data-testid="campaigns-email-copy-body"></div>
                     </div>
                   </div>
                 }
@@ -646,7 +649,7 @@
                          host -- the same vector the hero and sponsor placeholders close. -->
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                      [innerHTML]="copy.body"
+                      [innerHTML]="emailBodyHtmlPreview()"
                       data-testid="campaigns-email-preview-body"></div>
                     @if (emailCtaLabel(); as ctaLabel) {
                       <div class="px-4 pb-4">

@@ -4126,7 +4126,7 @@ describe('CampaignsComponent — email delivery channel', () => {
       // button the draft never gets. Both sides read one predicate precisely to avoid that.
       const cfg = create.mock.calls[0][0].hubspotConfig;
       expect(cfg?.buttonText).toBeUndefined();
-      expect(cfg?.buttonUrl).toBeUndefined();
+      expect(cfg?.['buttonUrl']).toBeUndefined();
       expect(internals().emailCtaIsStageable()).toBe(false);
     });
 
@@ -4783,6 +4783,38 @@ describe('CampaignsComponent — email delivery channel', () => {
       // canonicalHttpUrl, so the two cannot restate the rule differently.
       expect(internals().emailHeroImageUrl()).toBe('https://cdn.example.com/hero.png');
       expect(internals().emailSponsors()).toEqual([{ name: 'Acme', logoUrl: 'https://cdn.example.com/acme.png' }]);
+    });
+
+    it('stages the call to action whose destination was refused, as text', async () => {
+      // The server keeps a button's label inline in `body` only when the section carried NO url
+      // (`!section.url`). A url supplied and then REFUSED takes the label out of `body` there and
+      // sends no native button here, so the CTA vanished from the draft while the preview still
+      // showed it. The preview was right about intent; the draft was losing content.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().selectedEmailTemplateId.set('hs-123');
+      internals().emailAudience.set({ id: 'aud-1', status: 'built' } as never);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>Join us</p>',
+        cta: 'Register Now',
+        // A hallucinated host: truthy, so the server dropped the label, and refused by
+        // `emailCtaDestination`, so no native button is sent either.
+        ctaUrl: 'https://evil.example/phish',
+      });
+      fixture.detectChanges();
+
+      persistBrief.mockReturnValue(of({ status: 'saved', approved: true, briefId: 'brief-77', etag: null }));
+      const create = vi.spyOn(TestBed.inject(CampaignService), 'createCampaign').mockReturnValue(of({ jobId: 'j1' }));
+
+      await internals().onStageEmailSend();
+
+      const cfg = create.mock.calls[0][0].hubspotConfig;
+      expect(cfg?.bodyHtml).toContain('Register Now');
+      expect(cfg?.buttonUrl).toBeUndefined();
+      // The label ships; the refused destination does not.
+      expect(cfg?.bodyHtml).not.toContain('evil.example');
     });
 
     it('does not ship a hero from copy that was cleared mid-stage', async () => {
