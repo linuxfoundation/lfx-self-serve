@@ -48,6 +48,7 @@ const NO_ACCESS_COPY = ORG_LENS_EMPTY_STATE_COPY['no-access'];
 
 type RoleGrantsOverrides = Partial<{
   writers: string[];
+  auditors: string[];
   isStaff: boolean;
   degraded: boolean;
   lookupOutcome: 'ok' | 'partial' | 'failed';
