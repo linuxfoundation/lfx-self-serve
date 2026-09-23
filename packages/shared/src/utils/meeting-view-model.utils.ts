@@ -35,6 +35,13 @@ import { canJoinMeeting, hasMeetingEnded } from './meeting.utils';
  * window, so `live` is exactly "the join button would work" and `ended` is exactly the boundary
  * the dashboard already filters on. `ended` is tested first because the two windows share their
  * upper bound and `ended` is the strict side of it.
+ *
+ * `occurrence` is not optional in practice for a recurring meeting. Both delegates fall back to
+ * `meeting.start_time` — the *series'* start — when it is nullish, so a long-running series whose
+ * first occurrence is months past resolves to `ended` even while future occurrences exist. The
+ * caller owns occurrence selection (the V2 page has an occurrence strip and knows which one it is
+ * showing), so this resolver describes the occurrence it is handed rather than picking one itself.
+ * Pass `null` only for a one-time meeting.
  */
 export function resolveTimeState(meeting: Meeting, occurrence: MeetingOccurrence | null | undefined, now: Date): MeetingTimeState {
   if (hasMeetingEnded(meeting, occurrence ?? undefined, now)) {
@@ -123,7 +130,9 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
   const ended = input.timeState === 'ended';
   // Past content is gated on artifact access; upcoming content is not gated at all, because the
   // detail payload only returns a meeting the viewer was allowed to fetch in the first place.
-  const contentVisible = ended ? input.fullAccess : true;
+  // `hasArtifactAccess` is the same rule {@link resolveEndedActionSlot} applies, shared rather
+  // than restated: if the rail resolves to `tools`, the sections it points at must be visible.
+  const contentVisible = !ended || hasArtifactAccess(input.viewerRole, input.fullAccess);
   const rsvpVisible = input.inviteResponsesEnabled && onTheMeeting;
 
   return {
@@ -131,11 +140,13 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     joinDetails: !ended && onTheMeeting,
     materials: contentVisible,
     occurrences: input.recurring,
-    people: onTheMeeting,
+    // Gated with the rest of the past-meeting content, not only on membership: a registrant who
+    // cannot see the agenda or the recording has no business seeing who attended either.
+    people: onTheMeeting && contentVisible,
     rsvpAvatarBadges: rsvpVisible,
     rsvpRosterFilter: rsvpVisible,
     rsvpSummary: rsvpVisible,
-    tools: ended && input.fullAccess,
+    tools: ended && hasArtifactAccess(input.viewerRole, input.fullAccess),
   };
 }
 
@@ -144,11 +155,22 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
  * with `past_meeting_full_access`, and is told so rather than shown an empty page.
  */
 function resolveEndedActionSlot(input: ActionSlotInput): ActionSlotKind {
-  if (input.viewerRole === 'organizer') {
-    return 'tools';
-  }
+  return hasArtifactAccess(input.viewerRole, input.fullAccess) ? 'tools' : 'no-access';
+}
 
-  return input.fullAccess ? 'tools' : 'no-access';
+/**
+ * Whether a viewer may see a past meeting's agenda, materials, roster and recording.
+ *
+ * `past_meeting_full_access` is the general gate, but an organizer is never locked out of their
+ * own meeting's artifacts — the flag describes what the meeting exposes to its attendees, not
+ * what its owner is allowed to open.
+ *
+ * Shared by {@link resolveEndedActionSlot} and {@link resolveVisibleSections} on purpose. When
+ * they each carried their own rule, an organizer without `fullAccess` resolved to a `tools` rail
+ * pointing at sections the same view model had just hidden.
+ */
+function hasArtifactAccess(viewerRole: MeetingViewerRole, fullAccess: boolean): boolean {
+  return viewerRole === 'organizer' || fullAccess;
 }
 
 /**

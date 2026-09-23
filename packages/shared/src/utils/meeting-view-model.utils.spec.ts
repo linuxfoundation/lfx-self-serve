@@ -90,8 +90,26 @@ describe('resolveTimeState', () => {
   });
 
   it('returns "before" for a meeting with no start time rather than throwing', () => {
-    const meeting = buildMeeting({ start_time: undefined as unknown as string });
+    const meeting = buildMeeting();
+    delete (meeting as Partial<Meeting>).start_time;
     expect(resolveTimeState(meeting, null, at(START))).toBe('before');
+  });
+
+  // Pins the documented contract rather than endorsing it: a recurring series whose first
+  // occurrence is long past reads as 'ended' when no occurrence is supplied, because both
+  // delegates fall back to the series' own start_time. The caller owns occurrence selection, so
+  // the V2 page must pass the occurrence it is showing — this test is what fails if a future
+  // change starts resolving the occurrence internally and silently alters that contract.
+  it('describes the series, not the next occurrence, when no occurrence is supplied', () => {
+    const meeting = buildMeeting();
+    const nextWeek = buildOccurrence({ start_time: '2026-06-08T10:00:00.000Z' });
+    const duringTheFirstWeek = at('2026-06-05T10:00:00.000Z');
+
+    expect(resolveTimeState(meeting, null, duringTheFirstWeek)).toBe('ended');
+    expect(resolveTimeState(meeting, nextWeek, duringTheFirstWeek)).toBe('before');
+    // And the same for the live window, which is resolved by a second delegate: half an hour into
+    // the later occurrence is 'live' only because the occurrence — not the series — is consulted.
+    expect(resolveTimeState(meeting, nextWeek, at('2026-06-08T10:30:00.000Z'))).toBe('live');
   });
 });
 
@@ -311,6 +329,17 @@ describe('resolveVisibleSections', () => {
     }
   });
 
+  it('gates the past roster on artifact access, like the rest of the past content', () => {
+    const sections = resolveVisibleSections({
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended',
+      viewerRole: 'registrant',
+    });
+    expect(sections.people).toBe(false);
+  });
+
   it('gates past agenda and materials on artifact access', () => {
     const withAccess = resolveVisibleSections({
       fullAccess: true,
@@ -357,6 +386,26 @@ describe('resolveVisibleSections', () => {
     expect(ended.tools).toBe(true);
     expect(live.tools).toBe(false);
     expect(endedNoAccess.tools).toBe(false);
+  });
+
+  // The two resolvers have to agree or the page renders a rail pointing at hidden sections. An
+  // organizer without `past_meeting_full_access` is the cell where they previously disagreed, so
+  // it is asserted across both at once rather than in each resolver's own describe.
+  it('keeps an organizer without full access on the same side of both resolvers', () => {
+    const input = {
+      fullAccess: false,
+      inviteResponsesEnabled: true,
+      recurring: false,
+      timeState: 'ended' as MeetingTimeState,
+      viewerRole: 'organizer' as MeetingViewerRole,
+    };
+    const sections = resolveVisibleSections(input);
+
+    expect(resolveActionSlot({ ...input, privacy: PUBLIC_OPEN })).toBe('tools');
+    expect(sections.tools).toBe(true);
+    expect(sections.agenda).toBe(true);
+    expect(sections.materials).toBe(true);
+    expect(sections.people).toBe(true);
   });
 
   it('hides join details after the meeting ends', () => {
