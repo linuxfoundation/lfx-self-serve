@@ -5163,8 +5163,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     const host: HTMLElement = fixture.nativeElement;
     const notes = host.querySelectorAll('[data-testid="campaigns-email-preview-hero"]');
     // One panel renders under this fixture; the other two sit behind further conditions (a
-    // staged draft and an A/B variant). Asserting a hard count of 3 would be asserting my own
-    // assumption -- it fails at 1 -- so this pins what is actually reachable here: the note
+    // staged draft and an A/B variant). A hard count of 3 would assert an assumption rather than
+    // the fixture -- it fails at 1 -- so this pins what is actually reachable here: the note
     // renders, it NAMES the host, and it never becomes an <img>.
     expect(notes.length).toBeGreaterThan(0);
     // And it NAMES the host rather than loading it -- no <img> may appear in the rendered note.

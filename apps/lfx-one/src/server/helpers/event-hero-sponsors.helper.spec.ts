@@ -102,10 +102,10 @@ describe('extractHeroAndSponsors', () => {
     expect(result.sponsors).toEqual([]);
   });
 
-  // Split in two because one fixture cannot exercise both properties, and trying made it vacuous
-  // TWICE: the original used `i % 3` (three unique URLs, so the cap was never reached), and the
-  // rewrite that fixed the cap put the duplicate at position 15 -- past the cutoff, where the
-  // extraction loop breaks before ever seeing it. Each property now gets a fixture built for it.
+  // Split in two because one fixture cannot exercise both properties without going vacuous. A
+  // fixture cycling `i % 3` yields three unique URLs, so the cap is never reached; moving the
+  // duplicate past the cutoff instead puts it where the extraction loop breaks before seeing it.
+  // Each property gets a fixture built for it.
   it('caps the sponsor list at 10', () => {
     // 14 UNIQUE logos: more than the cap, so the cap is what decides the length.
     const html = `<h2>Sponsors</h2>${Array.from({ length: 14 }, (_, i) => `<img src="/sponsors/s${i}.png" alt="Sponsor ${i}" />`).join('')}`;

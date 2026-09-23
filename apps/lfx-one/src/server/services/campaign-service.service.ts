@@ -934,7 +934,7 @@ export class CampaignServiceClient {
       // renders as something other than what it contains, and nothing else on the CTA path --
       // not `emailCtaLabel` in the component, not `rawButtonText.trim()` in the controller --
       // sanitizes it. Doing it HERE, where the value is produced, covers every consumer rather
-      // than the one path in front of me.
+      // than a single call path.
       const cta = sanitizeDisplayText(buttonSection?.text ?? '');
       // The generator OMITS `url` when registration is not the right destination for the stage,
       // so an absent value must stay absent rather than be replaced downstream.
@@ -1113,7 +1113,7 @@ export class CampaignServiceClient {
     // Not a cosmetic omission upstream: `unmarshalPlatformConfig` in campaign-service returns nil
     // for an absent key — "no per-platform config supplied; zero value is fine" — so the
     // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
-    // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
+    // headlines. Nothing upstream refuses it -- confirmed against the dispatcher, not assumed.
     //
     // The reachable case is google-ads selected with NEITHER supported campaign type: the
     // builder returns null only when it can name no channel at all. Demand-Gen-only no longer
@@ -2144,15 +2144,12 @@ export class CampaignServiceClient {
  * Whether a stored brief is the one this request sent.
  *
  * Compares the WHOLE payload, opaque blobs included. Two rounds of review narrowed this: first
- * only `program_type` and `event_slug`, then `url` and `platforms` as well. Both times I excluded
- * the four `Any` fields on the reasoning that the service round-trips them without interpreting,
- * so key order and whitespace might not survive and a mismatch would reject a row that really is
- * ours — stranding the user, which this reconciliation exists to prevent.
- *
- * That reasoning was wrong, and checkably so: the columns are `JSONB`
+ * The four `Any` fields are INCLUDED in the comparison. Excluding them on the grounds that the
+ * service round-trips them without interpreting — so key order or whitespace might not survive,
+ * and a mismatch would reject a row that really is ours — does not hold: the columns are `JSONB`
  * (`000002_create_brief_campaign_tables.up.sql`), which normalizes key order and strips
  * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialized text — is
- * therefore stable across the round trip, and the hazard I kept citing does not exist.
+ * therefore stable across the round trip.
  *
  * It matters because the first-class columns alone do not discriminate: two briefs for the same
  * event normally share program, slug, url AND platform selection, differing only in the generated

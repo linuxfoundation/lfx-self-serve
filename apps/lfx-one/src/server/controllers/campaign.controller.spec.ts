@@ -832,7 +832,7 @@ describe('CampaignController.createCampaign cutover', () => {
   });
 
   /**
-   * The regression guard for a bug I shipped and had to back out.
+   * Regression guard for a bug that shipped and had to be backed out.
    *
    * The unconfigured-platform refusal was briefly in the controller, ABOVE the `createCampaigns`
    * call, where it ran unconditionally. That broke demand-gen-only Google creation with every flag
