@@ -664,14 +664,28 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
   });
 
   it.each([
-    ['a root-relative path', '/register'],
-    ['a document-relative path', 'register.html'],
-    ['a fragment', '#agenda'],
-    ['a parent-relative path', '../x'],
-  ])('leaves %s alone, because it names no host to vouch for', (_label, href) => {
-    // A relative href resolves against whatever document renders it, so it makes no destination
-    // claim. Judging one against the allow-list drops every ordinary in-site link.
-    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toContain(`href="${href}"`);
+    ['a root-relative path', '/register', 'https://events.linuxfoundation.org/register'],
+    ['a document-relative path', 'register.html', 'https://events.linuxfoundation.org/register.html'],
+    ['a fragment', '#agenda', 'https://events.linuxfoundation.org/kubecon#agenda'],
+    ['a parent-relative path', '../x', 'https://events.linuxfoundation.org/x'],
+    ['a query-only href', '?a=b', 'https://events.linuxfoundation.org/kubecon?a=b'],
+  ])('resolves %s against the vouched destination', (_label, href, expected) => {
+    // Forwarding a relative href unchanged was wrong for this sink: the body lands in an EMAIL,
+    // so `/register` resolves against the mail client's document rather than the event site and
+    // arrives as a link to nowhere. Resolving beats dropping -- the reader gets a working link --
+    // and the result is judged by the SAME allow-list, so nothing skips the check.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe(`<p><a href="${expected}">x</a></p>`);
+  });
+
+  it('drops a relative href when NOTHING is vouched for', () => {
+    // An empty list is "vouched for nothing", and that has to mean every link -- a relative one
+    // has no base to resolve against either. Keeping them contradicted the stated policy.
+    expect(stripResourceLoadingHtml('<p><a href="/register">x</a></p>', [])).toBe('<p><a>x</a></p>');
+  });
+
+  it('leaves a relative href alone when no list is supplied', () => {
+    // `undefined` is still "no opinion" -- the legacy behaviour for callers with no destination.
+    expect(stripResourceLoadingHtml('<p><a href="/register">x</a></p>', undefined)).toContain('href="/register"');
   });
 
   it.each([

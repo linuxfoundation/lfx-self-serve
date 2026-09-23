@@ -355,6 +355,12 @@ function normalizeHrefForJudgement(href: string): string {
   );
 }
 
+/** `attribs` without its `href`, so an anchor keeps its words and loses only the promise. */
+function omitHref(attribs: Record<string, string>): Record<string, string> {
+  const { href: _dropped, ...rest } = attribs;
+  return rest;
+}
+
 /** Whether an already-normalized href names a host. */
 function hasSchemeNormalized(normalized: string): boolean {
   return normalized.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(normalized);
@@ -482,6 +488,9 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
   if (!html) return '';
 
   const allowedHosts = buildAllowedHosts(allowedDestinations);
+  // The base a relative href resolves against: the first destination the caller vouched for.
+  // '' when none was, which is the same "nothing is vouched for" state an empty list expresses.
+  const firstAllowedBase = (allowedDestinations ?? []).map((d) => canonicalHttpUrl(d)).find((d) => d !== '') ?? '';
 
   return sanitizeHtml(html, {
     // Formatting only. Every resource-loading element is absent by omission rather than by
@@ -529,17 +538,34 @@ export function stripResourceLoadingHtml(html: string | null | undefined, allowe
       a: (tagName, attribs) => {
         if (allowedHosts === null) return { tagName, attribs };
         const raw = typeof attribs['href'] === 'string' ? attribs['href'] : '';
-        // A RELATIVE href names no host, so it makes no destination claim to check -- it resolves
-        // against whatever document renders it. Judging one against the allow-list would drop
-        // every ordinary in-site link, which is the defect the docstring below already records
-        // having fixed once.
-        if (raw !== '' && !hasScheme(raw)) return { tagName, attribs };
+        // A RELATIVE href is RESOLVED against the vouched destination and then judged like any
+        // other, rather than forwarded unchanged.
+        //
+        // Forwarding it was wrong for this sink: the body lands in an EMAIL, so `/register`
+        // resolves against whatever document the mail client renders -- not the event site --
+        // and arrives as a link to nowhere. It also contradicted the empty-list policy, under
+        // which every link is dropped.
+        //
+        // Resolving is better than dropping: `/register` against
+        // `https://events.linuxfoundation.org/kubecon` becomes a working absolute link on the
+        // vouched host, which then passes the SAME check on its own merits. Nothing skips the
+        // allow-list, and an in-site link the generator wrote still works in the inbox.
+        if (raw !== '' && !hasScheme(raw)) {
+          const base = firstAllowedBase;
+          if (base === '') return { tagName, attribs: omitHref(attribs) };
+          try {
+            const resolvedHref = allowedDestinationHref(new URL(raw, base).href, allowedHosts);
+            if (resolvedHref !== '') return { tagName, attribs: { ...attribs, href: resolvedHref } };
+          } catch {
+            // An href that will not resolve against a valid base is not a destination.
+          }
+          return { tagName, attribs: omitHref(attribs) };
+        }
         const href = allowedDestinationHref(raw, allowedHosts);
         if (href !== '') return { tagName, attribs: { ...attribs, href } };
         // The anchor SURVIVES without its href, so the words stay in the copy. Dropping the tag
         // would delete the call to action; dropping only the promise is the narrower answer.
-        const { href: _dropped, ...rest } = attribs;
-        return { tagName, attribs: rest };
+        return { tagName, attribs: omitHref(attribs) };
       },
     },
     // An `href` may name an http(s) destination or a RELATIVE path; `javascript:`, `data:` and
