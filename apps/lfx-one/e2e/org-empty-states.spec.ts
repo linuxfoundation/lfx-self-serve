@@ -20,6 +20,7 @@
  */
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
+import { LENS_COOKIE_KEY } from '@lfx-one/shared/constants/lens.constants';
 import { ORG_LENS_EMPTY_STATE_COPY } from '@lfx-one/shared/constants/org-lens-empty-state.constants';
 import { expect, Page, test } from '@playwright/test';
 
@@ -282,6 +283,19 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    // The profile route declares the Me lens, so every way in switches — not only the in-app link:
+    // a deep link, a refresh or back/forward while the Organization lens is the saved one.
+    test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page }) => {
+      await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'org', domain: 'localhost', path: '/' }]);
+
+      await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
       await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
       await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
