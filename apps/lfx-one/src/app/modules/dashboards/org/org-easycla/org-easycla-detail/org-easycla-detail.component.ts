@@ -88,6 +88,7 @@ import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
@@ -152,6 +153,7 @@ export class OrgEasyclaDetailComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
+  private autoEclaDetached = false;
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -596,6 +598,10 @@ export class OrgEasyclaDetailComponent {
   protected readonly lockedTab = computed(() => this.initLockedTab());
 
   public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.autoEclaDetached = true;
+    });
+
     // Either arm of the context, because neither destroys this component: an organization switch
     // re-drives the list fetch, and Angular reuses the component when `:signatureId` changes. So
     // without this the attestation stays open over a page that has moved on, and confirming it
@@ -809,9 +815,11 @@ export class OrgEasyclaDetailComponent {
    * click without a round trip. On success the override stays (the state was written) and the
    * saving flag is cleared. On failure the override is dropped — reverting to the row's own
    * value, which the producer did not change — and the producer's own sentence is shown as an
-   * error toast. A 403 body carries the sanctions or ACL refusal upstream wrote; the shared
-   * error interceptor pulls that off `.message`, and the fallback copy names the value nobody
-   * would want under an Auto ECLA line ("Could not turn Auto ECLA off").
+   * error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
+   * that sentence on `error`, not `message`, so the toast reads both through
+   * `serverAuthoredMessage`. The fallback copy names the value nobody would want under an Auto
+   * ECLA line ("Could not turn Auto ECLA off"). The request is not cancelled when the manager
+   * leaves the page: unsubscribing would abort a write the producer may already be recording.
    *
    * Refused while a write is already in flight, or against a group with no pair project SFID
    * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
@@ -834,24 +842,25 @@ export class OrgEasyclaDetailComponent {
     this.claService
       .setAutoCreateEcla(orgUid, signatureId, next)
       .pipe(
-        finalize(() => this.autoEclaSaving.set(false)),
-        takeUntil(this.contextChanged$),
-        takeUntilDestroyed(this.destroyRef)
+        finalize(() => {
+          if (!this.autoEclaDetached) this.autoEclaSaving.set(false);
+        })
       )
       .subscribe({
         next: (response) => {
+          if (this.autoEclaDetached) return;
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
           // (which it does not, but if it did, the toggle should tell the truth).
           this.autoEclaOverride.set({ signatureId, value: response?.autoCreateEcla === true });
         },
         error: (error: HttpErrorResponse) => {
+          if (this.autoEclaDetached) return;
           this.autoEclaOverride.set({ signatureId, value: previous });
-          const producer = typeof error?.error?.message === 'string' ? error.error.message.trim() : '';
           this.messageService.add({
             severity: 'error',
             summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
-            detail: producer || 'Please try again in a moment.',
+            detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
           });
         },
       });

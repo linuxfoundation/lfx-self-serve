@@ -4,6 +4,7 @@
 import '@angular/compiler';
 
 import { Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -2972,7 +2973,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   });
 
   it('rolls back and toasts with the producer sentence when the write is refused', async () => {
-    const error = { status: 403, error: { message: 'This organization is on the OFAC list. Contact support.' } };
+    const error = new HttpErrorResponse({
+      status: 403,
+      error: { error: 'This organization is on the OFAC list. Contact support.' },
+    });
     setAutoCreateEcla.mockReturnValue(throwError(() => error));
     const fixture = await render(row({ autoCreateEcla: false }));
 

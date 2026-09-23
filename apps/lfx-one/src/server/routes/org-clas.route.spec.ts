@@ -21,6 +21,7 @@ const {
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  updateEclaAutoCreate,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -35,6 +36,7 @@ const {
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  updateEclaAutoCreate: vi.fn(),
 }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
@@ -52,6 +54,7 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public updateEclaAutoCreate = updateEclaAutoCreate;
   },
 }));
 
@@ -168,6 +171,9 @@ beforeEach(() => {
   });
   invalidateAcknowledgment.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'ack-signature-uuid-1' });
+  });
+  updateEclaAutoCreate.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ autoCreateEcla: true });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -521,6 +527,50 @@ describe('org-clas router — acknowledgment invalidate', () => {
 
     expect(invalidateAcknowledgment).toHaveBeenCalled();
     expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+});
+
+describe('org-clas router — auto ecla toggle', () => {
+  function put(orgUid: string): Promise<Response> {
+    return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/signature-uuid-1/ecla-auto-create`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoCreateEcla: true }),
+    });
+  }
+
+  it('admits a granted org when not impersonating', async () => {
+    const res = await put(GRANTED);
+
+    expect(res.status).toBe(200);
+    expect(updateEclaAutoCreate).toHaveBeenCalled();
+  });
+
+  it('refuses an org the caller holds no grant on', async () => {
+    const res = await put(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an impersonated write before the controller, with the read-only code', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put(GRANTED);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('runs the impersonation block before the grant check', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
   });
 });
 
