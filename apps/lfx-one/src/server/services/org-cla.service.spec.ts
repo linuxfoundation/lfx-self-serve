@@ -1966,6 +1966,7 @@ describe('OrgClaService.updateEclaAutoCreate — the upstream call', () => {
     await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true);
 
     expect(gatewayFetch.mock.calls[1][2].redactResponseBodyFromLogs).toBe(true);
+    expect(gatewayFetch.mock.calls[1][2].acceptEmptyBody).toBe(true);
   });
 });
 

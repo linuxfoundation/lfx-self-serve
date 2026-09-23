@@ -3031,4 +3031,30 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     answer.next({ autoCreateEcla: true });
     answer.complete();
   });
+
+  it('clears the pending flag and ignores a late refusal after the organization changes', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+    };
+    component.onAutoEclaToggle(true);
+    expect(component.autoEclaPending()).toBe(true);
+
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaPending()).toBe(false);
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).not.toHaveBeenCalled();
+  });
 });

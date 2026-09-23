@@ -994,6 +994,8 @@ export class OrgClaService {
           // support route). Kept out of application logs; the `withoutUpstreamBody` at the throw
           // below takes it back off the error before it reaches the handler.
           redactResponseBodyFromLogs: true,
+          // The handler returns 200 and sets no body. An empty 200 is the success, not a 502.
+          acceptEmptyBody: true,
           // No `bearerToken` override: this route is blocked during impersonation, so there is
           // no impersonated identity to forward. A write must not run as the impersonator either.
         }

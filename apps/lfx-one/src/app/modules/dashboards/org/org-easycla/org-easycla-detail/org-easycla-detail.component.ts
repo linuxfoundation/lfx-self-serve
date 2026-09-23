@@ -154,6 +154,8 @@ export class OrgEasyclaDetailComponent {
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private autoEclaDetached = false;
+  /** The agreement the in-flight Auto ECLA write was started for. Null when none is running. */
+  private autoEclaInFlight: { orgUid: string; signatureId: string } | null = null;
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -261,9 +263,8 @@ export class OrgEasyclaDetailComponent {
    * - `autoEclaAllowed`: whether ACS grants the current viewer the Auto ECLA write for this
    *   agreement's pair. `null` while the hop is in flight — the toggle is withheld during that
    *   window rather than shown enabled from an unchecked grant. `false` hides the toggle
-   *   entirely (spec 054 FR-004), matching the design's choice to hide rather than disable a
-   *   control the viewer cannot use, until the read-only banner (#1989) exists to explain a
-   *   disabled state.
+   *   entirely, matching the design's choice to hide rather than disable a control the viewer
+   *   cannot use, until the read-only banner (#1989) exists to explain a disabled state.
    * - `autoEclaSaving`: a write is in flight. The toggle stays visible but is refused for its
    *   duration, so a rapid double-click cannot open two writes in parallel or roll the second
    *   back onto the first.
@@ -606,7 +607,10 @@ export class OrgEasyclaDetailComponent {
     // re-drives the list fetch, and Angular reuses the component when `:signatureId` changes. So
     // without this the attestation stays open over a page that has moved on, and confirming it
     // would open a session for the agreement the viewer left rather than the one on screen.
-    this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.uncommittedSigningDialog?.close());
+    this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.uncommittedSigningDialog?.close();
+      this.releaseAutoEclaSavingIfLeft();
+    });
 
     // The choice was made under the organization the viewer has since left, and Start would open a
     // session against the one they arrived at; nothing here can be re-derived for it either, since
@@ -820,6 +824,8 @@ export class OrgEasyclaDetailComponent {
    * `serverAuthoredMessage`. The fallback copy names the value nobody would want under an Auto
    * ECLA line ("Could not turn Auto ECLA off"). The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
+   * A late answer is applied only while this page is still that organization and agreement.
+   * Leaving clears the pending flag so the next agreement's toggle is not stuck disabled.
    *
    * Refused while a write is already in flight, or against a group with no pair project SFID
    * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
@@ -836,6 +842,8 @@ export class OrgEasyclaDetailComponent {
     const previous = this.autoEclaValue();
     if (previous === next) return;
 
+    const target = { orgUid, signatureId };
+    this.autoEclaInFlight = target;
     this.autoEclaOverride.set({ signatureId, value: next });
     this.autoEclaSaving.set(true);
 
@@ -843,19 +851,22 @@ export class OrgEasyclaDetailComponent {
       .setAutoCreateEcla(orgUid, signatureId, next)
       .pipe(
         finalize(() => {
-          if (!this.autoEclaDetached) this.autoEclaSaving.set(false);
+          if (this.autoEclaDetached) return;
+          if (this.autoEclaInFlight !== target) return;
+          this.autoEclaSaving.set(false);
+          this.autoEclaInFlight = null;
         })
       )
       .subscribe({
         next: (response) => {
-          if (this.autoEclaDetached) return;
+          if (!this.autoEclaStillHere(target)) return;
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
           // (which it does not, but if it did, the toggle should tell the truth).
           this.autoEclaOverride.set({ signatureId, value: response?.autoCreateEcla === true });
         },
         error: (error: HttpErrorResponse) => {
-          if (this.autoEclaDetached) return;
+          if (!this.autoEclaStillHere(target)) return;
           this.autoEclaOverride.set({ signatureId, value: previous });
           this.messageService.add({
             severity: 'error',
@@ -864,6 +875,21 @@ export class OrgEasyclaDetailComponent {
           });
         },
       });
+  }
+
+  /** True while the page is still the organization and agreement this write was started for. */
+  private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
+    return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
+  }
+
+  /**
+   * Drops the pending flag when the viewer has left the agreement the write belongs to.
+   * The HTTP call keeps running. A later answer is ignored unless they are back on that agreement.
+   */
+  private releaseAutoEclaSavingIfLeft(): void {
+    const target = this.autoEclaInFlight;
+    if (!target || this.autoEclaStillHere(target)) return;
+    this.autoEclaSaving.set(false);
   }
 
   /**

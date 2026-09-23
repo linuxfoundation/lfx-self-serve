@@ -115,7 +115,7 @@ export class OrgLensClaService {
    *
    * The server echoes the just-written state so the caller can trust the new value without a
    * re-read of the whole CLA list. Refusals arrive as HTTP errors — a 403 body carries the
-   * producer's own sentence on `message` (sanctions, ACL) and the toggle uses that verbatim.
+   * producer's own sentence on `error` (sanctions, ACL) and the toggle uses that verbatim.
    */
   public setAutoCreateEcla(orgUid: string, signatureId: string, autoCreateEcla: boolean): Observable<OrgClaEclaAutoCreateResponse> {
     return this.http.put<OrgClaEclaAutoCreateResponse>(this.eclaAutoCreateUrl(orgUid, signatureId), { autoCreateEcla });
