@@ -406,15 +406,6 @@ export class HealthMetricsEngagementService {
     };
   }
 
-  /**
-   * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
-   * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
-   * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
-   *
-   * The SDK names the fully-qualified view in its message, so a generic sentence is put in
-   * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
-   * `code` and `service` are dropped for the same reason.
-   */
   /** One cap rule for every engagement read, so a new capped section cannot log or cut differently. */
   private capRows<T>(req: Request, rows: T[], context: CapContext): T[] {
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
@@ -437,6 +428,15 @@ export class HealthMetricsEngagementService {
     return capped;
   }
 
+  /**
+   * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
+   * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
+   * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
+   *
+   * The SDK names the fully-qualified view in its message, so a generic sentence is put in
+   * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
+   * `code` and `service` are dropped for the same reason.
+   */
   private async executeRead<T>(req: Request, sql: string, binds: Bind[], context: ReadContext): Promise<SnowflakeQueryResult<T>> {
     const startTime = Date.now();
     try {

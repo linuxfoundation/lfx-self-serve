@@ -230,11 +230,16 @@ Each async section of a Level 2 page owns its own read, and every one of them fa
 ordering problem: the foundation is not selected on the first pass. The rule the engagement sections
 share is a **per-component `foundationSeen` latch** — a plain closure variable, not shared state —
 set the first time a query carries a non-empty slug, with the response tap writing
-`loading.set(!foundationSeen)`:
+`loading.set(!foundationSeen)` and gating its `settled` emission on the same flag:
 
 - Before any foundation resolves, the skeleton holds. Clearing `loading` there would let the table
   caption an unread scope as a measured empty one, which is a different and much more confident
   claim than "still loading".
+- That first empty-slug pass must **not** emit `settled`. It would drop every section out of the
+  container's wait set before a single read has run, releasing the pending fragment — and
+  `onSectionReading` cannot re-arm a key that is already cleared, so the deep link lands at the wrong
+  offset once the real read reflows the pane. A read that never gets a foundation is bounded by the
+  pending-section TTL instead.
 - A foundation **cleared after** a read still settles, because the latch stays set. Without it the
   section wedges on the skeleton forever, and — since the container holds a fragment deep link until
   every listed section reports — it would also hold every deep link until the TTL.

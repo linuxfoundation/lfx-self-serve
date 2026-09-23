@@ -198,9 +198,9 @@ export class EngagementOrgParticipationComponent {
               this.loading.set(!foundationSeen);
               // No foundation means no read happened, so there is no measured count to report.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
-              // Emitted separately from the counts: a failed or foundation-less read reports no
-              // counts and still settles, and the container would otherwise wait on it forever.
-              this.settled.emit();
+              // Held until a foundation has been seen: settling an unread section releases the
+              // container's pending deep link before any real read can re-arm it.
+              if (foundationSeen) this.settled.emit();
             })
           )
         )

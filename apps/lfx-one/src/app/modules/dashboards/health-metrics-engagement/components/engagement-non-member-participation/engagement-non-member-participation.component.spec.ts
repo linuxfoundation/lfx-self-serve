@@ -171,6 +171,39 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
+  it('holds the skeleton and withholds the settle while no foundation is selected', async () => {
+    const emitted: unknown[] = [];
+    const lifecycle: string[] = [];
+    selectedFoundation.set(null);
+    await render(response(), (counts) => emitted.push(counts), lifecycle);
+
+    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
+    expect(emitted).toEqual([null, null]);
+    // Settling here would release the container's pending deep link before any read has reflowed
+    // the pane, and no later read can re-arm a fragment that is already gone.
+    expect(lifecycle).toEqual(['reading']);
+    expect(fixture.componentInstance['loading']()).toBe(true);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-error"]')).toBeNull();
+  });
+
+  // A foundation arriving late is the deep-link case: the read that follows has to settle it.
+  it('reads the new foundation and restarts paging when the selection switches', async () => {
+    const lifecycle: string[] = [];
+    selectedFoundation.set(null);
+    await render(response(), undefined, lifecycle);
+    fixture.componentInstance['onTablePage']({ first: 25, rows: 25 });
+
+    selectedFoundation.set({ slug: 'globex' });
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(getEngagementNonMemberParticipation).toHaveBeenCalledWith({ foundationSlug: 'globex' });
+    expect(getEngagementNonMemberParticipation).toHaveBeenCalledTimes(1);
+    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
+    expect(fixture.componentInstance['first']()).toBe(0);
+  });
+
   it('settles a foundation cleared after a read, rather than wedging on the skeleton', async () => {
     await render();
     expect(fixture.componentInstance['loading']()).toBe(false);

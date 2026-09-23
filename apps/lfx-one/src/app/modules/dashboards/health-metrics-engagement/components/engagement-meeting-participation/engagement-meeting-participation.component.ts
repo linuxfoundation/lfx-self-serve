@@ -193,7 +193,9 @@ export class EngagementMeetingParticipationComponent {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
               // the hero cannot report an unread period as having no meetings.
               this.loading.set(!foundationSeen);
-              this.settled.emit();
+              // Held until a foundation has been seen: settling an unread section releases the
+              // container's pending deep link before any real read can re-arm it.
+              if (foundationSeen) this.settled.emit();
             })
           )
         )

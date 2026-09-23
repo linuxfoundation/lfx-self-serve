@@ -246,7 +246,7 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(lifecycle).toEqual(['reading', 'settled']);
   });
 
-  it('reports no counts and still settles when no foundation is selected', async () => {
+  it('reports no counts and withholds the settle when no foundation is selected', async () => {
     const emitted: unknown[] = [];
     const lifecycle: string[] = [];
     selectedFoundation = signal<{ slug: string } | null>(null);
@@ -254,7 +254,9 @@ describe('EngagementOrgParticipationComponent', () => {
 
     expect(getEngagementOrgParticipation).not.toHaveBeenCalled();
     expect(emitted).toEqual([null, null]);
-    expect(lifecycle).toEqual(['reading', 'settled']);
+    // Settling here would release the container's pending deep link before any read has reflowed
+    // the pane, and no later read can re-arm a fragment that is already gone.
+    expect(lifecycle).toEqual(['reading']);
     // An unresolved foundation is not a measured empty scope — no read happened to call it empty,
     // so the table holds its loading state rather than the section rendering empty or errored.
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-table"]')).not.toBeNull();

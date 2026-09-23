@@ -712,6 +712,15 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     });
   });
 
+  it('stays quiet for a scope of exactly the cap, which is complete rather than truncated', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP }, () => nonMemberWarehouseRow()) });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
   it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {
     execute.mockResolvedValue({ rows: [] });
 
