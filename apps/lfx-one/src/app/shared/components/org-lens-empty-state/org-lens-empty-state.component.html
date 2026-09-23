@@ -44,7 +44,8 @@
           [label]="action.label"
           icon="fa-light fa-life-ring"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           lfxOpenIntercom
           [attr.data-testid]="testId() + '-contact-support'"></lfx-button>
       } @else if (action.route) {
@@ -52,7 +53,8 @@
           [label]="action.label"
           icon="fa-light fa-arrow-right"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [routerLink]="action.route"
           [attr.data-testid]="testId() + '-primary'"></lfx-button>
       } @else if (action.href) {
@@ -60,7 +62,8 @@
           [label]="action.label"
           icon="fa-light fa-arrow-up-right-from-square"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [href]="action.href"
           target="_blank"
           rel="noopener noreferrer"
@@ -70,7 +73,8 @@
           [label]="action.label"
           icon="fa-light fa-rotate-right"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           [loading]="retrying()"
           [disabled]="retrying()"
           (onClick)="onAction(action)"
@@ -80,7 +84,8 @@
           [label]="action.label"
           icon="fa-light fa-filter-circle-xmark"
           severity="primary"
-          size="small"
+          [text]="true"
+          [styleClass]="ctaStyleClass"
           (onClick)="onAction(action)"
           [attr.data-testid]="testId() + '-reset-filters'"></lfx-button>
       }

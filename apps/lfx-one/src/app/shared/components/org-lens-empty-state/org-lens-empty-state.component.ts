@@ -52,6 +52,12 @@ export class OrgLensEmptyStateComponent {
   public readonly orgSelected = output<string>();
 
   /**
+   * The call to action is an `accent-500` text link, not a filled button (#2533 Tokens row: Inter 600 ·
+   * 14px · 16px icon). Exact px, not rem: the app root is 14px (styling.md).
+   */
+  protected readonly ctaStyleClass = '[&_.p-button-icon]:!text-[16px] [&_.p-button-label]:!text-[14px] [&_.p-button-label]:!font-semibold';
+
+  /**
    * The registry entry for the state. The name set is closed at compile time, but a name that reaches
    * here unrecognised (a stale bundle after a registry change, a future wire-carried state) must render
    * a safe generic block with a control, never a blank page (#2535): it falls closed to
