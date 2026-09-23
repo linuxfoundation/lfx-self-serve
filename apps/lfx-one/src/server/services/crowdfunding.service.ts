@@ -174,7 +174,7 @@ export class CrowdfundingService {
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `/v1/me/initiatives?limit=${limit}&offset=${off}`);
+    const raw = await cfFetch<BackendCrowdfundingResponse>(req, 'getMyInitiatives', `/crowdfunding/me/initiatives?limit=${limit}&offset=${off}`);
     const data = raw.data.map(mapToInitiativeBase);
 
     logger.success(req, 'cf_get_my_initiatives', startTime, { count: data.length });
@@ -203,8 +203,8 @@ export class CrowdfundingService {
   public async getInitiativeBySlug(req: Request, slug: string): Promise<InitiativeDetail | null> {
     const startTime = logger.startOperation(req, 'cf_get_initiative_by_slug', { slug });
 
-    // /v1/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
-    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/v1/me/initiatives/${encodeURIComponent(slug)}`);
+    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
+    const raw = await cfFetchNullable<BackendInitiative>(req, 'getInitiativeBySlug', `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_by_slug', 'Initiative not found', { slug });
       return null;
@@ -217,7 +217,7 @@ export class CrowdfundingService {
   public async getMyPaymentMethod(req: Request): Promise<PaymentMethod | null> {
     const startTime = logger.startOperation(req, 'cf_get_my_payment_method');
 
-    const raw = await cfFetchNullable<PaymentMethodWire>(req, 'getMyPaymentMethod', '/v1/me/payment-account');
+    const raw = await cfFetchNullable<PaymentMethodWire>(req, 'getMyPaymentMethod', '/crowdfunding/me/payment-account');
     if (!raw) return null;
 
     logger.success(req, 'cf_get_my_payment_method', startTime);
@@ -226,14 +226,14 @@ export class CrowdfundingService {
 
   public async deleteMyPaymentMethod(req: Request): Promise<void> {
     const startTime = logger.startOperation(req, 'cf_delete_my_payment_method');
-    await cfFetch<void>(req, 'deleteMyPaymentMethod', '/v1/me/payment-method', { method: 'DELETE', noBody: true });
+    await cfFetch<void>(req, 'deleteMyPaymentMethod', '/crowdfunding/me/payment-method', { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_delete_my_payment_method', startTime);
   }
 
   public async saveMyPaymentMethod(req: Request, paymentMethodId: string): Promise<PaymentMethod> {
     const startTime = logger.startOperation(req, 'cf_save_my_payment_method');
 
-    const raw = await cfFetch<PaymentMethodWire>(req, 'saveMyPaymentMethod', '/v1/me/payment-method', {
+    const raw = await cfFetch<PaymentMethodWire>(req, 'saveMyPaymentMethod', '/crowdfunding/me/payment-method', {
       method: 'POST',
       body: { payment_method_id: paymentMethodId },
     });
@@ -247,8 +247,8 @@ export class CrowdfundingService {
 
     // Recurring donations are subscriptions in CF — fetch both endpoints in parallel.
     const [allDonations, allSubscriptions] = await Promise.all([
-      cfFetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/v1/me/donations'),
-      cfFetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/v1/me/subscriptions'),
+      cfFetchAllPages<{ amount_cents: number; initiative_id?: string }>(req, 'getMyDonationStats_donations', '/crowdfunding/me/donations'),
+      cfFetchAllPages<{ status: string; amount_cents: number }>(req, 'getMyDonationStats_subscriptions', '/crowdfunding/me/subscriptions'),
     ]);
 
     const totalDonated = allDonations.reduce((sum, d) => sum + d.amount_cents, 0) / 100;
@@ -266,7 +266,7 @@ export class CrowdfundingService {
   public async getMyRecurringDonations(req: Request): Promise<RecurringDonationsResponse> {
     const startTime = logger.startOperation(req, 'cf_get_my_recurring_donations');
 
-    const all = await cfFetchAllPages<BackendSubscription>(req, 'getMyRecurringDonations', '/v1/me/subscriptions');
+    const all = await cfFetchAllPages<BackendSubscription>(req, 'getMyRecurringDonations', '/crowdfunding/me/subscriptions');
 
     const canceled = all.filter((s) => s.status === 'canceled').length;
     logger.success(req, 'cf_get_my_recurring_donations', startTime, { total: all.length, canceled });
@@ -278,7 +278,7 @@ export class CrowdfundingService {
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<BackendMyTransactionListResponse>(req, 'getMyDonations', `/v1/me/transactions?type=donations&limit=${limit}&offset=${off}`);
+    const raw = await cfFetch<BackendMyTransactionListResponse>(req, 'getMyDonations', `/crowdfunding/me/transactions?type=donations&limit=${limit}&offset=${off}`);
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.total_count });
     return { data: raw.data.map(mapMyTransactionToMyDonation), total: raw.total_count, pageSize: raw.limit, offset: raw.offset };
@@ -287,7 +287,7 @@ export class CrowdfundingService {
   public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {
     const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
 
-    const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
     if (!raw) {
       logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId });
       return null;
@@ -299,7 +299,7 @@ export class CrowdfundingService {
 
   public async cancelSubscription(req: Request, subscriptionId: string): Promise<void> {
     const startTime = logger.startOperation(req, 'cf_cancel_subscription', { subscriptionId });
-    await cfFetch<void>(req, 'cancelSubscription', `/v1/me/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE', noBody: true });
+    await cfFetch<void>(req, 'cancelSubscription', `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`, { method: 'DELETE', noBody: true });
     logger.success(req, 'cf_cancel_subscription', startTime, { subscriptionId });
   }
 
@@ -326,7 +326,7 @@ export class CrowdfundingService {
     }
     if (input.donationMode !== undefined) body.donation_mode = input.donationMode;
 
-    const raw = await cfFetch<BackendInitiative>(req, 'updateInitiative', `/v1/me/initiatives/${encodeURIComponent(id)}`, {
+    const raw = await cfFetch<BackendInitiative>(req, 'updateInitiative', `/crowdfunding/me/initiatives/${encodeURIComponent(id)}`, {
       method: 'PATCH',
       body,
     });
@@ -337,14 +337,14 @@ export class CrowdfundingService {
 
   public async getAnnouncements(req: Request, initiativeId: string): Promise<AnnouncementList> {
     const startTime = logger.startOperation(req, 'cf_get_announcements', { initiativeId });
-    const data = await cfFetchAllPages<BackendAnnouncement>(req, 'getAnnouncements', `/v1/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
+    const data = await cfFetchAllPages<BackendAnnouncement>(req, 'getAnnouncements', `/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
     logger.success(req, 'cf_get_announcements', startTime, { count: data.length });
     return { data: data.map(mapAnnouncementWire), totalCount: data.length };
   }
 
   public async createAnnouncement(req: Request, initiativeId: string, input: CreateAnnouncementInput): Promise<Announcement> {
     const startTime = logger.startOperation(req, 'cf_create_announcement', { initiativeId });
-    const raw = await cfFetch<BackendAnnouncement>(req, 'createAnnouncement', `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`, {
+    const raw = await cfFetch<BackendAnnouncement>(req, 'createAnnouncement', `/crowdfunding/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`, {
       method: 'POST',
       body: { title: input.title, description: input.description },
     });
@@ -357,7 +357,7 @@ export class CrowdfundingService {
     const raw = await cfFetch<BackendAnnouncement>(
       req,
       'updateAnnouncement',
-      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      `/crowdfunding/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
       { method: 'PUT', body: { title: input.title, description: input.description } }
     );
     logger.success(req, 'cf_update_announcement', startTime, { announcementId });
@@ -369,7 +369,7 @@ export class CrowdfundingService {
     await cfFetch<void>(
       req,
       'deleteAnnouncement',
-      `/v1/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
+      `/crowdfunding/me/initiatives/${encodeURIComponent(initiativeId)}/announcements/${encodeURIComponent(announcementId)}`,
       {
         method: 'DELETE',
         noBody: true,
@@ -381,7 +381,7 @@ export class CrowdfundingService {
   public async getPresignedUrl(req: Request, contentType: string): Promise<PresignedURLResult> {
     const startTime = logger.startOperation(req, 'cf_get_presigned_url');
 
-    const raw = await cfFetch<PresignedURLWire>(req, 'getPresignedUrl', '/v1/me/presigned-url', {
+    const raw = await cfFetch<PresignedURLWire>(req, 'getPresignedUrl', '/crowdfunding/me/presigned-url', {
       method: 'POST',
       body: { content_type: contentType },
     });
@@ -411,11 +411,11 @@ export class CrowdfundingService {
     if (kind) params.set('kind', kind);
     const qs = params.toString();
 
-    // /v1/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
+    // /crowdfunding/me/initiatives — owner-scoped endpoint; requires a CF token (initiative owners only, not public access)
     const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getInitiativeTransactions',
-      `/v1/me/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
+      `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}/transactions${qs ? `?${qs}` : ''}`
     );
     if (!raw) {
       logger.warning(req, 'cf_get_initiative_transactions', 'Initiative not found', { slug });
@@ -449,13 +449,13 @@ export class CrowdfundingService {
     if (subscriptionOnly) params.set('subscriptionOnly', 'true');
     const qs = params.toString();
 
-    // /v1/me/initiatives/{slug}/my-transactions — donor-scoped endpoint; returns the
+    // /crowdfunding/me/initiatives/{slug}/my-transactions — donor-scoped endpoint; returns the
     // authenticated caller's own contributions to the (published) initiative, regardless
     // of who owns it. Unlike the owner-scoped /transactions endpoint, this works for any donor.
     const raw = await cfFetchNullable<BackendTransactionList>(
       req,
       'getMyInitiativeTransactions',
-      `/v1/me/initiatives/${encodeURIComponent(slug)}/my-transactions${qs ? `?${qs}` : ''}`
+      `/crowdfunding/me/initiatives/${encodeURIComponent(slug)}/my-transactions${qs ? `?${qs}` : ''}`
     );
     if (!raw) {
       logger.warning(req, 'cf_get_my_initiative_transactions', 'Initiative not found', { slug });
