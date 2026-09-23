@@ -51,8 +51,9 @@ denylisted_account_id_sha256=(
   6baf1c8cd5e7798d33bd14e608c4d90d2eec126b2d35d319657bfcaa36c607ae
 )
 
-# Lowercase each name, escape dots, let a space match [ _-] or nothing, then join as alternatives.
-org_name_pattern=$(printf '%s\n' "${denylisted_org_names[@]}" | tr '[:upper:]' '[:lower:]' | sed -e 's/\./\\./g' -e 's/ /[ _-]?/g' | paste -sd '|' -)
+# Lowercase each name, escape every POSIX ERE metacharacter so an entry always matches literally,
+# let a space match [ _-] or nothing, then join as alternatives.
+org_name_pattern=$(printf '%s\n' "${denylisted_org_names[@]}" | tr '[:upper:]' '[:lower:]' | sed -e 's/[][\.^$*+?(){}|]/\\&/g' -e 's/ /[ _-]?/g' | paste -sd '|' -)
 
 sha256_hex() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -166,10 +167,14 @@ violations=""
 
 while IFS= read -r file; do
   [ -n "${file}" ] || continue
-  matches=$(
+  # A scan that fails (a malformed pattern, say) must fail the check, never pass it silently.
+  if ! matches=$(
     git diff "${diff_args[@]}" -U0 -- "${file}" |
       SCAN_FILE="${file}" ORG_NAME_PATTERN="${org_name_pattern}" awk "${scan_program}"
-  )
+  ); then
+    echo "❌ Fixture data check could not scan ${file}." >&2
+    exit 2
+  fi
   if [ -n "${matches}" ]; then
     violations="${violations}${matches}
 "
