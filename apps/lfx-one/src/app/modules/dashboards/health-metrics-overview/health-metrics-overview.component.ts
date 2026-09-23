@@ -8,6 +8,7 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
@@ -214,7 +215,7 @@ export class HealthMetricsOverviewComponent {
   private static buildNeutralKpiAreaState(area: HealthMetricsOverviewArea, loading: boolean): HealthMetricsAreaState {
     return {
       area,
-      statValue: '—',
+      statValue: HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
       statLabel: loading ? 'loading…' : 'no data this period',
       statSource: 'HEALTH_OVERVIEW_KPIS',
       classification: 'none',

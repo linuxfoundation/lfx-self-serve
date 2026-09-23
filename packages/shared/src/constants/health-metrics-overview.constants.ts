@@ -110,6 +110,9 @@ export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS = {
   'eng.participation': { section: 'participation', queryParams: { partMode: null } },
 } as const satisfies Record<string, HealthMetricsOverviewEngagementLinkSpec>;
 
+/** The stat value every no-data tile shows; the tile's drill-in link is withheld when it is set. */
+export const HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE = '—';
+
 /** The Engagement tile links to the unfiltered group attendance view, the source of its counts. */
 export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET = 'eng.groups';
 
@@ -117,10 +120,8 @@ export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET = 'eng.groups';
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';
 
 /**
- * Areas `getHealthOverviewKpis` returns live rows for (LFXV2-3365): the service builds its returned
- * rows by iterating this set, and the component uses the same set to decide when a missing/failed
- * row means "show a neutral placeholder" rather than "fall back to the fixture". `eng` is read from
- * `ENGAGEMENT_GROUP_ATTENDANCE` rather than `HEALTH_OVERVIEW_KPIS`, which has no engagement columns.
+ * Areas `ProjectService.buildHealthOverviewKpiAreaStates` builds from `HEALTH_OVERVIEW_KPIS` columns; the
+ * iteration drops any area with no builder (`eng` is built separately from `ENGAGEMENT_GROUP_ATTENDANCE`).
  */
 export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set([
   'eng',

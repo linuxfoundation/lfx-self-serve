@@ -363,3 +363,12 @@ export interface HealthMetricsEngagementRepresentatives {
 export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
 }
+
+/** Query params the Engagement sections read on arrival and write back; `null` clears one the URL carries. */
+export interface HealthMetricsEngagementQueryParams {
+  groupType?: HealthMetricsEngagementGroupTypeFilter | null;
+  groupPage?: number | null;
+  orgFilter?: HealthMetricsEngagementOrgFilter | null;
+  partMode?: HealthMetricsEngagementParticipationMode | null;
+  repFilter?: HealthMetricsEngagementRepFilter | null;
+}

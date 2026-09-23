@@ -43,8 +43,8 @@ vi.mock('@lfx-one/shared/utils', async () => {
 });
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
@@ -71,7 +71,7 @@ function rejectedField(next: NextFunction): string | undefined {
 describe('AnalyticsController.getEngagementGroupAttendance', () => {
   beforeEach(() => {
     getGroupAttendance.mockReset();
-    getGroupAttendance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    getGroupAttendance.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('defaults the optional params and passes a fully-resolved query to the service', async () => {
@@ -87,7 +87,7 @@ describe('AnalyticsController.getEngagementGroupAttendance', () => {
       page: 1,
       size: 25,
     });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
   });
 
   it('forwards every supplied param, coercing page and size to numbers', async () => {
@@ -166,7 +166,7 @@ function callParticipation(queryParams: Record<string, string>): { res: Response
 describe('AnalyticsController.getEngagementMeetingParticipation', () => {
   beforeEach(() => {
     getMeetingParticipation.mockReset();
-    getMeetingParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    getMeetingParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('defaults the range and answers with the service response', async () => {
@@ -174,7 +174,7 @@ describe('AnalyticsController.getEngagementMeetingParticipation', () => {
     await promise;
 
     expect(getMeetingParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme', range: 'YTD' });
-    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('forwards a supported range', async () => {

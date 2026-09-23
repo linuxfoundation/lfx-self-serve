@@ -190,16 +190,18 @@ describe('buildHealthMetricsOverviewPccUrl', () => {
 });
 
 describe('buildHealthMetricsOverviewEngagementRoute', () => {
-  it('links a group finding to the group-attendance section with any stale cut cleared', () => {
-    expect(buildHealthMetricsOverviewEngagementRoute('eng.groups')).toEqual({
+  // Pins each target's full route, including the null that clears a stale cut on arrival.
+  it.each([
+    ['eng.board', 'committees', { groupType: 'gov', groupPage: null }],
+    ['eng.groups', 'committees', { groupType: null, groupPage: null }],
+    ['eng.orgs', 'orgs', { orgFilter: null }],
+    ['eng.participation', 'participation', { partMode: null }],
+  ] as const)('links %s to its section with its arrival filters', (target, fragment, queryParams) => {
+    expect(buildHealthMetricsOverviewEngagementRoute(target)).toEqual({
       commands: ['/foundation/health-metrics', 'engagement'],
-      fragment: 'committees',
-      queryParams: { groupType: null, groupPage: null },
+      fragment,
+      queryParams,
     });
-  });
-
-  it('opens the board finding on the governance cut so the responsible group is visible on arrival', () => {
-    expect(buildHealthMetricsOverviewEngagementRoute('eng.board')?.queryParams).toEqual({ groupType: 'gov', groupPage: null });
   });
 
   it('points every Engagement target at a real section', () => {

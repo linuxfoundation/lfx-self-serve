@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  buildHealthMetricsOverviewPeriods,
   CLASSIFICATION_TO_EMAIL_TYPES,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
@@ -10,15 +9,14 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
-  getYearForRange,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
-  isHealthMetricsRange,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
@@ -26,6 +24,9 @@ import {
   PROJECT_SETTINGS_NOT_FOUND_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
+  buildHealthMetricsOverviewPeriods,
+  getYearForRange,
+  isHealthMetricsRange,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
@@ -6278,19 +6279,28 @@ export class ProjectService {
     // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
     // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
 
-    const [result, engagementCounts] = await Promise.all([
-      this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug]),
+    // The KPI leg is isolated like the engagement leg, so either read failing leaves the other's tiles.
+    const [wideRow, engagementCounts] = await Promise.all([
+      this.snowflakeService
+        .execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug])
+        .then((result) => result.rows?.[0])
+        .catch((error: unknown) => {
+          logger.warning(undefined, 'get_health_overview_kpis', 'Health overview KPIs unavailable', { foundation_slug: foundationSlug, err: error });
+          return null;
+        }),
       this.getHealthOverviewEngagementCounts(foundationSlug, ranges),
     ]);
-    const wideRow = result.rows?.[0];
     // An unreadable engagement read leaves the area out, so the tile falls back to its neutral placeholder.
     const engagementStates = (range: HealthMetricsRange): HealthMetricsAreaState[] => {
       const counts = engagementCounts?.[range];
       return counts ? [ProjectService.buildHealthOverviewEngagementAreaState(counts)] : [];
     };
 
+    // `null` is a failed read (already logged); `undefined` is a foundation with no KPI row.
     if (!wideRow) {
-      logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug });
+      if (wideRow === undefined) {
+        logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug });
+      }
       return Object.fromEntries(ranges.map((range) => [range, engagementStates(range)]));
     }
 
@@ -8068,18 +8078,25 @@ export class ProjectService {
     foundationSlug: string,
     ranges: HealthMetricsRange[]
   ): Promise<Partial<Record<HealthMetricsRange, HealthOverviewEngagementCounts>> | null> {
-    const binds: (string | number)[] = [];
-    const columns = ranges.flatMap((range) => {
+    // Each range's columns sit beside their binds, so the `?`s and bind values can't drift apart.
+    const built = ranges.map((range) => {
       const suffix = this.getRangeSuffix(range);
       const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ? AND attendance_pct${suffix} IS NOT NULL`;
-      binds.push(
-        HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-        HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-        HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD
-      );
-      return [`COUNT_IF(${rated}) AS ACTIVE_GROUPS__${range}`, `COUNT_IF(${rated} AND attendance_pct${suffix} < ?) AS LOW_ATTENDANCE_GROUPS__${range}`];
+      return {
+        sql: [
+          `COUNT(meetings_count${suffix}) AS MEASURED_GROUPS__${range}`,
+          `COUNT_IF(${rated}) AS ACTIVE_GROUPS__${range}`,
+          `COUNT_IF(${rated} AND attendance_pct${suffix} < ?) AS LOW_ATTENDANCE_GROUPS__${range}`,
+        ],
+        binds: [
+          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+          HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
+        ],
+      };
     });
-    binds.push(foundationSlug);
+    const columns = built.flatMap((range) => range.sql);
+    const binds: (string | number)[] = [...built.flatMap((range) => range.binds), foundationSlug];
     const query = `
       SELECT
         ${columns.join(',\n        ')}
@@ -8094,18 +8111,25 @@ export class ProjectService {
         return null;
       }
       return Object.fromEntries(
-        ranges.map((range) => [
-          range,
-          {
-            activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
-            lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
-          },
-        ])
+        ranges.map((range) => {
+          // The aggregate always returns a row, so a scope with no measured groups reads as unmeasured, not zero.
+          const measured = ProjectService.toNullableNumber(row[`MEASURED_GROUPS__${range}`]);
+          if (!measured) {
+            return [range, { activeGroups: null, lowAttendanceGroups: null }];
+          }
+          return [
+            range,
+            {
+              activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
+              lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
+            },
+          ];
+        })
       );
     } catch (error) {
       logger.warning(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
         foundation_slug: foundationSlug,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return null;
     }
@@ -8776,7 +8800,7 @@ export class ProjectService {
    */
   private static buildHealthOverviewEngagementAreaState(counts: HealthOverviewEngagementCounts): HealthMetricsAreaState {
     const { activeGroups, lowAttendanceGroups } = counts;
-    let statValue = '—';
+    let statValue: string = HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
     let statLabel = 'no data this period';
     if (activeGroups === 0) {
       statLabel = 'no active groups this period';

@@ -55,6 +55,11 @@ export function formatHealthMetricsEngagementAttendance(fraction: number | null,
   return `${Math.round(fraction * 100)}%`;
 }
 
+/** A count cell: "—" when unmeasured, else the count with its locale pinned so SSR and hydration agree. */
+export function formatHealthMetricsEngagementCount(value: number | null): string {
+  return value === null ? '—' : value.toLocaleString('en-US');
+}
+
 /**
  * "12 / 27"-style ratio cell shared by the org, rep and participation tables. Either side unmeasured
  * makes the whole cell "—" — a partial "12 / —" would wrongly imply the other side is a real zero.

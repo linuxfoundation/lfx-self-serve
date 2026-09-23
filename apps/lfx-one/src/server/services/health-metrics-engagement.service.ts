@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
@@ -169,7 +169,7 @@ export class HealthMetricsEngagementService {
    */
   public async getGroupAttendance(req: Request, query: HealthMetricsEngagementGroupQuery): Promise<HealthMetricsEngagementGroupAttendance> {
     if (!isSupportedEngagementRange(query.range)) {
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
+      return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED;
     }
 
     const suffix = RANGE_COLUMN_SUFFIX[query.range];
@@ -281,7 +281,7 @@ export class HealthMetricsEngagementService {
    */
   public async getMeetingParticipation(req: Request, query: HealthMetricsEngagementParticipationQuery): Promise<HealthMetricsEngagementMeetingParticipation> {
     if (!isSupportedEngagementRange(query.range)) {
-      return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT;
+      return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED;
     }
 
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');

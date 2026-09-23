@@ -14,6 +14,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
@@ -136,7 +137,7 @@ export class EngagementOrgParticipationComponent {
   protected readonly scopeUnmeasured = computed(() => this.response().rows.length === 0);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
-    const counts = this.response().counts;
+    const counts = this.counts();
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
@@ -219,7 +220,7 @@ export class EngagementOrgParticipationComponent {
   private syncUrl(filter: HealthMetricsEngagementOrgFilter): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { orgFilter: filter === 'all' ? null : filter },
+      queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.orgFilter]: filter === 'all' ? null : filter },
       queryParamsHandling: 'merge',
       preserveFragment: true,
       replaceUrl: true,
@@ -227,7 +228,7 @@ export class EngagementOrgParticipationComponent {
   }
 
   private parseInitialFilter(): HealthMetricsEngagementOrgFilter {
-    return this.toFilter(this.initialParams.get('orgFilter') ?? 'all');
+    return this.toFilter(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.orgFilter) ?? 'all');
   }
 
   private toFilter(key: string): HealthMetricsEngagementOrgFilter {

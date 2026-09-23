@@ -10,7 +10,7 @@ import type {
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
-import type { HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
+import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -31,14 +31,14 @@ export type HealthMetricsOverviewLinkTarget =
 export interface HealthMetricsOverviewEngagementLinkSpec {
   section: HealthMetricsEngagementSectionKey;
   /** Merged into the current query string; `null` clears a filter the URL already carries. */
-  queryParams: Readonly<Record<string, string | null>>;
+  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
 }
 
 /** An in-app Overview link, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
 export interface HealthMetricsOverviewFindingRoute {
   commands: readonly string[];
   fragment: HealthMetricsEngagementSectionKey;
-  queryParams: Readonly<Record<string, string | null>>;
+  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
 }
 
 /**

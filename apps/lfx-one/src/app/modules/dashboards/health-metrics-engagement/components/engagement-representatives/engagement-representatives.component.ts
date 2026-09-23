@@ -11,9 +11,10 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TableComponent } from '@components/table/table.component';
 import {
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
@@ -259,7 +260,7 @@ export class EngagementRepresentativesComponent {
   private syncUrl(filter: HealthMetricsEngagementRepFilter): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { repFilter: filter === 'all' ? null : filter },
+      queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter]: filter === 'all' ? null : filter },
       queryParamsHandling: 'merge',
       preserveFragment: true,
       replaceUrl: true,
@@ -267,7 +268,7 @@ export class EngagementRepresentativesComponent {
   }
 
   private parseInitialFilter(): HealthMetricsEngagementRepFilter {
-    return this.toFilter(this.initialParams.get('repFilter') ?? 'all');
+    return this.toFilter(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.repFilter) ?? 'all');
   }
 
   private toFilter(key: string): HealthMetricsEngagementRepFilter {

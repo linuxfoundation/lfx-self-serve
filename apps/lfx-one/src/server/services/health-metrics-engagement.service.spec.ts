@@ -23,8 +23,8 @@ vi.mock('./logger.service', () => ({
 }));
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
@@ -135,7 +135,7 @@ describe('HealthMetricsEngagementService', () => {
 
     const response = await service.getGroupAttendance(req, query());
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
     expect(response.counts).toBeNull();
   });
 
@@ -238,7 +238,7 @@ describe('HealthMetricsEngagementService', () => {
   it('returns the default response for a range the view has no columns for', async () => {
     const response = await service.getGroupAttendance(req, query({ range: 'COMPLETED_YEAR_4' }));
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -441,7 +441,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
   it('returns the empty shape for a range the view carries no columns for', async () => {
     const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'COMPLETED_YEAR_4' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
     expect(execute).not.toHaveBeenCalled();
   });
 
@@ -460,7 +460,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
 
     const response = await service.getMeetingParticipation(req, { foundationSlug: 'acme', range: 'YTD' });
 
-    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
   });
 
   it('sends its own client message for a missing view rather than the warehouse object name', async () => {

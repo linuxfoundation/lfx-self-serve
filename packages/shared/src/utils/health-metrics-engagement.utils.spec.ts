@@ -31,6 +31,7 @@ import {
   filterHealthMetricsEngagementRepRows,
   formatHealthMetricsEngagementAttendance,
   formatHealthMetricsEngagementAvgReps,
+  formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
@@ -99,6 +100,17 @@ describe('formatHealthMetricsEngagementAttendance', () => {
 
   it('renders "No data" when the meeting count itself is unmeasured, not a real fraction', () => {
     expect(formatHealthMetricsEngagementAttendance(0.83, null)).toBe('No data');
+  });
+});
+
+describe('formatHealthMetricsEngagementCount', () => {
+  it('renders an unmeasured count as an em dash and a genuine zero as 0', () => {
+    expect(formatHealthMetricsEngagementCount(null)).toBe('—');
+    expect(formatHealthMetricsEngagementCount(0)).toBe('0');
+  });
+
+  it('pins en-US grouping separators', () => {
+    expect(formatHealthMetricsEngagementCount(12345)).toBe('12,345');
   });
 });
 

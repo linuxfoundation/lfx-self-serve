@@ -10,9 +10,10 @@ import { FilterPillsComponent } from '@components/filter-pills/filter-pills.comp
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import { buildHealthMetricsEngagementGroupTrend, formatIsoDateLabel, selectHealthMetricsEngagementGroupPeriod } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -162,7 +163,7 @@ export class EngagementGroupAttendanceComponent {
   private initResponse(): Signal<HealthMetricsEngagementGroupAttendance> {
     if (!isPlatformBrowser(this.platformId)) {
       // `loading` stays at its static `true` so the serialized skeleton matches the pre-hydration DOM.
-      return computed(() => HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+      return computed(() => HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
     }
 
     // Latches on the first non-empty slug, as on the Overview: before any foundation resolves the
@@ -182,12 +183,12 @@ export class EngagementGroupAttendanceComponent {
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.
         switchMap((query) =>
-          (query.foundationSlug ? this.analyticsService.getEngagementGroupAttendance(query) : of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT)).pipe(
+          (query.foundationSlug ? this.analyticsService.getEngagementGroupAttendance(query) : of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED)).pipe(
             // Caught per query so a failure ends this read without tearing down the outer pipeline;
             // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.loadFailed.set(true);
-              return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
+              return of(HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED);
             }),
             tap((response) => {
               // An out-of-range page is not a settled read: the clamp fires a follow-up fetch, so
@@ -210,7 +211,7 @@ export class EngagementGroupAttendanceComponent {
           )
         )
       ),
-      { initialValue: HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT }
+      { initialValue: HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED }
     );
   }
 
@@ -218,8 +219,8 @@ export class EngagementGroupAttendanceComponent {
     void this.router.navigate([], {
       relativeTo: this.route,
       queryParams: {
-        groupType: query.groupType === 'all' ? null : query.groupType,
-        groupPage: query.page > 1 ? query.page : null,
+        [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupType]: query.groupType === 'all' ? null : query.groupType,
+        [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupPage]: query.page > 1 ? query.page : null,
       },
       queryParamsHandling: 'merge',
       preserveFragment: true,
@@ -241,11 +242,11 @@ export class EngagementGroupAttendanceComponent {
   }
 
   private parseInitialGroupType(): HealthMetricsEngagementGroupTypeFilter {
-    return this.toGroupType(this.initialParams.get('groupType') ?? 'all');
+    return this.toGroupType(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupType) ?? 'all');
   }
 
   private parseInitialPage(): number {
-    const page = Number(this.initialParams.get('groupPage'));
+    const page = Number(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.groupPage));
     return Number.isFinite(page) && page > 0 ? Math.floor(page) : 1;
   }
 

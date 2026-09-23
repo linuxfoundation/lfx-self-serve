@@ -8,6 +8,7 @@ import type {
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementQueryParams,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
@@ -24,6 +25,15 @@ export const HEALTH_METRICS_TABS = [
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },
 ] as const;
+
+/** The query-param keys the sections and the Overview deep links share, tied to the typed param shape. */
+export const HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS = {
+  groupType: 'groupType',
+  groupPage: 'groupPage',
+  orgFilter: 'orgFilter',
+  partMode: 'partMode',
+  repFilter: 'repFilter',
+} as const satisfies { [K in keyof HealthMetricsEngagementQueryParams]-?: K };
 
 /**
  * The six Engagement sections in render order. `key` is the section's URL fragment and the
@@ -156,7 +166,7 @@ export const HEALTH_METRICS_ENGAGEMENT_GROUP_PAGE_SIZE = 25;
  * foundation whose unfiltered scope has zero rows. The server never returns it for a failed read;
  * that error propagates.
  */
-export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT: HealthMetricsEngagementGroupAttendance = {
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED: HealthMetricsEngagementGroupAttendance = {
   rows: [],
   totalRecords: 0,
   counts: null,
@@ -249,7 +259,7 @@ export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] =
  * post-error placeholder. A `null` total renders the section's empty state, which is why the
  * server never returns this for a failed read; that error propagates.
  */
-export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
+export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED: HealthMetricsEngagementMeetingParticipation = {
   total: null,
   rows: [],
 };

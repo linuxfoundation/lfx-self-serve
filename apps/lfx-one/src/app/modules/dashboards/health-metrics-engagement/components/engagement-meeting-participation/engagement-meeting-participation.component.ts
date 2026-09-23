@@ -9,12 +9,14 @@ import { EmptyStateComponent } from '@components/empty-state/empty-state.compone
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import {
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
 } from '@lfx-one/shared/constants';
 import {
   formatHealthMetricsEngagementAttendance,
+  formatHealthMetricsEngagementCount,
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
@@ -100,7 +102,7 @@ export class EngagementMeetingParticipationComponent {
     if (!period) return '—';
 
     if (this.attendanceMode()) return formatHealthMetricsEngagementAttendance(period.attendancePct, period.meetingsHeld);
-    return period.meetingsHeld === null ? '—' : period.meetingsHeld.toLocaleString();
+    return formatHealthMetricsEngagementCount(period.meetingsHeld);
   });
   protected readonly heroLabel = computed(() => (this.attendanceMode() ? 'All-meeting attendance' : 'Meetings held'));
   protected readonly heroDelta = computed(() => {
@@ -122,14 +124,14 @@ export class EngagementMeetingParticipationComponent {
     const period = this.totalPeriod();
     if (!period) return '—';
 
-    if (this.attendanceMode()) return period.meetingsHeld === null ? '—' : period.meetingsHeld.toLocaleString();
+    if (this.attendanceMode()) return formatHealthMetricsEngagementCount(period.meetingsHeld);
     return formatHealthMetricsEngagementAttendance(period.attendancePct, period.meetingsHeld);
   });
   protected readonly meetingsLabel = computed(() => {
     const meetings = this.totalPeriod()?.meetingsHeld ?? null;
     if (meetings === null) return 'Meetings in period not available yet';
 
-    return `${meetings.toLocaleString()} ${meetings === 1 ? 'meeting' : 'meetings'} in period`;
+    return `${formatHealthMetricsEngagementCount(meetings)} ${meetings === 1 ? 'meeting' : 'meetings'} in period`;
   });
   // The roll-up's own meeting count decides this, not a row's: the banner qualifies the hero.
   protected readonly lowConfidence = computed(() => {
@@ -168,7 +170,7 @@ export class EngagementMeetingParticipationComponent {
   private initResponse(): Signal<HealthMetricsEngagementMeetingParticipation> {
     if (!isPlatformBrowser(this.platformId)) {
       // `loading` stays at its static `true` so the serialized skeleton matches the pre-hydration DOM.
-      return computed(() => HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+      return computed(() => HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
     }
 
     // Latches on the first non-empty slug, as on the Overview: before any foundation resolves the
@@ -189,13 +191,13 @@ export class EngagementMeetingParticipationComponent {
         switchMap((query) =>
           (query.foundationSlug
             ? this.analyticsService.getEngagementMeetingParticipation(query)
-            : of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT)
+            : of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED)
           ).pipe(
             // Caught per query so a failure ends this read without tearing down the outer pipeline;
             // `AnalyticsService` has already logged the error before rethrowing it.
             catchError(() => {
               this.loadFailed.set(true);
-              return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
+              return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED);
             }),
             tap(() => {
               // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
@@ -208,14 +210,14 @@ export class EngagementMeetingParticipationComponent {
           )
         )
       ),
-      { initialValue: HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT }
+      { initialValue: HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED }
     );
   }
 
   private syncUrl(mode: HealthMetricsEngagementParticipationMode): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { partMode: mode === 'attendance' ? null : mode },
+      queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.partMode]: mode === 'attendance' ? null : mode },
       queryParamsHandling: 'merge',
       preserveFragment: true,
       replaceUrl: true,
@@ -223,7 +225,7 @@ export class EngagementMeetingParticipationComponent {
   }
 
   private parseInitialMode(): HealthMetricsEngagementParticipationMode {
-    return this.toMode(this.initialParams.get('partMode') ?? 'attendance');
+    return this.toMode(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.partMode) ?? 'attendance');
   }
 
   private toMode(key: string): HealthMetricsEngagementParticipationMode {

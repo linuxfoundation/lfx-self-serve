@@ -285,6 +285,24 @@ describe('EngagementRepresentativesComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-representatives-row-r-2"]')).toBeNull();
   });
 
+  // A zero-row read is an unmeasured scope; the "no match" copy would claim a measured absence.
+  it('renders the not-available state for a scope with no representatives rows', async () => {
+    await render(response({ rows: [], counts: null }));
+
+    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
+    expect(empty?.textContent).toContain('Representatives data is not available yet');
+  });
+
+  it('keeps the no-match state for a search that filters a measured scope down to nothing', async () => {
+    await render();
+
+    typeSearch('nobody-matches-this');
+
+    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-representatives-empty"]');
+    expect(empty?.textContent).toContain('No representatives match this filter');
+    expect(empty?.textContent).not.toContain('not available yet');
+  });
+
   // Two foundations can hold the same number of reps, so the row count cannot stand in for identity.
   it('restarts paging when the foundation changes, not merely when the row count does', async () => {
     const rows = Array.from({ length: 60 }, (_, index) => repRow({ key: `r-${index}`, personName: `Person ${index}` }));

@@ -4,6 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
+import { HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -157,10 +158,12 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(emitted).toEqual([null, null]);
   });
 
-  it('renders the empty state for a measured foundation with no non-member organizations', async () => {
-    await render(response({ rows: [], counts: { orgs: 0 } }));
+  // The server answers a zero-row read with the unmeasured shape, so the empty state reads as unmeasured.
+  it('renders the not-available state for an unmeasured foundation', async () => {
+    await render(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]')).not.toBeNull();
+    const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]');
+    expect(empty?.textContent).toContain('Non-member participation data is not available yet');
   });
 
   // The container holds a deep link's scroll until every section reports, so both ends must fire.

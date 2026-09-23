@@ -9,6 +9,7 @@ import {
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 
@@ -91,7 +92,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       showStatus: state.showStatus,
       // No "View groups" link on an Engagement tile with no figure — there is nothing to drill into.
       route:
-        areaMeta.key === 'eng' && state.statValue !== '—'
+        areaMeta.key === 'eng' && state.statValue !== HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE
           ? buildHealthMetricsOverviewEngagementRoute(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET)
           : undefined,
     };
