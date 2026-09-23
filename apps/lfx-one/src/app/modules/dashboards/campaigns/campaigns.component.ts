@@ -1178,20 +1178,6 @@ export class CampaignsComponent {
    */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB()));
 
-  /**
-   * What STAGING sends for variant B -- the same sanitized string the preview renders.
-   *
-   * A named signal rather than an inline `stripResourceLoadingHtml(...)` at the snapshot, so the
-   * staged body has ONE clearly-named read site instead of a transform buried in a 40-line
-   * payload builder. (An earlier version of this line claimed the name existed so a test could
-   * assert it matches the preview; that test was tautological -- this is defined as the preview
-   * -- and was removed when this signal was introduced.)
-   *
-   * Sanitizing only the preview was worse than sanitizing neither: the pixel vanished from the
-   * one view that could have caught it and still shipped.
-   */
-  protected readonly abTestBodyHtmlBForSend = computed<string>(() => this.abTestBodyHtmlBPreview());
-
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
 
@@ -2651,7 +2637,7 @@ export class CampaignsComponent {
     // worse than sanitizing neither: a tracking pixel pasted into the B textarea vanished from
     // the operator's preview while still shipping in the sent email, so the one person who could
     // have spotted it was the only one who could not see it.
-    const abTestBodyHtmlB = this.abTestBodyHtmlBForSend();
+    const abTestBodyHtmlB = this.abTestBodyHtmlBPreview();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.

@@ -1886,7 +1886,6 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestSubjectB: Signal<string>;
     abTestBodyHtmlB: Signal<string>;
     abTestBodyHtmlBPreview: Signal<string>;
-    abTestBodyHtmlBForSend: Signal<string>;
     abTestPreheaderBForSend: Signal<string>;
     abTestPreheaderBPreview: Signal<string>;
     emailPreheaderPreview: Signal<string>;
@@ -5187,8 +5186,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     //
     // The name says PREVIEW only, deliberately. An earlier version claimed "and the STAGED value
     // alike" while asserting `ForSend() === Preview()` -- a tautology, since ForSend is defined
-    // as `() => Preview()`, so it could not fail. That assertion was removed and the
-    // name was left behind, promising coverage this body does not provide.
+    // as `() => Preview()`, so it could not fail. That assertion was removed, and the alias it
+    // existed for has now been deleted too -- staging reads `abTestBodyHtmlBPreview` directly,
+    // so the tautology is no longer expressible.
     //
     // The staged value is covered where it can actually fail: the controller test
     // 'sanitizes both HTML bodies and every display field at the request boundary' asserts the
