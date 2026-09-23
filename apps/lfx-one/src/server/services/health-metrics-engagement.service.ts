@@ -13,6 +13,8 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementGroupAttendance,
@@ -33,6 +35,11 @@ import type {
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationQuery,
   HealthMetricsEngagementParticipationRow,
+  HealthMetricsEngagementRepPeriod,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepQuery,
+  HealthMetricsEngagementRepresentatives,
+  HealthMetricsEngagementRepRow,
   SnowflakeQueryResult,
 } from '@lfx-one/shared/interfaces';
 
@@ -49,6 +56,7 @@ const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTEN
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
 const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
+const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES';
 
 /** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
@@ -127,6 +135,15 @@ interface NonMemberParticipationRow {
   ACCOUNT_NAME: string | null;
   MEMBERSHIP_STATUS: string | null;
   SCOPE_ORGS_COUNT: number | null;
+  [periodColumn: string]: unknown;
+}
+
+interface RepresentativesRow {
+  REP_KEY: string | null;
+  PERSON_DISPLAY_NAME: string | null;
+  ACCOUNT_NAME: string | null;
+  COMMITTEE_NAME: string | null;
+  LAST_ATTENDED_DATE: Date | string | null;
   [periodColumn: string]: unknown;
 }
 
@@ -406,6 +423,54 @@ export class HealthMetricsEngagementService {
     };
   }
 
+  /**
+   * Every representative in one read, with all four periods on each row. The view's grain is one row
+   * per person *per project*, so the read regroups to (person, committee) — the grain its own
+   * `SCOPE_*_ALL_PROJECTS_*` caption columns are computed at.
+   */
+  public async getRepresentatives(req: Request, query: HealthMetricsEngagementRepQuery): Promise<HealthMetricsEngagementRepresentatives> {
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => repSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+
+    // `MAX`, not `SUM`: a person/committee pair repeats only when its committee hangs off more than
+    // one project, and each of those rows already carries that committee's whole meeting count.
+    const sql = `
+      SELECT
+        MIN(_key) AS rep_key,
+        MAX(person_display_name) AS person_display_name,
+        MAX(account_name) AS account_name,
+        MAX(committee_name) AS committee_name,
+        MAX(last_attended_date) AS last_attended_date,
+        ${periodColumns}
+      FROM ${REPRESENTATIVES_VIEW}
+      WHERE foundation_slug = ?
+      GROUP BY person_key, committee_id
+      ORDER BY last_attended_date ASC NULLS FIRST, person_display_name ASC NULLS LAST, committee_name ASC NULLS LAST, rep_key ASC
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
+    `;
+
+    const result = await this.executeRead<RepresentativesRow>(req, sql, [query.foundationSlug], {
+      view: REPRESENTATIVES_VIEW,
+      operation: 'get_engagement_representatives',
+      clientMessage: 'Representatives are unavailable right now.',
+    });
+
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+      operation: 'get_engagement_representatives',
+      subject: 'representatives',
+      noun: 'Representative',
+      foundationSlug: query.foundationSlug,
+    });
+
+    const first = rows[0];
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT;
+
+    return {
+      rows: rows.map(mapRepRow),
+      counts: mapRepCounts(first),
+    };
+  }
+
   /** One cap rule for every engagement read, so a new capped section cannot log or cut differently. */
   private capRows<T>(req: Request, rows: T[], context: CapContext): T[] {
     // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
@@ -638,6 +703,64 @@ function mapParticipationPeriod(row: MeetingParticipationRow, range: SupportedEn
 function participationOrder(group: string | null): number {
   const index = group === null ? -1 : HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER.indexOf(group);
   return index === -1 ? HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER.length : index;
+}
+
+/**
+ * Aggregated because the read regroups to (person, committee); the scope counts are constant across
+ * the whole foundation cut, so `MAX` just carries them through the `GROUP BY`.
+ */
+function repSelectList(suffix: string): string {
+  return [
+    `MAX(meetings_invited_count_${suffix}) AS meetings_invited_count_${suffix}`,
+    `MAX(meetings_attended_count_${suffix}) AS meetings_attended_count_${suffix}`,
+    `BOOLOR_AGG(has_never_attended_${suffix}) AS has_never_attended_${suffix}`,
+    `BOOLOR_AGG(is_lapsed_${suffix}) AS is_lapsed_${suffix}`,
+    `MAX(scope_reps_count_all_projects_${suffix}) AS scope_reps_count_${suffix}`,
+    `MAX(scope_never_attended_reps_count_all_projects_${suffix}) AS scope_never_attended_reps_count_${suffix}`,
+  ].join(', ');
+}
+
+function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
+  return {
+    key: row.REP_KEY ?? '',
+    personName: row.PERSON_DISPLAY_NAME ?? '',
+    accountName: row.ACCOUNT_NAME ?? '',
+    committeeName: row.COMMITTEE_NAME ?? '',
+    lastAttendedDate: toIsoDate(row.LAST_ATTENDED_DATE),
+    periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapRepPeriod(row, range)),
+  };
+}
+
+function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange): HealthMetricsEngagementRepPeriod {
+  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+
+  return {
+    range,
+    meetingsInvited: Number(row[`MEETINGS_INVITED_COUNT_${suffix}`] ?? 0),
+    meetingsAttended: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
+    neverAttended: row[`HAS_NEVER_ATTENDED_${suffix}`] === true,
+    lapsed: row[`IS_LAPSED_${suffix}`] === true,
+  };
+}
+
+/**
+ * Unlike the org and non-member captions, this view counts its scope per period, so every period
+ * ships its own pair. A null anywhere is unmeasured — reporting 0 there would caption a full table.
+ */
+function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
+  const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {
+    const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+
+    return {
+      range,
+      reps: toNullableNumber(row[`SCOPE_REPS_COUNT_${suffix}`]),
+      neverAttendedReps: toNullableNumber(row[`SCOPE_NEVER_ATTENDED_REPS_COUNT_${suffix}`]),
+    };
+  });
+
+  if (counts.some((count) => count.reps === null || count.neverAttendedReps === null)) return null;
+
+  return counts.map((count) => ({ range: count.range, reps: count.reps ?? 0, neverAttendedReps: count.neverAttendedReps ?? 0 }));
 }
 
 function toNullableNumber(value: unknown): number | null {
