@@ -2580,6 +2580,32 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy).toBeUndefined();
   });
 
+  it('keeps a LEGACY flat response working instead of refusing it', async () => {
+    // A response with no `sections` is the pre-LFXV2-2775 flat shape. The wire type declares
+    // sections-only, but that is an assertion about the wire rather than a guarantee from it --
+    // and the empty-body guard turns "no sections" into a hard error, so this path would be
+    // REFUSED where it previously passed through.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Legacy body</p><img src="https://evil.test/probe.png">',
+        cta: 'Register\u202Eevil',
+        ctaUrl: 'https://events.linuxfoundation.org/register/',
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeFalsy();
+    expect(result.copy?.body).toContain('Legacy body');
+    // The fallback is not a way around the sanitizers: the same strip and display-text rules
+    // apply to the flat fields.
+    expect(result.copy?.body).not.toContain('evil.test');
+    expect(result.copy?.cta).not.toContain('\u202E');
+    expect(result.copy?.ctaUrl).toBe('https://events.linuxfoundation.org/register/');
+  });
+
   it('accepts a body whose only content is inside a wrapper', async () => {
     // The negative half: judging on text must not refuse real copy that happens to be nested.
     proxyRequestWithResponse.mockResolvedValueOnce(

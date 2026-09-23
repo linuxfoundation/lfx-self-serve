@@ -859,6 +859,14 @@ export class CampaignServiceClient {
       // image/sponsors treatment. Baking it into `body` as well as an anchor tag used to render
       // the CTA twice — once inline in the rich text, once as the native button — in both the
       // operator preview and the live HubSpot draft.
+      // A response with NO `sections` is the legacy flat shape (`body`/`cta` on the wire). The
+      // type declares sections-only, but a type is an assertion about the wire, not a guarantee
+      // from it -- and the empty-body guard added below turns "no sections" into a hard error,
+      // so a legacy response would be REFUSED rather than passed through as it was before.
+      //
+      // Falling back to the flat fields keeps that path working. They still go through the same
+      // sanitizers as the assembled body, so the legacy shape is not a way around them.
+      const legacy = copy as { body?: unknown; cta?: unknown; ctaUrl?: unknown };
       const sections = copy.sections ?? [];
       // Dividers become `<hr />` rather than being dropped. They carry no content of their own
       // ("divider (no other fields)" in campaign-service's own generator), so the only thing a
@@ -944,7 +952,9 @@ export class CampaignServiceClient {
       // `stripHtml(...).trim() === ''` -- and each one passed a value the previous caught: an
       // empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
       // `hasVisibleText` asks it by Unicode category, so there is one definition to keep right.
-      if (!hasVisibleText(stripHtml(body))) {
+      const legacyBody = typeof legacy.body === 'string' ? stripResourceLoadingHtml(legacy.body) : '';
+      const effectiveBody = hasVisibleText(stripHtml(body)) ? body : legacyBody;
+      if (!hasVisibleText(stripHtml(effectiveBody))) {
         logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
         return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
       }
@@ -956,9 +966,9 @@ export class CampaignServiceClient {
           // something other than what it contains.
           subject: sanitizeDisplayText(copy.subject ?? ''),
           preheader: sanitizeDisplayText(copy.preheader ?? ''),
-          body,
-          cta,
-          ctaUrl,
+          body: effectiveBody,
+          cta: cta || sanitizeDisplayText(typeof legacy.cta === 'string' ? legacy.cta : ''),
+          ctaUrl: ctaUrl || (typeof legacy.ctaUrl === 'string' ? legacy.ctaUrl : ''),
         },
       };
     } catch (error) {
