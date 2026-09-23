@@ -2,10 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section class="rounded-2xl border border-gray-200 bg-white p-6 md:p-8 flex flex-col gap-6" data-testid="mentorship-mentee-profile-details">
-  <header class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <h2 class="text-lg font-semibold text-gray-900" data-testid="mentorship-mentee-profile-details-title">{{ title }}</h2>
+  <header class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-lg font-semibold text-gray-900" data-testid="mentorship-mentee-profile-details-title">{{ title() }}</h2>
+      @if (subtitle()) {
+        <p class="text-sm text-gray-500 leading-5" data-testid="mentorship-mentee-profile-details-subtitle">{{ subtitle() }}</p>
+      }
+    </div>
     <lfx-button
       [label]="editLabel"
+      icon="fa-light fa-pen"
+      iconPos="right"
       severity="secondary"
       size="small"
       [outlined]="true"
@@ -15,7 +22,7 @@
   </header>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-about">
-    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ aboutLabel }}</span>
+    <span class="text-xs font-semibold text-gray-400">{{ aboutLabel }}</span>
     @if (!aboutMeIsEmpty()) {
       <!--
         Register form authors this via `lfx-rich-editor` → the payload is HTML (`<p>…</p>`).
@@ -33,7 +40,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-skills">
-    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ skillsHaveLabel }}</span>
+    <span class="text-xs font-semibold text-gray-400">{{ skillsHaveLabel }}</span>
     @if (skillsHave().length > 0) {
       <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-skills-list">
         @for (skill of skillsHave(); track skill) {
@@ -48,7 +55,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-areas">
-    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ skillsWantLabel }}</span>
+    <span class="text-xs font-semibold text-gray-400">{{ skillsWantLabel }}</span>
     @if (skillsWant().length > 0) {
       <div class="flex flex-wrap gap-2" data-testid="mentorship-mentee-profile-details-areas-list">
         @for (skill of skillsWant(); track skill) {
@@ -63,7 +70,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-notes">
-    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ notesLabel }}</span>
+    <span class="text-xs font-semibold text-gray-400">{{ notesLabel }}</span>
     @if (additionalNotes()) {
       <p class="text-sm text-gray-700 leading-6 whitespace-pre-wrap" data-testid="mentorship-mentee-profile-details-notes-text">{{ additionalNotes() }}</p>
     } @else {
@@ -72,7 +79,7 @@
   </div>
 
   <div class="flex flex-col gap-2" data-testid="mentorship-mentee-profile-details-resume">
-    <span class="text-xs font-semibold tracking-wider text-gray-400 uppercase">{{ resumeLabel }}</span>
+    <span class="text-xs font-semibold text-gray-400">{{ resumeLabel }}</span>
     @if (hasResume()) {
       @if (resumeUrl()) {
         <!--

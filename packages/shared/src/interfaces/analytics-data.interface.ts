@@ -1008,23 +1008,18 @@ export interface FoundationMaintainersDistributionResponse {
 
 /**
  * Foundation health score distribution row from Snowflake
- * Raw response from FOUNDATION_HEALTH_SCORE_DISTRIBUTION table
+ * FOUNDATION_TOTAL_PROJECTS_DETAIL grouped by foundation and v2 health category
  */
 export interface FoundationHealthScoreDistributionRow {
-  /**
-   * Foundation ID
-   */
-  FOUNDATION_ID: string;
-
   /**
    * Foundation URL slug
    */
   FOUNDATION_SLUG: string;
 
   /**
-   * Health score category v2 (Excellent, Healthy, Fair, Concerning, Critical)
+   * Health score category v2 (Excellent, Healthy, Fair, Concerning, Critical); null for projects with no score
    */
-  HEALTH_SCORE_CATEGORY_V2: string;
+  HEALTH_SCORE_CATEGORY_V2: string | null;
 
   /**
    * Number of projects in this category

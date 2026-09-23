@@ -284,6 +284,32 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/mentee/apply-target?programId=&programTermId=
+  public async getMenteeApplyTarget(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_mentee_apply_target');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+
+      const programId = parseTrimmedString(req.query['programId']);
+      const programTermId = parseTrimmedString(req.query['programTermId']);
+      if (!programId) {
+        throw ServiceValidationError.forField('programId', 'programId is required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+      if (!programTermId) {
+        throw ServiceValidationError.forField('programTermId', 'programTermId is required', { operation: 'get_mentorship_mentee_apply_target' });
+      }
+
+      const target = await this.mentorshipService.getMenteeApplyTarget(req, programId, programTermId);
+      logger.success(req, 'get_mentorship_mentee_apply_target', startTime, { programId, programTermId });
+      res.json(target);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/cii/:projectId
   public async getCiiBadge(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_cii_badge');

@@ -14,6 +14,7 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeOverviewResponse,
   MentorshipMenteePhase,
@@ -169,6 +170,14 @@ export class MentorshipService {
 
   public getMenteeProfile(): Observable<MentorshipMenteeProfileResponse> {
     return this.http.get<MentorshipMenteeProfileResponse>('/api/mentorship/mentee/profile').pipe(catchError(this.rethrowError('getMenteeProfile')));
+  }
+
+  /** Program name, project, and term name for the mentee apply header. Rethrows so the page can show a retry. */
+  public getMenteeApplyTarget(programId: string, programTermId: string): Observable<MentorshipMenteeApplyTarget> {
+    const params = new HttpParams().set('programId', programId).set('programTermId', programTermId);
+    return this.http
+      .get<MentorshipMenteeApplyTarget>('/api/mentorship/mentee/apply-target', { params })
+      .pipe(catchError(this.rethrowError('getMenteeApplyTarget')));
   }
 
   public getCiiBadge(projectId: string): Observable<MentorshipCiiBadge | null> {

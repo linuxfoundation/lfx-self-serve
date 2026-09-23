@@ -5,7 +5,7 @@ import { Component, input, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
-import { provideRouter } from '@angular/router';
+import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { RichEditorComponent } from '@components/rich-editor/rich-editor.component';
 import { MENTORSHIP_MENTEE_SUBMIT_SUCCESS_DETAIL, MENTORSHIP_MENTEE_SUBMIT_SUCCESS_SUMMARY } from '@lfx-one/shared/constants';
 import { UserService } from '@services/user.service';
@@ -160,6 +160,7 @@ describe('MenteeRegisterComponent', () => {
   });
 
   it('surfaces a success toast on a validated submit, per #2579 acceptance criteria', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
     fillValidForm();
 
     component['onSubmit']();
@@ -174,6 +175,27 @@ describe('MenteeRegisterComponent', () => {
     });
     // Errors go back into hiding, so a second visit to the form starts clean.
     expect(component['errors']()).toEqual({});
+    // No apply ids on the URL — stay on the form.
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('returns to the same apply link after a validated submit when both ids are present', () => {
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    const route = TestBed.inject(ActivatedRoute);
+    Object.defineProperty(route, 'snapshot', {
+      configurable: true,
+      value: {
+        queryParamMap: convertToParamMap({ programId: 'mp_apicurio_winter26', programTermId: 'trm_apicurio_winter26' }),
+      },
+    });
+    fillValidForm();
+
+    component['onSubmit']();
+
+    expect(navigate).toHaveBeenCalledWith(['/mentorship/mentee/apply'], {
+      queryParams: { programId: 'mp_apicurio_winter26', programTermId: 'trm_apicurio_winter26' },
+      state: { menteeProfileCreated: true },
+    });
   });
 
   it('treats the demographic answers as optional — leaving them blank still submits', () => {
