@@ -8,6 +8,8 @@ import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants
 import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { ORG_LENS_ROI_NO_VALUE } from '@lfx-one/shared/constants/org-lens-roi.constants';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+
 /**
  * Written down here rather than imported from the component constants, deliberately.
  *
@@ -26,7 +28,7 @@ export const BUBBLE_MAX_POINTS = 250;
 export const NO_VALUE = ORG_LENS_ROI_NO_VALUE;
 
 export const ORG_ROI_URL = '/org/roi';
-export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 /**
  * Only the year still in progress is labelled partial, so every year-bearing fixture is anchored to
@@ -69,19 +71,19 @@ export async function seedSelectedOrgCookie(page: Page): Promise<void> {
 }
 
 /**
- * Real production proportions for Red Hat, with `code` carrying the balance so the eight categories
- * sum to a round-tripped total. Three of them (`meetings`, `membership_tlf`, `educ_courses`) sit
- * under the 2% display threshold, so this fixture also exercises the collapsed remainder.
+ * Invented proportions, with `code` carrying the balance so the eight categories sum to a
+ * round-tripped total. Three of them (`meetings`, `membership_tlf`, `educ_courses`) sit under the 2%
+ * display threshold, so this fixture also exercises the collapsed remainder.
  */
 export const MOCK_CATEGORY_ROWS = [
-  { type: 'code', label: 'Code Contribution', expenditure: 101_904_741.07 },
-  { type: 'community', label: 'Community Contribution', expenditure: 13_877_843.18 },
-  { type: 'meetings', label: 'Meetings', expenditure: 201_358.17 },
-  { type: 'event_attendance', label: 'Event Attendance', expenditure: 10_614_558.63 },
-  { type: 'event_sponsorship', label: 'Event Sponsorship', expenditure: 4_951_172.72 },
-  { type: 'membership_project', label: 'Project Membership', expenditure: 13_650_145.36 },
-  { type: 'membership_tlf', label: 'Foundation Membership', expenditure: 2_731_354.84 },
-  { type: 'educ_courses', label: 'Education', expenditure: 1_190.0 },
+  { type: 'code', label: 'Code Contribution', expenditure: 24_475_000.0 },
+  { type: 'community', label: 'Community Contribution', expenditure: 5_200_000.0 },
+  { type: 'meetings', label: 'Meetings', expenditure: 450_000.0 },
+  { type: 'event_attendance', label: 'Event Attendance', expenditure: 3_100_000.0 },
+  { type: 'event_sponsorship', label: 'Event Sponsorship', expenditure: 1_750_000.0 },
+  { type: 'membership_project', label: 'Project Membership', expenditure: 2_400_000.0 },
+  { type: 'membership_tlf', label: 'Foundation Membership', expenditure: 600_000.0 },
+  { type: 'educ_courses', label: 'Education', expenditure: 25_000.0 },
 ];
 
 /** Three categories fall below the threshold, so the donut renders a remainder for exactly these. */
@@ -97,18 +99,19 @@ export const TOTAL_INVESTMENT = MOCK_CATEGORY_ROWS.reduce((sum, row) => sum + ro
 
 export const MOCK_INVESTMENT_BREAKDOWN = { rows: MOCK_CATEGORY_ROWS, total: TOTAL_INVESTMENT };
 
-export const MOCK_TOTAL_RETURN = 5_576_366_821.32;
+export const MOCK_TOTAL_RETURN = 1_094_970_000.0;
 
 export const MOCK_SUMMARY = {
   orgUid: MOCK_ACCOUNT_ID,
   method: 'logit',
   hasData: true,
-  nProjects: 407,
+  // The eight projects `MOCK_PROJECTS` serves; a literal because that fixture is declared below.
+  nProjects: 8,
   totalExpenditure: TOTAL_INVESTMENT,
   totalReturn: MOCK_TOTAL_RETURN,
   profit: MOCK_TOTAL_RETURN - TOTAL_INVESTMENT,
-  roi: 36.695,
-  bcr: 37.695,
+  roi: 27.815,
+  bcr: 28.815,
   yearMin: 2010,
   yearMax: CURRENT_YEAR,
   dateMin: '2010-01',
@@ -117,8 +120,9 @@ export const MOCK_SUMMARY = {
 
 export const MOCK_COVERAGE = { orgUid: MOCK_ACCOUNT_ID, hasData: true, coverageReason: 'covered' };
 
+/** Per-year ROI and BCR are constant by contract, so every row carries the portfolio's lifetime ratios. */
 export function annualRow(year: number, totalReturn: number, expenditure: number): unknown {
-  return { year, totalReturn, expenditure, profit: totalReturn - expenditure, roi: 36.5, bcr: 37.5 };
+  return { year, totalReturn, expenditure, profit: totalReturn - expenditure, roi: MOCK_SUMMARY.roi, bcr: MOCK_SUMMARY.bcr };
 }
 
 export const MOCK_ANNUAL = {
@@ -342,13 +346,13 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
+      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: 'Gold' }] : [])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: 'Gold' }] : [])
   );
 
   await page.route('**/api/orgs/me/role-grants', (route) =>
@@ -365,7 +369,16 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   await page.route('**/api/nav/org-items*', (route) =>
     fulfillJson(route, {
       items: hasAccess
-        ? [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: 'Red Hat, Inc.', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        ? [
+            {
+              uid: MOCK_ACCOUNT_ID,
+              accountId: MOCK_ACCOUNT_ID,
+              name: SYNTHETIC_ORG_LEGAL_NAME,
+              logoUrl: null,
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
+              isMember: true,
+            },
+          ]
         : [],
       next_page_token: null,
       upstream_failed: false,
