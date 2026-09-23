@@ -337,9 +337,16 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * whatever document renders it, so there is no destination to vouch for.
  */
 function hasScheme(href: string): boolean {
-  // A protocol-relative `//host/x` DOES name a host, so it counts as a claim and must be judged
-  // (canonicalHttpUrl then refuses it).
-  return href.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(href.trim());
+  // TRIMMED first, and backslashes treated as slashes. WHATWG strips leading C0/space before
+  // parsing and normalises `\` to `/`, so ` //evil.example`, `/\evil.example` and
+  // `\\evil.example` all resolve to the host `evil.example`. Testing the raw string would send
+  // them down the relative branch, which returns them UNJUDGED.
+  //
+  // sanitize-html's `allowProtocolRelative: false` also refuses these, so this is the second of
+  // two independent layers rather than the only one -- but the allow-list must not depend on
+  // that, or removing this normalisation becomes a silent bypass rather than a visible one.
+  const normalized = href.trim().replace(/\\/g, '/');
+  return normalized.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(normalized);
 }
 
 /**

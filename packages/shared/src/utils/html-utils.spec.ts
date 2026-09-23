@@ -674,6 +674,26 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toContain(`href="${href}"`);
   });
 
+  it.each([
+    ['a leading space', ' //evil.example/x'],
+    ['a leading tab', '\t//evil.example/x'],
+    ['a leading newline', '\n//evil.example/x'],
+    ['a slash-backslash pair', '/\\evil.example/path'],
+    ['a double backslash', '\\\\evil.example/path'],
+    ['a backslash-slash pair', '\\/evil.example/x'],
+  ])('refuses %s, which resolves to a host', (_label, href) => {
+    // WHATWG strips leading C0/space and normalises `\` to `/`, so each of these resolves to the
+    // host `evil.example` and must not be treated as a relative path.
+    //
+    // NOTE ON WHAT THIS PINS: two independent layers refuse these -- `hasScheme` normalises
+    // before deciding, and sanitize-html's `allowProtocolRelative: false` refuses them anyway.
+    // This test therefore pins the OUTCOME, not which layer produced it: it still passes if
+    // `hasScheme` stops normalising. That is stated rather than hidden, because a test whose name
+    // implies more than it checks is worse than no test. `hasScheme` is module-private, and
+    // exporting it purely to test it would widen the module's surface for no caller.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
+  });
+
   it('refuses a raw javascript: href inside the hook, not only via allowedSchemes', () => {
     // `transformTags` runs BEFORE sanitize-html's scheme check, so the hook sees raw hrefs. This
     // pins that `allowedDestinationHref` refuses the scheme itself -- the property the code
