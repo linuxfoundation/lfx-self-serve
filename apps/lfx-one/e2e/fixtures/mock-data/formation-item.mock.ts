@@ -117,9 +117,11 @@ export const mockFormationItems: Record<string, FormationItem[]> = {
       detail: null,
       notes: null,
       evidence_link: null,
+      // Mixed statuses on purpose (#2818): the one seeded sub-item list exercises the done / in-progress / to-do markers.
       sub_items: [
-        { uid: 'sub:announce', title: 'announce@', status: 'not_started' },
-        { uid: 'sub:tsc', title: 'tsc@', status: 'not_started' },
+        { uid: 'sub:announce', title: 'announce@', status: 'done' },
+        { uid: 'sub:tsc', title: 'tsc@', status: 'in_progress' },
+        { uid: 'sub:dev', title: 'dev@', status: 'not_started' },
       ],
       skip_reason: null,
       available_actions: createFormationAllAvailableActions(),

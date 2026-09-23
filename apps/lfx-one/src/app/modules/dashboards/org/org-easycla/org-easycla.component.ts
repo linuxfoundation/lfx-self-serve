@@ -12,6 +12,7 @@ import {
   ORG_EASYCLA_RETURN_ORG_PARAM,
   ORG_EASYCLA_RETURN_PARAMS_RESET,
   ORG_EASYCLA_SIGNATURE_PARAM,
+  ORG_LENS_EMPTY_STATE_COPY,
 } from '@lfx-one/shared/constants';
 import type { OrgClaGroup, OrgClaGroupList, OrgClaSignSelection } from '@lfx-one/shared/interfaces';
 import { orgClaOpenLabel } from '@lfx-one/shared/utils';
@@ -22,12 +23,13 @@ import { catchError, distinctUntilChanged, filter, of, skip, switchMap, take, ta
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
-import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
@@ -37,7 +39,7 @@ import { OrgEasyclaGroupSelectComponent } from './org-easycla-sign/org-easycla-g
 
 @Component({
   selector: 'lfx-org-easycla',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OpenIntercomDirective, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
+  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, OrgLensEmptyStateComponent, OrgEasyclaCardComponent, RouterLink, SkeletonModule],
   providers: [DialogService],
   templateUrl: './org-easycla.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -59,12 +61,13 @@ export class OrgEasyclaComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly injector = inject(Injector);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   /** One hand-off at a time. Also what disables the Sign CLA control while a flow is open. */
   protected readonly signingOpen = signal(false);
 
   protected readonly signClaDisabled = computed(
-    () => !this.hasCompany() || this.signingOpen() || this.hasNoOrgAccess() || !this.orgContextLoaded() || !this.claListReady()
+    () => !this.hasCompany() || this.signingOpen() || this.hasPageState() || !this.orgContextLoaded() || !this.claListReady()
   );
 
   /**
@@ -95,13 +98,15 @@ export class OrgEasyclaComponent {
 
   /**
    * Names the reason when Sign CLA is disabled, so a screen reader hears one instead of a bare
-   * "disabled". Computed rather than a template ternary — the control has three distinct reasons.
+   * "disabled". Computed rather than a template ternary — the control has several distinct reasons.
    *
-   * No-access is checked first: it is the one reason the viewer can do nothing about, and it also
-   * subsumes the others, since a viewer without access has no organization to select either.
+   * A page-level state is checked first: it is the one reason the viewer can do nothing about here,
+   * and it also subsumes the others, since a viewer whose page is replaced has no organization to
+   * select either.
    */
   protected readonly signClaAriaLabel = computed(() => {
-    if (this.hasNoOrgAccess()) return 'Sign a corporate CLA — Organization Lens is not available for your account';
+    const state = this.pageState();
+    if (state) return `Sign a corporate CLA — ${ORG_LENS_EMPTY_STATE_COPY[state].headline}`;
     // Every reason the control is disabled needs a branch here, or assistive technology announces
     // "disabled" with no explanation. Loading sits above the company check because it is why the
     // company is not known yet.
@@ -114,21 +119,17 @@ export class OrgEasyclaComponent {
   });
 
   /**
-   * True once both grant fetches have returned and the caller holds no org access. The route guard
-   * only checks the dark-launch flag, so without this an unauthorized deep link would be told
-   * "hasn't signed any CLAs yet" — a statement about their CLAs rather than about their access.
-   *
-   * Shares `hasOrgSelectorAccess` with the sidebar org-selector so the two cannot drift, and waits
-   * on `personaLoaded()` as well: for users whose orgs arrive only via the async personas response,
-   * role grants can return empty first and flash the no-access message. See
-   * `org-overview.component.ts` for the full reasoning.
+   * Spec 053 — the page-level state replacing the page, or null when the page renders (FR-016). The
+   * route guard only checks the dark-launch flag, so without this an unauthorized deep link would be
+   * told "hasn't signed any CLAs yet" — a statement about their CLAs rather than about their access.
+   * Decided by the shared classifier so it cannot drift from the other pages or the sidebar gate.
    */
-  protected readonly hasNoOrgAccess: Signal<boolean> = computed(
-    () => this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded() && !this.accountContext.hasOrgSelectorAccess()
-  );
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly hasPageState = this.emptyState.hasPageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   /**
-   * No-access is a settled answer in its own right, so it does not wait behind the loading branch.
+   * A page-level state is a settled answer in its own right, so it does not wait behind the loading branch.
    *
    * `orgNavigation.loaded()` is part of the authorized branch because grants and personas can both
    * be loaded while the org list is still being fetched and default-selected — for a direct
@@ -137,7 +138,7 @@ export class OrgEasyclaComponent {
    * settled answer about their CLAs before any company was selected.
    */
   protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasNoOrgAccess() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
+    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
   );
 
   // ── Data ──────────────────────────────────────────────────────────────────

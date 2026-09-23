@@ -33,8 +33,7 @@
  *   (see helpers/global-setup.ts).
  * - The repo has no e2e LaunchDarkly override helper. For the flag-ON tests we mock
  *   only the WG weekly-brief endpoints and rely on the `wg-weekly-brief` LD flag being
- *   ON in the dev environment (mirroring how org-membership-documentation.spec.ts relies
- *   on the `org-lens-enabled` flag being ON — see that file's header).
+ *   ON in the dev environment.
  *   For the flag-OFF test we block the LaunchDarkly SDK endpoints so OpenFeature's
  *   provider fails to initialize and the flag falls back to its `false` default
  *   (see feature-flag.service.ts:getBooleanFlag — returns `defaultValue` when the

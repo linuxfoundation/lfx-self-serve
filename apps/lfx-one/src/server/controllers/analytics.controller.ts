@@ -3304,6 +3304,148 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/engagement-meeting-participation
+   * The Health Metrics Engagement "Meeting participation" roll-up and its meeting-type table.
+   */
+  public async getEngagementMeetingParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_meeting_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+
+      const range = assertHealthMetricsRange(getStringQueryParam(req, 'range') || 'YTD', 'get_engagement_meeting_participation');
+      // The view carries no columns for the oldest range, so it is rejected rather than quietly
+      // resolving to a different year.
+      if (!isSupportedEngagementRange(range)) {
+        throw ServiceValidationError.forField('range', 'Meeting participation has no data for this range', {
+          operation: 'get_engagement_meeting_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getMeetingParticipation(req, { foundationSlug, range });
+
+      logger.success(req, 'get_engagement_meeting_participation', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-org-participation` — every organization, every period, one read.
+   * No `range` param: the period pill projects the loaded rows client-side.
+   */
+  public async getEngagementOrgParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_org_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_org_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_org_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getOrgParticipation(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_org_participation', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-non-member-participation` — every non-member org, every period.
+   * The view carries no project key, so the section is foundation-scoped.
+   */
+  public async getEngagementNonMemberParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_non_member_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_non_member_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_non_member_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNonMemberParticipation(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_non_member_participation', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
+   * the filter cut and the period all resolve client-side, so none of them reaches the wire.
+   */
+  public async getEngagementRepresentatives(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_representatives');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_representatives',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_representatives',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getRepresentatives(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_representatives', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */

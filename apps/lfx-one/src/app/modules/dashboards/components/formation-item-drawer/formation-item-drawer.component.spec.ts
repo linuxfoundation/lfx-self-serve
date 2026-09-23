@@ -247,7 +247,7 @@ describe('FormationItemDrawerComponent', () => {
       expect(audience?.querySelector('i.fa-globe')).toBeNull();
     });
 
-    it('renders sub-items through the shared list with a done count and status glyphs, not status chips', async () => {
+    it('renders sub-items through the shared list with a done count and status markers, not status chips', async () => {
       const item = buildItem({
         sub_items: [
           { uid: 'sub_a', title: 'Create workspace', status: 'done' },
@@ -256,10 +256,13 @@ describe('FormationItemDrawerComponent', () => {
       });
       await render(item, false);
 
-      const block = query('[data-testid="formation-item-drawer-sub-items"]');
+      // #2818: the "Sub-items" eyebrow sits outside the card, like the Details/Links/Activity sections.
+      const section = query('[data-testid="formation-item-drawer-sub-items-section"]');
+      expect(section?.firstElementChild?.textContent?.trim()).toBe('Sub-items');
+      const block = section?.querySelector('[data-testid="formation-item-drawer-sub-items"]');
       expect(block?.textContent).toContain('1 of 2 done');
       expect(block?.querySelectorAll('[data-testid^="formation-sub-item-row-"]').length).toBe(2);
-      expect(block?.querySelector('[data-testid="formation-sub-item-row-sub_a"] i.fa-circle-check')).not.toBeNull();
+      expect(block?.querySelector('[data-testid="formation-sub-item-row-sub_a"] [data-testid="formation-sub-item-marker"] i.fa-check')).not.toBeNull();
       expect(block?.querySelector('lfx-tag')).toBeNull();
     });
 

@@ -5,6 +5,11 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
+  HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementRepresentatives,
+  HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 
 /**
@@ -125,25 +130,20 @@ export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
 
 /**
+ * The four labels `ENGAGEMENT_GROUP_ATTENDANCE.GROUP_TYPE_LABEL` actually emits. The view buckets
+ * committee categories itself, so a cut matches one label rather than a category list.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABEL_VALUES: readonly string[] = ['Governance', 'Other', 'SIG / TAG', 'Working groups'];
+
+/**
  * Which `GROUP_TYPE_LABEL` values fall into each filter cut. `all` has no entry on purpose — it
- * drops the predicate rather than listing every label. Derived from `COMMITTEE_CATEGORIES`, whose
- * vocabulary is not yet confirmed against the view's distinct labels.
+ * drops the predicate rather than listing every label. The design gives `Other` no cut of its own,
+ * so the three cuts deliberately do not sum to the all-types count.
  */
 export const HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS: Partial<Record<HealthMetricsEngagementGroupTypeFilter, readonly string[]>> = {
-  gov: [
-    'Board',
-    'Technical Steering Committee',
-    'Technical Oversight Committee',
-    'Technical Advisory Committee',
-    'Finance Committee',
-    'Legal Committee',
-    'Code of Conduct',
-    'Government Advisory Council',
-  ],
-  // `COMMITTEE_CATEGORIES` has no TAG entry, so the literal is listed speculatively — it matches
-  // nothing until the view confirms it, rather than silently folding TAGs into governance.
-  sigtag: ['Special Interest Group', 'Technical Advisory Group'],
-  wg: ['Working Group'],
+  gov: ['Governance'],
+  sigtag: ['SIG / TAG'],
+  wg: ['Working groups'],
 };
 
 /** Rows per page in the Group attendance table. */
@@ -184,5 +184,181 @@ export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
  */
 export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
 
+/**
+ * Sections whose read can still change the pane's height, so a deep link is released only once
+ * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
+ * component emits `reading`/`settled` and the container binds both.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
+  'participation',
+  'committees',
+  'orgs',
+  'reps',
+  'nonmem',
+] as const satisfies readonly HealthMetricsEngagementSectionKey[];
+
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
+
+/** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [
+  { key: 'attendance', label: 'Attendance' },
+  { key: 'meetings', label: 'Meetings held' },
+] as const;
+
+/**
+ * The six values `ENGAGEMENT_MEETING_PARTICIPATION.MEETING_TYPE_GROUP` actually emits at the
+ * `group` level, pinned so the order and governance lists below cannot drift off the view.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_VALUES: readonly string[] = [
+  'Board',
+  'Maintainers',
+  'Marketing',
+  'Other',
+  'Technical',
+  'Working Group',
+];
+
+/**
+ * Display order for the participation table's `MEETING_TYPE_GROUP` rows — governance first, the
+ * catch-all last. A group the view adds later is unknown here and sorts to the end rather than
+ * being dropped.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER: readonly string[] = [
+  'Board',
+  'Technical',
+  'Working Group',
+  'Maintainers',
+  'Marketing',
+  'Other',
+];
+
+/**
+ * Groups whose detail belongs to the Members tab, which reports them per member against dues.
+ * Only the board qualifies today; widening this is one entry, not a code change.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS: readonly string[] = ['Board'];
+
+/** The view's own level values. The finer `committee_type` level is not read by this section. */
+export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS: readonly string[] = ['all', 'group'];
+
+/**
+ * The empty Meeting participation shape — pre-hydration, no foundation selected, and the client's
+ * post-error placeholder. A `null` total renders the section's empty state, which is why the
+ * server never returns this for a failed read; that error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetricsEngagementMeetingParticipation = {
+  total: null,
+  rows: [],
+};
+
+/**
+ * Debounce shared by the org and representatives search boxes. Either filter runs over the whole
+ * loaded scope, so a keystroke is more expensive than a typical typeahead and deserves the same
+ * pause as the other local filters.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS = 200;
+
+/** Client-side page size for the org table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read, an order of magnitude above the largest foundation's org count.
+ * It bounds a payload the client sorts and searches in memory; hitting it is logged, not silent.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP = 5000;
+
+/** The org table's cut. "No activity" is the view's own `IS_LAPSED_180D`, not a client-side date sum. */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'lapsed', label: 'No activity in 180 days' },
+] as const;
+
+/**
+ * A foundation the view holds no organizations for — a measured empty scope, which is why the
+ * counts are zero rather than null. The server never returns it for a failed read; that error
+ * propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: { orgs: 0, lapsedOrgs: 0 },
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: null,
+};
+
+/** Client-side page size for the non-member table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read, an order of magnitude above the largest foundation's non-member
+ * count. It bounds a payload the client sorts in memory; hitting it is logged, not silent.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP = 5000;
+
+/**
+ * A foundation the view holds no non-member organizations for — a measured empty scope, which is
+ * why the count is zero rather than null. The server never returns it for a failed read; that
+ * error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT: HealthMetricsEngagementNonMemberParticipation = {
+  rows: [],
+  counts: { orgs: 0 },
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its count is `null` because nothing was measured — a zero here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
+  rows: [],
+  counts: null,
+};
+
+/** Client-side page size for the representatives table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read. Higher than the org and non-member caps because this view's grain is
+ * one row per person per group *per project*, so it multiplies out further than either of those.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
+
+/**
+ * The representatives table's cuts, all three scoped to the people invited in the selected period —
+ * the population the view's own caption counts. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
+ * and "Lapsed" is `IS_LAPSED_<period>`, so neither cut is a client-side date comparison.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'never', label: 'Never attended' },
+  { key: 'lapsed', label: 'Lapsed' },
+] as const;
+
+/**
+ * A foundation the view holds no representatives for — a measured empty scope, which is why every
+ * period's counts are zero rather than null. The server never returns it for a failed read; that
+ * error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT: HealthMetricsEngagementRepresentatives = {
+  rows: [],
+  counts: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({ range, reps: 0, neverAttendedReps: 0 })),
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {
+  rows: [],
+  counts: null,
+};

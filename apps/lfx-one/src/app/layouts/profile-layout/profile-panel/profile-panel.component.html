@@ -60,10 +60,11 @@
         </span>
       </div>
 
-      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width in
-           the sm-2xl row (the flex default is min-width: auto, which would instead force the row to
-           overflow if displayName() falls back to a long, unbreakable username); break-words lets a
-           long name wrap instead of pushing the fixed-width pills container past the card edge. -->
+      <!-- Name + handle. min-w-0 lets this flex item shrink below its content's min-content width
+           in the sm-2xl row (the flex default is min-width: auto, which would instead force the
+           row to overflow if displayName() falls back to a long, unbreakable username);
+           break-words lets a long name wrap instead of pushing the fixed-width pills container
+           past the card edge. -->
       <div class="min-w-0">
         <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
         @if (username()) {
@@ -171,6 +172,15 @@
             <span>T-shirt size</span>
           </div>
           <div class="text-[12.5px] leading-relaxed text-slate-800">{{ tshirtSize() }}</div>
+        </div>
+      }
+      @if (memberSince()) {
+        <div data-testid="profile-panel-member-since">
+          <div class="mb-0.5 flex items-center gap-1.5 text-[11px] text-slate-500">
+            <i class="fa-light fa-calendar"></i>
+            <span>Member since</span>
+          </div>
+          <div class="text-[12.5px] leading-relaxed text-slate-800">{{ memberSince() }}</div>
         </div>
       }
     </div>

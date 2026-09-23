@@ -559,6 +559,20 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(service.validateForSubmit()).toBe(true);
   });
 
+  it('leaves the attendee toggle pristine when a submit fails validation', () => {
+    // The bulk mark exists to reveal validation messages, and this control has no validators — so
+    // marking it displays nothing and instead tells the attendee picker the organizer opted out.
+    // The picker seeds their standing choice from `dirty` on every mount, and create mode never
+    // hydrates, so one failed save would otherwise suppress group defaults for the whole session.
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.validateForSubmit()).toBe(false);
+
+    expect(service.form().get('show_meeting_attendees')?.dirty).toBe(false);
+    // The controls the mark is actually for still get it.
+    expect(service.form().get('title')?.dirty).toBe(true);
+  });
+
   it('does not re-fetch in create mode, where meetingId comes from the save', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.meetingId.set('meeting-1');
@@ -842,6 +856,8 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
 
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PRIVATE);
     expect(service.form().get('restricted')?.value).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 
   it('applies the same default in the quick dialog', () => {
@@ -862,6 +878,7 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
     // Otherwise one mis-click on Board leaves a technical meeting silently invite-only.
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
     expect(service.form().get('restricted')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.enabled).toBe(true);
   });
 
   it('leaves the saved access settings alone in edit mode', () => {
@@ -874,6 +891,29 @@ describe('MeetingComposerFormService \u2014 meeting type access defaults', () =>
 
     expect(service.form().get('visibility')?.value).toBe(MeetingVisibility.PUBLIC);
     expect(service.form().get('restricted')?.value).toBe(false);
+  });
+
+  it('locks attendee visibility when the meeting is restricted', () => {
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+    service.form().get('show_meeting_attendees')?.setValue(true);
+
+    service.form().get('restricted')?.setValue(true);
+
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('locks attendee visibility when switching to Board in edit mode without flipping restricted', () => {
+    service.initialize({ mode: 'edit', projectUid: 'project-1' });
+    service.form().patchValue({ meeting_type: MeetingType.TECHNICAL, restricted: false });
+    service.form().get('show_meeting_attendees')?.enable();
+    service.form().get('show_meeting_attendees')?.setValue(true);
+
+    service.form().get('meeting_type')?.setValue(MeetingType.BOARD);
+
+    expect(service.form().get('restricted')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 });
 /**
@@ -1804,6 +1844,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
     recording_enabled: true,
     transcript_enabled: true,
     youtube_upload_enabled: true,
+    show_meeting_attendees: true,
     auto_email_reminder_enabled: true,
     auto_email_reminder_time: 150,
   } as Meeting;
@@ -1866,6 +1907,7 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
         recording_enabled: true,
         transcript_enabled: true,
         youtube_upload_enabled: true,
+        show_meeting_attendees: true,
         auto_email_reminder_enabled: true,
         auto_email_reminder_time: 150,
       }),
@@ -1873,6 +1915,54 @@ describe('MeetingComposerFormService \u2014 feature flags on an edit save from a
     );
   });
 });
+/**
+ * Legacy rows predate the board/restricted lock, so an edit can hydrate a board meeting that still
+ * carries `show_meeting_attendees: true`. Hydration patches the stored value like any other field;
+ * only the `syncShowMeetingAttendeesLock` call that trails the patch puts it back. Without this the
+ * organizer sees the toggle on for a meeting whose invites never list guests, and a save from any
+ * section would send that `true` back for the server to override.
+ */
+describe('MeetingComposerFormService — hydrating a board meeting with a stale attendee flag', () => {
+  let service: MeetingComposerFormService;
+
+  const LEGACY_BOARD_MEETING = {
+    id: 'meeting-1',
+    organizer: true,
+    project_uid: 'project-1',
+    title: 'Legacy board meeting',
+    meeting_type: 'Board',
+    restricted: true,
+    show_meeting_attendees: true,
+  } as Meeting;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({
+      providers: [
+        MeetingComposerFormService,
+        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: CommitteeService, useValue: {} },
+        { provide: ProjectContextService, useValue: { activeContextUid: () => null } },
+        {
+          provide: MeetingService,
+          useValue: {
+            getMeeting: vi.fn().mockReturnValue(of(LEGACY_BOARD_MEETING)),
+            getMeetingAttachments: vi.fn().mockReturnValue(of([])),
+            getMeetingRegistrants: vi.fn().mockReturnValue(of([] as MeetingRegistrant[])),
+          },
+        },
+      ],
+    });
+
+    service = TestBed.inject(MeetingComposerFormService);
+    service.initialize({ mode: 'edit', meetingUid: 'meeting-1' });
+  });
+
+  it('shows the toggle off and locked despite the stored true', () => {
+    expect(service.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(service.form().get('show_meeting_attendees')?.disabled).toBe(true);
+  });
+});
+
 /**
  * Covers the two ways a group-scoped create can look ready and save the wrong meeting.
  *

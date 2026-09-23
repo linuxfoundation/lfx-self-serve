@@ -7,8 +7,10 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { BEHAVIORAL_CLASS_CONFIG, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import type { Account, OrgDropdownOption, OrgLensGroupSummary, OrgLensGroupsResponse } from '@lfx-one/shared/interfaces';
+import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { CommitteeMembersService } from '@modules/dashboards/org/org-people/services/committee-members.service';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -17,7 +19,7 @@ import { PersonDetailDrawerService } from '@services/person-detail-drawer.servic
 import { Tooltip } from 'primeng/tooltip';
 import { NEVER, Observable, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { signal, type WritableSignal } from '@angular/core';
+import { computed, signal, type WritableSignal } from '@angular/core';
 
 import { OrgGroupsComponent } from './org-groups.component';
 
@@ -64,7 +66,9 @@ function personDrawerStub() {
 async function render(options: RenderOptions = {}): Promise<Rendered> {
   const { accountName = 'Acme Motors, Inc.', orgNavigationLoaded = true, getGroups = () => of(emptyGroupsResponse()), queryParams = {} } = options;
 
-  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, accountSlug: 'acme', membershipTier: '', uid: 'org-uid-1' });
+  const selectedAccount = signal<Account>({ accountId: 'acc-1', accountName, membershipTier: '', uid: 'org-uid-1', slug: 'acme' });
+  // Derived exactly as AccountContextService derives it, so the stub can't hold a segment the real service never would.
+  const selectedUrlSegment = computed(() => orgUrlSegment(selectedAccount()));
 
   TestBed.resetTestingModule();
   await TestBed.configureTestingModule({
@@ -73,11 +77,12 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       {
         provide: AccountContextService,
         // Spec 050 US2: in-app links carry the selected organization's URL segment.
-        useValue: { selectedAccount, selectedUrlSegment: signal('acme'), hasOrgSelectorAccess: signal(true) },
+        useValue: { selectedAccount, selectedUrlSegment, hasOrgSelectorAccess: signal(true) },
       },
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
-      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true) } },
+      { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+      { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
       // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
@@ -499,7 +504,7 @@ describe('OrgGroupsComponent', () => {
 
     // clearFilters() resets the form synchronously, but filteredGroups reads the debounced filterValues
     // signal, so this needs the same real-time flush as a direct user edit.
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
     await flushFilterChange(fixture);
 
     expect(renderedItemUids(fixture)).toEqual(['g1', 'g2', 'g3', 'g4']);
@@ -514,7 +519,7 @@ describe('OrgGroupsComponent', () => {
     await clickSeatHoldersTrigger(fixture, 'g1');
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: true, selectedGroupUid: 'g1' });
 
-    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', accountSlug: 'vendor-corp', membershipTier: '', uid: 'org-uid-2' });
+    selectedAccount.set({ accountId: 'acc-2', accountName: 'Vendor Corp', membershipTier: '', uid: 'org-uid-2', slug: 'vendor-corp' });
     await flushFilterChange(fixture);
 
     expect(seatHoldersDrawerState(fixture)).toEqual({ visible: false, selectedGroupUid: null });
@@ -937,8 +942,9 @@ describe('OrgGroupsComponent stat strip', () => {
           },
         },
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
-        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded) } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
+        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
         { provide: PersonDetailDrawerService, useValue: personDrawerStub() },
@@ -1176,7 +1182,7 @@ describe('OrgGroupsComponent — CSV export', () => {
     expect(zephyrRow?.[2]).not.toBe('Working Group');
   });
 
-  it('names the download with the org slug and today’s date', async () => {
+  it('names the download with the org URL segment and today’s date', async () => {
     const { fixture } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
     const { filename } = await captureExportedCsv(fixture);
@@ -1210,13 +1216,24 @@ describe('OrgGroupsComponent — CSV export', () => {
     }
   });
 
-  it('falls back to the default slug when accountSlug is the empty-string placeholder (not just null/undefined)', async () => {
+  it('names the download with the SFID when the selection has no published slug', async () => {
     const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
 
-    // Mirrors AccountContextService's PLACEHOLDER_ACCOUNT / toAccount(), which normalize a missing
-    // Snowflake slug to '' rather than null/undefined during org-switch/enrichment windows —
-    // `?? 'org'` would miss this and produce a bare "org-lens-groups--<date>.csv".
-    selectedAccount.update((account) => ({ ...account, accountSlug: '' }));
+    // Uid-only selections (path-param guard stub, cookie restore, org-items row without a slug) are
+    // addressed by SFID, so the export follows the address rather than inventing a name.
+    selectedAccount.set({ accountId: '0014100000MgaAAAAA', accountName: 'Acme Motors, Inc.', membershipTier: '', uid: '0014100000MgaAAAAA', slug: null });
+
+    const { filename } = await captureExportedCsv(fixture);
+
+    expect(filename).toMatch(/^org-lens-groups-0014100000MgaAAAAA-\d{8}\.csv$/);
+  });
+
+  it('falls back to "org" when the selection carries neither a usable slug nor an SFID', async () => {
+    const { fixture, selectedAccount } = await render({ getGroups: () => of(groupsResponse(buildGroups())) });
+
+    // The placeholder selection: orgUrlSegment() is null, so the filename falls back rather than
+    // producing a bare "org-lens-groups--<date>.csv".
+    selectedAccount.set({ accountId: '', accountName: '', membershipTier: '' });
 
     const { filename } = await captureExportedCsv(fixture);
 

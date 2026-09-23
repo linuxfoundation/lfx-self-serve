@@ -5,9 +5,16 @@ import { isPlatformBrowser, NgClass } from '@angular/common';
 import { afterNextRender, Component, computed, DestroyRef, ElementRef, inject, Injector, input, model, PLATFORM_ID, Signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
-import { ORG_CATALOGUE_SEARCH_MIN_CHARS } from '@lfx-one/shared/constants';
+import {
+  ORG_CATALOGUE_SEARCH_MIN_CHARS,
+  ORG_LENS_LIST_INCOMPLETE_NOTICE,
+  ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL,
+  ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL,
+} from '@lfx-one/shared/constants';
 import { Account, DisplayOrgItem, OrgItem, OrgSelectorRow } from '@lfx-one/shared/interfaces';
+import { resolveOrgRolePersona } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService, OrgRolePersona } from '@services/org-role-grants.service';
@@ -29,6 +36,7 @@ export class OrgSelectorComponent {
   private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgLensNavigation = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
   /** Captured at construction so the afterNextRender callback below has an explicit DestroyRef + Injector — both `takeUntilDestroyed()` and `toObservable()` call inject() internally and would otherwise throw NG0203 outside the injection context. */
   private readonly destroyRef = inject(DestroyRef);
   private readonly injector = inject(Injector);
@@ -71,6 +79,17 @@ export class OrgSelectorComponent {
   protected readonly items: Signal<OrgItem[]> = this.orgNavigationService.items;
   protected readonly loading: Signal<boolean> = this.orgNavigationService.loading;
   protected readonly hasMore: Signal<boolean> = this.orgNavigationService.hasMore;
+
+  /**
+   * Spec 053 FR-010 — the caller's list is a lower bound (roll-up expansion was incomplete) but the
+   * selected organization did load, so the page renders and the switcher carries the notice instead.
+   */
+  protected readonly listIncomplete: Signal<boolean> = this.emptyState.listIncomplete;
+  protected readonly listIncompleteNotice = ORG_LENS_LIST_INCOMPLETE_NOTICE;
+  protected readonly listRetrying: Signal<boolean> = this.emptyState.retrying;
+  protected readonly listRetryLabel: Signal<string> = computed(() =>
+    this.listRetrying() ? ORG_LENS_LIST_INCOMPLETE_RETRYING_LABEL : ORG_LENS_LIST_INCOMPLETE_RETRY_LABEL
+  );
 
   /**
    * LFXV2-3029 — a single per-caller decision evaluated across the caller's whole resolved set,
@@ -251,10 +270,9 @@ export class OrgSelectorComponent {
       // display/analytics; the canonical fetch + Snowflake enrichment populate display fields.
       accountId: item.accountId ?? '',
       accountName: item.name,
-      // Slug and tier are org-specific — never carry over the previously selected org's values.
-      // Snowflake enrichment (refreshFromSnowflake) and canonical-record reconciliation populate
-      // them when authoritative data arrives; empty defaults match PLACEHOLDER_ACCOUNT semantics.
-      accountSlug: '',
+      // Tier is org-specific — never carry over the previously selected org's value. Snowflake
+      // enrichment (refreshFromSnowflake) populates it when authoritative data arrives; the empty
+      // default matches PLACEHOLDER_ACCOUNT semantics. `slug` below is the indexed row's, never Snowflake's.
       membershipTier: '',
       logoUrl: item.logoUrl ?? null,
       uid: item.uid,
@@ -304,6 +322,16 @@ export class OrgSelectorComponent {
 
   protected loadMore(): void {
     this.orgNavigationService.loadNextPage();
+  }
+
+  /** FR-010 Retry — the one shared Retry: role-grants lookup, then the list from its first page. */
+  protected retryList(): void {
+    // The control stays focusable while busy (aria-disabled, not disabled) so keyboard and screen-reader
+    // users keep their place; this guard is what stops a second click from starting another retry.
+    if (this.listRetrying()) {
+      return;
+    }
+    this.emptyState.retry();
   }
 
   /**
@@ -499,15 +527,7 @@ export class OrgSelectorComponent {
     this.orgNavigationService.resetAndReload(restoredUid);
   }
 
-  /**
-   * LFXV2-3029 — authority-first precedence: direct-writer, inherited-writer, direct-auditor,
-   * inherited-auditor. This replaces the previous directness-first order, which let a direct
-   * viewer grant on a subsidiary shadow the editing authority a roll-up grant confers on that same
-   * subsidiary. The BFF's `writers`/`cascadingWriters`/`auditors`/`cascadingAuditors` arrays are
-   * already disjoint per this same precedence (`OrgRoleGrantsService.buildResolvedMap` server-side),
-   * so at most one branch below ever matches for a given uid — this order is defense-in-depth, not
-   * load-bearing.
-   */
+  /** LFXV2-3029 — authority-first precedence, shared with the default-organization ranking (`resolveOrgRolePersona`). */
   private resolvePersona(
     uid: string,
     writerSet: Set<string>,
@@ -515,11 +535,7 @@ export class OrgSelectorComponent {
     inheritedWriterSet: Set<string>,
     inheritedAuditorSet: Set<string>
   ): OrgRolePersona | null {
-    if (writerSet.has(uid)) return 'direct-writer';
-    if (inheritedWriterSet.has(uid)) return 'inherited-writer';
-    if (auditorSet.has(uid)) return 'direct-auditor';
-    if (inheritedAuditorSet.has(uid)) return 'inherited-auditor';
-    return null;
+    return resolveOrgRolePersona(uid, { writerSet, inheritedWriterSet, auditorSet, inheritedAuditorSet });
   }
 
   /**

@@ -11,8 +11,16 @@
 
 import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants';
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
-import { ORG_LENS_CLA_M3_ENABLED_FLAG, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
-import type { OrgClaApprovalList, OrgClaGroup, OrgClaGroupList, OrgClaManager, OrgClaManagerList } from '@lfx-one/shared/interfaces';
+import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import type {
+  OrgClaApprovalList,
+  OrgClaContributorAcknowledgment,
+  OrgClaContributorAcknowledgmentList,
+  OrgClaGroup,
+  OrgClaGroupList,
+  OrgClaManager,
+  OrgClaManagerList,
+} from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './org-roi.helper';
@@ -23,7 +31,6 @@ export const PAGE_LOAD_TIMEOUT = 30_000;
 
 export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
 export const MOCK_ACCOUNT_NAME = 'Acme Motors';
-export const MOCK_ACCOUNT_SLUG = 'acme-motors';
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
@@ -35,6 +42,9 @@ export const APPROVAL_LIST_ROUTE = '**/api/orgs/*/lens/cla-groups/*/approval-lis
 
 export const MANAGERS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers';
 export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*';
+
+/** Contributor acknowledgments for one agreement. Query string carries search and nextKey. */
+export const ACKNOWLEDGMENTS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/acknowledgments**';
 
 /**
  * The detail page's presigned-URL route.
@@ -88,12 +98,12 @@ export async function stubAccountContext(page: Page): Promise<void> {
     personas: ['contributor'],
     personaProjects: {},
     projects: [],
-    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
+    organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }],
     isRootWriter: false,
   });
 
   await fulfillJson(page, '**/api/analytics/org-lens-account-context*', [
-    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, accountSlug: MOCK_ACCOUNT_SLUG, membershipTier: 'Gold' },
+    { accountId: MOCK_ACCOUNT_ID, accountName: MOCK_ACCOUNT_NAME, membershipTier: 'Gold' },
   ]);
 
   await fulfillJson(page, '**/api/orgs/me/role-grants', {
@@ -163,10 +173,7 @@ export async function stubPermissionChecks(page: Page, allowed = true): Promise<
  * authenticated app running before the guarded URL is requested.
  */
 export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Promise<void>, permissionAllowed = true): Promise<void> {
-  // Both flags, not just this feature's. `/org/*` sits behind the parent lens flag as well, so
-  // pinning only the child leaves these tests at the mercy of a remote flag: wherever it is off
-  // they skip rather than fail, and a suite that skips reports the same green as one that ran.
-  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
@@ -177,12 +184,6 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
 
   await page.goto(EASYCLA_URL, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  // A redirect away from the whole lens means `org-lens-enabled` is off for this user, which is a
-  // missing prerequisite rather than a failure of anything these specs are about.
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 /**
@@ -209,7 +210,7 @@ export async function gotoEasyclaDetail(
   signatureId?: string,
   permissionAllowed = true
 ): Promise<void> {
-  await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
+  await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
   await stubList(page);
@@ -221,10 +222,6 @@ export async function gotoEasyclaDetail(
   const query = signatureId ? `?${ORG_EASYCLA_SIGNATURE_PARAM}=${encodeURIComponent(signatureId)}` : '';
   await page.goto(`${EASYCLA_URL}/${claGroupId}${query}`, { waitUntil: 'domcontentloaded' });
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled appears off — /org/easycla redirected out of the lens');
-  }
 }
 
 /**
@@ -507,4 +504,68 @@ export function addManagerLastName(page: Page): Locator {
 
 export function addManagerEmail(page: Page): Locator {
   return page.locator('[data-test="org-easycla-add-manager-email"]');
+}
+
+// ---------------------------------------------------------------------------
+// The Contributor Acknowledgments tab (#2806)
+// ---------------------------------------------------------------------------
+
+export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
+  return {
+    signatureId: 'ecla-sig-1',
+    name: 'Ada Lovelace',
+    lfLogin: 'ada',
+    cclaVersion: 'v2.1',
+    signedOn: '2026-03-11T09:20:00Z',
+    approved: true,
+    ...overrides,
+  };
+}
+
+export function acknowledgmentList(overrides: Partial<OrgClaContributorAcknowledgmentList> = {}): OrgClaContributorAcknowledgmentList {
+  return {
+    signatureId: 'signature-uuid-1',
+    list: [acknowledgment()],
+    canEdit: true,
+    resultCount: 1,
+    totalCount: 1,
+    nextKey: null,
+    ...overrides,
+  };
+}
+
+/**
+ * Stubs GET on the acknowledgments path. A search term and a nextKey select a different page
+ * when the case supplied one, so Load more and search are real requests against the stub.
+ */
+export async function stubAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  const initial = options.initial ?? acknowledgmentList({ list: [], resultCount: 0, totalCount: 0 });
+
+  await page.route(ACKNOWLEDGMENTS_ROUTE, (route) => {
+    if (route.request().method() !== 'GET') return route.abort();
+    const url = new URL(route.request().url());
+    const search = url.searchParams.get('search')?.trim() ?? '';
+    const nextKey = url.searchParams.get('nextKey')?.trim() ?? '';
+    const body = search && options.search ? options.search : nextKey && options.next ? options.next : initial;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+export async function gotoAcknowledgments(
+  page: Page,
+  options: { initial?: OrgClaContributorAcknowledgmentList; search?: OrgClaContributorAcknowledgmentList; next?: OrgClaContributorAcknowledgmentList } = {}
+): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubAcknowledgments(p, options);
+  });
+  await openAcknowledgmentsTab(page);
+}
+
+export async function openAcknowledgmentsTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-acknowledgments').click();
+  await expect(page.getByTestId('org-easycla-acknowledgments')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }

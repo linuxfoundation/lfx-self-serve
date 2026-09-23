@@ -22,17 +22,16 @@
  * - S17: LF-team caller with zero assigned orgs still gets the switcher, no redirect or error toast
  * - S18: catalogue search runs only at or above the two-character minimum
  * - S19: discovered rows sit under their own heading and carry a membership chip
- * - S20: LF-team caller (lf-staff or lf-contractor) sees the switcher + catalogue search, opens an
- *        org they hold no grant on read-only, and is refused on the access write (spec 044)
+ * - S20: LF-team caller (lf-staff) sees the switcher + catalogue search, opens an org they hold
+ *        no grant on read-only, and is refused on the access write
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD for a user
  *   with FGA access to at least one b2b_org in the dev sandbox
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
-import { ORG_LENS_ENABLED_FLAG, ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
+import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
 import { stubFeatureFlags } from './helpers/org-roi.helper';
@@ -75,8 +74,8 @@ async function openSelector(page: Page, options: { expectSearch?: boolean } = {}
 }
 
 // Skip an LF-team-only scenario when the bootstrap identity is not in an LF team. `isStaff` on the
-// wire is the two-team population (`lf-staff` or `lf-contractor`, see `LF_TEAM_IDS`) — the field
-// name is kept for wire compatibility.
+// wire is `LF_TEAM_IDS` membership — `lf-staff` only since the rollback of lfx-self-serve#2157; the
+// field name is kept for wire compatibility.
 async function skipWhenNotLfTeam(page: Page): Promise<void> {
   const response = await page.request.get('/api/orgs/me/role-grants');
   if (response.status() !== 200) {
@@ -84,7 +83,7 @@ async function skipWhenNotLfTeam(page: Page): Promise<void> {
   }
   const body = (await response.json()) as { isStaff?: boolean };
   if (!body.isStaff) {
-    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff or lf-contractor member');
+    test.skip(true, 'Skipping LF-team scenario — TEST_USERNAME is not an lf-staff member');
   }
 }
 
@@ -342,10 +341,6 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
 
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
-
     // The page must NOT bounce back to / when the user is already inside /org/*.
     // Wait for the page to fully settle (data-loaded=true) so the empty-state — gated on `loaded` —
     // can render. This also asserts the FOEC guard: empty-state never appears mid-load.
@@ -382,7 +377,7 @@ const SINGLE_MAIN_ROUTES: { name: string; path: string; stayOn: RegExp; root: st
 test.describe('Org and foundation pages — single main landmark (GH-2220)', () => {
   for (const route of SINGLE_MAIN_ROUTES) {
     test(`exactly one main landmark on ${route.name}`, async ({ page }) => {
-      await stubFeatureFlags(page, { [ORG_LENS_ENABLED_FLAG]: true, [ORG_LENS_ROI_ENABLED_FLAG]: true });
+      await stubFeatureFlags(page, { [ORG_LENS_ROI_ENABLED_FLAG]: true });
       await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
 
@@ -401,9 +396,9 @@ test.describe('Org and foundation pages — single main landmark (GH-2220)', () 
 
 // S15 — no-access disclosure: a user whose role-grants settle empty (no direct
 // writer/auditor grant) AND who has no persona-seeded accounts must land on a
-// definitive "Organization Lens is not available" state on /org/overview — never an
-// endless loading skeleton. Stubs mirror S9 (the visibility gate's two inputs) so the
-// assertion is hermetic to the bootstrap user's real grants.
+// definitive no-organization state ("No organization linked to your account", spec 053
+// registry) on /org/overview — never an endless loading skeleton. Stubs mirror S9 (the
+// visibility gate's two inputs) so the assertion is hermetic to the bootstrap user's real grants.
 test.describe('Org Selector — /org/overview no-access state (S15)', () => {
   test('S15: empty role-grants + no persona-seeds renders the no-access state, not the skeleton', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -441,10 +436,6 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await page.reload({ waitUntil: 'domcontentloaded' });
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
 
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
-
     // hasNoOrgAccess settles to true once the stubbed (empty) role-grants resolve — independent of the
     // org-selector list fetch, which never fires for a zero-grants user. The no-access branch must win
     // over the loading skeleton.
@@ -453,7 +444,7 @@ test.describe('Org Selector — /org/overview no-access state (S15)', () => {
     await expect(root).toHaveAttribute('data-no-access', 'true', { timeout: DATA_LOAD_TIMEOUT });
     expect(page.url()).toContain('/org/overview');
     await expect(page.getByTestId('org-overview-no-access-state')).toBeVisible();
-    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('Organization Lens is not available');
+    await expect(page.getByTestId('org-overview-no-access-title')).toHaveText('No organization linked to your account');
     await expect(page.getByTestId('org-overview-no-access-contact-support')).toBeVisible();
     // The skeleton and the no-org-selected empty state must NOT show in this branch.
     await expect(page.getByTestId('org-overview-loading')).toHaveCount(0);
@@ -594,12 +585,6 @@ test.describe('Org Selector — zero-grants visibility gate (S9)', () => {
 // initEffectiveShowOrgSelector), so the switcher is legitimately hidden on '/'.
 const ORG_LENS_HOME = '/org/overview';
 
-function skipWhenOrgLensOff(page: Page): void {
-  if (!page.url().includes('/org/')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-  }
-}
-
 // S17 — an LF-team caller with zero assigned orgs must still get the switcher, and must land on
 // a usable page rather than being bounced away or shown a failure toast. This is the case that was
 // previously indistinguishable from "no access".
@@ -641,7 +626,6 @@ test.describe('Org Selector — LF-team caller with zero assigned orgs (S17)', (
     );
 
     await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
-    skipWhenOrgLensOff(page);
 
     const slot = page.getByTestId('org-selector-slot');
     await expect(slot).toBeAttached({ timeout: SIDEBAR_TIMEOUT });
@@ -747,7 +731,6 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
     );
 
     await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
-    skipWhenOrgLensOff(page);
     await openSelector(page, { expectSearch: true });
 
     // Sectioning and chips are search-result context (FR-007/US2.5): they must not appear on the
@@ -774,11 +757,13 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
   });
 });
 
-// S20 — LF-team global auditor (spec 044). Both `lf-staff` and `lf-contractor` hold `auditor` on
-// every b2b_org, so a team member reaches the switcher + catalogue search and may open any org
-// read-only; team membership never confers edit (FR-010), so the access write is refused. The
-// code path is identical for both teams, so a contractor-only identity is not required in CI —
-// contractor-specific verification is the post-release step (spec 044 T038a).
+// S20 — LF-team global auditor. `lf-staff` holds `auditor` on every b2b_org, so a team member
+// reaches the switcher + catalogue search and may open any org read-only; team membership never
+// confers edit (FR-010), so the access write is refused. `lf-contractor` held the same grant under
+// spec 044 and was rolled back (lfx-self-serve#2157). What guards that is the unit spec
+// `org-role-grants.service.spec.ts` (contractor-only caller → `isStaff: false`, and the
+// `TEAM_REQUESTS` batch) — every e2e stubs `isStaff` on the wire, so no e2e can catch a re-widened
+// `LF_TEAM_IDS`. A live contractor-only check remains a post-deploy step (#2157 verification).
 test.describe('Org Selector — LF-team caller reads any org, edits none (S20)', () => {
   test('S20: LF-team caller sees catalogue search, opens an ungranted org read-only, and is refused on the access write', async ({ page }) => {
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
@@ -818,7 +803,6 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 
     // The switcher is hidden on '/' (see ORG_LENS_HOME above), so drive the org lens like S17/S19.
     await page.goto(ORG_LENS_HOME, { waitUntil: 'domcontentloaded' });
-    skipWhenOrgLensOff(page);
 
     // Affordance: the catalogue search input renders only for LF-team callers.
     await openSelector(page, { expectSearch: true });
@@ -830,9 +814,6 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
     // Read: the profile renders for an org with no roster grant (authorizer-backed gate, DR-001)
     // and exposes no edit affordance — `org-profile-edit-button` is rendered only under `canEdit()`.
     await page.goto('/org/profile', { waitUntil: 'domcontentloaded' });
-    if (!page.url().includes('/org/profile')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
-    }
     await expect(page.getByTestId('org-profile-description')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-profile-load-error')).toHaveCount(0);
     await expect(page.getByTestId('org-profile-edit-button'), 'LF-team read access must not surface the profile edit affordance').toHaveCount(0);
@@ -852,21 +833,15 @@ test.describe('Org Selector — LF-team caller reads any org, edits none (S20)',
 });
 
 // S16 — org-route hard refresh must resolve to a clean org-lens sidebar with no stale
-// Me-lens sections (LFXV2-2789). The org lens is gated by a browser-only LaunchDarkly flag,
-// so SSR clamps to the me lens and used to emit a me-lens menu; hydrating that against the
-// client-resolved org menu left "My Engagement" / "My Growth" sections interleaved with org
-// items. The sidebar now withholds the concrete menu until afterNextRender, so the resolved
-// menu is built entirely from client state and must contain org items only.
+// Me-lens sections (LFXV2-2789). The org menu is still shaped by browser-only LaunchDarkly
+// flags (ROI, EasyCLA M3), so the server menu can differ from the client-resolved one;
+// hydrating one against the other used to leave "My Engagement" / "My Growth" sections
+// interleaved with org items. The sidebar now withholds the concrete menu until
+// afterNextRender, so the resolved menu is built entirely from client state and must contain org items only.
 test.describe('Sidebar — org-route refresh has no stale Me-lens sections (S16)', () => {
   test('S16: hard-refreshing /org/overview resolves to org-lens nav only, no Me-lens sections', async ({ page }) => {
     await page.goto('/org/overview', { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-
-    // Flag off (or no org access) redirects away from /org/* — this regression only applies when
-    // the org lens is actually active, so skip otherwise (same gate as S14/S15).
-    if (!page.url().includes('/org/overview')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/overview redirected away');
-    }
 
     // Wait for the sidebar to hydrate past the loading skeleton and render the resolved org menu.
     await expect(page.getByTestId('sidebar'), 'sidebar should be visible').toBeVisible({ timeout: SIDEBAR_TIMEOUT });

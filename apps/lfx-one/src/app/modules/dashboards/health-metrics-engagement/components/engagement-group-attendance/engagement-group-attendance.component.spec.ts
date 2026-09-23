@@ -47,7 +47,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     payload: HealthMetricsEngagementGroupAttendance = response(),
     onCounts?: (counts: unknown) => void,
     queryParams: Record<string, string> = {},
-    followUpPayload?: HealthMetricsEngagementGroupAttendance
+    followUpPayload?: HealthMetricsEngagementGroupAttendance,
+    lifecycle?: string[]
   ): Promise<void> {
     // `payload` answers the first read; `followUpPayload` every read after it, so a clamp or filter
     // change can resolve to a different page than the one that triggered it.
@@ -72,6 +73,11 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     fixture = TestBed.createComponent(EngagementGroupAttendanceComponent);
     if (onCounts) fixture.componentInstance.countsChange.subscribe(onCounts);
+    // Subscribed before the first change detection, so the initial read's own pair is recorded.
+    if (lifecycle) {
+      fixture.componentInstance.reading.subscribe(() => lifecycle.push('reading'));
+      fixture.componentInstance.settled.subscribe(() => lifecycle.push('settled'));
+    }
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();
@@ -243,8 +249,8 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
   });
 
-  // The default response's zeroes are not a measured count, and a deep link waiting on this section
-  // is settled by the first non-null emission — so an unread section must stay null.
+  // The default response's zeroes are not a measured count, so an unread section must stay null —
+  // settling is reported separately, since a read with nothing to count still ends.
   it('emits no counts while no foundation is selected, since nothing was read', async () => {
     const emitted: unknown[] = [];
     selectedFoundation.set(null);
@@ -252,6 +258,12 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).not.toHaveBeenCalled();
     expect(emitted.every((counts) => counts === null)).toBe(true);
+    // An unresolved foundation is not a foundation with no groups matching the filter — the table
+    // holds its loading state rather than the section rendering empty or errored.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).toBeNull();
+    expect(fixture.componentInstance['loading']()).toBe(true);
   });
 
   // The URL is the only carrier of table state across a reload or a shared link.
@@ -290,13 +302,43 @@ describe('EngagementGroupAttendanceComponent', () => {
     );
 
     expect(getEngagementGroupAttendance).toHaveBeenNthCalledWith(2, expect.objectContaining({ page: 2 }));
-    // One null per read: the second is what restarts the container's deep-link deadline, which a
-    // signal derived from the counts could never report while the whole clamp reads as one load.
+    // One null per read; the counts arrive only with the page that has rows.
     expect(emissions).toEqual([null, null, { groups: 34, dormantGroups: 3 }]);
     // The clamped page is the first settled render, so "34 groups" never sits over an empty table.
     expect(fixture.componentInstance['loading']()).toBe(false);
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-row-c-1"]')).not.toBeNull();
+  });
+
+  // The container releases a deep link only once every section has settled, so a read that ends
+  // with no counts to report — a failure, or no foundation — still has to say it ended.
+  it('settles a failed read, which reports no counts at all', async () => {
+    const lifecycle: string[] = [];
+    await render(response(), undefined, {}, undefined, lifecycle);
+    lifecycle.length = 0;
+    getEngagementGroupAttendance.mockReturnValue(throwError(() => new Error('gateway timeout')));
+
+    fixture.componentInstance['onFilterChange']('wg');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(lifecycle).toEqual(['reading', 'settled']);
+  });
+
+  // A clamp fires a follow-up fetch, so the first response is not a settled read — settling there
+  // would let a deep link anchor against the empty table the replacement page is about to fill.
+  it('settles once across a clamp, on the page that has rows', async () => {
+    const lifecycle: string[] = [];
+    await render(
+      response({ rows: [], totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      undefined,
+      { groupPage: '9' },
+      response({ totalRecords: 34, counts: { groups: 34, dormantGroups: 3 } }),
+      lifecycle
+    );
+
+    // The clamp's own read re-holds the deep link and does not settle; the follow-up page does.
+    expect(lifecycle).toEqual(['reading', 'reading', 'settled']);
   });
 
   it('writes the filter and page back to the URL, dropping each at its default', async () => {

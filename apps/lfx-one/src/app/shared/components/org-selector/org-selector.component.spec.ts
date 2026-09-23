@@ -6,6 +6,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { Account, OrgItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
 import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
@@ -21,7 +22,7 @@ import { OrgSelectorComponent } from './org-selector.component';
 describe('OrgSelectorComponent.selectItem', () => {
   const UID_A = '0014100000MgaAAAAA';
   const UID_B = '0014100000MgbBBBBB';
-  const acme: Account = { accountId: UID_A, accountName: 'Acme', accountSlug: '', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
+  const acme: Account = { accountId: UID_A, accountName: 'Acme', membershipTier: '', uid: UID_A, slug: 'acme-inc' };
   const rowA: OrgItem = { uid: UID_A, accountId: UID_A, name: 'Acme', logoUrl: null, slug: 'acme-inc' };
   const rowB: OrgItem = { uid: UID_B, accountId: UID_B, name: 'Beta', logoUrl: null, slug: 'beta-llc' };
 
@@ -31,6 +32,8 @@ describe('OrgSelectorComponent.selectItem', () => {
   let navigateToSelectedOrg: ReturnType<typeof vi.fn>;
   let isOnNotFound: ReturnType<typeof vi.fn>;
   let fixture: ComponentFixture<OrgSelectorComponent>;
+  let retrying: WritableSignal<boolean>;
+  let retry: ReturnType<typeof vi.fn>;
 
   const pick = (item: OrgItem): void => (fixture.componentInstance as unknown as { selectItem(item: OrgItem): void }).selectItem(item);
 
@@ -40,6 +43,8 @@ describe('OrgSelectorComponent.selectItem', () => {
     refreshCanonicalRecord = vi.fn(() => Promise.resolve());
     navigateToSelectedOrg = vi.fn();
     isOnNotFound = vi.fn(() => false);
+    retrying = signal(false);
+    retry = vi.fn();
     const empty = signal(new Set<string>());
 
     await TestBed.configureTestingModule({
@@ -72,6 +77,8 @@ describe('OrgSelectorComponent.selectItem', () => {
           },
         },
         { provide: OrgLensNavigationService, useValue: { navigateToSelectedOrg, isOnNotFound } },
+        // Spec 053: the FR-010 list-incomplete notice reads this service; a stub keeps the spec off HttpClient.
+        { provide: OrgLensEmptyStateService, useValue: { listIncomplete: signal(false), retrying, retry } },
       ],
     }).compileComponents();
 
@@ -108,5 +115,26 @@ describe('OrgSelectorComponent.selectItem', () => {
     expect(setAccount).not.toHaveBeenCalled();
     expect(refreshCanonicalRecord).not.toHaveBeenCalled();
     expect(navigateToSelectedOrg).toHaveBeenCalledWith('switch');
+  });
+
+  // FR-010 switcher Retry: the control stays focusable while busy (aria-disabled), so the guard in
+  // retryList is what prevents a second click from starting another cache-bypassing retry.
+  it('starts the shared Retry when idle and ignores clicks while it is in flight', () => {
+    const retryList = (): void => (fixture.componentInstance as unknown as { retryList(): void }).retryList();
+    const label = (): string => (fixture.componentInstance as unknown as { listRetryLabel(): string }).listRetryLabel();
+
+    expect(label()).toBe('Retry');
+    retryList();
+    expect(retry).toHaveBeenCalledTimes(1);
+
+    retrying.set(true);
+    expect(label()).toBe('Retrying…');
+    retryList();
+    retryList();
+    expect(retry).toHaveBeenCalledTimes(1);
+
+    retrying.set(false);
+    retryList();
+    expect(retry).toHaveBeenCalledTimes(2);
   });
 });

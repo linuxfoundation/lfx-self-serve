@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { isInvalidIdentifierError, isMissingObjectError } from './snowflake-error.helper';
+import { isInvalidIdentifierError, isMissingObjectError, isPoolQueueFullError } from './snowflake-error.helper';
 
 describe('isMissingObjectError', () => {
   it('matches a realistically wrapped missing-table error', () => {
@@ -67,5 +67,20 @@ describe('isInvalidIdentifierError', () => {
   it('does not match missing-object errors', () => {
     const error = new Error("Object 'ANALYTICS.PLATINUM_LFX_ONE.PAID_ADS_ATTRIBUTION' does not exist or not authorized.");
     expect(isInvalidIdentifierError(error)).toBe(false);
+  });
+});
+
+describe('isPoolQueueFullError', () => {
+  it("matches generic-pool's full waiting-queue rejection", () => {
+    expect(isPoolQueueFullError(new Error('max waitingClients count exceeded'))).toBe(true);
+  });
+
+  it('does not match an acquire timeout, which can also mean Snowflake is unreachable', () => {
+    const timeout = Object.assign(new Error('ResourceRequest timed out'), { name: 'TimeoutError' });
+    expect(isPoolQueueFullError(timeout)).toBe(false);
+  });
+
+  it('does not match a Snowflake query error', () => {
+    expect(isPoolQueueFullError(new Error('Network error. Could not reach Snowflake.'))).toBe(false);
   });
 });

@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isPlatformBrowser } from '@angular/common';
 import { HttpClient } from '@angular/common/http';
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
+import { computed, inject, Injectable, PLATFORM_ID, Signal, signal, WritableSignal } from '@angular/core';
+import { ACCOUNT_COOKIE_KEY, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import { Account, OrgCanonicalRecord, OrgLensAccountContextResponse } from '@lfx-one/shared/interfaces';
 import { orgUrlSegment } from '@lfx-one/shared/utils';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -12,13 +13,11 @@ import { take } from 'rxjs/operators';
 
 import { AnalyticsService } from './analytics.service';
 import { CookieRegistryService } from './cookie-registry.service';
-import { FeatureFlagService } from './feature-flag.service';
 import { OrgRoleGrantsService } from './org-role-grants.service';
 
 const PLACEHOLDER_ACCOUNT: Account = {
   accountId: '',
   accountName: '',
-  accountSlug: '',
   membershipTier: '',
 };
 
@@ -29,13 +28,20 @@ export class AccountContextService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly analyticsService = inject(AnalyticsService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly http = inject(HttpClient);
+  private readonly platformId = inject(PLATFORM_ID);
   private readonly storageKey = ACCOUNT_COOKIE_KEY;
 
   /** Request-scope dedup (spec 020 D-006) — concurrent calls for the same uid share one in-flight promise; cleared on settle. */
   private readonly canonicalFetchInFlight = new Map<string, Promise<void>>();
+
+  /**
+   * Monotonic generation for Snowflake enrichment. `initializeUserOrganizations` runs at bootstrap (transfer-state seeds) and again on
+   * every persona re-seed, so two enrichments can be in flight at once — the earlier (stale-seed) response must never overwrite the later.
+   * Every (re-)seed advances this, including empty ones that start no fetch, so a late response for a superseded seed list is always dropped.
+   */
+  private enrichmentGeneration = 0;
 
   /** Persona-authorised accounts seeded at bootstrap; enriched from Snowflake via getOrgLensAccountContext. */
   private readonly userOrganizations: WritableSignal<Account[]> = signal<Account[]>([]);
@@ -109,10 +115,11 @@ export class AccountContextService {
   });
 
   /**
-   * Whether the caller may see the org-selector / Org Lens surfaces: a direct writer or auditor
-   * grant, at least one persona-seeded account, or the LF staff grant. Single source of truth shared
-   * by the sidebar selector visibility gate and the Org Overview no-access gate so the two cannot
-   * drift apart. Inherited-only grants intentionally do not count — the selector itself is direct-only.
+   * Whether the caller may see the org-selector / Org Lens surfaces: a direct or inherited (roll-up,
+   * LFXV2-3029) writer or auditor grant, at least one persona-seeded account, or the LF-team grant.
+   * Single source of truth for every gate that asks whether the caller holds any organization, so
+   * those gates cannot drift apart. Inherited grants count: the switcher lists
+   * those rows, and a caller holding nothing else must still be able to start the list (spec 053).
    *
    * Staff qualify on the grant alone, with no accounts of their own. That is the whole
    * point: their list starts empty and is filled by search, so gating visibility on a non-empty list
@@ -122,6 +129,11 @@ export class AccountContextService {
     () =>
       this.orgRoleGrantsService.writerSet().size > 0 ||
       this.orgRoleGrantsService.auditorSet().size > 0 ||
+      // LFXV2-3029: an inherited (roll-up) grant is a held organization too — the switcher lists those
+      // rows, and without it a caller holding only inherited grants never starts the list and the page
+      // waits on it forever (spec 053 review).
+      this.orgRoleGrantsService.inheritedWriterSet().size > 0 ||
+      this.orgRoleGrantsService.inheritedAuditorSet().size > 0 ||
       this.availableAccounts().length > 0 ||
       this.orgRoleGrantsService.isStaff()
   );
@@ -134,6 +146,12 @@ export class AccountContextService {
   /** Seed persona-authorised orgs and trigger Snowflake enrichment; selection matches by stored accountId only — display attributes always come from seeds or live response. */
   public initializeUserOrganizations(organizations: Account[]): void {
     const seeds = organizations ?? [];
+    // Every (re-)seed supersedes any in-flight enrichment — including empty ones, which return
+    // early without starting a fetch (as does the addressed-selection branch below). Without this,
+    // a late bootstrap response would repopulate `liveAccounts` and could patch the selection with
+    // stale fields. A fetching re-seed advances the generation once more when its fetch starts;
+    // only order matters, gaps are irrelevant.
+    this.enrichmentGeneration++;
     this.userOrganizations.set(seeds);
     this.liveAccounts.set(new Map());
 
@@ -141,7 +159,7 @@ export class AccountContextService {
     // the guard has adopted; for a staff viewer the seeds are empty and would reset the selection to
     // the placeholder, for anyone else a seed or uid stub would replace the resolved record.
     if (this.isAddressedSelection()) {
-      if (seeds.length > 0 && this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
+      if (seeds.length > 0) {
         this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
       }
       return;
@@ -168,9 +186,7 @@ export class AccountContextService {
       this.setAccount(seeds[0]);
     }
 
-    if (this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false)()) {
-      this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
-    }
+    this.refreshFromSnowflake(seeds.map((seed) => seed.accountId));
   }
 
   /**
@@ -340,15 +356,27 @@ export class AccountContextService {
   }
 
   private refreshFromSnowflake(accountIds: string[]): void {
+    // Browser-only: the retired Org Lens flag defaulted to false in SSR (no OpenFeature
+    // provider on the server), so enrichment never ran there; running it now would stall SSR
+    // serialization on a Snowflake-backed call the browser refetches after hydration anyway.
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
     const ids = [...new Set(accountIds.filter((id) => !!id))];
     if (ids.length === 0) {
       return;
     }
 
+    // A newer re-seed supersedes this fetch: only the latest generation may write `liveAccounts` and the selection.
+    const generation = ++this.enrichmentGeneration;
+
     this.analyticsService
       .getOrgLensAccountContext(ids)
       .pipe(take(1))
       .subscribe((rows) => {
+        if (generation !== this.enrichmentGeneration) {
+          return;
+        }
         if (rows.length === 0) {
           return;
         }
@@ -399,7 +427,6 @@ export class AccountContextService {
     return {
       accountId: row.accountId,
       accountName: row.accountName,
-      accountSlug: row.accountSlug ?? '',
       logoUrl: row.logoUrl ?? undefined,
       cdevOrgId: row.cdevOrgId ?? undefined,
       membershipTier: row.membershipTierDisplayName ?? '',

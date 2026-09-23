@@ -62,10 +62,13 @@ export class EngagementGroupAttendanceComponent {
   /**
    * Feeds the container's sub-nav badges — the counts cover the whole filtered set, not the page.
    * `null` is "no measured counts" — a read starting, a failed read, or no foundation selected — and
-   * renders no badge rather than a believable zero. The container restarts its deep-link deadline on
-   * each one, since the only `null` it can act on arrives as a read begins.
+   * renders no badge rather than a believable zero.
    */
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+  /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
+  public readonly settled = output<void>();
+  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  public readonly reading = output<void>();
 
   protected readonly typeFilters: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS.map((filter) => ({
     id: filter.key,
@@ -155,16 +158,19 @@ export class EngagementGroupAttendanceComponent {
       return computed(() => HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT);
     }
 
+    // Latches on the first non-empty slug, as on the Overview: before any foundation resolves the
+    // skeleton holds, while one cleared after a read still settles instead of wedging on it.
+    let foundationSeen = false;
+
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b)),
-        tap(() => {
+        tap((query) => {
+          foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
-          // Emitted per read rather than derived from a `counts` signal: a page clamp leaves that
-          // signal at `null` throughout, so a derived output would never tell the container a
-          // second read had started and its deep-link deadline should restart.
           this.countsChange.emit(null);
+          this.reading.emit();
         }),
         // Empty slug handled inside switchMap so clearing the foundation also cancels the in-flight
         // request for the previous one.
@@ -185,9 +191,14 @@ export class EngagementGroupAttendanceComponent {
                 this.syncUrl(this.query());
                 return;
               }
-              this.loading.set(false);
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
+              // the table cannot caption an unread scope as "no rows".
+              this.loading.set(!foundationSeen);
               // No foundation means no read happened, so the default's zeroes are not a measured count.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
+              // Held until a foundation has been seen: settling an unread section releases the
+              // container's pending deep link before any real read can re-arm it.
+              if (foundationSeen) this.settled.emit();
             })
           )
         )

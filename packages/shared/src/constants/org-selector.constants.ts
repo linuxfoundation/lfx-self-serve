@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { OrgRoleGrantSets, OrgRolePersona } from '../interfaces';
+
 import { NAV_SEARCH_DEBOUNCE_MS } from './lens.constants';
 
 /** Debounce for org-selector typeahead — kept in lockstep with the project-selector. */
@@ -35,3 +37,26 @@ export const GROUPS_ENGAGEMENT_CHUNK_CONCURRENCY = 3;
 
 /** Short TTL for the per-username access-aware org-universe memo — keeps typeahead requests off query-service/NATS while staying fresh enough for grant changes. */
 export const ORG_ACCESS_AWARE_CACHE_TTL_MS = 30 * 1000;
+
+/** Spec 053 — TTL for a failed staff check (the transient result Retry targets): bounds Retry-driven recomputation during an authorizer outage without pinning recovery for the full `ORG_ACCESS_AWARE_CACHE_TTL_MS`. Degraded roll-ups keep the full TTL; Retry bypasses the cache read instead. */
+export const ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS = 5 * 1000;
+
+/** Spec 053 — query flag the viewer's Retry sends on `GET /api/orgs/me/role-grants` so the BFF skips its cache read (still coalesced, still written). */
+export const ORG_ROLE_GRANTS_REFRESH_PARAM = 'refresh';
+
+/** Spec 053 FR-011 — response header carrying the support reference of a failed staff check (the id logged by the computation that produced it; may repeat within the short cache window, unlike the per-request `X-Request-Id`). */
+export const ORG_ROLE_GRANTS_CORRELATION_HEADER = 'X-Correlation-Id';
+/**
+ * LFXV2-3029 — authority-first precedence over a viewer's grants on one organization: direct
+ * writer, inherited writer, direct auditor, inherited auditor. The one ordering both the selector's
+ * persona badge (`resolveOrgRolePersona`) and the default-organization ranking read, so the two
+ * cannot drift. The BFF's four arrays are already disjoint per this precedence, so at most one entry
+ * matches a given uid — the order is defense-in-depth there, load-bearing when a list is ranked
+ * into bands.
+ */
+export const ORG_ROLE_AUTHORITY_ORDER: readonly (readonly [OrgRolePersona, keyof OrgRoleGrantSets])[] = [
+  ['direct-writer', 'writerSet'],
+  ['inherited-writer', 'inheritedWriterSet'],
+  ['direct-auditor', 'auditorSet'],
+  ['inherited-auditor', 'inheritedAuditorSet'],
+];

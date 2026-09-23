@@ -58,7 +58,6 @@ import { withOrgCache } from './valkey.service';
 interface OrgLensAccountContextRow {
   ACCOUNT_ID: string;
   ACCOUNT_NAME: string;
-  ACCOUNT_SLUG: string | null;
   LOGO_URL: string | null;
   CDEV_ORG_ID: string | null;
   CDEV_ORG_NAME: string | null;
@@ -1046,7 +1045,6 @@ export class OrganizationService {
       SELECT
         ACCOUNT_ID,
         ACCOUNT_NAME,
-        ACCOUNT_SLUG,
         LOGO_URL,
         CDEV_ORG_ID,
         CDEV_ORG_NAME,
@@ -1067,7 +1065,6 @@ export class OrganizationService {
     return result.rows.map((row) => ({
       accountId: row.ACCOUNT_ID,
       accountName: row.ACCOUNT_NAME,
-      accountSlug: row.ACCOUNT_SLUG,
       logoUrl: row.LOGO_URL,
       cdevOrgId: row.CDEV_ORG_ID,
       cdevOrgName: row.CDEV_ORG_NAME,

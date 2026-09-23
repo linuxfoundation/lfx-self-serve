@@ -44,7 +44,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: 'Red Hat LLC',
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -62,7 +61,6 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         {
           accountId: MOCK_ACCOUNT_ID,
           accountName: 'Red Hat LLC',
-          accountSlug: 'red-hat-llc',
           membershipTier: 'Gold',
         },
       ]),
@@ -170,10 +168,6 @@ async function gotoOrgEventsPage(page: Page): Promise<void> {
   await page.goto(ORG_EVENTS_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/events')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/events redirected away');
-  }
 }
 
 test.describe('Org Events Dashboard', () => {

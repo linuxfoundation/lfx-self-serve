@@ -7,14 +7,13 @@
       <p-skeleton height="1.5rem" width="12rem" />
       <p-skeleton height="2.5rem" width="20rem" />
     </section>
-  } @else if (hasNoOrgAccess()) {
-    <section class="flex flex-col items-center gap-3 py-16 text-center" data-testid="org-easycla-no-access-state">
-      <h2 class="text-base font-semibold text-gray-900">Organization Lens is not available</h2>
-      <p class="max-w-md text-sm text-gray-600">
-        Organization Lens is only available for an organization's administrators. If you believe you should have access, please
-        <button type="button" lfxOpenIntercom class="font-medium underline" data-testid="org-easycla-no-access-contact-support">contact us</button>.
-      </p>
-    </section>
+  } @else if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-easycla-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
   } @else if (!hasCompany()) {
     <lfx-empty-state
       data-testid="org-easycla-no-company-empty-state"
@@ -314,6 +313,14 @@
         data-testid="org-easycla-detail-approval">
         <lfx-org-easycla-approval-list [claGroup]="claGroup()!" (countChanged)="onApprovalCountChanged($event)" />
       </section>
+    } @else if (activeTab() === 'acknowledgments' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-acknowledgments"
+        aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
+        data-testid="org-easycla-detail-acknowledgments">
+        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
+      </section>
     } @else {
       <section
         role="tabpanel"
@@ -322,14 +329,13 @@
         class="py-8"
         data-testid="org-easycla-detail-tab-empty">
         <!--
-          The CLA Managers and Approval List tabs on an unsigned agreement, where signing is what
-          creates the content: the signatory becomes the initial CLA Manager, and approval entries
-          are what that manager then maintains. Left bare, the panel reads as a page that failed to
-          load rather than as a state — the same gap the empty Overview had. One lock icon for both,
-          because "locked until signed" is what each panel is actually saying.
-
-          The remaining tabs stay bare. They are unbuilt for every agreement, signed or not, so
-          "once this CLA is signed" would promise content signing does not produce.
+          The CLA Managers, Approval List, and Contributor Acknowledgments tabs on an unsigned
+          agreement, where signing is what creates the content: the signatory becomes the initial
+          CLA Manager, approval entries are what that manager maintains, and acknowledgments are
+          what contributors place against the resulting rules. Left bare, the panel reads as a
+          page that failed to load rather than as a state — the same gap the empty Overview had.
+          One lock icon for all three, because "locked until signed" is what each panel is actually
+          saying.
         -->
         @if (lockedTab(); as locked) {
           <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />

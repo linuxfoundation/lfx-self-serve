@@ -4,11 +4,13 @@
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { lfxColors, ORG_LENS_ROI_DEFAULT_METHOD } from '@lfx-one/shared/constants';
-import type { OrgLensRoiAnnual, OrgLensRoiMethod } from '@lfx-one/shared/interfaces';
+import type { OrgLensRoiAnnual, OrgLensRoiMethod, OrgLensSectionOutcome } from '@lfx-one/shared/interfaces';
 import { formatCurrency } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
+import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import type { ChartData, ChartOptions } from 'chart.js';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
@@ -17,7 +19,7 @@ const EMPTY_ANNUAL: OrgLensRoiAnnual = { method: ORG_LENS_ROI_DEFAULT_METHOD, ro
 
 @Component({
   selector: 'lfx-org-roi-annual-trend',
-  imports: [ChartComponent, SkeletonModule],
+  imports: [ChartComponent, OrgLensEmptyStateComponent, SkeletonModule],
   templateUrl: './org-roi-annual-trend.component.html',
 })
 export class OrgRoiAnnualTrendComponent {
@@ -27,13 +29,23 @@ export class OrgRoiAnnualTrendComponent {
   public readonly method = input.required<OrgLensRoiMethod>();
 
   protected readonly loading = signal(true);
-  protected readonly failed = signal(false);
-  protected readonly forbidden = signal(false);
+  /** How the last request ended (spec 053 FR-014/FR-015); emptiness is judged on the rows in hand, below. */
+  private readonly loadOutcome = signal<Exclude<OrgLensSectionOutcome, 'empty'>>('records');
+  /** Bumped by Retry; part of the request key so the same organization and method re-issue the read. */
+  private readonly attempt = signal(0);
 
   private readonly annual: Signal<OrgLensRoiAnnual> = this.initAnnual();
 
   protected readonly hasRows: Signal<boolean> = computed(() => this.annual().rows.length > 0);
   protected readonly apportioned: Signal<boolean> = computed(() => this.annual().apportioned);
+
+  protected readonly orgName: Signal<string> = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
+
+  /** The shared state to render instead of the chart, or `null` while there are rows to draw. */
+  protected readonly emptyState = computed(() => {
+    const outcome = this.loadOutcome();
+    return sectionEmptyState(outcome === 'records' && !this.hasRows() ? 'empty' : outcome);
+  });
 
   // Only the calendar year still in progress is partial. An organization whose activity stopped in
   // an earlier year has a complete final year, and labelling it "still accruing" would be wrong.
@@ -123,18 +135,21 @@ export class OrgRoiAnnualTrendComponent {
     datasets: { line: { tension: 0.4, borderWidth: 2, pointRadius: 2, pointHoverRadius: 4 } },
   };
 
+  public retry(): void {
+    this.attempt.update((n) => n + 1);
+  }
+
   private initAnnual(): Signal<OrgLensRoiAnnual> {
     // Keyed by string, not the account object: that object is rewritten in place and would retrigger the fetch.
-    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}`));
+    const requestKey$ = toObservable(computed(() => `${this.accountContext.selectedAccount()?.accountId ?? ''}|${this.method()}|${this.attempt()}`));
 
     return toSignal(
       requestKey$.pipe(
-        map((key) => key.split('|') as [string, OrgLensRoiMethod]),
+        map((key) => key.split('|') as [string, OrgLensRoiMethod, string]),
         filter(([orgUid]) => !!orgUid),
         tap(() => {
           this.loading.set(true);
-          this.failed.set(false);
-          this.forbidden.set(false);
+          this.loadOutcome.set('records');
         }),
         switchMap(([orgUid, method]) =>
           this.roiService.getAnnual(orgUid, method).pipe(
@@ -142,8 +157,7 @@ export class OrgRoiAnnualTrendComponent {
             catchError((error: unknown) => {
               console.error('Failed to load ROI annual trend', error);
               this.loading.set(false);
-              if ((error as { status?: number })?.status === 403) this.forbidden.set(true);
-              else this.failed.set(true);
+              this.loadOutcome.set(classifySectionError(error));
               return of(EMPTY_ANNUAL);
             })
           )

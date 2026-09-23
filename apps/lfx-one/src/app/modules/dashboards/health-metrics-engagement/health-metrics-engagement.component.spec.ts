@@ -5,7 +5,11 @@ import { Component, output, PLATFORM_ID } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
-import { HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS, HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '@lfx-one/shared/constants';
+import {
+  HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS,
+  HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS,
+  HEALTH_METRICS_ENGAGEMENT_SECTIONS,
+} from '@lfx-one/shared/constants';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -13,13 +17,53 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsEngagementComponent } from './health-metrics-engagement.component';
 
-import type { HealthMetricsEngagementGroupCounts } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementOrgCounts,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementSectionKey,
+} from '@lfx-one/shared/interfaces';
 
 // Stands in for the real Group attendance section, matched by selector — this spec covers the shell,
 // and the real one would drag in HttpClient and the analytics read.
 @Component({ selector: 'lfx-engagement-group-attendance', template: '' })
 class GroupAttendanceStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementGroupCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Meeting participation: the shell only reacts to its two outputs.
+@Component({ selector: 'lfx-engagement-meeting-participation', template: '' })
+class MeetingParticipationStubComponent {
+  public readonly sectionPicked = output<HealthMetricsEngagementSectionKey>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Organization participation.
+@Component({ selector: 'lfx-engagement-org-participation', template: '' })
+class OrgParticipationStubComponent {
+  public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Representatives.
+@Component({ selector: 'lfx-engagement-representatives', template: '' })
+class RepresentativesStubComponent {
+  public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Non-member participation.
+@Component({ selector: 'lfx-engagement-non-member-participation', template: '' })
+class NonMemberParticipationStubComponent {
+  public readonly countsChange = output<HealthMetricsEngagementNonMemberCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
 }
 
 // Captures every observer the component builds so a test can fire entries at it directly; the real
@@ -79,8 +123,36 @@ describe('HealthMetricsEngagementComponent', () => {
     return FakeIntersectionObserver.instances[FakeIntersectionObserver.instances.length - 1];
   }
 
+  function participationChild(): MeetingParticipationStubComponent {
+    return fixture.debugElement.query(By.directive(MeetingParticipationStubComponent)).componentInstance as MeetingParticipationStubComponent;
+  }
+
+  function orgChild(): OrgParticipationStubComponent {
+    return fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
+  }
+
+  function nonMemberChild(): NonMemberParticipationStubComponent {
+    return fixture.debugElement.query(By.directive(NonMemberParticipationStubComponent)).componentInstance as NonMemberParticipationStubComponent;
+  }
+
+  function repChild(): RepresentativesStubComponent {
+    return fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
+  }
+
   function stubChild(): GroupAttendanceStubComponent {
     return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
+  }
+
+  /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
+  function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3 }): void {
+    stubChild().countsChange.emit(counts);
+    stubChild().settled.emit();
+  }
+
+  /** A group read starting — the badges drop and the section stops counting as settled. */
+  function groupReads(): void {
+    stubChild().countsChange.emit(null);
+    stubChild().reading.emit();
   }
 
   function activeKey(): string | null {
@@ -102,7 +174,18 @@ describe('HealthMetricsEngagementComponent', () => {
         ...(platformId ? [{ provide: PLATFORM_ID, useValue: platformId }] : []),
       ],
     })
-      .overrideComponent(HealthMetricsEngagementComponent, { set: { imports: [EngagementSubNavComponent, GroupAttendanceStubComponent] } })
+      .overrideComponent(HealthMetricsEngagementComponent, {
+        set: {
+          imports: [
+            EngagementSubNavComponent,
+            GroupAttendanceStubComponent,
+            MeetingParticipationStubComponent,
+            NonMemberParticipationStubComponent,
+            OrgParticipationStubComponent,
+            RepresentativesStubComponent,
+          ],
+        },
+      })
       .compileComponents();
 
     fixture = TestBed.createComponent(HealthMetricsEngagementComponent);
@@ -165,6 +248,32 @@ describe('HealthMetricsEngagementComponent', () => {
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-committees"]');
     expect(item.textContent).toContain('34');
     expect(item.textContent).toContain('3 dormant');
+  });
+
+  it('badges Organization participation from the counts that section reports', () => {
+    orgChild().countsChange.emit({ orgs: 136, lapsedOrgs: 54 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
+    expect(item.textContent).toContain('136');
+    expect(item.textContent).toContain('54 inactive');
+  });
+
+  it('badges Representatives from the counts that section reports', () => {
+    repChild().countsChange.emit({ range: 'YTD', reps: 486, neverAttendedReps: 112 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-reps"]');
+    expect(item.textContent).toContain('486');
+    expect(item.textContent).toContain('112 never attended');
+  });
+
+  it('badges Non-member participation from the counts that section reports', () => {
+    nonMemberChild().countsChange.emit({ orgs: 63 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]');
+    expect(item.textContent).toContain('63');
   });
 
   it('bounds the scrolling pane to what is left of the viewport, so only it scrolls', () => {
@@ -294,7 +403,7 @@ describe('HealthMetricsEngagementComponent', () => {
 
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     scrollIntoView.mockClear();
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
 
     // Scrolling in the emitting turn would read the offsets from before the rows were laid out.
     expect(scrollIntoView).not.toHaveBeenCalled();
@@ -315,7 +424,7 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -331,7 +440,7 @@ describe('HealthMetricsEngagementComponent', () => {
 
     fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]').click();
     fixture.detectChanges();
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -352,7 +461,7 @@ describe('HealthMetricsEngagementComponent', () => {
     const intent = type === 'keydown' ? new KeyboardEvent(type, { key: 'PageDown', bubbles: true }) : new Event(type, { bubbles: true });
     headingOf('participation').dispatchEvent(intent);
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -372,7 +481,7 @@ describe('HealthMetricsEngagementComponent', () => {
     scrollIntoView.mockClear();
     headingOf('participation').dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true }));
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -393,7 +502,7 @@ describe('HealthMetricsEngagementComponent', () => {
     heading.addEventListener('keydown', (event: Event) => event.preventDefault(), { once: true });
     heading.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -428,7 +537,7 @@ describe('HealthMetricsEngagementComponent', () => {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
     target.remove();
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -444,7 +553,7 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView.mockClear();
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -462,7 +571,7 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.useRealTimers();
 
     scrollIntoView.mockClear();
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -476,13 +585,72 @@ describe('HealthMetricsEngagementComponent', () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     fragment.next('reps');
     vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS - 1000);
-    stubChild().countsChange.emit(null);
+    groupReads();
     // Past the deadline the fragment armed, well inside the one the read restarted.
     vi.advanceTimersByTime(2000);
     vi.useRealTimers();
 
     scrollIntoView.mockClear();
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // Participation sits above every anchor below it, so its read landing moves them — but group
+  // attendance, still loading, owns clearing the key.
+  it('re-anchors a pending deep link when participation settles, and leaves it armed', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    groupSettles();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // The reverse order is the regression: releasing the key on the first section to report left
+  // participation's own reflow — which moves every anchor below it — unanswered.
+  it('re-anchors a pending deep link when participation settles last', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    groupSettles();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  it('scrolls to the section a participation cross-link emits, and drops the pending deep link', async () => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    participationChild().sectionPicked.emit('committees');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(activeKey()).toBe('committees');
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -502,7 +670,7 @@ describe('HealthMetricsEngagementComponent', () => {
     target.dispatchEvent(new KeyboardEvent('keydown', { key: 'PageDown', bubbles: true }));
     target.remove();
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -517,9 +685,9 @@ describe('HealthMetricsEngagementComponent', () => {
     fixture.detectChanges();
 
     // Two further reads starting, each re-arming the key already pending.
-    stubChild().countsChange.emit(null);
+    groupReads();
     fixture.detectChanges();
-    stubChild().countsChange.emit(null);
+    groupReads();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -530,12 +698,16 @@ describe('HealthMetricsEngagementComponent', () => {
 
   // The handlers sit on three of the browser's hottest event streams, so a settled read has to
   // give them back rather than leave them running for the rest of the page's life.
-  it('unregisters the reader-intent listeners once the read settles', async () => {
+  it('unregisters the reader-intent listeners once every section has settled', async () => {
     const removeEventListener = vi.spyOn(window, 'removeEventListener');
     fragment.next('reps');
     fixture.detectChanges();
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -545,12 +717,12 @@ describe('HealthMetricsEngagementComponent', () => {
   // The listeners are registered per arm: registering them once at construction left a link armed
   // after the first settle with nothing but the TTL protecting it.
   it('cancels a deep link armed after an earlier read has already settled', async () => {
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
-    // A filter change drops the counts, which is what lets the next fragment arm again.
-    stubChild().countsChange.emit(null);
+    // A filter change starts a fresh read, which is what lets the next fragment arm again.
+    groupReads();
     fixture.detectChanges();
     fragment.next('reps');
     fixture.detectChanges();
@@ -559,7 +731,7 @@ describe('HealthMetricsEngagementComponent', () => {
     scrollIntoView.mockClear();
     headingOf('participation').dispatchEvent(new Event('wheel', { bubbles: true }));
 
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+    groupSettles();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -578,8 +750,12 @@ describe('HealthMetricsEngagementComponent', () => {
     expect(setTimeoutSpy).not.toHaveBeenCalledWith(expect.any(Function), HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS);
   });
 
-  it('does not hold a fragment that arrives after the section data has settled', async () => {
-    stubChild().countsChange.emit({ groups: 34, dormantGroups: 3 });
+  it('does not hold a fragment that arrives after every section has settled', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -590,12 +766,170 @@ describe('HealthMetricsEngagementComponent', () => {
 
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
 
-    stubChild().countsChange.emit({ groups: 12, dormantGroups: 1 });
+    groupReads();
+    groupSettles({ groups: 12, dormantGroups: 1 });
     fixture.detectChanges();
     await fixture.whenStable();
 
     // The anchors are stable by now, so the next filter change must not re-scroll to the fragment.
     expect(scrollIntoView).toHaveBeenCalledTimes(1);
+  });
+
+  // The first full settle must not be the last: a period change re-reads both sections, so a
+  // fragment arriving during that reflow needs the same hold the first load gets.
+  it('holds a fragment that arrives while a later read is in flight', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    groupReads();
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    groupSettles();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // The orgs table re-reads on a foundation change like any other section, and its rows move every
+  // anchor below it, so its `reading` has to re-arm the hold exactly as the group section's does.
+  it('holds a fragment again once the orgs section reports a new read', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    orgChild().countsChange.emit(null);
+    orgChild().reading.emit();
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    orgChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    // Re-settled: the anchor moved while the orgs rows landed, so the link is replayed.
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // A failed read and a foundation-less one both end on `null` counts. Waiting for counts that
+  // never come would pin the key until the TTL and re-scroll on every settle in between.
+  it('releases a pending deep link when the group read settles without counts', async () => {
+    // Settled up front so this test's two reads are the last the deep link is waiting on.
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    groupSettles(null);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // Participation sits above every anchor and re-reads on every period change, so its own
+  // `reading` has to re-hold a deep link the group section would otherwise release alone.
+  it('holds a fragment that arrives while the participation read is in flight', async () => {
+    groupSettles();
+    participationChild().settled.emit();
+    orgChild().settled.emit();
+    repChild().settled.emit();
+    nonMemberChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    participationChild().reading.emit();
+    fixture.detectChanges();
+
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    scrollIntoView.mockClear();
+    fragment.next('reps');
+    fixture.detectChanges();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+
+    // The key is released now, so a later settle is not another yank back to the anchor.
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
+  });
+
+  // A key listed with no component emitting `settled` never leaves `unsettledSections`, so every
+  // deep link would hang on the TTL. This fails the moment the list grows past its emitters.
+  it('has a settle emitter wired for every section the deep link waits on', async () => {
+    const emitters: Record<HealthMetricsEngagementSectionKey, (() => void) | undefined> = {
+      participation: () => participationChild().settled.emit(),
+      committees: () => stubChild().settled.emit(),
+      orgs: () => orgChild().settled.emit(),
+      reps: () => repChild().settled.emit(),
+      nonmem: () => nonMemberChild().settled.emit(),
+    } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    fragment.next('reps');
+    scrollIntoView.mockClear();
+
+    for (const key of HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS) {
+      const emit = emitters[key];
+      expect(emit, `no component emits settled for the "${key}" section`).toBeTypeOf('function');
+      emit?.();
+      fixture.detectChanges();
+      await fixture.whenStable();
+    }
+
+    // Every listed section settled, so the key is released: a further settle does not re-scroll.
+    const settledCalls = scrollIntoView.mock.calls.length;
+    participationChild().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(settledCalls);
   });
 
   it('disconnects both observers on destroy', () => {

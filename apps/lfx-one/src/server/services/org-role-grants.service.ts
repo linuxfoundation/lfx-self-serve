@@ -5,6 +5,7 @@ import {
   ACCESS_CHECK_BATCH_SIZE,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
+  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
   ORG_CANDIDATE_CLASSIFY_CONCURRENCY,
   ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY,
   ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP,
@@ -20,6 +21,7 @@ import {
   B2bOrgIndexedDoc,
   B2bOrgSettingsDoc,
   CascadingRoleGrant,
+  OrgLensStaffCheck,
   OrgRolePersona,
   QueryServiceResponse,
   ResolvedOrgRole,
@@ -27,6 +29,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { Request } from 'express';
+import { randomUUID } from 'node:crypto';
 
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
@@ -48,8 +51,19 @@ export class OrgRoleGrantsService {
     this.accessCheck = new AccessCheckService();
   }
 
-  /** Single source of truth for the caller's access-aware org universe. Served through the shared Valkey cache, keyed per caller username; only successful resolutions are cached and the cache is fail-soft. */
-  public async getAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
+  /**
+   * Single source of truth for the caller's access-aware org universe. Served through the shared Valkey
+   * cache, keyed per caller username; upstream failures are never cached, a failed staff check only
+   * briefly, and the cache is fail-soft.
+   *
+   * `bypassCache` is the viewer's explicit Retry. It is honoured only against an entry Retry is offered
+   * for — a degraded roll-up or a failed staff check — and never lets a clean `ok` entry be recomputed:
+   * a client-passable flag would otherwise be a fan-out lever (coalescing dedupes concurrent calls, not
+   * sequential ones). A bypassed computation still coalesces per burst and still writes the entry every
+   * other reader sees, so a structurally degraded roll-up (traversal cap, index lag) is recomputed once
+   * per Retry, not on every page load.
+   */
+  public async getAccessAwareOrgs(req: Request, username: string, bypassCache = false): Promise<AccessAwareOrgsResult> {
     // Username is the caller's own identity (the "what can I see" principal), so keying by it is
     // per-user isolated. Only filter-safe usernames are cached; others bypass (compute directly).
     const cacheKey = OrgRoleGrantsService.buildCacheKey(username);
@@ -57,7 +71,7 @@ export class OrgRoleGrantsService {
     if (cacheKey) {
       // The shape guard rejects a corrupt/legacy entry as a miss so deserialize can never throw a 500.
       const cached = await valkeyService.getJson<AccessAwareOrgsCacheEntry>(cacheKey, OrgRoleGrantsService.isValidCacheEntry);
-      if (cached) {
+      if (cached && !(bypassCache && (cached.degraded || cached.staffCheck === 'failed'))) {
         return OrgRoleGrantsService.deserializeAccessResult(cached);
       }
     }
@@ -75,9 +89,17 @@ export class OrgRoleGrantsService {
 
     const promise = (async () => {
       const result = await this.computeAccessAwareOrgs(req, username);
-      // Cache only successful resolutions; never cache upstream failures (they retry next request).
+      // Never cache an upstream failure (the roster never loaded; it retries next request). A failed
+      // staff check — transient by nature — is cached only under the short TTL: it shields the gate
+      // reads (every section request and the org-items list read this result) during an authorizer
+      // outage, while recovery (and the FR-011 correlation id, stored with the entry) is not pinned
+      // for the full TTL. The viewer's Retry recomputes once per click, coalesced per burst, and
+      // rewrites the entry. A degraded roll-up keeps the full TTL: its causes are often structural
+      // (traversal cap, missing index doc) and would otherwise recompute the whole walk on every page
+      // load; Retry bypasses the read for it instead (`bypassCache`).
       if (!result.upstreamFailed) {
-        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), OrgRoleGrantsService.cacheTtlSeconds());
+        const ttl = result.staffCheck === 'failed' ? OrgRoleGrantsService.failedStaffCheckCacheTtlSeconds() : OrgRoleGrantsService.cacheTtlSeconds();
+        await valkeyService.setJson(cacheKey, OrgRoleGrantsService.serializeAccessResult(result), ttl);
       }
       return result;
     })();
@@ -93,14 +115,27 @@ export class OrgRoleGrantsService {
   /**
    * Public wire-shape wrapper around `getAccessAwareOrgs` for `GET /api/orgs/me/role-grants`.
    *
-   * `upstreamFailed` folds into the single wire-level `degraded` flag because this response has no
-   * separate transport-failure field (unlike the org list, which reports `upstream_failed` on its
-   * own). Dropping it would hand an empty, unverifiable grant set to `assertCanManage` as an
-   * authoritative denial — a 403 where the caller is owed a 503.
+   * `upstreamFailed` folds into the single wire-level `degraded` flag because that flag predates the
+   * finer `lookupOutcome` (spec 053) and server gates still read it. Dropping it would hand an empty,
+   * unverifiable grant set to `assertCanManage` as an authoritative denial — a 403 where the caller is
+   * owed a 503. `lookupOutcome` carries the distinction the page needs: `failed` (roster never loaded)
+   * vs `partial` (roll-up incomplete).
    */
-  public async getRoleGrants(req: Request, username: string): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded, upstreamFailed } = await this.getAccessAwareOrgs(req, username);
-    return this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
+  public async getRoleGrants(req: Request, username: string, bypassCache = false): Promise<RoleGrantsResponse> {
+    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username, bypassCache);
+    const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
+    if (upstreamFailed) {
+      response.lookupOutcome = 'failed';
+    } else if (degraded) {
+      response.lookupOutcome = 'partial';
+    } else {
+      response.lookupOutcome = 'ok';
+    }
+    response.staffCheck = staffCheck;
+    if (staffCheck === 'failed' && correlationId) {
+      response.correlationId = correlationId;
+    }
+    return response;
   }
 
   /**
@@ -128,6 +163,11 @@ export class OrgRoleGrantsService {
     return Math.floor(ORG_ACCESS_AWARE_CACHE_TTL_MS / 1000);
   }
 
+  /** Short TTL (whole seconds) for a failed staff check — the one transient result that is cached at all. */
+  private static failedStaffCheckCacheTtlSeconds(): number {
+    return Math.floor(ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS / 1000);
+  }
+
   /**
    * Rejects a corrupt/legacy/partial cached entry (so deserialize never throws and the response contract
    * holds): both Maps must be present as arrays of `[key, value]` tuples, and the fields later surfaced on
@@ -149,7 +189,12 @@ export class OrgRoleGrantsService {
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
       // connected-component classification. Rejecting it recomputes instead.
-      typeof entry.degraded === 'boolean'
+      typeof entry.degraded === 'boolean' &&
+      // Spec 053: entries written before `staffCheck` existed are recomputed rather than answering
+      // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
+      // correlation id it was logged under — without it the page would render `Reference: —` — and
+      // only fail-closed: a check that did not complete can never have granted the LF-team affordance.
+      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false))
     );
   }
 
@@ -203,6 +248,8 @@ export class OrgRoleGrantsService {
       username: result.username,
       isStaff: result.isStaff,
       degraded: result.degraded,
+      staffCheck: result.staffCheck,
+      ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
     };
   }
 
@@ -216,11 +263,17 @@ export class OrgRoleGrantsService {
       username: entry.username,
       isStaff: entry.isStaff,
       degraded: entry.degraded,
+      staffCheck: entry.staffCheck,
+      correlationId: entry.correlationId,
     };
   }
 
   private async computeAccessAwareOrgs(req: Request, username: string): Promise<AccessAwareOrgsResult> {
     const loadedAt = new Date().toISOString();
+    // Spec 053: one id per computation, echoed into every warning below and returned on the wire only
+    // when the staff check failed. Not `req.id` — pino's request id is a per-process counter, so a
+    // caller quoting it back could not be found in the logs (see `ensureGwRequestId`).
+    const correlationId = randomUUID();
     const empty: AccessAwareOrgsResult = {
       resolved: new Map(),
       orgDocByUid: new Map(),
@@ -229,6 +282,7 @@ export class OrgRoleGrantsService {
       username,
       isStaff: false,
       degraded: false,
+      staffCheck: 'ok',
     };
 
     if (!isFilterSafeUsername(username)) {
@@ -241,7 +295,7 @@ export class OrgRoleGrantsService {
     // Started here so it overlaps the roster query rather than serialising behind it, and
     // resolved on every path below: the LF-team affordance is independent of the roster, so it must survive
     // both "no grants" (the defining LF-team case) and a roster lookup failure.
-    const teamPromise = this.resolveIsStaff(req, username);
+    const teamPromise = this.resolveIsStaff(req, username, correlationId);
 
     let settingsResponse: QueryServiceResponse<B2bOrgSettingsDoc>;
     try {
@@ -262,8 +316,8 @@ export class OrgRoleGrantsService {
         page_size: ORG_ROLE_GRANTS_HARD_CAP + 1,
       });
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff: await teamPromise };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org_settings query failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, ...(await teamPromise), correlationId };
     }
 
     // Operator-visibility signal: when the caller has more direct grants than
@@ -288,7 +342,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const isStaff = await teamPromise;
+    const { isStaff, staffCheck } = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
@@ -296,7 +350,17 @@ export class OrgRoleGrantsService {
       // caller as a member, but only `accepted` ones become grants, so a roster of pending invites
       // wide enough to hit the cap can push the one accepted grant out of the slice — an empty
       // answer that must not read as a verified denial.
-      return { resolved: new Map(), orgDocByUid: new Map(), upstreamFailed: false, loadedAt, username, isStaff, degraded: directRosterTruncated };
+      return {
+        resolved: new Map(),
+        orgDocByUid: new Map(),
+        upstreamFailed: false,
+        loadedAt,
+        username,
+        isStaff,
+        degraded: directRosterTruncated,
+        staffCheck,
+        correlationId,
+      };
     }
 
     const directUids = new Set<string>([...directWriters, ...directAuditors]);
@@ -305,8 +369,8 @@ export class OrgRoleGrantsService {
     try {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
-      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error });
-      return { ...empty, upstreamFailed: true, isStaff };
+      logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error, correlation_id: correlationId });
+      return { ...empty, upstreamFailed: true, isStaff, staffCheck, correlationId };
     }
 
     // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
@@ -326,7 +390,10 @@ export class OrgRoleGrantsService {
       // already verified against the caller's own settings rows. Discarding them because roll-up
       // expansion failed would revoke access the caller demonstrably holds, so the failure
       // degrades the answer instead of emptying it.
-      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', { err: error });
+      logger.warning(req, 'get_org_role_grants', 'Connected-component walk failed; degrading to direct grants only', {
+        err: error,
+        correlation_id: correlationId,
+      });
       walk = { candidates: new Map(), docByUid: new Map(directOrgDocs), truncated: false };
       walkFailed = true;
     }
@@ -348,39 +415,43 @@ export class OrgRoleGrantsService {
       username,
       isStaff,
       degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
+      staffCheck,
+      correlationId,
     };
   }
 
   /**
    * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
-   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
-   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccess` over both teams.
+   * (`lf-staff`), the population that carries `auditor` on every `b2b_org` (member-service
+   * `docs/fga-contract.md`). One batched `checkAccessStrict` over that list.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
-   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
-   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
-   * gates (DR-002).
+   * `b2b_org:<uid>#auditor` directly. It resolves to the same membership as
+   * `PersonaDetectionService.checkLFStaff` today, but stays a separate list with separate
+   * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed — `checkAccess` already degrades to all-false, and the extra catch keeps
-   * an unexpected throw from failing the whole role-grants resolution for a caller who is simply not
-   * in either team.
+   * principle. Fails closed on `isStaff` (`false`), but reports the failure as `staffCheck: 'failed'`
+   * (spec 053 FR-011) so the page can say "we could not confirm your staff access" instead of the
+   * employee no-access copy. `checkAccessStrict` is used so an authorizer outage surfaces as a throw
+   * rather than a silent all-false that would read as "not staff".
    */
-  private async resolveIsStaff(req: Request, username: string): Promise<boolean> {
+  private async resolveIsStaff(req: Request, username: string, correlationId: string): Promise<{ isStaff: boolean; staffCheck: OrgLensStaffCheck }> {
     try {
-      const membership = await this.accessCheck.checkAccess(
+      const membership = await this.accessCheck.checkAccessStrict(
         req,
         LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
       );
-      return LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
+      return { isStaff: LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true), staffCheck: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
+        correlation_id: correlationId,
       });
-      return false;
+      return { isStaff: false, staffCheck: 'failed' };
     }
   }
 

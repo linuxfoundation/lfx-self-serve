@@ -195,6 +195,8 @@ export interface UserMetadataUpdateResponse {
   updated_fields?: string[];
   data?: UserMetadata;
   error?: string;
+  /** Account join date (min of Auth0 created_at/ldap_created_at), read-only. See #2836. */
+  created_at?: string;
 }
 
 /**

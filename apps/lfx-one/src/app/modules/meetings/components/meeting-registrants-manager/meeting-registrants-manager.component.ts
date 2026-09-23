@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, type Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,8 +17,9 @@ import {
   RegistrantPendingChanges,
   RegistrantState,
 } from '@lfx-one/shared/interfaces';
-import { generateTempId } from '@lfx-one/shared/utils';
+import { generateTempId, getShowMeetingAttendeesLockedNote } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { controlValueSignal } from '@shared/utils/form-control-signals.util';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
@@ -55,9 +56,17 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public registrantUpdates = input.required<RegistrantPendingChanges>();
   public refresh = input.required<BehaviorSubject<void>>();
   public committeeContext = input<Committee | null>(null);
+  /** The saved `show_meeting_attendees` of the meeting being managed — passed to the group picker. */
+  public savedAttendeeVisibility = input<boolean | null>(null);
 
   // Show meeting attendees feature from shared constants
   public readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
+
+  private readonly meetingTypeValue: Signal<string | null> = controlValueSignal<string>(this.form, 'meeting_type');
+  private readonly restrictedValue: Signal<boolean | null> = controlValueSignal<boolean>(this.form, 'restricted');
+  protected readonly showAttendeesToggleNote: Signal<string | null> = computed(() =>
+    getShowMeetingAttendeesLockedNote(this.meetingTypeValue(), this.restrictedValue())
+  );
 
   // Output events for two-way binding
   public readonly registrantUpdatesChange = output<RegistrantPendingChanges>();

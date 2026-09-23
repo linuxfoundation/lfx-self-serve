@@ -158,7 +158,6 @@ export class OrgClaReturnService {
     return {
       accountId: match.accountId ?? named,
       accountName: match.name,
-      accountSlug: '',
       membershipTier: '',
       logoUrl: match.logoUrl ?? null,
       uid: named,

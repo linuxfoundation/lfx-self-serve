@@ -13,6 +13,18 @@ export function isMissingObjectError(error: unknown): boolean {
   return /does not exist or not authorized/i.test(message);
 }
 
+/**
+ * True when the local connection pool refused the query because every connection was busy and its
+ * waiting queue was already full (generic-pool's `acquire`). The query never reached Snowflake, so
+ * this is backpressure from this process, not evidence that Snowflake is unhealthy. Acquire timeouts
+ * are deliberately excluded: they also occur when Snowflake is unreachable and no connection can be
+ * created, which the circuit breaker must still see.
+ */
+export function isPoolQueueFullError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /max waitingClients count exceeded/i.test(message);
+}
+
 /** True when Snowflake rejects a column reference, optionally for one expected identifier. */
 export function isInvalidIdentifierError(error: unknown, expectedIdentifier?: string): boolean {
   const message = error instanceof Error ? error.message : String(error);

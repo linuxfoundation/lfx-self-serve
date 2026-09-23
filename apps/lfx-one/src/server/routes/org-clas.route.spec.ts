@@ -19,6 +19,8 @@ const {
   listManagers,
   addManager,
   removeManager,
+  getContributorAcknowledgments,
+  invalidateAcknowledgment,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -31,6 +33,8 @@ const {
   listManagers: vi.fn(),
   addManager: vi.fn(),
   removeManager: vi.fn(),
+  getContributorAcknowledgments: vi.fn(),
+  invalidateAcknowledgment: vi.fn(),
 }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
@@ -46,6 +50,8 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public listManagers = listManagers;
     public addManager = addManager;
     public removeManager = removeManager;
+    public getContributorAcknowledgments = getContributorAcknowledgments;
+    public invalidateAcknowledgment = invalidateAcknowledgment;
   },
 }));
 
@@ -156,6 +162,12 @@ beforeEach(() => {
   });
   removeManager.mockImplementation((_req: express.Request, res: express.Response) => {
     res.status(204).send();
+  });
+  getContributorAcknowledgments.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null });
+  });
+  invalidateAcknowledgment.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'ack-signature-uuid-1' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -385,6 +397,130 @@ describe('org-clas router — approval-list write during impersonation', () => {
 
     expect(res.status).toBe(200);
     expect(getApprovalList).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Contributor Acknowledgments read route (#1986). The list carries every listed contributor's
+ * identity attributes, so a caller without an Org Lens grant on the organization must not reach
+ * it — otherwise the signature id alone would select the list. Impersonation is allowed on the
+ * read, matching every other read on this router: a support engineer viewing as the target sees
+ * exactly what the target sees.
+ */
+describe('org-clas router — acknowledgments read', () => {
+  it('refuses the list for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(403);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('admits the list for an org the caller holds a grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(200);
+    expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+
+  it('stays available while impersonating, because it reads nothing that a write would', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(200);
+    expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Contributor Acknowledgments invalidate route (#2807).
+ *
+ * The guards live on the route line, so this is the only layer that can see them: a controller
+ * test is handed a request that already passed everything the router put in front of it, and
+ * would stay green with `blockDuringImpersonation` deleted from the route.
+ *
+ * What makes that deletion expensive here is what the producer does with the caller's identity —
+ * it stamps the acting user on the invalidated signature as `invalidatedBy`, permanently, on a
+ * record that is part of a legal audit trail. An impersonated write attributes a support
+ * engineer's action to the CLA manager being impersonated, with nothing afterwards to say so.
+ */
+describe('org-clas router — acknowledgment invalidate', () => {
+  function invalidate(orgUid: string, ackId = 'ack-signature-uuid-1'): Promise<Response> {
+    return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/signature-uuid-1/acknowledgments/${ackId}/invalidate`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ reason: 'signed-in-error' }),
+    });
+  }
+
+  it('admits an invalidate for a granted org when not impersonating', async () => {
+    const res = await invalidate(GRANTED);
+
+    expect(res.status).toBe(200);
+    expect(invalidateAcknowledgment).toHaveBeenCalled();
+  });
+
+  it('refuses an invalidate for an org the caller holds no grant on', async () => {
+    const res = await invalidate(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    // Asserted alongside the status: the impersonation guard also answers 403, so the status
+    // alone would not prove the grant check is what produced it.
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('refuses an invalidate while impersonating, before the controller runs', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await invalidate(GRANTED);
+
+    expect(res.status).toBe(403);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The ORDER of the two guards, not merely their presence.
+   *
+   * Both answer 403, so on a granted org the two orderings are indistinguishable. The case that
+   * separates them is an impersonated caller on an org they hold *no* grant on: whichever guard
+   * runs first is the one that writes the body. `IMPERSONATION_READ_ONLY` in the response proves
+   * `blockDuringImpersonation` ran first — swap the two middleware on the route line and this
+   * body becomes the grant check's instead.
+   *
+   * It is not a cosmetic ordering. A CLA manager impersonating gets told the truth about why the
+   * button did nothing, rather than being sent to chase a grant they already hold.
+   */
+  it('runs the impersonation block before the grant check', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await invalidate(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+  });
+
+  /**
+   * The read next door must stay reachable while impersonating. A blanket `router.use` would
+   * satisfy every case above and break this one, so it is what stops the guard being widened
+   * into a safer-looking default.
+   */
+  it('still serves the acknowledgments list while impersonating', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/acknowledgments`);
+
+    expect(res.status).toBe(200);
+    expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+
+  // The invalidate path is declared under `:signatureId`, so its two trailing literal segments
+  // have to beat the read declared before it. If they ever stopped matching, this POST would fall
+  // through to the list handler and answer 200 without writing anything.
+  it('routes the invalidate to its own handler, not to the list read', async () => {
+    await invalidate(GRANTED);
+
+    expect(invalidateAcknowledgment).toHaveBeenCalled();
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
   });
 });
 

@@ -15,31 +15,13 @@
         <p-skeleton width="100%" height="1.5rem" />
       }
     </div>
-  } @else if (forbidden()) {
-    <div
-      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
-      data-testid="org-meetings-influence-forbidden">
-      <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
-      <span>You do not have Org Lens access for this organization.</span>
-    </div>
-  } @else if (failed()) {
-    <div
-      class="flex items-center gap-2 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm text-gray-600"
-      data-testid="org-meetings-influence-error">
-      <i class="fa-light fa-triangle-exclamation text-gray-400" aria-hidden="true"></i>
-      <span>Project influence couldn't be loaded. Please try again.</span>
-    </div>
-  } @else if (!rows().length) {
-    <!-- Between roughly half and two-thirds of orgs with meeting activity land here depending on the
-         window, so the copy names both the score-availability limit and the selected window. Copy
-         that mentions only score availability reads as "you have no project influence at all". -->
-    <div class="flex flex-col gap-1 rounded-lg border border-dashed border-gray-300 bg-white px-4 py-6 text-sm" data-testid="org-meetings-influence-empty">
-      <span class="text-gray-900">No ecosystem influence data for your projects in the {{ windowLabel() }}.</span>
-      <span class="text-gray-600">
-        This section covers only projects with a published Ecosystem Influence Score for the selected time range. Try another time range — your organization's
-        meeting activity still counts towards the totals above.
-      </span>
-    </div>
+  } @else if (emptyState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      testId="org-meetings-influence-empty"
+      [values]="{ orgName: orgName(), noun: 'influence scores', period: periodLabel(), filterActive: filterActive() }"
+      (retry)="retry()"
+      (resetFilters)="resetFilters.emit()" />
   } @else {
     <div class="overflow-x-auto rounded-lg border border-gray-200 bg-white" data-testid="org-meetings-influence-table">
       <table class="w-full text-sm">
@@ -184,9 +166,13 @@
         </tbody>
       </table>
     </div>
-    <!-- This list can be shorter than the spend card's "By project" bar for the same organization,
-         because a project only appears here once it has a published influence score. Saying so
-         prevents the difference being read as missing data. -->
+  }
+
+  <!-- This list can be shorter than the spend card's "By project" bar for the same organization,
+       because a project only appears here once it has a published influence score. Saying so
+       prevents the difference being read as missing data — and, on the genuine-empty state, tells the
+       viewer that their meeting activity still counts towards the totals above. -->
+  @if (showsCoverageNote()) {
     <p class="text-xs text-gray-500" data-testid="org-meetings-influence-coverage-note">
       Only projects with a published Ecosystem Influence Score appear here, so this list may be shorter than the projects your people attend meetings for.
     </p>

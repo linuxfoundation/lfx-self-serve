@@ -24,6 +24,7 @@ import {
   MentorshipCiiBadge,
   MentorshipInvitableUsersResponse,
   MentorshipLfProjectsResponse,
+  MentorshipMenteeApplyTarget,
   MentorshipMenteeHasProfileResponse,
   MentorshipMenteeOverviewResponse,
   MentorshipMenteePhase,
@@ -297,9 +298,41 @@ export class MentorshipService {
         skillsWant: [...MOCK_MENTORSHIP_MENTEE_PROFILE.profile.skillsWant],
       },
       history: MOCK_MENTORSHIP_MENTEE_PROFILE.history.map((entry) => ({ ...entry })),
+      demographics: MOCK_MENTORSHIP_MENTEE_PROFILE.demographics ? { ...MOCK_MENTORSHIP_MENTEE_PROFILE.demographics } : undefined,
     };
     logger.debug(req, 'mentorship_get_mentee_profile', 'Mentee profile loaded', { history_count: response.history.length });
     return response;
+  }
+
+  /**
+   * Header fields for the mentee apply page. Resolves the program the same way the
+   * admin detail does (id, then slug) and the term against that program's term rows.
+   * Does not return the admin lists — those include other applicants.
+   */
+  public async getMenteeApplyTarget(req: Request, programId: string, programTermId: string): Promise<MentorshipMenteeApplyTarget> {
+    logger.debug(req, 'mentorship_get_mentee_apply_target', 'Resolving mentee apply target', { programId, programTermId });
+    const program = this.findProgram(programId);
+    if (!program) {
+      throw new ResourceNotFoundError('Mentorship program', programId, { operation: 'mentorship_get_mentee_apply_target' });
+    }
+
+    const lists = MOCK_MENTORSHIP_PROGRAM_LISTS[program.slug] ?? EMPTY_MENTORSHIP_PROGRAM_LISTS;
+    const term = lists.terms.find((item) => item.id === programTermId);
+    if (!term) {
+      throw new ResourceNotFoundError('Mentorship program term', programTermId, { operation: 'mentorship_get_mentee_apply_target' });
+    }
+
+    const target: MentorshipMenteeApplyTarget = {
+      programName: program.name,
+      projectName: program.projectName,
+      termName: term.name,
+    };
+    logger.debug(req, 'mentorship_get_mentee_apply_target', 'Mentee apply target resolved', {
+      programName: target.programName,
+      projectName: target.projectName,
+      termName: target.termName,
+    });
+    return target;
   }
 
   /** Programs resolve by id (default) or slug, matching `/mentorship/admin/:programId`. */

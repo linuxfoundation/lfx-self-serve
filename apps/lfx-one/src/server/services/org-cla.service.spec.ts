@@ -12,7 +12,14 @@ import type { Request } from 'express';
 import type * as ClaIdentifierUtils from '../../../../../packages/shared/src/utils/cla-identifier.utils';
 import type { MicroserviceError as MicroserviceErrorType } from '../errors';
 import { customErrorSerializer } from '../helpers/error-serializer';
-import type { EasyClaApprovalItem, EasyClaCompanyClaGroup, EasyClaCompanyClaGroupList, EasyClaCorporateSignature } from '../types/cla.types';
+import type {
+  EasyClaApprovalItem,
+  EasyClaCompanyClaGroup,
+  EasyClaCompanyClaGroupList,
+  EasyClaCorporateContributor,
+  EasyClaCorporateContributorList,
+  EasyClaCorporateSignature,
+} from '../types/cla.types';
 import { orgClaPairProjectSfid } from '../../../../../packages/shared/src/utils/org-cla-permissions';
 
 const { gatewayFetch, gatewayFetchBinary, isImpersonating, getUsernameFromAuth, loggerWarning, loggerInfo } = vi.hoisted(() => ({
@@ -102,7 +109,7 @@ function upstreamList(...entries: EasyClaCompanyClaGroup[]): EasyClaCompanyClaGr
   return { companySFID: ORG_UID, resultCount: entries.length, list: entries };
 }
 
-function req(overrides: Partial<Request> = {}): Request {
+function req(overrides: Partial<Request> & { bearerToken?: string } = {}): Request {
   return overrides as unknown as Request;
 }
 
@@ -1938,6 +1945,29 @@ function upstreamManager(overrides: Record<string, unknown> = {}): Record<string
   };
 }
 
+/**
+ * Contributor Acknowledgments — read (#1986).
+ *
+ * The service resolves the CCLA through the organization's own list first (matching
+ * `getApprovalList` and `getPdfUrl`), then paginates via the producer's `nextKey`. The mapper
+ * carries the invariants the shared contract states: never drop a row for a missing LF Login,
+ * treat `github_id` and `gitlab_id` as display logins, and normalize `signature_version` to a
+ * `v`-prefixed string with an empty passthrough for the em-dash fallback at the row.
+ */
+function contributor(overrides: Partial<EasyClaCorporateContributor> = {}): EasyClaCorporateContributor {
+  return {
+    signatureID: 'ecla-sig-1',
+    linux_foundation_id: 'jsmith',
+    email: 'contributor@example.org',
+    github_id: 'jsmith-gh',
+    gitlab_id: 'jsmith-gl',
+    signature_version: '1',
+    userDocusignDateSigned: '2026-03-11T09:20:00Z',
+    signatureApproved: true,
+    ...overrides,
+  };
+}
+
 /** POST add returns a Signature; the BFF re-reads `GET …/cla-managers` before answering. */
 function mockAddManagerUpstream(entry: ReturnType<typeof upstreamEntry> = upstreamEntry(), manager: Record<string, unknown> = upstreamManager()): void {
   gatewayFetch
@@ -2014,10 +2044,16 @@ describe('OrgClaService.getManagers', () => {
     expect(manager).not.toHaveProperty('addedOn');
   });
 
-  it('lists managers for an agreement covering neither a project nor a foundation, which only the writes need', async () => {
+  it('reads through the CLA-group list when the org-list row names no project at all', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '' }))).mockResolvedValueOnce({ list: [upstreamManager()] });
 
     expect((await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1'))?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
   });
 
   it('reads an empty list array as an agreement with no managers', async () => {
@@ -2043,8 +2079,39 @@ describe('OrgClaService.getManagers', () => {
     expect(gatewayFetch).toHaveBeenNthCalledWith(
       2,
       expect.anything(),
-      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/project/a09410000182dD3AAI/cla-managers',
       expect.objectContaining({ operation: 'org_cla_list_managers' })
+    );
+  });
+
+  it('does not fall back to the CLA-group list when the project-scoped read fails with a non-403', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Server Error', 500, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }));
+
+    await expect(new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1')).rejects.toMatchObject({ statusCode: 500 });
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('/cla-group/'),
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
+    );
+  });
+
+  it('falls back to the CLA-group list when the project-scoped read is forbidden', async () => {
+    gatewayFetch
+      .mockResolvedValueOnce(upstreamList(upstreamEntry()))
+      .mockRejectedValueOnce(new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', { service: 'cla_service', operation: 'org_cla_list_managers' }))
+      .mockResolvedValueOnce({ list: [upstreamManager()] });
+
+    const result = await new OrgClaService().getManagers(req(), ORG_UID, 'signature-uuid-1');
+
+    expect(result?.managers).toHaveLength(1);
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      3,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/company/company-uuid-1/cla-group/cla-group-uuid-1/cla-managers',
+      expect.objectContaining({ operation: 'org_cla_list_managers_cla_group_fallback' })
     );
   });
 
@@ -2349,5 +2416,608 @@ describe.each([
     expect(error.errorBody).toBeUndefined();
     expect(logged).not.toContain('Ada Porter');
     expect(logged).not.toContain('ada.porter@example.org');
+  });
+});
+
+function contributorPage(overrides: Partial<EasyClaCorporateContributorList> = {}): EasyClaCorporateContributorList {
+  return {
+    companySFID: ORG_UID,
+    claGroupID: 'cla-group-uuid-1',
+    resultCount: 1,
+    totalCount: 1,
+    nextKey: '',
+    list: [contributor()],
+    ...overrides,
+  };
+}
+
+/**
+ * Stages the two upstream calls one acknowledgments read makes: the organization's list (used to
+ * resolve `(claGroupId, companyId)` and derive `canEdit`), then the contributors page.
+ */
+function stageAckRead(page: EasyClaCorporateContributorList = contributorPage(), entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+  gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce(page);
+}
+
+describe('OrgClaService.getContributorAcknowledgments — the upstream call', () => {
+  it('addresses the producer by the org Salesforce id and passes the internal company id as a query parameter', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain(`/v4/company/external/${ORG_UID}/cla-group/cla-group-uuid-1/corporate-contributors`);
+    expect(url).toContain('companyID=company-uuid-1');
+    expect(url).not.toContain('/company/external/company-uuid-1/');
+  });
+
+  it('lists acknowledgments when the agreement covers neither a project nor a foundation', async () => {
+    // The contributors URL does not take a project id. A held row with neither a project nor a
+    // foundation Salesforce id is still addressable here; only the approval-list paths 502.
+    stageAckRead(contributorPage(), [upstreamEntry({ projects: [], foundationSFID: '' })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain('/corporate-contributors');
+    expect(url).not.toContain('/signatures/project/');
+  });
+
+  it('carries the search term and page size to the producer as query parameters', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: 'ahmed', pageSize: 25, nextKey: 'cursor-xyz' });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/searchTerm=ahmed/), expect.any(Object));
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/pageSize=25/), expect.any(Object));
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/nextKey=cursor-xyz/), expect.any(Object));
+  });
+
+  it('redacts the response body so contributor identity attributes cannot reach the logs', async () => {
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it("sends the target user's token upstream while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageAckRead();
+
+    await new OrgClaService().getContributorAcknowledgments(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', {
+      search: '',
+      pageSize: 50,
+    });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-user-token' }));
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the answer shape', () => {
+  it('returns null for a signature this organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'someone-elses-signature' })));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toBeNull();
+    // Only the org list was called; the contributor endpoint was not reached for a signature
+    // that does not belong to this org.
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an empty uneditable page for an unsigned agreement, without calling the producer for one', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toEqual({ signatureId: 'signature-uuid-1', list: [], canEdit: false, resultCount: 0, totalCount: 0, nextKey: null });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('normalizes an empty nextKey to null so the client stops paging on it', async () => {
+    stageAckRead(contributorPage({ nextKey: '' }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.nextKey).toBeNull();
+  });
+
+  it('keeps a non-empty nextKey verbatim so the client can request the next page', async () => {
+    stageAckRead(contributorPage({ nextKey: 'cursor-page-2' }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.nextKey).toBe('cursor-page-2');
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the identity fallback', () => {
+  // Parent story #1973 AC1 requires every acknowledged contributor to be visible. A row with any
+  // one of LF Login / GitHub / GitLab / email / DocuSign name populated must render, because the
+  // corporate console shows every one of them today.
+  it('never drops a row when LF Login is absent — a GitHub-only contributor survives', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ linux_foundation_id: '', github_id: 'gh-only', email: '' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    expect(list?.list[0]).toMatchObject({ lfLogin: undefined, githubUsername: 'gh-only' });
+  });
+
+  it('carries github_id and gitlab_id as usernames (logins), never as identifiers', async () => {
+    // Producer swagger example is a stale numeric "123456"; the field carries the login. This
+    // pins that the mapper preserves the login verbatim rather than any numeric normalization.
+    stageAckRead(contributorPage({ list: [contributor({ github_id: 'gh-login', gitlab_id: 'gl-login' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
+  });
+
+  it('falls through a blank name and a blank signed date to the creation time, not the last modification', async () => {
+    // Invalidation refreshes signatureModified. Using it as Acknowledged On would show the
+    // invalidation instant for a row the producer recorded with no DocuSign date.
+    stageAckRead(
+      contributorPage({
+        list: [
+          contributor({
+            name: '   ',
+            userDocusignName: 'Ada Lovelace',
+            userDocusignDateSigned: '  ',
+            timestamp: '2026-01-02T00:00:00Z',
+            signatureModified: '2026-04-01T00:00:00Z',
+          }),
+        ],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]).toMatchObject({ name: 'Ada Lovelace', signedOn: '2026-01-02T00:00:00Z' });
+  });
+
+  it('leaves signedOn empty when neither the DocuSign date nor the creation time is present', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ userDocusignDateSigned: '  ', timestamp: '', signatureModified: '2026-04-01T00:00:00Z' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.signedOn).toBeUndefined();
+  });
+
+  it('prefers the DocuSign name when the profile name differs', async () => {
+    // The producer puts the profile name (or username) on `name` and the name on the DocuSign
+    // document on `userDocusignName`. The shared contract's `name` is the signing name, so a
+    // row that carries both must surface the DocuSign one.
+    stageAckRead(contributorPage({ list: [contributor({ name: 'ada', userDocusignName: 'Ada Lovelace' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
+  it('keeps the profile name when no DocuSign name was recorded', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: '   ' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+  });
+
+  it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
+    stageAckRead(
+      contributorPage({
+        list: [contributor({ linux_foundation_id: '   ', email: '', github_id: '', gitlab_id: '   ' })],
+      })
+    );
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    const row = list?.list[0];
+    expect(row?.lfLogin).toBeUndefined();
+    expect(row?.email).toBeUndefined();
+    expect(row?.githubUsername).toBeUndefined();
+    expect(row?.gitlabUsername).toBeUndefined();
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () => {
+  it('prefixes a bare version with `v`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '2.1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v2.1');
+  });
+
+  it('leaves an already-prefixed version unchanged so `v1` stays `v1` rather than becoming `vv1`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: 'v1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v1');
+  });
+
+  it('passes an empty version through as an empty string so the row renders an em-dash', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('');
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
+  it.each([
+    ['null', null],
+    ['omitted', undefined],
+    ['an empty string', ''],
+  ])('rejects a contributor page whose list is %s rather than showing an empty agreement', async (_label, list) => {
+    stageAckRead({ ...contributorPage(), list } as EasyClaCorporateContributorList);
+
+    await expect(new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('keeps an empty array as an empty page', async () => {
+    stageAckRead(contributorPage({ list: [], resultCount: 0, totalCount: 0 }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toEqual([]);
+  });
+
+  // The shared interface types `signatureId` as required; a producer row without one cannot be
+  // invalidated and, if two absent-id rows were kept, they would collide on Angular's `@for`
+  // tracking key and throw NG0955, killing the whole tab.
+  it('drops a producer row that arrives without a per-ack signature id, rather than emitting an empty string that collides on `@for` tracking', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signatureID: '' }), contributor({ signatureID: 'ecla-sig-2' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list).toHaveLength(1);
+    expect(list?.list[0]?.signatureId).toBe('ecla-sig-2');
+  });
+
+  it('walks the roster to decide `canEdit`, mirroring the sibling approval-list posture', async () => {
+    getUsernameFromAuth.mockResolvedValue('aporter');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(true);
+  });
+
+  it('withholds `canEdit` from an org viewer who is not a CLA manager on the agreement', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageAckRead(contributorPage(), [upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })]);
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.canEdit).toBe(false);
+  });
+
+  it('carries no manager identity or username into the acknowledgment response', async () => {
+    stageAckRead();
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    // The roster is what `canEdit` is computed from; computing the flag must not be what puts the
+    // identities back on the wire. Same rule the approval-list read pins.
+    const serialized = JSON.stringify(list);
+    expect(serialized).not.toContain('aporter');
+    expect(serialized).not.toContain('user-uuid-1');
+  });
+});
+
+/**
+ * Contributor Acknowledgments — invalidate (#2807).
+ *
+ * The write's gates in service-layer order: the agreement must be on this organization's list,
+ * it must be signed, the caller must be on its CLA-manager roster, and the acknowledgment id must
+ * be on the company's roster for this CLA Group. Only then does the producer call fire.
+ *
+ * Route-level guards (`blockDuringImpersonation` before `requireOrgLensAccess`) are asserted in
+ * `org-clas.route.spec.ts` — they are invisible from here, because this layer is handed a request
+ * that has already passed them.
+ */
+function stageInvalidate(
+  pages: EasyClaCorporateContributorList[] = [contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] })],
+  entries: EasyClaCompanyClaGroup[] = [upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })],
+  producerResult: unknown = { signature_id: 'ecla-sig-1', cla_group_id: 'cla-group-uuid-1', company_id: 'company-uuid-1', user_id: 'user-uuid-9' }
+): void {
+  gatewayFetch.mockResolvedValueOnce(upstreamList(...entries));
+  for (const page of pages) gatewayFetch.mockResolvedValueOnce(page);
+  gatewayFetch.mockResolvedValueOnce(producerResult);
+}
+
+describe('OrgClaService.invalidateAcknowledgment — the gates', () => {
+  beforeEach(() => {
+    // `vi.clearAllMocks()` above clears recorded calls but not a queued `mockResolvedValueOnce`,
+    // and a refusal case leaves its unused producer response in that queue. Reset the queue so a
+    // gate test cannot hand its leftover to the next case's organization-list call.
+    gatewayFetch.mockReset();
+  });
+
+  it('refuses a signature this organization does not hold, without reaching the producer', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'someone-elses-signature' })));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'not-found' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses an unsigned agreement, which has no acknowledgments to invalidate', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'not-signed' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The CLA-manager roster gate. An org viewer can load this page — `requireOrgLensAccess` proves
+   * only that they may view as the organization — and the producer's own rule is membership of
+   * the CCLA's ACL, matched on LF username. So a viewer who is not on that roster must be refused
+   * here, before the producer is asked to invalidate a contributor's legal coverage.
+   */
+  it('refuses a caller who is not a CLA manager on the agreement', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'forbidden' });
+    // The roster refusal is what stopped it: neither the id verify nor the producer was reached.
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Fails OPEN on a missing roster, and only on a missing roster.
+   *
+   * This is the sibling approval-list posture, restated for the write that shares its gate: the
+   * producer is the authority and refuses the write regardless, so failing open costs an entitled
+   * CLA manager one clear error message where failing closed would hide the control from them.
+   * An EMPTY roster is a real answer — nobody manages this agreement — and must not fail open.
+   */
+  it('fails open when the producer sent no roster at all', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    stageInvalidate(undefined, [upstreamEntry({ claManagers: undefined })]);
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toMatchObject({ outcome: 'invalidated' });
+  });
+
+  it('does not fail open on an empty roster, which is a real answer rather than a missing one', async () => {
+    getUsernameFromAuth.mockResolvedValue('someone-else');
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [] })));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'forbidden' });
+  });
+});
+
+/**
+ * The ownership verify, at the grain the producer acts at.
+ *
+ * The producer's endpoint is keyed on the CLA Group with no CCLA id in the path, so the blast
+ * radius of this write is company × CLA Group. The verify checks exactly that grain — narrowing
+ * it to the CCLA named on `:signatureId` would refuse writes the producer allows.
+ */
+describe('OrgClaService.invalidateAcknowledgment — the ownership verify', () => {
+  beforeEach(() => {
+    // `vi.clearAllMocks()` above clears recorded calls but not a queued `mockResolvedValueOnce`,
+    // and a refusal case leaves its unused producer response in that queue. Reset the queue so a
+    // gate test cannot hand its leftover to the next case's organization-list call.
+    gatewayFetch.mockReset();
+  });
+
+  it('refuses an acknowledgment id that is not on this company CLA Group', async () => {
+    stageInvalidate([contributorPage({ list: [contributor({ signatureID: 'a-different-ack' })], nextKey: '' })]);
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    // not-found rather than forbidden: the id may be a real acknowledgment on another agreement,
+    // and naming it would confirm its existence to a caller who cannot see it.
+    expect(result).toEqual({ outcome: 'not-found' });
+    // The organization list and one verify page — the producer's invalidate was never called.
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('accepts an id found on a later page, following the producer cursor', async () => {
+    stageInvalidate([
+      contributorPage({ list: [contributor({ signatureID: 'ecla-sig-other' })], nextKey: 'cursor-page-2' }),
+      contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })], nextKey: '' }),
+    ]);
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toMatchObject({ outcome: 'invalidated' });
+  });
+
+  /**
+   * Fails CLOSED at the page cap.
+   *
+   * A producer handing back a non-null cursor forever is the only way to reach this, and the
+   * answer must be to refuse the write rather than forward an id nothing has verified. The mock
+   * below never runs out of pages, so the loop exits only because the cap stops it.
+   */
+  it('refuses the write when the verify hits its page cap, rather than forwarding an unverified id', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+    gatewayFetch.mockResolvedValue(contributorPage({ list: [contributor({ signatureID: 'never-the-one' })], nextKey: 'always-another-page' }));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'not-found' });
+    // One organization list plus exactly the capped number of verify pages, and no producer call
+    // past them. A cap that failed open would show one more call than this.
+    expect(gatewayFetch).toHaveBeenCalledTimes(101);
+  });
+
+  it('refuses a blank acknowledgment id without asking the producer to page for it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', '   ', {});
+
+    expect(result).toEqual({ outcome: 'not-found' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrgClaService.invalidateAcknowledgment — the producer call', () => {
+  beforeEach(() => {
+    // `vi.clearAllMocks()` above clears recorded calls but not a queued `mockResolvedValueOnce`,
+    // and a refusal case leaves its unused producer response in that queue. Reset the queue so a
+    // gate test cannot hand its leftover to the next case's organization-list call.
+    gatewayFetch.mockReset();
+  });
+
+  it('PUTs the producer endpoint keyed on the resolved CLA Group and the acknowledgment id', async () => {
+    stageInvalidate();
+
+    await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    // PUT, not POST: the producer declares this operation as `put`. The CCLA signature id on the
+    // BFF route appears nowhere in the upstream path — the producer keys on the CLA Group.
+    expect(gatewayFetch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/cla-group/cla-group-uuid-1/ecla/ecla-sig-1/invalidate',
+      expect.objectContaining({ method: 'PUT' })
+    );
+  });
+
+  it('forwards the reason and trimmed note as the producer names them', async () => {
+    stageInvalidate();
+
+    await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {
+      reason: 'should-be-corporate',
+      note: '  moved to the corporate agreement  ',
+    });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(
+      expect.anything(),
+      expect.any(String),
+      expect.objectContaining({ body: { reason: 'should-be-corporate', note: 'moved to the corporate agreement' } })
+    );
+  });
+
+  it('omits a blank note rather than storing an empty reason string on the signature', async () => {
+    stageInvalidate();
+
+    await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', { note: '   ' });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ body: {} }));
+  });
+
+  /**
+   * No `bearerToken` override, unlike every read on this router.
+   *
+   * The reads forward the impersonated token deliberately so a support engineer sees what the
+   * target sees. A write must not: the producer stamps the token's identity on the signature as
+   * `invalidatedBy`. The route blocks impersonation outright, and this is the second line.
+   */
+  it('never forwards an impersonated token on the write', async () => {
+    isImpersonating.mockReturnValue(true);
+    stageInvalidate();
+
+    await new OrgClaService().invalidateAcknowledgment(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.not.objectContaining({ bearerToken: expect.anything() }));
+  });
+
+  it('redacts the response body, which echoes the invalidated contributor’s user id', async () => {
+    stageInvalidate();
+
+    await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it('raises a 502 when the producer answers with no body, rather than reporting a write that may not have happened', async () => {
+    stageInvalidate(undefined, undefined, null);
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+});
+
+describe('OrgClaService.invalidateAcknowledgment — the receipt', () => {
+  beforeEach(() => {
+    // `vi.clearAllMocks()` above clears recorded calls but not a queued `mockResolvedValueOnce`,
+    // and a refusal case leaves its unused producer response in that queue. Reset the queue so a
+    // gate test cannot hand its leftover to the next case's organization-list call.
+    gatewayFetch.mockReset();
+  });
+
+  /**
+   * The producer's identity triple stops at the BFF.
+   *
+   * The list mapper already holds this boundary — the row deliberately does not carry the CLA
+   * Group id, the internal company id, or the project SFID — and a receipt that echoed them
+   * would ship the same ids to the same browser through a different door.
+   */
+  it('returns only the acknowledgment id, keeping the producer’s internal ids off the wire', async () => {
+    stageInvalidate();
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: 'ecla-sig-1' } });
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain('company-uuid-1');
+    expect(serialized).not.toContain('cla-group-uuid-1');
+    expect(serialized).not.toContain('user-uuid-9');
+  });
+
+  it('falls back to the requested id when the producer echoes none', async () => {
+    stageInvalidate(undefined, undefined, { signature_id: '   ' });
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {});
+
+    expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: 'ecla-sig-1' } });
+  });
+
+  it('accepts an acknowledgment id the producer spells with different case or hyphens', async () => {
+    const acknowledgmentId = '11111111-1111-4111-8111-111111111111';
+    stageInvalidate([contributorPage({ list: [contributor({ signatureID: acknowledgmentId })] })], undefined, {
+      signature_id: acknowledgmentId.toUpperCase(),
+      cla_group_id: 'cla-group-uuid-1',
+      company_id: 'company-uuid-1',
+      user_id: 'user-uuid-9',
+    });
+
+    const result = await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', acknowledgmentId.replaceAll('-', ''), {});
+
+    expect(result).toEqual({ outcome: 'invalidated', result: { signatureId: acknowledgmentId.toUpperCase() } });
+  });
+
+  it('raises a 502 when the producer echoes a different acknowledgment id', async () => {
+    stageInvalidate(undefined, undefined, { signature_id: 'ecla-sig-other' });
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('raises a 502 when the producer body is not an object', async () => {
+    stageInvalidate(undefined, undefined, 'ok');
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
   });
 });

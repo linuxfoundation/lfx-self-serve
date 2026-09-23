@@ -4,22 +4,30 @@
 import {
   CLA_GROUP_ID_PATTERN,
   CLA_GROUP_SEARCH_MIN_CHARS,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
+  ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
+  ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_REVIEW_COPY_FILENAME,
   SALESFORCE_ID_PATTERN,
 } from '@lfx-one/shared/constants';
-import type {
-  OrgClaApprovalCriteriaKind,
-  OrgClaApprovalEntryInput,
-  OrgClaApprovalListUpdate,
-  OrgClaManagerAddRequest,
-  OrgClaPermissionCheckRequest,
-  OrgClaSignRequest,
+import {
+  type OrgClaApprovalCriteriaKind,
+  type OrgClaApprovalEntryInput,
+  type OrgClaApprovalListUpdate,
+  type OrgClaInvalidateAcknowledgmentRequest,
+  type OrgClaInvalidationReason,
+  type OrgClaManagerAddRequest,
+  type OrgClaPermissionCheckRequest,
+  type OrgClaSignRequest,
 } from '@lfx-one/shared/interfaces';
 import {
+  codePointLength,
   hasOrgClaManagerAddErrors,
   isEmailShape,
   isOrgClaManagerLfUsername,
@@ -40,6 +48,12 @@ import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
 const APPROVAL_CRITERIA_KINDS = new Set<string>(ORG_CLA_APPROVAL_CRITERIA.map((option) => option.kind));
+
+const INVALIDATION_REASONS = new Set<string>(ORG_CLA_INVALIDATION_REASONS);
+
+function isOrgClaInvalidationReason(value: unknown): value is OrgClaInvalidationReason {
+  return typeof value === 'string' && INVALIDATION_REASONS.has(value);
+}
 
 /**
  * Parses one side of the approval-list delta out of an untrusted body.
@@ -476,6 +490,156 @@ export class OrgClasController {
         entry_count: result.list.entries.length,
       });
       res.json(result.list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments
+  //
+  // Reads the paginated contributor acknowledgments (ECLA signatures) for one CCLA. Impersonation
+  // is allowed; the upstream call runs as the impersonated user. `Cache-Control: no-store` on
+  // every path because the body carries contributor identity attributes and a per-caller flag.
+  public async getContributorAcknowledgments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_acknowledgments');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_acknowledgments' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_acknowledgments');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
+          operation: 'get_org_cla_acknowledgments',
+        });
+      }
+
+      const rawPageSize = getStringQueryParam(req, 'pageSize');
+      const parsedPageSize = rawPageSize ? Number(rawPageSize) : NaN;
+      // Silent clamp — a page above 100 protects the producer, a request for zero rows prevents a
+      // runaway zero-loop. Anything else outside the range is a caller mistake the producer would
+      // punish; treating it as "give me the default" is friendlier than a 400 for what is a hint.
+      const pageSize = Number.isFinite(parsedPageSize)
+        ? Math.min(Math.max(Math.trunc(parsedPageSize), ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN), ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX)
+        : ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT;
+
+      const search = (getStringQueryParam(req, 'search') ?? '').trim();
+      const nextKeyRaw = (getStringQueryParam(req, 'nextKey') ?? '').trim();
+      const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : undefined;
+
+      const list = await this.orgClaService.getContributorAcknowledgments(req, orgUid, signatureId, { search, pageSize, nextKey });
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!list) {
+        logger.success(req, 'get_org_cla_acknowledgments', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_acknowledgments', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        result_count: list.resultCount,
+        total_count: list.totalCount,
+        can_edit: list.canEdit,
+        has_next: !!list.nextKey,
+      });
+      res.json(list);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments/:acknowledgmentSignatureId/invalidate
+  //
+  // Invalidates one acknowledgment. The route blocks impersonation ahead of the grant check, so
+  // there is no impersonation branch here. `reason` and `note` are both optional — the producer
+  // accepts an empty body — but a reason it does not define, or a note past its cap, is refused
+  // here rather than forwarded for the producer to reject with wording the tab cannot show.
+  public async invalidateAcknowledgment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'invalidate_org_cla_acknowledgment');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'invalidate_org_cla_acknowledgment');
+
+      const acknowledgmentSignatureId = (req.params['acknowledgmentSignatureId'] ?? '').trim();
+      if (!CLA_GROUP_ID_PATTERN.test(acknowledgmentSignatureId)) {
+        throw ServiceValidationError.forField('acknowledgmentSignatureId', 'A valid acknowledgmentSignatureId path parameter is required', {
+          operation: 'invalidate_org_cla_acknowledgment',
+        });
+      }
+
+      // Same shape as the approval-list write's rejections: `{ message }` the tab shows verbatim,
+      // and the operation is closed as it answers so a refused write does not log a start that
+      // never finishes.
+      const reject = (message: string, reason: string): void => {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, rejected: reason });
+        res.status(400).json({ message });
+      };
+
+      const body = req.body as { reason?: unknown; note?: unknown } | undefined;
+
+      if (body?.reason !== undefined && !isOrgClaInvalidationReason(body.reason)) {
+        reject('Choose one of the offered reasons for invalidating this acknowledgment', 'invalid_reason');
+        return;
+      }
+
+      // Refused, not truncated. A note silently cut at the cap is recorded on a legal audit trail
+      // as something the CLA manager did not write.
+      if (body?.note !== undefined && typeof body.note !== 'string') {
+        reject('The note must be text', 'invalid_note');
+        return;
+      }
+      // Code points, not UTF-16 units, to match the producer's go-swagger rune cap.
+      if (typeof body?.note === 'string' && codePointLength(body.note.trim()) > ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH) {
+        reject(`The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters`, 'note_too_long');
+        return;
+      }
+
+      const input: OrgClaInvalidateAcknowledgmentRequest = {
+        ...(isOrgClaInvalidationReason(body?.reason) ? { reason: body.reason } : {}),
+        ...(typeof body?.note === 'string' ? { note: body.note } : {}),
+      };
+
+      const result = await this.orgClaService.invalidateAcknowledgment(req, orgUid, signatureId, acknowledgmentSignatureId, input);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (result.outcome === 'not-found') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          found: false,
+        });
+        res.status(404).json({ message: 'Acknowledgment not found' });
+        return;
+      }
+
+      if (result.outcome === 'not-signed') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so it has no acknowledgments to invalidate' });
+        return;
+      }
+
+      if (result.outcome === 'forbidden') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
+        res.status(403).json({ message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' });
+        return;
+      }
+
+      logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        // The reason is one of four fixed enum values, so it carries no contributor detail. The
+        // note is free text a CLA manager typed and stays out of the log entirely.
+        reason: input.reason ?? 'none',
+      });
+      res.json(result.result);
     } catch (error) {
       next(error);
     }

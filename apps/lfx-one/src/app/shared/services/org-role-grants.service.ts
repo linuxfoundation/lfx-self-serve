@@ -3,7 +3,8 @@
 
 import { HttpClient } from '@angular/common/http';
 import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { CascadingRoleGrant, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
+import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
+import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
 // Re-export the shared persona type so existing consumers can keep importing from this service module.
@@ -37,6 +38,12 @@ export class OrgRoleGrantsService {
   // expansion or authoritative classification was incomplete). Without it an empty/short list is
   // indistinguishable from "you have no organizations", so an outage reads as a revocation.
   private readonly degradedInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // Spec 053 (FR-020) — why the sets are a lower bound: `failed` (roster never loaded — the answer is
+  // unknown) vs `partial` (direct grants loaded, roll-up incomplete — every listed uid is authoritative).
+  private readonly lookupOutcomeInternal: WritableSignal<OrgLensLookupOutcome> = signal<OrgLensLookupOutcome>('ok');
+  // Spec 053 (FR-011) — the LF-team check threw; `isStaff` is a fail-closed false, not a verdict.
+  private readonly staffCheckInternal: WritableSignal<OrgLensStaffCheck> = signal<OrgLensStaffCheck>('ok');
+  private readonly correlationIdInternal: WritableSignal<string | null> = signal<string | null>(null);
 
   public readonly writerSet: Signal<Set<string>> = this.writerSetInternal.asReadonly();
   public readonly auditorSet: Signal<Set<string>> = this.auditorSetInternal.asReadonly();
@@ -56,10 +63,16 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
-  /** Caller is a member of an LF team (`lf-staff` or `lf-contractor`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  /** Caller is a member of an LF team (`lf-staff`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
   public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
+  /** Spec 053 — `failed`: nothing in the sets is trustworthy; `partial`: the sets are a lower bound; `ok`: complete. Derived from `degraded` when the server predates the field. */
+  public readonly lookupOutcome: Signal<OrgLensLookupOutcome> = this.lookupOutcomeInternal.asReadonly();
+  /** Spec 053 — `failed` means the caller's staff status could not be determined; the page must never render the employee no-access copy on it. */
+  public readonly staffCheck: Signal<OrgLensStaffCheck> = this.staffCheckInternal.asReadonly();
+  /** Spec 053 — support reference for the staff-check-failed state; null otherwise. */
+  public readonly correlationId: Signal<string | null> = this.correlationIdInternal.asReadonly();
 
   public constructor() {
     afterNextRender(() => {
@@ -67,11 +80,16 @@ export class OrgRoleGrantsService {
     });
   }
 
-  /** Re-fetch role grants; idempotent. Returns Observable<void> so callers can compose (e.g. forkJoin with persona refresh). */
-  public refresh(): Observable<void> {
+  /**
+   * Re-fetch role grants; idempotent. Returns Observable<void> so callers can compose (e.g. forkJoin
+   * with persona refresh). `bypassCache` (the viewer's explicit Retry, spec 053) asks the BFF to skip
+   * its cache read and recompute — still coalesced and written server-side.
+   */
+  public refresh(bypassCache = false): Observable<void> {
     this.loadingInternal.set(true);
     this.errorInternal.set(null);
-    return this.http.get<RoleGrantsResponse>('/api/orgs/me/role-grants').pipe(
+    const params = bypassCache ? { [ORG_ROLE_GRANTS_REFRESH_PARAM]: '1' } : undefined;
+    return this.http.get<RoleGrantsResponse>('/api/orgs/me/role-grants', { params }).pipe(
       tap((response) => {
         this.writerSetInternal.set(new Set(response.writers));
         this.auditorSetInternal.set(new Set(response.auditors));
@@ -80,6 +98,10 @@ export class OrgRoleGrantsService {
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
         this.isStaffInternal.set(response.isStaff === true);
         this.degradedInternal.set(response.degraded === true);
+        // Absent on a pre-053 server: derive from the coarse flag so old+new deploy mixes stay safe.
+        this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
+        this.staffCheckInternal.set(response.staffCheck ?? 'ok');
+        this.correlationIdInternal.set(response.staffCheck === 'failed' && response.correlationId ? response.correlationId : null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         this.loadedAtMsInternal.set(Date.now());
@@ -97,6 +119,9 @@ export class OrgRoleGrantsService {
         this.isStaffInternal.set(false);
         // The grants are unknown, not empty — same distinction the server's `degraded` draws.
         this.degradedInternal.set(true);
+        this.lookupOutcomeInternal.set('failed');
+        this.staffCheckInternal.set('ok');
+        this.correlationIdInternal.set(null);
         this.loadedInternal.set(true);
         this.loadingInternal.set(false);
         return of(undefined);

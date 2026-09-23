@@ -9,8 +9,6 @@ export interface Account {
   accountName: string;
   /** Crowd.dev organization id — Org-Lens enrichment, resolved from accountId in Snowflake */
   cdevOrgId?: string | null;
-  /** URL-friendly slug derived from the account name — Org-Lens **display** enrichment (Snowflake). Never URL identity: it is generated, has no search tag, and is `''` during switch/enrichment windows. Use `slug` for `/org/{segment}/…` (spec 050, DR-001). */
-  accountSlug?: string | null;
   /**
    * Lowercase URL-identity slug derived by member-service from the org name (spec 050, DR-007:
    * `slugify(Account.Name)`, no stored slug). Tri-state: a string when published; `null` when the

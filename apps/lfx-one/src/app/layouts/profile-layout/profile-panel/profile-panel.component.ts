@@ -36,6 +36,7 @@ export class ProfilePanelComponent {
   public readonly displayName = input<string>('');
   public readonly initials = input<string>('U');
   public readonly username = input<string>('');
+  public readonly memberSince = input<string>('');
   public readonly aboutMe = input<string>('');
   public readonly jobTitle = input<string>('');
   public readonly organization = input<string>('');

@@ -14,6 +14,17 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberRow,
+  HealthMetricsEngagementOrgFilter,
+  HealthMetricsEngagementOrgPeriod,
+  HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRepFilter,
+  HealthMetricsEngagementRepPeriod,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepRow,
+  HealthMetricsEngagementParticipationPeriod,
+  HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
@@ -64,7 +75,7 @@ export function selectHealthMetricsEngagementGroupPeriod(
   row: HealthMetricsEngagementGroupRow,
   range: HealthMetricsRange
 ): HealthMetricsEngagementGroupPeriod | null {
-  return row.periods.find((period) => period.range === range) ?? row.periods[row.periods.length - 1] ?? null;
+  return selectPeriod(row.periods, range);
 }
 
 /**
@@ -102,4 +113,156 @@ export function buildHealthMetricsEngagementSubNavItems(counts: HealthMetricsEng
     count: totals[section.key],
     note: totals[section.key] === null ? '' : (notes[section.key] ?? ''),
   }));
+}
+
+/**
+ * The participation row's numbers for one period. Same fallback as the group table: the view
+ * carries four periods, so an unsupported range reads the most recent one rather than blanking.
+ */
+export function selectHealthMetricsEngagementParticipationPeriod(
+  row: HealthMetricsEngagementParticipationRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementParticipationPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/**
+ * Which way a delta moved. Judged on the rounded value the label prints, not the raw one: a change
+ * too small to show at one decimal must not be coloured as movement the reader cannot see.
+ */
+export function resolveHealthMetricsEngagementDeltaDirection(value: number | null): 'up' | 'down' | 'neutral' {
+  if (value === null || roundDeltaForDisplay(value) === 0) {
+    return 'neutral';
+  }
+
+  return value > 0 ? 'up' : 'down';
+}
+
+/** A point change on an attendance share: `+3.2pp`. Not a percent — the share itself is one. */
+export function formatHealthMetricsEngagementPpDelta(pointChange: number | null): string {
+  return formatDelta(pointChange, 'pp');
+}
+
+/** A fractional change in a count, rendered as a percent: `+12.0%`. */
+export function formatHealthMetricsEngagementPctDelta(fractionChange: number | null): string {
+  return formatDelta(fractionChange, '%');
+}
+
+/**
+ * The org row's numbers for one period. Same four-period fallback as the group and participation
+ * tables.
+ */
+export function selectHealthMetricsEngagementOrgPeriod(row: HealthMetricsEngagementOrgRow, range: HealthMetricsRange): HealthMetricsEngagementOrgPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** Mean reps at one decimal. `null` is "attended nothing this period", which is an em dash, not `0`. */
+export function formatHealthMetricsEngagementAvgReps(avgReps: number | null): string {
+  return avgReps === null ? '—' : avgReps.toFixed(1);
+}
+
+/**
+ * The org table's client-side cut: the lapsed segment, then the search box, then the selected
+ * period's own ranking. Ranking is per period, so the pill re-sorts rather than re-reads.
+ */
+export function filterHealthMetricsEngagementOrgRows(
+  rows: readonly HealthMetricsEngagementOrgRow[],
+  filter: HealthMetricsEngagementOrgFilter,
+  search: string,
+  range: HealthMetricsRange
+): HealthMetricsEngagementOrgRow[] {
+  const term = search.trim().toLowerCase();
+  const matched = rows.filter((row) => {
+    if (filter === 'lapsed' && !row.lapsed) return false;
+    return term === '' || row.accountName.toLowerCase().includes(term);
+  });
+
+  return matched.sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** The selected period's numbers for one non-member row, falling back to the newest period held. */
+export function selectHealthMetricsEngagementNonMemberPeriod(
+  row: HealthMetricsEngagementNonMemberRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** Best-first by the view's per-period rank; the pill re-sorts the loaded rows without a re-read. */
+export function sortHealthMetricsEngagementNonMemberRows(
+  rows: readonly HealthMetricsEngagementNonMemberRow[],
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberRow[] {
+  return [...rows].sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** The selected period's numbers for one representative, falling back to the newest period held. */
+export function selectHealthMetricsEngagementRepPeriod(row: HealthMetricsEngagementRepRow, range: HealthMetricsRange): HealthMetricsEngagementRepPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** The selected period's caption counts. This view counts its scope per period, unlike the others. */
+export function selectHealthMetricsEngagementRepCounts(
+  counts: readonly HealthMetricsEngagementRepPeriodCounts[] | null,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepPeriodCounts | null {
+  return counts ? selectPeriod(counts, range) : null;
+}
+
+/**
+ * The representatives table's client-side cut. Every cut starts from the people invited in the
+ * selected period — the population the view's own caption counts — so the table and its caption
+ * cannot disagree. Read order is already last-attended-first and period-independent, so the pill
+ * re-filters without re-sorting.
+ */
+export function filterHealthMetricsEngagementRepRows(
+  rows: readonly HealthMetricsEngagementRepRow[],
+  filter: HealthMetricsEngagementRepFilter,
+  search: string,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepRow[] {
+  const term = search.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    const period = selectPeriod(row.periods, range);
+    if (!period || period.meetingsInvited === 0) return false;
+    if (filter === 'never' && !period.neverAttended) return false;
+    if (filter === 'lapsed' && !period.lapsed) return false;
+
+    // Searched together because the name and its organization sub-line read as one cell.
+    return term === '' || row.personName.toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
+  });
+}
+
+/** One rank order for both organization tables: a divergent copy would sort them differently. */
+function compareByPeriodRank<T extends { accountName: string; periods: readonly { range: HealthMetricsRange; sortRank: number | null }[] }>(
+  a: T,
+  b: T,
+  range: HealthMetricsRange
+): number {
+  // A row the view left unranked sorts last rather than ahead of every ranked org.
+  const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+  const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+  // Locale pinned: an unpinned compare can order same-rank rows differently on SSR and the client.
+  return rankA === rankB ? a.accountName.localeCompare(b.accountName, 'en-US') : rankA - rankB;
+}
+
+/** Both views carry the same four periods, so the same fallback serves either row shape. */
+function selectPeriod<T extends { range: HealthMetricsRange }>(periods: readonly T[], range: HealthMetricsRange): T | null {
+  return periods.find((period) => period.range === range) ?? periods[periods.length - 1] ?? null;
+}
+
+/** The one decimal both delta labels print; the direction resolver reads the same value. */
+function roundDeltaForDisplay(fractionChange: number): number {
+  return Number((fractionChange * 100).toFixed(1));
+}
+
+/** `pp` and `%` differ only in unit — the sign comes from the rounded value, never the raw one. */
+function formatDelta(fractionChange: number | null, unit: 'pp' | '%'): string {
+  if (fractionChange === null) {
+    return '—';
+  }
+
+  const rounded = roundDeltaForDisplay(fractionChange);
+  return `${rounded >= 0 ? '+' : '−'}${Math.abs(rounded).toFixed(1)}${unit}`;
 }

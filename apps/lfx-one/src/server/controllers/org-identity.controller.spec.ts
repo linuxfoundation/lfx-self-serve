@@ -3,10 +3,11 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { proxyRequest, proxyRequestWithResponse, resolveSegment } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, resolveSegment, getRoleGrants } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   resolveSegment: vi.fn(),
+  getRoleGrants: vi.fn(),
 }));
 
 vi.mock('../services/microservice-proxy.service', () => ({
@@ -15,7 +16,12 @@ vi.mock('../services/microservice-proxy.service', () => ({
     public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
-vi.mock('../services/org-role-grants.service', () => ({ OrgRoleGrantsService: class {} }));
+vi.mock('../services/org-role-grants.service', () => ({
+  OrgRoleGrantsService: class {
+    public getRoleGrants = getRoleGrants;
+  },
+}));
+vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername: () => 'jdoe' }));
 vi.mock('../services/org-lens-addresses.service', () => ({ OrgLensAddressesService: class {} }));
 vi.mock('../services/org-slug-resolver.service', () => ({
   OrgSlugResolverService: class {
@@ -28,6 +34,8 @@ vi.mock('../services/logger.service', () => ({
 
 import { MicroserviceError } from '../errors/microservice.error';
 import { ServiceValidationError } from '../errors/service-validation.error';
+import { ORG_ROLE_GRANTS_CORRELATION_HEADER } from '@lfx-one/shared/constants';
+
 import { OrgIdentityController } from './org-identity.controller';
 
 function buildRes() {
@@ -245,5 +253,42 @@ describe('OrgIdentityController.resolveSegment', () => {
     await new OrgIdentityController().resolveSegment(request('bad!'), res, next);
     expect(next).toHaveBeenCalledWith(validation);
     expect(res.status).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgIdentityController.getRoleGrants', () => {
+  const grants = { writers: [], auditors: [], cascadingWriters: [], cascadingAuditors: [], isStaff: false, lookupOutcome: 'ok', staffCheck: 'ok' };
+  const request = (query: Record<string, string> = {}) => ({ query, path: '/api/orgs/me/role-grants' }) as any;
+
+  beforeEach(() => {
+    getRoleGrants.mockResolvedValue(grants);
+  });
+
+  // Spec 053: the viewer's Retry asks for a recompute past the BFF cache; nothing else does.
+  it('forwards ?refresh=1 as a cache bypass and nothing else', async () => {
+    const controller = new OrgIdentityController();
+
+    await controller.getRoleGrants(request({ refresh: '1' }), buildRes(), vi.fn());
+    await controller.getRoleGrants(request({ refresh: 'yes' }), buildRes(), vi.fn());
+    await controller.getRoleGrants(request(), buildRes(), vi.fn());
+
+    expect(getRoleGrants.mock.calls.map((call) => call[2])).toEqual([true, false, false]);
+  });
+
+  // FR-011: the support reference travels in its own header — it is the id logged by the computation
+  // that produced the result, which within the short cache window may be an earlier request's.
+  it('sets X-Correlation-Id from a failed staff check and no correlation header otherwise', async () => {
+    const controller = new OrgIdentityController();
+    const failedRes = buildRes();
+    getRoleGrants.mockResolvedValueOnce({ ...grants, staffCheck: 'failed', correlationId: 'ref-123' });
+    await controller.getRoleGrants(request(), failedRes, vi.fn());
+    expect(failedRes.setHeader).toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, 'ref-123');
+    expect(failedRes.setHeader).not.toHaveBeenCalledWith('X-Request-Id', expect.anything());
+
+    const okRes = buildRes();
+    await controller.getRoleGrants(request(), okRes, vi.fn());
+    expect(okRes.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+    expect(okRes.setHeader).not.toHaveBeenCalledWith(ORG_ROLE_GRANTS_CORRELATION_HEADER, expect.anything());
+    expect(okRes.json).toHaveBeenCalledWith(grants);
   });
 });

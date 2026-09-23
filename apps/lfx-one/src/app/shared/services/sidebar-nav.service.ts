@@ -18,7 +18,6 @@ import {
   MKTG_OS_AGENTS_ENABLED_FLAG,
   MKTG_OS_AGENTS_LABEL,
   ORG_LENS_CLA_M3_ENABLED_FLAG,
-  ORG_LENS_ENABLED_FLAG,
   ORG_LENS_ROI_ENABLED_FLAG,
   SURVEY_LABEL,
   VOTE_LABEL,
@@ -58,8 +57,6 @@ export class SidebarNavService {
   /** The Me lens section My Formations (#2753) is appended to; matched by label for the same reason. */
   private readonly meEngagementSectionLabel = 'My Engagement';
 
-  /** Dark-launch gate; falls back to Me Lens nav when off. */
-  private readonly isOrgLensEnabled = this.featureFlagService.getBooleanFlag(ORG_LENS_ENABLED_FLAG, false);
   /** Dark-launch gate for the Akrites admin dashboard; hides the Security nav section when off. */
   private readonly isAkritesEnabled = this.featureFlagService.getBooleanFlag(AKRITES_ENABLED_FLAG, false);
   /** Dark-launch gate for the Mentorship module; hides the Mentorship nav section when off, matching `mentorshipEnabledGuard`. */
@@ -159,7 +156,7 @@ export class SidebarNavService {
         return marketingSection ? [...withComms, marketingSection] : withComms;
       }
       case 'org':
-        return this.isOrgLensEnabled() ? this.visibleOrgLensItems() : this.visibleMeLensItems();
+        return this.visibleOrgLensItems();
       default:
         return this.visibleMeLensItems();
     }

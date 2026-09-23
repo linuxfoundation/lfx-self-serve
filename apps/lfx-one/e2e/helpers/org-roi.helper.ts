@@ -252,6 +252,18 @@ export function orgRoiProjectDetailUrl(slug: string): string {
 }
 
 /**
+ * The fixture organization's Org Lens address for `path`, legacy (`/org/{path}`) or org-addressed
+ * (`/org/{MOCK_ACCOUNT_ID}/{path}`). Spec 050 rewrites a legacy address to the selected organization's
+ * form once the default selection lands, so which of the two a link or URL carries depends on that
+ * timing, not on the feature under test. Only those two forms match — never another organization's
+ * address and never a different page.
+ */
+export function orgLensAddressPattern(...path: string[]): RegExp {
+  const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`/org/(?:${escape(MOCK_ACCOUNT_ID)}/)?${path.map(escape).join('/')}$`);
+}
+
+/**
  * The detail payload for one of the fixture's projects, wrapping the same row shape `/projects`
  * serves. Built from `MOCK_PROJECTS` rather than typed out again, so the drill-down and the table
  * it is reached from cannot disagree about a project's figures.
@@ -288,6 +300,19 @@ interface StubOptions {
   projectAnnual?: unknown;
 }
 
+/**
+ * Mirrors the one field the section classifier reads — the BFF's top-level error `code` — for the
+ * refusals the Org Lens read gate raises: 403 `FORBIDDEN` (no access) and 503 `ROLE_GRANTS_UNAVAILABLE`
+ * (could not check). Other statuses carry no code and classify as a load failure (spec 053 FR-015).
+ * `message` is filler; the real envelope's text key is `error`.
+ */
+const GATE_REFUSAL_CODES: Readonly<Record<number, string>> = { 403: 'FORBIDDEN', 503: 'ROLE_GRANTS_UNAVAILABLE' };
+
+function stubbedError(status: number): { message: string; code?: string } {
+  const code = GATE_REFUSAL_CODES[status];
+  return code ? { message: 'stubbed', code } : { message: 'stubbed' };
+}
+
 export async function stubOrgLensContext(page: Page, options: StubOptions = {}): Promise<void> {
   const hasAccess = options.hasAccess ?? true;
 
@@ -302,13 +327,13 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
   // mirrors the server, where the same distinction is made by registration order instead.
   await page.route('**/api/orgs/*/lens/roi/projects/*', (route) => {
     const status = options.projectDetailStatus ?? 200;
-    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
     return fulfillJson(route, options.projectDetail ?? mockProjectDetail(DETAIL_PROJECT.slug));
   });
 
   await page.route('**/api/orgs/*/lens/roi/projects/*/annual*', (route) => {
     const status = options.projectDetailStatus ?? 200;
-    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify({ message: 'stubbed' }) });
+    if (status !== 200) return route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(stubbedError(status)) });
     return fulfillJson(route, options.projectAnnual ?? mockProjectAnnual(DETAIL_PROJECT.slug));
   });
 
@@ -317,15 +342,13 @@ export async function stubOrgLensContext(page: Page, options: StubOptions = {}):
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: hasAccess
-        ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: '', uid: MOCK_ACCOUNT_ID }]
-        : [],
+      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', accountSlug: 'red-hat', membershipTier: 'Gold' }] : [])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: 'Gold' }] : [])
   );
 
   await page.route('**/api/orgs/me/role-grants', (route) =>

@@ -15,15 +15,15 @@ import type { Lens, LensGrantInputs } from '../interfaces/lens.interface';
  *    resolves a create target reads the lens, so a lens they could never hold made projects
  *    they demonstrably administer unreachable.
  *
- * `me` is always present. `org` is feature-flagged and independent of both sources.
+ * `me` and `org` are always present; `org` is independent of both sources (Org Lens is GA —
+ * content within is FGA-gated per org).
  *
  * Extracted as a pure function so this authorisation-adjacent logic is unit-testable — the
  * Angular app has no unit-test runner, and `LensService` consumes this rather than
  * reimplementing it.
  */
 export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
-  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isOrgLensEnabled, isLFStaff, hasMarketingGrant, isRootAuditor } =
-    inputs;
+  const { hasBoardRole, hasProjectRole, isRootWriter, hasWriterFoundation, hasWriterProject, isLFStaff, hasMarketingGrant, isRootAuditor } = inputs;
 
   const showFoundation = hasBoardRole || isRootWriter || hasWriterFoundation || isLFStaff || hasMarketingGrant || isRootAuditor;
   const showProject = hasProjectRole || isRootWriter || hasWriterProject;
@@ -35,9 +35,7 @@ export function deriveAllowedLenses(inputs: LensGrantInputs): Lens[] {
   if (showProject) {
     lenses.push('project');
   }
-  if (isOrgLensEnabled) {
-    lenses.push('org');
-  }
+  lenses.push('org');
   return lenses;
 }
 

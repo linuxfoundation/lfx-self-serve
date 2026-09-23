@@ -6,10 +6,12 @@
 // outside an Angular bootstrap (as under Vitest). Importing the compiler first provides that facade.
 import '@angular/compiler';
 
+import { FormControl, FormGroup } from '@angular/forms';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { MeetingVisibility } from '../enums';
+import { MeetingType, MeetingVisibility } from '../enums';
 import type { Meeting } from '../interfaces';
+import { syncShowMeetingAttendeesLock } from './form.utils';
 import { getMeetingPrivacyIcon, getMeetingPrivacyLabel, isHostKeyVisible, isHostKeyVisibleForJoinWindow } from './meeting-privacy.utils';
 
 describe('getMeetingPrivacyLabel', () => {
@@ -134,5 +136,29 @@ describe('isHostKeyVisibleForJoinWindow', () => {
   it('is false for null/undefined meetings', () => {
     expect(isHostKeyVisibleForJoinWindow(null)).toBe(false);
     expect(isHostKeyVisibleForJoinWindow(undefined)).toBe(false);
+  });
+});
+
+describe('syncShowMeetingAttendeesLock', () => {
+  const buildForm = (meetingType: string, restricted: boolean, showAttendees: boolean) =>
+    new FormGroup({
+      meeting_type: new FormControl(meetingType),
+      restricted: new FormControl(restricted),
+      show_meeting_attendees: new FormControl(showAttendees),
+    });
+
+  it('disables and clears the control for board meetings', () => {
+    const form = buildForm(MeetingType.BOARD, false, true);
+    syncShowMeetingAttendeesLock(form);
+    expect(form.get('show_meeting_attendees')?.disabled).toBe(true);
+    expect(form.get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('re-enables the control when leaving a locked state', () => {
+    const form = buildForm(MeetingType.BOARD, false, false);
+    syncShowMeetingAttendeesLock(form);
+    form.get('meeting_type')?.setValue(MeetingType.TECHNICAL);
+    syncShowMeetingAttendeesLock(form);
+    expect(form.get('show_meeting_attendees')?.enabled).toBe(true);
   });
 });

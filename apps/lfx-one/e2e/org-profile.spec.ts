@@ -13,7 +13,6 @@
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
  * - `apps/lfx-one/.env` populated with TEST_USERNAME / TEST_PASSWORD
- * - `org-lens-enabled` LaunchDarkly flag toggled ON for the test user
  */
 
 import type { CascadingRoleGrant } from '@lfx-one/shared/interfaces';
@@ -119,7 +118,6 @@ async function stubOrgProfileContext(page: Page, options: StubGrantsOptions): Pr
           {
             accountId: MOCK_ACCOUNT_ID,
             accountName: MOCK_CANONICAL.name,
-            accountSlug: 'red-hat-llc',
             membershipTier: '',
             uid: MOCK_UID,
           },
@@ -196,10 +194,6 @@ async function gotoProfileWithStubs(page: Page, writers: string[]): Promise<void
   await page.goto(PROFILE_URL, { waitUntil: 'domcontentloaded' });
   skipWhenAuthMissing(page);
   await expect(page).not.toHaveURL(/auth0\.com/);
-
-  if (!page.url().includes('/org/profile')) {
-    test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
-  }
 }
 
 test.describe('Org Profile — authenticated smoke set (S1/S2/S3/S4)', () => {
@@ -302,10 +296,6 @@ test.describe('Org Profile — authenticated smoke set (S1/S2/S3/S4)', () => {
     await page.goto(PROFILE_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    if (!page.url().includes('/org/profile')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
-    }
-
     const root = page.getByTestId('org-profile-page');
     await expect(root).toHaveAttribute('data-state', 'error', { timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('org-profile-load-error')).toBeVisible();
@@ -337,9 +327,6 @@ test.describe('Org Profile — spec 022 inherited-auditor (US4)', () => {
 
     await page.goto(PROFILE_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/profile')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
-    }
 
     const root = page.getByTestId('org-profile-page');
     await expect(root).toHaveAttribute('data-state', 'loaded', { timeout: DATA_LOAD_TIMEOUT });
@@ -392,9 +379,6 @@ test.describe('Org Profile — spec 023 empty addresses graceful degradation', (
 
     await page.goto(PROFILE_URL, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
-    if (!page.url().includes('/org/profile')) {
-      test.skip(true, 'org-lens-enabled flag appears off — /org/profile redirected away');
-    }
 
     const root = page.getByTestId('org-profile-page');
     // Page loads cleanly — no exception thrown by the address-cards null path.

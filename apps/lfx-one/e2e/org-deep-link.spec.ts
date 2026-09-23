@@ -17,7 +17,6 @@
  *         organization, and leaves the previous selection untouched (FR-022…FR-024).
  *   E9c — a fresh session (no selection cookie) on such an address stays on the not-found page after
  *         the org list picks its default: a default is a selection, never a navigation (SC-004).
- *   E10 — with the Org Lens flag off, a deep link lands on the same not-found page, not on `/`.
  *   E11 (US2) — switching organization on a detail page re-addresses it (detail segment, query and
  *         fragment kept), every rendered Org Lens link follows, and Back returns to the pre-switch
  *         organization and page.
@@ -44,7 +43,6 @@
  * run after hydration. The SSR contract (no cookie organization in the pre-hydration HTML) is E16.
  */
 
-import { FEATURE_FLAG_OVERRIDE_STORAGE_KEY, ORG_LENS_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { expect, Page, test } from '@playwright/test';
 
 test.setTimeout(120_000);
@@ -163,14 +161,6 @@ async function stubOrgIdentity(page: Page): Promise<{ resolved: string[] }> {
   return { resolved };
 }
 
-/** Pins `org-lens-enabled` for this page before the app's flag-provider bootstrap runs — see `FEATURE_FLAG_OVERRIDE_STORAGE_KEY` (non-production builds). */
-async function stubOrgLensFlag(page: Page, enabled: boolean): Promise<void> {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key as string, value as string), [
-    FEATURE_FLAG_OVERRIDE_STORAGE_KEY,
-    JSON.stringify({ [ORG_LENS_ENABLED_FLAG]: enabled }),
-  ] as const);
-}
-
 async function plantSelectionCookie(page: Page, baseURL: string | undefined, uid: string): Promise<void> {
   // Planted for the configured base URL (E2E_BASE_URL may override localhost).
   if (!baseURL) throw new Error('baseURL fixture is required to plant the selection cookie');
@@ -190,12 +180,8 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
   // with two matches under strict mode.
   test.use({ viewport: { width: 1440, height: 900 } });
 
-  test.beforeEach(async ({ page, context }) => {
+  test.beforeEach(async ({ context }) => {
     await context.clearCookies({ name: 'lfx-selected-account' });
-    // Pin the Org Lens flag on so the scenarios do not depend on the environment's LaunchDarkly state
-    // (a direct visit can be redirected before the authenticated flag context is ready). E10 pins it
-    // off again — its init script is registered later and wins.
-    await stubOrgLensFlag(page, true);
   });
 
   test('E1: a fresh session opens a slug address and lands on the named organization', async ({ page }) => {
@@ -304,22 +290,6 @@ test.describe('Org Lens deep links — /org/{segment}/{page}', () => {
     await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/);
     expect(await page.evaluate(() => window.history.length)).toBe(historyAtNotFound);
     await expect(page.locator('body')).not.toContainText(UNKNOWN_SLUG);
-  });
-
-  test('E10: with the Org Lens flag off, a deep link lands on the not-found page, not on the dashboard', async ({ page, baseURL }) => {
-    await stubOrgIdentity(page);
-    await stubOrgLensFlag(page, false);
-    await plantSelectionCookie(page, baseURL, ORG_A_UID);
-
-    await page.goto(`/org/${ORG_B_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
-    skipWhenAuthMissing(page);
-
-    await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SIDEBAR_TIMEOUT });
-    await expect(page.getByTestId('org-not-found')).toBeVisible({ timeout: SIDEBAR_TIMEOUT });
-    // The dead end is reached before any resolution: the addressed organization is never named, and
-    // the selection is untouched.
-    await expect(page.locator('body')).not.toContainText(ORG_B_NAME);
-    expect((await readSelectionCookie(page))?.uid).toBe(ORG_A_UID);
   });
 
   /** Opens the (desktop) selector and picks an organization row. */

@@ -18,6 +18,8 @@ const {
   getManagers,
   addManager,
   removeManager,
+  getContributorAcknowledgments,
+  invalidateAcknowledgment,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -30,6 +32,8 @@ const {
   getManagers: vi.fn(),
   addManager: vi.fn(),
   removeManager: vi.fn(),
+  getContributorAcknowledgments: vi.fn(),
+  invalidateAcknowledgment: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -45,6 +49,8 @@ vi.mock('../services/org-cla.service', () => ({
     public getManagers = getManagers;
     public addManager = addManager;
     public removeManager = removeManager;
+    public getContributorAcknowledgments = getContributorAcknowledgments;
+    public invalidateAcknowledgment = invalidateAcknowledgment;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -651,6 +657,112 @@ describe('OrgClasController.getApprovalList', () => {
 });
 
 /**
+ * Contributor Acknowledgments read (#1986). The route guard is asserted in the router spec; this
+ * layer's job is to translate query parameters correctly, clamp the page size before it reaches
+ * the producer, and answer 404 for a signature this organization does not hold.
+ */
+function ackReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function ackList(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getContributorAcknowledgments', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+
+  it('forwards the trimmed search term to the service so filtering is server-side, not client-side', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const req = ackReq({ search: '  ahmed  ' });
+
+    await new OrgClasController().getContributorAcknowledgments(req, buildRes(), vi.fn());
+
+    // A search that only lived on the browser would filter the already-loaded page and silently
+    // miss every match on the pages that follow.
+    expect(getContributorAcknowledgments).toHaveBeenCalledWith(req, ORG_UID, 'signature-uuid-1', expect.objectContaining({ search: 'ahmed' }));
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: 'cursor-xyz' })
+    );
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(
+      expect.anything(),
+      ORG_UID,
+      'signature-uuid-1',
+      expect.objectContaining({ nextKey: undefined })
+    );
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getContributorAcknowledgments(ackReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getContributorAcknowledgments).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getContributorAcknowledgments.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries every listed contributor's identity attributes and a per-caller `canEdit`
+  // flag, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getContributorAcknowledgments.mockResolvedValue(ackList());
+    const res = buildRes();
+
+    await new OrgClasController().getContributorAcknowledgments(ackReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+});
+
+/**
  * The delta arrives from a browser, so every part of it is untrusted. Validation lives here rather
  * than in the service because these are malformed *requests* — a 400 naming the offending entry is
  * the answer, and the producer's own 400 arrives as one joined sentence about every failure at
@@ -1012,5 +1124,198 @@ describe('OrgClasController — CLA manager path parameters', () => {
 
     expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
     expect(removeManager).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Invalidate one contributor acknowledgment (#2807).
+ *
+ * The controller's own job is the untrusted body and the outcome→status mapping. Authorization
+ * lives in front of it (`blockDuringImpersonation` then `requireOrgLensAccess`, asserted in the
+ * route spec) and beneath it (the roster gate and the ownership verify, asserted in the service
+ * spec) — so nothing here can stand in for either.
+ */
+describe('OrgClasController.invalidateAcknowledgment', () => {
+  const ORG = '0014100000Te2ovAAB';
+
+  const SIGNATURE_ID = '11111111-1111-4111-8111-111111111111';
+  const ACK_ID = '22222222-2222-4222-8222-222222222222';
+
+  function invalidateReq(body: unknown = {}, params: Record<string, string> = {}): any {
+    return {
+      params: { orgUid: ORG, signatureId: SIGNATURE_ID, acknowledgmentSignatureId: ACK_ID, ...params },
+      query: {},
+      body,
+    };
+  }
+
+  beforeEach(() => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'invalidated', result: { signatureId: 'ecla-sig-1' } });
+  });
+
+  it('returns 401 (via next) when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('rejects a missing acknowledgment id rather than addressing the producer with an empty segment', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({}, { acknowledgmentSignatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('rejects an acknowledgment id that is not a signature uuid', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({}, { acknowledgmentSignatureId: 'not-a-uuid' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The reason is a four-value enum on the producer's contract. Refusing an unknown value here
+   * rather than forwarding it means the CLA manager gets copy the tab can render, instead of the
+   * producer's own validation wording arriving through a 400 the tab has to guess at.
+   */
+  it('refuses a reason the producer does not define, without calling the service', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ reason: 'because-i-said-so' }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('accepts each reason the producer defines', async () => {
+    for (const reason of ['signed-in-error', 'should-be-corporate', 'compliance', 'other']) {
+      invalidateAcknowledgment.mockClear();
+      await new OrgClasController().invalidateAcknowledgment(invalidateReq({ reason }), buildRes(), vi.fn());
+
+      expect(invalidateAcknowledgment).toHaveBeenCalledWith(expect.anything(), ORG, SIGNATURE_ID, ACK_ID, { reason });
+    }
+  });
+
+  /**
+   * Refused, not truncated. The note is written to a legal audit trail, and a note silently cut
+   * at the cap is recorded as something the CLA manager did not write.
+   */
+  it('refuses a note past the producer cap rather than truncating it', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note: 'x'.repeat(2049) }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('accepts a note exactly at the cap', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note: 'x'.repeat(2048) }), res, vi.fn());
+
+    expect(invalidateAcknowledgment).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(400);
+  });
+
+  /**
+   * The producer counts runes. 2,048 non-BMP characters are 4,096 UTF-16 units, so a `.length`
+   * check would refuse a note the producer accepts.
+   */
+  it('accepts a note of 2048 code points that a UTF-16 count would refuse', async () => {
+    const note = '𠮷'.repeat(2048);
+    expect(note.length).toBe(4096);
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note }), res, vi.fn());
+
+    expect(invalidateAcknowledgment).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(400);
+  });
+
+  it('refuses a note of 2049 code points', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note: '𠮷'.repeat(2049) }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('drops a non-string note rather than passing it to the producer', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ note: { toString: 'nope' } }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(invalidateAcknowledgment).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 for an acknowledgment that is not on this agreement', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-found' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+  });
+
+  it('answers 403 for a caller who is not a CLA manager on this agreement', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'forbidden' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('answers 400 with its own copy for an unsigned agreement', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-signed' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: expect.stringContaining('has not been signed yet') });
+  });
+
+  it('marks the response no-store, so a write receipt never lands in a shared cache', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  /**
+   * The free-text note is a CLA manager's own words about a named contributor, so it stays out of
+   * the metadata this handler writes. The reason is one of four fixed enum values and carries no
+   * such detail, which is why it is the only one of the two that is logged.
+   *
+   * Asserted against the metadata argument alone. The whole `req` is the logger's first argument
+   * on every call in this file, so scanning all arguments would match the note on the request body
+   * and pass or fail for reasons this handler does not control.
+   */
+  it('logs the reason but not the free-text note', async () => {
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq({ reason: 'other', note: 'left the company in March' }), buildRes(), vi.fn());
+
+    // Read off the hoisted spy, not the `logger` import: that import is typed as the real service,
+    // so `.mock` is not on it and the app build (which type-checks server specs, unlike
+    // `check-types`) rejects it.
+    const metadata = loggerMock.success.mock.calls.map((call: unknown[]) => call[3]);
+
+    expect(JSON.stringify(metadata)).not.toContain('left the company in March');
+    expect(metadata).toContainEqual(expect.objectContaining({ reason: 'other' }));
   });
 });

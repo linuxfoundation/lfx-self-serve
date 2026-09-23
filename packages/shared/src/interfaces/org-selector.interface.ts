@@ -111,11 +111,38 @@ export interface RoleGrantsResponse {
   username: string;
   /** Server-side load timestamp (ISO 8601 UTC). */
   loaded_at: string;
-  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`, `lf-contractor`) — the global-auditor population that holds `auditor` on every `b2b_org` (spec 044). Field name retained for wire compatibility; it is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org. Distinct from `PersonaResult.isLFStaff`, which stays staff-only. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays above: a team caller who also administers orgs has both. `false` whenever the determination could not be completed. */
+  /** Caller is a member of any LF team in `LF_TEAM_IDS` (`lf-staff`) — the population that holds `auditor` on every `b2b_org`. `false` whenever the determination could not be completed, so it is fail-closed rather than unknown (see `staffCheck`). It is an affordance signal (switcher + catalogue search), never a read gate — the gate asks the authorizer per org, so an explicitly-granted caller still reads that org with this false. Distinct from `PersonaResult.isLFStaff`, which is a separate staff-only check with separate consumers. Always present, never optional, so a client cannot read "absent" as "unknown". Orthogonal to the grant arrays. */
   isStaff: boolean;
   /** LFXV2-3029 — true when the caller's inherited grants could not be fully resolved, so the arrays above are a lower bound rather than the complete set. Lets the client say the lookup broke rather than that the caller has no organizations, and tells a server gate to answer "unverifiable" (503) instead of "denied" (403) on a negative. Never invalidates an entry that IS listed: every uid present is authoritative. Always present. */
   degraded: boolean;
+  /**
+   * Spec 053 (FR-020) — why the arrays above may be incomplete. `failed`: the roster never loaded and
+   * the answer is unknown; `partial`: direct grants loaded but the inherited roll-up is a lower bound;
+   * `ok`: complete. Optional for rolling deploys: absent ⇒ derive from `degraded` (`true` → `partial`).
+   */
+  lookupOutcome?: OrgLensLookupOutcome;
+  /**
+   * Spec 053 (FR-011) — whether the LF-team membership check answered. `failed` means it threw and
+   * `isStaff` is a fail-closed `false`, so the client MUST render the staff-check state and never the
+   * employee no-access copy. Absent ⇒ `ok`.
+   */
+  staffCheck?: OrgLensStaffCheck;
+  /**
+   * Spec 053 (FR-011) — random per-computation UUID, present only when `staffCheck === 'failed'`; the
+   * same id is logged with that computation's lookup warnings and sent as the `X-Correlation-Id`
+   * response header (`ORG_ROLE_GRANTS_CORRELATION_HEADER`), so a caller quoting it can be found. Never
+   * `req.id` (a per-process counter). It is the id logged by the computation that produced the result
+   * — within the short failed-check cache window (`ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS`)
+   * that may be an earlier request's, which is why it is not this request's `X-Request-Id`.
+   */
+  correlationId?: string;
 }
+
+/** Spec 053 — completeness of the caller's organization-list lookup. */
+export type OrgLensLookupOutcome = 'ok' | 'partial' | 'failed';
+
+/** Spec 053 — whether the LF-team membership check answered. */
+export type OrgLensStaffCheck = 'ok' | 'failed';
 
 /**
  * Response of `GET /api/orgs/resolve/:segment` (spec 050). Resolves a `/org/{segment}/…` address
@@ -329,6 +356,14 @@ export interface MemberServiceB2bOrgResponse {
 /** Per-row caller role persona (spec 022 D-005 + FR-011a). The four variants are pairwise disjoint per uid; `direct-*` rows get the Edit button, `inherited-*` rows get a tooltip-only disclosure. */
 export type OrgRolePersona = 'direct-writer' | 'direct-auditor' | 'inherited-writer' | 'inherited-auditor';
 
+/** The four grant sets a viewer holds on organizations, direct and roll-up-derived, as `OrgRoleGrantsService` publishes them. Input to `resolveOrgRolePersona` and the default-organization ranking. */
+export interface OrgRoleGrantSets {
+  writerSet: ReadonlySet<string>;
+  inheritedWriterSet: ReadonlySet<string>;
+  auditorSet: ReadonlySet<string>;
+  inheritedAuditorSet: ReadonlySet<string>;
+}
+
 /** Resolved per-uid role with source qualifier and the parent uid it inherits from (cascading rows only) — spec 022 D-005. Crossed-service payload between `OrgRoleGrantsService` and `OrgNavigationService`. */
 export interface ResolvedOrgRole {
   roleSource: OrgRolePersona;
@@ -350,10 +385,14 @@ export interface AccessAwareOrgsResult {
   loadedAt: string;
   /** Caller's resolved username (echoed back through `RoleGrantsResponse.username`). */
   username: string;
-  /** Caller is a member of an LF team (`LF_TEAM_IDS`; global auditor population). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
+  /** Caller is a member of an LF team (`LF_TEAM_IDS`). Resolved independently of the roster, so it is meaningful even when `resolved` is empty or `upstreamFailed` is true. */
   isStaff: boolean;
   /** LFXV2-3029 — true when the inherited portion of the set is a lower bound: the connected-component walk hit a hard cap or failed outright, authoritative classification of discovered candidates could not be completed, or a direct grant's `b2b_org` doc never landed so its component was never walked. Distinct from `upstreamFailed`: the direct-grant roster still loaded, and every entry in `resolved` is still authoritative — this flags what is *missing*, so it must never be read as invalidating an org that is present. Surfaces on `RoleGrantsResponse.degraded`. */
   degraded: boolean;
+  /** Spec 053 — whether `resolveIsStaff` answered; `failed` results are cached only under `ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS` (see `getAccessAwareOrgs`). */
+  staffCheck: OrgLensStaffCheck;
+  /** Spec 053 — per-computation UUID echoed into that computation's warnings. Set on every computed result; surfaced on the wire (`RoleGrantsResponse.correlationId`) only when `staffCheck === 'failed'`. */
+  correlationId?: string;
 }
 
 /** Serializable form of `AccessAwareOrgsResult` for the shared cache — Maps stored as ordered entry arrays. */
@@ -367,4 +406,8 @@ export interface AccessAwareOrgsCacheEntry {
   isStaff: boolean;
   /** Required, so an entry written by the direct/downward-only resolver fails the shape guard and is recomputed rather than presenting an incomplete legacy result as a complete connected-component classification. */
   degraded: boolean;
+  /** Required, so an entry written before spec 053 fails the shape guard and is recomputed rather than answering `undefined` for the staff-check state. */
+  staffCheck: OrgLensStaffCheck;
+  /** Stored with a `failed` staff check so a short-TTL hit renders the reference that was logged; a `failed` entry without it (or with `isStaff: true`) fails the shape guard. */
+  correlationId?: string;
 }

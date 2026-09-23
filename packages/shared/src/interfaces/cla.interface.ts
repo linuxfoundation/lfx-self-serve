@@ -5,6 +5,7 @@ import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_DETAIL_TABS,
+  ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_MANAGER_REFUSALS,
   ORG_CLA_PERMISSION_ACTIONS,
 } from '../constants/cla.constants';
@@ -650,7 +651,7 @@ export interface OrgClaGroup {
   projects: OrgClaGroupProject[];
   /**
    * First covered-project SFID from upstream, captured before nameless projects are dropped
-   * from `projects` for display. Approval-list ACS pair — the same id `resolveApprovalContext`
+   * from `projects` for display. Approval-list ACS pair — the same id `resolveClaGroupContext`
    * keys the PUT on. Absent when upstream sent no project SFID.
    */
   pairProjectSfid?: string;
@@ -1046,6 +1047,147 @@ export interface OrgClaApprovalEntriesDialogData {
    * answers 200, which would report success for a change that did not happen.
    */
   existing: OrgClaApprovalEntry[];
+}
+
+// ---------------------------------------------------------------------------
+// Contributor Acknowledgments (#1986)
+//
+// The Organization Lens Contributor Acknowledgments tab lists the ECLA signatures the producer
+// holds under one CCLA (company × CLA Group), with a per-row invalidate. Two invariants shape the
+// contract:
+//
+//   1. **Never drop a row for a missing LF Login.** The identity fallback chain below is what lets
+//      the column always render a visible value.
+//   2. **`githubUsername` and `gitlabUsername` are display logins, not stable identifiers.** They
+//      are user-changeable, so nothing in the UI keys on them. The stable identifier is
+//      `signatureId` — the per-ack signature id the producer uses to address an invalidate.
+// ---------------------------------------------------------------------------
+
+/**
+ * One acknowledgment as the table renders it.
+ *
+ * Every field except `signatureId`, `cclaVersion`, and `approved` is optional; missing attributes
+ * render as an em-dash rather than dropping the row. The row is Invalidated when `approved` is
+ * false OR any of `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy
+ * rows can carry the stamps with `approved: true`; the stamps are authoritative).
+ */
+export interface OrgClaContributorAcknowledgment {
+  /** Per-ack signature id. Stable. Used to address an invalidate. */
+  signatureId: string;
+  /** LF Login username, when known. */
+  lfLogin?: string;
+  /** GitHub username (login). Display only; NOT a stable identifier. */
+  githubUsername?: string;
+  /** GitLab username (login). Display only; NOT a stable identifier. */
+  gitlabUsername?: string;
+  email?: string;
+  /** DocuSign name the contributor signed under. */
+  name?: string;
+  /**
+   * The CCLA version the acknowledgment was recorded against.
+   *
+   * Normalized to a `v`-prefixed string ("v1", "v2.1", …) at the mapper; a value already prefixed
+   * with `v`/`V` is returned unchanged. An empty version renders as an em-dash at the row.
+   */
+  cclaVersion: string;
+  /** When the acknowledgment was recorded, when the producer reported it. */
+  signedOn?: string;
+  /** False when the signature is invalidated. Default true for legacy rows the producer omits. */
+  approved: boolean;
+  invalidatedAt?: string;
+  /** Username of the acting CLA manager or admin who invalidated the acknowledgment. */
+  invalidatedBy?: string;
+  /** Reason recorded with the invalidation. Free text from the invalidator. */
+  invalidationReason?: string;
+}
+
+/**
+ * The paginated acknowledgment list for one CCLA.
+ *
+ * `signatureId` is the CCLA signature id from the route parameter (the agreement this list belongs
+ * to), NOT any per-row `signatureId` inside `list`. `canEdit` is server-decided from the CCLA's
+ * manager roster and MUST NOT be inferred client-side.
+ */
+export interface OrgClaContributorAcknowledgmentList {
+  signatureId: string;
+  list: OrgClaContributorAcknowledgment[];
+  /**
+   * Whether the caller may invalidate rows on this agreement.
+   *
+   * Server-decided from the CCLA's manager roster (LF-username match), fails open only when the
+   * producer sent no roster at all — matching the sibling approval-list posture.
+   */
+  canEdit: boolean;
+  resultCount: number;
+  totalCount: number;
+  /** Producer's opaque cursor for the next page, or `null` when there is no next page. */
+  nextKey: string | null;
+}
+
+/**
+ * One rendered acknowledgment row. The producer's `signatureId` on `ack` is the stable per-ack key.
+ * `identity` is the display chosen for the LF Login / GitHub or GitLab ID column.
+ */
+export interface OrgClaAcknowledgmentRow {
+  ack: OrgClaContributorAcknowledgment;
+  name: string;
+  identity: {
+    display: string;
+    href: string | null;
+    ariaLabel: string;
+  };
+  cclaVersion: string;
+  signedOnLabel: string;
+  invalidated: boolean;
+  invalidatedTooltip: string;
+  /**
+   * Whether this row can be invalidated at all, independent of who is asking.
+   *
+   * False for a row whose `signatureId` is empty. The list mapper drops a producer row without
+   * one, and an empty id would address the producer with an empty path segment.
+   */
+  invalidatable: boolean;
+  invalidatePending: boolean;
+  /** Accessible name for the per-row Invalidate control, computed while mapping the row. */
+  invalidateAriaLabel: string;
+}
+
+/** Producer enum, derived from the runtime tuple in `cla.constants`. */
+export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[number];
+
+/**
+ * Body posted to the BFF invalidate endpoint.
+ *
+ * Both fields are optional at the contract level — the producer accepts an empty body — but the
+ * UI dialog requires a reason before it lets the caller confirm. `note` is trimmed and length-
+ * capped at the server; anything past the cap is refused as 400, not truncated.
+ */
+export interface OrgClaInvalidateAcknowledgmentRequest {
+  reason?: OrgClaInvalidationReason;
+  note?: string;
+}
+
+/** What the acknowledgments panel hands the confirmation dialog. */
+export interface OrgClaInvalidateAcknowledgmentDialogData {
+  /** Identity the panel already resolved. The dialog does not repeat that fallback chain. */
+  contributor: string;
+}
+
+/**
+ * What the BFF returns once the producer has invalidated the acknowledgment.
+ *
+ * A receipt, not a row. The producer's own response echoes an identity triple — CLA Group id,
+ * internal company id, EasyCLA user id — and none of the three crosses to the browser: the same
+ * boundary the list mapper holds, where the row deliberately does not carry the ids the write
+ * paths are addressed by. What is left is the per-ack signature id the browser already supplied,
+ * which is enough to correlate the receipt with the row that was acted on.
+ *
+ * The producer stamps `invalidatedAt` / `invalidatedBy` and reports neither here, so the new row
+ * state cannot be derived from this. The tab refetches instead.
+ */
+export interface OrgClaInvalidateAcknowledgmentResult {
+  /** The per-ack signature id that was invalidated. */
+  signatureId: string;
 }
 
 /**
