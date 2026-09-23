@@ -6,6 +6,7 @@ import { FormControl, type FormGroup } from '@angular/forms';
 import { DRAFT_VOTE_DEFAULT_DURATION_DAYS, DRAFT_VOTE_PLACEHOLDER_QUESTION, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '../constants/poll.constants';
 import { LEGACY_VOTE_TIMEZONE } from '../constants/timezones.constants';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { PollStatus } from '../enums/poll.enum';
 import { maxCodePointsValidator } from '../validators/max-code-points.validator';
 import { combineDateTime, formatTo12HourInTimezone, parseTime12Hour, toZonedDateCarrier, wallTimeExistsInTimezone } from './date-time.utils';
 import type { PaginatedResponse } from '../interfaces/api.interface';
@@ -417,4 +418,31 @@ export function resolveCursorWalkOutcome<T>(response: PaginatedResponse<T>, fetc
   }
 
   return { action: 'clamp', clampIndex: fetchedIndex };
+}
+
+/**
+ * Canonical vote list ordering: active votes first, newest-created first within each tier
+ * @description Shared by every vote list read (project/committee lists via the BFF's `getVotes`, and
+ * Me-lens via `getMyVotes`) so all surfaces agree on one ordering (GH-1558). Tier 1: `status === ACTIVE`
+ * before everything else (ended, disabled/draft). Tier 2: `creation_time` descending — a missing or
+ * unparseable timestamp sorts as epoch 0, i.e. last within its tier. Remaining ties break on `uid`
+ * ascending so offset pagination stays deterministic.
+ * @param a - First vote
+ * @param b - Second vote
+ * @returns Negative when `a` sorts before `b`, positive when after, zero when equivalent
+ */
+export function compareVotesByRecency(a: Vote, b: Vote): number {
+  const tierA = a.status === PollStatus.ACTIVE ? 0 : 1;
+  const tierB = b.status === PollStatus.ACTIVE ? 0 : 1;
+  if (tierA !== tierB) {
+    return tierA - tierB;
+  }
+
+  const createdA = a.creation_time ? Date.parse(a.creation_time) || 0 : 0;
+  const createdB = b.creation_time ? Date.parse(b.creation_time) || 0 : 0;
+  if (createdA !== createdB) {
+    return createdB - createdA;
+  }
+
+  return a.uid.localeCompare(b.uid);
 }

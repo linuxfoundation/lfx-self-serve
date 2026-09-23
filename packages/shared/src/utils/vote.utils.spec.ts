@@ -18,6 +18,7 @@ import {
   buildDraftUpdateVoteRequest,
   buildDraftVoteRequest,
   buildUpdateVoteRequest,
+  compareVotesByRecency,
   computeVoteParticipationStats,
   mapVoteToFormValue,
 } from './vote.utils';
@@ -233,5 +234,79 @@ describe('computeVoteParticipationStats', () => {
 
   it('keeps participationRate as the share of eligible voters (abstentions count as responses)', () => {
     expect(computeVoteParticipationStats(results()).participationRate).toBe(75);
+  });
+});
+
+describe('compareVotesByRecency', () => {
+  /** Minimal Vote fixture — the comparator only reads uid, status, and creation_time. */
+  function recencyVote(overrides: Partial<Vote> = {}): Vote {
+    return {
+      uid: 'vote-uid',
+      name: 'Board election',
+      end_time: '2025-06-01T00:00:00Z',
+      status: PollStatus.ENDED,
+      project_uid: 'project-uid',
+      creation_time: '2025-05-01T00:00:00Z',
+      ...overrides,
+    };
+  }
+
+  const uids = (votes: Vote[]): string[] => votes.map((v) => v.uid);
+
+  it('sorts active votes before ended and disabled votes', () => {
+    const sorted = [
+      recencyVote({ uid: 'ended', status: PollStatus.ENDED, creation_time: '2025-05-10T00:00:00Z' }),
+      recencyVote({ uid: 'active', status: PollStatus.ACTIVE, creation_time: '2025-05-01T00:00:00Z' }),
+      recencyVote({ uid: 'disabled', status: PollStatus.DISABLED, creation_time: '2025-05-20T00:00:00Z' }),
+    ].sort(compareVotesByRecency);
+
+    // 'active' leads despite being the oldest; 'disabled' precedes 'ended' on creation_time desc.
+    expect(uids(sorted)).toEqual(['active', 'disabled', 'ended']);
+  });
+
+  it('orders newest-created first within a tier', () => {
+    const sorted = [
+      recencyVote({ uid: 'older', creation_time: '2025-05-01T00:00:00Z' }),
+      recencyVote({ uid: 'newest', creation_time: '2025-06-10T00:00:00Z' }),
+      recencyVote({ uid: 'middle', creation_time: '2025-05-15T00:00:00Z' }),
+    ].sort(compareVotesByRecency);
+
+    expect(uids(sorted)).toEqual(['newest', 'middle', 'older']);
+  });
+
+  it('keeps ended and disabled votes in one tier, interleaved by creation_time desc', () => {
+    const sorted = [
+      recencyVote({ uid: 'disabled-new', status: PollStatus.DISABLED, creation_time: '2025-05-20T00:00:00Z' }),
+      recencyVote({ uid: 'ended-old', status: PollStatus.ENDED, creation_time: '2025-05-01T00:00:00Z' }),
+      recencyVote({ uid: 'ended-new', status: PollStatus.ENDED, creation_time: '2025-05-25T00:00:00Z' }),
+    ].sort(compareVotesByRecency);
+
+    expect(uids(sorted)).toEqual(['ended-new', 'disabled-new', 'ended-old']);
+  });
+
+  it('sorts a vote with a missing creation_time last within its tier', () => {
+    const sorted = [recencyVote({ uid: 'no-timestamp', creation_time: undefined }), recencyVote({ uid: 'old', creation_time: '2020-01-01T00:00:00Z' })].sort(
+      compareVotesByRecency
+    );
+
+    expect(uids(sorted)).toEqual(['old', 'no-timestamp']);
+  });
+
+  it('treats an unparseable creation_time like a missing one instead of producing NaN', () => {
+    const sorted = [recencyVote({ uid: 'garbage', creation_time: 'not-a-date' }), recencyVote({ uid: 'old', creation_time: '2020-01-01T00:00:00Z' })].sort(
+      compareVotesByRecency
+    );
+
+    expect(uids(sorted)).toEqual(['old', 'garbage']);
+  });
+
+  it('breaks creation_time ties on uid ascending so pagination is deterministic', () => {
+    const sorted = [
+      recencyVote({ uid: 'bbb', creation_time: '2025-05-01T00:00:00Z' }),
+      recencyVote({ uid: 'aaa', creation_time: '2025-05-01T00:00:00Z' }),
+      recencyVote({ uid: 'ccc' }), // default creation_time matches the other two
+    ].sort(compareVotesByRecency);
+
+    expect(uids(sorted)).toEqual(['aaa', 'bbb', 'ccc']);
   });
 });
