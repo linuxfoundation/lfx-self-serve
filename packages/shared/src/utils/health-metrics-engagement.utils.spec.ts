@@ -318,8 +318,8 @@ describe('organization participation rules', () => {
       lastEngagedDate: '2026-08-14',
       daysSinceLastEngaged: 39,
       lapsed: false,
+      // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
-        { range: 'YTD', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank },
         {
           range: 'COMPLETED_YEAR',
           meetingsHeld: 30,
@@ -330,6 +330,7 @@ describe('organization participation rules', () => {
           avgReps: 1.1,
           sortRank: sortRank === null ? null : 10 - sortRank,
         },
+        { range: 'YTD', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank },
       ],
       ...overrides,
     };
