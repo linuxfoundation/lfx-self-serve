@@ -217,6 +217,9 @@ router.get('/engagement-non-member-participation', requireDashboardAccess, (req,
   analyticsController.getEngagementNonMemberParticipation(req, res, next)
 );
 
+// Health Metrics Engagement "Representatives" section (#2802)
+router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
+
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.
 // Authorization is enforced server-side with ED/FGA detection. Shared with LF Staff Marketing

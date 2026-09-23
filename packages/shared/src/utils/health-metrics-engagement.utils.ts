@@ -19,6 +19,10 @@ import type {
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
+  HealthMetricsEngagementRepFilter,
+  HealthMetricsEngagementRepPeriod,
+  HealthMetricsEngagementRepPeriodCounts,
+  HealthMetricsEngagementRepRow,
   HealthMetricsEngagementParticipationPeriod,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSectionKey,
@@ -190,6 +194,44 @@ export function sortHealthMetricsEngagementNonMemberRows(
   range: HealthMetricsRange
 ): HealthMetricsEngagementNonMemberRow[] {
   return [...rows].sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** The selected period's numbers for one representative, falling back to the newest period held. */
+export function selectHealthMetricsEngagementRepPeriod(row: HealthMetricsEngagementRepRow, range: HealthMetricsRange): HealthMetricsEngagementRepPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** The selected period's caption counts. This view counts its scope per period, unlike the others. */
+export function selectHealthMetricsEngagementRepCounts(
+  counts: readonly HealthMetricsEngagementRepPeriodCounts[] | null,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepPeriodCounts | null {
+  return counts ? selectPeriod(counts, range) : null;
+}
+
+/**
+ * The representatives table's client-side cut. Every cut starts from the people invited in the
+ * selected period — the population the view's own caption counts — so the table and its caption
+ * cannot disagree. Read order is already last-attended-first and period-independent, so the pill
+ * re-filters without re-sorting.
+ */
+export function filterHealthMetricsEngagementRepRows(
+  rows: readonly HealthMetricsEngagementRepRow[],
+  filter: HealthMetricsEngagementRepFilter,
+  search: string,
+  range: HealthMetricsRange
+): HealthMetricsEngagementRepRow[] {
+  const term = search.trim().toLowerCase();
+
+  return rows.filter((row) => {
+    const period = selectPeriod(row.periods, range);
+    if (!period || period.meetingsInvited === 0) return false;
+    if (filter === 'never' && !period.neverAttended) return false;
+    if (filter === 'lapsed' && !period.lapsed) return false;
+
+    // Searched together because the name and its organization sub-line read as one cell.
+    return term === '' || row.personName.toLowerCase().includes(term) || row.accountName.toLowerCase().includes(term);
+  });
 }
 
 /** One rank order for both organization tables: a divergent copy would sort them differently. */

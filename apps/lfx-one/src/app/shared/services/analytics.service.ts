@@ -89,6 +89,8 @@ import {
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
+  HealthMetricsEngagementRepQuery,
+  HealthMetricsEngagementRepresentatives,
 } from '@lfx-one/shared/interfaces';
 import {
   DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY_DISTINCT,
@@ -1169,6 +1171,24 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementNonMemberParticipation>('/api/analytics/engagement-non-member-participation', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-non-member-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Representatives" table
+   * @param query - Foundation scope; the period pill, the filter cut and search all resolve client-side
+   * @returns Observable of every representative with all four periods and the per-period caption counts
+   */
+  public getEngagementRepresentatives(query: HealthMetricsEngagementRepQuery): Observable<HealthMetricsEngagementRepresentatives> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table renders "no representatives", so a swallowed failure would
+    // state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementRepresentatives>('/api/analytics/engagement-representatives', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-representatives failed', { query, error });
         return throwError(() => error);
       })
     );
