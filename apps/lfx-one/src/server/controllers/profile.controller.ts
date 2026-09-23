@@ -161,17 +161,23 @@ export class ProfileController {
       }
 
       // Get user metadata from NATS (authoritative source). created_at rides top-level on the
-      // envelope (not inside UserMetadata) — see #2836. getUserInfo already resolves the effective
-      // (impersonation target's) username, so this is impersonation-aware with no extra plumbing.
+      // envelope (not inside UserMetadata) — see #2836. `username` was resolved above via
+      // getUsernameFromAuth, which routes through the impersonation-aware getEffectiveUsername
+      // except on its pre-existing Authelia-bearer-token shortcut (see parent issue #2835).
       let natsUserData: UserMetadata | null = null;
       let natsCreatedAt = '';
       try {
         const natsResponse = await this.userService.getUserInfo(req, username);
 
+        if (natsResponse.success) {
+          // created_at lives on the envelope independent of `data` — a user with no stored
+          // metadata still gets a real join date and must not have it dropped by this guard.
+          natsCreatedAt = natsResponse.created_at || '';
+        }
+
         if (natsResponse.success && natsResponse.data) {
           natsUserData = natsResponse.data;
-          natsCreatedAt = natsResponse.created_at || '';
-        } else {
+        } else if (!natsResponse.success) {
           logger.warning(req, 'get_current_user_profile', 'Failed to fetch user metadata from NATS', {
             username,
             error: natsResponse.error,

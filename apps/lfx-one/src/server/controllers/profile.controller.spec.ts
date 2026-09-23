@@ -1144,4 +1144,15 @@ describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () =>
     expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('keeps the real created_at when the read succeeds with no stored metadata (data absent)', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, created_at: '2023-03-15T10:00:00Z' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '2023-03-15T10:00:00Z' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
 });
