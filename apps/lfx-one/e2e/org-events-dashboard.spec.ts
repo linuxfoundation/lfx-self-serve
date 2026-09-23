@@ -3,9 +3,11 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const ORG_EVENTS_URL = '/org/events';
 const DATA_LOAD_TIMEOUT = 30_000;
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 test.setTimeout(120_000);
 
@@ -43,7 +45,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
         organizations: [
           {
             accountId: MOCK_ACCOUNT_ID,
-            accountName: 'Red Hat LLC',
+            accountName: SYNTHETIC_ORG_NAME,
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -60,7 +62,7 @@ async function stubOrgEventsRoutes(page: Page): Promise<void> {
       body: JSON.stringify([
         {
           accountId: MOCK_ACCOUNT_ID,
-          accountName: 'Red Hat LLC',
+          accountName: SYNTHETIC_ORG_NAME,
           membershipTier: 'Gold',
         },
       ]),

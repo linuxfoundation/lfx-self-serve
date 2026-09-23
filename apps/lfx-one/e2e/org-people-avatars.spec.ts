@@ -11,10 +11,12 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from './fixtures/mock-data/synthetic-org.mock';
+
 const PEOPLE_COMMITTEE_URL = '/org/people?tab=committee';
 const DATA_LOAD_TIMEOUT = 30_000;
 
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Motors';
 

@@ -23,14 +23,15 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
 export const EASYCLA_URL = ORG_EASYCLA_PATH;
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
-export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-export const MOCK_ACCOUNT_NAME = 'Acme Motors';
+export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
+export const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';

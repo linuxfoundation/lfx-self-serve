@@ -18,25 +18,27 @@
 import type { CascadingRoleGrant } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME, SYNTHETIC_ORG_SLUG } from './fixtures/mock-data/synthetic-org.mock';
+
 const PROFILE_URL = '/org/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 // Spec 002: the org identifier is the 18-char Salesforce account id (SFID); uid === accountId.
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const MOCK_UID = MOCK_ACCOUNT_ID;
 
 const MOCK_CANONICAL = {
   uid: MOCK_UID,
   accountId: MOCK_ACCOUNT_ID,
-  name: 'Red Hat LLC',
-  description: 'Open source software company providing enterprise solutions.',
-  website: 'redhat.com',
-  primaryDomain: 'redhat.com',
+  name: SYNTHETIC_ORG_NAME,
+  description: 'Maker of fictional vehicles used in test fixtures.',
+  website: SYNTHETIC_ORG_DOMAIN,
+  primaryDomain: SYNTHETIC_ORG_DOMAIN,
   logoUrl: null,
-  industry: 'Open Source Software',
-  sector: 'Information Technology',
-  numberOfEmployees: 19000,
-  crunchBaseUrl: 'https://crunchbase.com/organization/red-hat',
+  industry: 'Automotive',
+  sector: 'Manufacturing',
+  numberOfEmployees: 1200,
+  crunchBaseUrl: `https://www.crunchbase.example/organization/${SYNTHETIC_ORG_SLUG}`,
   updatedAt: '2026-05-20T12:34:56Z',
   parentUid: null,
   isMember: true,
@@ -44,17 +46,17 @@ const MOCK_CANONICAL = {
 
 const MOCK_ADDRESSES = {
   primaryAddress: {
-    line1: '100 East Davie Street',
-    city: 'Raleigh',
-    stateProvince: 'NC',
-    postalCode: '27601',
+    line1: '123 Example Avenue',
+    city: 'Springfield',
+    stateProvince: 'OR',
+    postalCode: '12345',
     country: 'United States',
   },
   billingAddress: {
-    line1: '100 East Davie Street',
-    city: 'Raleigh',
-    stateProvince: 'NC',
-    postalCode: '27601',
+    line1: '123 Example Avenue',
+    city: 'Springfield',
+    stateProvince: 'OR',
+    postalCode: '12345',
     country: 'United States',
   },
 };

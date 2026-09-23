@@ -34,6 +34,7 @@
 import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
@@ -190,9 +191,9 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
     skipWhenAuthMissing(page);
 
     // Org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
-    const PARENT_UID = '0014100000Te2QjAAJ';
+    const PARENT_UID = SYNTHETIC_ORG_ACCOUNT_ID;
     const CHILD_UID = '0014100000TdzYmAAJ';
-    const PARENT_NAME = 'Red Hat, Inc.';
+    const PARENT_NAME = SYNTHETIC_ORG_LEGAL_NAME;
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
       route.fulfill({
@@ -218,10 +219,10 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
           items: [
             {
               uid: PARENT_UID,
-              accountId: '0014100000Te2QjAAJ',
+              accountId: SYNTHETIC_ORG_ACCOUNT_ID,
               name: PARENT_NAME,
               logoUrl: null,
-              primaryDomain: 'redhat.com',
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
               isMember: true,
               parentName: null,
             },
@@ -271,7 +272,7 @@ test.describe('Org Selector — no mock fallback (S11)', () => {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['0014100000Te2QjAAJ'],
+          writers: [SYNTHETIC_ORG_ACCOUNT_ID],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
@@ -318,7 +319,7 @@ test.describe('Org Selector — /org/overview empty state without redirect (S14)
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          writers: ['0014100000Te2QjAAJ'],
+          writers: [SYNTHETIC_ORG_ACCOUNT_ID],
           auditors: [],
           cascadingWriters: [],
           cascadingAuditors: [],
@@ -676,7 +677,7 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
     await page.goto(APP_HOME, { waitUntil: 'domcontentloaded' });
     skipWhenAuthMissing(page);
 
-    const ASSIGNED_UID = '0014100000Te2QjAAJ';
+    const ASSIGNED_UID = SYNTHETIC_ORG_ACCOUNT_ID;
     const DISCOVERED_UID = '0014100000TdzYmAAJ';
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
@@ -704,9 +705,9 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
             {
               uid: ASSIGNED_UID,
               accountId: ASSIGNED_UID,
-              name: 'Red Hat, Inc.',
+              name: SYNTHETIC_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'redhat.com',
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
               isMember: true,
               parentName: null,
               isAssigned: true,

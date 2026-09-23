@@ -6,12 +6,13 @@
 import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID } from './fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const PEOPLE_BOARD_URL = '/org/people?tab=board';
 const DATA_LOAD_TIMEOUT = 30_000;
 
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const MOCK_UID = MOCK_ACCOUNT_ID;
 const MOCK_ACCOUNT_NAME = 'Acme Motors';
 
