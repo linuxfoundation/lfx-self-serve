@@ -163,10 +163,15 @@ export class EngagementMeetingParticipationComponent {
       return computed(() => HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
     }
 
+    // Latches on the first non-empty slug, as on the Overview: before any foundation resolves the
+    // skeleton holds, while one cleared after a read still settles instead of wedging on it.
+    let foundationSeen = false;
+
     return toSignal(
       toObservable(this.query).pipe(
         distinctUntilChanged((a, b) => a.foundationSlug === b.foundationSlug && a.range === b.range),
-        tap(() => {
+        tap((query) => {
+          foundationSeen = foundationSeen || query.foundationSlug !== '';
           this.loading.set(true);
           this.loadFailed.set(false);
           this.reading.emit();
@@ -185,9 +190,9 @@ export class EngagementMeetingParticipationComponent {
               return of(HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT);
             }),
             tap(() => {
-              // An unresolved foundation is not a measured empty scope: the skeleton stays up, as
-              // on the Overview, so the hero cannot report an unread period as having no meetings.
-              this.loading.set(!query.foundationSlug);
+              // An unresolved foundation is not a measured empty scope: the skeleton stays up, so
+              // the hero cannot report an unread period as having no meetings.
+              this.loading.set(!foundationSeen);
               this.settled.emit();
             })
           )

@@ -262,4 +262,18 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-error"]')).toBeNull();
     expect(fixture.componentInstance['loading']()).toBe(true);
   });
+
+  it('settles a foundation cleared after a read, rather than wedging on the skeleton', async () => {
+    await render();
+    expect(fixture.componentInstance['loading']()).toBe(false);
+
+    selectedFoundation.set(null);
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Unlike "none selected yet", this scope was read once — holding the skeleton here would leave
+    // the section loading forever with nothing left to resolve it.
+    expect(fixture.componentInstance['loading']()).toBe(false);
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).not.toBeNull();
+  });
 });
