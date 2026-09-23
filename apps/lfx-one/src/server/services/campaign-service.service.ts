@@ -923,35 +923,27 @@ export class CampaignServiceClient {
         )
         .map((section) => {
           if (section.type === 'divider') return '<hr />';
-          // The whole element changed, not just the class: `<p class="lfx-cta-text">` became
-          // `<div class="lfx-block lfx-button"><strong>`, the same element and classes campaign-service
-          // emits for a URL-LESS button in `internal/service/email_wizard_sections.go`:
+          // A URL-LESS button renders as TEXT, never as `href="#"` -- the same rule
+          // campaign-service applies in `internal/service/email_wizard_sections.go`, where a
+          // button with no destination is written as a label rather than a link.
           //
-          //     b.WriteString(`<div class="lfx-block lfx-button"><strong>` + label + "</strong></div>\n")
+          // `<div><strong>` and nothing more. No class attribute: `stripResourceLoadingHtml`
+          // allows none, and this body is sanitized twice more downstream (the client preview
+          // and the request boundary), so a class written here could never reach the wire. The
+          // wizard renderer does carry `lfx-block lfx-button`, but that is a separate path that
+          // builds and keeps its own markup; mirroring those names here only produced a string
+          // that looked like a contract and was stripped three lines later.
           //
-          // guarded there by the same reasoning -- "a button with nowhere to go is rendered as
-          // TEXT, never as href='#'". Not byte-identical: the Go side appends a trailing newline
-          // between blocks and this does not, which is whitespace between block elements and so
-          // renders the same.
+          // `<strong>` is the load-bearing part: it carries the emphasis a call to action needs
+          // in a mail client that drops CSS.
           //
-          // The ELEMENT is what survives and what matters: `<strong>` carries the emphasis a CTA
-          // needs in clients that drop CSS.
-          //
-          // The CLASSES do NOT survive to the wire, and this comment used to claim they were a
-          // contract between the two producers. They are not. `stripResourceLoadingHtml` allows
-          // no `class` attribute, and this body is sanitized twice more downstream -- once in the
-          // client preview, once at the request boundary -- so what campaign-service actually
-          // receives is `<div><strong>...</strong></div>`. They are written here only so this
-          // renderer reads the same as the wizard's (`internal/service/email_wizard_sections.go`),
-          // which is a SEPARATE path that builds its own HTML and keeps them.
           // sanitizeDisplayText BEFORE escapeHtml, and both: they defend against different
           // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
           // break out of the markup; it does nothing to a BIDI override or a zero-width
           // character, which need no markup to render the label as something it is not. This is
           // the SAME generator-supplied `section.text` that rides on `cta`, so sanitizing only
           // that field left the identical value unsanitised one branch away.
-          if (section.type === 'button')
-            return `<div class="lfx-block lfx-button"><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
+          if (section.type === 'button') return `<div><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
           // Resource-loading elements stripped HERE, where body is assembled.
           //
           // Angular's `[innerHTML]` sanitizer removes scripts, event handlers and

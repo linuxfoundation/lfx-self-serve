@@ -2433,7 +2433,7 @@ describe('CampaignsComponent — email delivery channel', () => {
         preheader: 'p',
         // The server keeps a URL-less button's label inline in `body` (its filter is
         // `!section.url`), so showing it again here renders the call to action twice.
-        body: '<p>Hello</p><div class="lfx-block lfx-button"><strong>Submit Your Proposal</strong></div>',
+        body: '<p>Hello</p><div><strong>Submit Your Proposal</strong></div>',
         cta: 'Submit Your Proposal',
         ctaUrl: '',
       } as unknown as EmailBriefCopy);

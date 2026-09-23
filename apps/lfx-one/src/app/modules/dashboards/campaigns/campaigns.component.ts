@@ -1389,7 +1389,7 @@ export class CampaignsComponent {
     const body = this.emailBodyHtmlPreview();
     const unlinked = this.emailCtaUnlinkedLabel();
     if (unlinked === '') return body;
-    return `${body}<div class="lfx-block lfx-button"><strong>${escapeHtml(unlinked)}</strong></div>`;
+    return `${body}<div><strong>${escapeHtml(unlinked)}</strong></div>`;
   });
 
   /**

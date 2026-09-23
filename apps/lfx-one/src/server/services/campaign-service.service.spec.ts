@@ -2730,14 +2730,11 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.body).not.toContain('<b>');
     expect(result.copy?.body).not.toContain('</b>');
     // The MARKUP SHAPE is pinned too -- asserting only "no live markup survives" left this
-    // wrapper with no coverage at all.
-    //
-    // This pins the SERVICE's output, which is not what reaches the wire: the body is sanitized
-    // twice more downstream and `stripResourceLoadingHtml` allows no `class`, so campaign-service
-    // receives `<div><strong>...</strong></div>`. The classes are written to match the wizard
-    // renderer's style, not because anything downstream reads them. The next test asserts what
-    // the wire actually carries.
-    expect(result.copy?.body).toContain('<div class="lfx-block lfx-button"><strong>');
+    // wrapper with no coverage at all. `<div><strong>` is exactly what the wire carries: the
+    // sanitizer allows no class attribute, so emitting one here would be markup that never
+    // arrives.
+    expect(result.copy?.body).toContain('<div><strong>');
+    expect(result.copy?.body).not.toContain('class=');
     expect(result.copy?.body).toContain('</strong></div>');
     // Still no destination, so no native button.
     expect(result.copy?.ctaUrl).toBe('');
