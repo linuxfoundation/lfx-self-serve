@@ -36,6 +36,17 @@ import { MeetingDetailsV2Component } from '../meeting-details-v2/meeting-details
  * `runtimeConfig`); that is the prerequisite for ramping this flag past a tester list, so do that
  * rather than widening targeting through this gate.
  *
+ * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
+ * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
+ * targeted viewer — so when that lookup fails it calls `router.navigate(['/meetings/not-found'])`
+ * during SSR (`meeting-join.component.ts`) and the URL is decided for *both* branches. v1's lookup
+ * therefore governs reachability until SSR has a flag source, which matters the moment v2 grows a
+ * data flow of its own. Second, both branches are static `imports` here, so the route's chunk
+ * carries each tree for the viewers on the other one; harmless while v2 is a placeholder, but when
+ * #2874 lands a real v2 page, load it through `@defer (when v2Enabled())` or a dynamic import so the
+ * ~100% of visitors on v1 do not download it — this route is public, SSR-first and anonymous-
+ * reachable, unlike the authenticated in-shell route that sets the static-import precedent.
+ *
  * Anonymous viewers always get v1, enforced here rather than through targeting: this route is
  * `auth: 'optional'` (`auth.middleware.ts`) and a LaunchDarkly tester list cannot express "not
  * logged out". `authenticated()` reading false on an early client render only delays the swap,

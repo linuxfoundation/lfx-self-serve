@@ -13,6 +13,6 @@ import { Component } from '@angular/core';
  */
 @Component({
   selector: 'lfx-meeting-details-v2',
-  template: '<div data-testid="meeting-details-v2-placeholder"></div>',
+  templateUrl: './meeting-details-v2.component.html',
 })
 export class MeetingDetailsV2Component {}

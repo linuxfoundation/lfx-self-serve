@@ -264,8 +264,9 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
     await expect(page.getByTestId('meeting-details-gate-v2')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
 
-    // The pre-v2 page never mounted, so nothing asked for the meeting and releasing the held lookup
-    // changes nothing — in particular it does not redirect this branch to not-found.
+    // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it
+    // is destroyed at the latch and its in-flight lookup torn down with it — so releasing the held
+    // route cannot redirect this branch to not-found the way it does with the flag off.
     release();
     await expect(page).toHaveURL(new RegExp(`/meetings/${MEETING_UID}$`));
   });
