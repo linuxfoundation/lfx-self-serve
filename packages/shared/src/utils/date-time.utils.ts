@@ -771,6 +771,19 @@ export function formatShortDate(date: Date): string {
 }
 
 /**
+ * "Member since" label, e.g. "Mar 2023", for an account-creation ISO timestamp. Returns '' when
+ * absent or unparseable so callers can hide the field rather than show a placeholder. Pins
+ * `timeZone: 'UTC'` like {@link formatShortDate} so the month doesn't shift for viewers west of UTC.
+ */
+export function formatMemberSince(iso: string | null | undefined): string {
+  const date = parseISODateString(iso);
+  if (!date || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
+}
+
+/**
  * Today's date as `YYYYMMDD` in the caller's local timezone — for stamping CSV/report export
  * filenames. Deliberately local, not `toISOString()` (which reports the UTC date and stamps
  * tomorrow's date for any viewer west of UTC exporting in the evening).

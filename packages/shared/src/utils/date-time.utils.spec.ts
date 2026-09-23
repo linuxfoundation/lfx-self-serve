@@ -7,6 +7,7 @@ import {
   daysUntilInTimezone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
+  formatMemberSince,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -26,6 +27,28 @@ import {
  * `YYYY-MM-DD` date comes back untouched, so bad warehouse data reads as obviously broken rather
  * than as a plausible wrong date. Each case below is a way `Date.UTC` will happily invent one.
  */
+describe('formatMemberSince', () => {
+  it('formats a valid ISO timestamp as "Mon YYYY" in UTC', () => {
+    expect(formatMemberSince('2023-03-15T10:00:00Z')).toBe('Mar 2023');
+  });
+
+  it('returns empty string for an empty string', () => {
+    expect(formatMemberSince('')).toBe('');
+  });
+
+  it('returns empty string for null', () => {
+    expect(formatMemberSince(null)).toBe('');
+  });
+
+  it('returns empty string for undefined', () => {
+    expect(formatMemberSince(undefined)).toBe('');
+  });
+
+  it('returns empty string for a malformed date string', () => {
+    expect(formatMemberSince('not-a-date')).toBe('');
+  });
+});
+
 describe('formatIsoDateLabel', () => {
   it('formats a real date', () => {
     expect(formatIsoDateLabel('2026-07-14')).toBe('Jul 14, 2026');

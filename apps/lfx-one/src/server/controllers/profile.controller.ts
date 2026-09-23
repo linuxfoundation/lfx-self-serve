@@ -160,13 +160,17 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Get user metadata from NATS (authoritative source)
+      // Get user metadata from NATS (authoritative source). created_at rides top-level on the
+      // envelope (not inside UserMetadata) — see #2836. getUserInfo already resolves the effective
+      // (impersonation target's) username, so this is impersonation-aware with no extra plumbing.
       let natsUserData: UserMetadata | null = null;
+      let natsCreatedAt = '';
       try {
         const natsResponse = await this.userService.getUserInfo(req, username);
 
         if (natsResponse.success && natsResponse.data) {
           natsUserData = natsResponse.data;
+          natsCreatedAt = natsResponse.created_at || '';
         } else {
           logger.warning(req, 'get_current_user_profile', 'Failed to fetch user metadata from NATS', {
             username,
@@ -193,10 +197,8 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
-            // Use an explicit "unknown" ('') rather than a fabricated current time that would change
-            // on every request. UserMetadata carries no created_at/updated_at, and these fields
-            // aren't surfaced for the impersonated view.
-            created_at: '',
+            // Real, NATS-sourced join date for the impersonated target — never fabricated.
+            created_at: natsCreatedAt,
             updated_at: '',
           }
         : {
@@ -205,7 +207,9 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
             username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
-            created_at: (oidcUser['created_at'] || new Date().toISOString()) as string,
+            // Use the real NATS-sourced join date. Never fabricate a timestamp (e.g. new Date()) —
+            // an unavailable date must surface as '' so the UI can hide the field, not a moving value.
+            created_at: natsCreatedAt,
             updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
           };
 

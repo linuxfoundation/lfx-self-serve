@@ -67,7 +67,10 @@
       <div class="min-w-0">
         <p class="break-words text-left text-[17px] font-bold text-slate-900" data-testid="profile-display-name">{{ displayName() }}</p>
         @if (username()) {
-          <p class="mb-4 break-words text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
+          <p [class.mb-4]="!memberSince()" class="break-words text-left text-xs text-slate-500" data-testid="profile-panel-handle">&#64;{{ username() }}</p>
+        }
+        @if (memberSince()) {
+          <p class="mb-4 text-left text-xs text-slate-500" data-testid="profile-panel-member-since">Member since {{ memberSince() }}</p>
         }
       </div>
 
