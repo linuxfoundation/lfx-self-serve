@@ -378,19 +378,20 @@ describe('non-member participation rules', () => {
       accountId: name.toLowerCase().replace(/\s+/g, '-'),
       accountName: name,
       membershipStatus: 'Non-member',
+      // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
-        { range: 'YTD', meetingsAttended: 12, distinctPeople: 4, sortRank },
         { range: 'COMPLETED_YEAR', meetingsAttended: 8, distinctPeople: 3, sortRank: sortRank === null ? null : 10 - sortRank },
+        { range: 'YTD', meetingsAttended: 12, distinctPeople: 4, sortRank },
       ],
     };
   }
 
-  it('selects the period the pill asks for, falling back to the oldest one the view returned', () => {
+  it('selects the period the pill asks for, falling back to the newest period held', () => {
     const row = nonMemberRow('Acme Motors', 1);
 
     expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR')?.meetingsAttended).toBe(8);
     // A period the read never returned falls back rather than blanking every cell in the row.
-    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('COMPLETED_YEAR');
+    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('YTD');
     expect(selectHealthMetricsEngagementNonMemberPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
   });
 
