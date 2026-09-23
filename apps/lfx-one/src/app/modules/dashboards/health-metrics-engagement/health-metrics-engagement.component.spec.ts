@@ -21,6 +21,7 @@ import type {
   HealthMetricsEngagementGroupCounts,
   HealthMetricsEngagementNonMemberCounts,
   HealthMetricsEngagementOrgCounts,
+  HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSectionKey,
 } from '@lfx-one/shared/interfaces';
 
@@ -45,6 +46,14 @@ class MeetingParticipationStubComponent {
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Representatives.
+@Component({ selector: 'lfx-engagement-representatives', template: '' })
+class RepresentativesStubComponent {
+  public readonly countsChange = output<HealthMetricsEngagementRepPeriodCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<void>();
 }
@@ -126,6 +135,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(NonMemberParticipationStubComponent)).componentInstance as NonMemberParticipationStubComponent;
   }
 
+  function repChild(): RepresentativesStubComponent {
+    return fixture.debugElement.query(By.directive(RepresentativesStubComponent)).componentInstance as RepresentativesStubComponent;
+  }
+
   function stubChild(): GroupAttendanceStubComponent {
     return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
   }
@@ -169,6 +182,7 @@ describe('HealthMetricsEngagementComponent', () => {
             MeetingParticipationStubComponent,
             NonMemberParticipationStubComponent,
             OrgParticipationStubComponent,
+            RepresentativesStubComponent,
           ],
         },
       })
@@ -243,6 +257,15 @@ describe('HealthMetricsEngagementComponent', () => {
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
     expect(item.textContent).toContain('136');
     expect(item.textContent).toContain('54 inactive');
+  });
+
+  it('badges Representatives from the counts that section reports', () => {
+    repChild().countsChange.emit({ range: 'YTD', reps: 486, neverAttendedReps: 112 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-reps"]');
+    expect(item.textContent).toContain('486');
+    expect(item.textContent).toContain('112 never attended');
   });
 
   it('badges Non-member participation from the counts that section reports', () => {
@@ -683,6 +706,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -730,6 +754,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -756,6 +781,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -783,6 +809,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -811,6 +838,7 @@ describe('HealthMetricsEngagementComponent', () => {
   it('releases a pending deep link when the group read settles without counts', async () => {
     // Settled up front so this test's two reads are the last the deep link is waiting on.
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -844,6 +872,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    repChild().settled.emit();
     nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
@@ -879,6 +908,7 @@ describe('HealthMetricsEngagementComponent', () => {
       participation: () => participationChild().settled.emit(),
       committees: () => stubChild().settled.emit(),
       orgs: () => orgChild().settled.emit(),
+      reps: () => repChild().settled.emit(),
       nonmem: () => nonMemberChild().settled.emit(),
     } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;

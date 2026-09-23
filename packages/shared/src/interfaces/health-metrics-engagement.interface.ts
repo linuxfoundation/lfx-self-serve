@@ -5,6 +5,7 @@ import type {
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES,
+  HEALTH_METRICS_ENGAGEMENT_REP_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
@@ -287,5 +288,69 @@ export interface HealthMetricsEngagementNonMemberParticipation {
 /** Wire query for `GET /api/analytics/engagement-non-member-participation`. The view carries no
  * project key, so the section is foundation-scoped and the period resolves client-side. */
 export interface HealthMetricsEngagementNonMemberQuery {
+  foundationSlug: string;
+}
+
+/** Which cut of the representatives table is showing. Every cut reads the selected period's own
+ * flags, so the pill re-filters the loaded rows rather than re-reading. */
+export type HealthMetricsEngagementRepFilter = (typeof HEALTH_METRICS_ENGAGEMENT_REP_FILTERS)[number]['key'];
+
+/** One representative's numbers for a single period. Every period ships on every row, so the
+ * period pill re-projects client-side and costs no request. */
+export interface HealthMetricsEngagementRepPeriod {
+  range: HealthMetricsRange;
+  meetingsInvited: number;
+  meetingsAttended: number;
+  /** The view's `HAS_NEVER_ATTENDED_<period>`: invited in this period, never attended all-time. */
+  neverAttended: boolean;
+  /** The view's `IS_LAPSED_<period>`: invited in it, attended none of it, and last seen before it. */
+  lapsed: boolean;
+}
+
+/**
+ * A row of the Representatives table — one person per group per project, the grain the view
+ * publishes. Rows cover every period, so a row only belongs to the visible table when it was
+ * invited in the selected one.
+ */
+export interface HealthMetricsEngagementRepRow {
+  /** The view's `_KEY`: a surrogate over (foundation, project, person, group), so unique per row. */
+  key: string;
+  personName: string;
+  /** Sub-line under the name; the row's organization, not a second identity. */
+  accountName: string;
+  committeeName: string;
+  /** All-time, not per period: ISO date this person last attended this group under this project. */
+  lastAttendedDate: string | null;
+  periods: HealthMetricsEngagementRepPeriod[];
+}
+
+/** One representatives row with its selected-period numbers and labels already resolved. */
+export interface HealthMetricsEngagementRepRowView {
+  row: HealthMetricsEngagementRepRow;
+  period: HealthMetricsEngagementRepPeriod | null;
+  /** `2 / 6` — attended over invited for the selected period. */
+  attendedLabel: string;
+  /** Pre-rendered so the template stays free of `DatePipe`, which would shift the date-only value. */
+  lastAttendedLabel: string;
+}
+
+/** Scope counts for one period. Unlike the org and non-member captions, this view's scope counts
+ * are period-suffixed, so the caption and the sub-nav badge follow the pill. */
+export interface HealthMetricsEngagementRepPeriodCounts {
+  range: HealthMetricsRange;
+  reps: number;
+  neverAttendedReps: number;
+}
+
+/** `GET /api/analytics/engagement-representatives` — every representative, every period, one read. */
+export interface HealthMetricsEngagementRepresentatives {
+  rows: HealthMetricsEngagementRepRow[];
+  /** `null` when the view reports no scope counts on rows that exist — unmeasured, not zero. */
+  counts: HealthMetricsEngagementRepPeriodCounts[] | null;
+}
+
+/** Wire query for `GET /api/analytics/engagement-representatives`. Search, the filter cut and the
+ * period all resolve client-side, so none of them reaches the wire. */
+export interface HealthMetricsEngagementRepQuery {
   foundationSlug: string;
 }
