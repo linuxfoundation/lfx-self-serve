@@ -694,6 +694,33 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
+  it.each([
+    ['a tab inside the scheme', 'ht\ttps://evil.example/p'],
+    ['a newline inside the scheme', 'ht\ntps://evil.example/p'],
+    ['a carriage return inside the scheme', 'ht\rtps://evil.example/p'],
+    ['a tab before the colon', 'https\t://evil.example/p'],
+    ['a tab after the colon', 'https:\t//evil.example/p'],
+    ['a slash, tab, then backslash', '/\t\\evil.example/p'],
+    ['a tab between the slashes', '/\t/evil.example/p'],
+    ['a leading C0 control', '\x01//evil.example/p'],
+  ])('refuses %s', (_label, href) => {
+    // WHATWG removes tab, LF and CR from ANYWHERE in a url before parsing, so each of these is
+    // `evil.example` to a browser while a regex anchored on `^https?:` sees a relative path.
+    //
+    // Unlike the protocol-relative cases above, these DO bind: sanitize-html does not fold
+    // backslashes or strip interior control characters, so this is the only layer that refuses
+    // them. Mutation-verified -- reverting the normalisation fails exactly these.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
+  });
+
+  it('keeps a legitimate url whose PATH contains a space', () => {
+    // The normalisation must not become an over-denial: stripping control characters is about
+    // how the host is read, and an ordinary path is untouched.
+    expect(stripResourceLoadingHtml('<p><a href="https://events.linuxfoundation.org/a b">x</a></p>', BRIEF)).toContain(
+      'href="https://events.linuxfoundation.org/a%20b"'
+    );
+  });
+
   it('refuses a raw javascript: href inside the hook, not only via allowedSchemes', () => {
     // `transformTags` runs BEFORE sanitize-html's scheme check, so the hook sees raw hrefs. This
     // pins that `allowedDestinationHref` refuses the scheme itself -- the property the code

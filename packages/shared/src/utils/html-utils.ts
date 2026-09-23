@@ -331,6 +331,30 @@ export function htmlClipboardToText(html: string | null | undefined): string {
 }
 
 /**
+ * `href` as WHATWG will read it, for the purpose of deciding what it addresses.
+ *
+ * Tab, LF and CR are removed from ANYWHERE in the string, not just the ends: the URL parser
+ * strips them wholesale before it does anything else, so `ht<TAB>tps://evil.example` is
+ * `https://evil.example` to a browser while any regex anchored on `^https?:` sees a relative
+ * path. Leading C0 controls and spaces go too, and `\` becomes `/` -- the parser's own order.
+ *
+ * This is the ONLY layer that folds backslashes; sanitize-html does not. So a spelling that
+ * survives here survives into the recipient's inbox.
+ */
+function normalizeHrefForJudgement(href: string): string {
+  return href
+    .replace(/[\t\n\r]/g, '')
+    .replace(/^[\x00-\x20]+/, '')
+    .replace(/[\x00-\x20]+$/, '')
+    .replace(/\\/g, '/');
+}
+
+/** Whether an already-normalized href names a host. */
+function hasSchemeNormalized(normalized: string): boolean {
+  return normalized.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(normalized);
+}
+
+/**
  * Whether `href` carries a scheme, i.e. makes a claim about WHICH HOST it addresses.
  *
  * A relative href (`/register`, `x.html`, `#frag`, `?a=b`) names no host and resolves against
@@ -345,8 +369,7 @@ function hasScheme(href: string): boolean {
   // sanitize-html's `allowProtocolRelative: false` also refuses these, so this is the second of
   // two independent layers rather than the only one -- but the allow-list must not depend on
   // that, or removing this normalisation becomes a silent bypass rather than a visible one.
-  const normalized = href.trim().replace(/\\/g, '/');
-  return normalized.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(normalized);
+  return hasSchemeNormalized(normalizeHrefForJudgement(href));
 }
 
 /**
