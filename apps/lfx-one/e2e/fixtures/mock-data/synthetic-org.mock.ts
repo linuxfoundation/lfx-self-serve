@@ -12,3 +12,8 @@ export const SYNTHETIC_ORG_NAME = 'Acme Motors';
 export const SYNTHETIC_ORG_LEGAL_NAME = 'Acme Motors, Inc.';
 export const SYNTHETIC_ORG_SLUG = 'acme-motors';
 export const SYNTHETIC_ORG_DOMAIN = 'acme-motors.example';
+
+/** A second invented organization, for fixtures that need two distinct ones (a parent and its child, say). */
+export const SYNTHETIC_SECOND_ORG_ACCOUNT_ID = '0014100000BetaAAAA';
+export const SYNTHETIC_SECOND_ORG_LEGAL_NAME = 'Beta Coastal, Inc.';
+export const SYNTHETIC_SECOND_ORG_DOMAIN = 'beta-coastal.example';

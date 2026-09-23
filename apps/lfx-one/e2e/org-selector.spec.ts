@@ -34,7 +34,14 @@
 import { ORG_LENS_ROI_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
 
-import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
+import {
+  SYNTHETIC_ORG_ACCOUNT_ID,
+  SYNTHETIC_ORG_DOMAIN,
+  SYNTHETIC_ORG_LEGAL_NAME,
+  SYNTHETIC_SECOND_ORG_ACCOUNT_ID,
+  SYNTHETIC_SECOND_ORG_DOMAIN,
+  SYNTHETIC_SECOND_ORG_LEGAL_NAME,
+} from './fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const APP_HOME = '/';
@@ -192,7 +199,7 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
 
     // Org identifiers are 18-char Salesforce account ids (SFID), not UUIDs.
     const PARENT_UID = SYNTHETIC_ORG_ACCOUNT_ID;
-    const CHILD_UID = '0014100000TdzYmAAJ';
+    const CHILD_UID = SYNTHETIC_SECOND_ORG_ACCOUNT_ID;
     const PARENT_NAME = SYNTHETIC_ORG_LEGAL_NAME;
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
@@ -228,10 +235,10 @@ test.describe('Org Selector — cascading row decoration (S10)', () => {
             },
             {
               uid: CHILD_UID,
-              accountId: '0014100000TdzYmAAJ',
-              name: 'CoreOS, Inc.',
+              accountId: CHILD_UID,
+              name: SYNTHETIC_SECOND_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'coreos.com',
+              primaryDomain: SYNTHETIC_SECOND_ORG_DOMAIN,
               isMember: true,
               parentName: PARENT_NAME,
             },
@@ -678,7 +685,7 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
     skipWhenAuthMissing(page);
 
     const ASSIGNED_UID = SYNTHETIC_ORG_ACCOUNT_ID;
-    const DISCOVERED_UID = '0014100000TdzYmAAJ';
+    const DISCOVERED_UID = SYNTHETIC_SECOND_ORG_ACCOUNT_ID;
 
     await page.route('**/api/orgs/me/role-grants', (route) =>
       route.fulfill({
@@ -715,9 +722,9 @@ test.describe('Org Selector — LF-team sections and membership chips (S19)', ()
             {
               uid: DISCOVERED_UID,
               accountId: DISCOVERED_UID,
-              name: 'CoreOS, Inc.',
+              name: SYNTHETIC_SECOND_ORG_LEGAL_NAME,
               logoUrl: null,
-              primaryDomain: 'coreos.com',
+              primaryDomain: SYNTHETIC_SECOND_ORG_DOMAIN,
               isMember: false,
               parentName: null,
               isAssigned: false,
