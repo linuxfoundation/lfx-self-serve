@@ -328,8 +328,7 @@ export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 25;
 
 /**
  * Sanity cap on that one read. Higher than the org and non-member caps because this view's grain is
- * one row per person *per group*: the largest foundation measured holds ~8,900 rows, so this leaves
- * headroom while still bounding a payload the client sorts, filters and searches in memory.
+ * one row per person per group *per project*, so it multiplies out further than either of those.
  */
 export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
 

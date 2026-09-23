@@ -100,23 +100,9 @@ export class EngagementRepresentativesComponent {
 
   private readonly dateLabelsByRow: Signal<Map<HealthMetricsEngagementRepRow, string>> = this.initDateLabelsByRow();
   private readonly rowViewsByRow: Signal<Map<HealthMetricsEngagementRepRow, HealthMetricsEngagementRepRowView>> = this.initRowViewsByRow();
-  // The cut narrows rows the labels are already resolved for, so a keystroke only filters.
-  protected readonly rowViews = computed<HealthMetricsEngagementRepRowView[]>(() => {
-    const views = this.rowViewsByRow();
-    return filterHealthMetricsEngagementRepRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
-      .map((row) => views.get(row))
-      .filter((view) => view !== undefined);
-  });
+  protected readonly rowViews: Signal<HealthMetricsEngagementRepRowView[]> = this.initRowViews();
   protected readonly totalRecords = computed(() => this.rowViews().length);
-  /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
-  protected readonly countLabel = computed(() => {
-    const counts = selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange());
-    if (!counts) return '—';
-
-    // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
-    const reps = `${counts.reps.toLocaleString('en-US')} ${counts.reps === 1 ? 'representative' : 'representatives'}`;
-    return `${reps} · ${counts.neverAttendedReps.toLocaleString('en-US')} never attended`;
-  });
+  protected readonly countLabel: Signal<string> = this.initCountLabel();
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
@@ -178,6 +164,29 @@ export class EngagementRepresentativesComponent {
           ];
         })
       );
+    });
+  }
+
+  // The cut narrows rows the labels are already resolved for, so a keystroke only filters.
+  private initRowViews(): Signal<HealthMetricsEngagementRepRowView[]> {
+    return computed(() => {
+      const views = this.rowViewsByRow();
+
+      return filterHealthMetricsEngagementRepRows(this.response().rows, this.filter(), this.search(), this.chrome.selectedRange())
+        .map((row) => views.get(row))
+        .filter((view) => view !== undefined);
+    });
+  }
+
+  /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
+  private initCountLabel(): Signal<string> {
+    return computed(() => {
+      const counts = selectHealthMetricsEngagementRepCounts(this.response().counts, this.chrome.selectedRange());
+      if (!counts) return '—';
+
+      // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
+      const reps = `${counts.reps.toLocaleString('en-US')} ${counts.reps === 1 ? 'representative' : 'representatives'}`;
+      return `${reps} · ${counts.neverAttendedReps.toLocaleString('en-US')} never attended`;
     });
   }
 

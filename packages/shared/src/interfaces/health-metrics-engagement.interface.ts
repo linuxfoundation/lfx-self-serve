@@ -308,17 +308,18 @@ export interface HealthMetricsEngagementRepPeriod {
 }
 
 /**
- * A row of the Representatives table — one person per group, not one per person. Rows cover every
- * period, so a row only belongs to the visible table when it was invited in the selected one.
+ * A row of the Representatives table — one person per group per project, the grain the view
+ * publishes. Rows cover every period, so a row only belongs to the visible table when it was
+ * invited in the selected one.
  */
 export interface HealthMetricsEngagementRepRow {
-  /** The view's `_KEY`, the only stable row identity: a person appears once per group. */
+  /** The view's `_KEY`: a surrogate over (foundation, project, person, group), so unique per row. */
   key: string;
   personName: string;
   /** Sub-line under the name; the row's organization, not a second identity. */
   accountName: string;
   committeeName: string;
-  /** All-time, not per period: ISO date this person last attended a meeting of this group. */
+  /** All-time, not per period: ISO date this person last attended this group under this project. */
   lastAttendedDate: string | null;
   periods: HealthMetricsEngagementRepPeriod[];
 }
