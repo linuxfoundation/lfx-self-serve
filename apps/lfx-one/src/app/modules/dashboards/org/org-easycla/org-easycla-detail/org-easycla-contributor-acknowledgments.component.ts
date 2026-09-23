@@ -467,7 +467,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * only a name would otherwise be "—" in all three places.
    */
   private contributorLabel(row: OrgClaAcknowledgmentRow): string {
-    return this.labelFor(row.identity.display, row.name);
+    return this.labelFor(row.identity.lfLogin ?? row.identity.display, row.name);
   }
 
   private labelFor(identity: string, name: string): string {
@@ -503,19 +503,20 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
-      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(this.labelFor(identity.display, name)),
+      invalidateAriaLabel: ORG_CLA_INVALIDATE_ACTION_COPY.ariaLabel(this.labelFor(identity.lfLogin ?? identity.display, name)),
     };
   }
 
   /**
-   * Chooses the ID display for the LF Login / GitHub or GitLab ID column, in order:
-   * LF Login → GitHub username → GitLab username → email → em-dash. GitHub / GitLab logins are
-   * display only and never used as stable identifiers.
+   * Chooses the ID display for the LF Login / GitHub or GitLab ID column: `LF Login/GitHub` when
+   * both are present, else LF Login → GitHub username → GitLab username → email → em-dash.
+   * GitHub / GitLab logins are display only and never used as stable identifiers.
    */
   private resolveIdentity(ack: OrgClaContributorAcknowledgment): OrgClaAcknowledgmentRow['identity'] {
-    if (ack.lfLogin) return { display: ack.lfLogin, href: null, ariaLabel: `LF Login ${ack.lfLogin}` };
+    if (ack.lfLogin && !ack.githubUsername) return { lfLogin: null, display: ack.lfLogin, href: null, ariaLabel: `LF Login ${ack.lfLogin}` };
     if (ack.githubUsername) {
       return {
+        lfLogin: ack.lfLogin ?? null,
         display: `@${ack.githubUsername}`,
         href: `https://github.com/${encodeURIComponent(ack.githubUsername)}`,
         ariaLabel: `GitHub username @${ack.githubUsername}, opens on github.com`,
@@ -523,13 +524,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     }
     if (ack.gitlabUsername) {
       return {
+        lfLogin: null,
         display: `@${ack.gitlabUsername}`,
         href: `https://gitlab.com/${encodeURIComponent(ack.gitlabUsername)}`,
         ariaLabel: `GitLab username @${ack.gitlabUsername}, opens on gitlab.com`,
       };
     }
-    if (ack.email) return { display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
-    return { display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
+    if (ack.email) return { lfLogin: null, display: ack.email, href: `mailto:${ack.email}`, ariaLabel: `Email ${ack.email}` };
+    return { lfLogin: null, display: ORG_CLA_ACKNOWLEDGMENTS_EM_DASH, href: null, ariaLabel: 'No login recorded' };
   }
 
   /**

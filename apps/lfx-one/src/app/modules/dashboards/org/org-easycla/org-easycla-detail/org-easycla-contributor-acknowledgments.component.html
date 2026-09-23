@@ -65,6 +65,9 @@
                 </div>
               </td>
               <td class="px-3 py-2 text-gray-700">
+                @if (row.identity.lfLogin) {
+                  <span data-testid="org-easycla-acknowledgment-lf-login">{{ row.identity.lfLogin }}/</span>
+                }
                 @if (row.identity.href) {
                   <a
                     [href]="row.identity.href"

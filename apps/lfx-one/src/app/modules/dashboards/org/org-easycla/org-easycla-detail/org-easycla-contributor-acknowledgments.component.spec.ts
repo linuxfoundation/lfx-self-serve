@@ -204,16 +204,35 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   });
 
   /**
-   * The identity column falls through: LF Login → GitHub username → GitLab username → email →
-   * em-dash. A row with no LF Login but any downstream identifier must render, or an
+   * The identity column shows `LF Login/GitHub` when both are present, else falls through:
+   * LF Login → GitHub username → GitLab username → email → em-dash. A row with no LF Login but any downstream identifier must render, or an
    * unaffiliated contributor disappears from the list.
    */
   describe('the identity fallback', () => {
-    it('renders the LF Login when present', async () => {
-      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ lfLogin: 'jsmith', githubUsername: 'jsmith-gh' })])));
+    it('renders the LF Login alone when there is no GitHub username', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ lfLogin: 'jsmith' })])));
       const fixture = await render();
 
       expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-identity'))).toBe('jsmith');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-lf-login')).toBeNull();
+    });
+
+    it('renders LF Login/GitHub when both are present, with only the GitHub part linked', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ lfLogin: 'jsmith', githubUsername: 'jsmith-gh' })])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-lf-login'))).toBe('jsmith/');
+      const identity = byTestId(fixture, 'org-easycla-acknowledgment-identity');
+      expect(textIn(identity)).toBe('@jsmith-gh');
+      expect(identity?.getAttribute('href')).toBe('https://github.com/jsmith-gh');
+    });
+
+    it('shows the LF Login alone when the other identity is GitLab', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ lfLogin: 'jsmith', gitlabUsername: 'jsmith-gl' })])));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-identity'))).toBe('jsmith');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-lf-login')).toBeNull();
     });
 
     it('falls through to GitHub when LF Login is absent, so a GitHub-only contributor still renders', async () => {
