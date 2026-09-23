@@ -177,6 +177,10 @@ describe('ApiGatewayAuthService', () => {
     expect(req.appSession!.apiGatewayRefreshToken).toBeUndefined();
     expect(req.appSession!['refresh_token']).toBe('primary-refresh');
     expect(req.appSession!.crowdfundingRefreshToken).toBe('cf-refresh');
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', {
+      reason: 'invalid_grant',
+      status: 200,
+    });
   });
 
   it('accepts a scalar audience and caps the cache lifetime at the JWT expiry, including short lifetimes', async () => {
@@ -568,7 +572,10 @@ describe('ApiGatewayAuthService', () => {
     expect(response.bodyUsed).toBe(true);
     expect(req.appSession).toEqual(session);
     expect(req.apiGatewayToken).toBeUndefined();
-    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', {
+      reason: 'refused',
+      status,
+    });
   });
 
   it('waits for failed code-exchange response cancellation before reporting the error', async () => {
@@ -601,7 +608,10 @@ describe('ApiGatewayAuthService', () => {
     expect(cancel).toHaveBeenCalledOnce();
     expect(error).toEqual(new Error('API Gateway authorization could not be completed. Please try again.'));
     expect(JSON.stringify(log.warning.mock.calls.map((call) => call.slice(1)))).not.toContain('secret-from-cancellation');
-    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', {
+      reason: 'refused',
+      status: 400,
+    });
   });
 
   it('keeps a bodyless code-exchange failure generic', async () => {
@@ -613,7 +623,28 @@ describe('ApiGatewayAuthService', () => {
 
     expect(req.appSession!.apiGatewayToken).toBeUndefined();
     expect(req.appSession!.apiGatewayRefreshToken).toBeUndefined();
-    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+    expect(log.warning).toHaveBeenCalledWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', {
+      reason: 'refused',
+      status: 400,
+    });
+  });
+
+  it.each(['transport', 'response'] as const)('logs only a controlled reason for a %s failure', async (failure) => {
+    const req = request();
+    const state = await stateFor(req);
+    if (failure === 'transport') fetchMock.mockRejectedValueOnce(new Error('secret-from-provider'));
+    else fetchMock.mockResolvedValueOnce(new Response('secret-from-provider', { status: 200 }));
+
+    const error = await service.exchangeCode(req, 'synthetic-code', state).catch((error: unknown) => error);
+
+    expect(error).toEqual(new Error('API Gateway authorization could not be completed. Please try again.'));
+    expect(log.warning).toHaveBeenCalledExactlyOnceWith(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', {
+      reason: failure === 'transport' ? 'token_request_failed' : 'invalid_response',
+      status: failure === 'transport' ? undefined : 200,
+    });
+    expect(JSON.stringify(log.warning.mock.calls.map((call) => call.slice(1)))).not.toContain('secret-from-provider');
+    expect(req.appSession!.apiGatewayToken).toBeUndefined();
+    expect(req.appSession!['refresh_token']).toBe('primary-refresh');
   });
 
   it('does not include token endpoint response bodies or transport messages in logs/errors', async () => {

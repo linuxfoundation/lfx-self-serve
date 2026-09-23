@@ -4,6 +4,7 @@
 export const API_GATEWAY_AUTH = {
   START_PATH: '/api-gateway/auth/start',
   CALLBACK_PATH: '/api-gateway/callback',
+  REQUIRED_CODE: 'API_GATEWAY_AUTH_REQUIRED',
   SCOPE: 'openid email profile access:api offline_access',
   ERROR_PARAM: 'api_gateway_error',
   TIMEOUT_MS: 10_000,

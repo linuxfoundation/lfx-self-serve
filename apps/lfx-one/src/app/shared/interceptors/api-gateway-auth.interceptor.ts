@@ -18,7 +18,7 @@ export const apiGatewayAuthInterceptor: HttpInterceptorFn = (req, next) => {
         req.url.startsWith('/api/') &&
         error instanceof HttpErrorResponse &&
         error.status === 403 &&
-        (error.error as Record<string, unknown> | null)?.['code'] === 'API_GATEWAY_AUTH_REQUIRED' &&
+        (error.error as Record<string, unknown> | null)?.['code'] === API_GATEWAY_AUTH.REQUIRED_CODE &&
         !new URLSearchParams(document.location.search).has(API_GATEWAY_AUTH.ERROR_PARAM)
       ) {
         const returnTo = document.location.pathname + document.location.search + document.location.hash;

@@ -120,14 +120,36 @@ describe('Gateway fetch authentication boundary', () => {
   it('does not substitute a default or primary token when the reviewed operator token is missing', async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    const req = { apiGatewayToken: 'unreviewed-default-token', bearerToken: 'primary-token', impersonationActive: true } as Request;
+    const req = {
+      apiGatewayToken: 'unreviewed-default-token',
+      bearerToken: 'primary-token',
+      impersonationActive: true,
+      apiGatewayAuthStatus: 'impersonating',
+    } as Request;
 
     await expect(gatewayFetch(req, 'https://gateway.example/catalogue', { ...options, allowOperatorToken: true })).rejects.toMatchObject({
       statusCode: 503,
       code: 'API_GATEWAY_UNAVAILABLE',
+      message: 'API Gateway authorization is unavailable while impersonating. Exit Admin Mode, authorize API Gateway access, then retry.',
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it.each(['impersonating', 'unavailable', 'not_configured', undefined] as const)(
+    'preserves existing outage guidance when an operator grant exists (status: %s)',
+    async (status) => {
+      const req = {
+        impersonationActive: true,
+        apiGatewayAuthStatus: status,
+        appSession: { apiGatewayRefreshToken: 'operator-refresh' },
+      } as Request;
+      await expect(gatewayFetch(req, 'https://gateway.example/catalogue', { ...options, allowOperatorToken: true })).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'API_GATEWAY_UNAVAILABLE',
+        message: 'API Gateway authorization is temporarily unavailable. Check API_GW_AUDIENCE and authentication configuration, then retry.',
+      });
+    }
+  );
 
   it('keeps an explicit target token authoritative even when an operator read is allowed', async () => {
     const fetchMock = vi.fn().mockResolvedValue(Response.json({ read: true }));

@@ -127,6 +127,8 @@ export class ApiGatewayAuthService {
 
   public async exchangeCode(req: Request, code: string, state: ApiGatewayAuthState): Promise<void> {
     const session = req.appSession;
+    let reason = 'token_request_failed';
+    let status: number | undefined;
     try {
       const response = await this.tokenRequest({
         grant_type: 'authorization_code',
@@ -134,10 +136,13 @@ export class ApiGatewayAuthService {
         redirect_uri: this.redirectUri,
         code_verifier: state.codeVerifier,
       });
+      status = response.status;
       if (!response.ok) {
+        reason = 'refused';
         await response.body?.cancel();
         throw new Error('Token exchange refused');
       }
+      reason = 'invalid_response';
       const token: unknown = await response.json();
       const expiresAt = this.validateTokenResponse(token, state);
       if (
@@ -149,13 +154,14 @@ export class ApiGatewayAuthService {
         !this.matchesGrant(req, state) ||
         isImpersonating(req)
       ) {
+        reason = 'invalid_grant';
         throw new Error('Invalid Gateway grant');
       }
       this.storeToken(req, token, state, expiresAt);
       delete session.apiGatewayAuthAttempted;
     } catch {
       // Provider errors can contain codes or credentials.
-      logger.warning(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed');
+      logger.warning(req, 'api_gateway_code_exchange', 'API Gateway authorization could not be completed', { reason, status });
       throw new Error('API Gateway authorization could not be completed. Please try again.');
     }
   }

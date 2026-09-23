@@ -11,7 +11,9 @@ vi.mock('../services/logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }));
 
+import { MicroserviceError } from '../errors';
 import { apiGatewayAuthService } from '../services/api-gateway-auth.service';
+import { logger } from '../services/logger.service';
 import { ApiGatewayAuthController } from './api-gateway-auth.controller';
 
 describe('ApiGatewayAuthController', () => {
@@ -64,8 +66,25 @@ describe('ApiGatewayAuthController', () => {
   });
 
   afterEach(() => {
-    vi.unstubAllEnvs();
-    vi.unstubAllGlobals();
+    try {
+      const completed = [...vi.mocked(logger.success).mock.calls, ...vi.mocked(logger.error).mock.calls];
+      for (const operation of ['api_gateway_auth_start', 'api_gateway_auth_callback']) {
+        const started = vi.mocked(logger.startOperation).mock.calls.filter((call) => call[1] === operation);
+        expect(completed.filter((call) => call[1] === operation)).toHaveLength(started.length);
+      }
+      const diagnostics = JSON.stringify(
+        [...completed, ...vi.mocked(logger.warning).mock.calls].map((call) =>
+          call.slice(1).map((value) => (value instanceof Error ? `${value.message}\n${value.stack}` : value))
+        )
+      );
+      for (const secret of ['synthetic-secret', 'synthetic-code', 'never-forward-this', 'secret-state-store']) {
+        expect(diagnostics).not.toContain(secret);
+      }
+    } finally {
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      vi.unstubAllGlobals();
+    }
   });
 
   it('starts a navigation and returns to the sanitized path after successful code exchange', async () => {
@@ -194,9 +213,15 @@ describe('ApiGatewayAuthController', () => {
     const req = request();
     req.get = ((name: string) => (name === 'Accept' ? 'application/json' : undefined)) as Request['get'];
     const res = response();
-    await controller[method](req, res, vi.fn());
-    expect(res.status).toHaveBeenCalledWith(403);
-    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'API_GATEWAY_AUTH_REQUIRED', authorize_url: '/api-gateway/auth/start' }));
+    const next = vi.fn();
+    await controller[method](req, res, next);
+    const error: unknown = next.mock.calls[0]?.[0];
+    expect(error).toBeInstanceOf(MicroserviceError);
+    if (!(error instanceof MicroserviceError)) throw new Error('Expected the shared Gateway authorization error');
+    expect(error.statusCode).toBe(403);
+    expect(error.toResponse()).toMatchObject({ code: 'API_GATEWAY_AUTH_REQUIRED', details: { authorize_url: '/api-gateway/auth/start' } });
+    expect(error.toResponse()).not.toHaveProperty('authorize_url');
+    expect(res.json).not.toHaveBeenCalled();
     expect(res.redirect).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
     expect(req.appSession!.apiGatewayAuthState).toBeUndefined();
@@ -214,5 +239,50 @@ describe('ApiGatewayAuthController', () => {
     expect(req.appSession!['refresh_token']).toBe('primary-refresh');
     expect(fetchMock).not.toHaveBeenCalled();
     expect(res.redirect).not.toHaveBeenCalled();
+  });
+
+  it('completes the start operation when an existing grant redirects without another exchange', async () => {
+    const req = request();
+    req.query['returnTo'] = '/org/acme/easycla';
+    req.appSession!.apiGatewayToken = token();
+    req.appSession!.apiGatewayTokenExpiresAt = Math.floor(Date.now() / 1000) + 3600;
+    req.appSession!.apiGatewayGrant = {
+      sub: 'auth0|synthetic-user',
+      issuer: 'https://issuer.example/',
+      audience: 'https://gateway.example/',
+      clientId: 'self-serve-client',
+    };
+    const res = response();
+    const next = vi.fn();
+
+    await controller.start(req, res, next);
+
+    expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/org/acme/easycla');
+    expect(logger.success).toHaveBeenCalledExactlyOnceWith(req, 'api_gateway_auth_start', 0);
+    expect(next).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(['start', 'callback'] as const)('logs a safe terminal reason for a %s state-store failure', async (method) => {
+    const req = request();
+    const res = response();
+    const next = vi.fn();
+    const operation = method === 'start' ? 'getAuthorizationUrl' : 'consumeAuthState';
+    vi.spyOn(apiGatewayAuthService, operation).mockRejectedValueOnce(new Error('secret-state-store'));
+
+    await controller[method](req, res, next);
+
+    expect(logger.error).toHaveBeenCalledWith(req, `api_gateway_auth_${method}`, 0, expect.any(Error), {
+      reason: method === 'start' ? 'authorization_start_failed' : 'state_unavailable',
+    });
+    if (method === 'start') {
+      expect(next).toHaveBeenCalledWith(expect.objectContaining({ statusCode: 503, code: 'API_GATEWAY_UNAVAILABLE' }));
+      expect(res.redirect).not.toHaveBeenCalled();
+    } else {
+      expect(res.redirect).toHaveBeenCalledExactlyOnceWith('/?api_gateway_error=authorization_failed');
+      expect(next).not.toHaveBeenCalled();
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(req.appSession!['refresh_token']).toBe('primary-refresh');
   });
 });

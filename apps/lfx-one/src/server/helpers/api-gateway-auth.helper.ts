@@ -11,7 +11,7 @@ export function apiGatewayAuthRequiredError(operation: string, service?: string)
   return new MicroserviceError(
     `API Gateway authorization required. Open ${API_GATEWAY_AUTH.START_PATH} in your browser, then retry the operation.`,
     403,
-    'API_GATEWAY_AUTH_REQUIRED',
+    API_GATEWAY_AUTH.REQUIRED_CODE,
     {
       service,
       operation,

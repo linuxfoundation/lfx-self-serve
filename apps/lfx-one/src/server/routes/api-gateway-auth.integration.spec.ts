@@ -419,6 +419,20 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     expect(tokenRequests).toHaveLength(1);
   });
 
+  it.each(['/api-gateway/auth/start', '/api-gateway/callback'])('returns the standard authorization envelope for XHR %s', async (path) => {
+    await login();
+    const denied = await send(path, 'GET', 'application/json');
+    const body: unknown = await denied.json();
+
+    expect(denied.status).toBe(403);
+    expect(body).toMatchObject({ code: 'API_GATEWAY_AUTH_REQUIRED', details: { authorize_url: '/api-gateway/auth/start' } });
+    expect(body).not.toHaveProperty('authorize_url');
+    expect(denied.headers.get('location')).toBeNull();
+    expect(denied.headers.get('cache-control')).toBe('no-store');
+    expect(tokenRequests).toHaveLength(1);
+    expect(upstreamAuthorizations).toEqual([]);
+  });
+
   it.each(['/foundation/gw/newsletters', '/project/gw/newsletters'])('renders %s without an extra OAuth round trip before fragment adoption', async (path) => {
     await login('/meetings/public-event');
     const browserUrl = new URL(`${baseUrl}${path}?project=synthetic-project&gw_state=synthetic-state#access_token=gw-access&refresh_token=gw-refresh`);

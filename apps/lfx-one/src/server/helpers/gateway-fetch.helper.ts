@@ -66,7 +66,9 @@ export async function fetchGatewayResponse(req: Request, url: string, options: G
       throw apiGatewayAuthRequiredError(options.operation, options.service);
     }
     throw new MicroserviceError(
-      'API Gateway authorization is temporarily unavailable. Check API_GW_AUDIENCE and authentication configuration, then retry.',
+      impersonating && req.apiGatewayAuthStatus === 'impersonating' && !req.appSession?.apiGatewayRefreshToken
+        ? 'API Gateway authorization is unavailable while impersonating. Exit Admin Mode, authorize API Gateway access, then retry.'
+        : 'API Gateway authorization is temporarily unavailable. Check API_GW_AUDIENCE and authentication configuration, then retry.',
       503,
       'API_GATEWAY_UNAVAILABLE',
       {
