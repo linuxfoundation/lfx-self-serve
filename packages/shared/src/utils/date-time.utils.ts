@@ -780,7 +780,10 @@ const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
  * impossible calendar date (`Date` normalizes e.g. `'2023-02-31'` to Mar 3 instead of rejecting it,
  * so the parsed y/m/d must round-trip to the input's digits) so callers can hide the field rather
  * than show a placeholder or a silently-shifted date. Pins `timeZone: 'UTC'` like
- * {@link formatShortDate} so the month doesn't shift for viewers west of UTC.
+ * {@link formatShortDate} so the month doesn't shift for viewers west of UTC. Assumes `iso` is
+ * UTC-normalized (`Z`-terminated, as every current caller sends) — a non-UTC offset whose UTC
+ * calendar day differs from the input digits fails the round-trip check and is hidden rather than
+ * shifted.
  */
 export function formatMemberSince(iso: string | null | undefined): string {
   const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;

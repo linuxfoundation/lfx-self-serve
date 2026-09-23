@@ -104,6 +104,12 @@ describe('formatMemberSince', () => {
     expect(formatMemberSince('2023-02-31T00:00:00Z')).toBe('');
     expect(formatMemberSince('2023-04-31T00:00:00Z')).toBe('');
   });
+
+  // Documents the UTC-normalized-input contract: offset timestamps whose UTC day
+  // differs from the input digits are hidden rather than shifted.
+  it('returns empty string for an offset timestamp whose UTC day differs from the input digits', () => {
+    expect(formatMemberSince('2023-03-01T00:30:00+05:00')).toBe('');
+  });
 });
 
 /**
