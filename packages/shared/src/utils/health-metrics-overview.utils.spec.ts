@@ -77,6 +77,16 @@ describe('buildHealthMetricsOverviewTiles', () => {
     expect(tiles.find((tile) => tile.area === 'code')?.insightsUrl).toBe('https://insights.example/foundation');
   });
 
+  it('links the eng tile, and only that tile, into the Engagement tab group attendance view', () => {
+    const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'eng' }), areaState({ area: 'code' })], undefined);
+    expect(tiles.find((tile) => tile.area === 'eng')?.route).toEqual({
+      commands: ['/foundation/health-metrics', 'engagement'],
+      fragment: 'committees',
+      queryParams: { groupType: null, groupPage: null },
+    });
+    expect(tiles.find((tile) => tile.area === 'code')?.route).toBeUndefined();
+  });
+
   it('carries showStatus through to the tile view model', () => {
     const tiles = buildHealthMetricsOverviewTiles([areaState({ area: 'evt', showStatus: false })], undefined);
     expect(tiles[0].showStatus).toBe(false);

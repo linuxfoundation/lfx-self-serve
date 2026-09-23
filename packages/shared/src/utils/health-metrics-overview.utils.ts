@@ -6,6 +6,7 @@ import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
   HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
@@ -69,7 +70,7 @@ export function buildHealthMetricsOverviewEngagementRoute(linkTarget: HealthMetr
  * promises one row per area per foundation per period, and a foundation with no data still gets a
  * 'none' row (e.g. a Training tile reading "no data this period") — an area whose row is somehow
  * absent is omitted rather than rendered as an empty tile. `insightsUrl` is attached to the `code`
- * tile only.
+ * tile only, and an in-app `route` to the `eng` tile only.
  */
 export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaState[], insightsUrl: string | undefined): HealthMetricsOverviewTileViewModel[] {
   const areaStateByKey = new Map(areaStates.map((state) => [state.area, state]));
@@ -88,6 +89,7 @@ export function buildHealthMetricsOverviewTiles(areaStates: HealthMetricsAreaSta
       evaluatedAt: state.evaluatedAt,
       insightsUrl: areaMeta.key === 'code' ? insightsUrl : undefined,
       showStatus: state.showStatus,
+      route: areaMeta.key === 'eng' ? buildHealthMetricsOverviewEngagementRoute(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_TILE_LINK_TARGET) : undefined,
     };
     return tile;
   }).filter((tile): tile is HealthMetricsOverviewTileViewModel => tile !== null);

@@ -209,11 +209,10 @@ export class HealthMetricsOverviewComponent {
   }
 
   /**
-   * HEALTH_OVERVIEW_KPIS only covers Events/Training/Members/Non-Members/Code — Engagement stays
-   * fixture-backed until LFXV2-3364 ships its `hm_area_state` row. For the five live areas, the
-   * fixture's numbers are fabricated placeholders, not real fallback data — showing them while the
-   * live fetch is still loading, or after it resolved empty/failed, would render fake figures as if
-   * they were the foundation's actual metrics. Those areas get a neutral "no data" row instead.
+   * Every area in HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS reads live data. For those, the fixture's
+   * numbers are fabricated placeholders, not real fallback data — showing them while the live fetch
+   * is still loading, or after it resolved empty/failed, would render fake figures as if they were
+   * the foundation's actual metrics. Those areas get a neutral "no data" row instead.
    */
   private static mergeAreaStates(live: HealthMetricsAreaState[], loading: boolean, fixture: HealthMetricsAreaState[]): HealthMetricsAreaState[] {
     const liveByArea = new Map<HealthMetricsOverviewArea, HealthMetricsAreaState>(live.map((state) => [state.area, state]));

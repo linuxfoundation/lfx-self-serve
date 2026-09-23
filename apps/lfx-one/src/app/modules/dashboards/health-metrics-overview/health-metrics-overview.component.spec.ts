@@ -230,10 +230,8 @@ describe('HealthMetricsOverviewComponent', () => {
       kpiRequest.error(new ProgressEvent('error'));
       await fixture.whenStable();
 
-      // AnalyticsService.getHealthOverviewKpis degrades to an empty per-range map on failure. All 6 tiles still render —
-      // eng from the fixture (this table never covers that area), but evt/trn/mem/non/code get a
-      // neutral "no data" row rather than the fixture's fabricated numbers, since those would look
-      // like real data.
+      // AnalyticsService.getHealthOverviewKpis degrades to an empty per-range map on failure. All 6 tiles
+      // still render, each as a neutral "no data" row rather than the fixture's fabricated numbers.
       const tileStrip = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-strip"]');
       expect(tileStrip.children.length).toBe(6);
       const evtTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-evt"]');
@@ -242,6 +240,32 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(evtTile.textContent).not.toContain('as of');
       const codeTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-code"]');
       expect(codeTile.textContent).toContain('no data this period');
+      const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
+      expect(engTile.textContent).toContain('no data this period');
+      expect(engTile.textContent).not.toContain('8 of 31');
+      httpMock.verify();
+    });
+
+    it('renders the live Engagement tile with its link to the Engagement tab and no status chip', async () => {
+      await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, 'a0912345678901234A');
+      const httpMock = TestBed.inject(HttpTestingController);
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/foundation-profile-summary')
+        .flush({ projects: 14, tiers: '4 tiers', board: '12 seats', nextRenewals: '5 in the next 90 days' });
+      httpMock.expectOne((r) => r.url === '/api/analytics/health-overview-revenue').flush({ YTD: { dataAvailable: true, total: 100, streams: [] } });
+      httpMock
+        .expectOne((r) => r.url === '/api/analytics/health-overview-kpis')
+        .flush({
+          YTD: [areaState({ area: 'eng', statValue: '3 of 12', statLabel: 'groups below 50% attendance', classification: 'none', showStatus: false })],
+        });
+      await fixture.whenStable();
+
+      const engTile = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-tile-eng"]');
+      expect(engTile.textContent).toContain('3 of 12');
+      expect(engTile.textContent).not.toContain('Awaiting data');
+      const link: HTMLAnchorElement = engTile.querySelector('[data-testid="health-metrics-overview-tile-engagement-link"]');
+      expect(link.getAttribute('href')).toContain('/foundation/health-metrics/engagement');
+      expect(link.getAttribute('href')).toContain('#committees');
       httpMock.verify();
     });
 

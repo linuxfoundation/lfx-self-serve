@@ -62,6 +62,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
   const healthMetricsOverviewConstants = await vi.importActual<typeof import('../../../../../packages/shared/src/constants/health-metrics-overview.constants')>(
     '../../../../../packages/shared/src/constants/health-metrics-overview.constants'
   );
+  const healthMetricsEngagementConstants = await vi.importActual<
+    typeof import('../../../../../packages/shared/src/constants/health-metrics-engagement.constants')
+  >('../../../../../packages/shared/src/constants/health-metrics-engagement.constants');
 
   return {
     PROJECT_SETTINGS_NOT_FOUND_CODE: staffConstants.PROJECT_SETTINGS_NOT_FOUND_CODE,
@@ -98,6 +101,9 @@ vi.mock('@lfx-one/shared/constants', async () => {
     QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
     HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: dashboardMetricsConstants.HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
     HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: healthMetricsOverviewConstants.HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+    // Real values (3 / 0.5): the Engagement tile read binds both, and the tests assert the binds.
+    HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+    HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD: healthMetricsEngagementConstants.HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
     // Real function, not a stub: both getHealthOverview* queries generate their period-suffixed
     // column list from this, so a stub would emit SQL that diverges from production.
     buildHealthMetricsOverviewPeriods: healthMetricsOverviewConstants.buildHealthMetricsOverviewPeriods,
@@ -2172,9 +2178,13 @@ describe('ProjectService — getHealthOverviewRevenue', () => {
 
 describe('ProjectService — getHealthOverviewKpis', () => {
   let service: ProjectService;
+  const isEngagementQuery = (sql: unknown): boolean => String(sql).includes('ENGAGEMENT_GROUP_ATTENDANCE');
 
   beforeEach(() => {
     execute.mockReset();
+    // The KPI read is issued first, so a mockResolvedValueOnce answers it; the engagement read falls
+    // through to this empty default and its area is left out.
+    execute.mockImplementation(async () => ({ rows: [] }));
     service = new ProjectService();
   });
 
@@ -2337,6 +2347,67 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     );
   });
 
+  it('adds the Engagement state from ENGAGEMENT_GROUP_ATTENDANCE, with no status chip', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql)
+        ? { rows: [{ ACTIVE_GROUPS__YTD: 31, LOW_ATTENDANCE_GROUPS__YTD: 8, ACTIVE_GROUPS__COMPLETED_YEAR: 0, LOW_ATTENDANCE_GROUPS__COMPLETED_YEAR: 0 }] }
+        : { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']?.[0]).toEqual({
+      area: 'eng',
+      statValue: '8 of 31',
+      statLabel: 'groups below 50% attendance',
+      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
+      classification: 'none',
+      evaluatedAt: '',
+      showStatus: false,
+    });
+    expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no active groups this period' }));
+    expect(result['YTD']).toEqual(expect.arrayContaining([expect.objectContaining({ area: 'code', statValue: '2.5K' })]));
+  });
+
+  it('counts only rated, non-dormant groups per period, binding the thresholds and the foundation', async () => {
+    await service.getHealthOverviewKpis('cncf');
+
+    const [query, binds] = execute.mock.calls.find(([sql]) => isEngagementQuery(sql)) ?? [];
+    const ranges = buildHealthMetricsOverviewPeriods().map((period) => period.range);
+    expect(query).toContain('COUNT_IF(NOT is_dormant_ytd AND meetings_count_ytd >= ?) AS ACTIVE_GROUPS__YTD');
+    expect(query).toContain('attendance_pct_3rd_last_completed_year < ?');
+    expect(query).not.toContain('_4th_last_completed_year');
+    expect(binds).toEqual([...ranges.flatMap(() => [3, 3, 0.5]), 'cncf']);
+    expect((query as string).match(/\?/g)).toHaveLength((binds as unknown[]).length);
+  });
+
+  it('keeps the Engagement state when the foundation has no KPI row', async () => {
+    execute.mockImplementation(async (sql: string) =>
+      isEngagementQuery(sql) ? { rows: [{ ACTIVE_GROUPS__YTD: 4, LOW_ATTENDANCE_GROUPS__YTD: 1 }] } : { rows: [] }
+    );
+
+    const result = await service.getHealthOverviewKpis('cncf');
+
+    expect(result['YTD']).toEqual([expect.objectContaining({ area: 'eng', statValue: '1 of 4' })]);
+  });
+
+  it('leaves Engagement out and still returns the other areas when its read fails', async () => {
+    execute.mockImplementation(async (sql: string) => {
+      if (isEngagementQuery(sql)) {
+        throw new Error('warehouse unavailable');
+      }
+      return { rows: [buildKpiWideRow({ CONTRIBUTORS_COUNT: 2540 })] };
+    });
+
+    const result = (await service.getHealthOverviewKpis('cncf'))['YTD'];
+
+    expect(result?.map((state) => state.area)).toEqual(['evt', 'trn', 'mem', 'non', 'code']);
+    expect(warning).toHaveBeenCalledWith(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
+      foundation_slug: 'cncf',
+      error: 'warehouse unavailable',
+    });
+  });
+
   it('returns an empty array for every range when no row is returned for the foundation', async () => {
     execute.mockResolvedValueOnce({ rows: [] });
 
@@ -2369,8 +2440,9 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     await service.getHealthOverviewKpis('cncf');
 
-    const [query, binds] = execute.mock.calls[0];
-    expect(execute).toHaveBeenCalledTimes(1);
+    const kpiCalls = execute.mock.calls.filter(([sql]) => !isEngagementQuery(sql));
+    const [query, binds] = kpiCalls[0];
+    expect(kpiCalls).toHaveLength(1);
     expect(binds).toEqual(['cncf']);
     expect((query as string).match(/\?/g)).toHaveLength(1);
     for (const suffix of ['_ytd', '_last_completed_year', '_prev_completed_year', '_3rd_last_completed_year']) {

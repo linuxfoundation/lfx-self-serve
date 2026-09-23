@@ -34,7 +34,7 @@ export interface HealthMetricsOverviewEngagementLinkSpec {
   queryParams: Readonly<Record<string, string | null>>;
 }
 
-/** An in-app finding link, bound to `routerLink` / `fragment` / `queryParams` by the finding item. */
+/** An in-app Overview link, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
 export interface HealthMetricsOverviewFindingRoute {
   commands: readonly string[];
   fragment: HealthMetricsEngagementSectionKey;
@@ -98,6 +98,15 @@ export interface HealthOverviewKpisRow {
 export interface HealthOverviewRevenueRow {
   REVENUE_USD: number | null;
   FOUNDATION_TOTAL_REVENUE_USD: number | null;
+}
+
+/**
+ * One period's group counts behind the Engagement tile, read from `ENGAGEMENT_GROUP_ATTENDANCE` until
+ * `HEALTH_OVERVIEW_KPIS` carries engagement columns. Both counts share the expected-to-meet population.
+ */
+export interface HealthOverviewEngagementCounts {
+  activeGroups: number;
+  lowAttendanceGroups: number;
 }
 
 /**
@@ -188,6 +197,8 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
+  /** Set only for the `eng` area — the tile links into the Engagement tab's group attendance. */
+  route?: HealthMetricsOverviewFindingRoute;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
