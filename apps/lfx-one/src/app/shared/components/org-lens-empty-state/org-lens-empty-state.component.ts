@@ -23,8 +23,9 @@ const ORG_LIST_STATES: ReadonlySet<OrgLensEmptyStateName> = new Set(['wrong-orga
  *
  * Visual shape follows the LFX Insights empty-state pattern (lfx-self-serve#2533 "Design"), in exact
  * px because the app root is 14px: a 56px `blue-100` disc (Insights' accent-100) with a 32px `blue-500`
- * icon, a Roboto Slab 18/20px headline, one 14px paragraph (max 448px), one primary `lfx-button` with a
- * leading icon at `size="small"` (the app's empty-state CTA default, `lfx-empty-state`), and at most one muted 13px secondary link.
+ * icon, a Roboto Slab 18/20px headline, one 14px paragraph (max 448px), one primary call to action
+ * rendered as an `accent-500` text-link `lfx-button` (Inter 600 · 14px label · 16px leading icon, see
+ * `ctaStyleClass`), and at most one muted 13px secondary link.
  *
  * Not a thin wrapper over `lfx-empty-state`: that primitive carries one CTA and no secondary line, and
  * FR-002/FR-008 need a secondary action and an organization list.
