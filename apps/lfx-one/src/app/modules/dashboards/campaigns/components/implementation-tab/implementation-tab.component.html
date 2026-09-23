@@ -1093,6 +1093,12 @@
                   <p class="text-xs text-gray-500">campaign {{ pr.campaignId }}</p>
                 }
               </div>
+              @if (pr.hubspotUrl) {
+                <p class="mt-1 text-xs text-gray-600" data-testid="implementation-hubspot-link">
+                  Email id {{ pr.campaignId }} —
+                  <a [href]="pr.hubspotUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">open in HubSpot</a>
+                </p>
+              }
               @if (pr.error) {
                 <p class="mt-1 text-xs" [class.text-amber-700]="outcome !== 'created'" [class.text-gray-600]="outcome === 'created'">
                   {{ pr.error }}

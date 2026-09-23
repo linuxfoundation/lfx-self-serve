@@ -18,6 +18,7 @@ import type {
   CampaignStatusUpdateRequest,
   CampaignStatusUpdateResult,
   CampaignToggleStatus,
+  EmailCopyRefineRequest,
   FlushableResponse,
   MicrosoftCampaignCreateRequest,
   MicrosoftKeyword,
@@ -578,6 +579,53 @@ export class CampaignController {
       const variant = typeof rawVariant === 'string' && rawVariant.trim() !== '' ? rawVariant.trim() : undefined;
       const result = await this.campaignServiceClient.generateEmailCopy(req, projectSlug, briefId, stage, variant);
       logger.success(req, 'generate_email_copy', startTime, { enabled: result.enabled });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * Refine a brief's already-generated email copy with a free-text instruction.
+   *
+   * A thin proxy to campaign-service, mirroring `generateEmailCopy()` above: `project` and
+   * `brief_id` travel as query params because both are PATH segments upstream, while
+   * `previousDraft`/`instruction` are the request body — unlike `stage`/`variant`, both are
+   * required, so a missing one fails validation rather than falling through to a default.
+   */
+  public async refineEmailCopy(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectSlug = typeof req.query['project'] === 'string' ? req.query['project'].trim() : '';
+    const briefId = typeof req.query['brief_id'] === 'string' ? req.query['brief_id'].trim() : '';
+
+    if (projectSlug === '' || briefId === '') {
+      next(
+        ServiceValidationError.forField('project', 'project and brief_id are required', {
+          operation: 'refine_email_copy',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const body = req.body as Partial<EmailCopyRefineRequest> | undefined;
+    const previousDraft = body?.previousDraft;
+    const instruction = typeof body?.instruction === 'string' ? body.instruction.trim() : '';
+
+    if (!previousDraft || instruction === '') {
+      next(
+        ServiceValidationError.forField('instruction', 'previousDraft and instruction are required', {
+          operation: 'refine_email_copy',
+          service: 'campaign_controller',
+        })
+      );
+      return;
+    }
+
+    const startTime = logger.startOperation(req, 'refine_email_copy', { projectSlug });
+
+    try {
+      const result = await this.campaignServiceClient.refineEmailCopy(req, projectSlug, briefId, previousDraft, instruction);
+      logger.success(req, 'refine_email_copy', startTime, { enabled: result.enabled });
       res.json(result);
     } catch (error) {
       next(error);

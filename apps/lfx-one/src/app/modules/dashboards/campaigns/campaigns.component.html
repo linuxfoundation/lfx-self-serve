@@ -341,11 +341,44 @@
                     data-testid="campaigns-email-generate-btn" />
                   @if (emailBriefOutput() === null) {
                     <span class="text-sm text-gray-500" data-testid="campaigns-email-generate-hint">{{ briefRequiredHint }}</span>
+                  } @else if (emailBriefMissingEventName()) {
+                    <span class="text-sm text-gray-500" data-testid="campaigns-email-event-name-hint">{{ eventNameRequiredHint }}</span>
                   }
                 </div>
 
                 @if (emailCopyError(); as message) {
                   <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-copy-error">{{ message }}</p>
+                }
+
+                @if (emailCopy()) {
+                  <!--
+                    Refine — iterate on the draft above with a free-text instruction instead of
+                    only being able to regenerate from scratch. Only shown once a draft exists,
+                    matching `canRefineEmailCopy`'s own precondition.
+                  -->
+                  <div class="flex items-center gap-3">
+                    <input
+                      type="text"
+                      [value]="refineInstruction()"
+                      (input)="onRefineInstructionInput($any($event.target).value)"
+                      (keyup.enter)="onRefineEmailCopy()"
+                      placeholder="e.g. make the CTA punchier"
+                      aria-label="Refine instruction"
+                      class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                      data-testid="campaigns-email-refine-input" />
+                    <lfx-button
+                      label="Refine"
+                      icon="fa-light fa-sparkles"
+                      severity="secondary"
+                      [disabled]="!canRefineEmailCopy() || refineInstruction().trim() === ''"
+                      [loading]="refineState() === 'refining'"
+                      (onClick)="onRefineEmailCopy()"
+                      data-testid="campaigns-email-refine-btn" />
+                  </div>
+
+                  @if (refineError(); as message) {
+                    <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-refine-error">{{ message }}</p>
+                  }
                 }
               </div>
 

@@ -779,6 +779,19 @@ export interface GenerateEmailCopyResult {
   error?: string;
 }
 
+/**
+ * Request body for refining a brief's already-generated email copy with a free-text instruction.
+ *
+ * Mirrors `CampaignBriefRefineRequest`'s naming ("current"/"previous" state plus the free-text
+ * ask) rather than restating a new convention, but stays email-copy-specific: `projectSlug` and
+ * `briefId` are NOT here, matching `generateEmailCopy()`'s own request — both travel as query
+ * params because they are path segments upstream, not body content.
+ */
+export interface EmailCopyRefineRequest {
+  previousDraft: EmailBriefCopy;
+  instruction: string;
+}
+
 export interface LinkedInBriefCopy {
   variants: LinkedInCreativeVariant[];
   recommendedGeoTargets: LinkedInGeoTarget[];
@@ -1311,6 +1324,8 @@ export interface CampaignPlatformResult {
   /** Upstream platform campaign id. Present when ok, and also when the create succeeded but recording it did not — so the orphaned id is not lost. */
   campaignId?: string;
   error?: string;
+  /** Deep link to this campaign's email in the HubSpot editor. Present only for the email (HubSpot) channel, and only once the portal that created it is known. */
+  hubspotUrl?: string;
 }
 
 /**
@@ -2270,6 +2285,8 @@ export interface CampaignServiceCampaign {
   status: string;
   version: number;
   etag?: string;
+  /** Deep link to this campaign's email in the HubSpot editor. Present only for the email (HubSpot) channel, and only once the portal that created it is known. */
+  hubspot_url?: string;
 }
 
 export interface CampaignStatusUpdateResult {

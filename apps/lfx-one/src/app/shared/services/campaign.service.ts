@@ -41,6 +41,8 @@ import {
   CampaignSSEEventType,
   CampaignStatusToggleParams,
   CampaignStatusUpdateResult,
+  EmailBriefCopy,
+  EmailCopyRefineRequest,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotUtmCreateResult,
@@ -200,6 +202,21 @@ export class CampaignService {
     // sent empty, and unrecognised upstream falls back to ordinary stage-based copy under a 200.
     const body = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
     return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy', body, {
+      params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
+    });
+  }
+
+  /**
+   * Refine a brief's already-generated email copy with a free-text instruction.
+   *
+   * `projectSlug` and `briefId` travel as query params, matching `generateEmailCopy()` above —
+   * both are path segments upstream. `previousDraft`/`instruction` are the request BODY, since
+   * unlike `stage`/`variant` they are not optional and carry no upstream fallback: refining
+   * without a draft to refine or an instruction to apply has nothing to do.
+   */
+  public refineEmailCopy(projectSlug: string, briefId: string, previousDraft: EmailBriefCopy, instruction: string): Observable<GenerateEmailCopyResult> {
+    const body: EmailCopyRefineRequest = { previousDraft, instruction };
+    return this.http.post<GenerateEmailCopyResult>('/api/campaigns/email-copy/refine', body, {
       params: new HttpParams().set('project', projectSlug).set('brief_id', briefId),
     });
   }

@@ -15,6 +15,7 @@ import {
   CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
+  EMAIL_BRIEF_EVENT_NAME_REQUIRED_HINT,
   EMAIL_BRIEF_REQUIRED_HINT,
   EVENT_TEMPLATE_SUGGESTION_MIN_SCORE,
   EVENT_TERM_DISTINCTIVE_LENGTH,
@@ -33,6 +34,7 @@ import type {
   CampaignServiceEmailMetrics,
   CampaignJobOutcome,
   CampaignEmailStage,
+  CampaignEmailVariant,
   EmailBriefCopy,
   EventTemplateTerms,
   CampaignCreateRequest,
@@ -111,6 +113,10 @@ export class CampaignsComponent {
     // native control also needed `selected` on each OPTION, because a `[value]` binding applied
     // before the options exist is ignored -- a form control has no such ordering hazard.
     emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
+    // Same reason again -- mirrored into `selectedEmailVariant` below rather than read directly,
+    // so `onGenerateEmailCopy` keeps reading a plain signal like every other piece of request
+    // state it assembles.
+    emailVariant: new FormControl<CampaignEmailVariant>('urgency-fomo', { nonNullable: true }),
   });
 
   /**
@@ -401,6 +407,15 @@ export class CampaignsComponent {
    * prevent that; only a counter can tell the two responses apart.
    */
   private emailCopyGeneration = 0;
+
+  /**
+   * Guards a late refine response against a draft the operator has since changed or regenerated.
+   *
+   * Same hazard as `emailCopyGeneration`, kept as its own counter because a refine can be in
+   * flight at the same time as a fresh regenerate would otherwise be — `canRefineEmailCopy` and
+   * `canGenerateEmailCopy` both check state independently, so nothing prevents the two racing.
+   */
+  private emailCopyRefineGeneration = 0;
 
   /**
    * Guards a late audience response against a brief the page no longer holds.
@@ -1021,6 +1036,9 @@ export class CampaignsComponent {
   /** Shared so the three email blocks that need a brief cannot drift apart. */
   protected readonly briefRequiredHint = EMAIL_BRIEF_REQUIRED_HINT;
 
+  /** Told to the operator when a brief exists but its event has no name -- see `emailBriefMissingEventName`. */
+  protected readonly eventNameRequiredHint = EMAIL_BRIEF_EVENT_NAME_REQUIRED_HINT;
+
   /**
    * The brief id the email side has established, if any.
    *
@@ -1043,6 +1061,14 @@ export class CampaignsComponent {
   protected readonly selectedEmailStage = computed<CampaignEmailStage | undefined>(
     () => CAMPAIGN_EMAIL_TYPES.find((t) => t.id === this.selectedEmailTypeId())?.stage
   );
+
+  /**
+   * The variant A draft style the operator wants -- defaults to `urgency-fomo`, which preserves
+   * `onGenerateEmailCopy`'s behavior from before this selector existed. Mirrored from
+   * `selectorForm.controls.emailVariant` in the constructor, the same relationship
+   * `selectedEmailTypeId` has to `selectorForm.controls.emailType`.
+   */
+  protected readonly selectedEmailVariant = signal<CampaignEmailVariant>('urgency-fomo');
 
   /**
    * The chosen type's label, for the read-only line on Implement.
@@ -1081,10 +1107,41 @@ export class CampaignsComponent {
   protected readonly emailCopyError = signal<string>('');
 
   /**
-   * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
-   * ONLY supplied event facts and has nothing to work from otherwise.
+   * Whether the current brief's event has no name -- `email_copy.go` 400s generation without one
+   * (see `EMAIL_BRIEF_EVENT_NAME_REQUIRED_HINT`), so this is checked client-side to catch it before
+   * the round-trip rather than after. `false` while no brief exists yet; that case has its own
+   * hint (`briefRequiredHint`) and must not also show this one.
    */
-  protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
+  protected readonly emailBriefMissingEventName = computed(() => {
+    const brief = this.emailBriefOutput();
+    return brief !== null && !brief.eventDetails.name.trim();
+  });
+
+  /**
+   * Whether copy can be generated: a brief must exist, because the prompt is instructed to use
+   * ONLY supplied event facts and has nothing to work from otherwise; and that brief's event must
+   * have a name, or the backend rejects the request outright (see `emailBriefMissingEventName`).
+   */
+  protected readonly canGenerateEmailCopy = computed(
+    () => this.emailBriefOutput() !== null && !this.emailBriefMissingEventName() && this.emailCopyState() !== 'generating'
+  );
+
+  /** The operator's free-text instruction for `onRefineEmailCopy`, e.g. "make the CTA punchier". */
+  protected readonly refineInstruction = signal('');
+
+  /** Refine lifecycle, separate from `emailCopyState` so a refine and a fresh regenerate cannot mask each other's status. */
+  protected readonly refineState = signal<'idle' | 'refining' | 'error'>('idle');
+
+  /** Message for a failed refine — empty while idle or in flight. */
+  protected readonly refineError = signal<string | null>(null);
+
+  /**
+   * Whether the current draft can be refined: there must be a draft to refine, and neither a
+   * fresh generation nor another refine may already be in flight.
+   */
+  protected readonly canRefineEmailCopy = computed(
+    () => this.emailCopy() !== null && this.emailCopyState() !== 'generating' && this.refineState() !== 'refining'
+  );
 
   /**
    * Whether the operator wants a native HubSpot A/B test on this send. Off by default — most
@@ -1625,6 +1682,26 @@ export class CampaignsComponent {
       this.onSelectEmailType(value);
     });
 
+    // Mirror the email-variant control into the signal, the same relationship `emailType` has to
+    // `selectedEmailTypeId` -- `onGenerateEmailCopy` reads the signal like every other piece of
+    // request state it assembles, rather than reaching back into `selectorForm`.
+    this.selectorForm.controls.emailVariant.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
+      this.selectedEmailVariant.set(value);
+    });
+
+    // Disabled while a generation is in flight, mirroring the generate button's own
+    // `[loading]="emailCopyState() === 'generating'"` -- picking a different variant mid-request
+    // would not affect the request already out, so it must not look choosable until it lands.
+    toObservable(this.emailCopyState)
+      .pipe(takeUntilDestroyed())
+      .subscribe((state) => {
+        if (state === 'generating') {
+          this.selectorForm.controls.emailVariant.disable();
+        } else {
+          this.selectorForm.controls.emailVariant.enable();
+        }
+      });
+
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       if (value === this.selectedDeliveryType()) {
         return;
@@ -2077,9 +2154,9 @@ export class CampaignsComponent {
    * Regeneration is just calling this again: upstream composes the prompt from the brief and does
    * NOT persist the result, so a second call is safe and cheap.
    *
-   * This is variant A of the A/B test: it always requests the `urgency-fomo` variant, so its draft
-   * differs from variant B's ordinary stage-based copy (`onGenerateAbTestCopy`) in structure, not
-   * just wording.
+   * This is variant A of the A/B test: it requests whichever draft style `selectedEmailVariant`
+   * names, so its draft differs from variant B's ordinary stage-based copy (`onGenerateAbTestCopy`)
+   * in structure, not just wording.
    */
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
@@ -2113,9 +2190,12 @@ export class CampaignsComponent {
         return;
       }
 
-      // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
-      // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo'));
+      // Variant A requests whichever draft style the operator picked -- variant B
+      // (`onGenerateAbTestCopy` below) stays on ordinary stage-based copy so the two drafts differ
+      // in more than wording.
+      const result = await firstValueFrom(
+        this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), this.selectedEmailVariant())
+      );
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
       // simply the wrong kind of email, which `onStageEmailSend` would then clone.
@@ -2144,6 +2224,78 @@ export class CampaignsComponent {
       }
       this.emailCopyState.set('error');
       this.emailCopyError.set('Could not generate the email. Try again.');
+    }
+  }
+
+  /** Bound to the refine instruction input — kept as a handler, matching this module's other text inputs. */
+  protected onRefineInstructionInput(value: string): void {
+    this.refineInstruction.set(value);
+  }
+
+  /**
+   * Refine the draft on screen with a free-text instruction, instead of regenerating from
+   * scratch.
+   *
+   * Brief-scoped the same way `onGenerateEmailCopy` is, and reuses `ensureEmailBriefId` for the
+   * same reason: refine posts to `/briefs/{id}/email-copy/refine`, so the brief must be
+   * persisted first.
+   */
+  protected async onRefineEmailCopy(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    const previousDraft = this.emailCopy();
+    const instruction = this.refineInstruction().trim();
+    if (brief === null || projectSlug === '' || previousDraft === null || instruction === '') {
+      return;
+    }
+
+    // Bumped BEFORE any await, for the same reason `onGenerateEmailCopy` bumps its own counter.
+    const generation = ++this.emailCopyRefineGeneration;
+    const isCurrent = (): boolean => generation === this.emailCopyRefineGeneration;
+
+    this.refineState.set('refining');
+    this.refineError.set(null);
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      if (briefId === '') {
+        this.refineState.set('error');
+        this.refineError.set(this.emailSaveFailureMessage('so the draft could not be refined.'));
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.refineEmailCopy(projectSlug, briefId, previousDraft, instruction));
+      if (!isCurrent()) {
+        return;
+      }
+
+      // The cutover flag being off is a steady state, not a failure.
+      if (!result.enabled) {
+        this.refineState.set('error');
+        this.refineError.set('Email copy refinement is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.copy) {
+        this.refineState.set('error');
+        this.refineError.set(result.error ?? 'The draft could not be refined.');
+        return;
+      }
+
+      this.emailCopy.set(result.copy);
+      this.refineState.set('idle');
+      // Cleared only on success — a failed refine leaves the instruction in place so the operator
+      // does not have to retype it before retrying.
+      this.refineInstruction.set('');
+    } catch {
+      if (!isCurrent()) {
+        return;
+      }
+      this.refineState.set('error');
+      this.refineError.set('Could not refine the draft. Try again.');
     }
   }
 

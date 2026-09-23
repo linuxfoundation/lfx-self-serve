@@ -6,6 +6,7 @@ import type {
   AudienceSpeakerScope,
   CampaignDeliveryTypeOption,
   CampaignEmailTypeOption,
+  CampaignEmailVariant,
   CampaignGoalOption,
   CampaignKeyword,
   CampaignPlatform,
@@ -1009,6 +1010,17 @@ export const CAMPAIGN_METRICS_WINDOWS = ['today', 'yesterday', 'last_7_days', 'l
 export const EMAIL_BRIEF_REQUIRED_HINT = 'Generate a brief on the Plan tab first.';
 
 /**
+ * Told to an operator on the Implementation tab when a brief exists but its event has no name.
+ *
+ * `email_copy.go`'s `decodeEmailCopyEventDetails` 400s copy generation without an `eventName`, and
+ * a brief reaches that state when the Plan tab's URL scrape never ran or returned nothing --
+ * `onProceedToImplementation`'s fallback derives the name from the pasted URL and can save an
+ * empty one. Surfacing the same fact here, before the round-trip, points at the actual fix (edit
+ * the event name on the Plan tab) instead of the 400's generic wording.
+ */
+export const EMAIL_BRIEF_EVENT_NAME_REQUIRED_HINT = "This brief's event has no name — set one on the Plan tab, then regenerate.";
+
+/**
  * How much harder an EVENT term counts than an email-type keyword when ranking clone templates.
  *
  * Within one portal that runs several events, "which event is this" discriminates far harder than
@@ -1208,13 +1220,26 @@ export const DEFAULT_CAMPAIGN_EMAIL_TYPE_ID = 'main-registration-push';
 export const CAMPAIGN_EMAIL_STAGES = ['CFP Launch', 'Schedule Announcement', 'Registration Push', 'Discount Offer', 'Final Countdown', 'Post-Event'] as const;
 
 /**
- * Recognised `variant` values for `generate-email-copy`. Currently just the one: a differently
- * styled draft of the same stage's copy (urgency/FOMO-forward structure) instead of the stage's
- * normal copy. Like `stage`, campaign-service treats an unrecognised or absent value as "no
- * variant requested" rather than an error, so this list is for the UI's own selector rather than
- * wire validation.
+ * Recognised `variant` values for `generate-email-copy`: differently styled drafts of the same
+ * stage's copy instead of the stage's normal copy. Like `stage`, campaign-service treats an
+ * unrecognised or absent value as "no variant requested" rather than an error, so this list is
+ * for the UI's own selector rather than wire validation.
  */
-export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo'] as const;
+export const CAMPAIGN_EMAIL_VARIANTS = ['urgency-fomo', 'value-focused', 'social-proof', 'b2b-sponsorship'] as const;
+
+/**
+ * The selector's visible label per variant.
+ *
+ * Keyed on `CampaignEmailVariant` rather than on a re-spelled literal union so this map cannot
+ * drift from the type `CAMPAIGN_EMAIL_VARIANTS` derives -- a member added to or renamed in the
+ * list fails to compile HERE.
+ */
+export const CAMPAIGN_EMAIL_VARIANT_LABELS: Readonly<Record<CampaignEmailVariant, string>> = {
+  'urgency-fomo': 'Urgency / FOMO',
+  'value-focused': 'Value-Focused',
+  'social-proof': 'Social Proof',
+  'b2b-sponsorship': 'B2B Sponsorship',
+};
 
 // ---------------------------------------------------------------------------
 // Audience Builder

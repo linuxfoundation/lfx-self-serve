@@ -25,6 +25,7 @@ import type {
   CampaignServiceCampaign,
   CampaignServiceCreateResult,
   CampaignToggleStatus,
+  EmailBriefCopy,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
   HubSpotMarketingEmail,
@@ -79,6 +80,7 @@ interface CampaignServiceJobPollResponse {
     ok: boolean;
     campaign_id?: string;
     error?: string;
+    hubspot_url?: string;
   }[];
   error?: string;
 }
@@ -870,6 +872,75 @@ export class CampaignServiceClient {
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
       return { enabled: true, error: upstreamMessageOr(error, 'The email copy could not be generated. Try again.') };
+    }
+  }
+
+  /**
+   * Refine a brief's already-generated email copy through campaign-service, using a free-text
+   * instruction against the copy the caller already has.
+   *
+   * A THIN PROXY, mirroring `generateEmailCopy()` above. `previousDraft`/`instruction` travel in
+   * the request BODY, not the query string — unlike `stage`/`variant` on generate, neither has
+   * an upstream default to fall back to, so both are required attributes upstream rather than
+   * optional query parameters.
+   *
+   * `previous_draft` is sent in this app's own flat `subject`/`preheader`/`body`/`cta` shape
+   * rather than reconstructed into upstream's `sections[]` — the flattening in
+   * `generateEmailCopy()` above is lossy (it drops section boundaries), so there is no faithful
+   * `sections[]` to rebuild from what this layer stored. The response is still parsed as
+   * `sections[]`, matching generate's own contract.
+   */
+  public async refineEmailCopy(
+    req: Request,
+    projectSlug: string,
+    briefId: string,
+    previousDraft: EmailBriefCopy,
+    instruction: string
+  ): Promise<GenerateEmailCopyResult> {
+    if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
+      return { enabled: false };
+    }
+
+    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy/refine`;
+    try {
+      const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
+        req,
+        'LFX_V2_CAMPAIGN_SERVICE',
+        path,
+        'POST',
+        undefined,
+        {
+          previous_draft: {
+            subject: previousDraft.subject,
+            preheader: previousDraft.preheader,
+            body: previousDraft.body,
+            cta: previousDraft.cta,
+          },
+          instruction,
+        }
+      );
+
+      const copy = response.data;
+      if (!copy?.subject) {
+        return { enabled: true, error: 'The refiner returned no email copy.' };
+      }
+
+      // Same reconstruction as `generateEmailCopy()` above — see its comment for why `body` folds
+      // only the `rich_text` sections and `cta` is pulled from the `button` section separately.
+      const sections = copy.sections ?? [];
+      const body = sections
+        .filter((section) => section.type === 'rich_text' && section.html)
+        .map((section) => section.html)
+        .join('');
+      const cta = sections.find((section) => section.type === 'button')?.text ?? '';
+
+      return {
+        enabled: true,
+        copy: { subject: copy.subject, preheader: copy.preheader, body, cta },
+      };
+    } catch (error) {
+      logger.warning(req, 'refine_email_copy', 'Email copy refine failed, returning an error result', { err: error });
+      return { enabled: true, error: upstreamMessageOr(error, 'The email copy could not be refined. Try again.') };
     }
   }
 
@@ -2755,6 +2826,7 @@ export function adaptJobPollResponse(response: CampaignServiceJobPollResponse): 
     ok: r.ok,
     campaignId: r.campaign_id,
     error: r.error,
+    hubspotUrl: r.hubspot_url,
   }));
 
   switch (response.status) {
