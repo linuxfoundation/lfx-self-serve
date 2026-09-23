@@ -4,7 +4,7 @@
 import { buildHealthMetricsYearOptions } from './dashboard-metrics.constants';
 
 import type { HealthMetricsYearOption } from '../interfaces/dashboard-metric.interface';
-import type { HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
+import type { HealthMetricsOverviewEngagementLinkSpec, HealthOverviewKpisRow, HealthOverviewRevenueRow } from '../interfaces/health-metrics-overview.interface';
 
 /**
  * Fixed area order and display metadata for the LFXV2-3365 Overview page. Area keys match the
@@ -86,12 +86,9 @@ export const HEALTH_METRICS_OVERVIEW_GROUP_ORDER = [
  * `link_target` → PCC anchor path, joined onto `…/project/{pcc_project_id}/reports/health-metrics`.
  * A one-line map so retiring a link when its Level 2 page ships is a one-line change.
  * `code.insights` is not here — it opens LFX Insights externally via `buildLensAwareInsightsUrl`.
+ * Engagement's targets moved to {@link HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS}.
  */
 export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
-  'eng.board': '/meetings#board',
-  'eng.groups': '/meetings#committees',
-  'eng.orgs': '/meetings#organizations',
-  'eng.participation': '/meetings',
   'evt.forecast': '/events#forecast',
   'mem.atrisk': '/members#at-risk',
   'mem.renewals': '/members#renewals',
@@ -99,6 +96,18 @@ export const HEALTH_METRICS_OVERVIEW_LINK_TARGETS = {
   'non.orgs': '/non-members',
   'trn.enrollment': '/training',
 } as const;
+
+/**
+ * `eng.*` `link_target` → the Engagement section that owns it, plus the section filters to apply on
+ * arrival. A filter left `null` is cleared, so a stale cut carried over in the URL cannot hide the
+ * responsible entity.
+ */
+export const HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS = {
+  'eng.board': { section: 'committees', queryParams: { groupType: 'gov', groupPage: null } },
+  'eng.groups': { section: 'committees', queryParams: { groupType: null, groupPage: null } },
+  'eng.orgs': { section: 'orgs', queryParams: { orgFilter: null } },
+  'eng.participation': { section: 'participation', queryParams: { partMode: null } },
+} as const satisfies Record<string, HealthMetricsOverviewEngagementLinkSpec>;
 
 /** The one `link_target` that opens externally (LFX Insights) instead of a PCC anchor. */
 export const HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET = 'code.insights';

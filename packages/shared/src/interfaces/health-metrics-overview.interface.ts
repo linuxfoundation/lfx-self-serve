@@ -4,11 +4,13 @@
 import type {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
+import type { HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -19,8 +21,25 @@ export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OV
 /** A rail revenue-stream key — fixed 3-stream set per `railHTML()`'s legend. */
 export type HealthMetricsOverviewRevenueStreamKey = keyof typeof HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS;
 
-/** A recognized `hm_findings.link_target` value — every PCC anchor key plus the one external Insights target. */
-export type HealthMetricsOverviewLinkTarget = keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+/** A recognized `hm_findings.link_target` value — every PCC anchor key, every Engagement target, and the one external Insights target. */
+export type HealthMetricsOverviewLinkTarget =
+  | keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS
+  | keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS
+  | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+
+/** One entry of `HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS`: the owning section and its arrival filters. */
+export interface HealthMetricsOverviewEngagementLinkSpec {
+  section: HealthMetricsEngagementSectionKey;
+  /** Merged into the current query string; `null` clears a filter the URL already carries. */
+  queryParams: Readonly<Record<string, string | null>>;
+}
+
+/** An in-app finding link, bound to `routerLink` / `fragment` / `queryParams` by the finding item. */
+export interface HealthMetricsOverviewFindingRoute {
+  commands: readonly string[];
+  fragment: HealthMetricsEngagementSectionKey;
+  queryParams: Readonly<Record<string, string | null>>;
+}
 
 /**
  * Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per
@@ -184,7 +203,10 @@ export interface HealthMetricsOverviewFindingViewModel {
   /** Carried through from {@link HealthMetricsFinding.sortRank} — display order and, since it's unique per row, also this row's `@for` track key and `data-testid` suffix. */
   sortRank: number;
   evaluatedAt: string;
+  /** Set for a PCC or Insights link; mutually exclusive with {@link linkRoute}. */
   linkHref?: string;
+  /** Set for an `eng.*` finding, which links into the Engagement tab instead of PCC. */
+  linkRoute?: HealthMetricsOverviewFindingRoute;
   linkIsExternal: boolean;
   visual?: HealthMetricsFindingVisual;
 }

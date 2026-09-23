@@ -3,9 +3,15 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS, HEALTH_METRICS_OVERVIEW_GROUP_ORDER } from '../constants/health-metrics-overview.constants';
+import { HEALTH_METRICS_ENGAGEMENT_SECTIONS } from '../constants/health-metrics-engagement.constants';
+import {
+  HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
+  HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
+} from '../constants/health-metrics-overview.constants';
 
 import {
+  buildHealthMetricsOverviewEngagementRoute,
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewRevenueStreams,
   buildHealthMetricsOverviewTiles,
@@ -136,20 +142,20 @@ describe('formatHealthMetricsOverviewAsOfLabel', () => {
 
 describe('buildHealthMetricsOverviewPccUrl', () => {
   it('builds a PCC report URL for a known link target', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', 'eng.groups')).toBe(
-      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/meetings#committees'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', 'evt.forecast')).toBe(
+      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/events#forecast'
     );
   });
 
   it('strips a trailing slash from the base URL before joining', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev/', 'proj-1', 'eng.groups')).toBe(
-      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/meetings#committees'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev/', 'proj-1', 'evt.forecast')).toBe(
+      'https://pcc.lfx.dev/project/proj-1/reports/health-metrics/events#forecast'
     );
   });
 
   it('encodes the project id in the URL path', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj 1/two', 'eng.groups')).toBe(
-      'https://pcc.lfx.dev/project/proj%201%2Ftwo/reports/health-metrics/meetings#committees'
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj 1/two', 'evt.forecast')).toBe(
+      'https://pcc.lfx.dev/project/proj%201%2Ftwo/reports/health-metrics/events#forecast'
     );
   });
 
@@ -158,7 +164,39 @@ describe('buildHealthMetricsOverviewPccUrl', () => {
   });
 
   it('returns undefined for a missing project id', () => {
-    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'eng.groups')).toBeUndefined();
+    expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', '', 'evt.forecast')).toBeUndefined();
+  });
+
+  it('resolves no Engagement target to PCC, now that the Engagement tab owns them', () => {
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS)[]) {
+      expect(buildHealthMetricsOverviewPccUrl('https://pcc.lfx.dev', 'proj-1', target)).toBeUndefined();
+    }
+  });
+});
+
+describe('buildHealthMetricsOverviewEngagementRoute', () => {
+  it('links a group finding to the group-attendance section with any stale cut cleared', () => {
+    expect(buildHealthMetricsOverviewEngagementRoute('eng.groups')).toEqual({
+      commands: ['/foundation/health-metrics', 'engagement'],
+      fragment: 'committees',
+      queryParams: { groupType: null, groupPage: null },
+    });
+  });
+
+  it('opens the board finding on the governance cut so the responsible group is visible on arrival', () => {
+    expect(buildHealthMetricsOverviewEngagementRoute('eng.board')?.queryParams).toEqual({ groupType: 'gov', groupPage: null });
+  });
+
+  it('points every Engagement target at a real section', () => {
+    const sectionKeys = HEALTH_METRICS_ENGAGEMENT_SECTIONS.map((section) => section.key as string);
+    for (const target of Object.keys(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS) as (keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS)[]) {
+      expect(sectionKeys).toContain(buildHealthMetricsOverviewEngagementRoute(target)?.fragment);
+    }
+  });
+
+  it('returns undefined for a target that still lives on PCC or Insights', () => {
+    expect(buildHealthMetricsOverviewEngagementRoute('mem.atrisk')).toBeUndefined();
+    expect(buildHealthMetricsOverviewEngagementRoute('code.insights')).toBeUndefined();
   });
 });
 

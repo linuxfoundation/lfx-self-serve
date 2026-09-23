@@ -5,6 +5,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +25,7 @@ describe('HealthMetricsOverviewComponent', () => {
       providers: [
         provideHttpClient(),
         provideHttpClientTesting(),
+        provideRouter([]),
         // Normally provided by HealthMetricsGateComponent, which owns the sticky header and tab bar.
         HealthMetricsChromeService,
         {
@@ -112,6 +114,16 @@ describe('HealthMetricsOverviewComponent', () => {
 
     const pccLinks = fixture.nativeElement.querySelectorAll('a[data-testid^="health-metrics-overview-finding-link-"][target="_self"]');
     expect(pccLinks.length).toBe(0);
+  });
+
+  it('links an Engagement finding into the Engagement tab even before the Salesforce id resolves', async () => {
+    await render({ uid: 'proj-uid', name: 'Test Foundation', slug: 'test-foundation' }, null);
+    fixture.componentRef.setInput('findings', [finding({ linkTarget: 'eng.board', sortRank: 7 })]);
+    fixture.detectChanges();
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-7"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement?groupType=gov#committees');
+    expect(link.getAttribute('target')).toBeNull();
   });
 
   function areaState(overrides: Partial<HealthMetricsAreaState> = {}): HealthMetricsAreaState {

@@ -12,6 +12,7 @@ import {
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
 } from '@lfx-one/shared/constants';
 import {
+  buildHealthMetricsOverviewEngagementRoute,
   buildHealthMetricsOverviewPccUrl,
   buildHealthMetricsOverviewTiles,
   buildLensAwareInsightsUrl,
@@ -246,11 +247,16 @@ export class HealthMetricsOverviewComponent {
     foundationSfid: string | null
   ): HealthMetricsOverviewFindingViewModel {
     const isInsightsLink = finding.linkTarget === HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+    // Engagement findings link into the tab in-app and need no Salesforce id.
+    const linkRoute = buildHealthMetricsOverviewEngagementRoute(finding.linkTarget);
     // PCC's `/project/{id}/...` routes are keyed by the Salesforce ID, not the LFX v2 project uid —
     // resolve through `selectedFoundationSfid` (null while resolving degrades to a hidden link).
-    const linkHref = isInsightsLink
-      ? buildLensAwareInsightsUrl(foundation?.slug, true)
-      : buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
+    let linkHref: string | undefined;
+    if (isInsightsLink) {
+      linkHref = buildLensAwareInsightsUrl(foundation?.slug, true);
+    } else if (!linkRoute) {
+      linkHref = buildHealthMetricsOverviewPccUrl(environment.urls.pcc, foundationSfid ?? '', finding.linkTarget);
+    }
 
     return {
       classification: finding.classification,
@@ -265,6 +271,7 @@ export class HealthMetricsOverviewComponent {
       sortRank: finding.sortRank,
       evaluatedAt: finding.evaluatedAt,
       linkHref,
+      linkRoute,
       linkIsExternal: isInsightsLink,
       visual: finding.visual,
     };

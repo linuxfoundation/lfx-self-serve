@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HEALTH_METRICS_BASE_PATH } from '../constants/health-metrics-engagement.constants';
 import {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_GROUP_ORDER,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
@@ -17,6 +19,7 @@ import type {
   HealthMetricsFinding,
   HealthMetricsOverviewClassification,
   HealthMetricsOverviewFindingGroupRows,
+  HealthMetricsOverviewFindingRoute,
   HealthMetricsOverviewLinkTarget,
   HealthMetricsOverviewRevenue,
   HealthMetricsOverviewRevenueStreamViewModel,
@@ -46,6 +49,18 @@ export function buildHealthMetricsOverviewPccUrl(pccBaseUrl: string, pccProjectI
   }
   const base = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
   return `${base}/project/${encodeURIComponent(pccProjectId)}/reports/health-metrics${anchor}`;
+}
+
+/**
+ * Resolves an `eng.*` `link_target` to its in-app Engagement section: the tab route, the section key
+ * as the fragment, and the arrival filters. `undefined` for every other target, which stays on PCC.
+ */
+export function buildHealthMetricsOverviewEngagementRoute(linkTarget: HealthMetricsOverviewLinkTarget): HealthMetricsOverviewFindingRoute | undefined {
+  if (!Object.hasOwn(HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS, linkTarget)) {
+    return undefined;
+  }
+  const spec = HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS[linkTarget as keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS];
+  return { commands: [HEALTH_METRICS_BASE_PATH, 'engagement'], fragment: spec.section, queryParams: spec.queryParams };
 }
 
 /**

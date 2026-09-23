@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { provideRouter } from '@angular/router';
 import { describe, expect, it } from 'vitest';
 
 import { HealthMetricsOverviewFindingItemComponent } from './health-metrics-overview-finding-item.component';
@@ -28,7 +29,7 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
   }
 
   async function render(overrides: Partial<HealthMetricsOverviewFindingViewModel> = {}): Promise<void> {
-    await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewFindingItemComponent] }).compileComponents();
+    await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewFindingItemComponent], providers: [provideRouter([])] }).compileComponents();
     fixture = TestBed.createComponent(HealthMetricsOverviewFindingItemComponent);
     fixture.componentRef.setInput('finding', finding(overrides));
     fixture.detectChanges();
@@ -191,6 +192,17 @@ describe('HealthMetricsOverviewFindingItemComponent', () => {
     await render({ sortRank: 42, linkHref: 'https://pcc.lfx.dev/project/abc/reports/health-metrics/meetings#committees' });
 
     expect(fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-42"]')).not.toBeNull();
+  });
+
+  it('renders an in-app link, not a PCC href, when the finding carries a route', async () => {
+    await render({
+      sortRank: 5,
+      linkRoute: { commands: ['/foundation/health-metrics', 'engagement'], fragment: 'orgs', queryParams: { orgFilter: null } },
+    });
+
+    const link: HTMLAnchorElement = fixture.nativeElement.querySelector('[data-testid="health-metrics-overview-finding-link-5"]');
+    expect(link.getAttribute('href')).toBe('/foundation/health-metrics/engagement#orgs');
+    expect(link.textContent?.trim()).toBe('View details');
   });
 
   it('points the dots visual at its visible caption via aria-labelledby instead of duplicating the text', async () => {
