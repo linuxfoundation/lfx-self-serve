@@ -50,6 +50,7 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
  * Attribute patterns then run against ONE tag (a few hundred bytes), where backtracking is
  * bounded by the tag and cannot be grown by the attacker.
  */
+
 function openTags(html: string, tagName: string): string[] {
   const tags: string[] = [];
   const re = new RegExp(`<${tagName}\\b[^<>]*>`, 'gi');
@@ -76,39 +77,57 @@ function extractHeroImage(html: string, baseUrl: string): string {
 
   // Fallback: an event page's own JSON-LD (schema.org Event) often carries a banner image
   // even when it has no og:image meta tag.
-  // Tokenized for the same reason the og:image match above is: `<script[^>]+...[^>]*>` carries two
-  // unbounded runs that both had to match before failure, and measured the same quadratic curve
-  // (16 KiB 14 ms -> 128 KiB 813 ms). Fixing only the og:image pattern would have left this one
-  // MORE exposed, not less: this is the fallback, so it runs precisely on the pages that have no
-  // og:image -- the common case for a scraped third-party page.
-  // `searchFrom` advances past each tag handled, so two identical `<script type=...>` tags read
-  // their OWN bodies -- `indexOf(openTag)` alone would return the first match every time and read
-  // the first tag's body twice.
-  let searchFrom = 0;
-  for (const openTag of openTags(html, 'script')) {
-    const start = html.indexOf(openTag, searchFrom);
-    if (start === -1) continue;
-    searchFrom = start + openTag.length;
-    if (!/type=["']application\/ld\+json["']/i.test(openTag)) continue;
-    const end = html.indexOf('</script', searchFrom);
-    if (end === -1) continue;
-    try {
-      const parsed = JSON.parse(html.slice(searchFrom, end).trim());
-      const candidates = Array.isArray(parsed) ? parsed : [parsed];
-      for (const entry of candidates) {
-        const type = entry?.['@type'];
-        const isEvent = typeof type === 'string' ? /event/i.test(type) : Array.isArray(type) && type.some((t) => /event/i.test(String(t)));
-        if (!isEvent) continue;
+  //
+  // ONE left-to-right pass over the document, matching opens and closes with a single regex.
+  // Two shapes were tried first and both were quadratic on a page of unclosed `<script>` tags,
+  // which a scraped page fully controls:
+  //   - `html.indexOf('</script', from)` per tag -- also CASE-SENSITIVE, so `</SCRIPT>` (valid
+  //     HTML, tag names are case-insensitive) was missed entirely and the image lost.
+  //   - a case-insensitive scan restarted per tag -- correct, but each of 149,796 open tags in a
+  //     5 MiB page rescanned to EOF for a closer that was not there: 109 SECONDS.
+  // Scanning once and handling each token as it arrives is O(n) in the page length: the 5 MiB
+  // worst case costs single-digit milliseconds.
+  const tokens = /<script\b[^<>]*>|<\/script/gi;
+  let pendingFrom = -1;
+  for (let match = tokens.exec(html); match !== null; match = tokens.exec(html)) {
+    const token = match[0];
+    if (token[1] === '/') {
+      // A closer. Only meaningful if an ld+json opener is waiting for one.
+      if (pendingFrom === -1) continue;
+      const image = heroImageFromJsonLd(html.slice(pendingFrom, match.index), baseUrl);
+      pendingFrom = -1;
+      if (image) return image;
+      continue;
+    }
+    // An opener. A nested opener before any closer replaces the pending one, matching how a
+    // parser would treat the outer tag as never closed.
+    pendingFrom = /type=["']application\/ld\+json["']/i.test(token) ? match.index + token.length : -1;
+  }
 
-        const image = entry?.image;
-        const imageUrl = Array.isArray(image) ? image[0] : image;
-        if (typeof imageUrl === 'string') {
-          const resolved = resolveUrl(imageUrl, baseUrl);
-          if (resolved) return resolved;
-        }
-      }
-    } catch {
-      // Malformed JSON-LD on the page — skip it and keep scanning other script blocks.
+  return '';
+}
+
+/** The hero image a single JSON-LD block names, or '' when it names none. */
+function heroImageFromJsonLd(raw: string, baseUrl: string): string {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw.trim());
+  } catch {
+    // Malformed JSON-LD on the page -- skip it and keep scanning other script blocks.
+    return '';
+  }
+
+  const candidates = Array.isArray(parsed) ? parsed : [parsed];
+  for (const entry of candidates) {
+    const type = (entry as { '@type'?: unknown })?.['@type'];
+    const isEvent = typeof type === 'string' ? /event/i.test(type) : Array.isArray(type) && type.some((t) => /event/i.test(String(t)));
+    if (!isEvent) continue;
+
+    const image = (entry as { image?: unknown })?.image;
+    const imageUrl = Array.isArray(image) ? image[0] : image;
+    if (typeof imageUrl === 'string') {
+      const resolved = resolveUrl(imageUrl, baseUrl);
+      if (resolved) return resolved;
     }
   }
 

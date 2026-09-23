@@ -319,6 +319,27 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
     expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/second.png');
   });
 
+  it.each([
+    ['lowercase', '</script>'],
+    ['uppercase', '</SCRIPT>'],
+    ['mixed case', '</Script>'],
+  ])('accepts a %s closing tag', (_label, closer) => {
+    // HTML tag names are case-insensitive, so all three close the block. A case-SENSITIVE closer
+    // search runs the body to the end of the document on an uppercased page and loses the image.
+    const html = `<script type="application/ld+json">{"@type":"Event","image":"/x.png"}${closer}`;
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/x.png');
+  });
+
+  it('does not backtrack on many unclosed ld+json tags', () => {
+    // The shape that made two earlier fixes quadratic: every open tag scanning to EOF for a
+    // closer that is not there. At 5 MiB that was 109 SECONDS; one left-to-right pass makes it
+    // milliseconds. 256 KiB is far above the fixed cost and far below the broken one.
+    const html = '<script type="application/ld+json">'.repeat((256 * 1024) / 35);
+
+    expect(timeMs(html)).toBeLessThan(1000);
+  });
+
   it('skips a non-JSON-LD script before the one that matters', () => {
     const html = '<script>var x = 1</script><script type="application/ld+json">{"@type":"Event","image":"/after.png"}</script>';
 
