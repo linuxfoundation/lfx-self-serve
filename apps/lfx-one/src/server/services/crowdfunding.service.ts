@@ -278,7 +278,11 @@ export class CrowdfundingService {
 
     const limit = pageSize ?? DEFAULT_CROWDFUNDING_PAGE_SIZE;
     const off = offset ?? 0;
-    const raw = await cfFetch<BackendMyTransactionListResponse>(req, 'getMyDonations', `/crowdfunding/me/transactions?type=donations&limit=${limit}&offset=${off}`);
+    const raw = await cfFetch<BackendMyTransactionListResponse>(
+      req,
+      'getMyDonations',
+      `/crowdfunding/me/transactions?type=donations&limit=${limit}&offset=${off}`
+    );
 
     logger.success(req, 'cf_get_my_donations', startTime, { total: raw.total_count });
     return { data: raw.data.map(mapMyTransactionToMyDonation), total: raw.total_count, pageSize: raw.limit, offset: raw.offset };
@@ -287,7 +291,11 @@ export class CrowdfundingService {
   public async getRecurringDonationById(req: Request, subscriptionId: string): Promise<RecurringDonation | null> {
     const startTime = logger.startOperation(req, 'cf_get_recurring_donation_by_id', { subscriptionId });
 
-    const raw = await cfFetchNullable<BackendSubscription>(req, 'getRecurringDonationById', `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`);
+    const raw = await cfFetchNullable<BackendSubscription>(
+      req,
+      'getRecurringDonationById',
+      `/crowdfunding/me/subscriptions/${encodeURIComponent(subscriptionId)}`
+    );
     if (!raw) {
       logger.warning(req, 'cf_get_recurring_donation_by_id', 'Subscription not found', { subscriptionId });
       return null;
@@ -337,17 +345,26 @@ export class CrowdfundingService {
 
   public async getAnnouncements(req: Request, initiativeId: string): Promise<AnnouncementList> {
     const startTime = logger.startOperation(req, 'cf_get_announcements', { initiativeId });
-    const data = await cfFetchAllPages<BackendAnnouncement>(req, 'getAnnouncements', `/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`);
+    const data = await cfFetchAllPages<BackendAnnouncement>(
+      req,
+      'getAnnouncements',
+      `/crowdfunding/initiatives/${encodeURIComponent(initiativeId)}/announcements`
+    );
     logger.success(req, 'cf_get_announcements', startTime, { count: data.length });
     return { data: data.map(mapAnnouncementWire), totalCount: data.length };
   }
 
   public async createAnnouncement(req: Request, initiativeId: string, input: CreateAnnouncementInput): Promise<Announcement> {
     const startTime = logger.startOperation(req, 'cf_create_announcement', { initiativeId });
-    const raw = await cfFetch<BackendAnnouncement>(req, 'createAnnouncement', `/crowdfunding/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`, {
-      method: 'POST',
-      body: { title: input.title, description: input.description },
-    });
+    const raw = await cfFetch<BackendAnnouncement>(
+      req,
+      'createAnnouncement',
+      `/crowdfunding/me/initiatives/${encodeURIComponent(initiativeId)}/announcements`,
+      {
+        method: 'POST',
+        body: { title: input.title, description: input.description },
+      }
+    );
     logger.success(req, 'cf_create_announcement', startTime, { announcementId: raw.id });
     return mapAnnouncementWire(raw);
   }
