@@ -716,3 +716,78 @@ export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
+
+/**
+ * Reasons a CLA manager can pick when invalidating an acknowledgment.
+ *
+ * The producer accepts these four enum values; the free-text note is separate. The tuple order
+ * is the UI order the picker presents them in.
+ */
+export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
+
+/**
+ * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ *
+ * Counted in code points, not UTF-16 units: go-swagger validates `maxLength` with
+ * `utf8.RuneCountInString`. The dialog uses `maxCodePointsValidator` and carries no native
+ * `maxlength`, which would stop a non-BMP note at half this cap.
+ */
+export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
+
+/**
+ * Labels for the invalidation-reason picker (#1986, #2807).
+ *
+ * The four values match the producer's enum. Copy is the CLA manager's wording, not the
+ * producer's slug — a manager clicking "Signed in error" understands the outcome; the producer
+ * receives `signed-in-error`.
+ */
+export const ORG_CLA_INVALIDATION_REASON_LABELS = {
+  'signed-in-error': 'Signed in error',
+  'should-be-corporate': 'Should be corporate',
+  compliance: 'Compliance concern',
+  other: 'Other',
+} as const;
+
+/**
+ * Confirmation-dialog copy for a row invalidate.
+ *
+ * The warning names the outcome directly: the producer marks the acknowledgment invalidated and
+ * revokes the contributor's coverage under this CLA. That is what the CLA manager is confirming;
+ * hiding it behind "will no longer be recognized" would leave the click reversible-looking when
+ * it is not.
+ */
+export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
+  header: 'Invalidate this acknowledgment?',
+  warning:
+    'This contributor will lose coverage under this CLA. Their acknowledgment is marked invalidated on the record, and they will need to re-acknowledge before their next contribution can be accepted.',
+  reasonLabel: 'Reason',
+  reasonPlaceholder: 'Choose a reason',
+  noteLabel: 'Note (optional)',
+  notePlaceholder: 'Add context for the audit trail.',
+  noteTooLong: `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`,
+  cancel: 'Cancel',
+  confirm: 'Invalidate acknowledgment',
+} as const;
+
+/**
+ * Toast copy for the outcome of an invalidate.
+ *
+ * The success detail names the contributor as the row displayed them, so the receipt is legible
+ * on a list where several rows can otherwise look alike. The failure detail is the fallback only
+ * — a message the BFF sent is preferred verbatim, because it is the producer's own sentence about
+ * why this particular write was refused.
+ */
+export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
+  successSummary: 'Acknowledgment invalidated',
+  successDetail: (contributor: string): string => `${contributor} is no longer covered by this CLA.`,
+  failureSummary: 'Invalidate failed',
+  failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
+} as const;
+
+/** Label and accessible name for the per-row Invalidate control. */
+export const ORG_CLA_INVALIDATE_ACTION_COPY = {
+  label: 'Invalidate',
+  ariaLabel: (contributor: string): string => `Invalidate the acknowledgment for ${contributor}`,
+  /** Shown instead of the control when the producer sent a row with no per-ack id to address. */
+  unavailableTooltip: 'This acknowledgment has no record id, so it cannot be invalidated here.',
+} as const;

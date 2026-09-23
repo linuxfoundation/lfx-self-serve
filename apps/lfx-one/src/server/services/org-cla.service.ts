@@ -5,7 +5,12 @@
 // EasyCLA's organization CLA landing list (easycla#5188) and maps them onto the row the
 // Org Lens page renders.
 
-import { ORG_EASYCLA_RETURN_ORG_PARAM, ORG_EASYCLA_RETURN_SIGNED_PARAM, ORG_EASYCLA_RETURN_SIGNED_VALUE } from '@lfx-one/shared/constants';
+import {
+  ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
+  ORG_EASYCLA_RETURN_ORG_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_PARAM,
+  ORG_EASYCLA_RETURN_SIGNED_VALUE,
+} from '@lfx-one/shared/constants';
 import {
   classifyOrgClaManagerRefusal,
   isSameClaGroup,
@@ -27,6 +32,8 @@ import type {
   OrgClaGroupList,
   OrgClaGroupProject,
   OrgClaGroupStatus,
+  OrgClaInvalidateAcknowledgmentRequest,
+  OrgClaInvalidateAcknowledgmentResult,
   OrgClaManager,
   OrgClaManagerAddRequest,
   OrgClaManagerList,
@@ -48,6 +55,8 @@ import type {
   EasyClaCorporateContributorList,
   EasyClaCorporateSignature,
   EasyClaCorporateSignatureList,
+  EasyClaEclaInvalidateResult,
+  EasyClaEclaInvalidationInput,
   EasyClaSearchList,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
@@ -1138,6 +1147,118 @@ export class OrgClaService {
     };
   }
 
+  /**
+   * Invalidates one contributor acknowledgment on this agreement (#1986, #2807).
+   *
+   * Four gates stand in front of the producer call, two of them in the route file:
+   *
+   *   1. `blockDuringImpersonation`, declared *before* `requireOrgLensAccess` — a write, and the
+   *      producer stamps the acting user on the signature as `invalidatedBy`.
+   *   2. `requireOrgLensAccess` — the Org Lens grant on the organization.
+   *   3. `canEdit` — the caller must be named on the CCLA's own manager roster. Fails open only
+   *      when the producer sent no roster, matching the sibling approval-list posture.
+   *   4. The id verify below, which refuses an acknowledgment id that is not on this company's
+   *      roster for this CLA Group.
+   *
+   * A verify miss answers not-found rather than bad-request: the id may be a perfectly real
+   * acknowledgment on a different agreement, and saying which would confirm its existence to a
+   * caller who cannot see it.
+   *
+   * The caller's own token is forwarded with no impersonated override, matching every other write
+   * on this router.
+   */
+  public async invalidateAcknowledgment(
+    req: Request,
+    orgUid: string,
+    signatureId: string,
+    acknowledgmentSignatureId: string,
+    input: OrgClaInvalidateAcknowledgmentRequest
+  ): Promise<OrgClaInvalidateAcknowledgmentOutcome> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_invalidate_acknowledgment');
+    if (!context) return { outcome: 'not-found' };
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'agreement is not signed, so it has no acknowledgments to invalidate', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'not-signed' };
+    }
+
+    if (!context.canEdit) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'caller is not a CLA manager on this agreement', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'forbidden' };
+    }
+
+    const onThisClaGroup = await this.acknowledgmentBelongsToCompanyClaGroup(req, context, acknowledgmentSignatureId, 'org_cla_invalidate_acknowledgment');
+    if (!onThisClaGroup) {
+      logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment id is not on this company CLA Group', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        acknowledgment_signature_id: acknowledgmentSignatureId,
+      });
+      return { outcome: 'not-found' };
+    }
+
+    // Both fields are optional upstream and an empty body is valid, so an absent or blank value is
+    // elided rather than sent as `""` — which the producer would store as an empty reason.
+    const body: EasyClaEclaInvalidationInput = {};
+    if (input.reason) body.reason = input.reason;
+    const note = input.note?.trim() ?? '';
+    if (note.length > 0) body.note = note;
+
+    // PUT, not POST: the producer declares this operation as `put` on
+    // `/v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`.
+    const upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
+      req,
+      `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+      {
+        method: 'PUT',
+        body,
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+        errorMessage: 'Failed to invalidate the acknowledgment',
+        errorCode: 'UPSTREAM_ERROR',
+        // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
+        // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
+        // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
+        // would be the one writing identities out.
+        redactResponseBody: true,
+        // No `bearerToken` override: the route blocks this path during impersonation, so there is
+        // no impersonated identity to forward. A write must run as the acting user.
+      }
+    );
+
+    if (!upstream || typeof upstream !== 'object') {
+      throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+      });
+    }
+
+    // The producer's CLA Group id, internal company id and EasyCLA user id stop here — see the
+    // shared result type. An echoed signature id that names a different acknowledgment is not a
+    // receipt for the write we sent. A body that omits the id still uses the id on the path,
+    // because that path is what the producer addressed.
+    // Same rule as the corporate signing echo: the producer accepts hyphenated and unhyphenated
+    // spellings in either case, and answers in its own. A raw compare would 502 a write that
+    // already succeeded.
+    const echoed = typeof upstream.signature_id === 'string' ? upstream.signature_id.trim() : '';
+    if (echoed && echoed !== acknowledgmentSignatureId && !isSameClaGroup(echoed, acknowledgmentSignatureId)) {
+      throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream named a different acknowledgment', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_invalidate_acknowledgment',
+        service: SERVICE,
+      });
+    }
+    return {
+      outcome: 'invalidated',
+      result: { signatureId: echoed || acknowledgmentSignatureId },
+    };
+  }
+
   /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
   private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
     const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
@@ -1446,7 +1567,84 @@ export class OrgClaService {
 
     return upstream;
   }
+
+  /**
+   * Whether this acknowledgment id is on the resolved company's roster for this CLA Group.
+   *
+   * The grain is **company × CLA Group** — not the CCLA named on `:signatureId` — and that is
+   * deliberate, because it is the grain the producer itself acts at. Its invalidate endpoint is
+   * keyed on the CLA Group with no CCLA id anywhere in the path, so a company holding two CCLAs
+   * under one CLA Group has one blast radius across both. Verifying against the narrower CCLA
+   * would refuse writes the producer would allow, which is a different contract, not a stricter
+   * reading of this one.
+   *
+   * Bounded by the producer's own paging cursor, with a cap on pages walked so a producer that
+   * keeps handing back a non-null `nextKey` cannot spin this forever. Hitting the cap returns
+   * false — the write is refused rather than let through unverified.
+   */
+  private async acknowledgmentBelongsToCompanyClaGroup(
+    req: Request,
+    context: ApprovalContext,
+    acknowledgmentSignatureId: string,
+    operation: string
+  ): Promise<boolean> {
+    const target = acknowledgmentSignatureId.trim();
+    if (!target) return false;
+
+    let nextKey: string | undefined;
+    for (let pages = 0; pages < CONTRIBUTOR_ACK_VERIFY_MAX_PAGES; pages += 1) {
+      const page = await this.fetchContributorAcknowledgmentsPage(
+        req,
+        context,
+        { search: '', pageSize: ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX, nextKey },
+        operation
+      );
+
+      if (
+        Array.isArray(page.list) &&
+        page.list.some((row) => {
+          const id = row?.signatureID?.trim();
+          return id === target || isSameClaGroup(id, target);
+        })
+      )
+        return true;
+
+      const cursor = page.nextKey?.trim();
+      if (!cursor) return false;
+      nextKey = cursor;
+    }
+
+    logger.warning(req, operation, 'acknowledgment id verify walked more pages than allowed', {
+      cla_group_id: context.claGroupId,
+      pages_walked: CONTRIBUTOR_ACK_VERIFY_MAX_PAGES,
+    });
+    return false;
+  }
 }
+
+/**
+ * Cap on the pages the id verify will walk before giving up and refusing the write.
+ *
+ * The invalidate flow only reaches the walker for an acknowledgment the browser has already
+ * rendered, so a hit on the first page is by far the common case. 100 pages of 100 rows covers a
+ * per-agreement roster orders of magnitude larger than any this feature has seen — so reaching
+ * the cap means the producer is misbehaving, and the write is refused rather than forwarded on an
+ * unverified id.
+ */
+const CONTRIBUTOR_ACK_VERIFY_MAX_PAGES = 100;
+
+/**
+ * Result of a per-acknowledgment invalidate (#1986, #2807).
+ *
+ * Mirrors `OrgClaApprovalUpdateOutcome`: three ordinary refusals map to three distinct HTTP
+ * answers and only `invalidated` carries a receipt. Impersonation is refused by middleware before
+ * this union is reachable.
+ */
+export type OrgClaInvalidateAcknowledgmentOutcome =
+  | { outcome: 'invalidated'; result: OrgClaInvalidateAcknowledgmentResult }
+  | { outcome: 'not-found' }
+  | { outcome: 'not-signed' }
+  | { outcome: 'forbidden' };
 
 /**
  * Result of an approval-list write.
