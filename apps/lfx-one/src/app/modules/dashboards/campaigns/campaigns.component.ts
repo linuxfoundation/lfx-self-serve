@@ -48,7 +48,7 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
+import { canonicalHttpUrl, hasVisibleHtmlText, normalizeSponsors, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -1200,7 +1200,7 @@ export class CampaignsComponent {
     // The SANITIZED body, because that is what ships. A body consisting only of a tracking pixel
     // sanitizes to '', so gating on the raw value would call it stageable and then send an empty
     // variant -- the same preview/draft drift this predicate exists to remove, one layer down.
-    () => this.abTestSubjectB().trim() !== '' && this.abTestBodyHtmlBPreview().trim() !== ''
+    () => this.abTestSubjectB().trim() !== '' && hasVisibleHtmlText(this.abTestBodyHtmlBPreview())
   );
 
   /**
@@ -1214,7 +1214,7 @@ export class CampaignsComponent {
    *
    * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
    */
-  protected readonly emailBodyIsStageable = computed<boolean>(() => (this.emailCopy()?.body ?? '').trim() !== '');
+  protected readonly emailBodyIsStageable = computed<boolean>(() => hasVisibleHtmlText(this.emailCopy()?.body ?? ''));
 
   /**
    * The hero image URL exactly as it will be staged, or '' when it will not be.

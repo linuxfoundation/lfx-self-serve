@@ -4137,6 +4137,13 @@ describe('CampaignsComponent — email delivery channel', () => {
     it.each([
       ['whitespace-only subject B', '   ', '<p>b</p>'],
       ['whitespace-only body B', 'S', '   '],
+      // The cases that actually pin the CLASS: each is a NON-EMPTY string that `.trim()` keeps
+      // and that renders nothing, so it passes a naive check here and is dropped by the
+      // controller's `hasVisibleHtmlText` gate. Variant B is the one body that reaches this gate
+      // without passing any server predicate first -- it is typed into the form.
+      ['zero-width-space body B', 'S', '<p>\u200B\u200B</p>'],
+      ['soft-hyphen body B', 'S', '<p>\u00AD</p>'],
+      ['Hangul-filler body B', 'S', '<p>\u3164</p>'],
     ])('does not stage an A/B test for %s', async (_label, subjectB, bodyHtmlB) => {
       selectEmail();
       internals().emailBriefOutput.set(emailBrief);
