@@ -144,7 +144,7 @@ export function mapToTransaction(b: BackendTransaction): CrowdfundingTransaction
   };
 }
 
-/** Maps a CF API CardDetails response (from GET /v1/me/payment-account) to the PaymentMethod shape. */
+/** Maps a CF API CardDetails response (from GET /crowdfunding/me/payment-account) to the PaymentMethod shape. */
 export function mapPaymentMethodWire(w: PaymentMethodWire): PaymentMethod {
   return {
     paymentMethodId: w.payment_method_id,
@@ -155,7 +155,7 @@ export function mapPaymentMethodWire(w: PaymentMethodWire): PaymentMethod {
   };
 }
 
-/** Maps a CF API transaction (from GET /v1/me/transactions) to the MyDonation wire shape. */
+/** Maps a CF API transaction (from GET /crowdfunding/me/transactions) to the MyDonation wire shape. */
 export function mapMyTransactionToMyDonation(t: BackendMyTransaction): MyDonation {
   return {
     id: t.id,
@@ -187,7 +187,7 @@ export function mapAnnouncementWire(b: BackendAnnouncement): Announcement {
   };
 }
 
-/** Maps a CF API Subscription (from GET /v1/me/subscriptions) to the RecurringDonation shape. */
+/** Maps a CF API Subscription (from GET /crowdfunding/me/subscriptions) to the RecurringDonation shape. */
 export function mapSubscriptionToRecurringDonation(s: BackendSubscription): RecurringDonation {
   return {
     id: s.id,
