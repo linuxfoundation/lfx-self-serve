@@ -320,7 +320,13 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
 
   it('fails closed when authenticated but no user token was captured (never checks access as the M2M identity)', async () => {
     // Optional-auth refresh failure: isAuthenticated() true, but no user bearer token.
-    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting());
+    meetingSvc.getMeetingById.mockResolvedValue(
+      buildMeeting({
+        organizers: ['meeting-organizer'],
+        created_by: { username: 'meeting-organizer' },
+        owner: { username: 'meeting-owner' },
+      } as Partial<Meeting>)
+    );
     const { req, res, next } = buildReqRes(true, /* hasUserToken */ false);
 
     await controller.getMeetingById(req, res, next);
@@ -332,6 +338,10 @@ describe('PublicMeetingController.getMeetingById host_key gating', () => {
     const payload = res.json.mock.calls[0][0];
     expect(payload.meeting.host_key).toBeUndefined();
     expect(payload.meeting.can_view_host_key).toBe(false);
+    expect(payload.meeting.organizers).toBeUndefined();
+    expect(payload.meeting.created_by).toBeUndefined();
+    expect(payload.meeting.owner).toBeUndefined();
+    expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
   });
 
   it('passes the captured user token through to both parallel access-check and host-key calls', async () => {
@@ -574,9 +584,9 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     checkPastMeetingAccessMock.mockResolvedValue(false);
   });
 
-  it('strips organizer identity fields from an anonymous full-access response', async () => {
+  it('strips organizer identity fields after an optional-auth refresh failure, even with full access', async () => {
     checkPastMeetingAccessMock.mockResolvedValue(true);
-    const { req, res, next } = buildReqRes(false);
+    const { req, res, next } = buildReqRes(true, /* hasUserToken */ false);
 
     await controller.getPublicPastMeetingById(req, res, next);
 
@@ -587,6 +597,20 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     expect(payload.meeting.created_by).toBeUndefined();
     expect(payload.meeting.owner).toBeUndefined();
     expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
+  });
+
+  it('keeps organizer identity fields for an authenticated full-access response', async () => {
+    checkPastMeetingAccessMock.mockResolvedValue(true);
+    const { req, res, next } = buildReqRes(true);
+
+    await controller.getPublicPastMeetingById(req, res, next);
+
+    expect(next).not.toHaveBeenCalled();
+    const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(true);
+    expect(payload.meeting.organizers).toEqual(['meeting-organizer']);
+    expect(payload.meeting.created_by).toEqual(createdBy);
+    expect(payload.meeting.owner).toEqual(owner);
   });
 
   it('includes authenticated creator and owner fields in the non-full-access projection', async () => {

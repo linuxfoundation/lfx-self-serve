@@ -134,7 +134,7 @@ export class PublicMeetingController {
       // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
       // for anonymous callers, skip that query and strip all three identity fields so we neither expose
       // them nor waste a call.
-      if (isAuthenticated) {
+      if (canRunUserAccessCheck) {
         [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
       } else {
         delete (meeting as Partial<Meeting>).organizers;
@@ -295,7 +295,7 @@ export class PublicMeetingController {
       // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
       // and strip all three identity fields (created_by is present as zoom.webhooks).
       let enrichedMeeting = meeting;
-      if (isAuthenticated) {
+      if (isAuthenticated && originalToken !== undefined) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
         delete (meeting as Partial<Meeting>).organizers;
