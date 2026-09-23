@@ -108,6 +108,28 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(names[1]).toContain('Acme Motors');
   });
 
+  // Every row moves when the pill changes, so a reader left on page 8 would land on unrelated orgs.
+  it('restarts paging when the period re-orders the table, without re-reading', async () => {
+    const rows = Array.from({ length: 60 }, (_, index) =>
+      nonMemberRow({
+        accountId: `a-${index}`,
+        accountName: `Org ${index}`,
+        periods: [{ range: 'YTD', meetingsAttended: 1, distinctPeople: 1, sortRank: index }],
+      })
+    );
+    await render(response({ rows, counts: { orgs: 60 } }));
+    getEngagementNonMemberParticipation.mockClear();
+
+    fixture.componentInstance['onTablePage']({ first: 50, rows: 25 });
+    expect(fixture.componentInstance['first']()).toBe(50);
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR');
+    fixture.detectChanges();
+
+    expect(fixture.componentInstance['first']()).toBe(0);
+    expect(getEngagementNonMemberParticipation).not.toHaveBeenCalled();
+  });
+
   it('emits the scope count for the sub-nav badge, and nothing while a read is in flight', async () => {
     const emitted: unknown[] = [];
     await render(response({ counts: { orgs: 63 } }), (counts) => emitted.push(counts));

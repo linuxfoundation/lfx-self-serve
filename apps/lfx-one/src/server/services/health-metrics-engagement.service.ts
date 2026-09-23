@@ -100,6 +100,15 @@ interface ReadContext {
   clientMessage: string;
 }
 
+/** Identifies one capped read: where it cuts, and the two log lines it writes. */
+interface CapContext {
+  cap: number;
+  operation: string;
+  subject: string;
+  noun: string;
+  foundationSlug: string;
+}
+
 interface OrgParticipationRow {
   ACCOUNT_ID: string | null;
   ACCOUNT_NAME: string | null;
@@ -332,22 +341,13 @@ export class HealthMetricsEngagementService {
       clientMessage: 'Organization participation is unavailable right now.',
     });
 
-    // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
-    const truncated = result.rows.length > HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP;
-    const rows = truncated ? result.rows.slice(0, HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP) : result.rows;
-
-    logger.debug(req, 'get_engagement_org_participation', 'Fetched organization participation', {
-      foundation_slug: query.foundationSlug,
-      row_count: rows.length,
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+      operation: 'get_engagement_org_participation',
+      subject: 'organization participation',
+      noun: 'Organization',
+      foundationSlug: query.foundationSlug,
     });
-
-    // Truncating leaves the table short of the caption's own count, so say so out loud.
-    if (truncated) {
-      logger.warning(req, 'get_engagement_org_participation', 'Organization rows hit the read cap', {
-        foundation_slug: query.foundationSlug,
-        row_cap: HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
-      });
-    }
 
     const first = rows[0];
     if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT;
@@ -389,22 +389,13 @@ export class HealthMetricsEngagementService {
       clientMessage: 'Non-member participation is unavailable right now.',
     });
 
-    // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
-    const truncated = result.rows.length > HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP;
-    const rows = truncated ? result.rows.slice(0, HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP) : result.rows;
-
-    logger.debug(req, 'get_engagement_non_member_participation', 'Fetched non-member participation', {
-      foundation_slug: query.foundationSlug,
-      row_count: rows.length,
+    const rows = this.capRows(req, result.rows, {
+      cap: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
+      operation: 'get_engagement_non_member_participation',
+      subject: 'non-member participation',
+      noun: 'Non-member',
+      foundationSlug: query.foundationSlug,
     });
-
-    // Truncating leaves the table short of the caption's own count, so say so out loud.
-    if (truncated) {
-      logger.warning(req, 'get_engagement_non_member_participation', 'Non-member rows hit the read cap', {
-        foundation_slug: query.foundationSlug,
-        row_cap: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
-      });
-    }
 
     const first = rows[0];
     if (!first) return HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT;
@@ -424,6 +415,28 @@ export class HealthMetricsEngagementService {
    * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
    * `code` and `service` are dropped for the same reason.
    */
+  /** One cap rule for every engagement read, so a new capped section cannot log or cut differently. */
+  private capRows<T>(req: Request, rows: T[], context: CapContext): T[] {
+    // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
+    const truncated = rows.length > context.cap;
+    const capped = truncated ? rows.slice(0, context.cap) : rows;
+
+    logger.debug(req, context.operation, `Fetched ${context.subject}`, {
+      foundation_slug: context.foundationSlug,
+      row_count: capped.length,
+    });
+
+    // Truncating leaves the table short of the caption's own count, so say so out loud.
+    if (truncated) {
+      logger.warning(req, context.operation, `${context.noun} rows hit the read cap`, {
+        foundation_slug: context.foundationSlug,
+        row_cap: context.cap,
+      });
+    }
+
+    return capped;
+  }
+
   private async executeRead<T>(req: Request, sql: string, binds: Bind[], context: ReadContext): Promise<SnowflakeQueryResult<T>> {
     const startTime = Date.now();
     try {
