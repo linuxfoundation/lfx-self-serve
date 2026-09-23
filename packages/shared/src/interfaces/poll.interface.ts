@@ -253,6 +253,27 @@ export interface IndexedVote extends Omit<Vote, 'uid'> {
   uid?: string;
 }
 
+/**
+ * Optional request body for PUT /votes/:uid/enable (GH-2826): echoes the create response's create-completion
+ * stamp back so the BFF sleeps the remaining FGA tuple-propagation grace before attempt 1; absent → no sleep (edit flow needs none).
+ */
+export interface EnableVoteRequest {
+  /** BFF-stamped create-completion time, epoch ms — echoed verbatim from the create response header. */
+  create_completed_at?: number;
+}
+
+/**
+ * Minimal response for PUT /votes/:uid/enable (GH-2730). The enable PUT is synchronous upstream
+ * (ITX writes the status before responding), so the BFF returns the known-open status immediately
+ * without an index round-trip; list freshness is the list's own refetch.
+ */
+export interface EnableVoteResponse {
+  /** Poll identifier */
+  uid: string;
+  /** Poll status after the enable — always `PollStatus.ACTIVE` on success (a 400 "poll is already enabled" answer is treated as success: enable is idempotent) */
+  status: PollStatus;
+}
+
 /** Current user's vote_response row, returned by GET /api/votes/:uid/my-response. `uid` is the pre-allocated invitation row — POST /vote_responses must reuse it (a fresh UUID returns 404 upstream). */
 export interface MyVoteResponse {
   uid: string;

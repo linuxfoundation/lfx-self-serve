@@ -3,6 +3,8 @@
 
 import { AbstractControl, FormArray, FormGroup } from '@angular/forms';
 
+import { isShowMeetingAttendeesLocked } from './meeting-attendee-lock.utils';
+
 /**
  * Generates a temporary ID for entities that need unique identifiers before API assignment
  */
@@ -51,4 +53,58 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
     const control = form.get(key);
     control?.updateValueAndValidity({ onlySelf, emitEvent });
   });
+}
+
+/**
+ * Marks a meeting form's controls touched and dirty so a failed submit shows its validation errors.
+ * @description Skips `show_meeting_attendees`, which carries no validators: marking it displays
+ * nothing, and instead corrupts the only thing that reads its `dirty` flag. To the attendee picker
+ * that flag means "the organizer edited this since the form was last hydrated", and the picker
+ * seeds their standing choice from it on every mount. A bulk mark turns one failed save into a
+ * silent opt-out that outranks every group default — permanently in create mode, which never
+ * hydrates and so never clears the flag.
+ *
+ * Shared by the composer and both manage submit paths so the exclusion cannot drift between them.
+ */
+export function markMeetingFormForValidation(form: FormGroup): void {
+  Object.keys(form.controls).forEach((key) => {
+    if (key === 'show_meeting_attendees') {
+      return;
+    }
+    const control = form.get(key);
+    control?.markAsTouched();
+    control?.markAsDirty();
+  });
+}
+
+/**
+ * Locks attendee visibility off for board and restricted meetings.
+ * @description Forces `show_meeting_attendees` to false and disables the control when
+ * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Composer and manage
+ * share this helper so the two surfaces cannot drift.
+ *
+ * This wrapper needs a `FormGroup`, so it stays here with the rest of the Angular-Forms
+ * helpers. The lock predicate it calls lives in `meeting-attendee-lock.utils.ts`, which is
+ * free of Angular imports so the server — and its tests — can load the real rule directly
+ * rather than through this barrel.
+ */
+export function syncShowMeetingAttendeesLock(form: FormGroup): void {
+  const control = form.get('show_meeting_attendees');
+  if (!control) {
+    return;
+  }
+
+  if (isShowMeetingAttendeesLocked(form.get('meeting_type')?.value, form.get('restricted')?.value)) {
+    if (control.value !== false) {
+      control.setValue(false, { emitEvent: false });
+    }
+    if (control.enabled) {
+      control.disable({ emitEvent: false });
+    }
+    return;
+  }
+
+  if (control.disabled) {
+    control.enable({ emitEvent: false });
+  }
 }

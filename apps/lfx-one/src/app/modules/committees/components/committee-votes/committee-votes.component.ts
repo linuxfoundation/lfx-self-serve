@@ -101,6 +101,8 @@ export class CommitteeVotesComponent {
         switchMap((c) => {
           this.loading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale index rows.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);

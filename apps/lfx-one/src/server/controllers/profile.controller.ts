@@ -161,14 +161,24 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Get user metadata from NATS (authoritative source)
+      // Get user metadata from NATS (authoritative source). created_at rides top-level on the
+      // envelope (not inside UserMetadata) — see #2836. `username` was resolved above via
+      // getUsernameFromAuth, which routes through the impersonation-aware getEffectiveUsername
+      // except on its pre-existing Authelia-bearer-token shortcut (see parent issue #2835).
       let natsUserData: UserMetadata | null = null;
+      let natsCreatedAt = '';
       try {
         const natsResponse = await this.userService.getUserInfo(req, username);
 
+        if (natsResponse.success) {
+          // created_at lives on the envelope independent of `data` — a user with no stored
+          // metadata still gets a real join date and must not have it dropped by this guard.
+          natsCreatedAt = natsResponse.created_at || '';
+        }
+
         if (natsResponse.success && natsResponse.data) {
           natsUserData = natsResponse.data;
-        } else {
+        } else if (!natsResponse.success) {
           logger.warning(req, 'get_current_user_profile', 'Failed to fetch user metadata from NATS', {
             username,
             error: natsResponse.error,
@@ -194,10 +204,9 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || null) as string | null,
             last_name: (natsUserData?.family_name || null) as string | null,
             username: (getEffectiveUsername(req) || username) as string,
-            // Use an explicit "unknown" ('') rather than a fabricated current time that would change
-            // on every request. UserMetadata carries no created_at/updated_at, and these fields
-            // aren't surfaced for the impersonated view.
-            created_at: '',
+            // NATS-sourced join date for the resolved username (target user except on the
+            // Authelia shortcut noted above) — never fabricated.
+            created_at: natsCreatedAt,
             updated_at: '',
           }
         : {
@@ -206,7 +215,10 @@ export class ProfileController {
             first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
             last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
             username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
-            created_at: (oidcUser['created_at'] || new Date().toISOString()) as string,
+            // created_at: use the real NATS-sourced join date. Never fabricate a timestamp (e.g.
+            // new Date()) — an unavailable date must surface as '' so the UI can hide the field,
+            // not a moving value. (updated_at below is unrelated and out of scope for this rule.)
+            created_at: natsCreatedAt,
             updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
           };
 

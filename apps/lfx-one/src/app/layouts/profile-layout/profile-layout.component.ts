@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { MY_CLAS_ENABLED_FLAG, normalizeTShirtSize, PENDING_PROFILE_SAVE_KEY, PROFILE_AUTH_ERROR_MESSAGES, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, EnrichedIdentity, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
-import { buildProfileTabs } from '@lfx-one/shared/utils';
+import { buildProfileTabs, formatMemberSince } from '@lfx-one/shared/utils';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -114,6 +114,8 @@ export class ProfileLayoutComponent {
     const cleanUsername = stripAuthPrefixOrNull(data.username);
     return data.firstName?.charAt(0).toUpperCase() || cleanUsername?.charAt(0).toUpperCase() || 'U';
   });
+
+  public readonly memberSince = computed(() => formatMemberSince(this.profileData()?.createdAt));
 
   public readonly jobTitle = computed(() => this.profileData()?.jobTitle || '');
 
@@ -448,6 +450,7 @@ export class ProfileLayoutComponent {
       lastName: profile.user.last_name || '',
       username: profile.user.username || '',
       email: profile.user.email || '',
+      createdAt: profile.user.created_at || '',
       jobTitle: profile.profile?.job_title || '',
       organization: profile.profile?.organization || '',
       city: profile.profile?.city || '',

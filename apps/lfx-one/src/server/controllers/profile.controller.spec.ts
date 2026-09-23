@@ -46,6 +46,7 @@ const {
   },
   userSvc: {
     updateUserMetadata: vi.fn(),
+    getUserInfo: vi.fn(),
   },
   profileAuthSvc: {
     isProfileAuthConfigured: vi.fn(() => false),
@@ -1193,5 +1194,139 @@ describe('ProfileController.getDeveloperTokenInfo — v1 token omission (Copilot
 
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR' }));
     expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * getCurrentUserProfile — real member-since date sourced from the NATS envelope's top-level
+ * `created_at` (#2836/#2837), never a fabricated timestamp. Covers both the impersonating and
+ * non-impersonating branches, plus the NATS-failure/absent-field fallback to ''.
+ */
+describe('ProfileController.getCurrentUserProfile — created_at (#2837)', () => {
+  let controller: ProfileController;
+
+  function buildProfileReq(overrides: Record<string, unknown> = {}): any {
+    return buildReq({
+      path: '/api/profile',
+      oidc: { user: { sub: 'auth0|user-1', email: 'user@example.com' } },
+      ...overrides,
+    });
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonatingMock.mockReturnValue(false);
+    getUsernameFromAuthMock.mockResolvedValue('testuser');
+    controller = new ProfileController();
+  });
+
+  it('uses the real NATS created_at when not impersonating', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Test User' }, created_at: '2023-03-15T10:00:00Z' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '2023-03-15T10:00:00Z' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('uses the real NATS created_at while impersonating', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveSubMock.mockReturnValue('auth0|target-user');
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Target User' }, created_at: '2022-01-01T00:00:00Z' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '2022-01-01T00:00:00Z' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string (never a fabricated timestamp) when the NATS read fails', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: false, error: 'upstream unavailable' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string while impersonating when the NATS read fails', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveSubMock.mockReturnValue('auth0|target-user');
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    userSvc.getUserInfo.mockResolvedValue({ success: false, error: 'upstream unavailable' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('keeps the real created_at when the read succeeds with no stored metadata (data absent)', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, created_at: '2023-03-15T10:00:00Z' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '2023-03-15T10:00:00Z' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  // Pre-#90-deploy compatibility: a successful legacy reply that carries no created_at at all
+  // must never fall back to a fabricated timestamp — only an empty string.
+  it('falls back to empty string when a successful reply omits created_at entirely', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Test User' } });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string while impersonating when a successful reply omits created_at entirely', async () => {
+    isImpersonatingMock.mockReturnValue(true);
+    getEffectiveSubMock.mockReturnValue('auth0|target-user');
+    getEffectiveEmailMock.mockReturnValue('target@example.com');
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Target User' } });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string when a successful reply has an empty created_at', async () => {
+    userSvc.getUserInfo.mockResolvedValue({ success: true, data: { name: 'Test User' }, created_at: '' });
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('falls back to empty string (never a fabricated timestamp) when getUserInfo throws', async () => {
+    userSvc.getUserInfo.mockRejectedValue(new Error('upstream timeout'));
+    const res = { ...buildRes(), set: vi.fn() };
+    const next = vi.fn();
+
+    await controller.getCurrentUserProfile(buildProfileReq(), res, next);
+
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ user: expect.objectContaining({ created_at: '' }) }));
+    expect(next).not.toHaveBeenCalled();
   });
 });

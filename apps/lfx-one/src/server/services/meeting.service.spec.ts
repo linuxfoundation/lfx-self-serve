@@ -16,14 +16,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // path alias isn't wired here, so runtime shared subpaths and the constructed collaborators must be
 // mocked (mirrors session-store.service.spec.ts / meeting.helper.spec.ts). Only the
 // microservice-proxy call path is exercised; the query-service pagination helper runs for real.
-const { proxyRequest, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
+const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
+  proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
   accessCheckSvc: { checkSingleAccess: vi.fn(), checkSingleAccessStrict: vi.fn() },
 }));
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
-vi.mock('@lfx-one/shared/utils', () => ({
+vi.mock('@lfx-one/shared/utils', async () => ({
+  // The real predicate, not a double: these tests are the only place the server-side lock is
+  // exercised end to end, and a hand-written copy would stop tracking its normalization — the
+  // casing, whitespace and string-coercion rules are the whole point of the gate. It is loaded
+  // from its own module rather than the mocked barrel because the barrel reaches @angular/forms
+  // and @angular/common/http, which this suite mocks the barrel to avoid in the first place.
+  ...(await vi.importActual<typeof import('@lfx-one/shared/utils/meeting-attendee-lock.utils')>('@lfx-one/shared/utils/meeting-attendee-lock.utils')),
   buildRecurrenceNeverEndDate: vi.fn(),
   getPastMeetingTranscriptUrl: vi.fn(),
   // Intentionally a light behavioral double, not a frozen copy meant to track the real predicate:
@@ -44,9 +51,16 @@ vi.mock('@lfx-one/shared/utils', () => ({
   // dedup, not the LFXV2-2864 occurrence-scoping logic (covered in meeting-rsvp.helper.spec.ts).
   selectApplicableRsvp: vi.fn((_occurrenceId: string | undefined, rsvps: unknown[]) => rsvps[rsvps.length - 1] ?? null),
 }));
+vi.mock('../helpers/poll-endpoint.helper', () => ({
+  pollEndpoint: vi.fn(async ({ pollFn }: { pollFn: () => Promise<boolean> }) => {
+    await pollFn();
+    return true;
+  }),
+}));
 vi.mock('./microservice-proxy.service', () => ({
   MicroserviceProxyService: class {
     public proxyRequest = proxyRequest;
+    public proxyRequestWithResponse = proxyRequestWithResponse;
   },
 }));
 vi.mock('./access-check.service', () => ({
@@ -74,6 +88,7 @@ import type { Request } from 'express';
 
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 const req = {} as unknown as Request;
 const human = (id: string): MeetingUserInfo => ({ name: `User ${id}`, username: `user${id}`, email: `${id}@example.com` });
@@ -1574,5 +1589,166 @@ describe('MeetingService registrant paths reject hostile identifiers', () => {
     await service.updatePastMeetingParticipant(req, 'pm/1', 'p 1', {} as never);
 
     expect(pathOf()).toBe('/itx/past_meetings/pm%2F1/participants/p%201');
+  });
+});
+
+describe('MeetingService.updateMeeting attendee visibility lock', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    proxyRequestWithResponse.mockReset();
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    service = new MeetingService();
+  });
+
+  const baseUpdate = {
+    project_uid: 'project-1',
+    start_time: '2026-01-01T00:00:00Z',
+    duration: 30,
+    timezone: 'UTC',
+    title: 'Test',
+    description: '',
+    show_meeting_attendees: true,
+  };
+
+  // An update body that makes no choice at all, which is the case upstream merges rather than replaces.
+  const { show_meeting_attendees: baseChoice, ...baseUpdateWithoutChoice } = baseUpdate;
+
+  it('forces show_meeting_attendees off for board meetings', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Board' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('forces show_meeting_attendees off when the stored meeting is restricted', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('locks on the stored values as they actually arrive, untrimmed and stringified', async () => {
+    // Neither field is validated between v1 and here, so the gate has to hold on the shapes the
+    // proxy really returns rather than on canonical ones.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board ', restricted: 'true', organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('does not let a blank meeting_type lift the lock off a board meeting', async () => {
+    // `""` is not nullish, so a nullish-only fallback would compare against the empty string and
+    // read a board meeting as unlocked — an unvalidated body must not be able to do that.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: '' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('still locks a board meeting when the update explicitly clears restricted', async () => {
+    // `restricted: false` is meaningful, not absent, so the resolution has to be nullish —
+    // a truthiness fallback would read the stored `true` here and pass for the wrong reason.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, restricted: false });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it("does not inherit a locked meeting's stale visibility when the update unlocks it", async () => {
+    // Upstream preserves fields the body omits, so a legacy board row holding `true` would keep it
+    // through an unlock that makes no choice, and the next invites would expose the guest list.
+    expect(baseChoice).toBe(true);
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice, meeting_type: 'Technical' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('honors an explicit choice made on the update that unlocks the meeting', async () => {
+    // The organizer may legitimately turn sharing on as part of the same edit that lifts the lock.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, show_meeting_attendees: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Technical' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
+  });
+
+  it('leaves an unlocked meeting alone when the update makes no choice', async () => {
+    // Only the unlock transition drops the stored value; an ordinary partial update must not.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBeUndefined();
+  });
+
+  it('forwards true when the meeting is unlocked', async () => {
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Technical', restricted: false });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
+  });
+});
+
+describe('MeetingService.createMeeting attendee visibility lock', () => {
+  let service: MeetingService;
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    vi.mocked(getUsernameFromAuth).mockResolvedValue('alice');
+    service = new MeetingService();
+  });
+
+  const baseCreate = {
+    project_uid: 'project-1',
+    start_time: '2026-01-01T00:00:00Z',
+    duration: 30,
+    timezone: 'UTC',
+    title: 'Test',
+    description: '',
+    show_meeting_attendees: true,
+  };
+
+  it('forces show_meeting_attendees off for board meetings', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', meeting_type: 'Board' });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Board' });
+
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
+  });
+
+  it('forces show_meeting_attendees off when restricted', async () => {
+    proxyRequest.mockResolvedValueOnce({ id: 'meeting-1' }).mockResolvedValueOnce({ id: 'meeting-1', restricted: true });
+
+    await service.createMeeting(req, { ...baseCreate, meeting_type: 'Technical', restricted: true });
+
+    expect(proxyRequest.mock.calls[0][5].show_meeting_attendees).toBe(false);
   });
 });

@@ -6,7 +6,8 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { Committee, CommitteeMember, CommitteeMemberVotingStatus, MeetingCommittee } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { Observable, of, Subject, throwError } from 'rxjs';
+import { syncShowMeetingAttendeesLock } from '@lfx-one/shared/utils';
+import { merge, Observable, of, Subject, throwError } from 'rxjs';
 import { describe, expect, it, vi } from 'vitest';
 
 import { MeetingCommitteeManagerComponent } from './meeting-committee-manager.component';
@@ -27,6 +28,68 @@ function votingMember(committeeUid: string, email: string, status: CommitteeMemb
 const VOTING_BOARD = { ...BOARD, enable_voting: true } as Committee;
 
 /**
+ * The parent form as the composer and manage page build it, lock included.
+ * @description Both hosts run `syncShowMeetingAttendeesLock` on every `meeting_type` /
+ * `restricted` change, which is what actually forces the attendees toggle off and disables it.
+ * A bare `FormGroup` would leave the toggle untouched on a board meeting, so specs about the
+ * lock would pass whether or not the component honoured it.
+ */
+function hostForm(committees: MeetingCommittee[], hydrated: { meetingType?: string; showMeetingAttendees?: boolean } = {}): FormGroup {
+  const form = new FormGroup({
+    visibility: new FormControl('private'),
+    committees: new FormControl(committees),
+    show_meeting_attendees: new FormControl(hydrated.showMeetingAttendees ?? false),
+    meeting_type: new FormControl(hydrated.meetingType ?? 'Technical'),
+    restricted: new FormControl(false),
+  });
+
+  merge(form.get('meeting_type')!.valueChanges, form.get('restricted')!.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form));
+  syncShowMeetingAttendeesLock(form);
+
+  return form;
+}
+
+/**
+ * Replays a host's hydration sequence over an already-mounted picker.
+ * @description Both hosts hydrate the same way: clear this control's dirty flag so the patch
+ * cannot read as an edit, one loud `patchValue`, then `syncShowMeetingAttendeesLock` to force a
+ * locked meeting's toggle off silently. A spec that only calls `patchValue` is missing the two
+ * steps that decide what the picker sees.
+ */
+function hydrate(form: FormGroup, values: Record<string, unknown>): void {
+  form.get('show_meeting_attendees')?.markAsPristine();
+  form.patchValue(values);
+  syncShowMeetingAttendeesLock(form);
+}
+
+/**
+ * Flips the attendees toggle the way the organizer does, not the way hydration does.
+ * @description The toggle binds through `formControlName`, so a human flipping it marks the
+ * control dirty; a programmatic patch leaves it pristine. The picker reads exactly that
+ * difference, so a spec that only calls `setValue` is simulating hydration, not an edit.
+ */
+function organizerSets(form: FormGroup, value: boolean): void {
+  const control = form.get('show_meeting_attendees');
+  control?.markAsDirty();
+  control?.setValue(value);
+}
+
+/**
+ * Rebuilds the picker over a form that outlives it, the way leaving and re-entering Guests does.
+ * @description The composer renders the section under an `@switch`, so this component is destroyed
+ * and a new one built while the host's form service keeps the form — and anything the organizer
+ * did to it.
+ */
+async function remount(form: FormGroup, saved: MeetingCommittee[] = [], savedAttendeeVisibility: boolean | null = null) {
+  const fixture = TestBed.createComponent(MeetingCommitteeManagerComponent);
+  fixture.componentRef.setInput('selectedCommittees', saved);
+  fixture.componentRef.setInput('savedAttendeeVisibility', savedAttendeeVisibility);
+  fixture.componentRef.setInput('form', form);
+  await fixture.whenStable();
+  return fixture;
+}
+
+/**
  * Mounts the manager over `saved` groups, with each committee's member fetch supplied by `members`.
  * @returns the emissions of `committeeMembersChange`, in order, and the mounted component.
  */
@@ -39,7 +102,10 @@ async function mount(
   projectUid: string | null = 'project-1',
   // Composer-like: parent `committees` already holds the saved groups. Default `[]` hid the first-
   // load wipe — `reconcileVotingFilter` writing `[]` over `[]` is a no-op in the assertions.
-  seedParentCommittees = false
+  seedParentCommittees = false,
+  // The meeting as it was saved, for the edit-mode cases: the value the host passes down, and the
+  // hydrated form state it goes with. Defaults describe a create, which is what most specs are.
+  hydrated: { savedAttendeeVisibility?: boolean | null; meetingType?: string; showMeetingAttendees?: boolean } = {}
 ) {
   TestBed.resetTestingModule();
   TestBed.configureTestingModule({
@@ -59,14 +125,8 @@ async function mount(
   const emissions: CommitteeMember[][] = [];
 
   fixture.componentRef.setInput('selectedCommittees', saved);
-  fixture.componentRef.setInput(
-    'form',
-    new FormGroup({
-      visibility: new FormControl('private'),
-      committees: new FormControl(seedParentCommittees ? saved : []),
-      show_meeting_attendees: new FormControl(false),
-    })
-  );
+  fixture.componentRef.setInput('savedAttendeeVisibility', hydrated.savedAttendeeVisibility ?? null);
+  fixture.componentRef.setInput('form', hostForm(seedParentCommittees ? saved : [], hydrated));
   fixture.componentInstance.committeeMembersChange.subscribe((value) => emissions.push(value));
 
   const resolved: string[][] = [];
@@ -724,5 +784,390 @@ describe('MeetingCommitteeManagerComponent — failed group-options fetch', () =
     expect(component.hasVotingEnabledCommittee()).toBe(false);
     expect(component.selectedVotingStatuses()).toEqual([]);
     expect((component.form().get('committees')?.value as MeetingCommittee[] | null)?.[0]?.allowed_voting_statuses).toEqual([]);
+  });
+});
+
+describe('MeetingCommitteeManagerComponent — attendee visibility default', () => {
+  const VISIBLE_BOARD = { ...BOARD, show_meeting_attendees: true } as Committee;
+
+  it('turns the meeting toggle on when a selected committee has attendee visibility enabled', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not enable a locked meeting toggle from a committee preference', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+    expect(component.form().get('show_meeting_attendees')?.disabled).toBe(true);
+  });
+
+  it('reapplies the committee preference when the lock lifts', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('keeps the committee preference pending across locked→locked, then applies on unlock', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('restricted')?.setValue(true);
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('restricted')?.setValue(false);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not reapply the committee preference when switching between unlocked types', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    organizerSets(component.form(), false);
+    component.form().get('meeting_type')?.setValue('Maintainers');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('restores a committee preference the lock overwrote, when the organizer never touched it', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    // The lock forces the control off; the organizer has expressed no preference of their own,
+    // so the round trip must leave the committee's preference where it was.
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not reapply a preference belonging to a committee dropped while locked', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('meeting_type')?.setValue('Board');
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    // The committee that carried the preference is gone before the lock lifts, so the unlock
+    // has to read the current selection rather than replay what an earlier one asked for.
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('does not re-enable the toggle when a committee is added after an opt-out', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    organizerSets(component.form(), false);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+
+    // A second committee carrying the same default is not new consent — the organizer's own
+    // choice for this meeting stands until they change it back themselves.
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    // Including across a lock round trip, which reaches the preference through the other path.
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('keeps an opt-out made before the organizer left and re-entered the Guests section', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    organizerSets(component.form(), false);
+    await fixture.whenStable();
+
+    const form = component.form();
+    fixture.destroy();
+    const returned = await remount(form);
+
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await returned.whenStable();
+
+    // The choice survived in the form, so the rebuilt picker has to find it there. Reading it as
+    // "no decision yet" would let the next group default silently re-share the guest list.
+    expect(form.get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('does not read a lock-forced value as the organizer opting out, on re-entering the section', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    organizerSets(component.form(), true);
+    await fixture.whenStable();
+
+    // Locking writes `false` over their opt-in and leaves the control dirty, so the value is the
+    // lock's and the flag is theirs. Seeding from that pair would record a phantom opt-out that
+    // outranks the saved value and every group default, and no unlock would undo it.
+    const form = component.form();
+    fixture.destroy();
+    form.get('meeting_type')?.setValue('Board');
+    expect(form.get('show_meeting_attendees')?.value).toBe(false);
+    expect(form.get('show_meeting_attendees')?.dirty).toBe(true);
+
+    const returned = await remount(form);
+    form.get('meeting_type')?.setValue('Technical');
+    await returned.whenStable();
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await returned.whenStable();
+
+    expect(form.get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not read an untouched toggle as an opt-out when the section is re-entered', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    await fixture.whenStable();
+
+    // Pristine and `false` is what every create starts at, so seeding off the value alone would
+    // read an organizer who has done nothing as having opted out, and no group default would apply.
+    const form = component.form();
+    expect(form.get('show_meeting_attendees')?.dirty).toBe(false);
+    fixture.destroy();
+    const returned = await remount(form);
+
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await returned.whenStable();
+
+    expect(form.get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('applies a newly picked committee preference once the opt-out is withdrawn', async () => {
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD, OTHER_VISIBLE]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    organizerSets(component.form(), false);
+    await fixture.whenStable();
+
+    // Turning it back on withdraws the opt-out, so committee defaults apply again from here —
+    // including the one the lock takes away and the unlock puts back.
+    organizerSets(component.form(), true);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not let a group default override a meeting saved with attendee visibility off', async () => {
+    // The organizer turned it off on an earlier visit and is now editing the guest list. Nothing
+    // in this session touched the toggle, so only the saved value says what they decided — without
+    // it, picking any further group re-shares the guest list they had switched off.
+    const OTHER_VISIBLE = { ...LEGAL, show_meeting_attendees: true } as Committee;
+    const { component, fixture } = await mount([{ uid: VISIBLE_BOARD.uid } as MeetingCommittee], {}, [VISIBLE_BOARD, OTHER_VISIBLE], 'project-1', true, {
+      savedAttendeeVisibility: false,
+    });
+
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid, OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    // Dropping a group reaches the same path, and is even less like consent.
+    component.committeeForm.get('committees')?.setValue([OTHER_VISIBLE.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('puts the organizer’s own attendee visibility back after a board round-trip', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    organizerSets(component.form(), true);
+    await fixture.whenStable();
+
+    // The lock wrote `false` over their choice silently, so leaving it off is the lock outliving
+    // itself — no committee is involved here, the value was the organizer's own.
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('puts a saved attendee visibility back after a board round-trip', async () => {
+    const { component, fixture } = await mount([], {}, [BOARD], 'project-1', false, {
+      savedAttendeeVisibility: true,
+      showMeetingAttendees: true,
+    });
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('does not resurrect a stale saved true on a meeting that loaded locked', async () => {
+    // A board meeting saved before the lock existed still carries `true`, and hydration shows the
+    // toggle off. `getSavedAttendeeVisibility` qualifies that away to "no decision" before it
+    // reaches here — covered in its own spec — so what this asserts is that no decision means no
+    // restore when the organizer switches the meeting to an unlocked type.
+    const { component, fixture } = await mount([], {}, [BOARD], 'project-1', false, {
+      savedAttendeeVisibility: null,
+      meetingType: 'Board',
+    });
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  // Opening a legacy Board meeting on the guests step: the picker is already mounted when the load
+  // lands, so it sees the loud patch carrying the stale `true`, and the lock only forces the control
+  // back off afterwards, silently. Treating that patch as a choice would resurrect the value on
+  // unlock through the session cache, going around the saved-value guard that discards it.
+  //
+  // Both key orders, because the two differ in whether the stale `true` lands before or after the
+  // lock takes hold: the hosts patch `meeting_type` first, and a patch built the other way round is
+  // one key reordering away.
+  for (const [order, patch] of [
+    ['as the hosts patch it', { meeting_type: 'Board', show_meeting_attendees: true }],
+    ['when the flag lands before the type', { show_meeting_attendees: true, meeting_type: 'Board' }],
+  ] as const) {
+    it(`does not read a hydration patch as the organizer choosing to share, ${order}`, async () => {
+      const { component, fixture } = await mount([], {}, [BOARD]);
+      hydrate(component.form(), patch);
+      await fixture.whenStable();
+      expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+      component.form().get('meeting_type')?.setValue('Technical');
+      await fixture.whenStable();
+
+      expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+    });
+  }
+
+  it('does not read a re-hydration as an edit just because a failed submit left the control dirty', async () => {
+    // `dirty` is sticky, so a reload after a failed submit would land on a control that still
+    // looks edited. The pristine reset before the patch is what keeps the flag meaning "edited
+    // since the load" — before, not after, because the patch is loud and the picker decides as it
+    // arrives.
+    const { component, fixture } = await mount([], {}, [BOARD]);
+    component.form().get('show_meeting_attendees')?.markAsDirty();
+
+    hydrate(component.form(), { meeting_type: 'Board', show_meeting_attendees: true });
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('does not read its own committee write as the organizer’s, on a control left dirty by a failed submit', async () => {
+    // `dirty` is sticky and both hosts mark every control dirty when a submit fails, so the
+    // component's own writes can land on a dirty control. `applyingAttendeeWrite`, not the dirty
+    // flag, is what keeps those from being recorded as the organizer's choice — without it, the
+    // preference below would be remembered as theirs and restored after the committee is gone.
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.form().get('show_meeting_attendees')?.markAsDirty();
+
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.committeeForm.get('committees')?.setValue([]);
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('leaves a saved opt-out alone when the lock round-trips', async () => {
+    // Editing a meeting whose organizer turned the toggle off on an earlier visit: the form
+    // hydrates `false` with the preferring committee already selected, and nothing in this
+    // session applied that value. An unlock must not read it as a preference to restore.
+    const { component, fixture } = await mount([{ uid: VISIBLE_BOARD.uid } as MeetingCommittee], {}, [VISIBLE_BOARD], 'project-1', true);
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
+  });
+
+  it('stops watching the previous form when a new one is supplied', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    const abandoned = component.form();
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('form', hostForm([]));
+    await fixture.whenStable();
+
+    // An edit on the discarded form must not reach the ownership tracking of the live one —
+    // the committee still carries its preference, so the unlock below has to apply it.
+    organizerSets(abandoned, false);
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+  });
+
+  it('keeps an explicit opt-out that predates the lock, rather than reapplying on unlock', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    component.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await fixture.whenStable();
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(true);
+
+    // Turned off deliberately while the control was still available.
+    organizerSets(component.form(), false);
+
+    component.form().get('meeting_type')?.setValue('Board');
+    await fixture.whenStable();
+    component.form().get('meeting_type')?.setValue('Technical');
+    await fixture.whenStable();
+
+    // The lock withheld nothing on the way in, so the unlock has nothing to restore — a round
+    // trip through Board must not silently re-enable a toggle the organizer switched off.
+    expect(component.form().get('show_meeting_attendees')?.value).toBe(false);
   });
 });
