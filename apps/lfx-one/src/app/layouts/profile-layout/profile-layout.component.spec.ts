@@ -134,6 +134,67 @@ describe('ProfileLayoutComponent — Flow C cold-return read-your-writes (LFXV2-
 });
 
 /**
+ * Guards the controller-to-panel wiring for member-since (#2837): mapToHeaderData's
+ * `createdAt: profile.user.created_at || ''` mapping feeds the `memberSince` computed. The
+ * formatter itself is covered in date-time.utils.spec.ts; this only asserts the plumbing between
+ * a fetched profile and the exposed signal isn't silently dropped by a future refactor.
+ */
+describe('ProfileLayoutComponent — member-since wiring (#2837)', () => {
+  async function setup(user: Partial<CombinedProfile['user']>): Promise<ComponentFixture<ProfileLayoutComponent>> {
+    const profile = {
+      user: { first_name: 'Ada', last_name: 'Lovelace', username: 'ada', email: 'ada@x.io', ...user },
+      profile: null,
+    } as unknown as CombinedProfile;
+
+    const userServiceMock = {
+      user: signal({ user_id: 'u1' } as unknown as User),
+      impersonating: signal(false),
+      uploadedAvatarUrl: signal<string | null>(null),
+      effectiveAvatarUrl: computed(() => ''),
+      identitiesRefresh$: EMPTY,
+      getCurrentUserProfile: vi.fn(() => of(profile)),
+      updateUserProfile: vi.fn(() => of({})),
+      getIdentities: vi.fn(() => of([])),
+    };
+
+    TestBed.configureTestingModule({
+      imports: [ProfileLayoutComponent],
+      providers: [
+        { provide: PLATFORM_ID, useValue: 'browser' },
+        { provide: ActivatedRoute, useValue: { queryParams: of({}) } },
+        { provide: Router, useValue: { url: '/profile', navigateByUrl: vi.fn() } },
+        { provide: UserService, useValue: userServiceMock },
+        { provide: FeatureFlagService, useValue: { getBooleanFlag: vi.fn(() => signal(false)) } },
+        { provide: MessageService, useValue: { add: vi.fn() } },
+      ],
+    });
+    TestBed.overrideComponent(ProfileLayoutComponent, { set: { template: '', imports: [] } });
+
+    const fixture = TestBed.createComponent(ProfileLayoutComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    return fixture;
+  }
+
+  beforeEach(() => {
+    sessionStorage.clear();
+    TestBed.resetTestingModule();
+  });
+
+  it('reflects a fetched created_at as a formatted memberSince', async () => {
+    const fixture = await setup({ created_at: '2023-03-15T10:00:00Z' } as unknown as Partial<CombinedProfile['user']>);
+
+    expect(fixture.componentInstance.memberSince()).toBe('Mar 2023');
+  });
+
+  it('leaves memberSince empty when created_at is absent', async () => {
+    const fixture = await setup({});
+
+    expect(fixture.componentInstance.memberSince()).toBe('');
+  });
+});
+
+/**
  * Guards issue #1935's PROFILE_AUTH_ERROR_MESSAGES lookup: a Flow C error code toasts its own
  * specific message (not the old generic "Authorization failed. Please try again." for every code).
  */

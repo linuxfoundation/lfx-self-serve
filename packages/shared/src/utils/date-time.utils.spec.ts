@@ -7,6 +7,7 @@ import {
   daysUntilInTimezone,
   formatIsoDateLabel,
   formatIsoDateShortLabel,
+  formatMemberSince,
   formatTo12HourInTimezone,
   formatVoteDeadline,
   getLongTimezoneName,
@@ -61,6 +62,53 @@ describe('formatIsoDateLabel', () => {
   // time — a day early for anyone west of Greenwich.
   it('does not drift across time zones', () => {
     expect(formatIsoDateLabel('2026-01-01')).toBe('Jan 1, 2026');
+  });
+});
+
+// Empty/unparseable input returns '' so callers can hide the field, never show a placeholder.
+describe('formatMemberSince', () => {
+  it('formats a valid ISO timestamp as "Mon YYYY" in UTC', () => {
+    expect(formatMemberSince('2023-03-15T10:00:00Z')).toBe('Mar 2023');
+  });
+
+  it('returns empty string for an empty string', () => {
+    expect(formatMemberSince('')).toBe('');
+  });
+
+  it('returns empty string for null', () => {
+    expect(formatMemberSince(null)).toBe('');
+  });
+
+  it('returns empty string for undefined', () => {
+    expect(formatMemberSince(undefined)).toBe('');
+  });
+
+  it('returns empty string for a malformed date string', () => {
+    expect(formatMemberSince('not-a-date')).toBe('');
+  });
+
+  // Go's zero time.Time sentinel — never a real join date.
+  it('returns empty string for a zero-time sentinel', () => {
+    expect(formatMemberSince('0001-01-01T00:00:00Z')).toBe('');
+  });
+
+  // JS's lenient Date parser accepts these as plausible-but-wrong dates; the ISO-prefix guard rejects them.
+  it('returns empty string for non-ISO strings Date would otherwise parse leniently', () => {
+    expect(formatMemberSince('1')).toBe('');
+    expect(formatMemberSince('2023')).toBe('');
+    expect(formatMemberSince('12/31/2022')).toBe('');
+  });
+
+  // Date normalizes impossible calendar dates (Feb 31 -> Mar 3) instead of rejecting them.
+  it('returns empty string for an impossible calendar date', () => {
+    expect(formatMemberSince('2023-02-31T00:00:00Z')).toBe('');
+    expect(formatMemberSince('2023-04-31T00:00:00Z')).toBe('');
+  });
+
+  // Documents the UTC-normalized-input contract: offset timestamps whose UTC day
+  // differs from the input digits are hidden rather than shifted.
+  it('returns empty string for an offset timestamp whose UTC day differs from the input digits', () => {
+    expect(formatMemberSince('2023-03-01T00:30:00+05:00')).toBe('');
   });
 });
 
