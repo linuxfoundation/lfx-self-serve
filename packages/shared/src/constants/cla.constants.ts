@@ -667,9 +667,9 @@ export const ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE = "Employees who've acknowledged t
 /**
  * Cap on the acknowledgment page size the BFF forwards to the producer.
  *
- * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the CLA
- * manager fetch more with the Load-more control. A page above 100 is clamped silently to protect
- * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop.
+ * The producer sets no upper bound on `pageSize`; the BFF caps it at 100 so a single request can't
+ * ask for an unbounded scan. The tab requests 50 by default and lets the CLA manager fetch more
+ * with the Load-more control. A request for zero rows is clamped to 1 to prevent a runaway zero-loop.
  */
 export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT = 50;
 export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX = 100;
