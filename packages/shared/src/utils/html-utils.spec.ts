@@ -560,8 +560,8 @@ describe('hasVisibleText — invisible code points outside C and Z', () => {
     ['BRAILLE PATTERN BLANK, which is a real glyph', '\u2800'],
     ['a lone combining mark, which renders as a dotted circle', '\u0301'],
   ])('still reports %s as visible', (_label, visible) => {
-    // A review round proposed excluding all of `\p{M}` here. These are why that would be wrong:
-    // marks carry meaning in these scripts, and a lone mark still puts a glyph on screen.
+    // Why `\p{M}` must NOT be added to the exclusion: marks carry meaning in these scripts, and
+    // a lone mark still puts a glyph on screen.
     expect(hasVisibleText(visible)).toBe(true);
   });
 });

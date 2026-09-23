@@ -34,9 +34,9 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
  *
  * NFC first, so a decomposed sequence is judged as the glyph it composes to.
  *
- * Deliberately NOT `\p{M}`: a review round proposed excluding all combining marks, but a lone
- * combining mark renders as a dotted circle, and the property above already covers the invisible
- * marks. Excluding every mark would also be a trap for scripts where marks carry meaning.
+ * Deliberately NOT `\p{M}`: a lone combining mark renders as a dotted circle, the property above
+ * already covers the invisible marks, and excluding every mark would misjudge scripts where marks
+ * carry meaning.
  *
  * @param value - Text, already stripped of markup if the caller has markup
  * @returns true when at least one character renders
@@ -88,9 +88,9 @@ function isDecodableCodePoint(code: number): boolean {
  * non-empty downstream. The floor asks whether anything RENDERS rather than naming spellings,
  * so a format character added to Unicode later needs no change here.
  *
- * An earlier version checked only C0/DEL and five
- * ASCII characters, so `U+202E` survived -- and that one character visually REVERSES everything
- * after it, letting a sponsor name render as something other than what it contains.
+ * The BIDI overrides matter most: `U+202E` visually REVERSES everything after it, letting a
+ * sponsor name render as something other than what it contains. Checking C0/DEL and a handful of
+ * ASCII characters does not reach them.
  *
  * Denies by CODE POINT RANGE rather than by regex: a character-class regex over literal control
  * characters trips `no-control-regex` and is hard to read, while a numeric range check over the
@@ -341,13 +341,12 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * is what the preview is for. The exception is `nonTextTags` below, whose contents are code or
  * markup internals rather than words; those are dropped with the tag.
  *
- * Delegates to `sanitize-html`, which PARSES rather than pattern-matches. Three hand-written
- * versions preceded it -- a regex denylist and two hand-rolled scanners -- and review found
- * eleven defects across them: `<image>`, `<input type=image>`, unquoted `background=`/`style=`,
- * spliced tags, a `dropContent` tag whose attribute merely ended in `/`, a mismatched close
- * tag, and twice a bug that DELETED ordinary copy (a raw `<` truncating the body, entities
- * double-escaped). None of those exist in a real parser, and each fix created the next
- * finding. Tag and attribute allow-lists still express the policy; the parsing is no longer ours.
+ * Delegates to `sanitize-html`, which PARSES rather than pattern-matches. A regex or hand-rolled
+ * scanner cannot do this job: `<image>`, `<input type=image>`, unquoted `background=`/`style=`,
+ * spliced tags, a `dropContent` tag whose attribute merely ends in `/`, and mismatched close tags
+ * all defeat one, and tightening a scanner against them tends to start DELETING ordinary copy
+ * instead (a raw `<` truncating the body, entities double-escaped). Tag and attribute allow-lists
+ * still express the policy; the parsing is not ours.
  */
 export function stripResourceLoadingHtml(html: string | null | undefined): string {
   if (!html) return '';

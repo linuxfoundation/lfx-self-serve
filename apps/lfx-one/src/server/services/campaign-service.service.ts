@@ -646,10 +646,8 @@ export class CampaignServiceClient {
     //
     // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
     // successful save returns, so the second Proceed of a session sends it and takes the ordinary
-    // replace path. An earlier version of this comment said the parameter "is always null in this
-    // phase" — that was true when it was written and my own later change to record the created id
-    // falsified it, which is exactly the kind of claim a comment should not make about the
-    // future.
+    // replace path. Note this parameter is NOT reliably null here: recording the created id
+    // populates it, so any logic must read the value rather than assume its absence.
     //
     // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
     // learn the id of a brief it did not write, so those callers arrive with null and are refused.
@@ -861,8 +859,8 @@ export class CampaignServiceClient {
       // operator preview and the live HubSpot draft.
       // A response with NO `sections` is the legacy flat shape (`body`/`cta` on the wire). The
       // type declares sections-only, but a type is an assertion about the wire, not a guarantee
-      // from it -- and the empty-body guard added below turns "no sections" into a hard error,
-      // so a legacy response would be REFUSED rather than passed through as it was before.
+      // from it -- and the empty-body guard turns "no sections" into a hard error, so a legacy
+      // response would be REFUSED rather than passed through.
       //
       // Falling back to the flat fields keeps that path working. They still go through the same
       // sanitizers as the assembled body, so the legacy shape is not a way around them.
@@ -876,8 +874,9 @@ export class CampaignServiceClient {
       //
       // This does NOT solve the ordered-sections gap: `bodyHtml` is one flat rich-text field on
       // the wire (`BodyHTML string` in internal/dispatch/hubspot.go), so a second button and any
-      // button URL are still lost. That needs a contract change on both sides and is filed as a
-      // follow-up rather than widened into this PR.
+      // button URL are still lost. That needs a contract change on both sides and is tracked
+      // separately.
+      //
       // A button with NO url keeps its label, as text, in place. The generator omits `url` for
       // the stages where registration is the wrong destination ("Submit Your Proposal",
       // "Share Feedback", "See You There") -- and since the UI correctly withholds a native
@@ -1358,8 +1357,7 @@ export class CampaignServiceClient {
    * search: the service's own design warns that reading it that way invites optimising the walk
    * away, reintroducing the false absence the cap exists to prevent.
    *
-   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
-   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded. `SearchEmails` (campaign-service
    * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
    * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
    * filtered search either sees every page or fails; it never quietly returns a subset. That is

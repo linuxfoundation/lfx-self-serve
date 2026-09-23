@@ -4130,10 +4130,10 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(internals().emailCtaIsStageable()).toBe(false);
     });
 
-    // These pin the CLASS, not one instance. Three review rounds on this PR were all the same
-    // defect: a predicate duplicated between the preview and the wire path, drifting apart so
-    // the operator previewed something the draft never got. Each case below is a value that
-    // passes a naive `!== ''` and is then dropped server-side.
+    // These pin the CLASS, not one instance. The defect they guard against is a predicate
+    // duplicated between the preview and the wire path and drifting apart, so the operator
+    // previews something the draft never gets. Each case below is a value that passes a naive
+    // `!== ''` and is then dropped server-side.
     it.each([
       ['whitespace-only subject B', '   ', '<p>b</p>'],
       ['whitespace-only body B', 'S', '   '],
@@ -5184,11 +5184,9 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Sanitizing only the preview is WORSE than sanitizing neither: the pixel vanishes from the
     // one view that could catch it while still shipping in the sent email.
     //
-    // The name says PREVIEW only, deliberately. An earlier version claimed "and the STAGED value
-    // alike" while asserting `ForSend() === Preview()` -- a tautology, since ForSend is defined
-    // as `() => Preview()`, so it could not fail. That assertion was removed, and the alias it
-    // existed for has now been deleted too -- staging reads `abTestBodyHtmlBPreview` directly,
-    // so the tautology is no longer expressible.
+    // The name says PREVIEW only, deliberately. Asserting that a staging alias equals the
+    // preview would be a tautology whenever the alias is defined as the preview; staging reads
+    // `abTestBodyHtmlBPreview` directly, so there is no such alias to assert against.
     //
     // The staged value is covered where it can actually fail: the controller test
     // 'sanitizes both HTML bodies and every display field at the request boundary' asserts the

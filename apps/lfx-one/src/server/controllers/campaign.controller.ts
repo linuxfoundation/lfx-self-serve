@@ -1197,8 +1197,7 @@ export class CampaignController {
         // CONFIDENT enough to auto-apply -- an exact normalized match, alone in that, from a
         // result set proven complete.
         //
-        // Both are logged because the gap is diagnostic, but NOT as "noise" -- an earlier version
-        // of this comment said that, and it predates the confidence gate. A large gap is the
+        // Both are logged because the gap is diagnostic, but NOT as "noise". A large gap is the
         // normal shape for a weak, tied or capped search: candidates scored, none earned an
         // unattended apply. Reading it as noise would send someone tuning the scorer when the
         // right answer is that the operator picks (Copilot).
@@ -1587,8 +1586,8 @@ export class CampaignController {
     // service loads the dispatcher from the campaign ROW — so a caller could label a Microsoft
     // campaign `google-ads` and pass here. What actually enforces the narrowing is the row check
     // after the toggle returns; this one exists to refuse an obviously-unsupported request before
-    // spending a round trip. Treating it as the boundary is what made an earlier version of this
-    // comment claim an exclusion the code did not perform.
+    // spending a round trip. It is NOT the exclusion boundary -- that is `supportedPlatforms`
+    // just below.
     const supportedPlatforms = viaCampaignService ? CAMPAIGN_SERVICE_STATUS_PLATFORMS : SUPPORTED_STATUS_PLATFORMS;
     if (!body.platform || !supportedPlatforms.has(body.platform)) {
       next(
@@ -1837,9 +1836,8 @@ export class CampaignController {
    * spend the demand-gen half on Search.
    *
    * For a DEMAND-GEN-ONLY selection this returns a config carrying the FULL budget and
-   * `channel: "demand-gen"` — not null, which is what an earlier version of this comment said
-   * and what the code did before LFXV2-3257 ported `createDemandGenCampaign` into
-   * campaign-service. There is no Search campaign to split the budget with, so the whole amount
+   * `channel: "demand-gen"` — not null. Since LFXV2-3257 ported `createDemandGenCampaign` into
+   * campaign-service there is no Search campaign to split the budget with, so the whole amount
    * funds the one campaign being created.
    *
    * A MIXED selection is refused DOWNSTREAM, not before this point: the controller builds the
@@ -1850,10 +1848,9 @@ export class CampaignController {
    * schema.
    *
    * Null means UNCONFIGURED, and `createCampaign` refuses the whole create when a selected
-   * platform lands here — see `hasPlatformConfig`. An earlier version of this comment said the
-   * caller already refused; it did not. `platforms` was passed through unfiltered, and
-   * campaign-service reads an absent config key as a zero value, so google-ads dispatched with
-   * budget 0 and no headlines. The refusal is real now rather than assumed.
+   * platform lands here — see `hasPlatformConfig`. The refusal must happen HERE: the caller
+   * passes `platforms` through unfiltered, and campaign-service reads an absent config key as a
+   * zero value, so an unrefused google-ads would dispatch with budget 0 and no headlines.
    */
   private buildGoogleAdsConfig(body: CampaignCreateRequest): Record<string, unknown> | null {
     if (!body?.platforms?.includes('google-ads')) return null;
@@ -2131,8 +2128,8 @@ export class CampaignController {
    * refused there — the precise split this guard exists to avoid.
    *
    * `utmCampaign` is only forwarded when non-blank — canonicalization, not a correctness guard.
-   * An earlier version of this comment claimed a blank one would suppress the upstream default;
-   * that was wrong. `utm.Resolve` (`internal/utm/resolve.go:47-60`) trims the value and falls
+   * A blank value does NOT suppress the upstream default:
+   * `utm.Resolve` (`internal/utm/resolve.go:47-60`) trims the value and falls
    * through to the name-derived slug when the result is empty, so `''`, `'  '` and absent all
    * resolve identically. Omitted anyway so the envelope carries only fields that mean something,
    * and so a reader cannot mistake an empty string for a deliberate override.

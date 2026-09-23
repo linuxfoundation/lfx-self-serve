@@ -1391,10 +1391,9 @@ export class CampaignsComponent {
     //
     // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
     // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
-    // and an earlier version of this comment said otherwise. A model copying the URL and adding or
-    // dropping a slash addresses the SAME page, so refusing it would silently drop the button
-    // for a generation that followed its instructions -- the over-denial this PR keeps having
-    // to guard against.
+    // A model copying the URL and adding or dropping a slash addresses the SAME page, so
+    // refusing it would silently drop the button for a generation that followed its
+    // instructions.
     //
     // Stripping it from the whole serialized URL was the over-correction in the other
     // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
@@ -1555,9 +1554,8 @@ export class CampaignsComponent {
    * version of this note said the PR built the route, which would have left later work treating
    * this component as the owner of an endpoint it only calls.
    *
-   * It is still NOT the paid Monitor component. An earlier version of this note reasoned from the
-   * backend capability straight to a frontend guarantee, and that missing step is what made
-   * reusing `MonitoringTabComponent` look safe. It is not — its `PlatformType` is
+   * It is still NOT the paid Monitor component: a backend capability does not imply a frontend
+   * one. `MonitoringTabComponent`'s `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
   protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_EMAIL_TABS;
@@ -1626,8 +1624,8 @@ export class CampaignsComponent {
    * Rows carrying an actual measurement.
    *
    * The predicate reaches all the way to `metrics.email`, and that depth is load-bearing: it must
-   * be the SAME predicate the totals are summed over. An earlier version stopped at
-   * `metrics !== undefined`, so a row whose `metrics` existed WITHOUT an `email` object passed
+   * be the SAME predicate the totals are summed over. Stopping at
+   * `metrics !== undefined` is not enough: a row whose `metrics` exists WITHOUT an `email` object passes
    * this filter, was then skipped by the reducer, and was counted on BOTH sides of the
    * partial-coverage comparison — which therefore never fired. The totals silently covered fewer
    * emails than the panel claimed, and where such a row was the only one the reducer's zero seed
@@ -1889,7 +1887,6 @@ export class CampaignsComponent {
         }
 
         // Same shape one tab over, but the claim is narrower than the picker's above, and
-        // narrower again than an earlier version of this comment asserted.
         //
         // `resetEmailBriefDerivedState` has already run in this handler, so the previous
         // foundation's numbers are gone either way -- this is NOT protection against stale
@@ -2559,7 +2556,7 @@ export class CampaignsComponent {
 
       // Per field, not all-or-nothing: an operator who typed a subject while the body generated
       // keeps their subject AND gets the generated body.
-      // `?? ''` on EVERY model-supplied field, not just the one a review round happened to flag.
+      // `?? ''` on EVERY model-supplied field, not just one of the three.
       // The wire type says `string`, but the value comes from a MODEL: a response that omits the
       // field satisfies the decoder and lands `undefined` in the control, and the `ForSend`
       // computeds call `.trim()` on it unguarded -- which throws a TypeError inside a computed
@@ -3803,7 +3800,7 @@ export class CampaignsComponent {
    *
    * Slug and name are tokenized the SAME way -- one `split(/[^\p{L}\p{N}]+/u)` over both, on any
    * non-alphanumeric run -- rather than separators for one and whitespace for the other, which is
-   * what an earlier version of this note claimed. Both are then filtered:
+   * Both are then filtered:
    * stopwords out (they match everything), tokens under three characters out (too weak to
    * identify an event on their own). What survives is the distinctive part of the event's
    * identity -- "kubecon", "nairobi", "pytorch".
@@ -4610,9 +4607,7 @@ export class CampaignsComponent {
     // discarding a hand-picked template.
     this.emailTemplateSelectionIsSuggested.set(false);
     // The suggestion is derived from THIS brief's event, so its id and the terms it matched on
-    // both belong to the brief and go with it. (An earlier version of this note also mentioned an
-    // override flag that could suppress later suggestions; that flag was removed when provenance
-    // replaced it, and only these two signals are reset here.)
+    // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
   }

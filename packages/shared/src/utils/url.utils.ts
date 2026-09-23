@@ -295,8 +295,8 @@ const METADATA_HOSTNAMES = ['metadata.google.internal', 'metadata.goog', 'instan
  *
  * Returns a LIST, not one value, because a label can be read more than one way and guessing
  * wrong is how an address slips past. `10000000` is 0.152.150.128 read as decimal and 16.0.0.0
- * read as hex; an earlier version tested hex first and so judged the wrong address entirely.
- * Both readings are now checked and either one being private is enough to refuse.
+ * read as hex, so testing one base first judges the wrong address entirely. Every reading is
+ * checked and any one of them being private is enough to refuse.
  *
  * AFFIXES are stripped before decoding. nip.io and sslip.io document `<prefix>-<address>`, so
  * `app-c0a801fc.nip.io` is 192.168.1.252 -- decoding only whole labels let that straight through
@@ -360,29 +360,24 @@ function dashNotationIPv6Candidates(label: string): string[] {
   // 8 groups, and the dash spelling separates groups with `-`, so a reading that starts more than
   // 8 groups from the end carries more groups than any address has.
   //
-  // NOT because `decodeDashIPv6` would reject it -- an earlier version of this comment claimed
-  // that and it is false for the compressed form, where `--` collapses a run of zero groups and
-  // a long label can still decode. What holds is the other direction: every reading DROPPED by
-  // this bound is also reachable as a SHORTER suffix of the same label, because the address
-  // itself occupies at most 8 of the trailing segments. `a-b-c-...-fd00--1` is judged on the
+  // NOT because `decodeDashIPv6` would reject a longer reading -- it would not, for the
+  // compressed form, where `--` collapses a run of zero groups and a long label still decodes.
+  // What holds is the other direction: every reading DROPPED by this bound is also reachable as
+  // a SHORTER suffix of the same label. `a-b-c-...-fd00--1` is judged on the
   // `fd00--1` suffix regardless of how much affix precedes it, which is why the deny cases --
   // including deliberately over-long ones -- still hold with the bound in place.
   //
   // 8 suffixes, one per possible group. NOT 8 + 1 for an affix split.
   //
-  // An earlier version of this comment claimed the address itself never occupies more than 8 dash
-  // segments. That is FALSE and a review round was right to say so: a leading `::` contributes an
-  // empty segment, so `-0-0-0-0-0-0-0-1` is 9. The bound survives anyway, for a different reason
-  // than the one first written here -- a private reading is a SUFFIX of the label, so a window of
-  // the last 8 segments still starts exactly where the address starts. `a-fd00--1` is judged on
-  // `fd00--1`, and the 9-segment `x-0-0-0-0-0-0-0-1` is judged from index 1, whether the window
-  // is 8 or 9.
+  // A label CAN exceed 8 dash segments: a leading `::` contributes an empty one, so
+  // `-0-0-0-0-0-0-0-1` is 9. The bound still holds, because a private reading is a SUFFIX of the
+  // label -- a window of the last 8 segments starts exactly where the address starts. `a-fd00--1`
+  // is judged on `fd00--1`; the 9-segment `x-0-0-0-0-0-0-0-1` is judged from index 1.
   //
-  // Verified rather than argued, under BOTH bounds: every leading- and trailing-`::` spelling at
-  // 0/1/2/3 affix depths across both wildcard domains, plus public controls -- 31 hosts, zero
-  // behavioural difference, all private readings blocked either way. Three review rounds have now
-  // asked for the +1 to be pinned by a test and none has produced an input that distinguishes the
-  // two bounds, which is what makes the slot unreachable rather than merely untested.
+  // Verified under both an 8- and a 9-slot window across 31 hosts (every leading- and
+  // trailing-`::` spelling at 0/1/2/3 affix depths, both wildcard domains, plus public controls):
+  // zero behavioural difference, every private reading blocked either way. No input is known that
+  // distinguishes the two, so a ninth slot would be unreachable.
   const MAX_IPV6_GROUPS = 8;
   const firstIndex = Math.max(0, segments.length - MAX_IPV6_GROUPS);
 
@@ -691,12 +686,12 @@ export function isPrivateHost(hostname: string): boolean {
   // a quad with a LABEL beside it is an embedded one worth re-judging.
   // EVERY position, not just the first: `cdn.169.254.169.254.nip.io` and `x.10-0-0-1.sslip.io`
   // are the same bypass with a prefix label. Scanning all labels costs nothing and removes the
-  // "which position" question that produced two rounds of narrower fixes.
+  // "which position is the address in" question entirely.
   // NORMALIZE, then scan. Wildcard-DNS services accept the address in several spellings --
-  // dotted, dash-separated, mixed, zero-padded -- and matching each one produced a round of
-  // review per spelling. Treating `-` as a separator and stripping leading zeros collapses the
-  // whole family into one form, so a spelling nobody has thought of is covered by construction
-  // rather than by having been listed.
+  // dotted, dash-separated, mixed, zero-padded -- and a matcher per spelling cannot keep up.
+  // Treating `-` as a separator and stripping leading zeros collapses the whole family into one
+  // form, so a spelling nobody has thought of is covered by construction rather than by having
+  // been listed.
   //
   // Every consecutive run of four numeric parts is checked, at any position, so a prefix or
   // suffix label changes nothing either.

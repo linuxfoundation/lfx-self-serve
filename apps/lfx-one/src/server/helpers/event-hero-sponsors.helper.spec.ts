@@ -36,9 +36,9 @@ describe('extractHeroAndSponsors', () => {
     // forget to call it.
     //
     // `alt` carries the keyword, NOT `class`: the detector tests alt/src/context and ignores
-    // class entirely. An earlier version of this fixture used class="sponsor", matched nothing,
-    // and its assertion sat behind an `if (length > 0)` that silently skipped -- a test that
-    // could not fail. Asserting the length FIRST is what makes that impossible.
+    // class entirely, so a fixture marking sponsors with class="sponsor" would match nothing.
+    // Asserting the length FIRST is what stops that failing silently: an assertion behind an
+    // `if (length > 0)` skips instead of failing when the fixture stops matching.
     const html = `<img src="https://cdn.example.com/logo.png?v=2&amp;token=xyz" alt="Acme &amp; Co sponsor" />`;
     const result = extractHeroAndSponsors(html, BASE_URL);
 
