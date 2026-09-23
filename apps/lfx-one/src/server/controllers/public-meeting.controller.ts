@@ -130,12 +130,14 @@ export class PublicMeetingController {
       // Registrant counts are no longer derived here — the full roster read was purely to derive
       // two integers with no consumer once the join page holds its own roster (GH-1731).
 
-      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
-      // created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
-      // for anonymous callers, skip that query and strip both so we neither expose nor waste a call.
+      // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers,
+      // enrich created_by/owner from the live v1_meeting index (the ITX detail payload omits created_by);
+      // for anonymous callers, skip that query and strip all three identity fields so we neither expose
+      // them nor waste a call.
       if (isAuthenticated) {
         [meeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.id);
       } else {
+        delete (meeting as Partial<Meeting>).organizers;
         delete (meeting as Partial<Meeting>).created_by;
         delete (meeting as Partial<Meeting>).owner;
       }
@@ -288,14 +290,15 @@ export class PublicMeetingController {
       // Past meetings never surface the Zoom host key — strip it unconditionally.
       stripHostKey(meeting);
 
-      // The organizer is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
+      // Organizer identity is authenticated-visible info (LFXV2-2802). For authenticated callers, enrich
       // created_by/owner from the live v1_meeting index (webhook-created past meetings lack a human
       // created_by, and v1_past_meeting never carries owner); for anonymous callers, skip that query
-      // and strip both (created_by is present as zoom.webhooks).
+      // and strip all three identity fields (created_by is present as zoom.webhooks).
       let enrichedMeeting = meeting;
       if (isAuthenticated) {
         [enrichedMeeting] = await enrichMeetingsWithCreatedBy(req, [meeting], (m) => m.meeting_id);
       } else {
+        delete (meeting as Partial<Meeting>).organizers;
         delete (meeting as Partial<Meeting>).created_by;
         delete (meeting as Partial<Meeting>).owner;
       }

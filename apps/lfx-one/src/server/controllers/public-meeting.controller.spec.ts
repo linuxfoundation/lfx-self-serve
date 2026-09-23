@@ -25,6 +25,7 @@ const {
   meetingSvc,
   projectSvc,
   addInvitedStatusToMeetingMock,
+  checkPastMeetingAccessMock,
 } = vi.hoisted(() => ({
   checkSingleAccessMock: vi.fn(),
   addAccessToResourceMock: vi.fn(),
@@ -46,6 +47,7 @@ const {
   },
   projectSvc: { getProjectById: vi.fn() },
   addInvitedStatusToMeetingMock: vi.fn(),
+  checkPastMeetingAccessMock: vi.fn(),
 }));
 
 // The `@lfx-one/shared/*` path alias isn't wired into vitest; stub the one runtime shared import
@@ -143,7 +145,7 @@ vi.mock('../utils/security.util', () => ({ validatePassword: validatePasswordMoc
 // stripHostKey); stub only the registrant-lookup helpers so we don't need M2M/registrant plumbing.
 vi.mock('../helpers/meeting.helper', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../helpers/meeting.helper')>();
-  return { ...actual, addInvitedStatusToMeeting: addInvitedStatusToMeetingMock, checkPastMeetingAccess: vi.fn() };
+  return { ...actual, addInvitedStatusToMeeting: addInvitedStatusToMeetingMock, checkPastMeetingAccess: checkPastMeetingAccessMock };
 });
 
 import { PublicMeetingController } from './public-meeting.controller';
@@ -506,20 +508,21 @@ describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)'
     getEffectiveEmailMock.mockReturnValue('user@example.com');
     getEffectiveUsernameMock.mockReturnValue('user');
     projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
-    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ created_by: createdBy, owner } as Partial<Meeting>));
+    meetingSvc.getMeetingById.mockResolvedValue(buildMeeting({ organizers: ['meeting-organizer'], created_by: createdBy, owner } as Partial<Meeting>));
     meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
     meetingSvc.getMeetingHostKey.mockResolvedValue(null);
     addInvitedStatusToMeetingMock.mockImplementation(async (_req: any, meeting: Meeting) => ({ ...meeting, invited: false }));
     checkSingleAccessMock.mockResolvedValue(false);
   });
 
-  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+  it('strips organizer identity fields for an anonymous caller without querying the index', async () => {
     const { req, res, next } = buildReqRes(false);
 
     await controller.getMeetingById(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.organizers).toBeUndefined();
     expect(payload.meeting.created_by).toBeUndefined();
     expect(payload.meeting.owner).toBeUndefined();
     expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
@@ -532,6 +535,7 @@ describe('PublicMeetingController.getMeetingById organizer privacy (LFXV2-2802)'
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
+    expect(payload.meeting.organizers).toEqual(['meeting-organizer']);
     expect(payload.meeting.created_by).toEqual(createdBy);
     expect(payload.meeting.owner).toEqual(owner);
   });
@@ -562,24 +566,30 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     controller = new PublicMeetingController();
     generateM2MTokenMock.mockResolvedValue('m2m-token');
     projectSvc.getProjectById.mockResolvedValue(buildProject({ parent_uid: '' }));
-    meetingSvc.getPastMeetingById.mockResolvedValue(buildPastMeeting({ created_by: createdBy, owner } as Partial<PastMeeting>));
+    meetingSvc.getPastMeetingById.mockResolvedValue(
+      buildPastMeeting({ organizers: ['meeting-organizer'], created_by: createdBy, owner } as Partial<PastMeeting>)
+    );
     addAccessToResourceMock.mockImplementation(async (_req: any, resource: any) => ({ ...resource, organizer: false }));
     checkSingleAccessMock.mockResolvedValue(false);
+    checkPastMeetingAccessMock.mockResolvedValue(false);
   });
 
-  it('strips created_by and owner for an anonymous caller without querying the index', async () => {
+  it('strips organizer identity fields from an anonymous full-access response', async () => {
+    checkPastMeetingAccessMock.mockResolvedValue(true);
     const { req, res, next } = buildReqRes(false);
 
     await controller.getPublicPastMeetingById(req, res, next);
 
     expect(next).not.toHaveBeenCalled();
     const payload = res.json.mock.calls[0][0];
+    expect(payload.full_access).toBe(true);
+    expect(payload.meeting.organizers).toBeUndefined();
     expect(payload.meeting.created_by).toBeUndefined();
     expect(payload.meeting.owner).toBeUndefined();
     expect(meetingSvc.resolveCreatedByForMeetings).not.toHaveBeenCalled();
   });
 
-  it('includes created_by and owner in the non-full-access projection for an authenticated caller', async () => {
+  it('includes authenticated creator and owner fields in the non-full-access projection', async () => {
     const { req, res, next } = buildReqRes(true);
 
     await controller.getPublicPastMeetingById(req, res, next);
@@ -589,6 +599,8 @@ describe('PublicMeetingController.getPublicPastMeetingById organizer privacy (LF
     // checkPastMeetingAccess is mocked to undefined => the reduced non-full-access projection.
     expect(payload.full_access).toBeFalsy();
     expect(payload.meeting.platform_meeting_id).toBeUndefined();
+    // The reduced projection is an allowlist and does not include usernames.
+    expect(payload.meeting.organizers).toBeUndefined();
     expect(payload.meeting.created_by).toEqual(createdBy);
     expect(payload.meeting.owner).toEqual(owner);
   });
