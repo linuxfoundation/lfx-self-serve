@@ -281,10 +281,8 @@ export class VoteManageComponent {
     if (!this.isEditMode()) {
       this.confirmingOpenVote.set(true);
 
-      // Speculative create (GH-2826 Design A): fire the plain create the moment the dialog opens
-      // and hide the ~3 s create behind the organizer's reading time. Accept chains onto it
-      // (submitVote → confirmSpeculativeVote); every dismiss path funnels through reject, which
-      // discards it; the VoteService owns the record so navigation mid-dialog still cleans up.
+      // Speculative create (GH-2826 Design A): fire the plain create at dialog-open, hiding the ~3 s
+      // create behind reading time; accept chains onto it, every dismiss path discards via reject.
       const projectUid = this.project()?.uid;
       if (projectUid) {
         const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
@@ -449,14 +447,9 @@ export class VoteManageComponent {
       });
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
-      // Speculative create (GH-2826 Design A): the create was already fired when the confirmation
-      // dialog opened; confirmSpeculativeVote chains onto it (or starts fresh from this request
-      // when none is pending) and enables with the grace-hint echo. The service marks the vote
-      // opened on success (the mark survives navigation); `opened: false` means the enable failed
-      // and the vote remains a draft — the state is genuinely uncertain beyond that (rarely
-      // opened-but-unconfirmed), and the list shows the truth in all cases (AC-2). takeUntilDestroyed:
-      // post-accept navigation must not let a late settlement toast/navigate from a dead component —
-      // the service-owned subscription completes the open on its own.
+      // Speculative create (GH-2826 Design A): the create fired at dialog-open; confirmSpeculativeVote chains
+      // the enable onto it (grace-hint echo) and the service marks the vote opened so the mark survives navigation.
+      // takeUntilDestroyed: a late settlement must not toast/navigate from a dead component.
       this.voteService
         .confirmSpeculativeVote(createRequest)
         .pipe(takeUntilDestroyed(this.destroyRef))

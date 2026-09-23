@@ -3,7 +3,12 @@
 
 import { HttpClient, HttpHeaders, HttpResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
-import { RECENTLY_OPENED_VOTE_TTL_MS, VOTE_CREATE_COMPLETED_AT_HEADER } from '@lfx-one/shared/constants';
+import {
+  RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_CREATE_COMPLETED_AT_HEADER,
+  VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
+  VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
+} from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import { defer, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -155,10 +160,8 @@ describe('VoteService', () => {
     expect(http.put).toHaveBeenCalledWith('/api/votes/vote-1/enable', {});
   });
 
-  // GH-2826 Design A: the open-vote confirmation dialog fires the create speculatively and the
-  // accept path chains the enable onto it with the grace-hint echo. The lifecycle lives on this
-  // root service (components die on navigation; the service doesn't): cancel/navigation gets a
-  // background compensating delete, a confirmed open completes even after the component is gone.
+  // GH-2826 Design A: dialog-open fires the speculative create; accept chains the enable onto it. The
+  // lifecycle lives on this root service so cancel/navigation cleanup and a confirmed open outlive the component.
   describe('speculative create lifecycle', () => {
     const request = { name: 'New ballot' } as unknown as CreateVoteRequest;
 
@@ -246,7 +249,7 @@ describe('VoteService', () => {
       expect(http.put).toHaveBeenCalledWith('/api/votes/vote-1/enable', {});
     });
 
-    it('discard after resolve issues the compensating delete immediately', () => {
+    it('discard after the grace has elapsed issues the compensating delete immediately (slow reader)', () => {
       http.post.mockReturnValue(of(createResponse(buildVote())));
       http.delete.mockReturnValue(of(undefined));
 
@@ -286,8 +289,47 @@ describe('VoteService', () => {
       expect(service.hasPendingSpeculativeCreate()).toBe(false);
     });
 
-    it('retries the compensating delete once, then gives up silently (orphan draft is accepted residue)', async () => {
+    it('a fast cancel waits out the grace remainder so the compensating DELETE does not fire pre-tuple', async () => {
       vi.useFakeTimers();
+      try {
+        http.post.mockReturnValue(of(createResponse(buildVote(), Date.now())));
+        http.delete.mockReturnValue(of(undefined));
+
+        service.beginSpeculativeCreate(request);
+        service.discardSpeculativeVote();
+
+        // The DELETE route is writer-gated on vote:{uid} at the gateway — pre-tuple would cache a denial.
+        expect(http.delete).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS - 1);
+        expect(http.delete).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(http.delete).toHaveBeenCalledWith('/api/votes/vote-1');
+        expect(service.hasPendingSpeculativeCreate()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('a discard without the create-completion stamp pays the full grace (deploy-skew guard)', async () => {
+      vi.useFakeTimers();
+      try {
+        http.post.mockReturnValue(of(createResponse(buildVote(), null)));
+        http.delete.mockReturnValue(of(undefined));
+
+        service.beginSpeculativeCreate(request);
+        service.discardSpeculativeVote();
+
+        expect(http.delete).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS);
+        expect(http.delete).toHaveBeenCalledWith('/api/votes/vote-1');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('retries the compensating delete once past the check-cache TTL, then warns (orphan draft is accepted residue)', async () => {
+      vi.useFakeTimers();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
       try {
         http.post.mockReturnValue(of(createResponse(buildVote())));
         // Count subscriptions, not mock calls: retry resubscribes to the ONE observable the mock
@@ -305,12 +347,16 @@ describe('VoteService', () => {
         service.discardSpeculativeVote();
 
         expect(attempts).toBe(1);
-        await vi.advanceTimersByTimeAsync(1000); // the single retry after its 1 s delay
+        await vi.advanceTimersByTimeAsync(VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS - 1);
+        expect(attempts).toBe(1); // still waiting — the retry delay spans the check-cache TTL
+        await vi.advanceTimersByTimeAsync(1);
         expect(attempts).toBe(2);
-        await vi.advanceTimersByTimeAsync(10_000);
+        await vi.advanceTimersByTimeAsync(60_000);
         expect(attempts).toBe(2); // count: 1 exhausted — no third attempt
+        expect(warn).toHaveBeenCalledOnce();
         expect(service.hasPendingSpeculativeCreate()).toBe(false);
       } finally {
+        warn.mockRestore();
         vi.useRealTimers();
       }
     });

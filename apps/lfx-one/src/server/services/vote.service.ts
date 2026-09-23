@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT } from '@lfx-one/shared/constants';
+import { MIN_VIABLE_REQUEST_BUDGET_MS, VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT, VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS } from '@lfx-one/shared/constants';
 import { IndexedVoteResponseStatus, PollStatus, VoteResponseStatus } from '@lfx-one/shared/enums';
 import {
   CreateVoteRequest,
@@ -81,19 +81,10 @@ export class VoteService {
   private static readonly enableEndToEndMaxDurationMs = 13000;
 
   /**
-   * FGA tuple-propagation grace for a just-created vote's first enable PUT (GH-2729 pivot,
-   * relocated to the enable route by GH-2826's speculative create): fga-sync writes the vote's
-   * OpenFGA tuple ~1.5 s after the create POST returns (observed 1.1–1.7 s in live verification,
-   * 2026-09-21). A check fired before the tuple lands caches `false` for the cluster's OpenFGA
-   * check-query TTL (10 s on dev) and every later check inside the TTL reads that cached denial —
-   * the probe-based predecessor of this flow failed 2/2 that way. The enable route receives the
-   * BFF-stamped create-completion time as `createCompletedAt` and sleeps the REMAINING grace
-   * (`max(0, grace − elapsed)`, never more than the grace) so attempt 1 computes fresh in the
-   * common case; the 13 s retry deadline then spans the TTL so a too-early first check still
-   * recovers once its cache entry expires. Calls without the hint (the edit flow's standalone
-   * enable) skip the sleep: their vote's tuples were written at create time, long past.
+   * Tuple-propagation grace for a just-created vote's first enable PUT (GH-2729/GH-2826): a pre-tuple
+   * check caches a denial for the check-query TTL, so the enable route sleeps the grace remaining since the create-completion hint; no hint (edit flow) → no sleep.
    */
-  private static readonly fgaTuplePropagationGraceMs = 2000;
+  private static readonly fgaTuplePropagationGraceMs = VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS;
 
   /**
    * Vote poll budget (GH-1637) for the delete index poll, at one 300 ms cadence. Create no
@@ -232,16 +223,8 @@ export class VoteService {
   }
 
   /**
-   * Creates a new vote/poll and returns the POST response as-is — nothing downstream consumes
-   * more than its `uid`, and list freshness is the list's own refetch (the pre-GH-1637 index
-   * poll never delivered that guarantee anyway: its broken `tags:` predicate exhausted 100% of
-   * the time). No readiness poll follows the create (GH-2729 pivot): on clusters where OpenFGA
-   * caches check results (dev TTL 10 s), a pre-tuple read probe caches `false` and defeats every
-   * retry inside the TTL — the probe manufactured the denial it measured. Opening is a separate
-   * client request to the enable route (GH-2826 speculative create): the controller stamps the
-   * create-completion time on the response (`X-Vote-Create-Completed-At`) and the client echoes
-   * it as the enable call's grace hint, so the tuple-propagation grace is paid on the enable
-   * route, not here. Worst-case create hold is the 16 s request timeout.
+   * Plain create — GH-2826 removed the fused open (the enable route's grace hint owns opening) and no
+   * readiness probe follows (a pre-tuple check poisons the check-query cache, GH-2729). Worst-case hold: the 16 s request timeout.
    */
   public async createVote(req: Request, voteData: CreateVoteRequest): Promise<Vote> {
     const sanitizedPayload = logger.sanitize({ voteData });
@@ -307,13 +290,8 @@ export class VoteService {
   }
 
   /**
-   * Enables a vote (changes status from disabled to active). `options.createCompletedAt` is the
-   * grace hint (GH-2826 speculative create): the BFF-stamped create-completion time echoed back
-   * by the client. When present, the remaining FGA tuple-propagation grace is slept before the
-   * first PUT — `max(0, grace − elapsed)`, clamped to the grace itself, so the hint can never
-   * extend the sleep past `fgaTuplePropagationGraceMs` (a forged hint only degrades the forger's
-   * own open into the retry grid; a negative elapsed clamps to the full grace). Absent or
-   * non-finite → no sleep: the edit flow's vote tuples were written at create time, long past.
+   * Enables a vote. `options.createCompletedAt` is the GH-2826 grace hint: sleep the remaining tuple-propagation
+   * grace (clamped to `[0, fgaTuplePropagationGraceMs]`) before attempt 1; absent/non-finite → no sleep (edit flow's tuples are long past).
    */
   public async enableVote(req: Request, voteUid: string, options: { createCompletedAt?: number } = {}): Promise<EnableVoteResponse> {
     logger.debug(req, 'enable_vote', 'Enabling vote', {

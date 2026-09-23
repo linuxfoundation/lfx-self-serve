@@ -260,11 +260,8 @@ describe('VoteManageComponent', () => {
     expect(router.parseUrl).toHaveBeenCalledWith(expect.stringMatching(/^\/(project|foundation)\/overview$/));
   });
 
-  // GH-2826 Design A: opening the confirmation dialog fires the speculative create; accept chains
-  // the enable with the grace-hint echo; every dismiss path (Cancel button, X, Esc — all emit on
-  // PrimeNG's rejectEvent, verified against PrimeNG 20.4.0's ConfirmDialog source) funnels into
-  // the one reject callback, which discards. confirm()/close() are spied rather than rendered —
-  // these tests exercise component logic, and rendering would pull in the full stepper subtree.
+  // GH-2826 Design A: dialog-open fires the speculative create, accept chains the enable, all dismiss
+  // paths (Cancel/X/Esc → PrimeNG rejectEvent) discard. confirm()/close() are spied, not rendered.
   describe('speculative create flow (GH-2826)', () => {
     let capturedConfirmation: Confirmation | null;
 

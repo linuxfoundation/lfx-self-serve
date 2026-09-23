@@ -254,13 +254,8 @@ export interface IndexedVote extends Omit<Vote, 'uid'> {
 }
 
 /**
- * Optional request body for PUT /votes/:uid/enable (GH-2826 speculative create). Carries the
- * grace hint: the BFF-stamped create-completion timestamp (`X-Vote-Create-Completed-At` response
- * header from POST /votes) echoed back unchanged. When present and fresh, the BFF sleeps the
- * remainder of the FGA tuple-propagation grace before the first enable PUT, so a just-created
- * vote's attempt 1 never fires before fga-sync's tuple write (a pre-tuple check caches `false`
- * for the cluster's OpenFGA check-query TTL). Absent/invalid → no sleep (the edit flow's
- * standalone enable needs none — its tuples were written at create time, long past).
+ * Optional request body for PUT /votes/:uid/enable (GH-2826): echoes the create response's create-completion
+ * stamp back so the BFF sleeps the remaining FGA tuple-propagation grace before attempt 1; absent → no sleep (edit flow needs none).
  */
 export interface EnableVoteRequest {
   /** BFF-stamped create-completion time, epoch ms — echoed verbatim from the create response header. */

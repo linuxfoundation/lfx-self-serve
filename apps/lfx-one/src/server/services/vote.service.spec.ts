@@ -339,13 +339,8 @@ describe('VoteService', () => {
     });
   });
 
-  // GH-2826: the speculative create+open flow pays the FGA tuple-propagation grace on the
-  // enable route — the client echoes the BFF-stamped create-completion time (`createCompletedAt`)
-  // and enableVote sleeps the remaining grace (max(0, grace − elapsed), clamped to the grace)
-  // before attempt 1, so a just-created vote's first PUT never fires before fga-sync's tuple
-  // write (a pre-tuple check caches `false` for OpenFGA's 10 s check-query TTL — the GH-2729
-  // pivot removed the probe that did exactly that). Without the hint there is no sleep: the
-  // edit flow's tuples were written at create time, long past.
+  // GH-2826: the tuple-propagation grace is paid on the enable route — the client echoes the create-completion
+  // stamp and enableVote sleeps the remainder (clamped) before attempt 1; no hint (edit flow) → no sleep.
   describe('enableVote grace hint (GH-2826)', () => {
     it('sleeps the remaining grace when the hint is fresh, then fires attempt 1 with the fixed 16 s budget', async () => {
       vi.useFakeTimers();

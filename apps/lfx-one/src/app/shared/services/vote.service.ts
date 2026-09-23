@@ -3,7 +3,14 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { INVITATION_NOT_FOUND, RECENTLY_OPENED_VOTE_TTL_MS, VOTE_CREATE_COMPLETED_AT_HEADER, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import {
+  INVITATION_NOT_FOUND,
+  RECENTLY_OPENED_VOTE_TTL_MS,
+  VOTE_CREATE_COMPLETED_AT_HEADER,
+  VOTE_DETAIL_CACHE_TTL_MS,
+  VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS,
+  VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS,
+} from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
@@ -19,7 +26,7 @@ import {
   VoteAnswerInput,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError, timer } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -32,11 +39,8 @@ export class VoteService {
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
 
   /**
-   * Single active speculative-create slot (GH-2826): the draft POST fired when the open-vote
-   * confirmation dialog opened, plus its terminal state. Lives on this root-provided service —
-   * not the component — so cancel/navigation cleanup and a confirmed open complete even after
-   * the vote-manage component is destroyed. The record type stays an inline annotation: it is
-   * private session state, not a shared contract (the shared-contract rule doesn't apply).
+   * Single active speculative-create slot (GH-2826) — service-owned, not component-owned, so
+   * cancel/navigation cleanup and a confirmed open complete even after vote-manage is destroyed.
    */
   private speculativeVote: {
     state: 'pending' | 'confirmed' | 'discarding';
@@ -169,21 +173,16 @@ export class VoteService {
   }
 
   /**
-   * Fires a plain (non-open) create the moment the open-vote confirmation dialog opens (GH-2826
-   * Design A), hiding the ~3 s create behind the organizer's reading time. Returns the shared
-   * create observable for the component's accept/early-error paths. A still-pending prior
-   * speculation is discarded first (single slot — an abandoned dialog's draft is cleaned up).
+   * Fires the plain create the moment the confirmation dialog opens (GH-2826 Design A), hiding the ~3 s
+   * create behind reading time; a still-pending prior speculation is discarded first (single slot).
    */
   public beginSpeculativeCreate(voteData: CreateVoteRequest): Observable<Vote> {
     return this.startSpeculativeRecord(voteData).create$;
   }
 
   /**
-   * The accept path: chains onto the speculative create (or begins fresh from `fallbackRequest`
-   * when none is pending — e.g. the project context was still loading at dialog-open), then
-   * enables with the grace-hint echo. Resolves `opened: false` when the enable failed — the
-   * draft is intentional residue on the accept path (the user said yes), no compensating delete.
-   * The chain is service-subscribed, so the open completes even if the component dies mid-chain.
+   * Accept path: chains onto the speculative create (or begins fresh from `fallbackRequest`), then enables with
+   * the grace-hint echo — service-subscribed so the open survives navigation. `opened: false` = enable failed, draft kept.
    */
   public confirmSpeculativeVote(fallbackRequest: CreateVoteRequest): Observable<{ vote: Vote; opened: boolean }> {
     const existing = this.speculativeVote;
@@ -223,11 +222,8 @@ export class VoteService {
   }
 
   /**
-   * Cancels the pending speculation (dialog dismissed or component destroyed before accept):
-   * the compensating DELETE fires once the uid is known — immediately when the create already
-   * resolved, otherwise when the still-running server-side write lands. State-guarded to
-   * 'pending', so it is safe to call unconditionally from the component's DestroyRef (a no-op
-   * after confirm). Never blocks, never toasts.
+   * Cancels a pending speculation (dismiss or destroy before accept): the compensating DELETE fires once
+   * the uid is known. State-guarded to 'pending' — safe to call unconditionally from DestroyRef (no-op after confirm).
    */
   public discardSpeculativeVote(): void {
     const record = this.speculativeVote;
@@ -268,10 +264,8 @@ export class VoteService {
   }
 
   /**
-   * Enables a vote. `options.createCompletedAt` echoes the create response's
-   * `X-Vote-Create-Completed-At` stamp (GH-2826): the BFF sleeps the remaining FGA-propagation
-   * grace before attempt 1 so a just-created vote's first PUT never fires pre-tuple. Absent →
-   * no grace (edit flow — the vote's tuples were written at create time, long past).
+   * Enables a vote. `options.createCompletedAt` echoes the create response's completion stamp (GH-2826) so the
+   * BFF sleeps the remaining FGA-propagation grace before attempt 1; absent → no grace (edit flow's tuples are long past).
    */
   public enableVote(voteUid: string, options: { createCompletedAt?: number } = {}): Observable<EnableVoteResponse> {
     const body: EnableVoteRequest = {};
@@ -388,11 +382,8 @@ export class VoteService {
   }
 
   /**
-   * Creates the speculative record: fires the POST with `observe: 'response'` to capture the
-   * BFF's create-completion stamp, stores terminal state on the record (late subscribers never
-   * depend on shareReplay's error replay), and holds a service-side subscription that keeps the
-   * request alive after the component unsubscribes and owns the compensating delete once the
-   * uid lands — unsubscribing the client fetch does not stop the server-side write.
+   * Creates the speculative record: POST with `observe: 'response'` captures the completion stamp; the
+   * service-side subscription survives component teardown and owns the compensating delete once the uid lands.
    */
   private startSpeculativeRecord(voteData: CreateVoteRequest): NonNullable<VoteService['speculativeVote']> {
     this.discardSpeculativeVote();
@@ -442,12 +433,23 @@ export class VoteService {
     return record;
   }
 
-  /** Compensating delete for a discarded speculation: one retry, then silent — the orphan draft is accepted, clutter-only residue (spec). */
+  /**
+   * Compensating delete for a discarded speculation: waits out the FGA tuple-propagation grace so
+   * attempt 1 isn't a cached pre-tuple 403; one retry past the check-cache TTL, then warn-only — the orphan draft is accepted, clutter-only residue (spec).
+   */
   private deleteSpeculativeVote(record: NonNullable<VoteService['speculativeVote']>, voteUid: string): void {
-    this.deleteVote(voteUid)
+    // No stamp means the create just resolved in this tab, so the full grace is owed.
+    const completedAt = record.result?.createCompletedAt;
+    const remainingGraceMs =
+      completedAt == null ? VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS : Math.max(0, completedAt + VOTE_FGA_TUPLE_PROPAGATION_GRACE_MS - Date.now());
+    const trigger$: Observable<unknown> = remainingGraceMs > 0 ? timer(remainingGraceMs) : of(null);
+    trigger$
       .pipe(
-        retry({ count: 1, delay: 1000 }),
-        catchError(() => of(null))
+        switchMap(() => this.deleteVote(voteUid).pipe(retry({ count: 1, delay: VOTE_SPECULATIVE_DELETE_RETRY_DELAY_MS }))),
+        catchError(() => {
+          console.warn(`Speculative vote cleanup failed; orphan draft may remain: ${voteUid}`);
+          return of(null);
+        })
       )
       .subscribe(() => this.clearSpeculativeVote(record));
   }

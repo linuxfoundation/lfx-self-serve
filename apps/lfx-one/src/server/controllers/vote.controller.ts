@@ -159,10 +159,8 @@ export class VoteController {
         name: vote.name,
       });
 
-      // Stamp the create-completion time (GH-2826 speculative create): the client echoes it back
-      // as the enable route's grace hint so a just-created vote's first enable PUT waits out the
-      // FGA tuple-propagation remainder instead of caching a pre-tuple denial. Post-await is the
-      // same macrotask as the service's upstream-POST return — sub-ms from the true zero-point.
+      // Stamp the create-completion time (GH-2826): the client echoes it as the enable route's grace
+      // hint so a just-created vote's first enable PUT waits out the tuple-propagation remainder.
       res.setHeader(VOTE_CREATE_COMPLETED_AT_HEADER, Date.now().toString());
       res.status(201).json(vote);
     } catch (error) {
