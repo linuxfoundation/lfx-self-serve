@@ -25,6 +25,8 @@ vi.mock('../helpers/social-listening-params.helper', () => ({
 }));
 
 vi.mock('../helpers/validation.helper', () => ({
+  clampInteger: (value: number, min: number, max: number, fallback: number) =>
+    Number.isFinite(value) ? Math.min(Math.max(Math.trunc(value), min), max) : fallback,
   escapeSqlLikePattern: (term: string) => term.replace(/[!%_]/g, (ch: string) => `!${ch}`),
 }));
 

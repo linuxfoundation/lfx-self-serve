@@ -5,6 +5,7 @@ import {
   CONTRIBUTIONS_DEFAULT_DATE_RANGE,
   CONTRIBUTIONS_DEFAULT_PAGE_SIZE,
   CONTRIBUTIONS_MAX_PAGE_SIZE,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
   CONTRIBUTIONS_PAGE_SIZE_OPTIONS,
 } from '@lfx-one/shared/constants';
 import type {
@@ -18,7 +19,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { assertOrgUid } from '../helpers/org-uid.helper';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { clampInteger, getStringQueryParam } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgContributionsService } from '../services/org-contributions.service';
 
@@ -94,7 +95,7 @@ function parseContributionsQuery(req: Request, operation: string): OrgContributi
     dir,
     commitSort,
     commitDir,
-    page: parsePositiveInt(getStringQueryParam(req, 'page'), 1),
+    page: clampInteger(Number.parseInt(getStringQueryParam(req, 'page') ?? '', 10), 1, MAX_SNOWFLAKE_PAGINATION_PAGE, 1),
     size: parsePageSize(getStringQueryParam(req, 'size')),
   };
 }
@@ -147,11 +148,6 @@ function parseCsvParam(raw: string | undefined): string[] {
     .split(',')
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
-}
-
-function parsePositiveInt(raw: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(raw ?? '', 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
 function parsePageSize(raw: string | undefined): number {

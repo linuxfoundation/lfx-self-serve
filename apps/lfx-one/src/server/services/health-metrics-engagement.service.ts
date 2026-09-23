@@ -46,6 +46,7 @@ import type {
 import { BaseApiError } from '../errors/base.error';
 import { MicroserviceError } from '../errors/microservice.error';
 import { getCodeForStatus } from '../helpers/http-status.helper';
+import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -770,10 +771,4 @@ function toIsoDate(value: Date | string | null): string | null {
   if (!value) return null;
 
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
-}
-
-function clampInteger(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-
-  return Math.min(Math.max(Math.trunc(value), min), max);
 }

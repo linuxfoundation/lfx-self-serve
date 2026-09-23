@@ -10,14 +10,14 @@ import {
   ATTR_SERVER_ADDRESS,
 } from '@opentelemetry/semantic-conventions';
 import { ATTR_DB_RESPONSE_RETURNED_ROWS } from '@opentelemetry/semantic-conventions/incubating';
-import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
+import { SNOWFLAKE_CONFIG, SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE } from '@lfx-one/shared/constants';
 import { SnowflakeCircuitState, SnowflakeLockStrategy } from '@lfx-one/shared/enums';
 import { LockStats, SnowflakeCircuitStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { isInvalidIdentifierError, isMissingObjectError, isPoolQueueFullError } from '../helpers/snowflake-error.helper';
+import { isInvalidIdentifierError, isInvalidRowCountError, isMissingObjectError, isPoolQueueFullError } from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -222,6 +222,7 @@ export class SnowflakeService {
             const expectedIdentifier = options?.expectInvalidIdentifier;
             const expectedInvalidIdentifier = typeof expectedIdentifier === 'string' && isInvalidIdentifierError(error, expectedIdentifier);
             const poolQueueFull = isPoolQueueFullError(error);
+            const invalidRowCount = isInvalidRowCountError(error);
 
             if (expectedMissing || expectedInvalidIdentifier) {
               span.setStatus({ code: SpanStatusCode.OK });
@@ -246,7 +247,16 @@ export class SnowflakeService {
                 message: error instanceof Error ? error.message : String(error),
               });
               span.setAttribute('snowflake.pool_queue_full', true);
-              this.recordBackpressure();
+              this.releaseProbe();
+            } else if (invalidRowCount) {
+              // Out-of-range LIMIT/OFFSET is a request fault, not a Snowflake outage, so it must not count
+              // toward the breaker. Rethrown as a 500, logged once by apiErrorHandler.
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              span.setAttribute('snowflake.invalid_row_count', true);
+              this.releaseProbe();
             } else {
               span.setStatus({
                 code: SpanStatusCode.ERROR,
@@ -263,9 +273,13 @@ export class SnowflakeService {
               });
             }
 
-            // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
+            // Wrap Snowflake SDK errors in MicroserviceError for proper error handling. `message` keeps the SDK
+            // text because callers match on it (isMissingObjectError / isInvalidIdentifierError); the client
+            // only ever sees `clientMessage`. Never add `originalMessage` or `details`/`errors`/`error` keys to
+            // `errorBody` here: MicroserviceError.toResponse forwards those to the browser.
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new MicroserviceError(`Snowflake query execution failed: ${errorMessage}`, 500, 'SNOWFLAKE_QUERY_ERROR', {
+              clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
               operation: 'snowflake_query_execution',
               service: 'snowflake',
               errorBody: {
@@ -506,6 +520,7 @@ export class SnowflakeService {
       // Wrap SDK errors in MicroserviceError for proper error handling
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new MicroserviceError(`Snowflake connection pool creation failed: ${errorMessage}`, 500, 'SNOWFLAKE_CONNECTION_ERROR', {
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
         operation: 'snowflake_pool_creation',
         service: 'snowflake',
         errorBody: {
@@ -573,11 +588,12 @@ export class SnowflakeService {
   }
 
   /**
-   * Record a query the local pool rejected before it reached Snowflake. Leaves the failure count
-   * and circuit state untouched, but frees the HALF_OPEN probe slot so the next caller can probe.
+   * Record a query failure that says nothing about Snowflake's health — the local pool rejected it, or
+   * the request carried an out-of-range row count. Leaves the failure count and circuit state untouched,
+   * but frees the HALF_OPEN probe slot so the next caller can probe.
    * @private
    */
-  private recordBackpressure(): void {
+  private releaseProbe(): void {
     this.probeInFlight = false;
   }
 

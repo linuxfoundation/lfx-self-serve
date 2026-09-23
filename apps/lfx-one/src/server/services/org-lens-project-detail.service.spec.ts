@@ -523,3 +523,33 @@ describe('OrgLensProjectDetailService board cache contract', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 });
+
+describe('OrgLensProjectDetailService.getCardRoster paging', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => ({ rows: sql.includes('COUNT(*)') ? [{ N: 0 }] : [] }));
+  });
+
+  function rosterSql(): string {
+    const call = execute.mock.calls.find(([sql]) => typeof sql === 'string' && sql.includes('OFFSET'));
+    expect(call).toBeDefined();
+    return call![0] as string;
+  }
+
+  it('caps an oversized page at the deepest allowed page', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 1e25, 10);
+
+    const sql = rosterSql();
+    expect(sql).toContain('LIMIT 10 OFFSET 1000000');
+    expect(sql).not.toContain('e+');
+  });
+
+  it('truncates a fractional page', async () => {
+    await service.getCardRoster(ORG, 'Acme', SLUG, 'contributors', '1y', 2.7, 10);
+
+    expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});

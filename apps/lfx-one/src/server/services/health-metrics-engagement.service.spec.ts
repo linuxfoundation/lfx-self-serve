@@ -21,6 +21,9 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
+// validation.helper (clampInteger) imports `@lfx-one/shared/utils`, whose barrel pulls Angular and cannot
+// load outside a test bed; see validation.helper.spec.ts. The real clampInteger is what runs here.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
