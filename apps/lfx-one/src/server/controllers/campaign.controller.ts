@@ -2241,8 +2241,11 @@ export class CampaignController {
       // than a dropped field. campaign-service's RebuildEmailContent replaces the whole widget
       // tree, so a rebuild carrying a hero and no body drops the cloned template's body
       // (internal/dispatch/hubspot.go; TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone).
-      // `bodyHtml` is already trimmed above, so whitespace-only counts as absent.
-      ...(bodyHtml
+      // Same predicate as the body-forwarding gate above, not `.trim()` truthiness. These two
+      // gates ask the same question about the same value, so answering them differently is how
+      // one gets fixed and the other keeps the bug: a body of zero-width spaces would forward no
+      // `bodyHtml` yet still attach a hero and sponsors to it.
+      ...(hasVisibleHtmlText(bodyHtml)
         ? {
             ...(buttonUrl ? { buttonUrl, ...(buttonText ? { buttonText } : {}) } : {}),
             ...(heroImageUrl ? { heroImageUrl, ...(heroLinkUrl ? { heroLinkUrl } : {}) } : {}),

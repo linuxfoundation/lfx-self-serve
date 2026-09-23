@@ -1256,6 +1256,40 @@ describe('CampaignController.createCampaign cutover', () => {
     expect(sent['bodyHtmlB']).toBeUndefined();
   });
 
+  /**
+   * Two gates in this handler ask the same question about the same value: whether the body has
+   * anything a reader can see. One was switched to the shared predicate and its sibling was left
+   * on `.trim()` truthiness, so a body of invisible characters forwarded no `bodyHtml` and still
+   * attached a hero and sponsors to it -- a rebuild carrying a hero and no body, which upstream
+   * treats as data loss rather than a dropped field.
+   */
+  it('attaches no hero or sponsors to a body that renders nothing', async () => {
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>\u200B\u200B</p>',
+            heroImageUrl: 'https://cdn.example.com/hero.png',
+            buttonUrl: 'https://example.com/register',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['bodyHtml']).toBeUndefined();
+    expect(sent['heroImageUrl']).toBeUndefined();
+    expect(sent['buttonUrl']).toBeUndefined();
+  });
+
   it('bounds the sponsor list before parsing, then caps the survivors', async () => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });

@@ -301,6 +301,30 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
     expect(timeMs(html)).toBeLessThan(1000);
   });
 
+  it('does not backtrack on unterminated script tags', () => {
+    // The JSON-LD fallback carried the IDENTICAL two-unbounded-run pattern as the og:image match,
+    // and it is the MORE exposed of the two: it runs precisely on pages with no og:image.
+    const html = '<script '.repeat((256 * 1024) / 8);
+
+    expect(timeMs(html)).toBeLessThan(1000);
+  });
+
+  it('reads the second JSON-LD block when the first carries no image', () => {
+    // Tokenizing the tags means finding each tag's OWN body: a naive `indexOf(openTag)` returns
+    // the first match every time, so two identical `<script type=...>` tags would both read the
+    // first one's body and the second block's image would never be seen.
+    const html =
+      '<script type="application/ld+json">{"@type":"Thing"}</script>' + '<script type="application/ld+json">{"@type":"Event","image":"/second.png"}</script>';
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/second.png');
+  });
+
+  it('skips a non-JSON-LD script before the one that matters', () => {
+    const html = '<script>var x = 1</script><script type="application/ld+json">{"@type":"Event","image":"/after.png"}</script>';
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/after.png');
+  });
+
   it('still finds the real og:image after a long adversarial run', () => {
     const html = `${'<meta '.repeat(20000)}<meta property="og:image" content="/real.png">`;
 

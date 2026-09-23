@@ -76,9 +76,24 @@ function extractHeroImage(html: string, baseUrl: string): string {
 
   // Fallback: an event page's own JSON-LD (schema.org Event) often carries a banner image
   // even when it has no og:image meta tag.
-  for (const scriptMatch of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
+  // Tokenized for the same reason the og:image match above is: `<script[^>]+...[^>]*>` carries two
+  // unbounded runs that both had to match before failure, and measured the same quadratic curve
+  // (16 KiB 14 ms -> 128 KiB 813 ms). Fixing only the og:image pattern would have left this one
+  // MORE exposed, not less: this is the fallback, so it runs precisely on the pages that have no
+  // og:image -- the common case for a scraped third-party page.
+  // `searchFrom` advances past each tag handled, so two identical `<script type=...>` tags read
+  // their OWN bodies -- `indexOf(openTag)` alone would return the first match every time and read
+  // the first tag's body twice.
+  let searchFrom = 0;
+  for (const openTag of openTags(html, 'script')) {
+    const start = html.indexOf(openTag, searchFrom);
+    if (start === -1) continue;
+    searchFrom = start + openTag.length;
+    if (!/type=["']application\/ld\+json["']/i.test(openTag)) continue;
+    const end = html.indexOf('</script', searchFrom);
+    if (end === -1) continue;
     try {
-      const parsed = JSON.parse(scriptMatch[1].trim());
+      const parsed = JSON.parse(html.slice(searchFrom, end).trim());
       const candidates = Array.isArray(parsed) ? parsed : [parsed];
       for (const entry of candidates) {
         const type = entry?.['@type'];
