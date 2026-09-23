@@ -1612,6 +1612,9 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
     show_meeting_attendees: true,
   };
 
+  // An update body that makes no choice at all, which is the case upstream merges rather than replaces.
+  const { show_meeting_attendees: baseChoice, ...baseUpdateWithoutChoice } = baseUpdate;
+
   it('forces show_meeting_attendees off for board meetings', async () => {
     proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, organizers: [] });
     proxyRequestWithResponse.mockResolvedValueOnce({});
@@ -1666,6 +1669,41 @@ describe('MeetingService.updateMeeting attendee visibility lock', () => {
 
     const payload = proxyRequestWithResponse.mock.calls[0][5];
     expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it("does not inherit a locked meeting's stale visibility when the update unlocks it", async () => {
+    // Upstream preserves fields the body omits, so a legacy board row holding `true` would keep it
+    // through an unlock that makes no choice, and the next invites would expose the guest list.
+    expect(baseChoice).toBe(true);
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice, meeting_type: 'Technical' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(false);
+  });
+
+  it('honors an explicit choice made on the update that unlocks the meeting', async () => {
+    // The organizer may legitimately turn sharing on as part of the same edit that lifts the lock.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Board', restricted: false, show_meeting_attendees: false, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdate, meeting_type: 'Technical' });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBe(true);
+  });
+
+  it('leaves an unlocked meeting alone when the update makes no choice', async () => {
+    // Only the unlock transition drops the stored value; an ordinary partial update must not.
+    proxyRequest.mockResolvedValueOnce({ meeting_type: 'Technical', restricted: false, show_meeting_attendees: true, organizers: [] });
+    proxyRequestWithResponse.mockResolvedValueOnce({});
+
+    await service.updateMeeting(req, 'meeting-1', { ...baseUpdateWithoutChoice });
+
+    const payload = proxyRequestWithResponse.mock.calls[0][5];
+    expect(payload.show_meeting_attendees).toBeUndefined();
   });
 
   it('forwards true when the meeting is unlocked', async () => {

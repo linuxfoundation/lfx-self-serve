@@ -619,6 +619,12 @@ export class MeetingService {
     // to opt a board/restricted meeting into sharing its guest list in calendar invites.
     if (isShowMeetingAttendeesLocked(meetingType, restricted)) {
       updatePayload.show_meeting_attendees = false;
+    } else if (meetingData.show_meeting_attendees == null && isShowMeetingAttendeesLocked(existingMeeting.meeting_type, existingMeeting.restricted)) {
+      // Unlocking a locked meeting with no choice of its own. Upstream keeps whatever the body
+      // omits, and a row written before the lock existed can still hold `true`, so the stale value
+      // would survive the unlock and start sharing the guest list. A locked meeting never carried
+      // an organizer decision to inherit — the same reading `getSavedAttendeeVisibility` gives the form.
+      updatePayload.show_meeting_attendees = false;
     }
 
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
