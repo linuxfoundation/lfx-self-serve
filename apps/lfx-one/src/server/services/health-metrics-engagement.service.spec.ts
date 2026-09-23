@@ -25,6 +25,8 @@ vi.mock('./logger.service', () => ({
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
 } from '@lfx-one/shared/constants';
@@ -604,6 +606,138 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getOrgParticipation(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** One warehouse row: the caption count carries no period suffix, the measures all do. */
+  function nonMemberWarehouseRow(overrides: Record<string, unknown> = {}) {
+    return {
+      ACCOUNT_ID: 'a-1',
+      ACCOUNT_NAME: 'Acme Motors',
+      MEMBERSHIP_STATUS: 'Non-member',
+      SCOPE_ORGS_COUNT: 63,
+      MEETINGS_ATTENDED_COUNT_YTD: 12,
+      DISTINCT_PEOPLE_COUNT_YTD: 4,
+      SORT_RANK_YTD: 1,
+      MEETINGS_ATTENDED_COUNT_LAST_COMPLETED_YEAR: 8,
+      DISTINCT_PEOPLE_COUNT_LAST_COMPLETED_YEAR: 3,
+      SORT_RANK_LAST_COMPLETED_YEAR: 2,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    loggerError.mockReset();
+    warning.mockReset();
+  });
+
+  // The period pill projects these rows client-side, so one read has to serve every period.
+  it('reads every period in one pass, scoped to the foundation', async () => {
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
+    expect(response.rows[0]?.periods[3]).toMatchObject({ meetingsAttended: 12, distinctPeople: 4, sortRank: 1 });
+  });
+
+  // The view has no project key at all, so a project predicate would filter on a column that is absent.
+  it('sends no project predicate, because the view is foundation-scoped', async () => {
+    await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('project_slug');
+    expect(lastSql()).not.toContain('is_all_projects');
+  });
+
+  it('renders the view status as-is rather than re-deriving membership', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ MEMBERSHIP_STATUS: 'Prospect' })] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.membershipStatus).toBe('Prospect');
+  });
+
+  // A `COUNT(*)` here would only ever match the row count, which is the same number by accident.
+  it('reads the denormalized caption count off a row rather than counting the rows', async () => {
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('COUNT(');
+    expect(response.counts).toEqual({ orgs: 63 });
+  });
+
+  it('keeps an unranked row null rather than folding it into a real zero', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SORT_RANK_YTD: null })] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.periods[3]).toMatchObject({ sortRank: null, meetingsAttended: 12 });
+  });
+
+  it('reports no counts at all when the view leaves the scope count null on rows that exist', async () => {
+    execute.mockResolvedValue({ rows: [nonMemberWarehouseRow({ SCOPE_ORGS_COUNT: null })] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.counts).toBeNull();
+  });
+
+  // The client sorts and pages this payload in memory, so the read carries its own ceiling.
+  it('caps the read and orders the cut by the best rank across periods', async () => {
+    await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    // One past the cap: a scope of exactly the cap must not be reported as truncated.
+    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}`);
+    expect(lastSql()).toContain('ORDER BY LEAST(');
+    expect(lastSql()).toContain('IFNULL(sort_rank_ytd, 2147483647)');
+    // Two accounts can share a name, and a tie at the cap boundary would drop a different org per read.
+    expect(lastSql()).toContain('account_name ASC NULLS LAST, account_id ASC NULLS LAST');
+  });
+
+  it('truncates to the cap and says so out loud when the scope overruns it', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1 }, () => nonMemberWarehouseRow()) });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_non_member_participation', 'Non-member rows hit the read cap', {
+      foundation_slug: 'acme',
+      row_cap: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
+    });
+  });
+
+  it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getNonMemberParticipation(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getNonMemberParticipation(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Non-member participation is unavailable right now.');
+  });
+
+  it('rethrows any other Snowflake failure', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getNonMemberParticipation(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
   });
 });
 

@@ -5,6 +5,8 @@ import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS,
@@ -18,6 +20,11 @@ import type {
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementGroupRow,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberQuery,
+  HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgPeriod,
@@ -41,6 +48,7 @@ import type { Bind } from 'snowflake-sdk';
 const GROUP_ATTENDANCE_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE';
 const MEETING_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION';
 const ORG_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION';
+const NON_MEMBER_PARTICIPATION_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION';
 
 /** The ranges this view has columns for — `COMPLETED_YEAR_4` is not one of them. */
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
@@ -102,6 +110,14 @@ interface OrgParticipationRow {
   IS_LAPSED_180D: boolean | null;
   SCOPE_ORGS_COUNT: number | null;
   SCOPE_LAPSED_ORGS_COUNT: number | null;
+  [periodColumn: string]: unknown;
+}
+
+interface NonMemberParticipationRow {
+  ACCOUNT_ID: string | null;
+  ACCOUNT_NAME: string | null;
+  MEMBERSHIP_STATUS: string | null;
+  SCOPE_ORGS_COUNT: number | null;
   [periodColumn: string]: unknown;
 }
 
@@ -343,6 +359,63 @@ export class HealthMetricsEngagementService {
   }
 
   /**
+   * Every non-member organization in one read, with all four periods on each row — this view has no
+   * project key, so the section is foundation-scoped and the period pill resolves client-side.
+   */
+  public async getNonMemberParticipation(req: Request, query: HealthMetricsEngagementNonMemberQuery): Promise<HealthMetricsEngagementNonMemberParticipation> {
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => nonMemberSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    // A capped read has to keep the ranked head, so the cut runs on the best rank across the
+    // periods; the sentinel parks an org the view left unranked behind every ranked one.
+    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
+
+    // `scope_orgs_count` is denormalized onto every row and covers the whole scope, so it is read
+    // off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
+    const sql = `
+      SELECT
+        account_id,
+        account_name,
+        membership_status,
+        scope_orgs_count,
+        ${periodColumns}
+      FROM ${NON_MEMBER_PARTICIPATION_VIEW}
+      WHERE foundation_slug = ?
+      ORDER BY ${bestSortRank} ASC, account_name ASC NULLS LAST, account_id ASC NULLS LAST
+      LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}
+    `;
+
+    const result = await this.executeRead<NonMemberParticipationRow>(req, sql, [query.foundationSlug], {
+      view: NON_MEMBER_PARTICIPATION_VIEW,
+      operation: 'get_engagement_non_member_participation',
+      clientMessage: 'Non-member participation is unavailable right now.',
+    });
+
+    // Reading one past the cap is what separates a scope of exactly the cap from a truncated one.
+    const truncated = result.rows.length > HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP;
+    const rows = truncated ? result.rows.slice(0, HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP) : result.rows;
+
+    logger.debug(req, 'get_engagement_non_member_participation', 'Fetched non-member participation', {
+      foundation_slug: query.foundationSlug,
+      row_count: rows.length,
+    });
+
+    // Truncating leaves the table short of the caption's own count, so say so out loud.
+    if (truncated) {
+      logger.warning(req, 'get_engagement_non_member_participation', 'Non-member rows hit the read cap', {
+        foundation_slug: query.foundationSlug,
+        row_cap: HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
+      });
+    }
+
+    const first = rows[0];
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT;
+
+    return {
+      rows: rows.map(mapNonMemberRow),
+      counts: mapNonMemberCounts(first),
+    };
+  }
+
+  /**
    * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
    * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
    * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
@@ -465,6 +538,43 @@ function mapOrgCounts(row: OrgParticipationRow): HealthMetricsEngagementOrgCount
   if (orgs === null || lapsedOrgs === null) return null;
 
   return { orgs, lapsedOrgs };
+}
+
+function nonMemberSelectList(suffix: string): string {
+  return ['meetings_attended_count', 'distinct_people_count', 'sort_rank'].map((column) => `${column}_${suffix}`).join(', ');
+}
+
+function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberRow {
+  return {
+    accountId: row.ACCOUNT_ID ?? '',
+    accountName: row.ACCOUNT_NAME ?? '',
+    // Rendered as the view reports it; the organization-matching gap the footnote warns about is a
+    // data problem upstream, not something to paper over by rewriting the status here.
+    membershipStatus: row.MEMBERSHIP_STATUS ?? '',
+    periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapNonMemberPeriod(row, range)),
+  };
+}
+
+function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementNonMemberPeriod {
+  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+
+  return {
+    range,
+    meetingsAttended: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
+    distinctPeople: Number(row[`DISTINCT_PEOPLE_COUNT_${suffix}`] ?? 0),
+    sortRank: toNullableNumber(row[`SORT_RANK_${suffix}`]),
+  };
+}
+
+/**
+ * The count is period-agnostic and identical on every row, so any row answers for the scope. A null
+ * count over rows that exist is unmeasured — reporting 0 there would caption a full table.
+ */
+function mapNonMemberCounts(row: NonMemberParticipationRow): HealthMetricsEngagementNonMemberCounts | null {
+  const orgs = toNullableNumber(row.SCOPE_ORGS_COUNT);
+  if (orgs === null) return null;
+
+  return { orgs };
 }
 
 function participationSelectList(suffix: string): string {

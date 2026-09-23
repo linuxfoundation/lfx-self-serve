@@ -3380,6 +3380,39 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-non-member-participation` — every non-member org, every period.
+   * The view carries no project key, so the section is foundation-scoped.
+   */
+  public async getEngagementNonMemberParticipation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_non_member_participation');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_non_member_participation',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_non_member_participation',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getNonMemberParticipation(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_non_member_participation', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */

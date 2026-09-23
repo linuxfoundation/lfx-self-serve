@@ -17,7 +17,12 @@ import { HealthMetricsChromeService } from '../health-metrics-gate/health-metric
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsEngagementComponent } from './health-metrics-engagement.component';
 
-import type { HealthMetricsEngagementGroupCounts, HealthMetricsEngagementOrgCounts, HealthMetricsEngagementSectionKey } from '@lfx-one/shared/interfaces';
+import type {
+  HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementNonMemberCounts,
+  HealthMetricsEngagementOrgCounts,
+  HealthMetricsEngagementSectionKey,
+} from '@lfx-one/shared/interfaces';
 
 // Stands in for the real Group attendance section, matched by selector — this spec covers the shell,
 // and the real one would drag in HttpClient and the analytics read.
@@ -40,6 +45,14 @@ class MeetingParticipationStubComponent {
 @Component({ selector: 'lfx-engagement-org-participation', template: '' })
 class OrgParticipationStubComponent {
   public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
+  public readonly reading = output<void>();
+  public readonly settled = output<void>();
+}
+
+// Same stand-in for Non-member participation.
+@Component({ selector: 'lfx-engagement-non-member-participation', template: '' })
+class NonMemberParticipationStubComponent {
+  public readonly countsChange = output<HealthMetricsEngagementNonMemberCounts | null>();
   public readonly reading = output<void>();
   public readonly settled = output<void>();
 }
@@ -109,6 +122,10 @@ describe('HealthMetricsEngagementComponent', () => {
     return fixture.debugElement.query(By.directive(OrgParticipationStubComponent)).componentInstance as OrgParticipationStubComponent;
   }
 
+  function nonMemberChild(): NonMemberParticipationStubComponent {
+    return fixture.debugElement.query(By.directive(NonMemberParticipationStubComponent)).componentInstance as NonMemberParticipationStubComponent;
+  }
+
   function stubChild(): GroupAttendanceStubComponent {
     return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
   }
@@ -145,7 +162,15 @@ describe('HealthMetricsEngagementComponent', () => {
       ],
     })
       .overrideComponent(HealthMetricsEngagementComponent, {
-        set: { imports: [EngagementSubNavComponent, GroupAttendanceStubComponent, MeetingParticipationStubComponent, OrgParticipationStubComponent] },
+        set: {
+          imports: [
+            EngagementSubNavComponent,
+            GroupAttendanceStubComponent,
+            MeetingParticipationStubComponent,
+            NonMemberParticipationStubComponent,
+            OrgParticipationStubComponent,
+          ],
+        },
       })
       .compileComponents();
 
@@ -218,6 +243,14 @@ describe('HealthMetricsEngagementComponent', () => {
     const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-orgs"]');
     expect(item.textContent).toContain('136');
     expect(item.textContent).toContain('54 inactive');
+  });
+
+  it('badges Non-member participation from the counts that section reports', () => {
+    nonMemberChild().countsChange.emit({ orgs: 63 });
+    fixture.detectChanges();
+
+    const item = fixture.nativeElement.querySelector('[data-testid="engagement-sub-nav-nonmem"]');
+    expect(item.textContent).toContain('63');
   });
 
   it('bounds the scrolling pane to what is left of the viewport, so only it scrolls', () => {
@@ -650,6 +683,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -696,6 +730,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -721,6 +756,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -747,6 +783,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -774,6 +811,7 @@ describe('HealthMetricsEngagementComponent', () => {
   it('releases a pending deep link when the group read settles without counts', async () => {
     // Settled up front so this test's two reads are the last the deep link is waiting on.
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -806,6 +844,7 @@ describe('HealthMetricsEngagementComponent', () => {
     groupSettles();
     participationChild().settled.emit();
     orgChild().settled.emit();
+    nonMemberChild().settled.emit();
     fixture.detectChanges();
     await fixture.whenStable();
 
@@ -840,6 +879,7 @@ describe('HealthMetricsEngagementComponent', () => {
       participation: () => participationChild().settled.emit(),
       committees: () => stubChild().settled.emit(),
       orgs: () => orgChild().settled.emit(),
+      nonmem: () => nonMemberChild().settled.emit(),
     } as Record<HealthMetricsEngagementSectionKey, (() => void) | undefined>;
     const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
     fragment.next('reps');

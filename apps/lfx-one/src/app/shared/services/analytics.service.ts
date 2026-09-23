@@ -84,6 +84,8 @@ import {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupQuery,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNonMemberParticipation,
+  HealthMetricsEngagementNonMemberQuery,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementOrgQuery,
   HealthMetricsEngagementParticipationQuery,
@@ -1149,6 +1151,24 @@ export class AnalyticsService {
     return this.http.get<HealthMetricsEngagementOrgParticipation>('/api/analytics/engagement-org-participation', { params }).pipe(
       catchError((error) => {
         console.error('[analytics] engagement-org-participation failed', { query, error });
+        return throwError(() => error);
+      })
+    );
+  }
+
+  /**
+   * Get the Health Metrics Engagement "Non-member participation" table
+   * @param query - Foundation scope; the period pill resolves client-side
+   * @returns Observable of every non-member organization with all four periods and the caption count
+   */
+  public getEngagementNonMemberParticipation(query: HealthMetricsEngagementNonMemberQuery): Observable<HealthMetricsEngagementNonMemberParticipation> {
+    const params: Record<string, string> = { foundationSlug: query.foundationSlug };
+
+    // Errors propagate: an empty table renders "no organizations", so a swallowed failure would
+    // state that as measured fact. See `analytics-error-propagation.spec.ts`.
+    return this.http.get<HealthMetricsEngagementNonMemberParticipation>('/api/analytics/engagement-non-member-participation', { params }).pipe(
+      catchError((error) => {
+        console.error('[analytics] engagement-non-member-participation failed', { query, error });
         return throwError(() => error);
       })
     );
