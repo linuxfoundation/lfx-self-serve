@@ -2374,7 +2374,7 @@ describe('ProjectService — getHealthOverviewKpis', () => {
 
     const [query, binds] = execute.mock.calls.find(([sql]) => isEngagementQuery(sql)) ?? [];
     const ranges = buildHealthMetricsOverviewPeriods().map((period) => period.range);
-    expect(query).toContain('COUNT_IF(NOT is_dormant_ytd AND meetings_count_ytd >= ?) AS ACTIVE_GROUPS__YTD');
+    expect(query).toContain('COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND meetings_count_ytd >= ?) AS ACTIVE_GROUPS__YTD');
     expect(query).toContain('attendance_pct_3rd_last_completed_year < ?');
     expect(query).not.toContain('_4th_last_completed_year');
     expect(binds).toEqual([...ranges.flatMap(() => [3, 3, 0.5]), 'cncf']);

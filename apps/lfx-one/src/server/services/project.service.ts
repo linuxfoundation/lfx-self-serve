@@ -8060,7 +8060,7 @@ export class ProjectService {
 
   /**
    * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`, using the
-   * Engagement tab's own rules: non-dormant groups with enough meetings to rate, and those below 50%.
+   * Engagement tab's own rules: non-dormant groups with enough meetings to rate, and those below the low-attendance threshold.
    * A stopgap until `HEALTH_OVERVIEW_KPIS` carries engagement columns. Any failure logs and returns
    * `null`, so a problem here never takes down the other five tiles.
    */
@@ -8071,7 +8071,7 @@ export class ProjectService {
     const binds: (string | number)[] = [];
     const columns = ranges.flatMap((range) => {
       const suffix = this.getRangeSuffix(range);
-      const rated = `NOT is_dormant${suffix} AND meetings_count${suffix} >= ?`;
+      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ?`;
       binds.push(
         HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
         HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
@@ -8778,7 +8778,10 @@ export class ProjectService {
     return {
       area: 'eng',
       statValue: counts.activeGroups === 0 ? '—' : `${formatNumber(counts.lowAttendanceGroups)} of ${formatNumber(counts.activeGroups)}`,
-      statLabel: counts.activeGroups === 0 ? 'no active groups this period' : 'groups below 50% attendance',
+      statLabel:
+        counts.activeGroups === 0
+          ? 'no active groups this period'
+          : `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`,
       statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
       classification: 'none',
       evaluatedAt: '',

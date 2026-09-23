@@ -72,9 +72,8 @@ export class HealthMetricsOverviewComponent {
 
   protected readonly foundationSummaryLoading = signal(true);
 
-  // Live rows from HEALTH_OVERVIEW_KPIS (Events/Training/Members/Non-Members/Code only); merged with
-  // the Engagement fixture row in initTiles since that table doesn't cover that area. Same
-  // all-periods-in-one-read shape as revenue above, so changing the period costs no request.
+  // Live rows for every tile (Engagement from ENGAGEMENT_GROUP_ATTENDANCE, the rest from HEALTH_OVERVIEW_KPIS).
+  // All periods arrive in one read, like revenue above, so changing the period costs no request.
   protected readonly kpiAreaStatesLoading = signal(true);
   protected readonly kpiByRange: Signal<HealthMetricsOverviewKpisByRange> = this.initKpiByRange();
   protected readonly kpiAreaStates = computed<HealthMetricsAreaState[]>(() => this.kpiByRange()[this.selectedRange()] ?? []);
