@@ -60,7 +60,10 @@
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-easycla-acknowledgment-row-' + row.ack.signatureId">
               <td class="px-3 py-2">
                 <div class="flex items-center gap-2.5">
-                  <span class="h-7 w-7 shrink-0 rounded-full bg-gray-900" aria-hidden="true"></span>
+                  <lfx-person-avatar
+                    [name]="row.ack.name"
+                    [identity]="row.ack.email ?? row.ack.lfLogin ?? row.ack.githubUsername ?? row.ack.gitlabUsername"
+                    size="sm" />
                   <span class="font-semibold text-gray-900" data-testid="org-easycla-acknowledgment-name">{{ row.name }}</span>
                 </div>
               </td>

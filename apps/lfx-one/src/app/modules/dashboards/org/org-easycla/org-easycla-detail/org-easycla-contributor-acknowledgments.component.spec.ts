@@ -277,6 +277,21 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       // The identity column carries the em-dash rather than dropping the row.
       expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-identity'))).toBe('—');
     });
+
+    // The shared person avatar: initials from the producer's name, the person icon when there is
+    // none — never initials taken from the em-dash the name column shows in its place.
+    it('shows initials for a named contributor and the person icon for a nameless one', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ name: 'Ada Lovelace', email: 'ada@example.org' }), ack({ email: 'nameless@example.org' })]))
+      );
+      const fixture = await render();
+
+      const avatars = allByTestId(fixture, 'person-avatar');
+      expect(avatars).toHaveLength(2);
+      expect(textIn(avatars[0].querySelector<HTMLElement>('[data-testid="person-avatar-initials"]'))).toBe('AL');
+      expect(avatars[1].querySelector('[data-testid="person-avatar-initials"]')).toBeNull();
+      expect(avatars[1].querySelector('[data-testid="person-avatar-icon"]')).toBeTruthy();
+    });
   });
 
   /**

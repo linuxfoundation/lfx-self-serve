@@ -51,6 +51,7 @@ import {
 import { ButtonComponent } from '@components/button/button.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { PersonAvatarComponent } from '@components/person-avatar/person-avatar.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
@@ -81,7 +82,7 @@ import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla
  */
 @Component({
   selector: 'lfx-org-easycla-contributor-acknowledgments',
-  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, ReactiveFormsModule, SkeletonModule, TagComponent],
+  imports: [ButtonComponent, EmptyStateComponent, InputTextComponent, PersonAvatarComponent, ReactiveFormsModule, SkeletonModule, TagComponent],
   templateUrl: './org-easycla-contributor-acknowledgments.component.html',
   // Scoped to this panel so the dialog it opens is torn down with the tab rather than outliving it.
   providers: [DialogService],
