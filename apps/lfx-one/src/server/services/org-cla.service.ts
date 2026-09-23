@@ -1446,7 +1446,8 @@ export class OrgClaService {
       entries,
       entry,
       operation,
-      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.'
+      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
+      'AMBIGUOUS_MANAGER_TARGET'
     );
   }
 
@@ -1458,14 +1459,15 @@ export class OrgClaService {
     entries: readonly (EasyClaCompanyClaGroup & { signatureID: string })[],
     entry: EasyClaCompanyClaGroup & { signatureID: string },
     operation: string,
-    message: string
+    message: string,
+    code: string
   ): void {
     const companyId = entry.companyID?.trim() ?? '';
     const claGroupId = entry.claGroupID?.trim() ?? '';
     const peers = entries.filter((candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId);
     if (peers.length <= 1) return;
 
-    throw new MicroserviceError(message, 409, 'AMBIGUOUS_MANAGER_TARGET', { operation, service: SERVICE });
+    throw new MicroserviceError(message, 409, code, { operation, service: SERVICE });
   }
 
   private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
@@ -1512,7 +1514,8 @@ export class OrgClaService {
         entries,
         entry,
         operation,
-        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.'
+        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+        'AMBIGUOUS_AGREEMENT_TARGET'
       );
     }
 

@@ -3137,4 +3137,55 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     expect(component.autoEclaValue()).toBe(false);
   });
+
+  it('does not start a second write for an agreement that already has one after another agreement was written', async () => {
+    const first = new Subject<{ autoCreateEcla: boolean }>();
+    const second = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false });
+    const there = row({ id: 'signature-uuid-2', autoCreateEcla: false });
+    const fixture = await render(here, [here, there]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(true);
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(false);
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('keeps a confirmed value after visiting an agreement on another project', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false, pairProjectSfid: PAIR_PROJECT });
+    const elsewhere = row({
+      id: 'signature-uuid-2',
+      autoCreateEcla: false,
+      pairProjectSfid: 'a09410000182dD9AAI',
+      projects: [{ projectName: 'Other', projectSfid: 'a09410000182dD9AAI' }],
+    });
+    const fixture = await render(here, [here, elsewhere]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(true);
+  });
 });
