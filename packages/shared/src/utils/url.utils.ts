@@ -368,12 +368,21 @@ function dashNotationIPv6Candidates(label: string): string[] {
   // `fd00--1` suffix regardless of how much affix precedes it, which is why the deny cases --
   // including deliberately over-long ones -- still hold with the bound in place.
   //
-  // 8 suffixes, one per possible group. NOT 8 + 1 for an affix split: an affixed label's private
-  // reading is a SUFFIX of it, so it is reached by the same scan -- `a-fd00--1` is judged on
-  // `fd00--1` whether the window is 8 or 9. The extra slot was unreachable, verified by running
-  // every combination of 9 address spellings x 9 affix lengths x both wildcard domains under
-  // both bounds: 162 hosts, zero behavioural difference. Three review rounds tried to pin the
-  // +1 with a test and could not, because no input distinguishes the two.
+  // 8 suffixes, one per possible group. NOT 8 + 1 for an affix split.
+  //
+  // An earlier version of this comment claimed the address itself never occupies more than 8 dash
+  // segments. That is FALSE and a review round was right to say so: a leading `::` contributes an
+  // empty segment, so `-0-0-0-0-0-0-0-1` is 9. The bound survives anyway, for a different reason
+  // than the one first written here -- a private reading is a SUFFIX of the label, so a window of
+  // the last 8 segments still starts exactly where the address starts. `a-fd00--1` is judged on
+  // `fd00--1`, and the 9-segment `x-0-0-0-0-0-0-0-1` is judged from index 1, whether the window
+  // is 8 or 9.
+  //
+  // Verified rather than argued, under BOTH bounds: every leading- and trailing-`::` spelling at
+  // 0/1/2/3 affix depths across both wildcard domains, plus public controls -- 31 hosts, zero
+  // behavioural difference, all private readings blocked either way. Three review rounds have now
+  // asked for the +1 to be pinned by a test and none has produced an input that distinguishes the
+  // two bounds, which is what makes the slot unreachable rather than merely untested.
   const MAX_IPV6_GROUPS = 8;
   const firstIndex = Math.max(0, segments.length - MAX_IPV6_GROUPS);
 
