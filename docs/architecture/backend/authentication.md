@@ -265,6 +265,12 @@ The system includes a custom login route (`/login`) that provides:
 
 **Rollout note:** this nonce cutover has two rolling-deploy/rollback incompatibilities. First, the Valkey-vs-session storage switch itself: a pod running the old code cannot read a nonce written to Valkey by a new pod, and a new pod treats an old pod's session-only nonce as an authoritative Valkey miss. Second, when Valkey is unavailable, an old pod's session-stored nonce carries no `profileAuthSub` — a new pod reading it during a mixed-version window resolves an empty sub and rejects the callback with `invalid_state`. Either case forces the affected login to restart. Deploying this change requires a no-overlap rollout (and rollback plan) for Flow C traffic; it does not have cross-version compatibility built in.
 
+### Dedicated API Gateway User Grant
+
+Auth0 Gateway calls use a separate grant and refresh token for `API_GW_AUDIENCE`, following Crowdfunding. Register `${PCC_BASE_URL}/api-gateway/callback` on the existing client before deploying, using Valkey-backed sessions and callback-compatible instances. No MRRT, new client or secret is needed. Primary login/token export, Crowdfunding and Authelia are unchanged.
+
+Automatic authorization starts on protected browser navigation, never during impersonation. For SPA requests, `apiGatewayAuthInterceptor` handles `403 API_GATEWAY_AUTH_REQUIRED` by navigating to `/api-gateway/auth/start`; failed callbacks stop automatic retries. Writes must be resubmitted after authorization, never automatically replayed. Existing cross-replica session-write limitations remain.
+
 ## 🤖 Machine-to-Machine (M2M) Authentication
 
 ### Architecture Overview

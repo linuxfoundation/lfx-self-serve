@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { API_GATEWAY_AUTH } from '@lfx-one/shared/constants';
 import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { isDocumentNavigation, normalizeApiGatewayReturnTo } from '../helpers/api-gateway-auth.helper';
+import { apiGatewayAuthService } from '../services/api-gateway-auth.service';
 import { CrowdfundingAuthService } from '../services/crowdfunding-auth.service';
 import { logger } from '../services/logger.service';
 import { clearImpersonationSession, decodeJwtPayload, hasActiveImpersonationSession } from '../utils/auth-helper';
@@ -77,6 +80,9 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
 
   // Crowdfunding auth start — needs session auth but no bearer token (initiates CF auth-code redirect)
   { pattern: '/api/crowdfunding/auth/start', type: 'api', auth: 'required', tokenRequired: false },
+
+  // Dedicated Gateway grant: session auth only, never refresh the primary grant on a callback.
+  { pattern: /^\/api-gateway\/(?:auth\/start|callback)\/?$/i, type: 'api', auth: 'required', tokenRequired: false },
 
   // Protected API routes - require authentication and token. `classifyRoute`'s `apiFallback` mirrors this row's
   // shape so a malformed/undecodable API path fails closed the same way — keep the two in sync.
@@ -307,13 +313,12 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
   return { success: false, needsLogout: false };
 }
 
-/**
- * Silently fetches a second access token scoped to the API Gateway audience.
- * Uses the existing refresh token from the OIDC session — no user interaction required.
- * Result is cached in the session (with a 5-minute expiry buffer) and stored on req.apiGatewayToken.
- * Failures are non-blocking; the request continues without the token.
- */
 async function extractApiGatewayToken(req: Request): Promise<void> {
+  if (!apiGatewayAuthService.isAuthelia) {
+    await apiGatewayAuthService.loadToken(req);
+    return;
+  }
+
   const apiGatewayAudience = process.env['API_GW_AUDIENCE'];
   if (!apiGatewayAudience) {
     logger.warning(req, 'api_gateway_token', 'API_GW_AUDIENCE env var is not set, skipping secondary token fetch');
@@ -331,6 +336,36 @@ async function extractApiGatewayToken(req: Request): Promise<void> {
   if (token) {
     req.apiGatewayToken = token;
     logger.debug(req, 'api_gateway_token', 'API Gateway token ready');
+  }
+}
+
+async function authorizeApiGatewayNavigation(req: Request, res: Response, route: RouteAuthConfig): Promise<boolean> {
+  if (
+    route.type !== 'ssr' ||
+    route.auth !== 'required' ||
+    !req.oidc?.isAuthenticated() ||
+    !req.oidc.user?.['sub'] ||
+    !req.appSession ||
+    req.impersonationActive ||
+    req.appSession.apiGatewayAuthAttempted ||
+    req.query[API_GATEWAY_AUTH.ERROR_PARAM] !== undefined ||
+    !apiGatewayAuthService.isConfigured() ||
+    !isDocumentNavigation(req)
+  ) {
+    return false;
+  }
+  const returnTo = normalizeApiGatewayReturnTo(req.originalUrl);
+  if (returnTo === '/' && req.path !== '/') return false;
+
+  if ((await apiGatewayAuthService.loadToken(req)) !== 'required') return false;
+  try {
+    const url = await apiGatewayAuthService.getAuthorizationUrl(req, returnTo);
+    res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' });
+    res.redirect(url);
+    return true;
+  } catch {
+    logger.warning(req, 'api_gateway_auth_start', 'API Gateway authorization is temporarily unavailable');
+    return false;
   }
 }
 
@@ -572,7 +607,9 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
 
       // 4. Silently fetch secondary tokens when the user is authenticated
       if (hasToken) {
-        await extractApiGatewayToken(req);
+        if (routeConfig.auth === 'required' || apiGatewayAuthService.isAuthelia) {
+          await extractApiGatewayToken(req);
+        }
         await extractCrowdfundingToken(req);
       }
 
@@ -586,6 +623,8 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
 
       // 6. Make authentication decision
       const decision = makeAuthDecision(result, req);
+
+      if (decision.action === 'allow' && (await authorizeApiGatewayNavigation(req, res, routeConfig))) return;
 
       // 7. Execute decision
       await executeAuthDecision(decision, req, res, next);

@@ -27,6 +27,7 @@ import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
+import apiGatewayAuthRouter from './routes/api-gateway-auth.route';
 import inviteRouter from './routes/invite.route';
 import badgesRouter from './routes/badges.route';
 import campaignsRouter from './routes/campaigns.route';
@@ -372,6 +373,8 @@ app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
 app.use('/login', authRateLimiter);
 
+app.use(apiGatewayAuthRouter);
+
 app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 app.use('/public/api/foundations', publicFoundationsRouter);
@@ -663,7 +666,7 @@ app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
     // /*.../callback siblings), whose query string carries a one-time `code`/`state` pair. Forwarding
     // that URL as `returnTo` would send the user back to an already-consumed callback after re-login
     // instead of a fresh OAuth round trip, so omit it there — only carry `returnTo` for ordinary pages.
-    const returnTo = /\/callback$/.test(req.path) ? '' : `&returnTo=${encodeURIComponent(req.originalUrl)}`;
+    const returnTo = /\/callback\/?$/i.test(req.path) ? '' : `&returnTo=${encodeURIComponent(req.originalUrl)}`;
     res.redirect(`/auth-error?reason=session${returnTo}`);
     return;
   }

@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { ApiGatewayAuthState, ApiGatewayAuthStatus, ApiGatewayGrant } from '@lfx-one/shared/interfaces';
+
 declare global {
   namespace Express {
     interface Request {
       bearerToken?: string;
       apiGatewayToken?: string;
+      apiGatewayAuthStatus?: ApiGatewayAuthStatus;
       crowdfundingToken?: string;
       impersonationActive?: boolean;
       appSession?:
@@ -25,6 +28,10 @@ declare global {
             socialConnectReturnTo?: string;
             apiGatewayToken?: string;
             apiGatewayTokenExpiresAt?: number;
+            apiGatewayRefreshToken?: string;
+            apiGatewayGrant?: ApiGatewayGrant;
+            apiGatewayAuthState?: ApiGatewayAuthState;
+            apiGatewayAuthAttempted?: boolean;
             crowdfundingToken?: string;
             crowdfundingTokenExpiresAt?: number;
             crowdfundingRefreshToken?: string;

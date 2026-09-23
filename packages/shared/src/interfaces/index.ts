@@ -21,6 +21,7 @@ export * from './rich-editor.interface';
 
 // Auth interfaces
 export * from './auth.interface';
+export * from './api-gateway-auth.interface';
 
 // Session store interfaces
 export * from './session-store.interface';

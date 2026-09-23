@@ -146,6 +146,7 @@ if (!otlpEndpoint) {
       new HttpInstrumentation({
         ignoreIncomingRequestHook: (req) => {
           const url = req.url || '';
+          if (/^\/api-gateway\/callback\/?(?:\?|$)/i.test(url)) return true;
           return url === '/livez' || url === '/readyz' || url.startsWith('/.well-known');
         },
         applyCustomAttributesOnSpan: (span, request, response) => {

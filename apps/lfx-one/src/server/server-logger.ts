@@ -16,10 +16,12 @@ import { SERVICE_NAME } from './server-tracer';
  * authorization headers, cookies, API keys, or other sensitive data.
  */
 export function reqSerializer(req: IncomingMessage & { id?: string; originalUrl?: string; ip?: string }) {
+  const url = req.originalUrl || req.url;
   return {
     id: req.id,
     method: req.method,
-    url: req.originalUrl || req.url,
+    // The Gateway callback query contains authorization credentials.
+    url: /^\/api-gateway\/callback\/?(?:\?|$)/i.test(url ?? '') ? url?.split('?')[0] : url,
     remoteAddress: req.ip || req.socket?.remoteAddress,
     userAgent: req.headers['user-agent'],
   };

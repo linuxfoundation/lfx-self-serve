@@ -10,6 +10,7 @@ import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
+import { apiGatewayAuthInterceptor } from '@shared/interceptors/api-gateway-auth.interceptor';
 import { authenticationInterceptor } from '@shared/interceptors/authentication.interceptor';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
@@ -45,7 +46,7 @@ export const appConfig: ApplicationConfig = {
     // and mildly harmful, since it would have opted an `Authorization` response header into the
     // serialized SSR HTML.
     provideClientHydration(withEventReplay(), withIncrementalHydration()),
-    provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor])),
+    provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor, apiGatewayAuthInterceptor])),
     provideAnimationsAsync(),
     providePrimeNG({
       theme: {

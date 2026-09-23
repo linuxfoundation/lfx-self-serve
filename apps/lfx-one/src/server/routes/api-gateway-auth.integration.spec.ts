@@ -1,0 +1,436 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import '@angular/compiler';
+
+import { DOCUMENT } from '@angular/common';
+import { HttpErrorResponse, HttpRequest, HttpResponse } from '@angular/common/http';
+import { Injector, PLATFORM_ID, runInInjectionContext } from '@angular/core';
+import type { SessionStorePayload } from '@lfx-one/shared/interfaces';
+import express, { type NextFunction, type Request, type Response } from 'express';
+import { auth } from 'express-openid-connect';
+import { generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { request as httpRequest, type IncomingMessage, type Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
+import { from, lastValueFrom, mergeMap } from 'rxjs';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { stubConstructor } = vi.hoisted(() => ({
+  stubConstructor: vi.fn(function (this: object) {
+    return this;
+  }),
+}));
+vi.mock('../services/logger.service', () => ({
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), debug: vi.fn(), error: vi.fn(), getLastOperation: vi.fn() },
+}));
+vi.mock('../services/valkey.service', () => ({ valkeyService: { isEnabled: () => false }, buildAuthStateCacheKey: () => null }));
+// Only the actual Developer Settings method is exercised; none of its other collaborators
+// should connect to a real service. OIDC, Gateway auth, session persistence and fetch are real.
+vi.mock('../services/auth0.service', () => ({ Auth0Service: stubConstructor }));
+vi.mock('../services/cdp.service', () => ({ CdpService: stubConstructor }));
+vi.mock('../services/email-verification.service', () => ({ EmailVerificationService: stubConstructor }));
+vi.mock('../services/enrollment.service', () => ({ EnrollmentService: stubConstructor }));
+vi.mock('../services/forwards.service', () => ({ ForwardsService: stubConstructor }));
+vi.mock('../services/meeting-preference.service', () => ({ MeetingPreferenceService: stubConstructor }));
+vi.mock('../services/object-store.service', () => ({ ObjectStoreService: stubConstructor }));
+vi.mock('../services/user.service', () => ({ UserService: stubConstructor }));
+vi.mock('../services/social-verification.service', () => ({ SocialVerificationService: stubConstructor }));
+vi.mock('../services/profile-auth.service', () => ({ ProfileAuthService: stubConstructor }));
+
+import { ProfileController } from '../controllers/profile.controller';
+import { apiGatewayAuthInterceptor } from '../../app/shared/interceptors/api-gateway-auth.interceptor';
+import { gatewayFetch } from '../helpers/gateway-fetch.helper';
+import { validateAndSanitizeUrl } from '../helpers/url-validation';
+import { authMiddleware } from '../middleware/auth.middleware';
+import { apiErrorHandler } from '../middleware/error-handler.middleware';
+import apiGatewayAuthRouter from './api-gateway-auth.route';
+
+describe('Gateway grant with real express-openid-connect and persisted sessions', () => {
+  const sessions = new Map<string, SessionStorePayload>();
+  const tokenRequests: Record<string, string>[] = [];
+  const upstreamAuthorizations: string[] = [];
+  const cookies = new Map<string, string>();
+  const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  let issuerServer: Server;
+  let bffServer: Server;
+  let issuer: string;
+  let baseUrl: string;
+  let nonce: string;
+  let failRefresh = false;
+  let primaryAccessToken: string;
+  let gatewayAccessToken: string;
+
+  function jwt(claims: Record<string, unknown>): string {
+    const header = Buffer.from(JSON.stringify({ alg: 'RS256', kid: 'synthetic-key' })).toString('base64url');
+    const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
+    const data = `${header}.${payload}`;
+    return `${data}.${sign('RSA-SHA256', Buffer.from(data), privateKey).toString('base64url')}`;
+  }
+
+  function accessToken(audience: string): string {
+    return jwt({
+      iss: issuer,
+      sub: 'auth0|synthetic-user',
+      aud: audience,
+      azp: 'self-serve-client',
+      scope: 'openid email profile access:api offline_access',
+      exp: Math.floor(Date.now() / 1000) + 3600,
+    });
+  }
+
+  async function listen(app: express.Express): Promise<Server> {
+    return new Promise((resolve) => {
+      const server = app.listen(0, '127.0.0.1', () => resolve(server));
+    });
+  }
+
+  async function close(server?: Server): Promise<void> {
+    if (!server) return;
+    server.closeAllConnections();
+    await new Promise<void>((resolve, reject) => server.close((error) => (error ? reject(error) : resolve())));
+  }
+
+  async function send(path: string, method = 'GET', accept = 'text/html'): Promise<globalThis.Response> {
+    // Node fetch forces Sec-Fetch-Mode:cors. Use HTTP to model a browser navigation
+    // without weakening the real middleware's prohibition on redirecting fetch/XHR.
+    const incoming = await new Promise<IncomingMessage>((resolve, reject) => {
+      const req = httpRequest(
+        `${baseUrl}${path}`,
+        {
+          method,
+          headers: {
+            Accept: accept,
+            Cookie: [...cookies].map(([key, value]) => `${key}=${value}`).join('; '),
+            ...(accept === 'text/html' ? { 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' } : {}),
+          },
+        },
+        resolve
+      );
+      req.on('error', reject);
+      req.end();
+    });
+    const chunks: Buffer[] = [];
+    for await (const chunk of incoming) chunks.push(Buffer.from(chunk));
+    const headers = new Headers();
+    for (const [key, value] of Object.entries(incoming.headers)) {
+      if (Array.isArray(value)) value.forEach((item) => headers.append(key, item));
+      else if (value !== undefined) headers.set(key, value);
+    }
+    const result = new globalThis.Response(Buffer.concat(chunks), { status: incoming.statusCode, headers });
+    for (const cookie of result.headers.getSetCookie()) {
+      const pair = cookie.split(';')[0];
+      const separator = pair.indexOf('=');
+      const key = pair.slice(0, separator);
+      const value = pair.slice(separator + 1);
+      if (value) cookies.set(key, value);
+      else cookies.delete(key);
+    }
+    return result;
+  }
+
+  async function login(returnTo = '/org/acme/easycla'): Promise<void> {
+    const start = await send(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    expect(start.status).toBe(302);
+    const location = new URL(start.headers.get('location')!);
+    nonce = location.searchParams.get('nonce')!;
+    expect(location.searchParams.get('audience')).toBe('https://v2.example/');
+    const callback = await send(`/callback?code=primary-code&state=${encodeURIComponent(location.searchParams.get('state')!)}`);
+    expect(callback.status).toBe(302);
+    expect(new URL(callback.headers.get('location')!, baseUrl).pathname).toBe(returnTo);
+    expect(sessions.size).toBe(1);
+  }
+
+  async function gatewayLogin(): Promise<void> {
+    const page = await send('/org/acme/easycla?tab=agreements');
+    expect(page.status).toBe(302);
+    const location = new URL(page.headers.get('location')!);
+    expect(location.searchParams.get('audience')).toBe('https://gateway.example/');
+    expect(location.searchParams.get('redirect_uri')).toBe(`${baseUrl}/api-gateway/callback`);
+    const callback = await send(`/api-gateway/callback?code=gateway-code&state=${location.searchParams.get('state')}`);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('location')).toBe('/org/acme/easycla?tab=agreements');
+    expect(callback.headers.get('cache-control')).toBe('no-store');
+    expect(callback.headers.get('referrer-policy')).toBe('no-referrer');
+  }
+
+  beforeAll(async () => {
+    const provider = express();
+    provider.use(express.urlencoded({ extended: false }));
+    provider.get('/.well-known/openid-configuration', (_req, res) =>
+      res.json({
+        issuer,
+        authorization_endpoint: `${issuer}authorize`,
+        token_endpoint: `${issuer}oauth/token`,
+        jwks_uri: `${issuer}jwks`,
+        response_types_supported: ['code'],
+        grant_types_supported: ['authorization_code', 'refresh_token'],
+        subject_types_supported: ['public'],
+        id_token_signing_alg_values_supported: ['RS256'],
+        token_endpoint_auth_methods_supported: ['client_secret_post', 'client_secret_basic'],
+      })
+    );
+    provider.get('/jwks', (_req, res) => res.json({ keys: [{ ...publicKey.export({ format: 'jwk' }), kid: 'synthetic-key', use: 'sig', alg: 'RS256' }] }));
+    provider.post('/oauth/token', (req, res) => {
+      tokenRequests.push({ ...req.body });
+      if (failRefresh && req.body.grant_type === 'refresh_token') {
+        res.status(503).json({ error: 'temporarily_unavailable' });
+        return;
+      }
+      const primary = req.body.code === 'primary-code' || req.body.refresh_token === 'primary-refresh';
+      const now = Math.floor(Date.now() / 1000);
+      res.json({
+        access_token: primary ? primaryAccessToken : gatewayAccessToken,
+        token_type: 'Bearer',
+        expires_in: 3600,
+        refresh_token: primary ? 'primary-refresh' : 'gateway-refresh',
+        ...(primary
+          ? {
+              id_token: jwt({
+                iss: issuer,
+                aud: 'self-serve-client',
+                sub: 'auth0|synthetic-user',
+                nickname: 'synthetic-user',
+                name: 'Synthetic User',
+                nonce,
+                iat: now,
+                exp: now + 3600,
+              }),
+            }
+          : {}),
+      });
+    });
+    provider.all('/resource', (req, res) => {
+      upstreamAuthorizations.push(req.headers.authorization ?? '');
+      res.json({ completed: true });
+    });
+    issuerServer = await listen(provider);
+    issuer = `http://127.0.0.1:${(issuerServer.address() as AddressInfo).port}/`;
+    expect((await fetch(`${issuer}.well-known/openid-configuration`)).status).toBe(200);
+  });
+
+  beforeEach(async () => {
+    sessions.clear();
+    cookies.clear();
+    tokenRequests.length = 0;
+    upstreamAuthorizations.length = 0;
+    failRefresh = false;
+    primaryAccessToken = accessToken('https://v2.example/');
+    gatewayAccessToken = accessToken('https://gateway.example/');
+    const app = express();
+    bffServer = await listen(app);
+    baseUrl = `http://127.0.0.1:${(bffServer.address() as AddressInfo).port}`;
+    vi.stubEnv('PCC_BASE_URL', baseUrl);
+    vi.stubEnv('PCC_AUTH0_ISSUER_BASE_URL', issuer);
+    vi.stubEnv('PCC_AUTH0_CLIENT_ID', 'self-serve-client');
+    vi.stubEnv('PCC_AUTH0_CLIENT_SECRET', 'synthetic-client-secret');
+    vi.stubEnv('API_GW_AUDIENCE', 'https://gateway.example/');
+    vi.stubEnv('CROWDFUNDING_API_AUDIENCE', '');
+    app.use(
+      auth({
+        authRequired: false,
+        auth0Logout: false,
+        baseURL: baseUrl,
+        issuerBaseURL: issuer,
+        clientID: 'self-serve-client',
+        clientSecret: 'synthetic-client-secret',
+        secret: 'a-long-synthetic-cookie-encryption-secret',
+        authorizationParams: {
+          response_type: 'code',
+          response_mode: 'query',
+          audience: 'https://v2.example/',
+          scope: 'openid email profile access:api offline_access',
+        },
+        routes: { login: false },
+        session: {
+          genid: () => randomBytes(32).toString('hex'),
+          store: {
+            async get(sid: string) {
+              return structuredClone(sessions.get(sid));
+            },
+            async set(sid: string, value?: SessionStorePayload) {
+              if (value) sessions.set(sid, structuredClone(value));
+            },
+            async destroy(sid: string) {
+              sessions.delete(sid);
+            },
+          },
+        },
+      })
+    );
+    app.get('/login', (req, res) => res.oidc.login({ returnTo: validateAndSanitizeUrl(req.query['returnTo'] as string, [baseUrl]) ?? '/' }));
+    app.use(authMiddleware);
+    app.use(apiGatewayAuthRouter);
+    const profile = new ProfileController();
+    app.get('/api/profile/developer', (req, res, next) => profile.getDeveloperTokenInfo(req, res, next));
+    app.get('/api/v2-only', (_req, res) => res.json({ primaryRoute: true }));
+    app.all('/api/gateway-operation', async (req, res, next) => {
+      try {
+        res.json(
+          await gatewayFetch(req, `${issuer}resource`, {
+            operation: 'synthetic_operation',
+            service: 'test',
+            errorMessage: 'failed',
+            errorCode: 'FAILED',
+            method: req.method === 'POST' ? 'POST' : 'GET',
+          })
+        );
+      } catch (error) {
+        next(error);
+      }
+    });
+    app.get('/org/acme/easycla', (_req, res) => res.type('html').send('<p>Application shell</p>'));
+    app.get('/meetings/public-event', (_req, res) => res.type('html').send('<p>Public meeting</p>'));
+    app.use((error: Error, req: Request, res: Response, next: NextFunction) => apiErrorHandler(error, req, res, next));
+  });
+
+  afterEach(async () => {
+    await close(bffServer);
+    vi.unstubAllEnvs();
+  });
+  afterAll(async () => close(issuerServer));
+
+  it('persists the dedicated callback/RT and feeds Gateway without changing primary/CF/exported tokens', async () => {
+    await login();
+    const initial = [...sessions.values()][0];
+    initial.data['crowdfundingToken'] = 'existing-cf-token';
+    initial.data['crowdfundingTokenExpiresAt'] = Math.floor(Date.now() / 1000) + 3600;
+    initial.data['crowdfundingRefreshToken'] = 'existing-cf-refresh';
+    await gatewayLogin();
+    const shell = await send('/org/acme/easycla?tab=agreements');
+    expect(shell.status).toBe(200);
+    expect(await shell.text()).not.toContain(gatewayAccessToken);
+
+    const operation = await send('/api/gateway-operation', 'POST', 'application/json');
+    expect(operation.status).toBe(200);
+    expect(await operation.json()).toEqual({ completed: true });
+    expect(upstreamAuthorizations).toEqual([`Bearer ${gatewayAccessToken}`]);
+
+    const exported = await send('/api/profile/developer', 'GET', 'application/json');
+    expect(exported.status).toBe(200);
+    expect(await exported.json()).toEqual({ token: primaryAccessToken, type: 'Bearer' });
+    expect(exported.headers.get('cache-control')).toContain('no-store');
+    const session = [...sessions.values()][0].data;
+    expect(session).toMatchObject({
+      access_token: primaryAccessToken,
+      refresh_token: 'primary-refresh',
+      apiGatewayToken: gatewayAccessToken,
+      apiGatewayRefreshToken: 'gateway-refresh',
+      crowdfundingToken: 'existing-cf-token',
+      crowdfundingRefreshToken: 'existing-cf-refresh',
+    });
+    expect(tokenRequests.map((body) => body['grant_type'])).toEqual(['authorization_code', 'authorization_code']);
+    expect(tokenRequests[1]).toMatchObject({ code: 'gateway-code', redirect_uri: `${baseUrl}/api-gateway/callback`, client_id: 'self-serve-client' });
+    expect(tokenRequests[1]['code_verifier']).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect([...cookies.values()].join(' ')).not.toContain(gatewayAccessToken);
+  });
+
+  it('returns a JSON challenge for an API write without replay or primary-token fallback', async () => {
+    await login();
+    const denied = await send('/api/gateway-operation', 'POST', 'application/json');
+    expect(denied.status).toBe(403);
+    expect(denied.headers.get('location')).toBeNull();
+    expect(await denied.json()).toMatchObject({ code: 'API_GATEWAY_AUTH_REQUIRED', details: { authorize_url: '/api-gateway/auth/start' } });
+    expect(upstreamAuthorizations).toEqual([]);
+    expect(tokenRequests).toHaveLength(1);
+    expect((await send('/api/v2-only', 'GET', 'application/json')).status).toBe(200);
+    expect(tokenRequests).toHaveLength(1);
+  });
+
+  it('completes client-triggered authorization after SPA navigation from a public page without replaying a write', async () => {
+    await login('/meetings/public-event');
+    expect((await send('/meetings/public-event')).status).toBe(200);
+    expect(tokenRequests).toHaveLength(1);
+    const location = { pathname: '/org/acme/easycla', search: '?tab=agreements', hash: '#active', href: '' };
+    const injector = Injector.create({
+      providers: [
+        { provide: DOCUMENT, useValue: { location } },
+        { provide: PLATFORM_ID, useValue: 'browser' },
+      ],
+    });
+    const request = new HttpRequest('POST', '/api/gateway-operation', null);
+    const next = vi.fn((req: HttpRequest<unknown>) =>
+      from(send(req.url, req.method, 'application/json')).pipe(
+        mergeMap(async (response) => {
+          const body: unknown = await response.json();
+          if (!response.ok) throw new HttpErrorResponse({ status: response.status, error: body, url: req.url });
+          return new HttpResponse({ status: response.status, body });
+        })
+      )
+    );
+    try {
+      await lastValueFrom(
+        runInInjectionContext(injector, () => apiGatewayAuthInterceptor(request, next)),
+        { defaultValue: undefined }
+      );
+    } finally {
+      injector.destroy();
+    }
+    expect(next).toHaveBeenCalledExactlyOnceWith(request);
+    expect(upstreamAuthorizations).toEqual([]);
+    expect(location.href).toBe('/api-gateway/auth/start?returnTo=%2Forg%2Facme%2Feasycla%3Ftab%3Dagreements%23active');
+
+    const start = await send(location.href);
+    expect(start.status).toBe(302);
+    const authorize = new URL(start.headers.get('location')!);
+    const callback = await send(`/api-gateway/callback?code=gateway-code&state=${authorize.searchParams.get('state')}`);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('location')).toBe('/org/acme/easycla?tab=agreements#active');
+    expect(tokenRequests).toHaveLength(2);
+    expect(upstreamAuthorizations).toEqual([]);
+    expect((await send('/api/gateway-operation', 'POST', 'application/json')).status).toBe(200);
+    expect(upstreamAuthorizations).toHaveLength(1);
+  });
+
+  it('refreshes the Gateway grant with its own RT across real request/session snapshots', async () => {
+    await login();
+    await gatewayLogin();
+    [...sessions.values()][0].data['apiGatewayTokenExpiresAt'] = Math.floor(Date.now() / 1000) - 1;
+    expect((await send('/api/gateway-operation', 'GET', 'application/json')).status).toBe(200);
+    expect(tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'gateway-refresh', audience: 'https://gateway.example/' });
+    expect([...sessions.values()][0].data['refresh_token']).toBe('primary-refresh');
+    expect([...sessions.values()][0].data['apiGatewayTokenExpiresAt']).toBeGreaterThan(Math.floor(Date.now() / 1000));
+  });
+
+  it('preserves the Gateway grant when express-openid-connect refreshes the primary token', async () => {
+    await login();
+    await gatewayLogin();
+    [...sessions.values()][0].data['expires_at'] = String(Math.floor(Date.now() / 1000) - 1);
+    expect((await send('/api/gateway-operation', 'GET', 'application/json')).status).toBe(200);
+    expect(tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'primary-refresh' });
+    expect(tokenRequests).toHaveLength(3);
+    expect([...sessions.values()][0].data).toMatchObject({
+      access_token: primaryAccessToken,
+      apiGatewayToken: gatewayAccessToken,
+      apiGatewayRefreshToken: 'gateway-refresh',
+    });
+  });
+
+  it('rejects a v2 token returned for the Gateway code instead of caching or forwarding it', async () => {
+    await login();
+    gatewayAccessToken = primaryAccessToken;
+    const page = await send('/org/acme/easycla');
+    const authorize = new URL(page.headers.get('location')!);
+    const callback = await send(`/api-gateway/callback?code=gateway-code&state=${authorize.searchParams.get('state')}`);
+    expect(callback.status).toBe(302);
+    expect(callback.headers.get('location')).toBe('/org/acme/easycla?api_gateway_error=authorization_failed');
+    expect((await send('/api/gateway-operation', 'POST', 'application/json')).status).toBe(403);
+    expect(upstreamAuthorizations).toEqual([]);
+    expect([...sessions.values()][0].data['apiGatewayToken']).toBeUndefined();
+    expect([...sessions.values()][0].data['apiGatewayRefreshToken']).toBeUndefined();
+    expect([...sessions.values()][0].data['refresh_token']).toBe('primary-refresh');
+  });
+
+  it('keeps primary routes authenticated during a Gateway outage and retains the dedicated RT', async () => {
+    await login();
+    await gatewayLogin();
+    [...sessions.values()][0].data['apiGatewayTokenExpiresAt'] = Math.floor(Date.now() / 1000) - 1;
+    failRefresh = true;
+    expect((await send('/api/v2-only', 'GET', 'application/json')).status).toBe(200);
+    const operation = await send('/api/gateway-operation', 'POST', 'application/json');
+    expect(operation.status).toBe(503);
+    expect(operation.headers.get('location')).toBeNull();
+    expect(upstreamAuthorizations).toEqual([]);
+    expect([...sessions.values()][0].data['apiGatewayRefreshToken']).toBe('gateway-refresh');
+    expect([...sessions.values()][0].data['refresh_token']).toBe('primary-refresh');
+  });
+});

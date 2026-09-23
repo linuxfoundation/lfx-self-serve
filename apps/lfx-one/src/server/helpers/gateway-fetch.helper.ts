@@ -5,9 +5,11 @@
 
 import { Request } from 'express';
 
+import { API_GATEWAY_AUTH } from '@lfx-one/shared/constants';
 import { API_GW_TIMEOUT_MS, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
-import { MicroserviceError } from '../errors';
+import { AuthorizationError, MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
+import { isImpersonating } from '../utils/auth-helper';
 
 export interface GatewayFetchOptions {
   operation: string;
@@ -46,11 +48,30 @@ export interface GatewayFetchOptions {
  * Returns only a 2xx `Response`; callers own how they read the body.
  */
 export async function fetchGatewayResponse(req: Request, url: string, options: GatewayFetchOptions): Promise<Response> {
+  if (!options.bearerToken && isImpersonating(req)) {
+    throw new AuthorizationError('API Gateway access is unavailable while impersonating without a target-scoped token.', {
+      code: 'IMPERSONATION_READ_ONLY',
+      service: options.service,
+      operation: options.operation,
+    });
+  }
   const token = options.bearerToken ?? req.apiGatewayToken;
 
   if (!token) {
+    if (req.apiGatewayAuthStatus === 'required') {
+      throw new MicroserviceError(
+        `API Gateway authorization required. Open ${API_GATEWAY_AUTH.START_PATH} in your browser, then retry the operation.`,
+        403,
+        'API_GATEWAY_AUTH_REQUIRED',
+        {
+          service: options.service,
+          operation: options.operation,
+          errorBody: { details: { authorize_url: API_GATEWAY_AUTH.START_PATH } },
+        }
+      );
+    }
     throw new MicroserviceError(
-      'API Gateway token not available — check API_GW_AUDIENCE env var, auth middleware config, and server logs for M2M token failures',
+      'API Gateway authorization is temporarily unavailable. Check API_GW_AUDIENCE and authentication configuration, then retry.',
       503,
       'API_GATEWAY_UNAVAILABLE',
       {
