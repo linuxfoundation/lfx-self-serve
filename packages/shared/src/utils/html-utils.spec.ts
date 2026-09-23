@@ -727,6 +727,41 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
+  it('refuses every ignorable-character spelling a browser reads as a host', () => {
+    // ENUMERATED, not sampled. Three consecutive review rounds each named one spelling
+    // (protocol-relative, then interior tab, then NBSP prefix) and each fix opened the next,
+    // because each closed the example instead of the class. This asserts the whole cross
+    // product: every character WHATWG ignores or a trim() removes, at every position that could
+    // change how the host is read.
+    const ignorable = [
+      0x00, 0x01, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1f, 0x20, 0xa0, 0x1680, 0x2000, 0x2002, 0x2003, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
+    ].map((cp) => String.fromCodePoint(cp));
+    const shapes = (c: string): string[] => [
+      `${c}https://evil.example/p`,
+      `ht${c}tps://evil.example/p`,
+      `https${c}://evil.example/p`,
+      `https:${c}//evil.example/p`,
+      `/${c}/evil.example/p`,
+      `/${c}\\evil.example/p`,
+      `${c}//evil.example/p`,
+    ];
+
+    const leaked = ignorable
+      .flatMap(shapes)
+      // Only a spelling a BROWSER resolves to the hostile host is a leak; the rest are
+      // unparseable and refused for a different reason.
+      .filter((href) => {
+        try {
+          return new URL(href, 'https://events.linuxfoundation.org/').hostname === 'evil.example';
+        } catch {
+          return false;
+        }
+      })
+      .filter((href) => stripResourceLoadingHtml(`<a href="${href}">x</a>`, BRIEF).includes('href'));
+
+    expect(leaked).toEqual([]);
+  });
+
   it('keeps a legitimate url whose PATH contains a space', () => {
     // The normalisation must not become an over-denial: stripping control characters is about
     // how the host is read, and an ordinary path is untouched.
