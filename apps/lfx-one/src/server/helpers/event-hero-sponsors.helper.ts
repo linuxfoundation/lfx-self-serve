@@ -34,10 +34,43 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
   }
 }
 
+/**
+ * Every `<tagName ...>` open tag in the document, as raw tag text.
+ *
+ * WHY THIS EXISTS, rather than matching attributes against the whole page:
+ * `/<meta[^>]+property=...[^>]*content=.../` has two unbounded `[^>]` runs that must BOTH match
+ * before the engine can conclude failure. On input that never supplies the closing `>` -- which a
+ * scraped page fully controls -- that backtracks quadratically. Measured on `'<meta '.repeat(n)`:
+ * 16 KiB 18 ms, 32 KiB 71 ms, 64 KiB 277 ms, 128 KiB 1.1 s, 256 KiB 4.4 s -- a clean 4x per
+ * doubling. `fetchSafeUrl` caps a response at 5 MiB (MAX_RESPONSE_BYTES), so the worst case this
+ * helper could legitimately be handed is ~28 MINUTES of blocked event loop. SSR is single
+ * threaded, so that is every user of the server, from one event URL.
+ *
+ * `[^<>]*` cannot pass a `<`, so each tag is scanned once and the scan is linear in page length.
+ * Attribute patterns then run against ONE tag (a few hundred bytes), where backtracking is
+ * bounded by the tag and cannot be grown by the attacker.
+ */
+function openTags(html: string, tagName: string): string[] {
+  const tags: string[] = [];
+  const re = new RegExp(`<${tagName}\\b[^<>]*>`, 'gi');
+  for (const match of html.matchAll(re)) tags.push(match[0]);
+  return tags;
+}
+
 function extractHeroImage(html: string, baseUrl: string): string {
-  const metaMatch =
-    html.match(/<meta[^>]+property=["']og:image["'][^>]*content=["']([^"']+)["'][^>]*>/i) ??
-    html.match(/<meta[^>]+content=["']([^"']+)["'][^>]*property=["']og:image["'][^>]*>/i);
+  // Order is preserved, so the first tag carrying BOTH attributes wins, exactly as the previous
+  // whole-page alternation did -- the attribute order within the tag no longer needs its own
+  // pattern, which is what the second `html.match` was for.
+  let metaCandidate = '';
+  for (const tag of openTags(html, 'meta')) {
+    if (!/property=["']og:image["']/i.test(tag)) continue;
+    const content = tag.match(/\bcontent=["']([^"']+)["']/i)?.[1];
+    if (content) {
+      metaCandidate = content;
+      break;
+    }
+  }
+  const metaMatch = metaCandidate ? [metaCandidate, metaCandidate] : null;
   const metaImage = metaMatch?.[1] ? resolveUrl(metaMatch[1], baseUrl) : null;
   if (metaImage) return metaImage;
 
@@ -114,7 +147,7 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
   const seen = new Set<string>();
   if (heroImageUrl) seen.add(heroImageUrl);
 
-  for (const imgMatch of html.matchAll(/<img\b[^>]*>/gi)) {
+  for (const imgMatch of html.matchAll(/<img\b[^<>]*>/gi)) {
     if (sponsors.length >= MAX_SPONSORS) break;
 
     const tag = imgMatch[0];

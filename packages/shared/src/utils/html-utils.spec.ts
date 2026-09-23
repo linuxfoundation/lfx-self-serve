@@ -481,3 +481,53 @@ describe('stripResourceLoadingHtml', () => {
     expect(stripResourceLoadingHtml(input)).toBe('');
   });
 });
+
+/**
+ * The invisible-character filter was inverted to a Unicode CATEGORY test to stop a denylist of
+ * named code points being outrun round after round. That inversion initially over-reached: it
+ * deleted all of `\p{Z}` except U+0020, so NBSP and U+3000 -- which are VISIBLE word breaks, not
+ * invisible characters -- were removed outright. `山田　太郎` became `山田太郎` and a scraped
+ * `Linux&nbsp;Foundation` became `LinuxFoundation`.
+ *
+ * The two categories answer different questions and now get different treatment: `\p{C}` (format,
+ * control, surrogate, private-use) carries no width and is DELETED; `\p{Z}` is a real word break
+ * and is NORMALIZED to U+0020 -- which keeps the break while removing the spoofing value of a
+ * separator that renders as a space but compares unequal.
+ */
+describe('sanitizeDisplayText — separators are word breaks, not invisibles', () => {
+  it.each([
+    ['NBSP', ' ', 'Linux Foundation'],
+    ['ideographic space', '　', '山田 太郎'],
+    ['narrow NBSP', ' ', '12 000'],
+    ['en space', ' ', 'a b'],
+    ['thin space', ' ', 'a b'],
+  ])('keeps the word break for %s', (_label, separator, expected) => {
+    const [left, right] = expected.split(' ');
+
+    expect(sanitizeDisplayText(`${left}${separator}${right}`)).toBe(expected);
+  });
+
+  it('normalises separators to a plain space rather than preserving them', () => {
+    // An NBSP renders identically to a space but compares unequal, which is the display spoof this
+    // function exists to stop -- so the break survives, the ambiguity does not.
+    const result = sanitizeDisplayText('Linux Foundation');
+
+    expect(result).not.toContain(' ');
+    expect(result).toBe('Linux Foundation');
+  });
+
+  it.each([
+    ['zero-width space', '​'],
+    ['soft hyphen', '­'],
+    ['Mongolian vowel separator', '᠎'],
+    ['word joiner', '⁠'],
+  ])('still deletes %s, which has no width', (_label, invisible) => {
+    expect(sanitizeDisplayText(`Foun${invisible}dation`)).toBe('Foundation');
+  });
+
+  it('still reports a separator-only value as empty', () => {
+    // `hasVisibleText` asks a different question from the filter: a value of nothing but
+    // separators renders blank, so it must not pass the floor even though the separators survive.
+    expect(sanitizeDisplayText(' 　 ')).toBe('');
+  });
+});

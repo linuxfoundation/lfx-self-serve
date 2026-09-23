@@ -268,3 +268,50 @@ describe('extractHeroAndSponsors — URL canonicalization', () => {
     expect(sponsor.name).not.toContain('\u202D');
   });
 });
+
+/**
+ * A scraped page is attacker-controlled input, and these extractors run on the SSR event loop.
+ * The og:image pattern used to carry two unbounded `[^>]+`/`[^>]*` runs that both had to match
+ * before the engine could conclude failure, so input that never supplies a closing `>` backtracked
+ * quadratically: measured at 4x per doubling from 16 KiB (18 ms) to 256 KiB (4.4 s), which
+ * extrapolates to roughly 28 minutes at the 5 MiB `MAX_RESPONSE_BYTES` ceiling that `fetchSafeUrl`
+ * permits. One event URL would have hung the server for every user.
+ *
+ * These assert the BOUND, not a wall-clock number a slow CI box could flake on: the guard is that
+ * cost grows linearly, so a 4x bigger page costs ~4x rather than ~16x.
+ */
+describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
+  function timeMs(html: string): number {
+    const started = process.hrtime.bigint();
+    extractHeroAndSponsors(html, BASE_URL);
+    return Number(process.hrtime.bigint() - started) / 1e6;
+  }
+
+  it('does not backtrack on unterminated meta tags', () => {
+    // 256 KiB took 4.4 s before the fix and ~0.3 ms after; 1 s is far above the fixed cost and far
+    // below the broken one, so this cannot flake either way.
+    const html = '<meta '.repeat((256 * 1024) / 6);
+
+    expect(timeMs(html)).toBeLessThan(1000);
+  });
+
+  it('does not backtrack on unterminated img tags', () => {
+    const html = '<img src="'.repeat((256 * 1024) / 10);
+
+    expect(timeMs(html)).toBeLessThan(1000);
+  });
+
+  it('still finds the real og:image after a long adversarial run', () => {
+    const html = `${'<meta '.repeat(20000)}<meta property="og:image" content="/real.png">`;
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/real.png');
+  });
+
+  it('reads og:image when content precedes property', () => {
+    // The old code needed a SECOND whole-page regex for this ordering; tokenizing the tag first
+    // makes attribute order irrelevant, so this pins that the behaviour survived the rewrite.
+    const html = '<meta content="/hero2.png" property="og:image">';
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/hero2.png');
+  });
+});

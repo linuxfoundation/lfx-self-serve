@@ -95,12 +95,21 @@ export function sanitizeDisplayText(value: string): string {
       // U+00AD and U+180E surviving mid-value. The category cannot be outrun, and a format
       // character added to Unicode later needs no change here.
       //
-      // A space is a legitimate separator inside a name, so it is the one Z that survives.
-      if (ch !== ' ' && /[\p{C}\p{Z}]/u.test(ch)) return false;
+      // `\p{C}` is DELETED: a format or control character carries no width, so removing it
+      // joins nothing that was not already adjacent.
+      if (/\p{C}/u.test(ch)) return false;
 
       return ch !== '<' && ch !== '>';
     })
     .join('')
+    // `\p{Z}` is Separator, and every member of it is a VISIBLE word break: NBSP (U+00A0) from a
+    // decoded `&nbsp;`, U+3000 in CJK names, U+202F in French digit grouping. Deleting them was a
+    // real defect -- `山田　太郎` became `山田太郎` and `Linux&nbsp;Foundation` became
+    // `LinuxFoundation`. They are still normalized rather than kept verbatim, because an NBSP
+    // renders identically to a space while comparing unequal, which is the spoof this function
+    // exists to stop. Mapping the CATEGORY to U+0020 keeps the word break and removes the
+    // ambiguity, and needs no change when Unicode adds another separator.
+    .replace(/\p{Z}/gu, ' ')
     .trim();
 
   // A joiner-only result is EMPTY in every sense that matters downstream.
