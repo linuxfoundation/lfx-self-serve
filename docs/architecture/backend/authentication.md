@@ -271,6 +271,10 @@ Auth0 Gateway calls use a separate grant and refresh token for `API_GW_AUDIENCE`
 
 Automatic authorization starts on protected browser navigation, never during impersonation. For SPA requests, `apiGatewayAuthInterceptor` handles `403 API_GATEWAY_AUTH_REQUIRED` by navigating to `/api-gateway/auth/start`; failed callbacks stop automatic retries. Writes must be resubmitted after authorization, never automatically replayed. Existing cross-replica session-write limitations remain.
 
+During impersonation, an existing operator Gateway grant can refresh but is isolated in `req.apiGatewayOperatorToken`. Only reviewed catalogue and staff-authorized Rewards GETs opt in with `allowOperatorToken`; target-scoped reads retain their explicit bearer override, and operator-token writes remain blocked. The operator must authorize the Gateway grant before entering Admin Mode.
+
+Dynamic API and SSR requests share the existing 500/minute per-IP limit before OIDC and selective authentication; public APIs retain their 100/minute limit, and login and Gateway grant routes use the 20/minute authentication limit.
+
 ## 🤖 Machine-to-Machine (M2M) Authentication
 
 ### Architecture Overview

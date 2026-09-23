@@ -47,6 +47,7 @@ import { emailsEqual, isIdentityAlreadyLinkedError, isMeetingInvitePrimarySentin
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { apiGatewayAuthRequiredError } from '../helpers/api-gateway-auth.helper';
 import { getLinuxForwardDomain } from '../helpers/linux-forward.helper';
 import { getStringQueryParam } from '../helpers/validation.helper';
 import { authStateService } from '../services/auth-state.service';
@@ -642,6 +643,9 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
+        if (req.apiGatewayAuthStatus === 'required') {
+          return next(apiGatewayAuthRequiredError('get_meeting_invite_email', 'profile_controller'));
+        }
         // Also absent after a transient audience-token exchange failure (auth middleware continues
         // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
         return next(
@@ -737,6 +741,9 @@ export class ProfileController {
       const v1Token = req.apiGatewayToken;
 
       if (!v1Token) {
+        if (req.apiGatewayAuthStatus === 'required') {
+          return next(apiGatewayAuthRequiredError('set_meeting_invite_email', 'profile_controller'));
+        }
         // Also absent after a transient audience-token exchange failure (auth middleware continues
         // without it), so the copy stays neutral; next() lets apiErrorHandler close the operation.
         return next(
@@ -1444,6 +1451,9 @@ export class ProfileController {
       const finishRejectIdentity = async (): Promise<void> => {
         if (isEmailIdentity) {
           const v1Token = req.apiGatewayToken;
+          if (!v1Token && req.apiGatewayAuthStatus === 'required') {
+            throw apiGatewayAuthRequiredError('reject_identity', 'profile_controller');
+          }
           const preference = v1Token ? await this.meetingPreferenceService.getMeetingInviteEmail(req, v1Token) : null;
 
           if (!preference || emailsEqual(preference.email, email)) {

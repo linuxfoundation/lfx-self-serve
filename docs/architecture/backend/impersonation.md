@@ -160,6 +160,8 @@ if (impersonationToken && !expired) {
 
 This is the single choke point — every controller and service uses `req.bearerToken` for upstream API calls, so all microservices automatically see the target user's identity.
 
+Gateway catalogue and staff-authorized Rewards reads are explicit exceptions: their GET calls opt in with `allowOperatorToken` and use the validated, separately held `req.apiGatewayOperatorToken`, never the default token slot. The operator's existing Gateway grant can refresh, but a new grant cannot start during impersonation; authorize before entering Admin Mode. Target-scoped calls keep their bearer overrides, and this exception never permits operator-token writes.
+
 ### 5. Identity Helpers
 
 **`apps/lfx-one/src/server/utils/auth-helper.ts`**
@@ -189,7 +191,7 @@ The only current caller is `WeeklyBriefService.shareBrief()`'s mailing-list send
 
 - `GET /api/profile`, `GET /api/profile/emails`, `GET /api/profile/linux-email` use `getEffectiveSub` / `getEffectiveEmail` / `getEffectiveUsername`.
 - `GET /api/profile/identities`, `/work-experiences`, `/project-affiliations` resolve the target's `lfid` (via `resolveEffectiveLfid`). CDP **reads are preserved** — work history and CDP-listed / non-verified identities still display.
-- **Individual enrollment & Linux.com add-on** (`EnrollmentService.getIndividualEnrollments` / `hasLinuxComAddon`) call the member-service `/me/memberships` through the API gateway. The real user's Gateway grant is unavailable during impersonation, so these reads pass `bearerToken: req.bearerToken` (the target's CTE token) to `gatewayFetch` — the same override `updateAutoRenew` uses — and `/me` resolves to the target. If that fetch fails, `getIndividualEnrollments` degrades to the standard (unenrolled) product card. The auto-renew write stays blocked; the enroll/renew CTAs and toggle render disabled.
+- **Individual enrollment & Linux.com add-on** (`EnrollmentService.getIndividualEnrollments` / `hasLinuxComAddon`) call the member-service `/me/memberships` through the API gateway. Default Gateway-token forwarding is disabled during impersonation, so these reads pass `bearerToken: req.bearerToken` (the target's CTE token) to `gatewayFetch` — the same override `updateAutoRenew` uses — and `/me` resolves to the target. If that fetch fails, `getIndividualEnrollments` degrades to the standard (unenrolled) product card. The auto-renew write stays blocked; the enroll/renew CTAs and toggle render disabled.
 - `GET /api/profile/developer` is **suppressed** (403) while impersonating — `req.bearerToken` is the target's live token and must never be surfaced to the impersonator.
 - The Linux.com **forward target** still can't be read during impersonation (needs the impersonator's Flow-C management token); the claimed alias itself is shown from the target's `user_emails.read`.
 

@@ -21,11 +21,11 @@ const { stubConstructor } = vi.hoisted(() => ({
   }),
 }));
 vi.mock('../services/logger.service', () => ({
-  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning: vi.fn(), debug: vi.fn(), error: vi.fn(), getLastOperation: vi.fn() },
+  logger: { startOperation: vi.fn(() => 0), success: vi.fn(), info: vi.fn(), warning: vi.fn(), debug: vi.fn(), error: vi.fn(), getLastOperation: vi.fn() },
 }));
 vi.mock('../services/valkey.service', () => ({ valkeyService: { isEnabled: () => false }, buildAuthStateCacheKey: () => null }));
-// Only the actual Developer Settings method is exercised; none of its other collaborators
-// should connect to a real service. OIDC, Gateway auth, session persistence and fetch are real.
+// Exercise Developer Settings and Salesforce ID without connecting their unrelated
+// collaborators; OIDC, Gateway auth, session persistence and profile HTTP requests are real.
 vi.mock('../services/auth0.service', () => ({ Auth0Service: stubConstructor }));
 vi.mock('../services/cdp.service', () => ({ CdpService: stubConstructor }));
 vi.mock('../services/email-verification.service', () => ({ EmailVerificationService: stubConstructor }));
@@ -33,23 +33,39 @@ vi.mock('../services/enrollment.service', () => ({ EnrollmentService: stubConstr
 vi.mock('../services/forwards.service', () => ({ ForwardsService: stubConstructor }));
 vi.mock('../services/meeting-preference.service', () => ({ MeetingPreferenceService: stubConstructor }));
 vi.mock('../services/object-store.service', () => ({ ObjectStoreService: stubConstructor }));
-vi.mock('../services/user.service', () => ({ UserService: stubConstructor }));
 vi.mock('../services/social-verification.service', () => ({ SocialVerificationService: stubConstructor }));
 vi.mock('../services/profile-auth.service', () => ({ ProfileAuthService: stubConstructor }));
+vi.mock('../services/nats.service', () => ({ NatsService: stubConstructor }));
+vi.mock('../services/snowflake.service', () => ({ SnowflakeService: { getInstance: () => ({}) } }));
+vi.mock('../services/meeting.service', () => ({ MeetingService: stubConstructor }));
+vi.mock('../services/project.service', () => ({ ProjectService: stubConstructor }));
+vi.mock('../services/microservice-proxy.service', () => ({ MicroserviceProxyService: stubConstructor }));
+vi.mock('../services/access-check.service', () => ({ AccessCheckService: stubConstructor }));
+vi.mock('../services/committee.service', () => ({ CommitteeService: stubConstructor }));
+vi.mock('../services/formation.service', () => ({ formationService: {} }));
 
 import { ProfileController } from '../controllers/profile.controller';
+import { UserController } from '../controllers/user.controller';
 import { apiGatewayAuthInterceptor } from '../../app/shared/interceptors/api-gateway-auth.interceptor';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { validateAndSanitizeUrl } from '../helpers/url-validation';
 import { authMiddleware } from '../middleware/auth.middleware';
 import { apiErrorHandler } from '../middleware/error-handler.middleware';
+import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from '../middleware/rate-limit.middleware';
+import { REWARD_PROMOTIONS_PAGE_SIZE } from '../constants';
+import { ClaService } from '../services/cla.service';
+import { OrgClaService } from '../services/org-cla.service';
+import { RewardsService } from '../services/rewards.service';
 import apiGatewayAuthRouter from './api-gateway-auth.route';
 
 describe('Gateway grant with real express-openid-connect and persisted sessions', () => {
   const sessions = new Map<string, SessionStorePayload>();
   const tokenRequests: Record<string, string>[] = [];
   const upstreamAuthorizations: string[] = [];
+  const upstreamPaths: string[] = [];
   const cookies = new Map<string, string>();
+  const targetSalesforceId = '005000000000001AAA';
+  const claGroupId = '11111111-2222-4333-8444-555555555555';
   const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
   let issuerServer: Server;
   let bffServer: Server;
@@ -144,7 +160,7 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     const page = await send('/org/acme/easycla?tab=agreements');
     expect(page.status).toBe(302);
     const location = new URL(page.headers.get('location')!);
-    expect(location.searchParams.get('audience')).toBe('https://gateway.example/');
+    expect(location.searchParams.get('audience')).toBe(`${issuer}gateway/`);
     expect(location.searchParams.get('redirect_uri')).toBe(`${baseUrl}/api-gateway/callback`);
     const callback = await send(`/api-gateway/callback?code=gateway-code&state=${location.searchParams.get('state')}`);
     expect(callback.status).toBe(302);
@@ -203,19 +219,46 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
       upstreamAuthorizations.push(req.headers.authorization ?? '');
       res.json({ completed: true });
     });
+    provider.use('/gateway', (req, _res, next) => {
+      upstreamAuthorizations.push(req.headers.authorization ?? '');
+      upstreamPaths.push(req.originalUrl);
+      next();
+    });
+    provider.get('/gateway/user-service/v1/me', (_req, res) => {
+      res.json({ ID: 'synthetic-profile-id' });
+    });
+    provider.get('/gateway/cla-service/v4/cla-group/search', (_req, res) => {
+      res.json({
+        results: [{ claGroupID: claGroupId, projectName: 'Synthetic Project', iclaEnabled: true, cclaEnabled: true, projectSFID: 'synthetic-project' }],
+      });
+    });
+    provider.get('/gateway/cla-service/v4/template/:claGroupId/preview', (_req, res) => {
+      res.type('application/pdf').send(Buffer.from('%PDF-1.7\nsynthetic preview\n%%EOF\n'));
+    });
+    provider.get('/gateway/user-service/v1/users', (_req, res) => {
+      res.json({ Data: [{ ID: targetSalesforceId, Username: 'synthetic-target' }], Metadata: { TotalSize: 1 } });
+    });
+    provider.get(`/gateway/user-service/v1/users/${targetSalesforceId}`, (_req, res) => {
+      res.json({ Username: 'synthetic-target', TuxRewards: 10 });
+    });
+    provider.get(`/gateway/user-service/v1/users/${targetSalesforceId}/promotions`, (_req, res) => {
+      res.json({ Data: [], Metadata: { Offset: 0, PageSize: REWARD_PROMOTIONS_PAGE_SIZE, TotalSize: 0 } });
+    });
     issuerServer = await listen(provider);
     issuer = `http://127.0.0.1:${(issuerServer.address() as AddressInfo).port}/`;
     expect((await fetch(`${issuer}.well-known/openid-configuration`)).status).toBe(200);
   });
 
   beforeEach(async () => {
+    for (const limiter of [apiRateLimiter, authRateLimiter, publicApiRateLimiter]) limiter.resetKey('127.0.0.1');
     sessions.clear();
     cookies.clear();
     tokenRequests.length = 0;
     upstreamAuthorizations.length = 0;
+    upstreamPaths.length = 0;
     failRefresh = false;
     primaryAccessToken = accessToken('https://v2.example/');
-    gatewayAccessToken = accessToken('https://gateway.example/');
+    gatewayAccessToken = accessToken(`${issuer}gateway/`);
     const app = express();
     bffServer = await listen(app);
     baseUrl = `http://127.0.0.1:${(bffServer.address() as AddressInfo).port}`;
@@ -223,8 +266,11 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     vi.stubEnv('PCC_AUTH0_ISSUER_BASE_URL', issuer);
     vi.stubEnv('PCC_AUTH0_CLIENT_ID', 'self-serve-client');
     vi.stubEnv('PCC_AUTH0_CLIENT_SECRET', 'synthetic-client-secret');
-    vi.stubEnv('API_GW_AUDIENCE', 'https://gateway.example/');
+    vi.stubEnv('API_GW_AUDIENCE', `${issuer}gateway/`);
+    vi.stubEnv('CLA_SERVICE_URL', '');
     vi.stubEnv('CROWDFUNDING_API_AUDIENCE', '');
+    app.use('/public/api/', publicApiRateLimiter);
+    app.use(apiRateLimiter);
     app.use(
       auth({
         authRequired: false,
@@ -257,11 +303,40 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
         },
       })
     );
-    app.get('/login', (req, res) => res.oidc.login({ returnTo: validateAndSanitizeUrl(req.query['returnTo'] as string, [baseUrl]) ?? '/' }));
+    app.get('/login', authRateLimiter, (req, res) => res.oidc.login({ returnTo: validateAndSanitizeUrl(req.query['returnTo'] as string, [baseUrl]) ?? '/' }));
     app.use(authMiddleware);
     app.use(apiGatewayAuthRouter);
     const profile = new ProfileController();
     app.get('/api/profile/developer', (req, res, next) => profile.getDeveloperTokenInfo(req, res, next));
+    const user = new UserController();
+    app.get('/api/user/salesforce-id', (req, res, next) => user.getSalesforceId(req, res, next));
+    const cla = new ClaService();
+    const orgCla = new OrgClaService();
+    const rewards = new RewardsService();
+    app.get('/api/operator-read/me-catalogue', (req, res, next) => {
+      void cla
+        .searchClaGroups(req, 'synthetic')
+        .then((data) => res.json(data))
+        .catch(next);
+    });
+    app.get('/api/operator-read/org-catalogue', (req, res, next) => {
+      void orgCla
+        .getSignOptions(req, 'synthetic')
+        .then((data) => res.json(data))
+        .catch(next);
+    });
+    app.get('/api/operator-read/preview', (req, res, next) => {
+      void orgCla
+        .getCclaPreview(req, claGroupId)
+        .then((data) => res.type('application/pdf').send(data))
+        .catch(next);
+    });
+    app.get('/api/operator-read/rewards', (req, res, next) => {
+      void rewards
+        .getSummary(req)
+        .then((data) => res.json(data))
+        .catch(next);
+    });
     app.get('/api/v2-only', (_req, res) => res.json({ primaryRoute: true }));
     app.all('/api/gateway-operation', async (req, res, next) => {
       try {
@@ -336,7 +411,36 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     expect(tokenRequests).toHaveLength(1);
   });
 
-  it('completes client-triggered authorization after SPA navigation from a public page without replaying a write', async () => {
+  it('rejects excess requests before refreshing tokens or starting document authorization', async () => {
+    await login();
+    apiRateLimiter.resetKey('127.0.0.1');
+    for (let attempt = 0; attempt < 500; attempt++) {
+      expect((await send('/api/v2-only', 'GET', 'application/json')).status).toBe(200);
+    }
+    [...sessions.values()][0].data['expires_at'] = String(Math.floor(Date.now() / 1000) - 1);
+
+    const rejected = await send('/api/v2-only', 'GET', 'application/json');
+    expect(rejected.status).toBe(429);
+    expect(tokenRequests).toHaveLength(1);
+    expect((await send('/org/acme/easycla')).status).toBe(429);
+    expect([...sessions.values()][0].data['apiGatewayAuthState']).toBeUndefined();
+    expect(upstreamAuthorizations).toEqual([]);
+  });
+
+  it('rate-limits login before initiating another authorization request', async () => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      expect((await send('/login')).status).toBe(302);
+    }
+    const rejected = await send('/login');
+    expect(rejected.status).toBe(429);
+    expect(rejected.headers.get('location')).toBeNull();
+    expect(tokenRequests).toEqual([]);
+  });
+
+  it.each([
+    ['POST', '/api/gateway-operation', { completed: true }],
+    ['GET', '/api/user/salesforce-id', { id: 'synthetic-profile-id' }],
+  ] as const)('recovers SPA navigation from a public page without replaying %s %s', async (method, path, expected) => {
     await login('/meetings/public-event');
     expect((await send('/meetings/public-event')).status).toBe(200);
     expect(tokenRequests).toHaveLength(1);
@@ -347,7 +451,7 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
         { provide: PLATFORM_ID, useValue: 'browser' },
       ],
     });
-    const request = new HttpRequest('POST', '/api/gateway-operation', null);
+    const request = new HttpRequest(method, path, null);
     const next = vi.fn((req: HttpRequest<unknown>) =>
       from(send(req.url, req.method, 'application/json')).pipe(
         mergeMap(async (response) => {
@@ -377,8 +481,11 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     expect(callback.headers.get('location')).toBe('/org/acme/easycla?tab=agreements#active');
     expect(tokenRequests).toHaveLength(2);
     expect(upstreamAuthorizations).toEqual([]);
-    expect((await send('/api/gateway-operation', 'POST', 'application/json')).status).toBe(200);
+    const retried = await send(path, method, 'application/json');
+    expect(retried.status).toBe(200);
+    expect(await retried.json()).toEqual(expected);
     expect(upstreamAuthorizations).toHaveLength(1);
+    expect(upstreamAuthorizations[0]).not.toContain(primaryAccessToken);
   });
 
   it('refreshes the Gateway grant with its own RT across real request/session snapshots', async () => {
@@ -386,7 +493,7 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
     await gatewayLogin();
     [...sessions.values()][0].data['apiGatewayTokenExpiresAt'] = Math.floor(Date.now() / 1000) - 1;
     expect((await send('/api/gateway-operation', 'GET', 'application/json')).status).toBe(200);
-    expect(tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'gateway-refresh', audience: 'https://gateway.example/' });
+    expect(tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'gateway-refresh', audience: `${issuer}gateway/` });
     expect([...sessions.values()][0].data['refresh_token']).toBe('primary-refresh');
     expect([...sessions.values()][0].data['apiGatewayTokenExpiresAt']).toBeGreaterThan(Math.floor(Date.now() / 1000));
   });
@@ -403,6 +510,55 @@ describe('Gateway grant with real express-openid-connect and persisted sessions'
       apiGatewayToken: gatewayAccessToken,
       apiGatewayRefreshToken: 'gateway-refresh',
     });
+  });
+
+  it.each([false, true])('keeps real CLA/Rewards service reads working during impersonation (expired grant: %s)', async (expired) => {
+    await login();
+    await gatewayLogin();
+    const session = [...sessions.values()][0].data;
+    const targetToken = jwt({ sub: 'auth0|synthetic-target', aud: 'https://v2.example/', exp: Math.floor(Date.now() / 1000) + 3600 });
+    session['impersonationToken'] = targetToken;
+    session['impersonationExpiresAt'] = Date.now() + 3600_000;
+    session['impersonationUser'] = { sub: 'auth0|synthetic-target', username: 'synthetic-target', email: 'target@example.com' };
+    if (expired) session['apiGatewayTokenExpiresAt'] = Math.floor(Date.now() / 1000) - 1;
+
+    for (const path of ['/api/operator-read/me-catalogue', '/api/operator-read/org-catalogue']) {
+      const response = await send(path, 'GET', 'application/json');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ resultCount: 1, results: [{ claGroupId }] });
+    }
+    const preview = await send('/api/operator-read/preview', 'GET', 'application/pdf');
+    expect(preview.status).toBe(200);
+    expect(await preview.text()).toContain('%PDF-1.7');
+    const rewards = await send('/api/operator-read/rewards', 'GET', 'application/json');
+    expect(rewards.status).toBe(200);
+    expect(await rewards.json()).toMatchObject({
+      readOnly: true,
+      points: 10,
+      availability: { profile: 'available', promotions: 'available' },
+    });
+    expect(upstreamAuthorizations).toEqual(Array.from({ length: 6 }, () => `Bearer ${gatewayAccessToken}`));
+    expect(upstreamPaths).toEqual(
+      expect.arrayContaining([
+        '/gateway/cla-service/v4/cla-group/search?searchTerm=synthetic',
+        `/gateway/cla-service/v4/template/${claGroupId}/preview?claType=ccla&watermark=true`,
+        '/gateway/user-service/v1/users?username=synthetic-target&pageSize=2&offset=0',
+        `/gateway/user-service/v1/users/${targetSalesforceId}`,
+        `/gateway/user-service/v1/users/${targetSalesforceId}/promotions?offset=0&pageSize=${REWARD_PROMOTIONS_PAGE_SIZE}`,
+      ])
+    );
+    expect(tokenRequests).toHaveLength(expired ? 3 : 2);
+    if (expired) expect(tokenRequests.at(-1)).toMatchObject({ grant_type: 'refresh_token', refresh_token: 'gateway-refresh' });
+
+    for (const method of ['GET', 'POST']) {
+      const denied = await send('/api/gateway-operation', method, 'application/json');
+      expect(denied.status).toBe(403);
+      expect(await denied.json()).toMatchObject({ code: 'IMPERSONATION_READ_ONLY' });
+    }
+    expect((await send('/api/profile/developer', 'GET', 'application/json')).status).toBe(403);
+    expect(upstreamAuthorizations).toHaveLength(6);
+    expect([...sessions.values()][0].data['impersonationToken']).toBe(targetToken);
+    expect([...sessions.values()][0].data['refresh_token']).toBe('primary-refresh');
   });
 
   it('rejects a v2 token returned for the Gateway code instead of caching or forwarding it', async () => {

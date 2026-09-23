@@ -8,6 +8,7 @@ declare global {
     interface Request {
       bearerToken?: string;
       apiGatewayToken?: string;
+      apiGatewayOperatorToken?: string;
       apiGatewayAuthStatus?: ApiGatewayAuthStatus;
       crowdfundingToken?: string;
       impersonationActive?: boolean;

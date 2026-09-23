@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // Real values, not hand-copied literals — so a future TTL retune (see LFXV2 #2241) can't leave
 // this spec's assertions asserting a value the product no longer uses.
 import { VALKEY_CACHE } from '../../../../../packages/shared/src/constants/valkey-cache.constants';
+import { API_GATEWAY_AUTH } from '../../../../../packages/shared/src/constants/api-gateway-auth.constants';
 
 // Hoisted mocks — defined before any module is imported so vi.mock factories can reference them.
 const {
@@ -20,6 +21,7 @@ const {
   userSvc,
   profileAuthSvc,
   emailVerificationSvc,
+  cdpSvc,
   forwardsSvc,
   enrollmentSvc,
   meetingPrefSvc,
@@ -58,7 +60,9 @@ const {
     setPrimaryEmail: vi.fn(),
     sendPasswordResetLink: vi.fn(),
     linkIdentity: vi.fn(),
+    unlinkIdentity: vi.fn(),
   },
+  cdpSvc: { rejectIdentityForUser: vi.fn() },
   forwardsSvc: {
     getForward: vi.fn(),
   },
@@ -86,6 +90,7 @@ const {
 
 // The `@lfx-one/shared/*` path alias isn't wired into the server-side vitest config.
 vi.mock('@lfx-one/shared/constants', () => ({
+  API_GATEWAY_AUTH,
   ALLOWED_AVATAR_MIME_TYPES: ['image/png', 'image/jpeg', 'image/webp'],
   AUTH0_TO_CDP_PROVIDER_MAP: {},
   CDP_DISPLAYABLE_IDENTITY_COMBOS: [],
@@ -148,7 +153,7 @@ vi.mock('../services/auth0.service', () => ({
 }));
 vi.mock('../services/cdp.service', () => ({
   CdpService: vi.fn(function () {
-    return {};
+    return cdpSvc;
   }),
 }));
 vi.mock('../services/email-verification.service', () => ({
@@ -351,6 +356,33 @@ describe('ProfileController.getMeetingInviteEmail', () => {
     expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
+  it.each(['required', 'unavailable', 'not_configured'] as const)(
+    'classifies a missing Gateway token (%s) without falling back to the primary token',
+    async (status) => {
+      const next = vi.fn();
+      const res = buildRes();
+
+      await controller.getMeetingInviteEmail(buildReq({ bearerToken: 'primary-token', apiGatewayAuthStatus: status }), res, next);
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: status === 'required' ? 'API_GATEWAY_AUTH_REQUIRED' : 'SERVICE_UNAVAILABLE',
+          statusCode: status === 'required' ? 403 : 503,
+          operation: 'get_meeting_invite_email',
+          service: 'profile_controller',
+        })
+      );
+      if (status === 'required') {
+        expect(next.mock.calls[0][0].toResponse()).toMatchObject({ details: { authorize_url: '/api-gateway/auth/start' } });
+      } else {
+        expect(next.mock.calls[0][0].message).toBe('Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.');
+      }
+      expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    }
+  );
+
   it('returns the override when the meeting service resolves one', async () => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
     const res = buildRes();
@@ -442,6 +474,19 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
   });
 
+  it('keeps email validation ahead of the new authorization challenge', async () => {
+    const next = vi.fn();
+
+    await controller.setMeetingInviteEmail(
+      buildSetReq({ email: 'not-an-email' }, { apiGatewayToken: undefined, apiGatewayAuthStatus: 'required' }),
+      buildRes(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'VALIDATION_ERROR', statusCode: 400 }));
+    expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+  });
+
   it('lets the reset sentinel through the email-format gate', async () => {
     meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: null, email: null } });
     const res = buildRes();
@@ -466,6 +511,38 @@ describe('ProfileController.setMeetingInviteEmail', () => {
     expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'SERVICE_ADVISORY', statusCode: 503 }));
     expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
   });
+
+  it.each(['required', 'unavailable', 'not_configured'] as const)(
+    'classifies a missing Gateway token (%s) before locking or writing the preference',
+    async (status) => {
+      const next = vi.fn();
+      const res = buildRes();
+
+      await controller.setMeetingInviteEmail(
+        buildSetReq({ email: 'invite@example.com' }, { apiGatewayToken: undefined, bearerToken: 'primary-token', apiGatewayAuthStatus: status }),
+        res,
+        next
+      );
+
+      expect(next).toHaveBeenCalledWith(
+        expect.objectContaining({
+          code: status === 'required' ? 'API_GATEWAY_AUTH_REQUIRED' : 'SERVICE_ADVISORY',
+          statusCode: status === 'required' ? 403 : 503,
+          operation: 'set_meeting_invite_email',
+          service: 'profile_controller',
+        })
+      );
+      if (status === 'required') {
+        expect(next.mock.calls[0][0].toResponse()).toMatchObject({ details: { authorize_url: '/api-gateway/auth/start' } });
+      } else {
+        expect(next.mock.calls[0][0].message).toBe('Meeting invitation email settings are temporarily unavailable. Please refresh the page and try again.');
+      }
+      expect(meetingPrefSvc.setMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
+      expect(res.json).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    }
+  );
 
   it('responds 200 with the updated preference on success', async () => {
     meetingPrefSvc.setMeetingInviteEmail.mockResolvedValue({ success: true, data: { email_id: 'id-2', email: 'invite@example.com' } });
@@ -587,6 +664,19 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
     expect(withMeetingInviteLockMock).not.toHaveBeenCalled();
   });
 
+  it.each(['required', 'unavailable'] as const)('does not challenge a non-email removal when Gateway authorization is %s', async (status) => {
+    const res = buildRes();
+    const next = vi.fn();
+    const req = buildRejectReq({}, { apiGatewayToken: undefined, apiGatewayAuthStatus: status, params: { identityId: 'cdp-identity' } });
+
+    await controller.rejectIdentity(req, res, next);
+
+    expect(cdpSvc.rejectIdentityForUser).toHaveBeenCalledExactlyOnceWith(req, 'testuser', 'cdp-identity');
+    expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+    expect(res.json).toHaveBeenCalledWith({ success: true });
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('blocks removal with a 409 when the address matches the active meeting-invite email (case-insensitive)', async () => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue({ email_id: 'id-1', email: 'invite@example.com' });
     const res = buildRes();
@@ -616,6 +706,41 @@ describe('ProfileController.rejectIdentity — meeting-invite guard (Copilot rev
       message: 'Could not confirm your meeting-invitation email. Please try again.',
     });
   });
+
+  it.each(['required', 'unavailable', 'not_configured'] as const)(
+    'classifies a missing Gateway token (%s) before unlinking or rejecting an email identity',
+    async (status) => {
+      profileAuthSvc.getManagementToken.mockReturnValue('mgmt-token');
+      const res = buildRes();
+      const next = vi.fn();
+
+      await controller.rejectIdentity(
+        buildRejectReq(
+          { email: 'someone@example.com', provider: 'email', auth0UserId: 'synthetic-provider-id' },
+          { apiGatewayToken: undefined, bearerToken: 'primary-token', apiGatewayAuthStatus: status, params: { identityId: 'cdp-identity' } }
+        ),
+        res,
+        next
+      );
+
+      if (status === 'required') {
+        expect(next).toHaveBeenCalledWith(expect.objectContaining({ code: 'API_GATEWAY_AUTH_REQUIRED', statusCode: 403 }));
+        expect(next.mock.calls[0][0].toResponse()).toMatchObject({ details: { authorize_url: '/api-gateway/auth/start' } });
+        expect(res.json).not.toHaveBeenCalled();
+      } else {
+        expect(res.status).toHaveBeenCalledWith(409);
+        expect(res.json).toHaveBeenCalledWith({
+          error: 'meeting_invite_email_active',
+          message: 'Could not confirm your meeting-invitation email. Please try again.',
+        });
+        expect(next).not.toHaveBeenCalled();
+      }
+      expect(meetingPrefSvc.getMeetingInviteEmail).not.toHaveBeenCalled();
+      expect(emailVerificationSvc.unlinkIdentity).not.toHaveBeenCalled();
+      expect(cdpSvc.rejectIdentityForUser).not.toHaveBeenCalled();
+      expect(res.redirect).not.toHaveBeenCalled();
+    }
+  );
 
   it('fails closed with a 409 when the preference lookup itself fails (service returns null)', async () => {
     meetingPrefSvc.getMeetingInviteEmail.mockResolvedValue(null);

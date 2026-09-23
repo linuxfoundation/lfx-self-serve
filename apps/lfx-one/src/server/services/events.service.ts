@@ -42,6 +42,7 @@ import { formatDateToUTC, isBackfillEventSource, normalizeToUrl } from '@lfx-one
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
+import { apiGatewayAuthRequiredError } from '../helpers/api-gateway-auth.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 import { UserService } from './user.service';
@@ -562,6 +563,9 @@ export class EventsService {
     }
 
     if (!req.apiGatewayToken) {
+      if (req.apiGatewayAuthStatus === 'required') {
+        throw apiGatewayAuthRequiredError('submit_visa_request_application');
+      }
       throw new MicroserviceError('API Gateway token not available', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'submit_visa_request_application',
       });
@@ -678,6 +682,9 @@ export class EventsService {
     }
 
     if (!req.apiGatewayToken) {
+      if (req.apiGatewayAuthStatus === 'required') {
+        throw apiGatewayAuthRequiredError('submit_travel_fund_application');
+      }
       throw new MicroserviceError('API Gateway token not available', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'submit_travel_fund_application',
       });
@@ -808,6 +815,9 @@ export class EventsService {
     }
 
     if (!req.apiGatewayToken) {
+      if (req.apiGatewayAuthStatus === 'required') {
+        throw apiGatewayAuthRequiredError('search_organizations');
+      }
       throw new MicroserviceError('API Gateway token not available', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'search_organizations',
       });

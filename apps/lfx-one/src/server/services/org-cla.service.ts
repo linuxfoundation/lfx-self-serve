@@ -510,7 +510,7 @@ export class OrgClaService {
    * unsigned overview is precisely a group that is not on that list. The gate is the Org Lens
    * grant on the path organization (the route) plus a well-formed group id (the controller).
    * The catalogue is not organization-scoped upstream — same as `getSignOptions` — so this
-   * runs on the default gateway token with no impersonation branch.
+   * explicitly permits the operator's Gateway token during impersonation.
    *
    * The hop always sends `claType=ccla&watermark=true` and does not take those as
    * client query params. Whether the bytes are actually watermarked is upstream's.
@@ -522,6 +522,7 @@ export class OrgClaService {
       service: SERVICE,
       errorMessage: 'Failed to fetch CCLA review copy',
       errorCode: 'UPSTREAM_ERROR',
+      allowOperatorToken: true,
       redactResponseBody: true,
     });
   }
@@ -540,7 +541,7 @@ export class OrgClaService {
    * carried only when upstream sent one, and its absence is what the picker renders as
    * "cannot be signed from here" — a property of the CLA Group, not a failure.
    *
-   * Runs on the default gateway token with no impersonation branch, same as the Me-lens search:
+   * Explicitly permits the operator's Gateway token during impersonation, same as the Me-lens search:
    * the CLA Group catalogue is not organization-scoped upstream, so there is no ownership check
    * for a token swap to satisfy. The gate on this route is `requireOrgLensAccess` alone; nothing
    * about the caller's company reaches the query. The dark-launch flag is not part of it — that
@@ -555,6 +556,7 @@ export class OrgClaService {
       service: SERVICE,
       errorMessage: 'Failed to search CLA groups',
       errorCode: 'UPSTREAM_ERROR',
+      allowOperatorToken: true,
     });
 
     const upstreamResults = list?.results ?? [];

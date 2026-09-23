@@ -97,6 +97,7 @@ export class RewardsService {
       service: REWARDS_SERVICE_NAME,
       errorMessage: 'User profile fetch failed',
       errorCode: 'USER_PROFILE_FETCH_FAILED',
+      allowOperatorToken: subject.mode === 'impersonated',
       redactResponseBody: true,
     });
 
@@ -130,6 +131,7 @@ export class RewardsService {
           service: REWARDS_SERVICE_NAME,
           errorMessage: 'Promotions fetch failed',
           errorCode: 'PROMOTIONS_FETCH_FAILED',
+          allowOperatorToken: subject.mode === 'impersonated',
           redactResponseBody: true,
         }
       );

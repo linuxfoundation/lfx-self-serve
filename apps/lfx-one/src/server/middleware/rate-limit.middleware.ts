@@ -4,10 +4,10 @@
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 
 /**
- * App-wide rate limiter for API routes.
+ * App-wide rate limiter for dynamic API and SSR routes.
  *
- * Applied globally in server.ts to all /api/* routes
- * so that every current and future route is automatically protected.
+ * Runs before OIDC and selective authentication in server.ts so rejected
+ * requests cannot trigger token refresh or authorization work.
  */
 export const apiRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute window

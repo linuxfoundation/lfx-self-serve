@@ -4,7 +4,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
-import { aiRateLimiter } from './rate-limit.middleware';
+import { aiRateLimiter, apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './rate-limit.middleware';
 
 // `aiRateLimiter` counts in the default in-process MemoryStore, so the counter is shared across
 // every test in this file. express-rate-limit exposes no reset, so each test has to use its own key
@@ -51,6 +51,7 @@ function testIpv6Prefix(): string {
 function buildReq(opts: { sub?: string; ip?: string }): Request {
   return {
     ip: opts.ip ?? '203.0.113.10',
+    headers: {},
     app: { get: () => undefined },
     ...(opts.sub ? { oidc: { user: { sub: opts.sub } } } : {}),
   } as unknown as Request;
@@ -83,7 +84,10 @@ function buildRes(): Response & { statusCode?: number; headers: Record<string, s
 }
 
 /** Drives the limiter once and reports whether the request was allowed through. */
-async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
+async function request(
+  opts: { sub?: string; ip?: string } = {},
+  limiter = aiRateLimiter
+): Promise<{
   allowed: boolean;
   statusCode?: number;
   headers: Record<string, string>;
@@ -93,7 +97,7 @@ async function request(opts: { sub?: string; ip?: string } = {}): Promise<{
   const res = buildRes();
   const next = vi.fn() as unknown as NextFunction;
 
-  await aiRateLimiter(req, res, next);
+  await limiter(req, res, next);
 
   const sent = res.send as unknown as ReturnType<typeof vi.fn>;
 
@@ -171,5 +175,22 @@ describe('aiRateLimiter', () => {
     // A different /56 is a different caller and keeps its own budget. The fourth group's *high* byte
     // is what has to differ — `0100` and above leave the exhausted /56.
     expect((await request({ ip: `${prefix}:0100:0:0:0:1` })).allowed).toBe(true);
+  });
+});
+
+describe.each([
+  ['apiRateLimiter', apiRateLimiter, 500],
+  ['publicApiRateLimiter', publicApiRateLimiter, 100],
+  ['authRateLimiter', authRateLimiter, 20],
+] as const)('%s', (_name, limiter, limit) => {
+  it(`allows ${limit} requests and stops the next request before the protected handler`, async () => {
+    const ip = `${testIpv6Prefix()}:0001:0:0:0:1`;
+    for (let attempt = 0; attempt < limit; attempt++) {
+      expect((await request({ ip }, limiter)).allowed).toBe(true);
+    }
+    const rejected = await request({ ip }, limiter);
+    expect(rejected.allowed).toBe(false);
+    expect(rejected.statusCode).toBe(429);
+    expect(rejected.headers['RateLimit-Limit']).toBe(String(limit));
   });
 });

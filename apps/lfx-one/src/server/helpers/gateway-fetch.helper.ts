@@ -5,11 +5,11 @@
 
 import { Request } from 'express';
 
-import { API_GATEWAY_AUTH } from '@lfx-one/shared/constants';
 import { API_GW_TIMEOUT_MS, UPSTREAM_ERROR_BODY_LIMIT } from '../constants';
 import { AuthorizationError, MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 import { isImpersonating } from '../utils/auth-helper';
+import { apiGatewayAuthRequiredError } from './api-gateway-auth.helper';
 
 export interface GatewayFetchOptions {
   operation: string;
@@ -20,6 +20,8 @@ export interface GatewayFetchOptions {
   body?: unknown;
   /** When provided, overrides req.apiGatewayToken as the Authorization token. */
   bearerToken?: string;
+  /** Opts a reviewed GET into the operator's token during impersonation, never a write. */
+  allowOperatorToken?: boolean;
   /** Suppresses upstream response bodies from logs and client-visible error metadata. */
   redactResponseBody?: boolean;
   /**
@@ -48,27 +50,20 @@ export interface GatewayFetchOptions {
  * Returns only a 2xx `Response`; callers own how they read the body.
  */
 export async function fetchGatewayResponse(req: Request, url: string, options: GatewayFetchOptions): Promise<Response> {
-  if (!options.bearerToken && isImpersonating(req)) {
+  const impersonating = isImpersonating(req);
+  const operatorRead = options.allowOperatorToken === true && (options.method ?? 'GET') === 'GET';
+  if (!options.bearerToken && impersonating && !operatorRead) {
     throw new AuthorizationError('API Gateway access is unavailable while impersonating without a target-scoped token.', {
       code: 'IMPERSONATION_READ_ONLY',
       service: options.service,
       operation: options.operation,
     });
   }
-  const token = options.bearerToken ?? req.apiGatewayToken;
+  const token = options.bearerToken ?? (impersonating ? req.apiGatewayOperatorToken : req.apiGatewayToken);
 
   if (!token) {
     if (req.apiGatewayAuthStatus === 'required') {
-      throw new MicroserviceError(
-        `API Gateway authorization required. Open ${API_GATEWAY_AUTH.START_PATH} in your browser, then retry the operation.`,
-        403,
-        'API_GATEWAY_AUTH_REQUIRED',
-        {
-          service: options.service,
-          operation: options.operation,
-          errorBody: { details: { authorize_url: API_GATEWAY_AUTH.START_PATH } },
-        }
-      );
+      throw apiGatewayAuthRequiredError(options.operation, options.service);
     }
     throw new MicroserviceError(
       'API Gateway authorization is temporarily unavailable. Check API_GW_AUDIENCE and authentication configuration, then retry.',

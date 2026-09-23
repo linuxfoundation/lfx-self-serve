@@ -61,6 +61,7 @@ import {
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError } from '../errors';
+import { apiGatewayAuthRequiredError } from '../helpers/api-gateway-auth.helper';
 import { getUserServiceBaseUrl } from '../helpers/api-gateway.helper';
 import { gatewayFetch } from '../helpers/gateway-fetch.helper';
 import { enrichMeetingsWithCreatedBy } from '../helpers/meeting.helper';
@@ -1010,6 +1011,9 @@ export class UserService {
     const token = bearerToken ?? req.apiGatewayToken;
 
     if (!token) {
+      if (req.apiGatewayAuthStatus === 'required') {
+        throw apiGatewayAuthRequiredError('get_api_gateway_profile', 'user_service');
+      }
       throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
         operation: 'get_api_gateway_profile',
         service: 'user_service',

@@ -595,7 +595,7 @@ export class ClaService {
    * repository URL via `GET /v4/cla-group/search` (#1250), and maps the producer's envelope onto
    * the one `GET /api/me/clas/sign-options` returns.
    *
-   * Runs on the default gateway token with no impersonation branch. Unlike `/v4/my-clas` and the
+   * Explicitly permits the operator's Gateway token during impersonation. Unlike `/v4/my-clas` and the
    * PDF download, this call carries no identity: it asks which CLA Groups exist, not which ones
    * belong to anybody, so there is no ownership check upstream for a token swap to satisfy.
    *
@@ -610,6 +610,7 @@ export class ClaService {
       service: SERVICE,
       errorMessage: 'Failed to search CLA groups',
       errorCode: 'UPSTREAM_ERROR',
+      allowOperatorToken: true,
     });
 
     const envelope = toClaGroupSearchResponse(list, searchTerm);

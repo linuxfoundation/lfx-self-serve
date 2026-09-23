@@ -352,13 +352,89 @@ describe('ApiGatewayAuthService', () => {
     expect(req.appSession!.apiGatewayRefreshToken).toBe('gateway-refresh');
   });
 
-  it('never acquires or exposes the real user Gateway token during impersonation', async () => {
+  it('keeps the operator grant isolated from the default token and target identity during impersonation', async () => {
     const req = request(cache());
     req.impersonationActive = true;
+    req.bearerToken = 'target-token';
     expect(await service.loadToken(req)).toBe('impersonating');
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(req.apiGatewayOperatorToken).toBe(jwt());
+    expect(req.bearerToken).toBe('target-token');
+    expect(fetchMock).not.toHaveBeenCalled();
+    await expect(service.getAuthorizationUrl(req, '/')).rejects.toThrow('non-impersonated');
+  });
+
+  it('refreshes an existing operator grant without exposing it as the target token', async () => {
+    const req = request({ ...cache(), apiGatewayTokenExpiresAt: now });
+    req.impersonationActive = true;
+    req.bearerToken = 'target-token';
+    fetchMock.mockResolvedValue(Response.json(tokenResponse({ refresh_token: undefined })));
+
+    expect(await service.loadToken(req)).toBe('impersonating');
+    expect(req.apiGatewayOperatorToken).toBe(jwt());
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(req.bearerToken).toBe('target-token');
+    expect(req.appSession!.apiGatewayRefreshToken).toBe('gateway-refresh');
+    expect(req.appSession!['refresh_token']).toBe('primary-refresh');
+    const body = new URLSearchParams(String(fetchMock.mock.calls[0][1]!.body));
+    expect(body.get('refresh_token')).toBe('gateway-refresh');
+    expect(body.get('audience')).toBe(grant.audience);
+  });
+
+  it.each([
+    ['subject', { sub: 'auth0|target-user' }],
+    ['audience', { aud: 'https://v2.example/' }],
+    ['client', { azp: 'other-client' }],
+  ])('rejects an operator cache with a different %s instead of trusting its slot', async (_description, claims) => {
+    const req = request(cache(jwt(claims)));
+    req.impersonationActive = true;
+
+    expect(await service.loadToken(req)).toBe('impersonating');
+    expect(req.apiGatewayOperatorToken).toBeUndefined();
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(req.appSession!.apiGatewayRefreshToken).toBeUndefined();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('does not exchange the primary refresh token or start a new grant while impersonating', async () => {
+    const req = request();
+    req.impersonationActive = true;
+
+    expect(await service.loadToken(req)).toBe('impersonating');
+    expect(req.apiGatewayOperatorToken).toBeUndefined();
     expect(req.apiGatewayToken).toBeUndefined();
     expect(fetchMock).not.toHaveBeenCalled();
     await expect(service.getAuthorizationUrl(req, '/')).rejects.toThrow('non-impersonated');
+  });
+
+  it.each([429, 503])('retains the operator refresh token on HTTP %s without exposing a stale access token', async (status) => {
+    const req = request({ ...cache(), apiGatewayTokenExpiresAt: now });
+    req.impersonationActive = true;
+    fetchMock.mockResolvedValue(Response.json({ error: 'temporarily_unavailable' }, { status }));
+
+    expect(await service.loadToken(req)).toBe('impersonating');
+    expect(req.apiGatewayOperatorToken).toBeUndefined();
+    expect(req.apiGatewayToken).toBeUndefined();
+    expect(req.appSession!.apiGatewayRefreshToken).toBe('gateway-refresh');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('coalesces normal and operator refreshes without mixing their request token slots', async () => {
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementation(() => new Promise((resolve) => (finish = resolve)));
+    const normal = request({ ...cache(), apiGatewayTokenExpiresAt: now });
+    const operator = request(structuredClone(normal.appSession!));
+    operator.impersonationActive = true;
+    const pending = [service.loadToken(normal), service.loadToken(operator)];
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    finish(Response.json(tokenResponse({ refresh_token: 'updated-pair' })));
+    expect(await Promise.all(pending)).toEqual(['ready', 'impersonating']);
+    expect(normal.apiGatewayToken).toBe(jwt());
+    expect(normal.apiGatewayOperatorToken).toBeUndefined();
+    expect(operator.apiGatewayToken).toBeUndefined();
+    expect(operator.apiGatewayOperatorToken).toBe(jwt());
+    expect(operator.appSession!.apiGatewayRefreshToken).toBe('updated-pair');
   });
 
   it('requires the original subject and one unexpired, single-use state even on the session fallback', async () => {

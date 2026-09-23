@@ -1,11 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { TravelFundApplication, VisaRequestApplication } from '@lfx-one/shared/interfaces';
+import type { Request } from 'express';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Imported from source, not through the mocked '@lfx-one/shared/utils' barrel, so the SQL/JS
 // whitespace-agreement assertion below checks the real implementation.
 import { isBackfillEventSource } from '../../../../../packages/shared/src/utils/event.utils';
+import { API_GATEWAY_AUTH } from '../../../../../packages/shared/src/constants/api-gateway-auth.constants';
 
 // Mirrors project.service.spec.ts: the `@lfx-one/shared/*` subpaths aren't wired into this app's
 // vitest config, so each is mocked. The event/url/date helpers are pulled in via importActual
@@ -13,10 +16,12 @@ import { isBackfillEventSource } from '../../../../../packages/shared/src/utils/
 // it regress with the tests still green.
 const snowflakeMocks = vi.hoisted(() => ({
   execute: vi.fn(),
+  gatewayProfile: vi.fn(),
 }));
 
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
 vi.mock('@lfx-one/shared/constants', () => ({
+  API_GATEWAY_AUTH,
   COMING_SOON_SENTINEL: 'coming-soon',
   DEFAULT_EVENT_SORT_FIELD: 'EVENT_START_DATE',
   DEFAULT_VISA_REQUEST_SORT_FIELD: 'APPLICATION_DATE',
@@ -46,7 +51,9 @@ vi.mock('./snowflake.service', () => ({
   SnowflakeService: { getInstance: () => ({ execute: snowflakeMocks.execute }) },
 }));
 vi.mock('./user.service', () => ({
-  UserService: class {},
+  UserService: class {
+    public getApiGatewayProfile = snowflakeMocks.gatewayProfile;
+  },
 }));
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), error: vi.fn(), warning: vi.fn(), debug: vi.fn(), info: vi.fn() },
@@ -242,5 +249,170 @@ describe('EventsService filter options use the same past-event predicate', () =>
 
     expect(lastSql()).toContain('WHERE NOT (CASE WHEN');
     expect(lastSql()).not.toContain('IS_PAST_EVENT = FALSE');
+  });
+});
+
+describe('EventsService direct Gateway authentication', () => {
+  let service: InstanceType<typeof EventsService>;
+  let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+  const visa: VisaRequestApplication = {
+    eventId: 'synthetic-event',
+    eventName: 'Example Summit',
+    termsAccepted: true,
+    userId: 'client-provided-id',
+    applicantInfo: {
+      firstName: 'Example',
+      lastName: 'Attendee',
+      email: 'attendee@example.com',
+      attendeeType: 'attendee',
+      attendeeAccommodationPaidBy: 'delegate',
+      birthDate: new Date('1990-01-01T00:00:00.000Z'),
+      citizenshipCountry: 'Example Country',
+      passportNumber: 'SYNTHETIC-PASSPORT',
+      passportExpiryDate: null,
+      organizationID: 'synthetic-org',
+      embassyCity: 'Example City',
+      company: '',
+      mailingAddress: '',
+    },
+  };
+  const travel: TravelFundApplication = {
+    eventId: 'synthetic-event',
+    eventName: 'Example Summit',
+    termsAccepted: true,
+    userId: 'client-provided-id',
+    aboutMe: {
+      firstName: 'Example',
+      lastName: 'Attendee',
+      email: 'attendee@example.com',
+      citizenshipCountry: 'Example Country',
+      profileLink: '',
+      company: '',
+      organizationID: 'synthetic-org',
+      canReceiveFunds: 'no',
+      travelFromCountry: 'Example Country',
+      accommodationNumberOfNights: 2,
+      openSourceInvolvement: '',
+      isLgbtqia: false,
+      isWoman: false,
+      isPersonWithDisability: false,
+      isDiversityOther: false,
+      preferNotToAnswer: false,
+      attendingForCompany: 'no',
+      willingToBlog: 'no',
+    },
+    expenses: {
+      airfareCost: 300,
+      airfareNotes: '',
+      hotelCost: 0,
+      hotelNotes: '',
+      groundTransportCost: 0,
+      groundTransportNotes: '',
+      estimatedTotal: 300,
+    },
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('API_GW_AUDIENCE', 'https://gateway.example/');
+    vi.stubEnv('API_GW_DEV_EVENT_ID_OVERRIDE', '');
+    snowflakeMocks.gatewayProfile.mockResolvedValue({ ID: 'synthetic-sfid' });
+    fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ Data: [{ ID: 'synthetic-org', Name: 'Example Org', Other: 'ignored' }] }));
+    vi.stubGlobal('fetch', fetchMock);
+    service = new EventsService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
+
+  describe.each(['submitVisaRequestApplication', 'submitTravelFundApplication', 'searchOrganizations'] as const)('%s', (method) => {
+    function invoke(req: Request): Promise<unknown> {
+      if (method === 'submitVisaRequestApplication') return service.submitVisaRequestApplication(req, visa);
+      if (method === 'submitTravelFundApplication') return service.submitTravelFundApplication(req, travel);
+      return service.searchOrganizations(req, 'Example & Org');
+    }
+
+    it.each(['required', 'unavailable', 'not_configured', undefined] as const)(
+      'classifies a missing token (%s) before any profile lookup or mutation',
+      async (status) => {
+        const result = invoke({ bearerToken: 'primary-token', apiGatewayAuthStatus: status } as Request);
+        await expect(result).rejects.toMatchObject({
+          statusCode: status === 'required' ? 403 : 503,
+          code: status === 'required' ? 'API_GATEWAY_AUTH_REQUIRED' : 'API_GATEWAY_UNAVAILABLE',
+        });
+        if (status !== 'required') {
+          await expect(result).rejects.toMatchObject({ message: 'API Gateway token not available', service: undefined });
+        }
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(snowflakeMocks.gatewayProfile).not.toHaveBeenCalled();
+      }
+    );
+
+    it('preserves the upstream request and result when a Gateway token is available', async () => {
+      const req = { bearerToken: 'primary-token', apiGatewayToken: 'gateway-token' } as Request;
+      const result = await invoke(req);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, options] = fetchMock.mock.calls[0];
+      expect(options?.headers).toMatchObject({ Authorization: 'Bearer gateway-token' });
+      expect(options?.signal).toBeInstanceOf(AbortSignal);
+      if (method === 'searchOrganizations') {
+        expect(url).toBe('https://gateway.example/organization-service/v1/orgs/search?name=Example%20%26%20Org');
+        expect(options?.method).toBe('GET');
+        expect(result).toEqual({ data: [{ id: 'synthetic-org', name: 'Example Org' }] });
+        expect(snowflakeMocks.gatewayProfile).not.toHaveBeenCalled();
+      } else {
+        const resource = method === 'submitVisaRequestApplication' ? 'visaletterrequests' : 'travelfundrequests';
+        expect(url).toBe(`https://gateway.example/user-service/v1/users/synthetic-sfid/${resource}`);
+        expect(options?.method).toBe('POST');
+        expect(options?.headers).toMatchObject({ 'Content-Type': 'application/json' });
+        expect(JSON.parse(String(options?.body))).toMatchObject({
+          userID: 'synthetic-sfid',
+          requestingUserID: 'synthetic-sfid',
+          eventID: 'synthetic-event',
+          organizationID: 'synthetic-org',
+        });
+        expect(result).toMatchObject({ success: true });
+        expect(snowflakeMocks.gatewayProfile).toHaveBeenCalledExactlyOnceWith(req);
+      }
+    });
+
+    it('preserves a missing audience configuration error', async () => {
+      vi.stubEnv('API_GW_AUDIENCE', '');
+      await expect(invoke({ apiGatewayAuthStatus: 'required' } as Request)).rejects.toMatchObject({
+        statusCode: 503,
+        code: 'API_GATEWAY_MISCONFIGURED',
+      });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('preserves upstream failure handling instead of issuing an auth challenge', async () => {
+      fetchMock.mockResolvedValue(new Response('temporarily unavailable', { status: 503 }));
+      const result = invoke({ apiGatewayToken: 'gateway-token' } as Request);
+      if (method === 'searchOrganizations') {
+        await expect(result).resolves.toEqual({ data: [] });
+      } else {
+        await expect(result).rejects.toMatchObject({ statusCode: 503, code: 'API_GATEWAY_ERROR' });
+      }
+    });
+  });
+
+  it('preserves visa-field validation without posting a malformed request', async () => {
+    const payload = { ...visa, applicantInfo: { ...visa.applicantInfo, birthDate: null } };
+    await expect(service.submitVisaRequestApplication({ apiGatewayToken: 'gateway-token' } as Request, payload)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'INVALID_REQUEST_FIELDS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('preserves travel-fund validation without posting a malformed request', async () => {
+    const payload = { ...travel, expenses: { ...travel.expenses, estimatedTotal: 0 } };
+    await expect(service.submitTravelFundApplication({ apiGatewayToken: 'gateway-token' } as Request, payload)).rejects.toMatchObject({
+      statusCode: 422,
+      code: 'INVALID_REQUEST_FIELDS',
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

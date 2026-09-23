@@ -43,6 +43,7 @@ export async function resolveRewardsSubject(req: Request): Promise<RewardsSubjec
     service: REWARDS_SERVICE_NAME,
     errorMessage: 'Rewards target lookup failed',
     errorCode: 'REWARDS_SUBJECT_RESOLUTION_FAILED',
+    allowOperatorToken: true,
     redactResponseBody: true,
   });
 

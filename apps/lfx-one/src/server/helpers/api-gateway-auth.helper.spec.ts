@@ -6,7 +6,31 @@ import '@angular/compiler';
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { isDocumentNavigation, normalizeApiGatewayReturnTo } from './api-gateway-auth.helper';
+import { apiGatewayAuthRequiredError, isDocumentNavigation, normalizeApiGatewayReturnTo } from './api-gateway-auth.helper';
+
+describe('Gateway authorization required error', () => {
+  it('constructs only the recoverable 403 response with a fixed local authorize URL', () => {
+    const error = apiGatewayAuthRequiredError('synthetic_operation', 'synthetic_service');
+    expect(error).toMatchObject({
+      statusCode: 403,
+      code: 'API_GATEWAY_AUTH_REQUIRED',
+      operation: 'synthetic_operation',
+      service: 'synthetic_service',
+    });
+    expect(error.toResponse()).toEqual({
+      error: 'API Gateway authorization required. Open /api-gateway/auth/start in your browser, then retry the operation.',
+      code: 'API_GATEWAY_AUTH_REQUIRED',
+      service: 'synthetic_service',
+      details: { authorize_url: '/api-gateway/auth/start' },
+    });
+  });
+
+  it('does not add service metadata when the caller supplies only an operation', () => {
+    const error = apiGatewayAuthRequiredError('synthetic_operation');
+    expect(error.operation).toBe('synthetic_operation');
+    expect(error.toResponse()).not.toHaveProperty('service');
+  });
+});
 
 describe('Gateway authorization navigation', () => {
   beforeEach(() => vi.stubEnv('PCC_BASE_URL', 'https://self-serve.example'));

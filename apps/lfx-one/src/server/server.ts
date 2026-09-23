@@ -341,13 +341,15 @@ if (sessionStoreEnabled) {
   });
 }
 
+app.use('/public/api/', publicApiRateLimiter);
+app.use(apiRateLimiter);
 app.use(auth(authConfig));
 
 // Public pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
 app.use('/groups/', attemptSilentLogin());
 
-app.use('/login', (req: Request, res: Response) => {
+app.use('/login', authRateLimiter, (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     const returnTo = req.query['returnTo'] as string;
     const validatedReturnTo = validateAndSanitizeUrl(returnTo, [process.env['PCC_BASE_URL'] as string]);
@@ -368,10 +370,6 @@ app.use('/login', (req: Request, res: Response) => {
 });
 
 app.use(authMiddleware);
-
-app.use('/public/api/', publicApiRateLimiter);
-app.use('/api/', apiRateLimiter);
-app.use('/login', authRateLimiter);
 
 app.use(apiGatewayAuthRouter);
 

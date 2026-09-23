@@ -157,9 +157,9 @@ export class ApiGatewayAuthService {
     }
   }
 
-  public getCachedToken(req: Request): string | null {
+  public getCachedToken(req: Request, operatorRead = false): string | null {
     const session = req.appSession;
-    if (!this.isConfigured() || !session || isImpersonating(req)) return null;
+    if (!this.isConfigured() || !session || (isImpersonating(req) && !operatorRead)) return null;
     if (!this.matchesGrant(req, session.apiGatewayGrant)) {
       this.clearGrant(req);
       return null;
@@ -181,29 +181,31 @@ export class ApiGatewayAuthService {
 
   public async loadToken(req: Request): Promise<ApiGatewayAuthStatus> {
     delete req.apiGatewayToken;
+    delete req.apiGatewayOperatorToken;
+    const operatorRead = isImpersonating(req);
     let status: ApiGatewayAuthStatus;
     if (!this.isConfigured()) {
       status = 'not_configured';
-    } else if (isImpersonating(req)) {
-      status = 'impersonating';
     } else {
-      const cached = this.getCachedToken(req);
+      const cached = this.getCachedToken(req, operatorRead);
       if (cached) {
-        req.apiGatewayToken = cached;
+        req[operatorRead ? 'apiGatewayOperatorToken' : 'apiGatewayToken'] = cached;
         status = 'ready';
       } else {
-        status = await this.tryRefreshToken(req);
+        status = await this.tryRefreshToken(req, operatorRead);
       }
+      if (operatorRead) status = 'impersonating';
     }
     req.apiGatewayAuthStatus = status;
     return status;
   }
 
-  public async tryRefreshToken(req: Request): Promise<ApiGatewayAuthStatus> {
+  public async tryRefreshToken(req: Request, operatorRead = false): Promise<ApiGatewayAuthStatus> {
     const session = req.appSession;
     const grant = this.currentGrant(req);
     const refreshToken = session?.apiGatewayRefreshToken;
-    if (!this.isConfigured() || !session || !grant || isImpersonating(req) || !this.matchesGrant(req, session.apiGatewayGrant)) return 'required';
+    if (!this.isConfigured() || !session || !grant || (isImpersonating(req) && !operatorRead) || !this.matchesGrant(req, session.apiGatewayGrant))
+      return 'required';
     if (typeof refreshToken !== 'string' || !refreshToken) return 'required';
 
     const key = this.digest(JSON.stringify([grant, refreshToken]));
@@ -214,15 +216,15 @@ export class ApiGatewayAuthService {
     }
     const result = await pending;
     // Each waiter must update its own session snapshot with the refreshed pair.
-    if (req.appSession !== session || !this.matchesGrant(req, grant) || isImpersonating(req)) return 'required';
+    if (req.appSession !== session || !this.matchesGrant(req, grant) || (isImpersonating(req) && !operatorRead)) return 'required';
     if (session.apiGatewayRefreshToken !== refreshToken) {
-      const cached = this.getCachedToken(req);
+      const cached = this.getCachedToken(req, operatorRead);
       if (!cached) return 'required';
-      req.apiGatewayToken = cached;
+      req[operatorRead ? 'apiGatewayOperatorToken' : 'apiGatewayToken'] = cached;
       return 'ready';
     }
     if (result.status === 'success' && result.token && result.expiresAt) {
-      this.storeToken(req, result.token, grant, result.expiresAt);
+      this.storeToken(req, result.token, grant, result.expiresAt, operatorRead);
       return 'ready';
     }
     if (result.status === 'invalid_grant' || result.status === 'invalid_token') {
@@ -335,17 +337,18 @@ export class ApiGatewayAuthService {
     );
   }
 
-  private storeToken(req: Request, token: ApiGatewayTokenResponse, grant: ApiGatewayGrant, expiresAt: number): void {
+  private storeToken(req: Request, token: ApiGatewayTokenResponse, grant: ApiGatewayGrant, expiresAt: number, operatorRead = false): void {
     if (!req.appSession) return;
     req.appSession.apiGatewayGrant = { sub: grant.sub, issuer: grant.issuer, audience: grant.audience, clientId: grant.clientId };
     req.appSession.apiGatewayToken = token.access_token;
     req.appSession.apiGatewayTokenExpiresAt = expiresAt;
     if (token.refresh_token) req.appSession.apiGatewayRefreshToken = token.refresh_token;
-    req.apiGatewayToken = token.access_token;
+    req[operatorRead ? 'apiGatewayOperatorToken' : 'apiGatewayToken'] = token.access_token;
   }
 
   private clearAccessToken(req: Request): void {
     delete req.apiGatewayToken;
+    delete req.apiGatewayOperatorToken;
     delete req.appSession?.apiGatewayToken;
     delete req.appSession?.apiGatewayTokenExpiresAt;
   }

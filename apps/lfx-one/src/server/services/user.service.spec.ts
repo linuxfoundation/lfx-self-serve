@@ -17,7 +17,7 @@ import {
   UserServicePreference,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { proxyRequest, getPendingActionSurveys, getMyPendingInvitations, getUsernameFromAuth, getMyFormationWork, isImpersonating } = vi.hoisted(() => ({
   proxyRequest: vi.fn(),
@@ -116,6 +116,79 @@ describe('UserService.validateUserMetadata', () => {
 
     it('rejects a numeric bio rather than throwing a raw "not iterable" TypeError', () => {
       expect(() => service.validateUserMetadata({ bio: 42 } as unknown as UserMetadata)).toThrow('Bio must be a string');
+    });
+  });
+});
+
+describe('UserService.getApiGatewayProfile direct Gateway authentication', () => {
+  let service: UserService;
+  let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    isImpersonating.mockReturnValue(false);
+    vi.stubEnv('API_GW_AUDIENCE', 'https://gateway.example/');
+    fetchMock = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ ID: 'synthetic-sfid' }));
+    vi.stubGlobal('fetch', fetchMock);
+    service = new UserService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+    isImpersonating.mockReturnValue(false);
+  });
+
+  it.each(['required', 'unavailable', 'not_configured', undefined] as const)(
+    'classifies a missing Gateway token (%s) without falling back to the primary token',
+    async (status) => {
+      const req = { bearerToken: 'primary-token', apiGatewayAuthStatus: status } as Request;
+      const result = service.getApiGatewayProfile(req);
+      await expect(result).rejects.toMatchObject({
+        statusCode: status === 'required' ? 403 : 503,
+        code: status === 'required' ? 'API_GATEWAY_AUTH_REQUIRED' : 'API_GATEWAY_UNAVAILABLE',
+        operation: 'get_api_gateway_profile',
+        service: 'user_service',
+      });
+      if (status !== 'required') {
+        await expect(result).rejects.toMatchObject({ message: 'API Gateway token not available — check API_GW_AUDIENCE env var and auth logs' });
+      }
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
+
+  it('keeps the profile URL, Gateway authorization and response unchanged', async () => {
+    const req = { bearerToken: 'primary-token', apiGatewayToken: 'gateway-token' } as Request;
+    await expect(service.getApiGatewayProfile(req)).resolves.toEqual({ ID: 'synthetic-sfid' });
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('https://gateway.example/user-service/v1/me?basic=true', {
+      headers: { Authorization: 'Bearer gateway-token' },
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it('preserves an explicitly supplied target token during impersonation', async () => {
+    isImpersonating.mockReturnValue(true);
+    const req = { apiGatewayToken: 'real-user-token', apiGatewayAuthStatus: 'impersonating' } as Request;
+    await expect(service.getApiGatewayProfile(req, 'target-token')).resolves.toEqual({ ID: 'synthetic-sfid' });
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://gateway.example/user-service/v1/me?basic=true',
+      expect.objectContaining({ headers: { Authorization: 'Bearer target-token' } })
+    );
+  });
+
+  it('preserves the existing upstream status mapping', async () => {
+    fetchMock.mockResolvedValue(new Response('', { status: 503 }));
+    await expect(service.getApiGatewayProfile({ apiGatewayToken: 'gateway-token' } as Request)).rejects.toMatchObject({
+      statusCode: 503,
+      code: 'API_GATEWAY_ERROR',
+    });
+  });
+
+  it('preserves malformed upstream response handling', async () => {
+    fetchMock.mockResolvedValue(new Response('invalid-json'));
+    await expect(service.getApiGatewayProfile({ apiGatewayToken: 'gateway-token' } as Request)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'API_GATEWAY_INVALID_RESPONSE',
     });
   });
 });

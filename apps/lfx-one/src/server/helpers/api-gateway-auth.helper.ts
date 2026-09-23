@@ -4,7 +4,21 @@
 import { API_GATEWAY_AUTH } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors';
 import { validateAndSanitizeUrl } from './url-validation';
+
+export function apiGatewayAuthRequiredError(operation: string, service?: string): MicroserviceError {
+  return new MicroserviceError(
+    `API Gateway authorization required. Open ${API_GATEWAY_AUTH.START_PATH} in your browser, then retry the operation.`,
+    403,
+    'API_GATEWAY_AUTH_REQUIRED',
+    {
+      service,
+      operation,
+      errorBody: { details: { authorize_url: API_GATEWAY_AUTH.START_PATH } },
+    }
+  );
+}
 
 export function isDocumentNavigation(req: Request): boolean {
   const mode = req.get('Sec-Fetch-Mode');
