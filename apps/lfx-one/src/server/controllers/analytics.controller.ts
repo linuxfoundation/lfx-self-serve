@@ -10,6 +10,7 @@ import type { HealthMetricsEngagementGroupTypeFilter } from '@lfx-one/shared/int
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
 import { logger } from '../services/logger.service';
@@ -3225,16 +3226,21 @@ export class AnalyticsController {
    * accounts — one denormalised row per account_id with cdev mapping
    * and highest active corporate membership tier.
    * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
+   *
+   * Only the caller's own board-member accounts are resolved (`filterReadableAccountIds`); any other
+   * id is dropped without an upstream call rather than failing the whole org-selector enrichment.
    */
   public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_lens_account_context');
 
     try {
       const accountIds = this.parseAccountIdsParam(req, 'get_org_lens_account_context');
-      const response = await this.organizationService.getOrgLensAccountContext(accountIds);
+      const readableIds = await filterReadableAccountIds(req, accountIds, 'get_org_lens_account_context');
+      const response = readableIds.length > 0 ? await this.organizationService.getOrgLensAccountContext(readableIds) : [];
 
       logger.success(req, 'get_org_lens_account_context', startTime, {
         requested_count: accountIds.length,
+        readable_count: readableIds.length,
         resolved_count: response.length,
       });
 
