@@ -2387,6 +2387,27 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
    * the two shapes: an empty value in a sections response is an ANSWER, not a gap, and refilling
    * it from a leftover flat field overrode the operator.
    */
+  it('vouches only for the FIRST button, matching what the adapter forwards', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        sections: [
+          { type: 'rich_text', html: '<p><a href="https://events.linuxfoundation.org/x">ok</a> <a href="https://second.example/p">no</a></p>' },
+          { type: 'button', text: 'Register', url: 'https://events.linuxfoundation.org/kubecon' },
+          // A second button's url is discarded by the adapter (`sections.find`), so it must not
+          // whitelist its host -- that would leave a clickable unvouched link in the preview.
+          { type: 'button', text: 'Other', url: 'https://second.example/p' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
+    expect(result.copy?.body).not.toContain('second.example');
+  });
+
   it('does not refill an empty sections field from a leftover flat field', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({

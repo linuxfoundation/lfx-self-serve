@@ -2178,11 +2178,15 @@ export class CampaignController {
     // its link -- the same answer this handler gives a button with no usable url.
     const buttonUrl = canonicalHttpUrl(body.hubspotConfig?.buttonUrl);
     const heroLinkUrl = canonicalHttpUrl(body.hubspotConfig?.heroLinkUrl);
-    // `buttonUrl` ONLY -- deliberately not `heroLinkUrl`. This list must match the one the
-    // service and the client preview used, which is the generator's CTA destination. The client
-    // withholds `buttonUrl` whenever the CTA label is empty and sends `heroLinkUrl` only when a
-    // hero image exists, so folding the hero in would make this second pass REVOKE links the
-    // operator previewed -- the preview/draft divergence this file exists to prevent.
+    // `buttonUrl`, which the client derives from `emailCtaDestination` -- the same signal its
+    // preview vouches against, so the two agree by construction rather than by coincidence.
+    //
+    // Not `heroLinkUrl`: that is sent only when a hero image exists, so folding it in would make
+    // this pass vouch for a host the preview did not.
+    //
+    // A request that sends no `buttonUrl` -- including one whose CTA label is empty, since the
+    // client withholds the pair together -- vouches for nothing, and body links are dropped. That
+    // is the conservative direction of the same rule: absent evidence is not permission.
     const allowedBodyDestinations = [buttonUrl].filter((url) => url !== '');
 
     const rawBody = body.hubspotConfig?.bodyHtml;

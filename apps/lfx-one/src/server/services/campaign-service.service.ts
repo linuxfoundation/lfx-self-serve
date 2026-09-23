@@ -898,9 +898,12 @@ export class CampaignServiceClient {
       // (CFP Launch, Post-Event, Final Countdown) legitimately have no destination, and they are
       // the ones a model is most likely to invent an address for. Those bodies keep their words
       // and lose every link.
-      const generatedDestinations = sections
-        .filter((section) => section.type === 'button' && typeof section.url === 'string' && section.url !== '')
-        .map((section) => section.url as string);
+      // The FIRST button only, matching `buttonSection` below (`sections.find`). `bodyHtml` is one
+      // flat field on the wire, so a second button's url is discarded everywhere else -- letting
+      // it vouch for a host here would whitelist a destination the draft never carries, leaving a
+      // clickable unvouched link in the operator preview.
+      const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
+      const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
 
       const body = sections
         .filter(

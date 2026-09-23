@@ -1176,8 +1176,15 @@ export class CampaignsComponent {
    * preview cannot show a link the draft will drop.
    */
   protected readonly generatedDestinations = computed<string[]>(() => {
-    const ctaUrl = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
-    return ctaUrl === '' ? [] : [ctaUrl];
+    // `emailCtaDestination`, NOT a second reading of `copy.ctaUrl`. That signal already answers
+    // "where may a generated link point": it requires the generator's url to EQUAL the brief's
+    // registration url, because the model is told to copy that url exactly or omit the field, so
+    // anything else is a hallucination. A raw `canonicalHttpUrl(ctaUrl)` only proves the url is
+    // public-looking, which `https://evil.example/phish` also is -- and staging forwards
+    // `emailCtaDestination`, so the weaker list kept links in the preview that the draft drops.
+    // One validator, not two: `emailCtaDestination` is lazily read, so declaration order is fine.
+    const destination = this.emailCtaDestination();
+    return destination === '' ? [] : [destination];
   });
 
   /**
