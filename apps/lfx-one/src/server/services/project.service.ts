@@ -2190,26 +2190,30 @@ export class ProjectService {
 
   /**
    * Get foundation health score distribution from Snowflake
-   * Queries FOUNDATION_HEALTH_SCORE_DISTRIBUTION table
+   * Counts FOUNDATION_TOTAL_PROJECTS_DETAIL rows per v2 health category
    * Returns project count breakdown by health category
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @returns Foundation health score distribution with counts by category
    */
   public async getFoundationHealthScoreDistribution(foundationSlug: string): Promise<FoundationHealthScoreDistributionResponse> {
+    // Counted from FOUNDATION_TOTAL_PROJECTS_DETAIL rather than FOUNDATION_HEALTH_SCORE_DISTRIBUTION:
+    // that model LEFT JOINs its v2 buckets onto the v1 buckets by band rank, so its v2 category is
+    // null wherever a v1 band has no v2 counterpart, its PROJECT_COUNT is the v1 count, and v2 bands
+    // with no v1 counterpart are dropped entirely (GH-2771). Grouping the drawer's own rows keeps
+    // this chart and the Project Health Scores table in agreement.
     const query = `
       SELECT
+        FOUNDATION_SLUG,
         HEALTH_SCORE_CATEGORY_V2,
-        PROJECT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
+        COUNT(*) AS PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
       WHERE FOUNDATION_SLUG = ?
+      GROUP BY FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2
     `;
 
     const result = await this.snowflakeService.execute<FoundationHealthScoreDistributionRow>(query, [foundationSlug]);
 
-    // Map categories to response structure (case-insensitive). "Unscored" is an additive
-    // dbt bucket (COALESCE(health_score_category_v2, 'Unscored')) so every project counted in
-    // FOUNDATION_TOTAL_PROJECTS_DETAIL maps to exactly one bar, scored or not.
-    const distribution = {
+    const distribution: FoundationHealthScoreDistributionResponse = {
       excellent: 0,
       healthy: 0,
       fair: 0,
@@ -2218,17 +2222,7 @@ export class ProjectService {
       unscored: 0,
     };
 
-    // Fold any category outside the 5 scored values into `unscored` to mirror the detail
-    // endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored), so chart and table agree.
-    result.rows.forEach((row) => {
-      const category = row.HEALTH_SCORE_CATEGORY_V2.toLowerCase();
-      if (category === 'excellent') distribution.excellent += row.PROJECT_COUNT;
-      else if (category === 'healthy') distribution.healthy += row.PROJECT_COUNT;
-      else if (category === 'fair') distribution.fair += row.PROJECT_COUNT;
-      else if (category === 'concerning') distribution.concerning += row.PROJECT_COUNT;
-      else if (category === 'critical') distribution.critical += row.PROJECT_COUNT;
-      else distribution.unscored += row.PROJECT_COUNT;
-    });
+    result.rows.forEach((row) => ProjectService.addToHealthScoreBand(distribution, row));
 
     return distribution;
   }
@@ -2243,8 +2237,8 @@ export class ProjectService {
 
     // HEALTH_SCORE_CATEGORY_V2 is folded directly into FOUNDATION_TOTAL_PROJECTS_DETAIL by dbt (a
     // slug-only LEFT JOIN to PROJECT_HEALTH_METRICS_LATEST, the shared per-project latest-score
-    // selection). FOUNDATION_HEALTH_SCORE_DISTRIBUTION counts over this same model, so the chart
-    // and this table can never disagree. Absent categories are null; the drawer renders "Unscored".
+    // selection). getFoundationHealthScoreDistribution groups these same rows, so the chart and
+    // this table can never disagree. Absent categories are null; the drawer renders "Unscored".
     const query = `
       SELECT
         d.PROJECT_ID,
@@ -8498,10 +8492,13 @@ export class ProjectService {
       QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY LAST_METRIC_DATE DESC) = 1
     `;
 
+    // Same source as getFoundationHealthScoreDistribution — see the note there on why this does not
+    // read FOUNDATION_HEALTH_SCORE_DISTRIBUTION.
     const healthScoreQuery = `
-      SELECT FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2, PROJECT_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
+      SELECT FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2, COUNT(*) AS PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
       WHERE FOUNDATION_SLUG IN (${placeholders})
+      GROUP BY FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2
     `;
 
     interface TotalProjectsRow {
@@ -8516,12 +8513,6 @@ export class ProjectService {
       FOUNDATION_SLUG: string;
       TOTAL_VALUE: number;
     }
-    interface HealthScoreRow {
-      FOUNDATION_SLUG: string;
-      HEALTH_SCORE_CATEGORY_V2: string;
-      PROJECT_COUNT: number;
-    }
-
     const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
       this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
       this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs).catch((error) => {
@@ -8534,7 +8525,7 @@ export class ProjectService {
         return { rows: [], metadata: [] } as SnowflakeQueryResult<TotalMembersRow>;
       }),
       this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
-      this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
+      this.snowflakeService.execute<FoundationHealthScoreDistributionRow>(healthScoreQuery, filteredSlugs),
     ]);
 
     logger.debug(req, 'get_multi_foundation_summary_batch', 'Batched Snowflake queries resolved', {
@@ -8563,15 +8554,7 @@ export class ProjectService {
         critical: 0,
         unscored: 0,
       };
-      const category = row.HEALTH_SCORE_CATEGORY_V2.toLowerCase();
-      if (category === 'excellent') existing.excellent += row.PROJECT_COUNT;
-      else if (category === 'healthy') existing.healthy += row.PROJECT_COUNT;
-      else if (category === 'fair') existing.fair += row.PROJECT_COUNT;
-      else if (category === 'concerning') existing.concerning += row.PROJECT_COUNT;
-      else if (category === 'critical') existing.critical += row.PROJECT_COUNT;
-      // Fold 'unscored' and any unexpected category into `unscored` to match the
-      // detail endpoint's normalizeHealthScoreCategoryV2 (→ null → Unscored in the drawer).
-      else existing.unscored += row.PROJECT_COUNT;
+      ProjectService.addToHealthScoreBand(existing, row);
       healthScoresBySlug.set(row.FOUNDATION_SLUG, existing);
     });
 
@@ -8636,6 +8619,14 @@ export class ProjectService {
       throw ServiceValidationError.forField('period', 'Unable to resolve default period range');
     }
     return resolved;
+  }
+
+  /**
+   * Adds one distribution row's project count to its v2 band. A null or unrecognized category
+   * counts as unscored, matching how getFoundationProjectsDetail renders the same row.
+   */
+  private static addToHealthScoreBand(distribution: FoundationHealthScoreDistributionResponse, row: FoundationHealthScoreDistributionRow): void {
+    distribution[normalizeHealthScoreCategoryV2(row.HEALTH_SCORE_CATEGORY_V2) ?? 'unscored'] += row.PROJECT_COUNT;
   }
 
   /**
