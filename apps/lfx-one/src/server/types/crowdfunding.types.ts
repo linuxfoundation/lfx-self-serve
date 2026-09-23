@@ -78,7 +78,7 @@ export interface BackendTransaction {
   kind?: 'one-time' | 'recurring';
 }
 
-/** Raw snake_case response from GET /v1/me/payment-account on the upstream crowdfunding service. */
+/** Raw snake_case response from GET /crowdfunding/me/payment-account on the upstream crowdfunding service. */
 export interface PaymentMethodWire {
   payment_method_id: string;
   last_four: string;
@@ -94,7 +94,7 @@ export interface BackendTransactionList {
   size: number;
 }
 
-/** Raw snake_case transaction shape from GET /v1/me/transactions on the upstream crowdfunding service. */
+/** Raw snake_case transaction shape from GET /crowdfunding/me/transactions on the upstream crowdfunding service. */
 export interface BackendMyTransaction {
   id: string;
   type: 'donation' | 'reimbursement';
@@ -115,7 +115,7 @@ export interface BackendMyTransactionListResponse {
   offset: number;
 }
 
-/** Raw snake_case subscription shape from GET /v1/me/subscriptions on the upstream crowdfunding service. */
+/** Raw snake_case subscription shape from GET /crowdfunding/me/subscriptions on the upstream crowdfunding service. */
 export interface BackendSubscription {
   id: string;
   initiative_id: string;
@@ -172,7 +172,7 @@ export interface BackendSponsorshipTierInput {
   benefits: string[];
 }
 
-/** Snake_case PATCH body sent to PATCH /v1/me/initiatives/{id} on the upstream crowdfunding service. */
+/** Snake_case PATCH body sent to PATCH /crowdfunding/me/initiatives/{id} on the upstream crowdfunding service. */
 export interface BackendUpdateInitiativeInput {
   name?: string;
   description?: string;
@@ -186,7 +186,7 @@ export interface BackendUpdateInitiativeInput {
   donation_mode?: string;
 }
 
-/** Raw snake_case presigned-URL response from POST /v1/me/presigned-url. */
+/** Raw snake_case presigned-URL response from POST /crowdfunding/me/presigned-url. */
 export interface PresignedURLWire {
   upload_url: string;
   destination_url: string;
