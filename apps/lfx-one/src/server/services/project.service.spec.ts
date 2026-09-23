@@ -1188,6 +1188,37 @@ describe('ProjectService — Health Score v2 categories', () => {
       expect(result.unscored).toBe(0);
       expect(execute.mock.calls[0][0]).toContain('HEALTH_SCORE_CATEGORY_V2');
     });
+
+    // GH-2771: FOUNDATION_HEALTH_SCORE_DISTRIBUTION left-joins v2 onto v1 by band rank, so it
+    // returns null v2 categories, v1 counts, and drops v2 bands with no v1 counterpart.
+    it('counts v2 bands from FOUNDATION_TOTAL_PROJECTS_DETAIL, not the rank-joined distribution model', async () => {
+      execute.mockResolvedValueOnce({ rows: [] });
+
+      await service.getFoundationHealthScoreDistribution('aswf');
+
+      const [sql, binds] = execute.mock.calls[0];
+      expect(sql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL');
+      expect(sql).not.toContain('FOUNDATION_HEALTH_SCORE_DISTRIBUTION');
+      expect(sql).toContain('COUNT(*) AS PROJECT_COUNT');
+      expect(sql).toContain('GROUP BY FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY_V2');
+      expect(binds).toEqual(['aswf']);
+    });
+
+    it('counts a null or unrecognized category as unscored instead of throwing', async () => {
+      execute.mockResolvedValueOnce({
+        rows: [
+          { FOUNDATION_SLUG: 'aswf', HEALTH_SCORE_CATEGORY_V2: 'Healthy', PROJECT_COUNT: 3 },
+          { FOUNDATION_SLUG: 'aswf', HEALTH_SCORE_CATEGORY_V2: null, PROJECT_COUNT: 5 },
+          { FOUNDATION_SLUG: 'aswf', HEALTH_SCORE_CATEGORY_V2: 'Stable', PROJECT_COUNT: 2 },
+        ],
+      });
+
+      // fails before fix: row.HEALTH_SCORE_CATEGORY_V2.toLowerCase() threw a TypeError on the null
+      // row, which the API error handler answered with a bare INTERNAL_ERROR 500.
+      const result = await service.getFoundationHealthScoreDistribution('aswf');
+
+      expect(result).toEqual({ excellent: 0, healthy: 3, fair: 0, concerning: 0, critical: 0, unscored: 7 });
+    });
   });
 
   describe('getFoundationProjectsDetail', () => {
@@ -1221,7 +1252,7 @@ describe('ProjectService — Health Score v2 categories', () => {
   describe('getMultiFoundationSummary', () => {
     it('reads HEALTH_SCORE_CATEGORY_V2 per foundation without remapping to a v1 band', async () => {
       execute.mockImplementation((sql: string) => {
-        if (String(sql).includes('FOUNDATION_HEALTH_SCORE_DISTRIBUTION')) {
+        if (String(sql).includes('HEALTH_SCORE_CATEGORY_V2')) {
           return Promise.resolve({ rows: [{ FOUNDATION_SLUG: 'cncf', HEALTH_SCORE_CATEGORY_V2: 'fair', PROJECT_COUNT: 7 }] });
         }
         return Promise.resolve({ rows: [] });
@@ -1233,6 +1264,34 @@ describe('ProjectService — Health Score v2 categories', () => {
       // via mapV1BandToV2, so a v2 'fair' category wouldn't have passed straight through.
       expect(result.perFoundation['cncf'].healthScores.fair).toBe(7);
       expect(result.perFoundation['cncf'].healthScores.unscored).toBe(0);
+    });
+
+    // GH-2771: one null category used to throw inside the batch, and the batch's catch zeroed
+    // projects, members and value for every foundation in the summary, not just health scores.
+    it('keeps the other metrics and counts a null category as unscored', async () => {
+      execute.mockImplementation((sql: string) => {
+        const text = String(sql);
+        if (text.includes('HEALTH_SCORE_CATEGORY_V2')) {
+          return Promise.resolve({
+            rows: [
+              { FOUNDATION_SLUG: 'aswf', HEALTH_SCORE_CATEGORY_V2: null, PROJECT_COUNT: 4 },
+              { FOUNDATION_SLUG: 'aswf', HEALTH_SCORE_CATEGORY_V2: 'Excellent', PROJECT_COUNT: 1 },
+            ],
+          });
+        }
+        if (text.includes('FOUNDATION_TOTAL_PROJECTS_MONTHLY')) {
+          return Promise.resolve({ rows: [{ FOUNDATION_SLUG: 'aswf', PROJECT_COUNT: 5 }] });
+        }
+        return Promise.resolve({ rows: [] });
+      });
+
+      const result = await service.getMultiFoundationSummary(req, ['aswf']);
+
+      const healthSql = execute.mock.calls.map(([sql]) => String(sql)).find((sql) => sql.includes('HEALTH_SCORE_CATEGORY_V2'));
+      expect(healthSql).toContain('FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL');
+      expect(healthSql).not.toContain('FOUNDATION_HEALTH_SCORE_DISTRIBUTION');
+      expect(result.perFoundation['aswf'].totalProjects).toBe(5);
+      expect(result.perFoundation['aswf'].healthScores).toEqual({ excellent: 1, healthy: 0, fair: 0, concerning: 0, critical: 0, unscored: 4 });
     });
   });
 });
