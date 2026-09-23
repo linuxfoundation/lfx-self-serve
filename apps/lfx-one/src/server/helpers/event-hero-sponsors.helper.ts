@@ -99,9 +99,12 @@ function extractHeroImage(html: string, baseUrl: string): string {
       if (image) return image;
       continue;
     }
-    // An opener. A nested opener before any closer replaces the pending one, matching how a
-    // parser would treat the outer tag as never closed.
-    pendingFrom = /type=["']application\/ld\+json["']/i.test(token) ? match.index + token.length : -1;
+    // An opener. While a body is PENDING it is ignored: script content is raw text until the
+    // closer, so a `<script>` appearing inside a JSON string is not a nested tag and must not
+    // end or restart the block. Treating it as one dropped any JSON-LD whose own text mentioned
+    // a script tag -- which event pages legitimately do.
+    if (pendingFrom !== -1) continue;
+    if (/type=["']application\/ld\+json["']/i.test(token)) pendingFrom = match.index + token.length;
   }
 
   return '';

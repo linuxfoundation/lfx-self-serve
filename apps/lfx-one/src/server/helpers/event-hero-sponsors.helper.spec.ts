@@ -331,6 +331,15 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
     expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/x.png');
   });
 
+  it('reads a JSON-LD block whose own text mentions a script tag', () => {
+    // Script content is RAW TEXT until the closer, so a `<script>` inside a JSON string is not a
+    // nested tag. Treating an opener as one while a body is pending dropped the whole block --
+    // and event pages legitimately carry such text in a description.
+    const html = '<script type="application/ld+json">{"@type":"Event","image":"/b.png","description":"use <script> tags"}</script>';
+
+    expect(extractHeroAndSponsors(html, BASE_URL).heroImageUrl).toBe('https://example.com/b.png');
+  });
+
   it('does not backtrack on many unclosed ld+json tags', () => {
     // The shape that made two earlier fixes quadratic: every open tag scanning to EOF for a
     // closer that is not there. At 5 MiB that was 109 SECONDS; one left-to-right pass makes it
