@@ -56,6 +56,28 @@ export function updateFormControls(form: FormGroup, onlySelf: boolean = false, e
 }
 
 /**
+ * Marks a meeting form's controls touched and dirty so a failed submit shows its validation errors.
+ * @description Skips `show_meeting_attendees`, which carries no validators: marking it displays
+ * nothing, and instead corrupts the only thing that reads its `dirty` flag. To the attendee picker
+ * that flag means "the organizer edited this since the form was last hydrated", and the picker
+ * seeds their standing choice from it on every mount. A bulk mark turns one failed save into a
+ * silent opt-out that outranks every group default — permanently in create mode, which never
+ * hydrates and so never clears the flag.
+ *
+ * Shared by the composer and both manage submit paths so the exclusion cannot drift between them.
+ */
+export function markMeetingFormForValidation(form: FormGroup): void {
+  Object.keys(form.controls).forEach((key) => {
+    if (key === 'show_meeting_attendees') {
+      return;
+    }
+    const control = form.get(key);
+    control?.markAsTouched();
+    control?.markAsDirty();
+  });
+}
+
+/**
  * Locks attendee visibility off for board and restricted meetings.
  * @description Forces `show_meeting_attendees` to false and disables the control when
  * {@link isShowMeetingAttendeesLocked} is true; re-enables it otherwise. Composer and manage

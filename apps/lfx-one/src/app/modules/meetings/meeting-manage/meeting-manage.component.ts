@@ -54,6 +54,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
@@ -384,11 +385,7 @@ export class MeetingManageComponent {
 
   public onSubmit(): void {
     // Mark all form controls as touched to show validation errors
-    Object.keys(this.form().controls).forEach((key) => {
-      const control = this.form().get(key);
-      control?.markAsTouched();
-      control?.markAsDirty();
-    });
+    markMeetingFormForValidation(this.form());
 
     if (this.form().invalid) {
       return;
@@ -441,11 +438,7 @@ export class MeetingManageComponent {
     }
 
     // Mark all form controls as touched to show validation errors
-    Object.keys(this.form().controls).forEach((key) => {
-      const control = this.form().get(key);
-      control?.markAsTouched();
-      control?.markAsDirty();
-    });
+    markMeetingFormForValidation(this.form());
 
     if (this.form().invalid) {
       return;

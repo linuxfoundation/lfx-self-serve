@@ -923,6 +923,29 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
     expect(form.get('show_meeting_attendees')?.value).toBe(false);
   });
 
+  it('does not read a lock-forced value as the organizer opting out, on re-entering the section', async () => {
+    const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
+    organizerSets(component.form(), true);
+    await fixture.whenStable();
+
+    // Locking writes `false` over their opt-in and leaves the control dirty, so the value is the
+    // lock's and the flag is theirs. Seeding from that pair would record a phantom opt-out that
+    // outranks the saved value and every group default, and no unlock would undo it.
+    const form = component.form();
+    fixture.destroy();
+    form.get('meeting_type')?.setValue('Board');
+    expect(form.get('show_meeting_attendees')?.value).toBe(false);
+    expect(form.get('show_meeting_attendees')?.dirty).toBe(true);
+
+    const returned = await remount(form);
+    form.get('meeting_type')?.setValue('Technical');
+    await returned.whenStable();
+    returned.componentInstance.committeeForm.get('committees')?.setValue([VISIBLE_BOARD.uid]);
+    await returned.whenStable();
+
+    expect(form.get('show_meeting_attendees')?.value).toBe(true);
+  });
+
   it('does not read an untouched toggle as an opt-out when the section is re-entered', async () => {
     const { component, fixture } = await mount([], {}, [VISIBLE_BOARD]);
     await fixture.whenStable();
@@ -1055,9 +1078,10 @@ describe('MeetingCommitteeManagerComponent — attendee visibility default', () 
   }
 
   it('does not read a re-hydration as an edit just because a failed submit left the control dirty', async () => {
-    // `dirty` is sticky and both hosts mark every control dirty when a submit fails, so a reload
-    // after that would land on a control that still looks edited. The pristine reset at the end of
-    // hydration is what keeps the flag meaning "edited since the load".
+    // `dirty` is sticky, so a reload after a failed submit would land on a control that still
+    // looks edited. The pristine reset before the patch is what keeps the flag meaning "edited
+    // since the load" — before, not after, because the patch is loud and the picker decides as it
+    // arrives.
     const { component, fixture } = await mount([], {}, [BOARD]);
     component.form().get('show_meeting_attendees')?.markAsDirty();
 

@@ -58,6 +58,7 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
@@ -624,11 +625,7 @@ export class MeetingComposerFormService {
     }
 
     const form = this.form();
-    Object.keys(form.controls).forEach((key) => {
-      const control = form.get(key);
-      control?.markAsTouched();
-      control?.markAsDirty();
-    });
+    markMeetingFormForValidation(form);
 
     // `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor `statusChanges`, so the bump has
     // to be explicit for anything reading control state through `revision`.

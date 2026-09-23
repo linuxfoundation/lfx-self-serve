@@ -254,7 +254,7 @@ export class MeetingCommitteeManagerComponent {
             return EMPTY;
           }
           this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
-          this.seedSessionAttendeeChoice(form);
+          this.seedSessionAttendeeChoice(form, this.attendeeVisibilityLocked);
           return merge(
             merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
               map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
@@ -521,10 +521,18 @@ export class MeetingCommitteeManagerComponent {
    * records an edit on, so a dirty control at mount means its value is the organizer's, made since
    * the last hydration. A pristine one clears the field rather than leaving it, so replacing the
    * form input does not carry a previous meeting's decision into the new one.
+   *
+   * Never while locked, though: `syncShowMeetingAttendeesLock` writes `false` and disables the
+   * control without clearing `dirty`, so a locked control reads as an opt-out no matter what the
+   * organizer actually chose. Seeding there would turn an opt-in into a phantom `false` that
+   * outranks the saved value and every group default for the rest of the session, and no unlock
+   * would undo it. A locked mount reports no decision instead — the same answer
+   * {@link getSavedAttendeeVisibility} gives the hosts for a locked meeting, and for the same
+   * reason: while the lock is on, nothing the form holds is evidence of a choice.
    */
-  private seedSessionAttendeeChoice(form: FormGroup): void {
+  private seedSessionAttendeeChoice(form: FormGroup, locked: boolean): void {
     const control = form.get('show_meeting_attendees');
-    this.sessionAttendeeChoice = control?.dirty ? control.value === true : null;
+    this.sessionAttendeeChoice = control?.dirty && !locked ? control.value === true : null;
   }
 
   /**

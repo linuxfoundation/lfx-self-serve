@@ -559,6 +559,20 @@ describe('MeetingComposerFormService — load retry', () => {
     expect(service.validateForSubmit()).toBe(true);
   });
 
+  it('leaves the attendee toggle pristine when a submit fails validation', () => {
+    // The bulk mark exists to reveal validation messages, and this control has no validators — so
+    // marking it displays nothing and instead tells the attendee picker the organizer opted out.
+    // The picker seeds their standing choice from `dirty` on every mount, and create mode never
+    // hydrates, so one failed save would otherwise suppress group defaults for the whole session.
+    service.initialize({ mode: 'create', projectUid: 'project-1' });
+
+    expect(service.validateForSubmit()).toBe(false);
+
+    expect(service.form().get('show_meeting_attendees')?.dirty).toBe(false);
+    // The controls the mark is actually for still get it.
+    expect(service.form().get('title')?.dirty).toBe(true);
+  });
+
   it('does not re-fetch in create mode, where meetingId comes from the save', () => {
     service.initialize({ mode: 'create', projectUid: 'project-1' });
     service.meetingId.set('meeting-1');
