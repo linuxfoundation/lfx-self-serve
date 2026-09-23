@@ -159,10 +159,17 @@ describe('resolvePrivacy', () => {
     expect(resolvePrivacy(MeetingVisibility.PUBLIC, undefined).restricted).toBe(false);
   });
 
-  it('normalizes an undefined visibility to null and keeps the meeting closed to the public', () => {
-    const privacy = resolvePrivacy(undefined, false);
-    expect(privacy.visibility).toBeNull();
-    expect(privacy.openToPublic).toBe(false);
+  // The chip and the rail read the same object, so an unknown visibility has to resolve to one
+  // reading. Closed is the safe one: the alternative renders "Public" under a globe while the rail
+  // tells the same viewer they need an invitation.
+  it('reads an absent visibility as private across every field, not just openToPublic', () => {
+    for (const absent of [null, undefined]) {
+      const privacy = resolvePrivacy(absent, false);
+      expect(privacy.visibility).toBe(MeetingVisibility.PRIVATE);
+      expect(privacy.openToPublic).toBe(false);
+      expect(privacy.label).toBe('Private');
+      expect(privacy.icon).toBe('fa-light fa-shield');
+    }
   });
 });
 
@@ -389,7 +396,8 @@ describe('resolveVisibleSections', () => {
   });
 
   // The two resolvers have to agree or the page renders a rail pointing at hidden sections. An
-  // organizer without `past_meeting_full_access` is the cell where they previously disagreed, so
+  // organizer without `PublicPastMeetingResponse.full_access` is the cell where they previously
+  // disagreed, so
   // it is asserted across both at once rather than in each resolver's own describe.
   it('keeps an organizer without full access on the same side of both resolvers', () => {
     const input = {

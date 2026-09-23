@@ -82,7 +82,8 @@ export interface MeetingViewerContext {
  */
 export interface ActionSlotInput {
   /**
-   * Whether the viewer may see a past meeting's artifacts (`past_meeting_full_access`). Only
+   * Whether the viewer may see a past meeting's artifacts — `full_access` on
+   * {@link PublicPastMeetingResponse}, held client-side as `pastMeetingFullAccess`. Only
    * consulted when `timeState` is `ended`.
    */
   fullAccess: boolean;
@@ -117,7 +118,11 @@ export interface MeetingSectionVisibilityInput {
  */
 export interface MeetingSectionVisibility {
   agenda: boolean;
-  /** Join link, dial-in region — pre-meeting only, and only for people on the meeting. */
+  /**
+   * The join region — visible until the meeting ends, the live window included, and only for
+   * people on the meeting. Scoped to what the product already has (the join link and the host
+   * key); passcodes and dial-in numbers exist nowhere in LFX One and are not implied here.
+   */
   joinDetails: boolean;
   materials: boolean;
   /** The occurrence strip for a recurring meeting. */

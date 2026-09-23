@@ -84,9 +84,15 @@ export function resolveViewerRole(context: MeetingViewerContext): MeetingViewerR
  * Reuses the existing label and icon helpers rather than re-deriving the four-way copy — they
  * branch in different orders on purpose (label is visibility-first, icon is restricted-first), and
  * duplicating either here would eventually drift from the admin surfaces that already call them.
+ *
+ * An absent `visibility` reads as private. `Meeting.visibility` is nullable, and both helpers fall
+ * through to the public label and the globe icon when it is null — which would put "Public" and a
+ * globe in the header while `openToPublic` stayed false and the rail told the same viewer they
+ * need an invitation. Resolving the unknown case closed here is what makes this object's promise
+ * true: every field describes one privacy reading, so the header and the rail cannot disagree.
  */
 export function resolvePrivacy(visibility: MeetingVisibility | null | undefined, restricted: boolean | null | undefined): MeetingPrivacyState {
-  const resolvedVisibility = visibility ?? null;
+  const resolvedVisibility = visibility ?? MeetingVisibility.PRIVATE;
   const resolvedRestricted = restricted === true;
 
   return {
@@ -139,6 +145,8 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
     agenda: contentVisible,
     joinDetails: !ended && onTheMeeting,
     materials: contentVisible,
+    // Deliberately not gated on artifact access: the occurrence strip is navigation, not content,
+    // and a viewer locked out of one past occurrence may still open the upcoming ones.
     occurrences: input.recurring,
     // Gated with the rest of the past-meeting content, not only on membership: a registrant who
     // cannot see the agenda or the recording has no business seeing who attended either.
@@ -152,7 +160,7 @@ export function resolveVisibleSections(input: MeetingSectionVisibilityInput): Me
 
 /**
  * Past meeting. Organizers keep their tools unconditionally; everyone else sees artifacts only
- * with `past_meeting_full_access`, and is told so rather than shown an empty page.
+ * with `PublicPastMeetingResponse.full_access`, and is told so rather than shown an empty page.
  */
 function resolveEndedActionSlot(input: ActionSlotInput): ActionSlotKind {
   return hasArtifactAccess(input.viewerRole, input.fullAccess) ? 'tools' : 'no-access';
@@ -161,9 +169,9 @@ function resolveEndedActionSlot(input: ActionSlotInput): ActionSlotKind {
 /**
  * Whether a viewer may see a past meeting's agenda, materials, roster and recording.
  *
- * `past_meeting_full_access` is the general gate, but an organizer is never locked out of their
- * own meeting's artifacts — the flag describes what the meeting exposes to its attendees, not
- * what its owner is allowed to open.
+ * `PublicPastMeetingResponse.full_access` is the general gate, but an organizer is never locked
+ * out of their own meeting's artifacts — the flag describes what the meeting exposes to its
+ * attendees, not what its owner is allowed to open.
  *
  * Shared by {@link resolveEndedActionSlot} and {@link resolveVisibleSections} on purpose. When
  * they each carried their own rule, an organizer without `fullAccess` resolved to a `tools` rail
