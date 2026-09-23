@@ -2534,7 +2534,7 @@ describe('OrgClaService.getContributorAcknowledgments — the answer shape', () 
 
 describe('OrgClaService.getContributorAcknowledgments — the identity fallback', () => {
   // Parent story #1973 AC1 requires every acknowledged contributor to be visible. A row with any
-  // one of LF Login / GitHub / GitLab / email / DocuSign name populated must render, because the
+  // one of LF Login / GitHub / GitLab / email / name populated must render, because the
   // corporate console shows every one of them today.
   it('never drops a row when LF Login is absent — a GitHub-only contributor survives', async () => {
     stageAckRead(contributorPage({ list: [contributor({ linux_foundation_id: '', github_id: 'gh-only', email: '' })] }));
@@ -2659,6 +2659,17 @@ describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () =>
     });
 
     expect(row?.removedFromApprovalList).toBe(false);
+  });
+
+  it.each([
+    ['repeated clauses', `Signature invalidated (approved set to false) by cla-manager${' due to x'.repeat(2000)}`],
+    ['a long whitespace run', `Signature invalidated (approved set to false) by cla-manager due to x${' '.repeat(10000)}x`],
+  ])('rejects a long legacy note with %s promptly', async (_label, note) => {
+    const started = performance.now();
+    const row = await mapped({ signatureApproved: false, note });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+    expect(performance.now() - started).toBeLessThan(250);
   });
 
   it.each([

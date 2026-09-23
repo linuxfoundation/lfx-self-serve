@@ -396,9 +396,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       vi.useFakeTimers();
       try {
-        (
-          fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (v: string) => void } } } }
-        ).filterForm.controls.search.setValue('ada');
+        fixture.componentInstance['filterForm'].controls.search.setValue('ada');
         await vi.advanceTimersByTimeAsync(600);
         fixture.detectChanges();
       } finally {

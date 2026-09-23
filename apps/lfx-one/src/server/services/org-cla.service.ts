@@ -1736,7 +1736,7 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
 
 const APPROVAL_LIST_REMOVAL_REASON = /^approved list removal(?:\s*\((.*)\))?$/i;
 const LEGACY_INVALIDATION_NOTE = 'signature invalidated (approved set to false)';
-const LEGACY_APPROVAL_LIST_REMOVAL_NOTE = /^signature invalidated \(approved set to false\) by .* due to (.+?)\s+removal\b/i;
+const LEGACY_APPROVAL_LIST_REMOVAL_NOTE = /^signature invalidated \(approved set to false\) by (?:(?! due to ).)* due to (.{1,100}?)\s+removal\b/i;
 
 /**
  * Whether an unapproved acknowledgment lost its approval-list criteria rather than being

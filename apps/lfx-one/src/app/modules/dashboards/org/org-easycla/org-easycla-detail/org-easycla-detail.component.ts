@@ -248,6 +248,9 @@ export class OrgEasyclaDetailComponent {
    */
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
 
+  /** Set by the acknowledgments tab each time it loads, so the badge follows what the tab shows. */
+  private readonly panelAcknowledgmentCount = signal<{ signatureId: string; count: number } | null>(null);
+
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
   protected readonly selectedOrgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
@@ -542,9 +545,6 @@ export class OrgEasyclaDetailComponent {
    * agreement — an unsigned one holds no acknowledgments.
    */
   private readonly fetchedAcknowledgmentCount = this.initFetchedAcknowledgmentCount();
-
-  /** Set by the acknowledgments tab each time it loads, so the badge follows what the tab shows. */
-  private readonly panelAcknowledgmentCount = signal<{ signatureId: string; count: number } | null>(null);
 
   protected readonly acknowledgmentsBadge = computed(() => this.initAcknowledgmentsBadge());
 
@@ -1077,7 +1077,10 @@ export class OrgEasyclaDetailComponent {
           return this.claService.getContributorAcknowledgments(next.orgUid, next.signatureId, { pageSize: 1 }).pipe(
             map((list) => ({ signatureId: next.signatureId, count: list.totalCount })),
             // A failed count leaves the badge empty; the tab itself reports the failure when opened.
-            catchError(() => of(null))
+            catchError((error: unknown) => {
+              console.warn('Failed to load the contributor acknowledgment count:', (error as HttpErrorResponse)?.status, (error as HttpErrorResponse)?.message);
+              return of(null);
+            })
           );
         })
       ),

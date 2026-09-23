@@ -1066,10 +1066,11 @@ export interface OrgClaApprovalEntriesDialogData {
 /**
  * One acknowledgment as the table renders it.
  *
- * Every field except `signatureId` and `approved` is optional; missing attributes
- * render as an em-dash rather than dropping the row. The row is Invalidated when `approved` is
- * false OR any of `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy
- * rows can carry the stamps with `approved: true`; the stamps are authoritative).
+ * Every field except `signatureId`, `approved`, and `removedFromApprovalList` is optional; missing
+ * attributes render as an em-dash rather than dropping the row. The row is Not Authorized when
+ * `removedFromApprovalList` is true. Otherwise it is Invalidated when `approved` is false OR any of
+ * `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy rows can carry the
+ * stamps with `approved: true`; the stamps are authoritative).
  */
 export interface OrgClaContributorAcknowledgment {
   /** Per-ack signature id. Stable. Used to address an invalidate. */
