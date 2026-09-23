@@ -4,65 +4,61 @@
 import { ORG_ACCESS_UNVERIFIABLE_MESSAGE, ORG_ACCOUNT_ID_PATTERN } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
 
-import { BaseApiError, MicroserviceError, ServiceValidationError } from '../errors';
-import { personaDetectionService } from '../utils/persona-helper';
+import { MicroserviceError, ServiceValidationError } from '../errors';
+import { AccessCheckService } from '../services/access-check.service';
 import { assertOrgLensRead } from './org-lens-read-access.helper';
+
+const accessCheck = new AccessCheckService();
 
 /**
  * Read gate for org-scoped Snowflake analytics keyed by a caller-supplied account id.
  *
  * The analytics lane reads `ANALYTICS.PLATINUM_LFX_ONE.*` with the BFF's own credentials, so the
- * account id only filters rows — it never authorizes them (ADR-0038). A caller may read an
- * organization when it is one of their board-member persona organizations (the Board Member
- * dashboard's seed) or when `assertOrgLensRead` admits them (org grant, inherited grant, or
- * `b2b_org#auditor`, which is also how LF team membership resolves) — the organizations the org
- * selector offers them.
+ * account id only filters rows — it never authorizes them (ADR-0038). The caller must hold read
+ * permission on that organization: `assertOrgLensRead`, the same gate as every Org Lens read (org
+ * grant, inherited grant, or `b2b_org#auditor`, which covers key-contact promotion and LF team
+ * membership). Personas never grant access here — they shape presentation only.
  *
  * Only the canonical 18-char SFID is accepted (`ORG_ACCOUNT_ID_PATTERN`, 400 on the `accountId`
  * field otherwise), so the id authorized here is byte-for-byte the id the handler queries.
- *
- * Failure semantics follow `assertOrgLensRead`: 403 when we checked and the caller has no access,
- * 503 when we could not check. A failed persona lookup leaves the board-member branch unverified,
- * so a 403 that follows it is reported as 503 rather than as a verified denial.
+ * Failure semantics are `assertOrgLensRead`'s: 403 when the caller has no access, 503 when it
+ * could not be verified.
  */
 export async function assertOrgAnalyticsRead(req: Request, accountId: string, operation: string): Promise<void> {
   if (!ORG_ACCOUNT_ID_PATTERN.test(accountId)) {
     throw ServiceValidationError.forField('accountId', 'Invalid organization account id format', { operation });
   }
 
-  const { organizations, error: personaError } = await personaDetectionService.getDetections(req);
-  if (organizations.some((account) => account.accountId === accountId)) {
-    return;
-  }
-
-  try {
-    await assertOrgLensRead(req, accountId, operation);
-  } catch (error) {
-    if (personaError && error instanceof BaseApiError && error.statusCode === 403) {
-      throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', {
-        operation,
-        service: 'LFX_V2_SERVICE',
-      });
-    }
-    throw error;
-  }
+  await assertOrgLensRead(req, accountId, operation);
 }
 
 /**
- * The subset of `accountIds` that are the caller's own board-member organizations, in request order.
+ * The subset of `accountIds` the caller holds `b2b_org#auditor` on, in request order.
  *
- * The batch's one client (the org-selector enrichment in `AccountContextService`) only ever sends those
- * persona seeds, so no other id needs the grant roster or the authorizer — and asking the authorizer
- * per id would hand any caller a client-controlled fan-out of up to one upstream call per id. Ids
- * outside the persona set are dropped without any upstream call. A failed persona lookup cannot say
- * which ids are the caller's, so it fails the call closed (503).
+ * One batched authorizer check covers the whole list, so a caller cannot turn the batch into one
+ * upstream round-trip per id. Non-canonical ids are dropped before the check. An authorizer
+ * failure fails the whole call closed (503) rather than reading as "no access".
  */
 export async function filterReadableAccountIds(req: Request, accountIds: string[], operation: string): Promise<string[]> {
-  const { organizations, error } = await personaDetectionService.getDetections(req);
-  if (error) {
-    throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'PERSONA_DETECTION_UNAVAILABLE', { operation, service: 'LFX_V2_SERVICE' });
+  const canonical = accountIds.filter((accountId) => ORG_ACCOUNT_ID_PATTERN.test(accountId));
+  if (canonical.length === 0) {
+    return [];
   }
 
-  const own = new Set(organizations.map((account) => account.accountId));
-  return accountIds.filter((accountId) => own.has(accountId) && ORG_ACCOUNT_ID_PATTERN.test(accountId));
+  let granted: Map<string, boolean>;
+  try {
+    granted = await accessCheck.checkAccessStrict(
+      req,
+      canonical.map((id) => ({ resource: 'b2b_org', id, access: 'auditor' }))
+    );
+  } catch (error) {
+    throw new MicroserviceError(ORG_ACCESS_UNVERIFIABLE_MESSAGE, 503, 'ROLE_GRANTS_UNAVAILABLE', {
+      operation,
+      service: 'LFX_V2_SERVICE',
+      path: '/access-check',
+      originalError: error instanceof Error ? error : undefined,
+    });
+  }
+
+  return canonical.filter((accountId) => granted.get(`${accountId}#auditor`) === true);
 }

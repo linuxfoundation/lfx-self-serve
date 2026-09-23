@@ -3227,8 +3227,8 @@ export class AnalyticsController {
    * and highest active corporate membership tier.
    * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
    *
-   * Only the caller's own board-member accounts are resolved (`filterReadableAccountIds`); any other
-   * id is dropped without an upstream call rather than failing the whole org-selector enrichment.
+   * Only accounts the caller holds read permission on are resolved (`filterReadableAccountIds`, one
+   * batched `b2b_org#auditor` check); the rest are dropped rather than failing the whole org-selector enrichment.
    */
   public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_lens_account_context');
@@ -3515,7 +3515,7 @@ export class AnalyticsController {
    * Parse and validate the `accountIds` query parameter (comma-separated
    * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
    * checks each id matches the Salesforce 15/18-char alphanumeric format.
-   * `filterReadableAccountIds` then keeps only the caller's own canonical 18-char board-member ids.
+   * `filterReadableAccountIds` then keeps only canonical 18-char ids the caller holds `b2b_org#auditor` on.
    */
   private parseAccountIdsParam(req: Request, operation: string): string[] {
     const raw = getStringQueryParam(req, 'accountIds');

@@ -31,14 +31,14 @@ import type * as AuthHelper from '../utils/auth-helper';
  */
 
 const getPersonas = vi.fn();
-const getDetections = vi.fn();
+const checkAccessStrict = vi.fn();
 const checkRootMarketingAuditor = vi.fn();
 const execute = vi.fn();
 const getAccessAwareOrgs = vi.fn();
 const checkSingleAccessStrict = vi.fn();
 
 vi.mock('../utils/persona-helper', () => ({
-  personaDetectionService: { getPersonas, getDetections, checkRootMarketingAuditor },
+  personaDetectionService: { getPersonas, checkRootMarketingAuditor },
 }));
 // The org gate delegates to the real `assertOrgLensRead`; these mock what that helper consumes (the
 // caller's grant roster and the `b2b_org#auditor` authorizer), so the real decision logic runs.
@@ -50,6 +50,7 @@ vi.mock('../services/org-role-grants.service', () => ({
 vi.mock('../services/access-check.service', () => ({
   AccessCheckService: class {
     public checkSingleAccessStrict = checkSingleAccessStrict;
+    public checkAccessStrict = checkAccessStrict;
 
     // The marketing gates' per-project check. A prototype method (not a field) so a test can
     // `vi.spyOn(AccessCheckService.prototype, 'checkSingleAccess')` to stub a project grant.
@@ -121,6 +122,9 @@ beforeEach(() => {
   // Default: a caller with no grant roster entries whom the authorizer does not admit.
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false, degraded: false });
   checkSingleAccessStrict.mockResolvedValue(false);
+  checkAccessStrict.mockImplementation(
+    async (_req: unknown, resources: { id: string; access: string }[]) => new Map(resources.map((r) => [`${r.id}#${r.access}`, false]))
+  );
 });
 
 describe.each([
@@ -271,17 +275,28 @@ describe.each(['/member-retention', '/member-acquisition', '/engaged-community',
 const OWN = '001EXAMPLEOWN00AAA';
 const VICTIM = '001EXAMPLEOTHER0AA';
 
-/** A caller who is a board member of `boardMemberOf` and holds an org grant on `grants`, and nothing else. */
-function caller({ boardMemberOf = [], grants = [], personaError = null }: { boardMemberOf?: string[]; grants?: string[]; personaError?: string | null }): void {
-  const personas = boardMemberOf.length > 0 ? ['board-member'] : ['contributor'];
+/**
+ * A caller who is a board member of `boardMemberOf` (a persona, never an access grant) and holds an
+ * org permission on `grants` — seen by both the grant roster and the batched `b2b_org#auditor` check.
+ */
+function caller({ boardMemberOf = [], grants = [] }: { boardMemberOf?: string[]; grants?: string[] }): void {
   const organizations = boardMemberOf.map((accountId) => ({ accountId, accountName: 'Org', uid: accountId }));
-  getDetections.mockResolvedValue({ personas, personaProjects: {}, projects: [], organizations, error: personaError });
-  getPersonas.mockResolvedValue({ personas, isLFStaff: false, isRootWriter: false, personaProjects: {}, organizations, error: personaError });
+  getPersonas.mockResolvedValue({
+    personas: boardMemberOf.length > 0 ? ['board-member'] : ['contributor'],
+    isLFStaff: false,
+    isRootWriter: false,
+    personaProjects: {},
+    organizations,
+    error: null,
+  });
   getAccessAwareOrgs.mockResolvedValue({
     resolved: new Map(grants.map((uid) => [uid, { roleSource: 'direct-writer' }])),
     upstreamFailed: false,
     degraded: false,
   });
+  checkAccessStrict.mockImplementation(
+    async (_req: unknown, resources: { id: string; access: string }[]) => new Map(resources.map((r) => [`${r.id}#${r.access}`, grants.includes(r.id)]))
+  );
 }
 
 /** Whether any Snowflake query ran with this account id among its binds. */
@@ -333,7 +348,7 @@ describe('analytics router — no row reads an organization the caller holds no 
   });
 
   it.each(routePaths)('%s never queries Snowflake with an ungranted account id', async (path) => {
-    caller({ boardMemberOf: [OWN], grants: [OWN] });
+    caller({ grants: [OWN] });
 
     await (await request(path, OWN)).arrayBuffer();
     expect(queried(OWN)).toBe(ORG_SCOPED_ROWS.has(path));
@@ -353,7 +368,7 @@ describe.each([
   const request = (accountId: string): Promise<Response> => fetch(`${baseUrl}/api/analytics${path}?accountId=${accountId}&${slugParam}=cncf`);
 
   it('refuses an organization the caller holds no access to (the reported exposure)', async () => {
-    caller({ boardMemberOf: [OWN], grants: [OWN] });
+    caller({ grants: [OWN] });
 
     const res = await request(VICTIM);
 
@@ -361,12 +376,14 @@ describe.each([
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('admits a board member of the organization who holds no org grant', async () => {
+  // Personas shape presentation only; access comes from a permission on the organization.
+  it('refuses a board member of the organization who holds no permission on it', async () => {
     caller({ boardMemberOf: [OWN] });
 
-    await request(OWN);
+    const res = await request(OWN);
 
-    expect(queried(OWN)).toBe(true);
+    expect(res.status).toBe(403);
+    expect(execute).not.toHaveBeenCalled();
   });
 
   it('admits an org-grant holder who is not a board member', async () => {
@@ -387,9 +404,9 @@ describe.each([
     expect(checkSingleAccessStrict).toHaveBeenCalledWith(expect.anything(), { resource: 'b2b_org', id: OWN, access: 'auditor' });
   });
 
-  // A failed persona lookup cannot confirm the board-member branch, so "no" is not a verified answer.
-  it('answers 503, not 403, when persona detection failed and no grant admits the caller', async () => {
-    caller({ personaError: 'persona service unavailable' });
+  it('answers 503, not 403, when the grant lookup failed and the authorizer does not admit the caller', async () => {
+    caller({});
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true, degraded: false });
 
     const res = await request(OWN);
 
@@ -397,17 +414,9 @@ describe.each([
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it('still admits a grant holder when persona detection failed', async () => {
-    caller({ grants: [OWN], personaError: 'persona service unavailable' });
-
-    await request(OWN);
-
-    expect(queried(OWN)).toBe(true);
-  });
-
   // The id authorized must be the id queried: the non-canonical 15-char form is refused outright.
   it('rejects the 15-char form of an organization the caller can read', async () => {
-    caller({ boardMemberOf: [OWN], grants: [OWN] });
+    caller({ grants: [OWN] });
 
     const res = await request(OWN.slice(0, 15));
 
@@ -417,9 +426,9 @@ describe.each([
   });
 });
 
-describe('analytics router — org-lens-account-context resolves only the caller’s board-member accounts', () => {
-  it('resolves only the accounts the caller may read', async () => {
-    caller({ boardMemberOf: [OWN] });
+describe('analytics router — org-lens-account-context resolves only accounts the caller may read', () => {
+  it('resolves only the accounts the caller holds a permission on', async () => {
+    caller({ grants: [OWN] });
 
     const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN},${VICTIM}`);
 
@@ -429,7 +438,7 @@ describe('analytics router — org-lens-account-context resolves only the caller
   });
 
   it('returns an empty list without querying when no requested account is readable', async () => {
-    caller({});
+    caller({ boardMemberOf: [VICTIM] });
 
     const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${VICTIM}`);
 
@@ -439,8 +448,8 @@ describe('analytics router — org-lens-account-context resolves only the caller
   });
 
   // A batch of made-up ids must not become one authorizer round-trip per id.
-  it('drops ids outside the persona set without asking the grant roster or the authorizer', async () => {
-    caller({ boardMemberOf: [OWN] });
+  it('checks the whole batch with one authorizer call', async () => {
+    caller({ grants: [OWN] });
     const madeUp = Array.from({ length: 49 }, (_, index) => `001EXAMPLEZZ${String(index).padStart(3, '0')}AAA`);
 
     const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${[OWN, ...madeUp].join(',')}`);
@@ -448,12 +457,13 @@ describe('analytics router — org-lens-account-context resolves only the caller
     expect(res.status).toBe(200);
     expect(queried(OWN)).toBe(true);
     expect(madeUp.some(queried)).toBe(false);
-    expect(getAccessAwareOrgs).not.toHaveBeenCalled();
+    expect(checkAccessStrict).toHaveBeenCalledTimes(1);
     expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
-  it('fails closed with 503 when persona detection failed', async () => {
-    caller({ boardMemberOf: [OWN], personaError: 'persona service unavailable' });
+  it('fails closed with 503 when the authorizer cannot answer', async () => {
+    caller({ grants: [OWN] });
+    checkAccessStrict.mockRejectedValue(new Error('authorizer down'));
 
     const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN}`);
 
