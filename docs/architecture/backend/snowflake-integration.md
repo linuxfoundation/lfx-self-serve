@@ -839,6 +839,18 @@ Solution:
   4. Check for connection leaks (unreleased connections)
 ```
 
+```text
+Error: Snowflake query execution failed: max waitingClients count exceeded
+Cause: All connections busy and the pod's waiting queue is full (SNOWFLAKE_MAX_WAITING_CLIENTS)
+Solution:
+  1. Raise SNOWFLAKE_MAX_WAITING_CLIENTS and/or SNOWFLAKE_MAX_CONNECTIONS for the environment
+  2. Reduce per-page query fan-out
+```
+
+The query never reached Snowflake, so this rejection does not count toward the circuit breaker's
+consecutive-failure threshold (it is logged as a warning with pool stats instead). Acquire timeouts
+still count, because they also occur when Snowflake is unreachable and no connection can be created.
+
 #### 3. Query Timeout
 
 ```text

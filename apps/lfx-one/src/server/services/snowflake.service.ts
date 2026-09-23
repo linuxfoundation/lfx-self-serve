@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { isInvalidIdentifierError, isMissingObjectError } from '../helpers/snowflake-error.helper';
+import { isInvalidIdentifierError, isMissingObjectError, isPoolQueueFullError } from '../helpers/snowflake-error.helper';
 import { tracer } from '../server-tracer';
 import { LockManager } from '../utils/lock-manager';
 import { logger } from './logger.service';
@@ -235,6 +235,21 @@ export class SnowflakeService {
                 query_hash: queryHash,
                 sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
                 err: error,
+              });
+            } else if (isPoolQueueFullError(error)) {
+              // Local backpressure: the query never reached Snowflake, so counting it would let a
+              // traffic burst open the breaker and fail every query for the reset window.
+              span.setStatus({
+                code: SpanStatusCode.ERROR,
+                message: error instanceof Error ? error.message : String(error),
+              });
+              span.setAttribute('snowflake.pool_queue_full', true);
+              this.recordBackpressure();
+              logger.warning(undefined, 'snowflake_query', 'Query rejected by local connection pool — waiting queue full', {
+                query_hash: queryHash,
+                sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
+                pool: this.getPoolStats(),
+                circuit_state: this.circuitState,
               });
             } else {
               span.setStatus({
@@ -558,6 +573,15 @@ export class SnowflakeService {
     this.consecutiveFailures = 0;
     this.probeInFlight = false;
     this.circuitState = SnowflakeCircuitState.CLOSED;
+  }
+
+  /**
+   * Record a query the local pool rejected before it reached Snowflake. Leaves the failure count
+   * and circuit state untouched, but frees the HALF_OPEN probe slot so the next caller can probe.
+   * @private
+   */
+  private recordBackpressure(): void {
+    this.probeInFlight = false;
   }
 
   /**

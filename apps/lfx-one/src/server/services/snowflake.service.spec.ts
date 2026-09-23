@@ -29,6 +29,10 @@ vi.mock('./logger.service', () => ({
   },
 }));
 
+import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
+import { SnowflakeCircuitState } from '@lfx-one/shared/enums';
+
+import { tracer } from '../server-tracer';
 import { SnowflakeService } from './snowflake.service';
 
 describe('SnowflakeService query deduplication', () => {
@@ -59,5 +63,62 @@ describe('SnowflakeService query deduplication', () => {
     await service.execute('SELECT 1', [], options);
 
     expect(lockManager.hashQuery).toHaveBeenCalledWith('SELECT 1', [], options);
+  });
+});
+
+describe('SnowflakeService circuit breaker', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+  const poolQueueFull = () => Promise.reject(new Error('max waitingClients count exceeded'));
+  const queryFailure = () => Promise.reject(new Error('Network error. Could not reach Snowflake.'));
+  const querySuccess = () => Promise.resolve({ rows: [], metadata: [] });
+
+  const serviceWithPool = (use: ReturnType<typeof vi.fn>) => {
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    const service = SnowflakeService.getInstance();
+    const internals = service as unknown as { pool: unknown; circuitState: SnowflakeCircuitState; lastFailureTime: number };
+    internals.pool = { use, borrowed: 20, available: 0, pending: 10, size: 20 };
+    return { service, internals };
+  };
+
+  const runQueries = async (service: SnowflakeService, count: number) => {
+    for (let i = 0; i < count; i++) {
+      await service.execute(`SELECT ${i}`).catch(() => undefined);
+    }
+  };
+
+  afterEach(() => {
+    SnowflakeService.resetInstance();
+    vi.clearAllMocks();
+  });
+
+  it('keeps the circuit closed when the local pool rejects queries because its waiting queue is full', async () => {
+    const { service } = serviceWithPool(vi.fn(poolQueueFull));
+
+    await expect(service.execute('SELECT 1')).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+    await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD * 2);
+
+    expect(service.getCircuitStats()).toMatchObject({ state: SnowflakeCircuitState.CLOSED, consecutiveFailures: 0 });
+    expect(span.setAttribute).toHaveBeenCalledWith('snowflake.pool_queue_full', true);
+  });
+
+  it('still opens the circuit after repeated genuine Snowflake failures', async () => {
+    const { service } = serviceWithPool(vi.fn(queryFailure));
+
+    await runQueries(service, SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_FAILURE_THRESHOLD);
+
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.OPEN);
+  });
+
+  it('frees the HALF_OPEN probe slot when the probe is rejected by a full pool queue', async () => {
+    const use = vi.fn().mockImplementationOnce(poolQueueFull).mockImplementation(querySuccess);
+    const { service, internals } = serviceWithPool(use);
+    internals.circuitState = SnowflakeCircuitState.OPEN;
+    internals.lastFailureTime = Date.now() - SNOWFLAKE_CONFIG.CIRCUIT_BREAKER_RESET_TIMEOUT_MS - 1;
+
+    await expect(service.execute('SELECT 1')).rejects.toMatchObject({ code: 'SNOWFLAKE_QUERY_ERROR' });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.HALF_OPEN);
+
+    await expect(service.execute('SELECT 2')).resolves.toEqual({ rows: [], metadata: [] });
+    expect(service.getCircuitStats().state).toBe(SnowflakeCircuitState.CLOSED);
   });
 });
