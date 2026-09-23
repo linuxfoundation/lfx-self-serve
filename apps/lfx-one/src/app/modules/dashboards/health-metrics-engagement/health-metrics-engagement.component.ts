@@ -18,12 +18,14 @@ import { debounceTime, filter, Subject } from 'rxjs';
 
 import { EngagementGroupAttendanceComponent } from './components/engagement-group-attendance/engagement-group-attendance.component';
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
+import { EngagementNonMemberParticipationComponent } from './components/engagement-non-member-participation/engagement-non-member-participation.component';
 import { EngagementOrgParticipationComponent } from './components/engagement-org-participation/engagement-org-participation.component';
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
 import type {
   HealthMetricsEngagementGroupCounts,
+  HealthMetricsEngagementNonMemberCounts,
   HealthMetricsEngagementOrgCounts,
   HealthMetricsEngagementSectionKey,
   HealthMetricsEngagementSectionView,
@@ -37,7 +39,13 @@ import type {
  */
 @Component({
   selector: 'lfx-health-metrics-engagement',
-  imports: [EngagementGroupAttendanceComponent, EngagementMeetingParticipationComponent, EngagementOrgParticipationComponent, EngagementSubNavComponent],
+  imports: [
+    EngagementGroupAttendanceComponent,
+    EngagementMeetingParticipationComponent,
+    EngagementNonMemberParticipationComponent,
+    EngagementOrgParticipationComponent,
+    EngagementSubNavComponent,
+  ],
   templateUrl: './health-metrics-engagement.component.html',
 })
 export class HealthMetricsEngagementComponent {
@@ -60,9 +68,10 @@ export class HealthMetricsEngagementComponent {
   protected readonly activeSection = signal<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
 
   // `null` until that section reports, which renders no badge rather than a misleading zero. The
-  // remaining badge-bearing sections land in the follow-up PRs on #2802.
+  // remaining badge-bearing section (`reps`) lands in the follow-up PR on #2802.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
   protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
+  protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
     buildHealthMetricsEngagementSubNavItems({
@@ -72,7 +81,7 @@ export class HealthMetricsEngagementComponent {
       lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
       reps: null,
       neverAttendedReps: 0,
-      nonMemberOrgs: null,
+      nonMemberOrgs: this.nonMemberCounts()?.orgs ?? null,
     })
   );
 
@@ -177,6 +186,21 @@ export class HealthMetricsEngagementComponent {
   /** A foundation change re-reads the table, which reflows the pane all over again. */
   protected onOrgReading(): void {
     this.onSectionReading('orgs');
+  }
+
+  /** Non-member participation reports the foundation-wide non-member org count for its badge. */
+  protected onNonMemberCounts(counts: HealthMetricsEngagementNonMemberCounts | null): void {
+    this.nonMemberCounts.set(counts);
+  }
+
+  /** The last section still reflows the pane: a deep link to it must re-settle once its rows land. */
+  protected onNonMemberSettled(): void {
+    this.onSectionSettled('nonmem');
+  }
+
+  /** A foundation change re-reads the table, which reflows the pane all over again. */
+  protected onNonMemberReading(): void {
+    this.onSectionReading('nonmem');
   }
 
   /** An explicit pick supersedes a deep link still waiting on data, which would scroll back over it. */

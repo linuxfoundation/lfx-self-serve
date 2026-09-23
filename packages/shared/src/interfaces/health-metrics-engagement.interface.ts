@@ -244,3 +244,48 @@ export interface HealthMetricsEngagementOrgParticipation {
 export interface HealthMetricsEngagementOrgQuery {
   foundationSlug: string;
 }
+
+/** One non-member organization's numbers for a single period. Every period ships on every row, so
+ * the period pill re-projects client-side and costs no request. */
+export interface HealthMetricsEngagementNonMemberPeriod {
+  range: HealthMetricsRange;
+  /** Meetings this org turned up to in the period; `0` is measured, not missing. */
+  meetingsAttended: number;
+  /** Distinct people it sent across those meetings. */
+  distinctPeople: number;
+  /** The view's `SORT_RANK_<period>`, best-first. Per period, so the pill re-sorts the loaded rows. */
+  sortRank: number | null;
+}
+
+/** A row of the Non-member participation table. */
+export interface HealthMetricsEngagementNonMemberRow {
+  accountId: string;
+  accountName: string;
+  /** The view's own `MEMBERSHIP_STATUS`, rendered as-is — it reads `Non-member` on real rows. */
+  membershipStatus: string;
+  periods: HealthMetricsEngagementNonMemberPeriod[];
+}
+
+/** One non-member row with its selected-period numbers already resolved. */
+export interface HealthMetricsEngagementNonMemberRowView {
+  row: HealthMetricsEngagementNonMemberRow;
+  period: HealthMetricsEngagementNonMemberPeriod | null;
+}
+
+/** Sub-nav badge input for `#nonmem`. Period-agnostic, denormalized onto every row. */
+export interface HealthMetricsEngagementNonMemberCounts {
+  orgs: number;
+}
+
+/** `GET /api/analytics/engagement-non-member-participation` — every org, every period, one read. */
+export interface HealthMetricsEngagementNonMemberParticipation {
+  rows: HealthMetricsEngagementNonMemberRow[];
+  /** `null` when the view reports no scope count on rows that exist — unmeasured, not zero. */
+  counts: HealthMetricsEngagementNonMemberCounts | null;
+}
+
+/** Wire query for `GET /api/analytics/engagement-non-member-participation`. The view carries no
+ * project key, so the section is foundation-scoped and the period resolves client-side. */
+export interface HealthMetricsEngagementNonMemberQuery {
+  foundationSlug: string;
+}

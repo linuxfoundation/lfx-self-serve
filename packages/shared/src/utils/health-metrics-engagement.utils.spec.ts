@@ -16,6 +16,7 @@ import {
 } from '../constants/health-metrics-engagement.constants';
 import {
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgRow,
   HealthMetricsEngagementParticipationRow,
   HealthMetricsEngagementSubNavCounts,
@@ -33,7 +34,9 @@ import {
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
   selectHealthMetricsEngagementGroupPeriod,
+  selectHealthMetricsEngagementNonMemberPeriod,
   selectHealthMetricsEngagementParticipationPeriod,
+  sortHealthMetricsEngagementNonMemberRows,
 } from './health-metrics-engagement.utils';
 
 function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): HealthMetricsEngagementSubNavCounts {
@@ -315,8 +318,8 @@ describe('organization participation rules', () => {
       lastEngagedDate: '2026-08-14',
       daysSinceLastEngaged: 39,
       lapsed: false,
+      // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
       periods: [
-        { range: 'YTD', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank },
         {
           range: 'COMPLETED_YEAR',
           meetingsHeld: 30,
@@ -327,6 +330,7 @@ describe('organization participation rules', () => {
           avgReps: 1.1,
           sortRank: sortRank === null ? null : 10 - sortRank,
         },
+        { range: 'YTD', meetingsHeld: 30, meetingsTotal: 27, invitedCount: 27, attendedCount: 21, attendancePct: 0.78, avgReps: 1.75, sortRank },
       ],
       ...overrides,
     };
@@ -364,6 +368,51 @@ describe('organization participation rules', () => {
   it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
     const rows = [orgRow('Zeta Labs', 5), orgRow('Alpha Works', 1)];
     filterHealthMetricsEngagementOrgRows(rows, 'all', '', 'YTD');
+
+    expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
+  });
+});
+
+describe('non-member participation rules', () => {
+  function nonMemberRow(name: string, sortRank: number | null): HealthMetricsEngagementNonMemberRow {
+    return {
+      accountId: name.toLowerCase().replace(/\s+/g, '-'),
+      accountName: name,
+      membershipStatus: 'Non-member',
+      // Oldest-first, as the server builds them from `HEALTH_METRICS_ENGAGEMENT_RANGES`.
+      periods: [
+        { range: 'COMPLETED_YEAR', meetingsAttended: 8, distinctPeople: 3, sortRank: sortRank === null ? null : 10 - sortRank },
+        { range: 'YTD', meetingsAttended: 12, distinctPeople: 4, sortRank },
+      ],
+    };
+  }
+
+  it('selects the period the pill asks for, falling back to the newest period held', () => {
+    const row = nonMemberRow('Acme Motors', 1);
+
+    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR')?.meetingsAttended).toBe(8);
+    // A period the read never returned falls back rather than blanking every cell in the row.
+    expect(selectHealthMetricsEngagementNonMemberPeriod(row, 'COMPLETED_YEAR_3')?.range).toBe('YTD');
+    expect(selectHealthMetricsEngagementNonMemberPeriod({ ...row, periods: [] }, 'YTD')).toBeNull();
+  });
+
+  it('ranks by the selected period, so the period pill re-sorts rather than re-reads', () => {
+    const rows = [nonMemberRow('Acme Motors', 4), nonMemberRow('Vendor Corp', 1)];
+
+    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Vendor Corp', 'Acme Motors']);
+    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'COMPLETED_YEAR').map((row) => row.accountName)).toEqual(['Acme Motors', 'Vendor Corp']);
+  });
+
+  // An unranked row is not the best row — sorting it first would put a blank at the top of the table.
+  it('sorts an unranked organization last, and breaks a rank tie by name', () => {
+    const rows = [nonMemberRow('Unranked Co', null), nonMemberRow('Zeta Labs', 2), nonMemberRow('Alpha Works', 2)];
+
+    expect(sortHealthMetricsEngagementNonMemberRows(rows, 'YTD').map((row) => row.accountName)).toEqual(['Alpha Works', 'Zeta Labs', 'Unranked Co']);
+  });
+
+  it("leaves the caller's array untouched, since the rows are shared with the response signal", () => {
+    const rows = [nonMemberRow('Zeta Labs', 5), nonMemberRow('Alpha Works', 1)];
+    sortHealthMetricsEngagementNonMemberRows(rows, 'YTD');
 
     expect(rows.map((row) => row.accountName)).toEqual(['Zeta Labs', 'Alpha Works']);
   });

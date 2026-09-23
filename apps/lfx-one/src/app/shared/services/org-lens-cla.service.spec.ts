@@ -92,3 +92,32 @@ describe('OrgLensClaService manager client', () => {
     expect(http.delete).toHaveBeenCalledWith(`${managersBase}/${encodeURIComponent(lfUsername)}`);
   });
 });
+
+describe('OrgLensClaService acknowledgment client', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const SIGNATURE = 'signature-uuid-1';
+  const acknowledgmentsBase = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/${encodeURIComponent(SIGNATURE)}/acknowledgments`;
+
+  let service: OrgLensClaService;
+  let http: { post: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { post: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('invalidateAcknowledgment POSTs to the encoded invalidate path', async () => {
+    const acknowledgmentSignatureId = 'ack id/with chars';
+    const request = { reason: 'other' as const };
+    const receipt = { signatureId: acknowledgmentSignatureId };
+    http.post.mockReturnValue(of(receipt));
+
+    await expect(firstValueFrom(service.invalidateAcknowledgment(ORG, SIGNATURE, acknowledgmentSignatureId, request))).resolves.toEqual(receipt);
+    expect(http.post).toHaveBeenCalledWith(`${acknowledgmentsBase}/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`, request);
+  });
+});

@@ -77,6 +77,7 @@ describe.each([
   ['/health-overview-kpis', 'foundationSlug'],
   ['/engagement-group-attendance', 'foundationSlug'],
   ['/engagement-meeting-participation', 'foundationSlug'],
+  ['/engagement-non-member-participation', 'foundationSlug'],
   ['/engagement-org-participation', 'foundationSlug'],
 ])('analytics router — dashboard access gate on %s', (path, slugParam) => {
   it('refuses a caller without ED or LF Staff access', async () => {

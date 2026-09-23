@@ -49,6 +49,9 @@ export class OrgNavigationService {
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly destroyRef = inject(DestroyRef);
 
+  /** Written by the first-page tap inside `createOrgListState`, so it is declared before `state`. */
+  private readonly firstPageLandedGenerationInternal = signal<number>(0);
+
   private readonly state: OrgListState = this.createOrgListState();
 
   /** The one deferred `'default'` address write waiting for the router to go idle, if any. */
@@ -64,6 +67,14 @@ export class OrgNavigationService {
   public readonly loaded: Signal<boolean> = this.state.loaded;
   public readonly hasMore: Signal<boolean> = this.state.hasMore;
   public readonly upstreamFailed: Signal<boolean> = this.state.upstreamFailed.asReadonly();
+  /** First-page fetch generation: bumped by every search, reset and refresh; a superseded fetch cannot clear `loading`. */
+  public readonly generation: Signal<number> = this.state.generation.asReadonly();
+  /**
+   * Generation of the last first page that landed (success or the empty page a failed reset emits).
+   * Next-page fetches reuse the active generation, so `loading` alone cannot tell "the first page is
+   * still in flight" from "the viewer is scrolling"; this can.
+   */
+  public readonly firstPageLandedGeneration: Signal<number> = this.firstPageLandedGenerationInternal.asReadonly();
 
   public searchTerm(): WritableSignal<string> {
     return this.state.searchTerm;
@@ -103,12 +114,16 @@ export class OrgNavigationService {
    * untouched, never forced either way — so the refreshed page (which supersedes the bootstrap's
    * request) is consumed under the bootstrap's semantics, exactly as the bootstrap's own page would
    * have been. The guarantee above is therefore "Retry adds no selection semantics of its own".
+   *
+   * Returns the generation of the fetch it started (bumped synchronously by the first-page pipeline),
+   * so a caller can tell its own fetch apart from a later search or reset.
    */
-  public refreshList(selectedUid?: string | null): void {
+  public refreshList(selectedUid?: string | null): number {
     if (selectedUid) {
       this.restoredSelectedUid = selectedUid;
     }
     this.state.reload$.next();
+    return this.state.generation();
   }
 
   private createOrgListState(): OrgListState {
@@ -197,6 +212,9 @@ export class OrgNavigationService {
           nextPageToken.set(page.nextPageToken);
           upstreamFailed.set(page.upstreamFailed);
           loaded.set(true);
+          if (page.reset) {
+            this.firstPageLandedGenerationInternal.set(generation());
+          }
           if (pendingDefaultSelection()) {
             this.handlePendingSelection(page, pendingDefaultSelection);
           }
