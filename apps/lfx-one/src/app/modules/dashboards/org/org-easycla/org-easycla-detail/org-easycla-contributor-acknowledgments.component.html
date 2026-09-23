@@ -121,10 +121,10 @@
                   @if (!row.invalidated) {
                     <lfx-button
                       [label]="actionCopy.label"
-                      icon="fa-light fa-ban"
                       severity="danger"
                       [text]="true"
                       size="small"
+                      styleClass="!p-0 !text-red-600 hover:!bg-transparent hover:underline"
                       [disabled]="!row.invalidatable || row.invalidatePending"
                       [loading]="row.invalidatePending"
                       [ariaLabel]="row.invalidateAriaLabel"

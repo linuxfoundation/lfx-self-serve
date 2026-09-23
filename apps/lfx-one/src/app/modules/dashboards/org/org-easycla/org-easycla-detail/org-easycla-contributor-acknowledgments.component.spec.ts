@@ -487,6 +487,17 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(invalidateButton(fixture)).toBeTruthy();
     });
 
+    it('renders the control as a plain text link with no icon, as the prototype does', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { canEdit: true })));
+      const fixture = await render();
+      const button = invalidateButton(fixture);
+
+      expect(button?.classList).toContain('p-button-text');
+      expect(button?.classList).toContain('hover:underline');
+      expect(button?.querySelector('.p-button-icon')).toBeNull();
+      expect(button?.textContent?.trim()).toBe('Invalidate');
+    });
+
     // `canEdit` is decided server-side from the CCLA's manager roster. An org viewer who is not on
     // it would be refused by the BFF anyway; withholding the control is what stops them being
     // offered an action that cannot succeed.

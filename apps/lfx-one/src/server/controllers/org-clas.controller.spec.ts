@@ -1280,6 +1280,16 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('answers 409 with a plain sentence when the acknowledgment is not approved', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-approved' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ message: "This acknowledgment is no longer approved, so it can't be invalidated yet." });
+  });
+
   it('answers 400 with its own copy for an unsigned agreement', async () => {
     invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-signed' });
     const res = buildRes();

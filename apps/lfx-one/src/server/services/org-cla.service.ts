@@ -1212,25 +1212,40 @@ export class OrgClaService {
 
     // PUT, not POST: the producer declares this operation as `put` on
     // `/v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`.
-    const upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
-      {
-        method: 'PUT',
-        body,
-        operation: 'org_cla_invalidate_acknowledgment',
-        service: SERVICE,
-        errorMessage: 'Failed to invalidate the acknowledgment',
-        errorCode: 'UPSTREAM_ERROR',
-        // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
-        // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
-        // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
-        // would be the one writing identities out.
-        redactResponseBody: true,
-        // No `bearerToken` override: the route blocks this path during impersonation, so there is
-        // no impersonated identity to forward. A write must run as the acting user.
+    let upstream: EasyClaEclaInvalidateResult | null;
+    try {
+      upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+        {
+          method: 'PUT',
+          body,
+          operation: 'org_cla_invalidate_acknowledgment',
+          service: SERVICE,
+          errorMessage: 'Failed to invalidate the acknowledgment',
+          errorCode: 'UPSTREAM_ERROR',
+          // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
+          // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
+          // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
+          // would be the one writing identities out.
+          redactResponseBody: true,
+          // No `bearerToken` override: the route blocks this path during impersonation, so there is
+          // no impersonated identity to forward. A write must run as the acting user.
+        }
+      );
+    } catch (error) {
+      // The producer refuses any acknowledgment that is not approved with 409 — a Not Authorized
+      // row, or one invalidated since the list was read.
+      if (error instanceof MicroserviceError && error.statusCode === 409) {
+        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment is not approved, so the producer refused the invalidate', {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          acknowledgment_signature_id: acknowledgmentSignatureId,
+        });
+        return { outcome: 'not-approved' };
       }
-    );
+      throw error;
+    }
 
     if (!upstream || typeof upstream !== 'object') {
       throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
@@ -1649,7 +1664,8 @@ export type OrgClaInvalidateAcknowledgmentOutcome =
   | { outcome: 'invalidated'; result: OrgClaInvalidateAcknowledgmentResult }
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
-  | { outcome: 'forbidden' };
+  | { outcome: 'forbidden' }
+  | { outcome: 'not-approved' };
 
 /**
  * Result of an approval-list write.

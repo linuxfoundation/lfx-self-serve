@@ -2949,6 +2949,26 @@ describe('OrgClaService.invalidateAcknowledgment — the producer call', () => {
     );
   });
 
+  it('answers not-approved when the producer refuses an acknowledgment that is not approved', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+    gatewayFetch.mockResolvedValueOnce(contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] }));
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to invalidate the acknowledgment: 409 Conflict', 409, 'UPSTREAM_ERROR', { service: 'cla_service' })
+    );
+
+    expect(await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).toEqual({ outcome: 'not-approved' });
+  });
+
+  it('rethrows any other producer failure', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+    gatewayFetch.mockResolvedValueOnce(contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] }));
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to invalidate the acknowledgment: 500', 500, 'UPSTREAM_ERROR', { service: 'cla_service' })
+    );
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({ statusCode: 500 });
+  });
+
   it('omits a blank note rather than storing an empty reason string on the signature', async () => {
     stageInvalidate();
 

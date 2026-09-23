@@ -788,6 +788,9 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
 } as const;
 
+/** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */
+export const ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE = "This acknowledgment is no longer approved, so it can't be invalidated yet.";
+
 /** Label and accessible name for the per-row Invalidate control. */
 export const ORG_CLA_INVALIDATE_ACTION_COPY = {
   label: 'Invalidate',
