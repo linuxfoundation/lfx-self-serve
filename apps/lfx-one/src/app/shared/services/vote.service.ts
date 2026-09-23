@@ -3,12 +3,13 @@
 
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { INVITATION_NOT_FOUND, RECENTLY_OPENED_VOTE_TTL_MS, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
+import { INVITATION_NOT_FOUND, RECENTLY_OPENED_VOTE_TTL_MS, VOTE_CREATE_COMPLETED_AT_HEADER, VOTE_DETAIL_CACHE_TTL_MS } from '@lfx-one/shared/constants';
 import { PollStatus } from '@lfx-one/shared/enums';
 import {
   CommentResponseInput,
   CreateVoteRequest,
   CreateVoteResponseRequest,
+  EnableVoteRequest,
   EnableVoteResponse,
   MyVoteResponse,
   PaginatedResponse,
@@ -18,7 +19,7 @@ import {
   VoteAnswerInput,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, map, Observable, of, shareReplay, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, retry, shareReplay, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -29,6 +30,21 @@ export class VoteService {
   private readonly http = inject(HttpClient);
   private readonly voteDetailCache = new Map<string, { observable: Observable<Vote>; cachedAt: number }>();
   private readonly recentlyOpenedVotes: WritableSignal<Map<string, number>> = signal(new Map());
+
+  /**
+   * Single active speculative-create slot (GH-2826): the draft POST fired when the open-vote
+   * confirmation dialog opened, plus its terminal state. Lives on this root-provided service —
+   * not the component — so cancel/navigation cleanup and a confirmed open complete even after
+   * the vote-manage component is destroyed. The record type stays an inline annotation: it is
+   * private session state, not a shared contract (the shared-contract rule doesn't apply).
+   */
+  private speculativeVote: {
+    state: 'pending' | 'confirmed' | 'discarding';
+    create$: Observable<Vote>;
+    confirm$: Observable<{ vote: Vote; opened: boolean }> | null;
+    result: { vote: Vote; createCompletedAt: number | null } | null;
+    error: unknown;
+  } | null = null;
 
   public getVotes(params?: HttpParams): Observable<PaginatedResponse<Vote>> {
     return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(
@@ -148,11 +164,89 @@ export class VoteService {
     return request$;
   }
 
-  public createVote(voteData: CreateVoteRequest, options?: { open?: boolean }): Observable<Vote> {
-    // ?open=true fuses create+open into one BFF operation (GH-2731); the response carries the vote
-    // in its real status ('active' only when the inline enable succeeded) — callers branch on it.
-    const params = options?.open ? new HttpParams().set('open', 'true') : undefined;
-    return this.http.post<Vote>('/api/votes', voteData, { params }).pipe(take(1));
+  public createVote(voteData: CreateVoteRequest): Observable<Vote> {
+    return this.http.post<Vote>('/api/votes', voteData).pipe(take(1));
+  }
+
+  /**
+   * Fires a plain (non-open) create the moment the open-vote confirmation dialog opens (GH-2826
+   * Design A), hiding the ~3 s create behind the organizer's reading time. Returns the shared
+   * create observable for the component's accept/early-error paths. A still-pending prior
+   * speculation is discarded first (single slot — an abandoned dialog's draft is cleaned up).
+   */
+  public beginSpeculativeCreate(voteData: CreateVoteRequest): Observable<Vote> {
+    return this.startSpeculativeRecord(voteData).create$;
+  }
+
+  /**
+   * The accept path: chains onto the speculative create (or begins fresh from `fallbackRequest`
+   * when none is pending — e.g. the project context was still loading at dialog-open), then
+   * enables with the grace-hint echo. Resolves `opened: false` when the enable failed — the
+   * draft is intentional residue on the accept path (the user said yes), no compensating delete.
+   * The chain is service-subscribed, so the open completes even if the component dies mid-chain.
+   */
+  public confirmSpeculativeVote(fallbackRequest: CreateVoteRequest): Observable<{ vote: Vote; opened: boolean }> {
+    const existing = this.speculativeVote;
+    if (existing?.state === 'confirmed' && existing.confirm$) {
+      return existing.confirm$; // defensive double-confirm: one chain, one enable
+    }
+
+    const record = existing?.state === 'pending' ? existing : this.startSpeculativeRecord(fallbackRequest);
+    record.state = 'confirmed';
+
+    // Stored terminal state, not shareReplay's error replay: a create that already failed
+    // rethrows deterministically for every subscriber.
+    const create$ = record.error ? throwError(() => record.error) : record.create$;
+    const confirm$ = create$.pipe(
+      take(1),
+      switchMap((vote) =>
+        this.enableVote(vote.uid, { createCompletedAt: record.result?.createCompletedAt ?? undefined }).pipe(
+          map((): { vote: Vote; opened: boolean } => ({ vote, opened: true })),
+          catchError((): Observable<{ vote: Vote; opened: boolean }> => of({ vote, opened: false }))
+        )
+      ),
+      tap({
+        next: ({ vote, opened }) => {
+          if (opened) {
+            this.markVoteOpened(vote.uid);
+          }
+          this.clearSpeculativeVote(record);
+        },
+        error: () => this.clearSpeculativeVote(record),
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    record.confirm$ = confirm$;
+    // Service-owned subscription: the open (and its cleanup) completes after navigation away.
+    confirm$.subscribe({ error: () => undefined });
+    return confirm$;
+  }
+
+  /**
+   * Cancels the pending speculation (dialog dismissed or component destroyed before accept):
+   * the compensating DELETE fires once the uid is known — immediately when the create already
+   * resolved, otherwise when the still-running server-side write lands. State-guarded to
+   * 'pending', so it is safe to call unconditionally from the component's DestroyRef (a no-op
+   * after confirm). Never blocks, never toasts.
+   */
+  public discardSpeculativeVote(): void {
+    const record = this.speculativeVote;
+    if (!record || record.state !== 'pending') {
+      return;
+    }
+    record.state = 'discarding';
+    if (record.error) {
+      this.clearSpeculativeVote(record); // the create failed — nothing was created
+      return;
+    }
+    if (record.result) {
+      this.deleteSpeculativeVote(record, record.result.vote.uid);
+    }
+    // Still in flight: the service-side subscription deletes once the uid lands.
+  }
+
+  public hasPendingSpeculativeCreate(): boolean {
+    return this.speculativeVote?.state === 'pending';
   }
 
   public updateVote(voteUid: string, voteData: UpdateVoteRequest): Observable<Vote> {
@@ -173,8 +267,18 @@ export class VoteService {
     return this.http.get<VoteResultsResponse>(`/api/votes/${encodeURIComponent(voteUid)}/results`);
   }
 
-  public enableVote(voteUid: string): Observable<EnableVoteResponse> {
-    return this.http.put<EnableVoteResponse>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, {}).pipe(
+  /**
+   * Enables a vote. `options.createCompletedAt` echoes the create response's
+   * `X-Vote-Create-Completed-At` stamp (GH-2826): the BFF sleeps the remaining FGA-propagation
+   * grace before attempt 1 so a just-created vote's first PUT never fires pre-tuple. Absent →
+   * no grace (edit flow — the vote's tuples were written at create time, long past).
+   */
+  public enableVote(voteUid: string, options: { createCompletedAt?: number } = {}): Observable<EnableVoteResponse> {
+    const body: EnableVoteRequest = {};
+    if (options.createCompletedAt !== undefined) {
+      body.create_completed_at = options.createCompletedAt;
+    }
+    return this.http.put<EnableVoteResponse>(`/api/votes/${encodeURIComponent(voteUid)}/enable`, body).pipe(
       take(1),
       tap(() => this.voteDetailCache.delete(voteUid))
     );
@@ -281,6 +385,77 @@ export class VoteService {
         return throwError(() => err);
       })
     );
+  }
+
+  /**
+   * Creates the speculative record: fires the POST with `observe: 'response'` to capture the
+   * BFF's create-completion stamp, stores terminal state on the record (late subscribers never
+   * depend on shareReplay's error replay), and holds a service-side subscription that keeps the
+   * request alive after the component unsubscribes and owns the compensating delete once the
+   * uid lands — unsubscribing the client fetch does not stop the server-side write.
+   */
+  private startSpeculativeRecord(voteData: CreateVoteRequest): NonNullable<VoteService['speculativeVote']> {
+    this.discardSpeculativeVote();
+
+    const record: NonNullable<VoteService['speculativeVote']> = {
+      state: 'pending',
+      // Placeholder replaced with the live POST below in the same synchronous block — the
+      // pipeline's closures write result/error back onto this record, so it must exist first.
+      create$: throwError(() => new Error('Speculative create pipeline not yet wired')),
+      confirm$: null,
+      result: null,
+      error: null,
+    };
+    record.create$ = this.http.post<Vote>('/api/votes', voteData, { observe: 'response' }).pipe(
+      take(1),
+      map((response) => {
+        if (!response.body) {
+          throw new Error('Create vote response body was empty');
+        }
+        const stamp = response.headers.get(VOTE_CREATE_COMPLETED_AT_HEADER);
+        const parsed = stamp === null ? Number.NaN : Number(stamp);
+        record.result = { vote: response.body, createCompletedAt: Number.isFinite(parsed) ? parsed : null };
+        return response.body;
+      }),
+      catchError((error) => {
+        record.error = error;
+        return throwError(() => error);
+      }),
+      shareReplay({ bufferSize: 1, refCount: false })
+    );
+    this.speculativeVote = record;
+
+    record.create$.subscribe({
+      next: (vote) => {
+        if (record.state === 'discarding') {
+          this.deleteSpeculativeVote(record, vote.uid);
+        }
+      },
+      error: () => {
+        if (record.state === 'discarding') {
+          this.clearSpeculativeVote(record); // the create failed — nothing was created
+        }
+        // State 'pending' keeps the errored record so confirmSpeculativeVote rethrows it.
+      },
+    });
+
+    return record;
+  }
+
+  /** Compensating delete for a discarded speculation: one retry, then silent — the orphan draft is accepted, clutter-only residue (spec). */
+  private deleteSpeculativeVote(record: NonNullable<VoteService['speculativeVote']>, voteUid: string): void {
+    this.deleteVote(voteUid)
+      .pipe(
+        retry({ count: 1, delay: 1000 }),
+        catchError(() => of(null))
+      )
+      .subscribe(() => this.clearSpeculativeVote(record));
+  }
+
+  private clearSpeculativeVote(record: NonNullable<VoteService['speculativeVote']>): void {
+    if (this.speculativeVote === record) {
+      this.speculativeVote = null;
+    }
   }
 
   private pruneExpiredVoteDetailCache(): void {

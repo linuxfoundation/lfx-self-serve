@@ -20,6 +20,14 @@ export const VOTE_COMMENT_RESULTS_ROWS_PER_PAGE_OPTIONS = [5, 10, 25];
 export const VOTE_COMMENT_RESULTS_MAX_RESPONSES_PER_PROMPT = 200;
 
 /**
+ * Response header carrying the BFF-stamped create-completion time (epoch ms) on POST /api/votes
+ * (GH-2826 speculative create). The client echoes it verbatim as `create_completed_at` in the
+ * enable request body — the grace hint that keeps a just-created vote's first enable PUT past
+ * fga-sync's tuple write. Named to stay distinct from the vote entity's own created_at field.
+ */
+export const VOTE_CREATE_COMPLETED_AT_HEADER = 'x-vote-create-completed-at';
+
+/**
  * Short TTL for the vote-detail cache — lets the writerGuard probe and VoteManageComponent's refetch share one request. Mirrors COMMITTEE_DETAIL_CACHE_TTL_MS.
  */
 export const VOTE_DETAIL_CACHE_TTL_MS = 10 * 1000;

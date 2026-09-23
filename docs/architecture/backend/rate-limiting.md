@@ -4,13 +4,13 @@ All API routes and auth flows sit behind rate limiters implemented with [`expres
 
 ## Limiters
 
-| Limiter                | Mounted at                                             | Window | Max req | Keyed on                     | Purpose                                                                            |
-| ---------------------- | ------------------------------------------------------ | ------ | ------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| `apiRateLimiter`       | `/api/*`                                               | 1 min  | 500     | IP                           | General authenticated API traffic.                                                 |
-| `publicApiRateLimiter` | `/public/api/*`                                        | 1 min  | 100     | IP                           | Unauthenticated surfaces (e.g. public meetings).                                   |
-| `authRateLimiter`      | `/login`, `/passwordless/callback`, `/social/callback` | 1 min  | 20      | IP                           | Auth flows — brute-force mitigation.                                               |
-| `aiRateLimiter`        | `POST /api/meetings/generate-agenda`                   | 1 min  | 10      | `req.oidc.user.sub`, else IP | LiteLLM-backed AI generation.                                                      |
-| `voteWriteRateLimiter` | `POST /api/votes`, `PUT /api/votes/:uid/enable`        | 1 min  | 10      | `req.oidc.user.sub`, else IP | Vote create/enable — a fused create+open fans out to as many as 22 upstream calls. |
+| Limiter                | Mounted at                                             | Window | Max req | Keyed on                     | Purpose                                                                                                                              |
+| ---------------------- | ------------------------------------------------------ | ------ | ------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `apiRateLimiter`       | `/api/*`                                               | 1 min  | 500     | IP                           | General authenticated API traffic.                                                                                                   |
+| `publicApiRateLimiter` | `/public/api/*`                                        | 1 min  | 100     | IP                           | Unauthenticated surfaces (e.g. public meetings).                                                                                     |
+| `authRateLimiter`      | `/login`, `/passwordless/callback`, `/social/callback` | 1 min  | 20      | IP                           | Auth flows — brute-force mitigation.                                                                                                 |
+| `aiRateLimiter`        | `POST /api/meetings/generate-agenda`                   | 1 min  | 10      | `req.oidc.user.sub`, else IP | LiteLLM-backed AI generation.                                                                                                        |
+| `voteWriteRateLimiter` | `POST /api/votes`, `PUT /api/votes/:uid/enable`        | 1 min  | 10      | `req.oidc.user.sub`, else IP | Vote create/enable — one open fans out to as many as 22 upstream calls (1 create POST, then up to 21 enable PUTs on the retry grid). |
 
 All five limiters use `standardHeaders: true` (modern `RateLimit-*` response headers) and `legacyHeaders: false` (no `X-RateLimit-*`). The window is 1 minute across the board.
 

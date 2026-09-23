@@ -81,14 +81,17 @@ export class VoteService {
   private static readonly enableEndToEndMaxDurationMs = 13000;
 
   /**
-   * Grace before the fused create+open path's first enable PUT (GH-2729 pivot): fga-sync writes
-   * the vote's OpenFGA tuple ~1.5 s after the create POST returns (observed 1.1–1.7 s in live
-   * verification, 2026-09-21). A check fired before the tuple lands caches `false` for the
-   * cluster's OpenFGA check-query TTL (10 s on dev) and every later check inside the TTL reads
-   * that cached denial — the probe-based predecessor of this flow failed 2/2 that way. The 2 s
-   * grace keeps attempt 1 fresh in the common case; the 13 s retry deadline then spans the TTL
-   * so a too-early first check still recovers once its cache entry expires. Standalone enables
-   * (edit flow) skip the grace: their vote's tuples were written at create time, long past.
+   * FGA tuple-propagation grace for a just-created vote's first enable PUT (GH-2729 pivot,
+   * relocated to the enable route by GH-2826's speculative create): fga-sync writes the vote's
+   * OpenFGA tuple ~1.5 s after the create POST returns (observed 1.1–1.7 s in live verification,
+   * 2026-09-21). A check fired before the tuple lands caches `false` for the cluster's OpenFGA
+   * check-query TTL (10 s on dev) and every later check inside the TTL reads that cached denial —
+   * the probe-based predecessor of this flow failed 2/2 that way. The enable route receives the
+   * BFF-stamped create-completion time as `createCompletedAt` and sleeps the REMAINING grace
+   * (`max(0, grace − elapsed)`, never more than the grace) so attempt 1 computes fresh in the
+   * common case; the 13 s retry deadline then spans the TTL so a too-early first check still
+   * recovers once its cache entry expires. Calls without the hint (the edit flow's standalone
+   * enable) skip the sleep: their vote's tuples were written at create time, long past.
    */
   private static readonly fgaTuplePropagationGraceMs = 2000;
 
@@ -122,10 +125,10 @@ export class VoteService {
    * arrives, so an exact 15 s could still abort a response completing just under the upstream
    * limit (PR #2797 review); beyond that margin a slower create can never return successfully
    * end-to-end, so the API client's 30 s default would only outwait the server's own ceiling.
-   * Worst-case fused create+open hold = 16 s create + 2 s grace + 16 s enable attempt-1 ≈ 34 s
-   * (a hung attempt-1 ends the grid via its non-retryable 408; a fast-denied attempt-1 instead
-   * leaves retries the 13 s deadline, ≈ 31 s), under the 60 s ingress-nginx default; the budgets
-   * stay independent by design — documenting the sum is the fix.
+   * Since GH-2826 split create and enable into separate client requests, the worst-case holds are
+   * independent: create ≤ 16 s; enable ≤ 2 s grace sleep + 16 s attempt-1 ≈ 18 s (a hung
+   * attempt-1 ends the grid via its non-retryable 408; a fast-denied attempt-1 instead leaves
+   * retries the 13 s deadline, ≈ 15 s) — each comfortably under the 60 s ingress-nginx default.
    */
   private static readonly createVoteRequestTimeoutMs = 16000;
 
@@ -234,17 +237,13 @@ export class VoteService {
    * poll never delivered that guarantee anyway: its broken `tags:` predicate exhausted 100% of
    * the time). No readiness poll follows the create (GH-2729 pivot): on clusters where OpenFGA
    * caches check results (dev TTL 10 s), a pre-tuple read probe caches `false` and defeats every
-   * retry inside the TTL — the probe manufactured the denial it measured. With `options.open`
-   * (GH-2731) the vote is also opened in the same call: after a short FGA-propagation grace
-   * (fga-sync's tuple write lags the create POST by ~1.5 s), the enable PUT runs inline on its
-   * 403-retry grid — graced past the tuple write, bounded past the cache TTL — and the returned
-   * vote carries `status: 'active'`; if the enable fails, the created vote is returned in its
-   * real (disabled) status — the draft exists and can be opened later from the list. Worst-case
-   * fused create+open hold is ~34 s (16 s create + 2 s grace + 16 s enable attempt-1 — the
-   * budgets are independent by design), under the 60 s ingress-nginx default.
+   * retry inside the TTL — the probe manufactured the denial it measured. Opening is a separate
+   * client request to the enable route (GH-2826 speculative create): the controller stamps the
+   * create-completion time on the response (`X-Vote-Create-Completed-At`) and the client echoes
+   * it as the enable call's grace hint, so the tuple-propagation grace is paid on the enable
+   * route, not here. Worst-case create hold is the 16 s request timeout.
    */
-  public async createVote(req: Request, voteData: CreateVoteRequest, options: { open?: boolean } = {}): Promise<Vote> {
-    const { open = false } = options;
+  public async createVote(req: Request, voteData: CreateVoteRequest): Promise<Vote> {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'create_vote', 'Creating vote payload', sanitizedPayload);
 
@@ -254,31 +253,7 @@ export class VoteService {
       timeoutMs: VoteService.createVoteRequestTimeoutMs,
     });
 
-    if (!open) {
-      return newVote;
-    }
-
-    // open=true (GH-2731): grace past fga-sync's tuple write so attempt 1's FGA check computes
-    // fresh instead of caching a pre-tuple `false` that every retry inside the 10 s TTL would
-    // read back (GH-2729 pivot), then run the bounded enable loop — its 13 s deadline spans that
-    // TTL, so even a too-early first attempt recovers once the cache entry expires.
-    await new Promise((resolve) => setTimeout(resolve, VoteService.fgaTuplePropagationGraceMs));
-
-    try {
-      await this.enableVoteWithRetry(req, newVote.uid);
-    } catch (error) {
-      // Partial failure: the vote exists as a draft — return it in its real status (HTTP 201)
-      // rather than synthesizing an error for a create that succeeded; the frontend branches on
-      // vote.status to show the recoverable "created as draft" warning. (A 403-exhaustion already
-      // logged its distinguishable warning inside the loop.)
-      logger.warning(req, 'create_vote', 'Vote created but enable failed, returning the created vote in its current status', {
-        vote_uid: newVote.uid,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      });
-      return newVote;
-    }
-
-    return { ...newVote, status: PollStatus.ACTIVE };
+    return newVote;
   }
 
   /**
@@ -332,12 +307,30 @@ export class VoteService {
   }
 
   /**
-   * Enables a vote (changes status from disabled to active)
+   * Enables a vote (changes status from disabled to active). `options.createCompletedAt` is the
+   * grace hint (GH-2826 speculative create): the BFF-stamped create-completion time echoed back
+   * by the client. When present, the remaining FGA tuple-propagation grace is slept before the
+   * first PUT — `max(0, grace − elapsed)`, clamped to the grace itself, so the hint can never
+   * extend the sleep past `fgaTuplePropagationGraceMs` (a forged hint only degrades the forger's
+   * own open into the retry grid; a negative elapsed clamps to the full grace). Absent or
+   * non-finite → no sleep: the edit flow's vote tuples were written at create time, long past.
    */
-  public async enableVote(req: Request, voteUid: string): Promise<EnableVoteResponse> {
+  public async enableVote(req: Request, voteUid: string, options: { createCompletedAt?: number } = {}): Promise<EnableVoteResponse> {
     logger.debug(req, 'enable_vote', 'Enabling vote', {
       vote_uid: voteUid,
     });
+
+    if (options.createCompletedAt !== undefined && Number.isFinite(options.createCompletedAt)) {
+      const elapsedMs = Date.now() - options.createCompletedAt;
+      const sleepMs = Math.min(Math.max(0, VoteService.fgaTuplePropagationGraceMs - elapsedMs), VoteService.fgaTuplePropagationGraceMs);
+      if (sleepMs > 0) {
+        logger.debug(req, 'enable_vote', 'Sleeping the remaining FGA-propagation grace before the first enable PUT', {
+          vote_uid: voteUid,
+          grace_remaining_ms: sleepMs,
+        });
+        await new Promise((resolve) => setTimeout(resolve, sleepMs));
+      }
+    }
 
     await this.enableVoteWithRetry(req, voteUid);
 
@@ -581,10 +574,11 @@ export class VoteService {
   // ============================================
 
   /**
-   * The enable PUT with its bounded 403-retry loop (GH-1637), extracted so `createVote`'s
-   * open=true path runs the identical loop inline (GH-2731). On the fused path this grid is the
-   * readiness mechanism itself — no read probe precedes it (GH-2729 pivot). Resolves once the
-   * PUT succeeds; rethrows the observed error on exhaustion or non-retryable failure.
+   * The enable PUT with its bounded 403-retry loop (GH-1637), shared by the standalone enable
+   * route and the speculative create+open flow (GH-2826 passes the create-completion hint so
+   * `enableVote` sleeps the remaining grace before this loop's attempt 1; no read probe precedes
+   * it — GH-2729 pivot). Resolves once the PUT succeeds; rethrows the observed error on
+   * exhaustion or non-retryable failure.
    */
   private async enableVoteWithRetry(req: Request, voteUid: string): Promise<void> {
     // Retry the enable PUT only on a 403: the enable route is authorized on `vote:{uid}`

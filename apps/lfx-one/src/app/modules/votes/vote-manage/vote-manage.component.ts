@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Signal, signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,7 +15,6 @@ import {
   VOTE_QUESTION_MIN_LENGTH,
   VOTE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { PollStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeReference, EntityWithProject, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import {
@@ -129,6 +128,11 @@ export class VoteManageComponent {
       freshFetch: (uid) => this.voteService.fetchVote(uid, { skipCache: true }),
       canonicalizeRoute: true,
     });
+
+    // Navigation away with the dialog undecided (or after a failed submit): the state-guarded
+    // discard cleans up only a still-pending speculation — after accept the service-owned chain
+    // completes the open on its own (GH-2826).
+    this.destroyRef.onDestroy(() => this.voteService.discardSpeculativeVote());
   }
 
   public nextStep(): void {
@@ -276,6 +280,35 @@ export class VoteManageComponent {
     // For create mode, show confirmation dialog before opening the vote
     if (!this.isEditMode()) {
       this.confirmingOpenVote.set(true);
+
+      // Speculative create (GH-2826 Design A): fire the plain create the moment the dialog opens
+      // and hide the ~3 s create behind the organizer's reading time. Accept chains onto it
+      // (submitVote → confirmSpeculativeVote); every dismiss path funnels through reject, which
+      // discards it; the VoteService owns the record so navigation mid-dialog still cleans up.
+      const projectUid = this.project()?.uid;
+      if (projectUid) {
+        const speculativeRequest = buildCreateVoteRequest(this.form().getRawValue() as VoteFormValue, projectUid);
+        this.voteService
+          .beginSpeculativeCreate(speculativeRequest)
+          .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+          .subscribe({
+            error: (error) => {
+              // The create failed during reading time — surface it now instead of after
+              // commitment. close() routes through the dialog's reject path, which discards the
+              // errored record (nothing was created — no compensating delete).
+              if (this.confirmingOpenVote()) {
+                this.confirmationService.close();
+                this.messageService.add({
+                  severity: 'error',
+                  summary: 'Error',
+                  detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+                });
+              }
+              // After accept the confirm chain's own error branch shows the same toast.
+            },
+          });
+      }
+
       this.confirmationService.confirm({
         header: OPEN_VOTE_CONFIRMATION.header,
         message: OPEN_VOTE_CONFIRMATION.message,
@@ -287,7 +320,12 @@ export class VoteManageComponent {
           this.confirmingOpenVote.set(false);
           this.submitVote();
         },
-        reject: () => this.confirmingOpenVote.set(false),
+        reject: () => {
+          this.confirmingOpenVote.set(false);
+          // Cancel (button, X, Esc — all emit on rejectEvent): compensate the speculative create
+          // in the background; the dialog close never waits on the network.
+          this.voteService.discardSpeculativeVote();
+        },
       });
     } else {
       this.submitVote();
@@ -348,12 +386,19 @@ export class VoteManageComponent {
     // dialog may have been open long enough for a near-future deadline to expire since onSubmit.
     this.form().updateValueAndValidity({ emitEvent: false });
     if (this.form().invalid) {
+      // A deadline that expired during the dialog's reading time still cleans up the speculative
+      // draft created at dialog-open (GH-2826) — the no-op when no record is pending (edit mode,
+      // or no project context at dialog-open) keeps this safe on every invalid-submit path.
+      this.voteService.discardSpeculativeVote();
       this.handleInvalidSubmit();
       return;
     }
 
     const projectUid = this.vote()?.project_uid || this.project()?.uid;
     if (!projectUid) {
+      // Same discard reasoning as the invalid path above: a pending speculation (if any) must not
+      // outlive an accept that cannot proceed.
+      this.voteService.discardSpeculativeVote();
       this.messageService.add({
         severity: 'error',
         summary: 'Error',
@@ -404,41 +449,44 @@ export class VoteManageComponent {
       });
     } else {
       const createRequest = buildCreateVoteRequest(formValue, projectUid);
-      // Create and open in one BFF operation (GH-2731): the response carries the vote in its real
-      // status — 'active' only when the inline enable succeeded.
-      this.voteService.createVote(createRequest, { open: true }).subscribe({
-        next: (createdVote) => {
-          if (createdVote.status === PollStatus.ACTIVE) {
+      // Speculative create (GH-2826 Design A): the create was already fired when the confirmation
+      // dialog opened; confirmSpeculativeVote chains onto it (or starts fresh from this request
+      // when none is pending) and enables with the grace-hint echo. The service marks the vote
+      // opened on success (the mark survives navigation); `opened: false` means the enable failed
+      // and the vote remains a draft — the state is genuinely uncertain beyond that (rarely
+      // opened-but-unconfirmed), and the list shows the truth in all cases (AC-2). takeUntilDestroyed:
+      // post-accept navigation must not let a late settlement toast/navigate from a dead component —
+      // the service-owned subscription completes the open on its own.
+      this.voteService
+        .confirmSpeculativeVote(createRequest)
+        .pipe(takeUntilDestroyed(this.destroyRef))
+        .subscribe({
+          next: ({ opened }) => {
+            this.submitting.set(false);
+            if (opened) {
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.voteLabel.singular} opened successfully`,
+              });
+            } else {
+              this.messageService.add({
+                severity: 'warn',
+                summary: 'Warning',
+                detail: `${this.voteLabel.singular} created — couldn't confirm it opened; check the list`,
+              });
+            }
+            this.navigateBack();
+          },
+          error: (error) => {
             this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: `${this.voteLabel.singular} opened successfully`,
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
             });
             this.submitting.set(false);
-            this.voteService.markVoteOpened(createdVote.uid);
-            this.navigateBack();
-            return;
-          }
-          // Partial failure — the state is genuinely uncertain: usually a draft, rarely
-          // opened-but-unconfirmed (enable 408 after ITX's PutPoll) or deleted concurrently —
-          // and the list shows the truth in all three, so the copy doesn't claim "draft" (AC-2).
-          this.messageService.add({
-            severity: 'warn',
-            summary: 'Warning',
-            detail: `${this.voteLabel.singular} created — couldn't confirm it opened; check the list`,
-          });
-          this.submitting.set(false);
-          this.navigateBack();
-        },
-        error: (error) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
-          });
-          this.submitting.set(false);
-        },
-      });
+          },
+        });
     }
   }
 

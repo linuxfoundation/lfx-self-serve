@@ -1,8 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommentResponseInput, CreatePollCommentPrompt, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
-import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  CommentResponseInput,
+  CreatePollCommentPrompt,
+  CreateVoteRequest,
+  CreateVoteResponseRequest,
+  EnableVoteRequest,
+  UpdateVoteRequest,
+} from '@lfx-one/shared/interfaces';
+import {
+  VOTE_COMMENT_PROMPT_MAX_COUNT,
+  VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_CREATE_COMPLETED_AT_HEADER,
+} from '@lfx-one/shared/constants';
 import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -135,16 +147,11 @@ export class VoteController {
 
       const validatedCommentPrompts = this.validateCommentPrompts(voteData.poll_comment_prompts, validationContext);
 
-      // ?open=true fuses create+open into one BFF operation (GH-2731) — the response carries the
-      // vote in its real status in all non-error paths; the frontend branches on vote.status.
-      const open = req.query['open'] === 'true';
-
       // No client-disconnect abort (matches every BFF write endpoint): a navigate-away leaves the
-      // create(+open) completing server-side — the vote lands created (and opened when the enable
-      // succeeded) and is recoverable from the list; the same property held pre-change across the
-      // two-request flow. Accepted per GH-2729 review m-8.
+      // create completing server-side — the vote lands created and is recoverable from the list.
+      // Accepted per GH-2729 review m-8.
 
-      const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts }, { open });
+      const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts });
 
       logger.success(req, 'create_vote', startTime, {
         uid: vote.uid,
@@ -152,6 +159,11 @@ export class VoteController {
         name: vote.name,
       });
 
+      // Stamp the create-completion time (GH-2826 speculative create): the client echoes it back
+      // as the enable route's grace hint so a just-created vote's first enable PUT waits out the
+      // FGA tuple-propagation remainder instead of caching a pre-tuple denial. Post-await is the
+      // same macrotask as the service's upstream-POST return — sub-ms from the true zero-point.
+      res.setHeader(VOTE_CREATE_COMPLETED_AT_HEADER, Date.now().toString());
       res.status(201).json(vote);
     } catch (error) {
       next(error);
@@ -453,7 +465,11 @@ export class VoteController {
         return;
       }
 
-      const vote = await this.voteService.enableVote(req, uid);
+      const body = req.body as EnableVoteRequest | undefined;
+      const hint = body?.create_completed_at;
+      const createCompletedAt = typeof hint === 'number' && Number.isFinite(hint) ? hint : undefined;
+
+      const vote = await this.voteService.enableVote(req, uid, { createCompletedAt });
 
       logger.success(req, 'enable_vote', startTime, {
         vote_uid: uid,

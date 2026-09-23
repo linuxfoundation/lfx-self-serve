@@ -4,6 +4,7 @@
 import { ApplicationRef, signal } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
+import { FormArray, FormGroup } from '@angular/forms';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, NavigationEnd, Router } from '@angular/router';
 import { Vote } from '@lfx-one/shared/interfaces';
@@ -16,6 +17,10 @@ import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { VoteManageComponent } from './vote-manage.component';
+
+import type { Confirmation } from 'primeng/api';
+import type { ParamMap } from '@angular/router';
+import type { Observable } from 'rxjs';
 
 // Regression coverage for the relation-gated-null → uncached-detail context fallback (GH-1568):
 // when the by-uid project lookup is relation-gated into null for an organizer without a viewer
@@ -34,6 +39,37 @@ describe('VoteManageComponent', () => {
   let fetchCommittee: ReturnType<typeof vi.fn>;
   let routerEvents$: BehaviorSubject<NavigationEnd>;
   let setProject: ReturnType<typeof vi.fn>;
+  let messageAdd: ReturnType<typeof vi.fn>;
+  let voteServiceMock: {
+    getVote: ReturnType<typeof vi.fn>;
+    fetchVote: ReturnType<typeof vi.fn>;
+    createVote: ReturnType<typeof vi.fn>;
+    updateVote: ReturnType<typeof vi.fn>;
+    enableVote: ReturnType<typeof vi.fn>;
+    beginSpeculativeCreate: ReturnType<typeof vi.fn>;
+    confirmSpeculativeVote: ReturnType<typeof vi.fn>;
+    discardSpeculativeVote: ReturnType<typeof vi.fn>;
+    markVoteOpened: ReturnType<typeof vi.fn>;
+  };
+
+  // Mutable route double — edit mode by default; create-mode tests call setRouteMode(null) before
+  // createComponent (the component reads paramMap/snapshot at construction).
+  const routeMock: {
+    paramMap: Observable<ParamMap>;
+    queryParamMap: Observable<ParamMap>;
+    snapshot: { queryParamMap: ParamMap; paramMap: ParamMap };
+  } = {
+    paramMap: of(convertToParamMap({ id: VOTE_UID })),
+    queryParamMap: of(convertToParamMap({})),
+    snapshot: { queryParamMap: convertToParamMap({}), paramMap: convertToParamMap({ id: VOTE_UID }) },
+  };
+  const setRouteMode = (id: string | null) => {
+    routeMock.paramMap = of(convertToParamMap(id === null ? {} : { id }));
+    routeMock.snapshot.paramMap = convertToParamMap(id === null ? {} : { id });
+  };
+
+  // A real signal, not a stub function: create-mode write access runs toObservable(activeContext).
+  const activeContext = signal<Record<string, unknown> | null>(null);
 
   // Unenriched detail payload: project_uid only, no project_slug — the trigger condition for the
   // context fallback. The committee_uid keeps the write-access committee leg grantable so the
@@ -72,9 +108,25 @@ describe('VoteManageComponent', () => {
     fetchVote = vi.fn();
     getProject = vi.fn();
     setProject = vi.fn();
+    messageAdd = vi.fn();
     // Committee leg grants write access by default so the eviction predicate stays quiet.
     fetchCommittee = vi.fn().mockReturnValue(of({ uid: COMMITTEE_UID, writer: true }));
     routerEvents$ = new BehaviorSubject<NavigationEnd>(new NavigationEnd(0, '/project/votes/x/edit', '/project/votes/x/edit'));
+    setRouteMode(VOTE_UID);
+    activeContext.set(null);
+    voteServiceMock = {
+      // initVote loads via getVote; the fallback re-fetches via fetchVote with skipCache —
+      // both land on the same mock so call ordering stays inspectable.
+      getVote: vi.fn().mockImplementation((id: string) => fetchVote(id)),
+      fetchVote,
+      createVote: vi.fn().mockReturnValue(of(unenrichedVote())),
+      updateVote: vi.fn().mockReturnValue(of(unenrichedVote())),
+      enableVote: vi.fn().mockReturnValue(of({ uid: VOTE_UID, status: 'active' })),
+      beginSpeculativeCreate: vi.fn().mockReturnValue(of(unenrichedVote())),
+      confirmSpeculativeVote: vi.fn().mockReturnValue(of({ vote: unenrichedVote(), opened: true })),
+      discardSpeculativeVote: vi.fn(),
+      markVoteOpened: vi.fn(),
+    };
 
     TestBed.configureTestingModule({
       providers: [
@@ -92,26 +144,17 @@ describe('VoteManageComponent', () => {
         },
         {
           provide: ActivatedRoute,
-          useValue: {
-            paramMap: of(convertToParamMap({ id: VOTE_UID })),
-            queryParamMap: of(convertToParamMap({})),
-            snapshot: { queryParamMap: convertToParamMap({}), paramMap: convertToParamMap({ id: VOTE_UID }) },
-          },
+          useValue: routeMock,
         },
         {
           provide: VoteService,
-          useValue: {
-            // initVote loads via getVote; the fallback re-fetches via fetchVote with skipCache —
-            // both land on the same mock so call ordering stays inspectable.
-            getVote: vi.fn().mockImplementation((id: string) => fetchVote(id)),
-            fetchVote,
-          },
+          useValue: voteServiceMock,
         },
         { provide: ProjectService, useValue: { getProject, project: signal(null) } },
         {
           provide: ProjectContextService,
           useValue: {
-            activeContext: () => null,
+            activeContext,
             activeContextUid: () => '',
             isFoundationContext: () => false,
             setProject,
@@ -133,7 +176,7 @@ describe('VoteManageComponent', () => {
         // PrimeNG stepper binds @content.start animation listeners when the template is compiled —
         // required even without detectChanges(), since compilation alone wires the listener.
         provideNoopAnimations(),
-        { provide: MessageService, useValue: { add: vi.fn() } },
+        { provide: MessageService, useValue: { add: messageAdd } },
       ],
     });
   });
@@ -215,5 +258,169 @@ describe('VoteManageComponent', () => {
 
     expect(router.navigateByUrl).toHaveBeenCalled();
     expect(router.parseUrl).toHaveBeenCalledWith(expect.stringMatching(/^\/(project|foundation)\/overview$/));
+  });
+
+  // GH-2826 Design A: opening the confirmation dialog fires the speculative create; accept chains
+  // the enable with the grace-hint echo; every dismiss path (Cancel button, X, Esc — all emit on
+  // PrimeNG's rejectEvent, verified against PrimeNG 20.4.0's ConfirmDialog source) funnels into
+  // the one reject callback, which discards. confirm()/close() are spied rather than rendered —
+  // these tests exercise component logic, and rendering would pull in the full stepper subtree.
+  describe('speculative create flow (GH-2826)', () => {
+    let capturedConfirmation: Confirmation | null;
+
+    const fillValidForm = (component: VoteManageComponent) => {
+      const form = component.form();
+      form.get('title')?.setValue('Board decision 2026');
+      form.get('committee')?.setValue({ uid: COMMITTEE_UID, name: 'Test Committee' });
+      form.get('eligible_participants')?.setValue('project_members');
+      form.get('close_date')?.setValue(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000));
+      const firstQuestion = (form.get('questions') as FormArray).at(0) as FormGroup;
+      firstQuestion.get('question')?.setValue('Approve the 2026 budget?');
+      (firstQuestion.get('options') as FormArray).at(0).setValue('Yes');
+      (firstQuestion.get('options') as FormArray).at(1).setValue('No');
+      form.updateValueAndValidity();
+    };
+
+    const submitFromValidForm = async () => {
+      const fixture = await createComponent();
+      fillValidForm(fixture.componentInstance);
+      fixture.componentInstance.onSubmit();
+      return fixture;
+    };
+
+    beforeEach(() => {
+      setRouteMode(null); // create mode
+      activeContext.set({ uid: PROJECT_UID, slug: PROJECT_SLUG, name: 'Test Project' });
+      getProject.mockReturnValue(of({ uid: PROJECT_UID, writer: true }));
+      capturedConfirmation = null;
+      const confirmationService = TestBed.inject(ConfirmationService);
+      vi.spyOn(confirmationService, 'confirm').mockImplementation((confirmation) => {
+        capturedConfirmation = confirmation;
+        return confirmationService;
+      });
+    });
+
+    it('opening the dialog fires the speculative create with the built request in the same tick', async () => {
+      const fixture = await submitFromValidForm();
+
+      expect(voteServiceMock.beginSpeculativeCreate).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.beginSpeculativeCreate.mock.calls[0][0]).toMatchObject({
+        name: 'Board decision 2026',
+        project_uid: PROJECT_UID,
+        committee_uid: COMMITTEE_UID,
+      });
+      expect(capturedConfirmation).not.toBeNull();
+      expect(fixture.componentInstance.confirmingOpenVote()).toBe(true);
+    });
+
+    it('accept chains onto the speculation: success toast + navigate, and the service (not the component) marks the vote opened', async () => {
+      const router = TestBed.inject(Router);
+      const fixture = await submitFromValidForm();
+
+      capturedConfirmation?.accept?.();
+
+      expect(voteServiceMock.confirmSpeculativeVote).toHaveBeenCalledTimes(1);
+      expect(voteServiceMock.confirmSpeculativeVote.mock.calls[0][0]).toMatchObject({ project_uid: PROJECT_UID });
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+      expect(router.navigate).toHaveBeenCalledWith(['/votes']);
+      expect(fixture.componentInstance.submitting()).toBe(false);
+      // markVoteOpened moved into the service's confirm chain (it must survive navigation).
+      expect(voteServiceMock.markVoteOpened).not.toHaveBeenCalled();
+      expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
+    });
+
+    it('accept with opened: false warns and navigates — the draft residue is intentional, no delete', async () => {
+      voteServiceMock.confirmSpeculativeVote.mockReturnValue(of({ vote: unenrichedVote(), opened: false }));
+      const router = TestBed.inject(Router);
+      await submitFromValidForm();
+
+      capturedConfirmation?.accept?.();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn' }));
+      expect(router.navigate).toHaveBeenCalledWith(['/votes']);
+      expect(voteServiceMock.discardSpeculativeVote).not.toHaveBeenCalled();
+    });
+
+    it('accept surfaces a create failure as an error toast and stays on the form', async () => {
+      voteServiceMock.confirmSpeculativeVote.mockReturnValue(throwError(() => new Error('upstream down')));
+      const router = TestBed.inject(Router);
+      const fixture = await submitFromValidForm();
+
+      capturedConfirmation?.accept?.();
+
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      expect(router.navigate).not.toHaveBeenCalled();
+      expect(fixture.componentInstance.submitting()).toBe(false);
+    });
+
+    it('reject discards the speculation instantly without confirming', async () => {
+      const fixture = await submitFromValidForm();
+
+      capturedConfirmation?.reject?.();
+
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalledTimes(1);
+      expect(fixture.componentInstance.confirmingOpenVote()).toBe(false);
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(messageAdd).not.toHaveBeenCalled();
+    });
+
+    it('destroying the component mid-dialog discards the pending speculation (in-app navigation)', async () => {
+      const fixture = await submitFromValidForm();
+
+      fixture.destroy();
+
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+    });
+
+    it('a deadline that expired during reading time discards the draft and shows the invalid-submit UX', async () => {
+      const fixture = await submitFromValidForm();
+      fixture.componentInstance
+        .form()
+        .get('close_date')
+        ?.setValue(new Date(Date.now() - 24 * 60 * 60 * 1000));
+
+      capturedConfirmation?.accept?.();
+
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', summary: 'Deadline expired' }));
+    });
+
+    it('a speculative create failure while the dialog is open closes the dialog and surfaces the error', async () => {
+      const pendingCreate$ = new Subject<Vote>();
+      voteServiceMock.beginSpeculativeCreate.mockReturnValue(pendingCreate$.asObservable());
+      const confirmationService = TestBed.inject(ConfirmationService);
+      const closeSpy = vi.spyOn(confirmationService, 'close').mockImplementation(() => confirmationService);
+      await submitFromValidForm();
+      expect(capturedConfirmation).not.toBeNull();
+
+      pendingCreate$.error(new Error('create failed'));
+
+      expect(closeSpy).toHaveBeenCalled();
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      // The rendered dialog's reaction to close() routes through the same reject callback (CANCEL
+      // and REJECT share rejectEvent in PrimeNG 20.4.0) — simulate that side to pin the cleanup.
+      capturedConfirmation?.reject?.();
+      expect(voteServiceMock.discardSpeculativeVote).toHaveBeenCalled();
+    });
+
+    it('edit mode submits without any speculation — update then enable, component marks opened', async () => {
+      setRouteMode(VOTE_UID); // back to edit mode for this test
+      fetchVote.mockReturnValue(of(enrichedVote()));
+      const router = TestBed.inject(Router);
+      const fixture = await createComponent();
+      fillValidForm(fixture.componentInstance);
+
+      fixture.componentInstance.onSubmit();
+
+      expect(voteServiceMock.beginSpeculativeCreate).not.toHaveBeenCalled();
+      expect(voteServiceMock.confirmSpeculativeVote).not.toHaveBeenCalled();
+      expect(capturedConfirmation).toBeNull(); // no confirmation dialog in edit mode
+      expect(voteServiceMock.updateVote).toHaveBeenCalledWith(VOTE_UID, expect.objectContaining({ project_uid: PROJECT_UID }));
+      expect(voteServiceMock.enableVote).toHaveBeenCalledWith(VOTE_UID);
+      expect(voteServiceMock.markVoteOpened).toHaveBeenCalledWith(VOTE_UID);
+      expect(messageAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+      expect(router.navigate).toHaveBeenCalledWith(['/votes']);
+    });
   });
 });
