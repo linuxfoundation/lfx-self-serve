@@ -946,11 +946,12 @@ export class CampaignServiceClient {
       // reads downstream as "blank this field", so a staged draft would lose the body it was
       // meant to set. An error the operator can retry is the honest answer; a silent blank is not.
       //
-      // Judged with the SHARED predicate, not a fourth bespoke check. This question has been
-      // answered three different ways in this file's history -- `!== ''`, `.trim() === ''`, and
-      // `stripHtml(...).trim() === ''` -- and each one passed a value the previous caught: an
-      // empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
-      // `hasVisibleText` asks it by Unicode category, so there is one definition to keep right.
+      // Judged with the SHARED predicate, `hasVisibleHtmlText`. A bespoke check here drifts:
+      // `!== ''` admits an empty paragraph, `.trim() === ''` admits a lone `<br>`, and
+      // `stripHtml(...).trim()` admits a body of only zero-width spaces. The shared predicate
+      // strips markup first and then asks by Unicode category, so there is one definition to
+      // keep right.
+      //
       // The fallback is chosen ONCE, by SHAPE, not per field.
       //
       // Deciding it per field mixed the two response shapes: `cta || legacy.cta` refilled a button
