@@ -1311,6 +1311,36 @@ describe('CampaignController.createCampaign cutover', () => {
     expect((sent['sponsors'] as { name: string }[])[0].name).toBe('S0');
   });
 
+  it('forwards a URL-less CTA as text, without its presentational classes', async () => {
+    // What the WIRE carries, as opposed to what the service emits. The service renders a
+    // destination-less button as `<div class="lfx-block lfx-button"><strong>`, but `class` is not
+    // an allowed attribute, so by the time the body reaches campaign-service the classes are
+    // gone. The ELEMENT and the label are the part that survives, and the part that matters --
+    // `<strong>` is what carries the emphasis in a client that drops CSS.
+    createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
+    legacyCreate.mockResolvedValue({ jobId: 'job_1' });
+
+    await controller.createCampaign(
+      buildReq(
+        {
+          platforms: ['hubspot'],
+          hubspotConfig: {
+            sourceEmailId: 'e-1',
+            bodyHtml: '<p>Hi</p><div class="lfx-block lfx-button"><strong>Submit Your Proposal</strong></div>',
+          },
+        },
+        { project: 'tlf', brief_id: 'b-1' }
+      ),
+      res,
+      next
+    );
+
+    const sent = envelopeFor(createCampaigns)['hubspotConfig'] as Record<string, unknown>;
+    expect(sent['bodyHtml']).toContain('<strong>Submit Your Proposal</strong>');
+    expect(sent['bodyHtml']).not.toContain('lfx-block');
+    expect(sent['bodyHtml']).not.toContain('class=');
+  });
+
   it('sanitizes both HTML bodies and every display field at the request boundary', async () => {
     // This is a public API. The component sanitizes before staging, but a DIRECT request never
     // runs that code -- so without this the browser-side sanitizer was the only guard on values

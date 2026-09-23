@@ -932,13 +932,18 @@ export class CampaignServiceClient {
           // guarded there by the same reasoning -- "a button with nowhere to go is rendered as
           // TEXT, never as href='#'". Not byte-identical: the Go side appends a trailing newline
           // between blocks and this does not, which is whitespace between block elements and so
-          // renders the same. The ELEMENT and CLASSES are what the two producers have to agree
-          // on, and `<strong>` carries the emphasis a CTA needs in clients that drop CSS.
+          // renders the same.
           //
-          // The previous `lfx-cta-text` was invented here, defined by no stylesheet and matching
-          // nothing upstream -- dead markup that also read as part of a convention it did not
-          // belong to. Email clients strip most CSS, so these classes are a structural hook for
-          // whoever styles the template rather than a visual effect on their own.
+          // The ELEMENT is what survives and what matters: `<strong>` carries the emphasis a CTA
+          // needs in clients that drop CSS.
+          //
+          // The CLASSES do NOT survive to the wire, and this comment used to claim they were a
+          // contract between the two producers. They are not. `stripResourceLoadingHtml` allows
+          // no `class` attribute, and this body is sanitized twice more downstream -- once in the
+          // client preview, once at the request boundary -- so what campaign-service actually
+          // receives is `<div><strong>...</strong></div>`. They are written here only so this
+          // renderer reads the same as the wizard's (`internal/service/email_wizard_sections.go`),
+          // which is a SEPARATE path that builds its own HTML and keeps them.
           // sanitizeDisplayText BEFORE escapeHtml, and both: they defend against different
           // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
           // break out of the markup; it does nothing to a BIDI override or a zero-width

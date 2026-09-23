@@ -2729,11 +2729,14 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     // now defended twice: the brackets are removed, and anything left is escaped.
     expect(result.copy?.body).not.toContain('<b>');
     expect(result.copy?.body).not.toContain('</b>');
-    // The MARKUP SHAPE is pinned too. Asserting only "no live markup survives" left the wrapper
-    // this commit introduced with no coverage at all, so a change to the element or the classes
-    // would go unnoticed -- and those classes are a cross-service contract: campaign-service's
-    // own renderer emits the same `lfx-block lfx-button` for a button section, so the two
-    // producers of this markup have to stay in step.
+    // The MARKUP SHAPE is pinned too -- asserting only "no live markup survives" left this
+    // wrapper with no coverage at all.
+    //
+    // This pins the SERVICE's output, which is not what reaches the wire: the body is sanitized
+    // twice more downstream and `stripResourceLoadingHtml` allows no `class`, so campaign-service
+    // receives `<div><strong>...</strong></div>`. The classes are written to match the wizard
+    // renderer's style, not because anything downstream reads them. The next test asserts what
+    // the wire actually carries.
     expect(result.copy?.body).toContain('<div class="lfx-block lfx-button"><strong>');
     expect(result.copy?.body).toContain('</strong></div>');
     // Still no destination, so no native button.
