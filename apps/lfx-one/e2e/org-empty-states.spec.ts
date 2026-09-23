@@ -289,8 +289,10 @@ test.describe('Org Lens empty states (spec 053)', () => {
 
     // The profile route declares the Me lens, so every way in switches — not only the in-app link:
     // a deep link, a refresh or back/forward while the Organization lens is the saved one.
-    test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page }) => {
-      await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'org', domain: 'localhost', path: '/' }]);
+    test('S2a′: opening the profile directly with the Organization lens saved lands in the Me lens', async ({ page, baseURL }) => {
+      // Scoped to baseURL, not a hardcoded host: on an E2E_BASE_URL override a localhost cookie would
+      // never reach the app, and the Me fallback would pass this test without exercising the route lens.
+      await page.context().addCookies([{ name: LENS_COOKIE_KEY, value: 'org', url: baseURL ?? 'http://localhost:4200' }]);
 
       await page.goto('/profile/attributions', { waitUntil: 'domcontentloaded' });
       skipWhenAuthMissing(page);
