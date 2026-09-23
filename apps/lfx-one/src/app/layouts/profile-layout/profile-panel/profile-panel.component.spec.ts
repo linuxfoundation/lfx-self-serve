@@ -54,8 +54,8 @@ describe('ProfilePanelComponent — impersonation (#2399, #2400)', () => {
 });
 
 /**
- * "Member since" line under the @handle (#2837). Hidden entirely when absent — no dash
- * placeholder — matching every other optional row in this panel.
+ * "Member since" field in the metadata grid, alongside job title/organization/etc. (#2837).
+ * Hidden entirely when absent — no dash placeholder — matching every other optional field.
  */
 describe('ProfilePanelComponent — member since (#2837)', () => {
   let fixture: ComponentFixture<ProfilePanelComponent>;
@@ -66,40 +66,21 @@ describe('ProfilePanelComponent — member since (#2837)', () => {
     fixture.detectChanges();
   });
 
-  it('renders the member-since line when set', () => {
+  it('renders the member-since field when set', () => {
     fixture.componentRef.setInput('memberSince', 'Mar 2023');
     fixture.detectChanges();
 
     const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
     expect(el).not.toBeNull();
-    expect(el.textContent).toContain('Member since Mar 2023');
+    expect(el.textContent).toContain('Member since');
+    expect(el.textContent).toContain('Mar 2023');
   });
 
-  it('hides the member-since line when empty', () => {
+  it('hides the member-since field when empty', () => {
     fixture.componentRef.setInput('memberSince', '');
     fixture.detectChanges();
 
     const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
     expect(el).toBeNull();
-  });
-
-  it('moves mb-4 off the handle onto member-since when both are present', () => {
-    fixture.componentRef.setInput('username', 'alice');
-    fixture.componentRef.setInput('memberSince', 'Mar 2023');
-    fixture.detectChanges();
-
-    const handle = fixture.nativeElement.querySelector('[data-testid="profile-panel-handle"]');
-    const memberSince = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
-    expect(handle.classList).not.toContain('mb-4');
-    expect(memberSince.classList).toContain('mb-4');
-  });
-
-  it('keeps mb-4 on the handle when member-since is absent', () => {
-    fixture.componentRef.setInput('username', 'alice');
-    fixture.componentRef.setInput('memberSince', '');
-    fixture.detectChanges();
-
-    const handle = fixture.nativeElement.querySelector('[data-testid="profile-panel-handle"]');
-    expect(handle.classList).toContain('mb-4');
   });
 });
