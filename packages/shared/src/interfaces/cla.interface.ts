@@ -1253,6 +1253,20 @@ export interface OrgClaActivityLogPage {
 }
 
 /**
+ * View-model row projection for the Activity Log table (#1987).
+ *
+ * `searchText` is a precomputed haystack of actor and summary joined with a NUL byte, so a
+ * client-side filter term cannot false-positive by spanning the two fields.
+ */
+export interface OrgClaActivityLogRow {
+  entry: OrgClaActivityLogEntry;
+  actor: string;
+  summary: string;
+  whenLabel: string;
+  searchText: string;
+}
+
+/**
  * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
  *
  * The browser posts one of these, never a raw ACS string. The server interpolates the permission

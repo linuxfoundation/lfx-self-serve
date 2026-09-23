@@ -16,7 +16,7 @@ import {
   ORG_CLA_ACTIVITY_LOG_SEARCH_PLACEHOLDER,
   ORG_CLA_ACTIVITY_LOG_SUBHEADER,
 } from '@lfx-one/shared/constants';
-import type { OrgClaActivityLogEntry, OrgClaActivityLogPage, OrgClaGroup } from '@lfx-one/shared/interfaces';
+import type { OrgClaActivityLogEntry, OrgClaActivityLogPage, OrgClaActivityLogRow, OrgClaGroup } from '@lfx-one/shared/interfaces';
 import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -68,7 +68,6 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
   protected readonly heading = ORG_CLA_ACTIVITY_LOG_HEADING;
   protected readonly subheader = ORG_CLA_ACTIVITY_LOG_SUBHEADER;
   protected readonly columnHeaders = ORG_CLA_ACTIVITY_LOG_COLUMN_HEADERS;
-  protected readonly emDash = ORG_CLA_ACTIVITY_LOG_EM_DASH;
   protected readonly emptyCopy = ORG_CLA_ACTIVITY_LOG_EMPTY_COPY;
   protected readonly filterEmptyCopy = ORG_CLA_ACTIVITY_LOG_FILTER_EMPTY_COPY;
   protected readonly loadMoreCopy = ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY;
@@ -114,9 +113,11 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
             this.errorMessage.set(null);
           }),
           catchError((error: unknown) => {
+            const httpError = error instanceof HttpErrorResponse ? error : null;
+            console.error('Failed to load the activity log:', httpError?.status ?? 'unknown', httpError?.message ?? String(error));
             const message =
-              error instanceof HttpErrorResponse && typeof error.error?.message === 'string' && error.error.message.trim().length > 0
-                ? error.error.message
+              httpError && typeof httpError.error?.message === 'string' && httpError.error.message.trim().length > 0
+                ? httpError.error.message
                 : "We couldn't load the activity log for this agreement.";
             this.page.set(null);
             this.errorMessage.set(message);
@@ -145,15 +146,7 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
    * Timestamps are not searched — a term like "2026" would false-positive on ISO-8601 strings
    * even for rows whose visible date is a different year in the viewer's locale.
    */
-  protected readonly filteredRows = computed<OrgClaActivityLogRow[]>(() => {
-    const list = this.loadedList();
-    if (!list) return [];
-    const term = (this.searchTerm() ?? '').trim();
-    const rows = list.list.map((entry) => this.toRow(entry));
-    if (term.length === 0) return rows;
-    const lowerTerm = term.toLocaleLowerCase();
-    return rows.filter((row) => row.searchText.includes(lowerTerm));
-  });
+  protected readonly filteredRows = computed<OrgClaActivityLogRow[]>(() => this.initFilteredRows());
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
@@ -221,6 +214,16 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
       });
   }
 
+  private initFilteredRows(): OrgClaActivityLogRow[] {
+    const list = this.loadedList();
+    if (!list) return [];
+    const term = (this.searchTerm() ?? '').trim();
+    const rows = list.list.map((entry) => this.toRow(entry));
+    if (term.length === 0) return rows;
+    const lowerTerm = term.toLocaleLowerCase();
+    return rows.filter((row) => row.searchText.includes(lowerTerm));
+  }
+
   private toRow(entry: OrgClaActivityLogEntry): OrgClaActivityLogRow {
     const actor = entry.actor?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH;
     const summary = entry.summary?.trim() || ORG_CLA_ACTIVITY_LOG_EM_DASH;
@@ -237,18 +240,4 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
       searchText,
     };
   }
-}
-
-/**
- * Row projection for the Activity Log table.
- *
- * `searchText` is the precomputed haystack the filter runs against — actor and summary joined
- * with a NUL byte so a match cannot span the two fields.
- */
-interface OrgClaActivityLogRow {
-  entry: OrgClaActivityLogEntry;
-  actor: string;
-  summary: string;
-  whenLabel: string;
-  searchText: string;
 }

@@ -1889,7 +1889,9 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
   const actor = nonEmpty(row?.UserName) ?? nonEmpty(row?.LfUsername) ?? null;
   const when = nonEmpty(row?.EventTime) ?? '';
   const eventType = row?.EventType?.trim() ?? '';
-  const category = ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE[eventType] ?? 'other';
+  const category = Object.prototype.hasOwnProperty.call(ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE, eventType)
+    ? ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE[eventType]
+    : 'other';
 
   return {
     id,
