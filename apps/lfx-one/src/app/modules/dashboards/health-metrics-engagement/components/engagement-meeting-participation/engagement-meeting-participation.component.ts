@@ -122,12 +122,12 @@ export class EngagementMeetingParticipationComponent {
     const period = this.totalPeriod();
     if (!period) return '—';
 
-    if (!this.attendanceMode()) return period.meetingsHeld === null ? '—' : period.meetingsHeld.toLocaleString();
+    if (this.attendanceMode()) return period.meetingsHeld === null ? '—' : period.meetingsHeld.toLocaleString();
     return formatHealthMetricsEngagementAttendance(period.attendancePct, period.meetingsHeld);
   });
   protected readonly meetingsLabel = computed(() => {
     const meetings = this.totalPeriod()?.meetingsHeld ?? null;
-    if (meetings === null) return 'No meetings in period';
+    if (meetings === null) return 'Meetings in period not available yet';
 
     return `${meetings.toLocaleString()} ${meetings === 1 ? 'meeting' : 'meetings'} in period`;
   });

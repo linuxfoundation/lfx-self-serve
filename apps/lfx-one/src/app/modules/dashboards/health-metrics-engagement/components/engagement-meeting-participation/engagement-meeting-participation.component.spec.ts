@@ -139,6 +139,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('All-meeting attendance');
     expect(text('engagement-meeting-participation-delta')).toBe('+4.0pp vs prior period');
     expect(text('engagement-meeting-participation-count')).toBe('12 meetings in period');
+    expect(text('engagement-meeting-participation-secondary')).toBe('12');
   });
 
   // The hero must read the view's own `all` row: summing the type rows double-counts a meeting
@@ -159,6 +160,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
     expect(text('engagement-meeting-participation-hero')).toContain('12');
     expect(text('engagement-meeting-participation-delta')).toBe('+20.0% vs prior period');
+    expect(text('engagement-meeting-participation-secondary')).toBe('70%');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
   });
 

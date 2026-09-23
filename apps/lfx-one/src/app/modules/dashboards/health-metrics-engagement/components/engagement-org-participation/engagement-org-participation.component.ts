@@ -132,6 +132,8 @@ export class EngagementOrgParticipationComponent {
   /** `null` means the foundation's whole scope was never measured — a filtered cut with zero matches
    * keeps its own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
+  /** No rows at all means the scope was never measured; rows with null caption counts still render. */
+  protected readonly scopeUnmeasured = computed(() => this.response().rows.length === 0);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
     const counts = this.response().counts;

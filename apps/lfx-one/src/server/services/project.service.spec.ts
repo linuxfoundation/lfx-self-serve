@@ -2402,12 +2402,14 @@ describe('ProjectService — getHealthOverviewKpis', () => {
     expect(result['COMPLETED_YEAR']?.[0]).toEqual(expect.objectContaining({ area: 'eng', statValue: '—', statLabel: 'no data this period' }));
   });
 
-  it('counts only rated, non-dormant groups per period, binding the thresholds and the foundation', async () => {
+  it('counts only rated, non-dormant groups with an attendance rate per period, binding the thresholds and the foundation', async () => {
     await service.getHealthOverviewKpis('cncf');
 
     const [query, binds] = execute.mock.calls.find(([sql]) => isEngagementQuery(sql)) ?? [];
     const ranges = buildHealthMetricsOverviewPeriods().map((period) => period.range);
-    expect(query).toContain('COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND meetings_count_ytd >= ?) AS ACTIVE_GROUPS__YTD');
+    expect(query).toContain(
+      'COUNT_IF(NOT COALESCE(is_dormant_ytd, FALSE) AND meetings_count_ytd >= ? AND attendance_pct_ytd IS NOT NULL) AS ACTIVE_GROUPS__YTD'
+    );
     expect(query).toContain('attendance_pct_3rd_last_completed_year < ?');
     expect(query).not.toContain('_4th_last_completed_year');
     expect(binds).toEqual([...ranges.flatMap(() => [3, 3, 0.5]), 'cncf']);

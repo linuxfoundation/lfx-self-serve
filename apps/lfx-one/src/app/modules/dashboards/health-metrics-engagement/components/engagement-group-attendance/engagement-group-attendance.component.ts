@@ -113,7 +113,11 @@ export class EngagementGroupAttendanceComponent {
    * its own counts, so this is not the same signal as `totalRecords() === 0`. */
   protected readonly counts = computed(() => this.response().counts);
   protected readonly first = computed(() => (this.page() - 1) * this.size());
-  protected readonly countLabel = computed(() => `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`);
+  protected readonly countLabel = computed(() => {
+    if (this.counts() === null) return '—';
+
+    return `${this.totalRecords().toLocaleString()} ${this.totalRecords() === 1 ? 'group' : 'groups'}`;
+  });
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {

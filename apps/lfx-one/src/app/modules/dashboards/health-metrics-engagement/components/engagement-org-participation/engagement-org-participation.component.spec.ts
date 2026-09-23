@@ -143,6 +143,20 @@ describe('EngagementOrgParticipationComponent', () => {
     expect(emitted).toEqual([null, null]);
   });
 
+  // Missing caption counts must not hide organizations the view did return.
+  it('still renders the returned rows when only the caption counts are unmeasured', async () => {
+    await render(response({ counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]')).toBeNull();
+  });
+
+  it('shows the not-available state when the view returns no rows for the scope', async () => {
+    await render(response({ rows: [], counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain('not available yet');
+  });
+
   // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.
   it('restarts paging when the foundation changes, not merely when the row count does', async () => {
     const rows = Array.from({ length: 60 }, (_, index) => orgRow({ accountId: `a-${index}`, accountName: `Org ${index}` }));

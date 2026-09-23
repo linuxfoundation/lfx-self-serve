@@ -214,6 +214,13 @@ describe('EngagementGroupAttendanceComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
   });
 
+  it('captions an unmeasured scope with an em dash beside the not-available state, not "0 groups"', async () => {
+    await render(response({ rows: [], totalRecords: 0, counts: null }));
+
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-count"]').textContent.trim()).toBe('\u2014');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]').textContent).toContain('not available yet');
+  });
+
   // A failed read must not render the copy that asserts the foundation has no matching groups.
   it('separates a failed read from an empty one, and keeps the badges and count off a fabricated zero', async () => {
     const emitted: unknown[] = [];

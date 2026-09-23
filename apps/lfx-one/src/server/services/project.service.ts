@@ -8060,7 +8060,7 @@ export class ProjectService {
 
   /**
    * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`, using the
-   * Engagement tab's own rules: non-dormant groups with enough meetings to rate, and those below the low-attendance threshold.
+   * Engagement tab's own rules: non-dormant groups with enough meetings and a non-null rate, and those below the low-attendance threshold.
    * A stopgap until `HEALTH_OVERVIEW_KPIS` carries engagement columns. Any failure logs and returns
    * `null`, so a problem here never takes down the other five tiles.
    */
@@ -8071,7 +8071,7 @@ export class ProjectService {
     const binds: (string | number)[] = [];
     const columns = ranges.flatMap((range) => {
       const suffix = this.getRangeSuffix(range);
-      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ?`;
+      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ? AND attendance_pct${suffix} IS NOT NULL`;
       binds.push(
         HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
         HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
