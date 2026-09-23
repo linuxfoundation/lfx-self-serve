@@ -620,3 +620,34 @@ export interface EasyClaCorporateContributorList {
   nextKey?: string;
   list?: EasyClaCorporateContributor[];
 }
+
+/**
+ * Body for `PUT /v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`
+ * (`#/definitions/ecla-invalidation-input`).
+ *
+ * Both fields are optional — omitting the body preserves the previous behaviour where the
+ * producer records the invalidation without a reason or note.
+ */
+export interface EasyClaEclaInvalidationInput {
+  /** Enum: `signed-in-error | should-be-corporate | compliance | other`. */
+  reason?: EasyClaEclaInvalidationReason;
+  /** Free-text note, ≤ 2048 chars. */
+  note?: string;
+}
+
+export type EasyClaEclaInvalidationReason = 'signed-in-error' | 'should-be-corporate' | 'compliance' | 'other';
+
+/**
+ * Response for `PUT /v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`
+ * (`#/definitions/ecla-invalidate-result`).
+ *
+ * Identifies the invalidated employee acknowledgment. The response carries no timestamps or
+ * caller identity — those are stamped upstream from the request and are read back through the
+ * corporate-contributors list.
+ */
+export interface EasyClaEclaInvalidateResult {
+  signature_id?: string;
+  cla_group_id?: string;
+  company_id?: string;
+  user_id?: string;
+}

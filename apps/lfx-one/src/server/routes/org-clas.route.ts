@@ -78,4 +78,17 @@ router.delete('/:orgUid/lens/cla-groups/:signatureId/managers/:lfUsername', bloc
   orgClasController.removeManager(req, res, next)
 );
 
+// Invalidate one contributor acknowledgment (#2807). Same middleware order as the approval-list
+// write above, and for the same reason: the producer stamps the acting user on the invalidated
+// signature as `invalidatedBy`, so an impersonated write would record a support engineer's action
+// against the person being impersonated, permanently, on a legal audit trail. Ordered before the
+// grant check so an impersonated caller is refused for impersonating rather than told they lack a
+// grant they may well hold.
+router.post(
+  '/:orgUid/lens/cla-groups/:signatureId/acknowledgments/:acknowledgmentSignatureId/invalidate',
+  blockDuringImpersonation,
+  requireOrgLensAccess,
+  (req, res, next) => orgClasController.invalidateAcknowledgment(req, res, next)
+);
+
 export default router;
