@@ -713,6 +713,20 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
+  it.each([
+    ['a non-breaking space', '\u00A0https://evil.example/p'],
+    ['an ideographic space', '\u3000https://evil.example/p'],
+    ['an en space', '\u2002https://evil.example/p'],
+    ['a line separator', '\u2028https://evil.example/p'],
+    ['a byte-order mark', '\uFEFFhttps://evil.example/p'],
+    ['a non-breaking space before //', '\u00A0//evil.example/p'],
+  ])('refuses a url prefixed with %s', (_label, href) => {
+    // Narrowing the end-strip to C0/space to catch interior tabs opened this: NBSP, U+3000 and
+    // U+2028 survived, the value read as relative, and a later `trim()` -- canonicalHttpUrl runs
+    // one -- turned it back into a live destination. Both classes are stripped at both ends.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
+  });
+
   it('keeps a legitimate url whose PATH contains a space', () => {
     // The normalisation must not become an over-denial: stripping control characters is about
     // how the host is read, and an ordinary path is untouched.

@@ -342,11 +342,17 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * survives here survives into the recipient's inbox.
  */
 function normalizeHrefForJudgement(href: string): string {
-  return href
-    .replace(/[\t\n\r]/g, '')
-    .replace(/^[\x00-\x20]+/, '')
-    .replace(/[\x00-\x20]+$/, '')
-    .replace(/\\/g, '/');
+  return (
+    href
+      .replace(/[\t\n\r]/g, '')
+      // BOTH C0/space AND Unicode whitespace at the ends. `trim()` alone misses C0 controls;
+      // a C0-only strip misses NBSP, U+3000 and U+2028 -- and a later `trim()` (canonicalHttpUrl
+      // runs one) removes those, turning a value judged as relative into a live destination.
+      // `\s` covers the Unicode set, `\x00-\x20` the controls; both ends, both classes.
+      .replace(/^[\s\x00-\x20\uFEFF]+/u, '')
+      .replace(/[\s\x00-\x20\uFEFF]+$/u, '')
+      .replace(/\\/g, '/')
+  );
 }
 
 /** Whether an already-normalized href names a host. */
@@ -361,14 +367,13 @@ function hasSchemeNormalized(normalized: string): boolean {
  * whatever document renders it, so there is no destination to vouch for.
  */
 function hasScheme(href: string): boolean {
-  // TRIMMED first, and backslashes treated as slashes. WHATWG strips leading C0/space before
-  // parsing and normalises `\` to `/`, so ` //evil.example`, `/\evil.example` and
-  // `\\evil.example` all resolve to the host `evil.example`. Testing the raw string would send
-  // them down the relative branch, which returns them UNJUDGED.
+  // NORMALIZED first -- see `normalizeHrefForJudgement`. Testing the raw string sends a value a
+  // browser reads as host-bearing down the relative branch, which returns it UNJUDGED.
   //
-  // sanitize-html's `allowProtocolRelative: false` also refuses these, so this is the second of
-  // two independent layers rather than the only one -- but the allow-list must not depend on
-  // that, or removing this normalisation becomes a silent bypass rather than a visible one.
+  // For the protocol-relative spellings sanitize-html's `allowProtocolRelative: false` is a
+  // second layer, but NOT for the rest: it folds no backslashes and strips no interior control
+  // characters, so for `ht<TAB>tps://` and `/\host` this is the only thing standing between a
+  // model-invented destination and the recipient's inbox.
   return hasSchemeNormalized(normalizeHrefForJudgement(href));
 }
 
