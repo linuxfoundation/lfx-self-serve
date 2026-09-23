@@ -14,6 +14,8 @@ import type {
   HealthMetricsEngagementAttendanceTone,
   HealthMetricsEngagementGroupPeriod,
   HealthMetricsEngagementGroupRow,
+  HealthMetricsEngagementNonMemberPeriod,
+  HealthMetricsEngagementNonMemberRow,
   HealthMetricsEngagementOrgFilter,
   HealthMetricsEngagementOrgPeriod,
   HealthMetricsEngagementOrgRow,
@@ -171,13 +173,36 @@ export function filterHealthMetricsEngagementOrgRows(
     return term === '' || row.accountName.toLowerCase().includes(term);
   });
 
+  return matched.sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** The selected period's numbers for one non-member row, falling back to the newest period held. */
+export function selectHealthMetricsEngagementNonMemberPeriod(
+  row: HealthMetricsEngagementNonMemberRow,
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberPeriod | null {
+  return selectPeriod(row.periods, range);
+}
+
+/** Best-first by the view's per-period rank; the pill re-sorts the loaded rows without a re-read. */
+export function sortHealthMetricsEngagementNonMemberRows(
+  rows: readonly HealthMetricsEngagementNonMemberRow[],
+  range: HealthMetricsRange
+): HealthMetricsEngagementNonMemberRow[] {
+  return [...rows].sort((a, b) => compareByPeriodRank(a, b, range));
+}
+
+/** One rank order for both organization tables: a divergent copy would sort them differently. */
+function compareByPeriodRank<T extends { accountName: string; periods: readonly { range: HealthMetricsRange; sortRank: number | null }[] }>(
+  a: T,
+  b: T,
+  range: HealthMetricsRange
+): number {
   // A row the view left unranked sorts last rather than ahead of every ranked org.
-  return matched.sort((a, b) => {
-    const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
-    const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
-    // Locale pinned: an unpinned compare can order same-rank rows differently on SSR and the client.
-    return rankA === rankB ? a.accountName.localeCompare(b.accountName, 'en-US') : rankA - rankB;
-  });
+  const rankA = selectPeriod(a.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+  const rankB = selectPeriod(b.periods, range)?.sortRank ?? Number.MAX_SAFE_INTEGER;
+  // Locale pinned: an unpinned compare can order same-rank rows differently on SSR and the client.
+  return rankA === rankB ? a.accountName.localeCompare(b.accountName, 'en-US') : rankA - rankB;
 }
 
 /** Both views carry the same four periods, so the same fallback serves either row shape. */

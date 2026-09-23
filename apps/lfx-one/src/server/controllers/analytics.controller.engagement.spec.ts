@@ -4,9 +4,10 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getGroupAttendance, getMeetingParticipation, getOrgParticipation } = vi.hoisted(() => ({
+const { getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation } = vi.hoisted(() => ({
   getGroupAttendance: vi.fn(),
   getMeetingParticipation: vi.fn(),
+  getNonMemberParticipation: vi.fn(),
   getOrgParticipation: vi.fn(),
 }));
 
@@ -18,6 +19,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
     HealthMetricsEngagementService: class {
       public getGroupAttendance = getGroupAttendance;
       public getMeetingParticipation = getMeetingParticipation;
+      public getNonMemberParticipation = getNonMemberParticipation;
       public getOrgParticipation = getOrgParticipation;
     },
   };
@@ -41,6 +43,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
 } from '@lfx-one/shared/constants';
 
@@ -262,6 +265,58 @@ describe('AnalyticsController.getEngagementOrgParticipation', () => {
     getOrgParticipation.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callOrgs({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callNonMembers(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementNonMemberParticipation(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementNonMemberParticipation', () => {
+  beforeEach(() => {
+    getNonMemberParticipation.mockReset();
+    getNonMemberParticipation.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+  });
+
+  // The view carries no project key, so a project on the wire would be a param the service ignores.
+  it('takes the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callNonMembers({ foundationSlug: 'acme', projectSlug: 'acme-core' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getNonMemberParticipation).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT);
+  });
+
+  it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
+    const { next, promise } = callNonMembers({});
+    await promise;
+
+    expect(getNonMemberParticipation).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('rejects a foundation slug that is not a slug', async () => {
+    const { next, promise } = callNonMembers({ foundationSlug: "acme' OR 1=1" });
+    await promise;
+
+    expect(getNonMemberParticipation).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getNonMemberParticipation.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callNonMembers({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();

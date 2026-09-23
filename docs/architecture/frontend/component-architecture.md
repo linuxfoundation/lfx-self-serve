@@ -226,6 +226,28 @@ For the scroll-spy used inside a Level 2 page, five rules apply, each attributed
 - Register teardown once via `destroyRef.onDestroy`, **not** inside the setup function, which re-runs whenever the sticky offset changes (`health-metrics-engagement.component.ts`, whose observer is rebuilt as the sticky offset and the pane's overflow change).
 - Release a fragment deep link only once **every** async section that can change the pane's height has settled (`health-metrics-engagement.component.ts`, `HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS`). Clearing the pending key on the first section to report leaves a later section's reflow to push the anchor out of view unanswered. A section joins that list only once its component emits `reading`/`settled` and the container binds both — a listed section that never emits `settled` holds every deep link until the TTL.
 
+Each async section of a Level 2 page owns its own read, and every one of them faces the same
+ordering problem: the foundation is not selected on the first pass. The rule the engagement sections
+share is a **per-component `foundationSeen` latch** — a plain closure variable, not shared state —
+set the first time a query carries a non-empty slug, with the response tap writing
+`loading.set(!foundationSeen)` and gating its `settled` emission on the same flag:
+
+- Before any foundation resolves, the skeleton holds. Clearing `loading` there would let the table
+  caption an unread scope as a measured empty one, which is a different and much more confident
+  claim than "still loading".
+- That first empty-slug pass must **not** emit `settled`. It would drop every section out of the
+  container's wait set before a single read has run, releasing the pending fragment — and
+  `onSectionReading` cannot re-arm a key that is already cleared, so the deep link lands at the wrong
+  offset once the real read reflows the pane. A read that never gets a foundation is bounded by the
+  pending-section TTL instead.
+- A foundation **cleared after** a read still settles, because the latch stays set. Without it the
+  section wedges on the skeleton forever, and — since the container holds a fragment deep link until
+  every listed section reports — it would also hold every deep link until the TTL.
+
+Known limitation: once latched, a scope cleared after a read renders the _measured-empty_ card
+rather than a neutral one. Distinguishing the third state ("no foundation selected") belongs to the
+page-wide neutral state, not to four per-section copies of the same computed.
+
 A Level 2 page whose content column scrolls on its own (`health-metrics-engagement`) bounds that column to the viewport and gives the observer that element as its `root`, with a `0px 0px -70% 0px` margin — the sticky-header offset only belongs in the margin when the window is what scrolls. Detect the container at runtime (computed `overflow-y` plus `scrollHeight > clientHeight`) rather than assuming it, so the same code falls back to window scroll at narrow widths.
 
 ## 🎨 Component Development Pattern

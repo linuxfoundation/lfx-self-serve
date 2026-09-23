@@ -6,6 +6,7 @@ import type {
   HealthMetricsEngagementGroupAttendance,
   HealthMetricsEngagementGroupTypeFilter,
   HealthMetricsEngagementMeetingParticipation,
+  HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
@@ -187,7 +188,12 @@ export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
  * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
  * component emits `reading`/`settled` and the container binds both.
  */
-export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = ['participation', 'committees', 'orgs'] as const satisfies readonly HealthMetricsEngagementSectionKey[];
+export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
+  'participation',
+  'committees',
+  'orgs',
+  'nonmem',
+] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
 /** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
 export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
@@ -281,6 +287,35 @@ export const HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT: HealthMetricsE
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED: HealthMetricsEngagementOrgParticipation = {
+  rows: [],
+  counts: null,
+};
+
+/** Client-side page size for the non-member table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read, an order of magnitude above the largest foundation's non-member
+ * count. It bounds a payload the client sorts in memory; hitting it is logged, not silent.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP = 5000;
+
+/**
+ * A foundation the view holds no non-member organizations for — a measured empty scope, which is
+ * why the count is zero rather than null. The server never returns it for a failed read; that
+ * error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT: HealthMetricsEngagementNonMemberParticipation = {
+  rows: [],
+  counts: { orgs: 0 },
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its count is `null` because nothing was measured — a zero here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
   rows: [],
   counts: null,
 };

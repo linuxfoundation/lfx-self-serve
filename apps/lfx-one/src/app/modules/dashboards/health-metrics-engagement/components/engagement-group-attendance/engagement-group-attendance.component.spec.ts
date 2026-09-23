@@ -258,6 +258,12 @@ describe('EngagementGroupAttendanceComponent', () => {
 
     expect(getEngagementGroupAttendance).not.toHaveBeenCalled();
     expect(emitted.every((counts) => counts === null)).toBe(true);
+    // An unresolved foundation is not a foundation with no groups matching the filter — the table
+    // holds its loading state rather than the section rendering empty or errored.
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-table"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-empty"]')).toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-group-attendance-error"]')).toBeNull();
+    expect(fixture.componentInstance['loading']()).toBe(true);
   });
 
   // The URL is the only carrier of table state across a reload or a shared link.
