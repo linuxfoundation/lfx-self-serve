@@ -489,6 +489,45 @@ describe('OrgNavigationService default selection', () => {
       expect(service.items().map((row) => row.uid)).toEqual([UID_A]);
     });
 
+    // Retry's busy state also needs to know when its first page landed; scroll pages reuse the
+    // generation and must not count.
+    it('records a first page landing but not a next page', () => {
+      const started = service.refreshList(UID_B);
+      expect(service.firstPageLandedGeneration()).toBeLessThan(started);
+
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush({ items: [item(UID_B, 'Beta')], next_page_token: 'next', upstream_failed: false });
+      expect(service.firstPageLandedGeneration()).toBe(started);
+
+      service.loadNextPage();
+      expect(service.generation()).toBe(started);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush(page([item(UID_A, 'Acme')]));
+      expect(service.firstPageLandedGeneration()).toBe(started);
+    });
+
+    // Retry is pressed during an outage, so its first page may fail again: the failed reset page must
+    // still count as landed, or Retry would stay disabled until the next search.
+    it('records a failed first page as landed so Retry is released', () => {
+      const started = service.refreshList(UID_B);
+      http.expectOne((req) => req.url === '/api/nav/org-items').flush('unavailable', { status: 503, statusText: 'Service Unavailable' });
+      expect(service.firstPageLandedGeneration()).toBe(started);
+    });
+
+    // The empty-state Retry keys its busy state on this: the generation returned is the one the
+    // started fetch carries, and a later reset moves past it.
+    it('returns the generation of the fetch it started, which a later reset supersedes', () => {
+      const started = service.refreshList(UID_B);
+      expect(service.generation()).toBe(started);
+
+      service.resetAndReload();
+      expect(service.generation()).toBeGreaterThan(started);
+
+      http
+        .match((req) => req.url === '/api/nav/org-items')
+        .forEach((req) => {
+          if (!req.cancelled) req.flush(page([item(UID_B, 'Beta')]));
+        });
+    });
+
     it('pins the current selection into the refreshed request like the bootstrap does', () => {
       service.refreshList(UID_B);
 
