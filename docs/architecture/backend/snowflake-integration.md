@@ -852,22 +852,6 @@ consecutive-failure threshold. The request still fails with 500 `SNOWFLAKE_QUERY
 `apiErrorHandler` with `error_body.pool_queue_full: true` and the pool stats at rejection time. Acquire timeouts
 still count, because they also occur when Snowflake is unreachable and no connection can be created.
 
-```text
-Error: Snowflake query execution failed: SQL compilation error: Invalid row count '…' in result offset clause
-Cause: An out-of-range LIMIT (002010) or OFFSET (002011) literal — Snowflake cannot bind either, so both are interpolated
-Solution:
-  1. Bound pagination at the HTTP layer with parseOffsetPagination / clampInteger (helpers/validation.helper.ts),
-     capped at MAX_SNOWFLAKE_PAGINATION_PAGE pages
-```
-
-This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker either (it frees
-the HALF_OPEN probe slot, like a full pool queue). Every other compilation error still counts — including
-"does not exist or not authorized", which can mean a revoked GRANT.
-
-Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` response carries the generic
-`SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE`; the SDK text stays in `message` (which callers such as
-`isMissingObjectError` match on) and in the logs, never in the response body.
-
 #### 3. Query Timeout
 
 ```text
@@ -890,6 +874,25 @@ Solution:
   2. Check for CTEs or subqueries with writes
   3. Review application logic for query construction
 ```
+
+#### 5. Out-of-Range LIMIT/OFFSET
+
+```text
+Error: Snowflake query execution failed: SQL compilation error: Invalid row count '…' in result offset clause
+Cause: An out-of-range LIMIT (002010) or OFFSET (002011) literal — Snowflake cannot bind either, so both are interpolated
+Solution:
+  1. Bound pagination at the HTTP layer with parseOffsetPagination / clampInteger (helpers/validation.helper.ts),
+     capped at MAX_SNOWFLAKE_PAGINATION_PAGE pages
+```
+
+This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
+queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
+exist or not authorized", which can mean a revoked GRANT.
+
+Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
+`SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
+SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
+response body.
 
 ## 🎯 Best Practices
 

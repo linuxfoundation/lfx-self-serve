@@ -15,6 +15,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_RANGES,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementGroupAttendance,
@@ -517,7 +518,11 @@ export class HealthMetricsEngagementService {
         });
       }
 
-      if (!(error instanceof BaseApiError) || error.clientMessage) throw error;
+      // SnowflakeService's own generic sentence is replaced by this widget's; any other client message
+      // was chosen by the site that threw it and passes through untouched.
+      const siteClientMessage =
+        error instanceof BaseApiError && error.clientMessage !== undefined && error.clientMessage !== SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE;
+      if (!(error instanceof BaseApiError) || siteClientMessage) throw error;
 
       throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
         operation: error.operation,

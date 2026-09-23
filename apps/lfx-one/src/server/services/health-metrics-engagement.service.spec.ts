@@ -34,6 +34,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -243,6 +244,7 @@ describe('HealthMetricsEngagementService', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -440,6 +442,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -598,6 +601,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -739,6 +743,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -916,6 +921,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
