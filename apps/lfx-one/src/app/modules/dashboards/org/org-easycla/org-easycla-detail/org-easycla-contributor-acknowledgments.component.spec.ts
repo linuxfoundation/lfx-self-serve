@@ -23,6 +23,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   const selectedAccount = signal<{ uid?: string; accountName: string } | null>(null);
   const getContributorAcknowledgments = vi.fn();
   const invalidateAcknowledgment = vi.fn();
+  const getApprovalList = vi.fn();
+  const updateApprovalList = vi.fn();
   const addMessage = vi.fn();
   /** Emits what the confirmation closed with: a request on confirm, `null` on dismiss. */
   let dialogClosed: Subject<unknown>;
@@ -72,7 +74,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount } },
-        { provide: OrgLensClaService, useValue: { getContributorAcknowledgments, invalidateAcknowledgment } },
+        { provide: OrgLensClaService, useValue: { getContributorAcknowledgments, invalidateAcknowledgment, getApprovalList, updateApprovalList } },
         { provide: MessageService, useValue: { add: addMessage } },
       ],
     })
@@ -122,6 +124,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     selectedAccount.set(SELECTED_ACCOUNT);
     getContributorAcknowledgments.mockReturnValue(of(page([])));
     invalidateAcknowledgment.mockReturnValue(of({ signatureId: 'ecla-1' }));
+    getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     dialogClosed = new Subject<unknown>();
     openDialog.mockReturnValue({ onClose: dialogClosed.asObservable(), close: vi.fn() });
   });
@@ -592,6 +596,94 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       });
     });
 
+    /**
+     * Only entries added for this contributor alone are offered for removal. A domain or GitHub
+     * org entry approves other people too, so it is never matched, whatever it contains.
+     */
+    it('hands the dialog only the approval-list entries added for this contributor', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', email: 'Ada@Example.org', githubUsername: 'ada-l' })], { canEdit: true }))
+      );
+      getApprovalList.mockReturnValueOnce(
+        of({
+          signatureId: 'signature-uuid-1',
+          entries: [
+            { kind: 'email', value: 'ada@example.org' },
+            { kind: 'github-username', value: 'ADA-L' },
+            { kind: 'domain', value: 'example.org' },
+            { kind: 'github-org', value: 'ada-l' },
+            { kind: 'email', value: 'someone-else@example.org' },
+          ],
+          canEdit: false,
+        })
+      );
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      const data = openDialog.mock.calls[0][1].data;
+
+      expect(getApprovalList).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+      expect(data.matchingEntries()).toEqual([
+        { kind: 'email', value: 'ada@example.org' },
+        { kind: 'github-username', value: 'ADA-L' },
+      ]);
+      expect(data.canRemoveEntries()).toBe(false);
+    });
+
+    it('tells the dialog the approval list is unknown when it cannot be read', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'ada@example.org' })], { canEdit: true })));
+      getApprovalList.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.matchingEntries()).toBeNull();
+    });
+
+    it('removes the confirmed entries only after the invalidate succeeds, then reports the new count', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      updateApprovalList.mockReturnValueOnce(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.org' }], canEdit: true }));
+      const fixture = await render();
+      const counts: number[] = [];
+      fixture.componentInstance.approvalListChanged.subscribe((count) => counts.push(count));
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+
+      expect(invalidateAcknowledgment).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', 'ecla-1', {});
+      expect(updateApprovalList).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', {
+        add: [],
+        remove: [{ kind: 'email', value: 'ada@example.org' }],
+      });
+      expect(counts).toEqual([1]);
+    });
+
+    it('leaves the approval list alone when the invalidate fails', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      invalidateAcknowledgment.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+
+      expect(updateApprovalList).not.toHaveBeenCalled();
+    });
+
+    it('warns, without undoing the invalidate, when the entry removal fails', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      updateApprovalList.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Approval List not updated' }));
+    });
+
     it('sends the write once when the dialog closes twice', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();
@@ -798,7 +890,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       click(fixture, 'org-easycla-acknowledgment-invalidate');
 
-      expect(openDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ data: { contributor: 'Ada Lovelace' } }));
+      expect(openDialog).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ data: expect.objectContaining({ contributor: 'Ada Lovelace' }) }));
     });
 
     it('names impersonation when the BFF refuses the write as read-only', async () => {

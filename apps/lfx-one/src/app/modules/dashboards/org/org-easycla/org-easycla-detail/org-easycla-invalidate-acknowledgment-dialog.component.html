@@ -1,54 +1,52 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<form [formGroup]="form" (submit)="$event.preventDefault(); onConfirm()" class="flex flex-col gap-4" data-testid="org-easycla-invalidate-dialog">
-  <lfx-message severity="warn" icon="fa-light fa-triangle-exclamation">
-    <ng-template #content>
-      <span data-testid="org-easycla-invalidate-dialog-warning">{{ copy.warning }}</span>
-    </ng-template>
-  </lfx-message>
+<div class="flex flex-col gap-3 pt-5" data-testid="org-easycla-invalidate-dialog">
+  <span class="flex h-9 w-9 items-center justify-center rounded-full bg-red-50 text-red-600" aria-hidden="true">
+    <i class="fa-light fa-triangle-exclamation"></i>
+  </span>
 
-  <p class="text-sm text-gray-700" data-testid="org-easycla-invalidate-dialog-contributor">{{ contributor }}</p>
+  <h2 class="m-0 text-base font-semibold text-gray-900" data-testid="org-easycla-invalidate-dialog-title">{{ copy.title(contributor) }}</h2>
 
-  <div class="flex flex-col gap-1">
-    <label class="text-sm font-medium text-gray-700" for="org-easycla-invalidate-reason">{{ copy.reasonLabel }}</label>
-    <lfx-select
-      [form]="form"
-      control="reason"
-      inputId="org-easycla-invalidate-reason"
-      [options]="reasonOptions"
-      [placeholder]="copy.reasonPlaceholder"
-      [required]="true"
-      styleClass="w-full"
-      dataTest="org-easycla-invalidate-dialog-reason" />
-  </div>
+  <p class="m-0 text-sm text-gray-700" data-testid="org-easycla-invalidate-dialog-body">
+    {{ copy.marksPrefix }} <strong>{{ contributor }}</strong
+    >{{ copy.marksSuffix }} <strong>{{ copy.reacknowledge(contributor) }}</strong
+    >{{ copy.removeCriteria }}
+  </p>
 
-  <div class="flex flex-col gap-1">
-    <label class="text-sm font-medium text-gray-700" for="org-easycla-invalidate-note">{{ copy.noteLabel }}</label>
-    <lfx-textarea
-      [form]="form"
-      control="note"
-      inputId="org-easycla-invalidate-note"
-      [placeholder]="copy.notePlaceholder"
-      [invalid]="noteTooLong()"
-      [describedBy]="noteTooLong() ? 'org-easycla-invalidate-note-error' : undefined"
-      styleClass="w-full"
-      dataTest="org-easycla-invalidate-dialog-note" />
-    @if (noteTooLong()) {
-      <p id="org-easycla-invalidate-note-error" role="alert" class="text-xs text-red-600 m-0" data-testid="org-easycla-invalidate-dialog-note-error">
-        {{ copy.noteTooLong }}
+  @if (checking()) {
+    <p class="m-0 text-sm text-gray-500" data-testid="org-easycla-invalidate-dialog-checking">{{ copy.checking }}</p>
+  } @else if (matchRows().length > 0) {
+    <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="org-easycla-invalidate-dialog-matches">
+      <p class="m-0">
+        <strong>{{ contributor }}</strong
+        >{{ copy.matchedBy(matchRows().length) }}
       </p>
-    }
-  </div>
+      <ul class="my-2 ml-5 list-disc p-0">
+        @for (entry of matchRows(); track entry.kind + entry.value) {
+          <li data-testid="org-easycla-invalidate-dialog-match">
+            <span class="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">{{ entry.criteriaLabel }}</span> {{ entry.value }}
+          </li>
+        }
+      </ul>
+      @if (canRemoveEntries()) {
+        <label class="flex items-start gap-2">
+          <input
+            type="checkbox"
+            class="mt-0.5"
+            [checked]="alsoRemove()"
+            (change)="onAlsoRemoveChange($event)"
+            data-testid="org-easycla-invalidate-dialog-also-remove" />
+          <span>{{ copy.alsoRemove(contributor, matchRows().length) }}</span>
+        </label>
+      }
+    </div>
+  } @else if (matchingEntries() !== null) {
+    <p class="m-0 text-sm text-gray-500" data-testid="org-easycla-invalidate-dialog-no-match">{{ copy.noMatch }}</p>
+  }
 
   <div class="flex justify-end gap-2">
     <lfx-button [label]="copy.cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" data-testid="org-easycla-invalidate-dialog-cancel" />
-    <lfx-button
-      [label]="copy.confirm"
-      icon="fa-light fa-ban"
-      severity="danger"
-      [disabled]="!canConfirm()"
-      (onClick)="onConfirm()"
-      data-testid="org-easycla-invalidate-dialog-confirm" />
+    <lfx-button [label]="copy.confirm" severity="danger" [disabled]="checking()" (onClick)="onConfirm()" data-testid="org-easycla-invalidate-dialog-confirm" />
   </div>
-</form>
+</div>

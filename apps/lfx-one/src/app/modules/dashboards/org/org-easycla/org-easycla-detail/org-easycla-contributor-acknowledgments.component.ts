@@ -15,14 +15,16 @@ import {
   ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY,
   ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS,
   ORG_CLA_INVALIDATE_ACTION_COPY,
-  ORG_CLA_INVALIDATE_DIALOG_COPY,
   ORG_CLA_INVALIDATE_RECEIPT_COPY,
 } from '@lfx-one/shared/constants';
 import type {
   OrgClaAcknowledgmentRow,
+  OrgClaApprovalEntry,
+  OrgClaApprovalEntryInput,
   OrgClaContributorAcknowledgment,
   OrgClaContributorAcknowledgmentList,
   OrgClaGroup,
+  OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
 import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
@@ -106,6 +108,9 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
 
   /** The Not Authorized row's "Add the user to the Approval list" link. The page switches tabs. */
   public readonly approvalListRequested = output<void>();
+
+  /** The approval list's new entry count, after an invalidate also removed the contributor's entries. */
+  public readonly approvalListChanged = output<number>();
 
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
   protected readonly subtitle = ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE;
@@ -313,31 +318,83 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     // Close any dialog already open, so a fast click on a second row leaves one modal rather than
     // two competing for keyboard focus.
     this.invalidateDialog?.close();
+    const orgUid = this.orgUid();
+    const claSignatureId = this.signatureId();
+    const matchingEntries = signal<OrgClaApprovalEntry[] | null | undefined>(undefined);
+    const canRemoveEntries = signal(false);
     const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
-      header: ORG_CLA_INVALIDATE_DIALOG_COPY.header,
+      showHeader: false,
       modal: true,
       dismissableMask: true,
       closable: true,
       width: 'min(32rem, 100%)',
-      data: { contributor: this.contributorLabel(row) },
+      data: { contributor: this.contributorLabel(row), matchingEntries: matchingEntries.asReadonly(), canRemoveEntries: canRemoveEntries.asReadonly() },
     });
 
     // `open` is typed nullable because it declines under SSR, where there is no document to attach
     // to. The control that calls this is browser-side, so there is nothing to subscribe to then.
     if (!dialogRef) return;
     this.invalidateDialog = dialogRef;
-    const orgUid = this.orgUid();
-    const claSignatureId = this.signatureId();
+    this.claService
+      .getApprovalList(orgUid, claSignatureId)
+      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .subscribe({
+        next: (list) => {
+          canRemoveEntries.set(list.canEdit);
+          matchingEntries.set(this.entriesAddedFor(row.ack, list.entries));
+        },
+        error: (error: unknown) => {
+          console.warn(
+            'Failed to load the approval list for the invalidate dialog:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.message
+          );
+          matchingEntries.set(null);
+        },
+      });
     // take(1): the dialog can emit close more than once while it is still closing, and a second
     // emission would send the write again. The HTTP call itself does not use take(1), so closing
     // the tab does not cancel a write that has already started.
-    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((request: OrgClaInvalidateAcknowledgmentRequest | null | undefined) => {
+    dialogRef.onClose.pipe(take(1), takeUntilDestroyed(this.destroyRef)).subscribe((result: OrgClaInvalidateAcknowledgmentDialogResult | null | undefined) => {
       if (this.invalidateDialog === dialogRef) this.invalidateDialog = null;
-      if (!request || this.destroyed) return;
+      if (!result || this.destroyed) return;
+      const { removeApprovalEntries, ...request } = result;
       // The pair captured when the dialog opened. A confirm that races an agreement change
       // must not write the previous row against the agreement now on screen.
       if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
-      this.sendInvalidate(row, request, orgUid, claSignatureId);
+      this.sendInvalidate(row, request, orgUid, claSignatureId, removeApprovalEntries ?? []);
+    });
+  }
+
+  /** Entries added for this contributor alone. Domain and org entries cover others too, so they never match. */
+  private entriesAddedFor(ack: OrgClaContributorAcknowledgment, entries: OrgClaApprovalEntry[]): OrgClaApprovalEntry[] {
+    const same = (entry: OrgClaApprovalEntry, identity: string | undefined): boolean =>
+      !!identity && entry.value.trim().toLowerCase() === identity.trim().toLowerCase();
+    return entries.filter(
+      (entry) =>
+        (entry.kind === 'email' && same(entry, ack.email)) ||
+        (entry.kind === 'github-username' && same(entry, ack.githubUsername)) ||
+        (entry.kind === 'gitlab-username' && same(entry, ack.gitlabUsername))
+    );
+  }
+
+  private removeApprovalEntries(orgUid: string, claSignatureId: string, entries: OrgClaApprovalEntryInput[]): void {
+    this.claService.updateApprovalList(orgUid, claSignatureId, { add: [], remove: entries }).subscribe({
+      next: (list) => {
+        if (!this.destroyed && claSignatureId === this.signatureId()) this.approvalListChanged.emit(list.entries.length);
+      },
+      error: (error: unknown) => {
+        console.warn(
+          'Failed to remove approval-list entries after an invalidate:',
+          (error as HttpErrorResponse)?.status,
+          (error as HttpErrorResponse)?.message
+        );
+        this.messageService.add({
+          severity: 'warn',
+          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedSummary,
+          detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedDetail,
+        });
+      },
     });
   }
 
@@ -349,7 +406,13 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * stamps. An optimistic removal would show the contributor as gone, which is a different and
    * wrong claim: the acknowledgment stays on the record, invalidated.
    */
-  private sendInvalidate(row: OrgClaAcknowledgmentRow, request: OrgClaInvalidateAcknowledgmentRequest, orgUid: string, claSignatureId: string): void {
+  private sendInvalidate(
+    row: OrgClaAcknowledgmentRow,
+    request: OrgClaInvalidateAcknowledgmentRequest,
+    orgUid: string,
+    claSignatureId: string,
+    removeApprovalEntries: OrgClaApprovalEntryInput[] = []
+  ): void {
     const signatureId = row.ack.signatureId;
     this.trackPending(signatureId, true);
     this.claService
@@ -366,6 +429,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
             summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
             detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
           });
+          if (removeApprovalEntries.length > 0) this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries);
           if (this.destroyed) return;
           if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
           if (this.pagesLoaded > 1) {

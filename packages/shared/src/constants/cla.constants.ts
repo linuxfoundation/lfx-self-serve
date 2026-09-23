@@ -739,36 +739,25 @@ export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corpo
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
 /**
- * Labels for the invalidation-reason picker (#1986, #2807).
+ * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
  *
- * The four values match the producer's enum. Copy is the CLA manager's wording, not the
- * producer's slug — a manager clicking "Signed in error" understands the outcome; the producer
- * receives `signed-in-error`.
- */
-export const ORG_CLA_INVALIDATION_REASON_LABELS = {
-  'signed-in-error': 'Signed in error',
-  'should-be-corporate': 'Should be corporate',
-  compliance: 'Compliance concern',
-  other: 'Other',
-} as const;
-
-/**
- * Confirmation-dialog copy for a row invalidate.
- *
- * The warning names the outcome directly: the producer marks the acknowledgment invalidated and
- * revokes the contributor's coverage under this CLA. That is what the CLA manager is confirming;
- * hiding it behind "will no longer be recognized" would leave the click reversible-looking when
- * it is not.
+ * It names the contributor and says what invalidating does not stop: a contributor who still
+ * matches the approval list can acknowledge again, or be re-added by Auto ECLA.
  */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
-  header: 'Invalidate this acknowledgment?',
-  warning:
-    'This contributor will lose coverage under this CLA. Their acknowledgment is marked invalidated on the record, and they will need to re-acknowledge before their next contribution can be accepted.',
-  reasonLabel: 'Reason',
-  reasonPlaceholder: 'Choose a reason',
-  noteLabel: 'Note (optional)',
-  notePlaceholder: 'Add context for the audit trail.',
-  noteTooLong: `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`,
+  title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
+  marksPrefix: 'This marks',
+  marksSuffix:
+    " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
+  reacknowledge: (contributor: string): string =>
+    `If ${contributor} still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again`,
+  removeCriteria: " — remove the matching criteria below if that shouldn't be possible.",
+  matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
+  alsoRemove: (contributor: string, count: number): string =>
+    `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,
+  noMatch:
+    "No individual approval-list entry matches this contributor. If they still match a broader entry (e.g. an email domain or GitHub org), they'll remain able to re-acknowledge this CCLA.",
+  checking: 'Checking the Approval List…',
   cancel: 'Cancel',
   confirm: 'Invalidate acknowledgment',
 } as const;
@@ -786,6 +775,8 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   successDetail: (contributor: string): string => `${contributor} is no longer covered by this CLA.`,
   failureSummary: 'Invalidate failed',
   failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
+  removalFailedSummary: 'Approval List not updated',
+  removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entry couldn't be removed. Remove it from the Approval List tab.",
 } as const;
 
 /** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */

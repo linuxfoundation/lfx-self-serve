@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Signal } from '@angular/core';
+
 import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
@@ -1179,6 +1181,20 @@ export interface OrgClaInvalidateAcknowledgmentRequest {
 export interface OrgClaInvalidateAcknowledgmentDialogData {
   /** Identity the panel already resolved. The dialog does not repeat that fallback chain. */
   contributor: string;
+  /**
+   * Approval-list entries added for this contributor alone — their email, GitHub username or
+   * GitLab username. `undefined` while the list is read; `null` when it could not be read, so the
+   * dialog makes no claim either way.
+   */
+  matchingEntries: Signal<OrgClaApprovalEntry[] | null | undefined>;
+  /** Whether the caller may edit the approval list, so the dialog may offer to remove those entries. */
+  canRemoveEntries: Signal<boolean>;
+}
+
+/** What the confirmation dialog closes with on confirm. */
+export interface OrgClaInvalidateAcknowledgmentDialogResult extends OrgClaInvalidateAcknowledgmentRequest {
+  /** Entries to remove from the approval list once the invalidate succeeds. */
+  removeApprovalEntries?: OrgClaApprovalEntryInput[];
 }
 
 /**
