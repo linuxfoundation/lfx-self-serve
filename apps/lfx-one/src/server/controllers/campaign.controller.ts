@@ -5,7 +5,7 @@
 // re-exports `form.utils`, which imports `@angular/forms`. A server spec that pulls the
 // barrel in dies with "PlatformLocation needs to be compiled using the JIT compiler".
 // Verified by switching to the barrel and watching the suite fail.
-import { sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import { canonicalHttpUrl } from '@lfx-one/shared/utils/url.utils';
 import { normalizeSponsors } from '@lfx-one/shared/utils/campaign.utils';
 
@@ -2224,7 +2224,11 @@ export class CampaignController {
       sourceEmailId,
       ...(utmCampaign ? { utmCampaign } : {}),
       ...(subject ? { subject } : {}),
-      ...(bodyHtml ? { bodyHtml } : {}),
+      // `hasVisibleHtmlText`, not truthiness: `.trim()` removes only whitespace-category characters,
+      // so a body of zero-width spaces or a Hangul filler is non-empty as a STRING while
+      // rendering blank. The service layer already judges the same question this way; asking it
+      // differently here is what lets a body the service would reject still gate a hero block.
+      ...(hasVisibleHtmlText(bodyHtml) ? { bodyHtml } : {}),
       // Sent as `previewText`, NOT `preheader`. campaign-service decodes this config into a
       // struct whose tag is `previewText` (internal/dispatch/hubspot.go), so a `preheader` key
       // is silently ignored by the Go decoder -- the generated preview text was dropped and the
@@ -2254,7 +2258,7 @@ export class CampaignController {
       // `previewText` above: the Go decoder reads the latter and silently drops the former.
       // Rides INSIDE the A/B gate and is dropped when blank -- upstream preserves the parent's
       // preview text for an absent value, so forwarding '' would BLANK B's preheader.
-      ...(abTestEnabled && subjectB !== '' && bodyHtmlB !== ''
+      ...(abTestEnabled && subjectB !== '' && hasVisibleHtmlText(bodyHtmlB)
         ? { abTestEnabled, subjectB, bodyHtmlB, ...(preheaderB !== '' ? { previewTextB: preheaderB } : {}) }
         : {}),
     };

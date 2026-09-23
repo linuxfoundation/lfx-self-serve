@@ -21,15 +21,45 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
  * check, and a `stripHtml(...).trim()` check. Each passed a value the previous one caught --
  * an empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
  *
- * `\p{C}` is Other (control, format, surrogate, private-use, unassigned) and `\p{Z}` is
- * Separator, so anything outside both is a character with a glyph. Asking by CATEGORY is what
- * makes this stable: a format character added to Unicode later needs no change here.
+ * Three PROPERTIES, each answering part of "does a glyph appear", rather than a list of
+ * spellings -- naming spellings is what made this wrong four times before:
+ *
+ * - `\p{C}` is Other: control, format, surrogate, private-use, unassigned.
+ * - `\p{Z}` is Separator: real word breaks, but nothing a reader sees as content.
+ * - `\p{Default_Ignorable_Code_Point}` is the Unicode property that MEANS "renders nothing",
+ *   and it is the one the category test alone missed. HANGUL FILLER (U+3164) is category Lo,
+ *   VARIATION SELECTOR-16 and COMBINING GRAPHEME JOINER are Mn -- all outside C and Z, all
+ *   invisible. Because it is a property rather than an enumeration, a default-ignorable added
+ *   to a later Unicode version is covered without a change here.
+ *
+ * NFC first, so a decomposed sequence is judged as the glyph it composes to.
+ *
+ * Deliberately NOT `\p{M}`: a review round proposed excluding all combining marks, but a lone
+ * combining mark renders as a dotted circle, and the property above already covers the invisible
+ * marks. Excluding every mark would also be a trap for scripts where marks carry meaning.
  *
  * @param value - Text, already stripped of markup if the caller has markup
  * @returns true when at least one character renders
  */
 export function hasVisibleText(value: string): boolean {
-  return /[^\p{C}\p{Z}]/u.test(value);
+  return /[^\p{C}\p{Z}\p{Default_Ignorable_Code_Point}]/u.test(value.normalize('NFC'));
+}
+
+/**
+ * Whether an HTML fragment renders any text a reader can see.
+ *
+ * `hasVisibleText(stripHtml(html))` is the composition every caller wants, and writing it out at
+ * each site is how this question drifted before: the markup must come off FIRST, or the tag names
+ * themselves count as visible characters and `<p>\u200B</p>` reads as content.
+ *
+ * Markup that renders without text -- an `<img>`, an `<hr>` -- is deliberately NOT visible text
+ * here. Callers that accept an image-only body check for that separately.
+ *
+ * @param html - An HTML fragment
+ * @returns true when stripping the markup leaves at least one rendering character
+ */
+export function hasVisibleHtmlText(html: string): boolean {
+  return hasVisibleText(stripHtml(html));
 }
 
 function isDecodableCodePoint(code: number): boolean {

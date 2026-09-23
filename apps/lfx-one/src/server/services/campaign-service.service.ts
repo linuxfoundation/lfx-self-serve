@@ -3,7 +3,7 @@
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
 import { encodePathSegment } from '../helpers/url-validation';
-import { escapeHtml, hasVisibleText, sanitizeDisplayText, stripHtml, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
+import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -953,8 +953,8 @@ export class CampaignServiceClient {
       // empty paragraph, then a lone `<br>`, then a body of only zero-width spaces.
       // `hasVisibleText` asks it by Unicode category, so there is one definition to keep right.
       const legacyBody = typeof legacy.body === 'string' ? stripResourceLoadingHtml(legacy.body) : '';
-      const effectiveBody = hasVisibleText(stripHtml(body)) ? body : legacyBody;
-      if (!hasVisibleText(stripHtml(effectiveBody))) {
+      const effectiveBody = hasVisibleHtmlText(body) ? body : legacyBody;
+      if (!hasVisibleHtmlText(effectiveBody)) {
         logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
         return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
       }

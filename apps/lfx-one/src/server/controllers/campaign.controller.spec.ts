@@ -1231,6 +1231,12 @@ describe('CampaignController.createCampaign cutover', () => {
     ['only a subject', { subjectB: 'S', bodyHtmlB: '' }],
     ['only a body', { subjectB: '', bodyHtmlB: '<p>b</p>' }],
     ['a whitespace-only body', { subjectB: 'S', bodyHtmlB: '   ' }],
+    // `.trim()` removes only whitespace-category characters, so each of these is a NON-EMPTY
+    // string that renders blank. Gating on truthiness staged a variant whose body a reader
+    // cannot see; the gate now asks `hasVisibleText`, the same predicate the service layer uses.
+    ['a body of zero-width spaces', { subjectB: 'S', bodyHtmlB: '<p>\u200B\u200B</p>' }],
+    ['a body of soft hyphens', { subjectB: 'S', bodyHtmlB: '<p>\u00AD</p>' }],
+    ['a body of Hangul filler', { subjectB: 'S', bodyHtmlB: '<p>\u3164</p>' }],
   ])('refuses to stage an A/B variant from a direct request carrying %s', async (_label, half) => {
     createCampaigns.mockResolvedValue({ enabled: false, jobId: null, error: null });
     legacyCreate.mockResolvedValue({ jobId: 'job_1' });

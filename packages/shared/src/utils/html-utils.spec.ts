@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, htmlClipboardToText, stripHtml, stripResourceLoadingHtml } from './html-utils';
+import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, hasVisibleText, htmlClipboardToText, stripHtml, stripResourceLoadingHtml } from './html-utils';
 
 describe('sanitizeDisplayText', () => {
   it('drops a BIDI override that would visually reverse the name', () => {
@@ -529,5 +529,39 @@ describe('sanitizeDisplayText — separators are word breaks, not invisibles', (
     // `hasVisibleText` asks a different question from the filter: a value of nothing but
     // separators renders blank, so it must not pass the floor even though the separators survive.
     expect(sanitizeDisplayText(' 　 ')).toBe('');
+  });
+});
+
+/**
+ * The category test (`\p{C}`/`\p{Z}`) was the fix for a denylist that kept being outrun, but it
+ * had a gap of its own: invisible code points OUTSIDE those two categories. HANGUL FILLER is
+ * category Lo (a Letter), and VARIATION SELECTOR-16 and COMBINING GRAPHEME JOINER are Mn (Mark) --
+ * all three render nothing and all three passed as "visible".
+ *
+ * The fix is another PROPERTY rather than another list: `Default_Ignorable_Code_Point` is the
+ * Unicode property that means exactly "renders nothing", so a default-ignorable added in a future
+ * Unicode version needs no change here.
+ */
+describe('hasVisibleText — invisible code points outside C and Z', () => {
+  it.each([
+    ['HANGUL FILLER (category Lo)', '\u3164'],
+    ['VARIATION SELECTOR-16 (Mn)', '\uFE0F'],
+    ['COMBINING GRAPHEME JOINER (Mn)', '\u034F'],
+    ['MONGOLIAN FREE VARIATION SELECTOR ONE (Mn)', '\u180B'],
+  ])('reports %s as not visible', (_label, invisible) => {
+    expect(hasVisibleText(invisible)).toBe(false);
+  });
+
+  it.each([
+    ['Devanagari with conjuncts', 'नमस्ते'],
+    ['Arabic with harakat', 'مُحَمَّد'],
+    ['Thai with vowel signs', 'กำ'],
+    ['a decomposed accented letter', 'e\u0301'],
+    ['BRAILLE PATTERN BLANK, which is a real glyph', '\u2800'],
+    ['a lone combining mark, which renders as a dotted circle', '\u0301'],
+  ])('still reports %s as visible', (_label, visible) => {
+    // A review round proposed excluding all of `\p{M}` here. These are why that would be wrong:
+    // marks carry meaning in these scripts, and a lone mark still puts a glyph on screen.
+    expect(hasVisibleText(visible)).toBe(true);
   });
 });
