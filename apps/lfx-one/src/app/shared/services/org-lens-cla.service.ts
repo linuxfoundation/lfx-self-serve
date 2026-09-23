@@ -5,6 +5,7 @@ import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import type {
   ClaGroupSearchResponse,
+  OrgClaActivityLogPage,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgmentList,
@@ -161,6 +162,20 @@ export class OrgLensClaService {
     );
   }
 
+  /**
+   * Paginated activity log for one CCLA (#1987).
+   *
+   * `nextKey`-driven Load-more fetches the next page. `pageSize` is clamped server-side, so
+   * passing an out-of-range value is a hint the server rewrites rather than an error the client
+   * has to handle. There is no `search` on the wire — client-side filtering only.
+   */
+  public getActivityLog(orgUid: string, signatureId: string, options: { pageSize?: number; nextKey?: string | null } = {}): Observable<OrgClaActivityLogPage> {
+    let params = strictHttpParams();
+    if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
+    if (options.nextKey) params = params.set('nextKey', options.nextKey);
+    return this.http.get<OrgClaActivityLogPage>(this.activityLogUrl(orgUid, signatureId), { params });
+  }
+
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
   }
@@ -171,5 +186,9 @@ export class OrgLensClaService {
 
   private acknowledgmentsUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/acknowledgments`;
+  }
+
+  private activityLogUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/activity`;
   }
 }

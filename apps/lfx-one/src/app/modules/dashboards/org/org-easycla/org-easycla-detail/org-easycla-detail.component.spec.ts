@@ -81,6 +81,9 @@ describe('OrgEasyclaDetailComponent', () => {
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
+  const getContributorAcknowledgments = vi.fn();
+  const invalidateAcknowledgment = vi.fn();
+  const getActivityLog = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -140,6 +143,9 @@ describe('OrgEasyclaDetailComponent', () => {
             getManagers,
             addManager,
             removeManager,
+            getContributorAcknowledgments,
+            invalidateAcknowledgment,
+            getActivityLog,
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
@@ -218,6 +224,13 @@ describe('OrgEasyclaDetailComponent', () => {
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
+    getContributorAcknowledgments.mockReset();
+    getContributorAcknowledgments.mockReturnValue(
+      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null })
+    );
+    invalidateAcknowledgment.mockReset();
+    getActivityLog.mockReset();
+    getActivityLog.mockReturnValue(of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null }));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -1614,13 +1627,16 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeTruthy();
   });
 
-  it('still leaves the tabs this feature does not build empty', async () => {
+  it('renders the Activity Log panel on a signed agreement when the Activity Log tab is selected', async () => {
     const fixture = await render();
 
     byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
     fixture.detectChanges();
 
-    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();
+    // The Activity Log tab body wires the OrgEasyclaActivityLogComponent (#1987), so the panel
+    // renders instead of falling to the bare-tab empty state that used to occupy this branch.
+    expect(byTestId(fixture, 'org-easycla-detail-activity')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeNull();
   });
 
   it('fetches no roster on first paint', async () => {

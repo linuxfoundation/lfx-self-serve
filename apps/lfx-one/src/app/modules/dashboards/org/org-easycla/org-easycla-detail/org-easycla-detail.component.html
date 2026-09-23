@@ -321,6 +321,14 @@
         data-testid="org-easycla-detail-acknowledgments">
         <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
       </section>
+    } @else if (activeTab() === 'activity' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-activity"
+        aria-labelledby="org-easycla-detail-tab-trigger-activity"
+        data-testid="org-easycla-detail-activity">
+        <lfx-org-easycla-activity-log [claGroup]="claGroup()!" />
+      </section>
     } @else {
       <section
         role="tabpanel"

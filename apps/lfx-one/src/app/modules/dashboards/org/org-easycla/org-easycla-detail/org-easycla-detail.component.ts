@@ -91,6 +91,7 @@ import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '.
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
+import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
@@ -102,6 +103,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
