@@ -1,0 +1,17 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!--
+  The branch markers sit on wrappers of their own, outside anything that depends on the meeting
+  payload, so an e2e assertion can tell the two trees apart on a real `/meetings/:id` navigation
+  even when the BFF has no such meeting and the tree renders its own error state.
+-->
+@if (v2Enabled()) {
+  <div data-testid="meeting-details-gate-v2">
+    <lfx-meeting-details-v2 />
+  </div>
+} @else {
+  <div data-testid="meeting-details-gate-v1">
+    <lfx-meeting-join />
+  </div>
+}

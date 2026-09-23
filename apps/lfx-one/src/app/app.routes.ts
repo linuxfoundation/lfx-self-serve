@@ -750,7 +750,11 @@ export const routes: Routes = [
   {
     path: 'meetings/:id',
     title: 'Meeting',
-    loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
+    // One stable route target that renders the pre-v2 page or the v2 tree behind
+    // `MEETING_V2_ENABLED_FLAG`, rather than a `canMatch` guard picking between two routes — see
+    // `MeetingDetailsGateComponent` for why a guard cannot gate an SSR-rendered, optional-auth page
+    // without either tearing the tree at hydration or taxing every visitor with a LaunchDarkly wait.
+    loadComponent: () => import('./modules/meetings/meeting-details-gate/meeting-details-gate.component').then((m) => m.MeetingDetailsGateComponent),
   },
   {
     path: 'groups/not-found',
