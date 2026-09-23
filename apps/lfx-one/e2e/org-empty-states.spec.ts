@@ -449,7 +449,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
 
     // FR-012 / "never say no access when the truth is a failed lookup": an LF-team caller holds
     // every organization, so even with own rows an unresolvable address is not a wrong-organization
-    // case — the invite wins, and the own rows stay available beneath it.
+    // case — the invite wins, and the own rows are not listed (staff reach any org through search).
     test('S2f: an LF-team caller with own organizations still sees the search invite, never wrong-organization', async ({ page }) => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: true, writers: [ORG_A_UID] }),

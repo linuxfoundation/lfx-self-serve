@@ -61,6 +61,24 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
+  // #2533 Tokens row: the call to action is an accent text link, not a filled button. Pinned for every
+  // registry state so a one-line edit dropping [text] cannot pass silently.
+  it('renders every call to action as a text link', () => {
+    for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY) as [
+      OrgLensEmptyStateName,
+      (typeof ORG_LENS_EMPTY_STATE_COPY)[OrgLensEmptyStateName],
+    ][]) {
+      if (!copy.primary || copy.primary.action === 'org-list') {
+        continue;
+      }
+      const fixture = render(state, { filterActive: true });
+      const suffix = copy.primary.action ? CONTROL_BY_KIND[copy.primary.action] : 'primary';
+      const control = byTestId(fixture, suffix)?.querySelector('a, button');
+      expect(control?.classList, `${state} renders its call to action as a text link`).toContain('p-button-text');
+      fixture.destroy();
+    }
+  });
+
   it('renders the held-organization list as the wrong-organization primary and emits the pick', () => {
     const fixture = render('wrong-organization', { orgList: ORG_LIST });
     const picked: string[] = [];
