@@ -98,6 +98,12 @@ describe('formatMemberSince', () => {
     expect(formatMemberSince('2023')).toBe('');
     expect(formatMemberSince('12/31/2022')).toBe('');
   });
+
+  // Date normalizes impossible calendar dates (Feb 31 -> Mar 3) instead of rejecting them.
+  it('returns empty string for an impossible calendar date', () => {
+    expect(formatMemberSince('2023-02-31T00:00:00Z')).toBe('');
+    expect(formatMemberSince('2023-04-31T00:00:00Z')).toBe('');
+  });
 });
 
 /**

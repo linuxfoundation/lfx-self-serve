@@ -770,22 +770,29 @@ export function formatShortDate(date: Date): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
 }
 
-/** Guards {@link formatMemberSince} against JS's lenient `Date` parser accepting non-ISO input (e.g. `'2023'`, `'1'`). */
-const ISO_DATE_PREFIX_PATTERN = /^\d{4}-\d{2}-\d{2}/;
+/** Guards {@link formatMemberSince} against JS's lenient `Date` parser accepting non-ISO input (e.g. `'2023'`, `'1'`) — captures y/m/d for the round-trip check below. */
+const ISO_DATE_PREFIX_PATTERN = /^(\d{4})-(\d{2})-(\d{2})/;
 
 /**
  * "Member since" label, e.g. "Mar 2023", for an account-creation ISO timestamp. Returns '' when
- * absent, non-ISO, unparseable, or before 1990 (a pre-1990 result means the upstream sent a
- * zero-time sentinel, e.g. Go's zero `time.Time` — `'0001-01-01T00:00:00Z'` — never a real join
- * date) so callers can hide the field rather than show a placeholder. Pins `timeZone: 'UTC'` like
+ * absent, non-ISO, unparseable, before 1990 (a pre-1990 result means the upstream sent a zero-time
+ * sentinel, e.g. Go's zero `time.Time` — `'0001-01-01T00:00:00Z'` — never a real join date), or an
+ * impossible calendar date (`Date` normalizes e.g. `'2023-02-31'` to Mar 3 instead of rejecting it,
+ * so the parsed y/m/d must round-trip to the input's digits) so callers can hide the field rather
+ * than show a placeholder or a silently-shifted date. Pins `timeZone: 'UTC'` like
  * {@link formatShortDate} so the month doesn't shift for viewers west of UTC.
  */
 export function formatMemberSince(iso: string | null | undefined): string {
-  if (!iso || !ISO_DATE_PREFIX_PATTERN.test(iso)) {
+  const match = iso ? ISO_DATE_PREFIX_PATTERN.exec(iso) : null;
+  if (!match) {
     return '';
   }
   const date = parseISODateString(iso);
   if (!date || Number.isNaN(date.getTime()) || date.getUTCFullYear() < 1990) {
+    return '';
+  }
+  const [, year, month, day] = match;
+  if (date.getUTCFullYear() !== Number(year) || date.getUTCMonth() + 1 !== Number(month) || date.getUTCDate() !== Number(day)) {
     return '';
   }
   return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', timeZone: 'UTC' });
