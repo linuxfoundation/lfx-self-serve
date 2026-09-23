@@ -885,6 +885,23 @@ export class CampaignServiceClient {
       //
       // Escaped, because `body` is rendered through `[innerHTML]` and lands in a rich-text
       // widget: the label is model output and must not become markup.
+      // The destinations the GENERATION vouches for, judged where the value is produced rather
+      // than at one downstream call site.
+      //
+      // campaign-service's api-catalog says of `/email-copy` that the model "is INSTRUCTED that
+      // every href in the generated body must be the brief's url", but that this is "a prompt
+      // instruction, NOT an enforced guarantee ... a caller needing certainty must check the
+      // returned body itself." The button section's own `url` is the destination the generation
+      // declared, so it is what a body anchor may point at.
+      //
+      // An EMPTY list is meaningful, not a missing value: the stages that withhold a button
+      // (CFP Launch, Post-Event, Final Countdown) legitimately have no destination, and they are
+      // the ones a model is most likely to invent an address for. Those bodies keep their words
+      // and lose every link.
+      const generatedDestinations = sections
+        .filter((section) => section.type === 'button' && typeof section.url === 'string' && section.url !== '')
+        .map((section) => section.url as string);
+
       const body = sections
         .filter(
           (section) =>
@@ -925,7 +942,7 @@ export class CampaignServiceClient {
           // applies no sanitizer of its own, so there is nothing upstream to rely on. An
           // earlier comment in this file claimed an upstream allow-list covered it; that
           // allow-list exists only on the wizard path, which this is not.
-          return stripResourceLoadingHtml(section.html);
+          return stripResourceLoadingHtml(section.html, generatedDestinations);
         })
         .join('');
       const buttonSection = sections.find((section) => section.type === 'button');
@@ -961,7 +978,13 @@ export class CampaignServiceClient {
       // only the absence of sections entirely means "this is the older flat shape".
       const isLegacyShape = sections.length === 0;
       const legacyText = (value: unknown): string => (typeof value === 'string' ? value : '');
-      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body)) : '';
+      // The LEGACY shape's own declared destination, not `generatedDestinations`. That list is
+      // derived from `sections`, and `isLegacyShape` IS `sections.length === 0` -- so passing it
+      // here vouches for nothing by construction and strips every link in a legacy body. The
+      // flat shape carries its destination in `ctaUrl`, which is what this branch must judge
+      // against, exactly as the sections branch judges against its button url.
+      const legacyDestinations = [legacyText(legacy.ctaUrl)].filter((url) => url !== '');
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
       const effectiveBody = isLegacyShape ? legacyBody : body;
       const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
       const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;

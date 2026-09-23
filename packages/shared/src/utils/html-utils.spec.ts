@@ -565,3 +565,123 @@ describe('hasVisibleText — invisible code points outside C and Z', () => {
     expect(hasVisibleText(visible)).toBe(true);
   });
 });
+
+/**
+ * An `<a href>` in model-written copy is a PROMISE OF A DESTINATION, and campaign-service's
+ * api-catalog says of `/email-copy` that its "every href must be the brief's url" prompt is
+ * "a prompt instruction, NOT an enforced guarantee ... a caller needing certainty must check the
+ * returned body itself."
+ *
+ * The link is dropped; the TEXT is kept. That matches what the assembly layer already does with
+ * a button that has no usable url -- the words are the content, the link is the claim.
+ */
+describe('stripResourceLoadingHtml — anchor destinations', () => {
+  const BRIEF = ['https://events.linuxfoundation.org/kubecon'];
+
+  it('drops an href pointing at a host nobody vouched for, keeping its text', () => {
+    const html = '<p>Hi <a href="https://evil.example/phish">Register</a></p>';
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toBe('<p>Hi <a>Register</a></p>');
+  });
+
+  it('keeps an href pointing at a vouched-for host', () => {
+    const html = '<p><a href="https://events.linuxfoundation.org/kubecon/register">Register</a></p>';
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toContain('href="https://events.linuxfoundation.org/kubecon/register"');
+  });
+
+  it('keeps a subdomain of a vouched-for host', () => {
+    // A brief pointing at `events.linuxfoundation.org` vouches for `cfp.events…` too.
+    const html = '<p><a href="https://cfp.events.linuxfoundation.org/submit">Submit</a></p>';
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toContain('href="https://cfp.events.linuxfoundation.org/submit"');
+  });
+
+  it.each([
+    ['a suffix that is not a subdomain', 'https://evilevents.linuxfoundation.org/x'],
+    ['the vouched host as a prefix of another', 'https://events.linuxfoundation.org.evil.test/x'],
+  ])('refuses %s', (_label, href) => {
+    // The dot in `.${allowed}` is what separates a subdomain from a lookalike; without it both
+    // of these match by bare suffix.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
+  });
+
+  it('treats an EMPTY destination list as vouching for nothing', () => {
+    // Not the same as `undefined`. The stages that withhold a button (CFP Launch, Post-Event,
+    // Final Countdown) arrive with an empty list, and they are the ones a model is most likely
+    // to invent an address for.
+    const html = '<p><a href="https://events.linuxfoundation.org/kubecon">Register</a></p>';
+
+    expect(stripResourceLoadingHtml(html, [])).toBe('<p><a>Register</a></p>');
+  });
+
+  it('keeps every http(s) anchor when no list is supplied', () => {
+    // `undefined` is "no opinion" -- the behaviour for callers with no destination to vouch
+    // against, such as the operator-typed variant B body.
+    const html = '<p><a href="https://sponsor.example/blog">the post</a></p>';
+
+    expect(stripResourceLoadingHtml(html, undefined)).toContain('href="https://sponsor.example/blog"');
+  });
+
+  it('does not widen the allow-list from an unparseable destination', () => {
+    // An unparseable destination is not evidence that a host is safe. Contributing nothing is
+    // what stops a malformed brief url becoming "allow everything".
+    const html = '<p><a href="https://evil.example/p">x</a></p>';
+
+    expect(stripResourceLoadingHtml(html, ['not a url', 'javascript:alert(1)'])).toBe('<p><a>x</a></p>');
+  });
+
+  it('is idempotent, so a second pass at the request boundary changes nothing', () => {
+    const html = '<p>Go <a href="https://events.linuxfoundation.org/kubecon">here</a> not <a href="https://evil.example/p">there</a></p>';
+    const once = stripResourceLoadingHtml(html, BRIEF);
+
+    expect(stripResourceLoadingHtml(once, BRIEF)).toBe(once);
+  });
+
+  it('emits the CANONICAL href, not the raw one', () => {
+    // WHATWG normalises a backslash to a slash, so this is `events.linuxfoundation.org` with
+    // `/@evil.example/` as its path -- a safe host in a shape that reads as a hostile one.
+    // Shipping the form that was judged means the mail client sees what this function approved.
+    const html = String.raw`<p><a href="https://events.linuxfoundation.org\@evil.example/">x</a></p>`;
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toBe('<p><a href="https://events.linuxfoundation.org/@evil.example/">x</a></p>');
+  });
+
+  it.each([
+    ['userinfo naming the vouched host', 'https://events.linuxfoundation.org@evil.example/p'],
+    ['userinfo with a password', 'https://events.linuxfoundation.org:x@evil.example/p'],
+    ['the vouched host in the PATH', 'https://evil.example/events.linuxfoundation.org'],
+    ['a protocol-relative url', '//events.linuxfoundation.org/x'],
+  ])('refuses %s', (_label, href) => {
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
+  });
+
+  it('keeps a vouched host regardless of case or port', () => {
+    // DNS is case-insensitive and a port does not change the host.
+    const html = '<p><a href="https://EVENTS.LINUXFOUNDATION.ORG:8443/x">x</a></p>';
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toContain('href="https://events.linuxfoundation.org:8443/x"');
+  });
+
+  it.each([
+    ['a root-relative path', '/register'],
+    ['a document-relative path', 'register.html'],
+    ['a fragment', '#agenda'],
+    ['a parent-relative path', '../x'],
+  ])('leaves %s alone, because it names no host to vouch for', (_label, href) => {
+    // A relative href resolves against whatever document renders it, so it makes no destination
+    // claim. Judging one against the allow-list drops every ordinary in-site link.
+    expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toContain(`href="${href}"`);
+  });
+
+  it('refuses a raw javascript: href inside the hook, not only via allowedSchemes', () => {
+    // `transformTags` runs BEFORE sanitize-html's scheme check, so the hook sees raw hrefs. This
+    // pins that `allowedDestinationHref` refuses the scheme itself -- the property the code
+    // actually relies on, rather than the ordering an earlier comment wrongly claimed.
+    expect(stripResourceLoadingHtml('<p><a href="javascript:alert(1)">x</a></p>', [])).toBe('<p><a>x</a></p>');
+  });
+
+  it('still refuses a non-http scheme even on a vouched-for host', () => {
+    expect(stripResourceLoadingHtml('<p><a href="javascript:alert(1)">x</a></p>', BRIEF)).toBe('<p><a>x</a></p>');
+  });
+});

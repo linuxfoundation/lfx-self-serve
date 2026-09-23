@@ -3,6 +3,8 @@
 
 import sanitizeHtml from 'sanitize-html';
 
+import { canonicalHttpUrl } from './url.utils';
+
 const NAMED_HTML_ENTITIES: Record<string, string> = {
   nbsp: ' ',
   amp: '&',
@@ -329,6 +331,75 @@ export function htmlClipboardToText(html: string | null | undefined): string {
 }
 
 /**
+ * Whether `href` carries a scheme, i.e. makes a claim about WHICH HOST it addresses.
+ *
+ * A relative href (`/register`, `x.html`, `#frag`, `?a=b`) names no host and resolves against
+ * whatever document renders it, so there is no destination to vouch for.
+ */
+function hasScheme(href: string): boolean {
+  // A protocol-relative `//host/x` DOES name a host, so it counts as a claim and must be judged
+  // (canonicalHttpUrl then refuses it).
+  return href.startsWith('//') || /^[a-z][a-z0-9+.-]*:/i.test(href.trim());
+}
+
+/**
+ * The set of hosts an anchor may point at, from the caller's vouched-for destinations.
+ *
+ * A destination that will not parse contributes NOTHING rather than widening the set -- an
+ * unparseable value is not evidence that a host is safe, and treating it as one would turn a
+ * malformed brief url into "allow everything".
+ */
+function buildAllowedHosts(destinations: readonly string[] | undefined): Set<string> | null {
+  // `undefined` means "no opinion" -- the legacy behaviour, every http(s) anchor kept. An EMPTY
+  // ARRAY is the opposite and is the case that matters: the caller looked for a destination and
+  // found none, so nothing is vouched for and every link is dropped. The stages that withhold a
+  // button (CFP Launch, Post-Event, Final Countdown) arrive exactly this way, and they are the
+  // ones a model is most likely to invent an address for.
+  if (destinations === undefined) return null;
+
+  const hosts = new Set<string>();
+  for (const destination of destinations) {
+    const canonical = canonicalHttpUrl(destination);
+    if (canonical === '') continue;
+    try {
+      hosts.add(new URL(canonical).hostname.toLowerCase());
+    } catch {
+      // canonicalHttpUrl already parsed it; this is unreachable, and swallowing beats throwing
+      // out of a sanitizer.
+    }
+  }
+  // An allow-list that ended up EMPTY is not the same as no allow-list. The caller vouched for
+  // something and none of it parsed, so nothing is vouched for: keep the text, drop every link.
+  return hosts;
+}
+
+/**
+ * The CANONICAL form of `href` when it points at a vouched-for host, or '' when it does not.
+ *
+ * Returns the canonical URL rather than a boolean so the anchor that ships carries it. The raw
+ * value can address a safe host in a shape that reads as a hostile one --
+ * `https://events.linuxfoundation.org\@evil.example/` is `events.linuxfoundation.org` with
+ * `/@evil.example/` as its PATH, because WHATWG normalises a backslash to a slash. Emitting the
+ * form that was actually judged means the recipient's mail client sees the same URL this
+ * function approved, instead of one it has to re-derive.
+ */
+function allowedDestinationHref(href: string, allowedHosts: Set<string>): string {
+  const canonical = canonicalHttpUrl(href);
+  if (canonical === '') return '';
+  let hostname: string;
+  try {
+    hostname = new URL(canonical).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+  // Subdomains included: a brief pointing at `events.linuxfoundation.org` vouches for
+  // `cfp.events.linuxfoundation.org`. The dot is what stops `notevents.linuxfoundation.org.evil`
+  // and `evilevents.linuxfoundation.org` matching by suffix alone.
+  const allowed = [...allowedHosts].some((host) => hostname === host || hostname.endsWith(`.${host}`));
+  return allowed ? canonical : '';
+}
+
+/**
  * Reduces html to formatting that cannot make the renderer fetch anything.
  *
  * For html destined for `[innerHTML]`. Angular's sanitizer already removes scripts, event
@@ -347,9 +418,35 @@ export function htmlClipboardToText(html: string | null | undefined): string {
  * all defeat one, and tightening a scanner against them tends to start DELETING ordinary copy
  * instead (a raw `<` truncating the body, entities double-escaped). Tag and attribute allow-lists
  * still express the policy; the parsing is not ours.
+ *
+ * ANCHORS. An `<a href>` is a PROMISE OF A DESTINATION, and this body is model-written text that
+ * a scraped third-party page influenced. campaign-service's api-catalog states the position
+ * plainly for `/email-copy`: the model "is INSTRUCTED that every `href` in the generated body
+ * must be the brief's `url`", but "that is a prompt instruction, NOT an enforced guarantee ... a
+ * caller needing certainty must check the returned body itself." This is that check.
+ *
+ * `allowedDestinations` is that certainty. A host on it keeps its link; every other host keeps
+ * its TEXT and loses only the `href`. That matches what this file already does one layer up,
+ * where a button with no usable url keeps its label as text rather than vanishing -- the words
+ * are the content, the link is the claim we cannot back.
+ *
+ * Two failure modes were considered and rejected:
+ *   - Allowing any `http(s)` host (what `canonicalHttpUrl` alone does). It stops `javascript:`
+ *     and private hosts, but `https://evil.example/phish` is an ordinary public https URL, so
+ *     the phishing vector survives untouched.
+ *   - Requiring exact equality with the brief url. Generated copy legitimately links to sponsor
+ *     sites, documentation and social profiles; stripping those is an over-denial that silently
+ *     rewrites correct copy.
+ * Host-level matching (the destination's host, plus its subdomains) is the narrowest rule that
+ * admits the legitimate cases and refuses an invented address.
+ *
+ * Omitting `allowedDestinations` keeps every `http(s)` anchor -- the prior behaviour, for callers
+ * that have no destination to vouch against. Pass it wherever one is known.
  */
-export function stripResourceLoadingHtml(html: string | null | undefined): string {
+export function stripResourceLoadingHtml(html: string | null | undefined, allowedDestinations?: readonly string[]): string {
   if (!html) return '';
+
+  const allowedHosts = buildAllowedHosts(allowedDestinations);
 
   return sanitizeHtml(html, {
     // Formatting only. Every resource-loading element is absent by omission rather than by
@@ -386,6 +483,30 @@ export function stripResourceLoadingHtml(html: string | null | undefined): strin
     ],
     // `src`, `srcset`, `background`, `style` and `poster` are all absent for the same reason.
     allowedAttributes: { a: ['href'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
+    transformTags: {
+      // Runs BEFORE `allowedSchemes` / `allowProtocolRelative`, which sanitize-html applies in
+      // the attribute loop after `transformTags` has been dispatched. So `href` arrives RAW here
+      // -- `javascript:` and `//evil.example` both reach this hook. That is safe because
+      // `allowedDestinationHref` goes through `canonicalHttpUrl`, which refuses a non-http(s)
+      // scheme and a protocol-relative url on its own; the scheme check afterwards is a second
+      // line, not the first. Do not simplify this to a bare host comparison on the assumption
+      // that the scheme was already validated.
+      a: (tagName, attribs) => {
+        if (allowedHosts === null) return { tagName, attribs };
+        const raw = typeof attribs['href'] === 'string' ? attribs['href'] : '';
+        // A RELATIVE href names no host, so it makes no destination claim to check -- it resolves
+        // against whatever document renders it. Judging one against the allow-list would drop
+        // every ordinary in-site link, which is the defect the docstring below already records
+        // having fixed once.
+        if (raw !== '' && !hasScheme(raw)) return { tagName, attribs };
+        const href = allowedDestinationHref(raw, allowedHosts);
+        if (href !== '') return { tagName, attribs: { ...attribs, href } };
+        // The anchor SURVIVES without its href, so the words stay in the copy. Dropping the tag
+        // would delete the call to action; dropping only the promise is the narrower answer.
+        const { href: _dropped, ...rest } = attribs;
+        return { tagName, attribs: rest };
+      },
+    },
     // An `href` may name an http(s) destination or a RELATIVE path; `javascript:`, `data:` and
     // protocol-relative `//host` are dropped. Relative is kept deliberately: an earlier
     // hand-rolled version refused it, which silently broke ordinary in-site links in generated

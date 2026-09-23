@@ -1164,6 +1164,23 @@ export class CampaignsComponent {
   });
 
   /**
+   * The destinations a generated body may link to, for BOTH variants.
+   *
+   * An `<a href>` in generated copy is a promise of a destination, and campaign-service does not
+   * enforce its own "every href must be the brief's url" prompt instruction. The generator's own
+   * `ctaUrl` is the destination it declared, so it is what a body anchor may point at.
+   *
+   * An EMPTY list is meaningful: the stages that withhold a CTA destination (CFP Launch,
+   * Post-Event, Final Countdown) vouch for nothing, and are the stages a model is most likely to
+   * invent an address for. The staging payload judges variant B against this same list, so the
+   * preview cannot show a link the draft will drop.
+   */
+  protected readonly generatedDestinations = computed<string[]>(() => {
+    const ctaUrl = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
+    return ctaUrl === '' ? [] : [ctaUrl];
+  });
+
+  /**
    * Variant B's body with resource-loading markup removed, for the PREVIEW only.
    *
    * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
@@ -1176,7 +1193,7 @@ export class CampaignsComponent {
    *
    * Staging uses this same normalized value, so the preview and the draft cannot disagree.
    */
-  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB()));
+  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
 
   /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
   protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');

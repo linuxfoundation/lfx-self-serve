@@ -2167,8 +2167,26 @@ export class CampaignController {
     // display-text field through `sanitizeDisplayText`, at the boundary, once.
     const rawSubject = body.hubspotConfig?.subject;
     const subject = sanitizeDisplayText(typeof rawSubject === 'string' ? rawSubject.trim() : '');
+    // The destinations this request VOUCHES FOR, computed before the bodies because both bodies
+    // are judged against them.
+    //
+    // An `<a href>` in a model-written body is a promise of a destination, and campaign-service
+    // states in its api-catalog that its "every href must be the brief's url" prompt is "NOT an
+    // enforced guarantee ... a caller needing certainty must check the returned body itself."
+    // These two fields ARE that certainty: the operator-confirmed button destination and hero
+    // link, already canonicalised. A body anchor pointing anywhere else keeps its text and loses
+    // its link -- the same answer this handler gives a button with no usable url.
+    const buttonUrl = canonicalHttpUrl(body.hubspotConfig?.buttonUrl);
+    const heroLinkUrl = canonicalHttpUrl(body.hubspotConfig?.heroLinkUrl);
+    // `buttonUrl` ONLY -- deliberately not `heroLinkUrl`. This list must match the one the
+    // service and the client preview used, which is the generator's CTA destination. The client
+    // withholds `buttonUrl` whenever the CTA label is empty and sends `heroLinkUrl` only when a
+    // hero image exists, so folding the hero in would make this second pass REVOKE links the
+    // operator previewed -- the preview/draft divergence this file exists to prevent.
+    const allowedBodyDestinations = [buttonUrl].filter((url) => url !== '');
+
     const rawBody = body.hubspotConfig?.bodyHtml;
-    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '').trim();
+    const bodyHtml = stripResourceLoadingHtml(typeof rawBody === 'string' ? rawBody : '', allowedBodyDestinations).trim();
 
     // Same allow-list gap as subject/bodyHtml above, but for the preheader: unnamed here, it
     // would stay dropped even after the AI generates one, and a staged draft would keep the
@@ -2181,8 +2199,6 @@ export class CampaignController {
     // button never reached campaign-service and no draft ever got a button widget.
     const rawButtonText = body.hubspotConfig?.buttonText;
     const buttonText = sanitizeDisplayText(typeof rawButtonText === 'string' ? rawButtonText.trim() : '');
-    const rawButtonUrl = body.hubspotConfig?.buttonUrl;
-    const buttonUrl = canonicalHttpUrl(rawButtonUrl);
 
     // Same allow-list gap as above, but for the A/B test: the frontend has always sent these
     // three fields when the operator opted in, but none was named here, so `cfg.ABTestEnabled`
@@ -2191,7 +2207,11 @@ export class CampaignController {
     const rawSubjectB = body.hubspotConfig?.subjectB;
     const subjectB = sanitizeDisplayText(typeof rawSubjectB === 'string' ? rawSubjectB.trim() : '');
     const rawBodyB = body.hubspotConfig?.bodyHtmlB;
-    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '').trim();
+    // Variant B gets the SAME allow-list as A. B is not operator-authored in the general case:
+    // `onGenerateAbTestCopy` calls the same `/email-copy` endpoint and writes the result straight
+    // into the control, so a scraped page can steer a phishing href into B exactly as it can
+    // into A. The client preview judges B against this same list, so preview and draft agree.
+    const bodyHtmlB = stripResourceLoadingHtml(typeof rawBodyB === 'string' ? rawBodyB : '', allowedBodyDestinations).trim();
     const rawPreheaderB = body.hubspotConfig?.preheaderB;
     const preheaderB = sanitizeDisplayText(typeof rawPreheaderB === 'string' ? rawPreheaderB.trim() : '');
 
@@ -2200,10 +2220,7 @@ export class CampaignController {
     // `heroLinkUrl`, and `sponsors` and rendered each as its own module, but none was named here,
     // so the frontend baked their HTML into `bodyHtml` instead — HubSpot's rich-text sanitizer then
     // stripped the `<table>`/`<hr>` wrapper, leaving only one sponsor logo and no hosted hero image.
-    const rawHeroImageUrl = body.hubspotConfig?.heroImageUrl;
-    const heroImageUrl = canonicalHttpUrl(rawHeroImageUrl);
-    const rawHeroLinkUrl = body.hubspotConfig?.heroLinkUrl;
-    const heroLinkUrl = canonicalHttpUrl(rawHeroLinkUrl);
+    const heroImageUrl = canonicalHttpUrl(body.hubspotConfig?.heroImageUrl);
     const sponsors = Array.isArray(body.hubspotConfig?.sponsors)
       ? // The logo goes through the SAME validator as the other link fields: it becomes an
         // `<img src>` in a sent email and is fetched server-side, so a non-empty check alone let
