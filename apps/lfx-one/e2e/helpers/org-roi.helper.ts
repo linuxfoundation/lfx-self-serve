@@ -293,14 +293,16 @@ export function mockProjectDetail(slug: string, hasOrgLensProject = true): unkno
 }
 
 /**
- * A project's yearly distribution, split in proportion from its lifetime figures; a slug outside
- * the fixture falls back to the detail project's. `efficiencyConstant` is always true in the
- * contract — per-year ROI and BCR cancel to the lifetime figure — and the disclosure is driven by
- * it, so a case can flip it to prove the copy is not hardcoded.
+ * A project's yearly distribution, split in proportion from its lifetime figures. A slug outside
+ * the fixture, such as the zero-investment project, has no yearly split and so gets no rows.
+ * `efficiencyConstant` is always true in the contract — per-year ROI and BCR cancel to the lifetime
+ * figure — and the disclosure is driven by it, so a case can flip it to prove the copy is not
+ * hardcoded.
  */
 export function mockProjectAnnual(slug: string, efficiencyConstant = true, apportioned = true): OrgLensRoiProjectAnnual {
-  const project = MOCK_PROJECT_INPUTS.find((input) => input.slug === slug) ?? DETAIL_PROJECT;
-  return { method: 'logit', projectSlug: slug, rows: annualSeries(project.expenditure, project.return), apportioned, efficiencyConstant };
+  const project = MOCK_PROJECT_INPUTS.find((input) => input.slug === slug);
+  const rows = project ? annualSeries(project.expenditure, project.return) : [];
+  return { method: 'logit', projectSlug: slug, rows, apportioned, efficiencyConstant };
 }
 
 interface StubOptions {
