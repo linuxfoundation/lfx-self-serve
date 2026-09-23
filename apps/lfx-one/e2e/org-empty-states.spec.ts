@@ -281,6 +281,9 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // Following the primary must reach its destination, not just render (SC-004).
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
@@ -463,7 +466,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'not-found-staff');
       await expect(page.getByTestId('org-not-found-primary')).toBeVisible();
-      await expect(page.getByTestId('org-not-found-org-list')).toContainText(ORG_A_NAME);
+      // Staff reach any organization through switcher search: the staff state lists none of their own.
+      await expect(page.getByTestId('org-not-found-org-list')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('You do not have access');
       await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
     });

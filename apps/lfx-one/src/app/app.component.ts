@@ -305,7 +305,7 @@ export class AppComponent {
         // projectContextService.activeRouteLensKind() — that signal is updated by
         // MainLayoutComponent on this same NavigationEnd, but AppComponent's subscription (registered
         // at bootstrap) always runs first, so reading the signal here would see the previous route's
-        // stale kind for one tick on lens-less routes (e.g. /profile, /badges).
+        // stale kind for one tick on lens-less routes (e.g. /badges).
         let snapshot = router.routerState.snapshot.root;
         let kind: 'foundation' | 'project' | null = null;
         while (snapshot.firstChild) {

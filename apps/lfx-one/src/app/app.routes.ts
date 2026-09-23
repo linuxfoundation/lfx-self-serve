@@ -645,8 +645,12 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
       {
+        // A Me page, like crowdfunding/mentorship/formations: `data.lens: 'me'` makes every way in (a
+        // link from another lens, a deep link, a refresh, back/forward) switch to the Me lens and its
+        // menu (MainLayoutComponent.syncLensFromRoute), rather than keeping the previous lens (#2533).
         path: 'profile',
         title: 'Profile',
+        data: { lens: 'me' },
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
       },
       {
