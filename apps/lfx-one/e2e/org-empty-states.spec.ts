@@ -491,7 +491,8 @@ test.describe('Org Lens empty states (spec 053)', () => {
     // answers `isStaff: false` for a contractor. A contractor holding one explicit org grant keeps
     // the switcher (they hold an org) but loses the catalogue search this rollback removes. The e2e
     // stubs `isStaff` on the wire, so it pins the UI contract only; what fails if `lf-contractor` is
-    // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`).
+    // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`). The switcher
+    // sequence copies M4 in `org-multi-grant-switch.spec.ts` (non-LF-team: no catalogue search).
     test('S5 (contractor): a contractor with an explicit org grant keeps the switcher but gets no catalogue search', async ({ page }) => {
       await stubOrgIdentity(page, {
         roleGrants: roleGrantsBody({ isStaff: false, auditors: [ORG_A_UID] }),
@@ -506,8 +507,9 @@ test.describe('Org Lens empty states (spec 053)', () => {
       const trigger = page.getByTestId('org-selector');
       await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await trigger.click();
-      await expect(page.getByTestId('org-selector-list')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-      await expect(page.getByTestId('org-selector-list')).toContainText(ORG_A_NAME);
+      const listbox = page.locator('#org-selector-listbox');
+      await expect(listbox).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(listbox).toContainText(ORG_A_NAME);
       // The removed affordance: no LF-team catalogue search input.
       await expect(page.getByTestId('org-search-input')).toHaveCount(0);
     });
