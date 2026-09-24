@@ -7,6 +7,9 @@ export * from './project.interface';
 // Committee interfaces
 export * from './committee.interface';
 
+// Compact Valkey cache storage shapes (GH-1906)
+export * from './compact-cache.interface';
+
 // Member interfaces
 export * from './member.interface';
 
