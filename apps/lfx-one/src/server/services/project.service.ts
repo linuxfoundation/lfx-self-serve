@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  buildHealthMetricsOverviewPeriods,
   CLASSIFICATION_TO_EMAIL_TYPES,
   EMAIL_CAMPAIGN_LIMIT,
   EVENT_GROWTH_TOP_EVENTS_LIMIT,
@@ -10,13 +9,14 @@ import {
   FOUNDATION_DESCENDANT_TRAVERSAL_MAX_NODES,
   FOUNDATION_DESCENDANT_TRAVERSAL_SIBLING_CONCURRENCY,
   FOUNDATION_PROJECT_DETAIL_FETCH_CONCURRENCY,
-  getYearForRange,
+  HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
+  HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
   HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT,
   HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS,
+  HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_RANGES,
   HEALTH_OVERVIEW_KPI_PERIOD_COLUMNS,
   HEALTH_OVERVIEW_REVENUE_PERIOD_COLUMNS,
-  isHealthMetricsRange,
   NATS_CONFIG,
   PAID_CAMPAIGN_LIMIT,
   PENDING_ACTION_SEVERITY,
@@ -24,6 +24,9 @@ import {
   PROJECT_SETTINGS_NOT_FOUND_CODE,
   QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
   ROOT_PROJECT_SLUG,
+  buildHealthMetricsOverviewPeriods,
+  getYearForRange,
+  isHealthMetricsRange,
 } from '@lfx-one/shared/constants';
 import { NatsSubjects, ProjectStage } from '@lfx-one/shared/enums';
 import {
@@ -102,6 +105,7 @@ import {
   HealthMetricsOverviewRevenueByRange,
   HealthMetricsRange,
   HealthOverviewAllPeriodsRow,
+  HealthOverviewEngagementCounts,
   HealthOverviewKpisRow,
   KeywordAttributionRow,
   KeywordPerformanceResponse,
@@ -1739,15 +1743,15 @@ export class ProjectService {
       return HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT;
     }
 
-    const tierCount = row.MEMBERSHIP_TIER_COUNT ?? 0;
-    const boardCount = row.BOARD_SEAT_COUNT ?? 0;
-    const renewalsCount = row.RENEWALS_NEXT_90D_COUNT ?? 0;
+    // A null column is unmeasured, not zero — render it as "—" rather than "0 tiers".
+    const format = (value: number | null, render: (count: number) => string): string => (value === null ? '—' : render(value));
 
     return {
-      projects: row.PROJECT_COUNT ?? 0,
-      tiers: `${tierCount} ${tierCount === 1 ? 'tier' : 'tiers'}`,
-      board: `${boardCount} ${boardCount === 1 ? 'seat' : 'seats'}`,
-      nextRenewals: `${renewalsCount} in the next 90 days`,
+      dataAvailable: true,
+      projects: format(row.PROJECT_COUNT, (count) => String(count)),
+      tiers: format(row.MEMBERSHIP_TIER_COUNT, (count) => `${count} ${count === 1 ? 'tier' : 'tiers'}`),
+      board: format(row.BOARD_SEAT_COUNT, (count) => `${count} ${count === 1 ? 'seat' : 'seats'}`),
+      nextRenewals: format(row.RENEWALS_NEXT_90D_COUNT, (count) => `${count} in the next 90 days`),
     };
   }
 
@@ -6230,7 +6234,7 @@ export class ProjectService {
         total,
         streams: rows.map((row) => ({
           key: String(row['REVENUE_DOMAIN'] ?? '').toLowerCase(),
-          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]) ?? 0,
+          value: ProjectService.toNullableNumber(row[ProjectService.revenueAlias('REVENUE_USD', range)]),
         })),
       };
     }
@@ -6242,10 +6246,10 @@ export class ProjectService {
    * Get Health Metrics Overview KPI tile-strip data from Snowflake (LFXV2-3365), for every selectable
    * period in one read — the table keys on `foundation_slug` alone and carries the period as a column
    * suffix, so per-period queries would re-read the same row to project other columns. Returns one entry
-   * per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields an empty array
-   * for every range. Events, Training, Members, Non-Members, and Code all have stat columns in this table
-   * — only Engagement isn't part of its contract and stays fixture-backed on the frontend until LFXV2-3364
-   * ships its `hm_area_state` row. Members/Non-Members columns aren't period-suffixed (unlike
+   * per range in {@link buildHealthMetricsOverviewPeriods}; a missing foundation row yields only the
+   * Engagement state for every range. Events, Training, Members, Non-Members, and Code all have stat
+   * columns in this table — Engagement isn't part of its contract, so its state comes from
+   * {@link getHealthOverviewEngagementCounts} instead. Members/Non-Members columns aren't period-suffixed (unlike
    * Events/Training/Code). Code has no paired `_STATUS` column, so its classification is always `'none'` —
    * the tile renders an LFX Insights link instead of a status word for this area anyway.
    */
@@ -6275,15 +6279,37 @@ export class ProjectService {
     // No ORDER BY: this table has one row per foundation_slug (like HEALTH_OVERVIEW_PROFILE above),
     // so LIMIT 1 has nothing to pick between rather than picking a non-deterministic one.
 
-    const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug]);
-    const wideRow = result.rows?.[0];
+    // The KPI leg is isolated like the engagement leg, so either read failing leaves the other's tiles.
+    const [wideRow, engagementCounts] = await Promise.all([
+      this.snowflakeService
+        .execute<HealthOverviewAllPeriodsRow>(query, [foundationSlug])
+        .then((result) => result.rows?.[0])
+        .catch((error: unknown) => {
+          logger.warning(undefined, 'get_health_overview_kpis', 'Health overview KPIs unavailable', { foundation_slug: foundationSlug, err: error });
+          return null;
+        }),
+      this.getHealthOverviewEngagementCounts(foundationSlug, ranges),
+    ]);
+    // An unreadable engagement read leaves the area out, so the tile falls back to its neutral placeholder.
+    const engagementStates = (range: HealthMetricsRange): HealthMetricsAreaState[] => {
+      const counts = engagementCounts?.[range];
+      return counts ? [ProjectService.buildHealthOverviewEngagementAreaState(counts)] : [];
+    };
 
+    // `null` is a failed read (already logged); `undefined` is a foundation with no KPI row.
     if (!wideRow) {
-      logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug });
-      return Object.fromEntries(ranges.map((range) => [range, []]));
+      if (wideRow === undefined) {
+        logger.warning(undefined, 'get_health_overview_kpis', 'No KPI row for foundation', { foundation_slug: foundationSlug });
+      }
+      return Object.fromEntries(ranges.map((range) => [range, engagementStates(range)]));
     }
 
-    return Object.fromEntries(ranges.map((range) => [range, ProjectService.buildHealthOverviewKpiAreaStates(ProjectService.projectKpiRow(wideRow, range))]));
+    return Object.fromEntries(
+      ranges.map((range) => [
+        range,
+        [...engagementStates(range), ...ProjectService.buildHealthOverviewKpiAreaStates(ProjectService.projectKpiRow(wideRow, range))],
+      ])
+    );
   }
 
   /**
@@ -8043,6 +8069,73 @@ export class ProjectService {
   }
 
   /**
+   * Engagement tile counts for every period in one read of `ENGAGEMENT_GROUP_ATTENDANCE`, using the
+   * Engagement tab's own rules: non-dormant groups with enough meetings and a non-null rate, and those below the low-attendance threshold.
+   * A stopgap until `HEALTH_OVERVIEW_KPIS` carries engagement columns. Any failure logs and returns
+   * `null`, so a problem here never takes down the other five tiles.
+   */
+  private async getHealthOverviewEngagementCounts(
+    foundationSlug: string,
+    ranges: HealthMetricsRange[]
+  ): Promise<Partial<Record<HealthMetricsRange, HealthOverviewEngagementCounts>> | null> {
+    // Each range's columns sit beside their binds, so the `?`s and bind values can't drift apart.
+    const built = ranges.map((range) => {
+      const suffix = this.getRangeSuffix(range);
+      const rated = `NOT COALESCE(is_dormant${suffix}, FALSE) AND meetings_count${suffix} >= ? AND attendance_pct${suffix} IS NOT NULL`;
+      return {
+        sql: [
+          `COUNT(meetings_count${suffix}) AS MEASURED_GROUPS__${range}`,
+          `COUNT_IF(${rated}) AS ACTIVE_GROUPS__${range}`,
+          `COUNT_IF(${rated} AND attendance_pct${suffix} < ?) AS LOW_ATTENDANCE_GROUPS__${range}`,
+        ],
+        binds: [
+          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+          HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
+          HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
+        ],
+      };
+    });
+    const columns = built.flatMap((range) => range.sql);
+    const binds: (string | number)[] = [...built.flatMap((range) => range.binds), foundationSlug];
+    const query = `
+      SELECT
+        ${columns.join(',\n        ')}
+      FROM ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE
+      WHERE foundation_slug = ?
+    `;
+
+    try {
+      const result = await this.snowflakeService.execute<HealthOverviewAllPeriodsRow>(query, binds, { expectMissingObject: true });
+      const row = result.rows?.[0];
+      if (!row) {
+        return null;
+      }
+      return Object.fromEntries(
+        ranges.map((range) => {
+          // The aggregate always returns a row, so a scope with no measured groups reads as unmeasured, not zero.
+          const measured = ProjectService.toNullableNumber(row[`MEASURED_GROUPS__${range}`]);
+          if (!measured) {
+            return [range, { activeGroups: null, lowAttendanceGroups: null }];
+          }
+          return [
+            range,
+            {
+              activeGroups: ProjectService.toNullableNumber(row[`ACTIVE_GROUPS__${range}`]),
+              lowAttendanceGroups: ProjectService.toNullableNumber(row[`LOW_ATTENDANCE_GROUPS__${range}`]),
+            },
+          ];
+        })
+      );
+    } catch (error) {
+      logger.warning(undefined, 'get_health_overview_engagement_counts', 'Engagement tile counts unavailable', {
+        foundation_slug: foundationSlug,
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
    * Re-codes a 404 raised by the staff update's own project-settings read/write as
    * PROJECT_SETTINGS_NOT_FOUND, leaving every other failure untouched. This is what lets the
    * client tell "the project is gone" from the directory lookup's generic NOT_FOUND — the two
@@ -8646,7 +8739,7 @@ export class ProjectService {
     const nonMembersPipelineValue = row.NON_MEMBERS_PIPELINE_VALUE_USD;
 
     // Keyed by area, then read through HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS below, so an area
-    // missing its builder here is dropped from the response instead of the two silently drifting.
+    // missing its builder here is dropped. `eng` has no builder: its state comes from another table.
     const areaStateBuilders: Partial<Record<HealthMetricsOverviewArea, () => HealthMetricsAreaState>> = {
       evt: () => ({
         area: 'evt',
@@ -8699,6 +8792,31 @@ export class ProjectService {
     return Array.from(HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS)
       .map((area) => areaStateBuilders[area]?.())
       .filter((state): state is HealthMetricsAreaState => state !== undefined);
+  }
+
+  /**
+   * The Engagement tile's state. No status chip: the tab's rules define no classification for this
+   * count, so the tile carries a link into the group attendance view instead.
+   */
+  private static buildHealthOverviewEngagementAreaState(counts: HealthOverviewEngagementCounts): HealthMetricsAreaState {
+    const { activeGroups, lowAttendanceGroups } = counts;
+    let statValue: string = HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE;
+    let statLabel = 'no data this period';
+    if (activeGroups === 0) {
+      statLabel = 'no active groups this period';
+    } else if (activeGroups !== null && lowAttendanceGroups !== null) {
+      statValue = `${formatNumber(lowAttendanceGroups)} of ${formatNumber(activeGroups)}`;
+      statLabel = `groups below ${Math.round(HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD * 100)}% attendance`;
+    }
+    return {
+      area: 'eng',
+      statValue,
+      statLabel,
+      statSource: 'ENGAGEMENT_GROUP_ATTENDANCE.attendance_pct',
+      classification: 'none',
+      evaluatedAt: '',
+      showStatus: false,
+    };
   }
 
   private getRangeSuffix(range: string, convention: string = 'standard'): string {

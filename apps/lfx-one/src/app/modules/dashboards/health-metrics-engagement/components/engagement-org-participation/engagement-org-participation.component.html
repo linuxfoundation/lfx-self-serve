@@ -39,6 +39,12 @@
       title="Organization participation unavailable"
       subtitle="We could not load organization participation for this foundation. Refresh the page to try again."
       data-testid="engagement-org-participation-error" />
+  } @else if (!loading() && scopeEmpty()) {
+    <lfx-empty-state
+      icon="fa-light fa-building"
+      title="No organizations recorded for this foundation"
+      subtitle="The analytics model has no organization participation records for this foundation."
+      data-testid="engagement-org-participation-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-building"
@@ -80,7 +86,7 @@
             <span class="text-sm text-gray-800">{{ row.membershipTier }}</span>
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.attendedCount ?? 0 }} / {{ period?.meetingsTotal ?? 0 }}</span>
+            <span class="text-sm tabular-nums text-gray-800">{{ view.attendedLabel }}</span>
           </td>
           <td>
             <span class="text-sm tabular-nums text-gray-800">{{ view.avgRepsLabel }}</span>

@@ -39,6 +39,12 @@
       title="Representatives unavailable"
       subtitle="We could not load representatives for this foundation. Refresh the page to try again."
       data-testid="engagement-representatives-error" />
+  } @else if (!loading() && scopeEmpty()) {
+    <lfx-empty-state
+      icon="fa-light fa-user"
+      title="No representatives recorded for this foundation"
+      subtitle="The analytics model has no representative records for this foundation."
+      data-testid="engagement-representatives-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-user"

@@ -14,11 +14,13 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS,
   HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
   filterHealthMetricsEngagementOrgRows,
   formatHealthMetricsEngagementAvgReps,
+  formatHealthMetricsEngagementRatio,
   formatIsoDateLabel,
   selectHealthMetricsEngagementOrgPeriod,
 } from '@lfx-one/shared/utils';
@@ -114,6 +116,7 @@ export class EngagementOrgParticipationComponent {
             period,
             lastEngagedLabel: row.lastEngagedDate ? formatIsoDateLabel(row.lastEngagedDate) : '—',
             avgRepsLabel: formatHealthMetricsEngagementAvgReps(period?.avgReps ?? null),
+            attendedLabel: formatHealthMetricsEngagementRatio(period?.attendedCount ?? null, period?.meetingsTotal ?? null),
           },
         ];
       })
@@ -127,9 +130,14 @@ export class EngagementOrgParticipationComponent {
       .filter((view) => view !== undefined);
   });
   protected readonly totalRecords = computed(() => this.rowViews().length);
+  /** `null` means the foundation's whole scope has no rows — a filtered cut with zero matches keeps
+   * its own counts, so this is not the same signal as `totalRecords() === 0`. */
+  protected readonly counts = computed(() => this.response().counts);
+  /** No rows at all means an empty scope; rows with null caption counts still render. */
+  protected readonly scopeEmpty = computed(() => this.response().rows.length === 0);
   /** The caption counts the whole foundation, not the filtered cut — both come off the view. */
   protected readonly countLabel = computed(() => {
-    const counts = this.response().counts;
+    const counts = this.counts();
     if (!counts) return '—';
 
     // Locale pinned so the server-rendered caption and the hydrated one agree on separators.
@@ -212,7 +220,7 @@ export class EngagementOrgParticipationComponent {
   private syncUrl(filter: HealthMetricsEngagementOrgFilter): void {
     void this.router.navigate([], {
       relativeTo: this.route,
-      queryParams: { orgFilter: filter === 'all' ? null : filter },
+      queryParams: { [HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.orgFilter]: filter === 'all' ? null : filter },
       queryParamsHandling: 'merge',
       preserveFragment: true,
       replaceUrl: true,
@@ -220,7 +228,7 @@ export class EngagementOrgParticipationComponent {
   }
 
   private parseInitialFilter(): HealthMetricsEngagementOrgFilter {
-    return this.toFilter(this.initialParams.get('orgFilter') ?? 'all');
+    return this.toFilter(this.initialParams.get(HEALTH_METRICS_ENGAGEMENT_QUERY_PARAMS.orgFilter) ?? 'all');
   }
 
   private toFilter(key: string): HealthMetricsEngagementOrgFilter {

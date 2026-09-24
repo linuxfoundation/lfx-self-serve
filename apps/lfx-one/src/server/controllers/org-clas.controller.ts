@@ -7,10 +7,14 @@ import {
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT,
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX,
   ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MIN,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX,
+  ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN,
   ORG_CLA_APPROVAL_CRITERIA,
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
+  ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_REVIEW_COPY_FILENAME,
@@ -495,6 +499,65 @@ export class OrgClasController {
     }
   }
 
+  /**
+   * PUT /api/orgs/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create
+   *
+   * Turns Auto ECLA on or off for one signed CCLA (#1988). The route is behind
+   * `blockDuringImpersonation` + `requireOrgLensAccess`; the service raises a 403 with the
+   * producer's own refusal sentence on the sanctions path, and this handler leaves that error
+   * to the shared error handler rather than translating it here — the producer's copy is what
+   * belongs on screen.
+   *
+   * `Cache-Control: no-store` because the response echoes the just-written state, and a CDN
+   * substituting an earlier body would tell the manager the toggle held a value it does not.
+   */
+  public async updateEclaAutoCreate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_org_cla_ecla_auto_create');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'update_org_cla_ecla_auto_create');
+
+      // Boolean-only body. Coercion is refused: a stringified `"false"` is `true` under `Boolean`,
+      // and the toggle would then always turn on. Same discipline as the approval-list write
+      // above, which rejects a non-string value rather than `String()`-ing it.
+      const body = req.body as { autoCreateEcla?: unknown } | undefined;
+      if (typeof body?.autoCreateEcla !== 'boolean') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          rejected: 'invalid_body',
+        });
+        res.status(400).json({ message: 'Body must include boolean "autoCreateEcla"' });
+        return;
+      }
+
+      const result = await this.orgClaService.updateEclaAutoCreate(req, orgUid, signatureId, body.autoCreateEcla);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (result.outcome === 'not-found') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      if (result.outcome === 'not-signed') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        return;
+      }
+
+      logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        auto_create_ecla: result.autoCreateEcla,
+      });
+      res.json({ autoCreateEcla: result.autoCreateEcla });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments
   //
   // Reads the paginated contributor acknowledgments (ECLA signatures) for one CCLA. Impersonation
@@ -551,6 +614,70 @@ export class OrgClasController {
       });
       res.json(list);
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/activity
+  //
+  // Reads one page of the per-CCLA activity log. Read-only, org-scope: the middleware chain is
+  // `requireOrgLensAccess` only — no `blockDuringImpersonation`, no CLA-manager check. That is
+  // wider than the write tabs on this router by design (see the service header for why the log
+  // is a broader grant than the manager-only writes). `Cache-Control: no-store` on every path
+  // because the body carries actor names and timestamps.
+  public async getActivityLog(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_cla_activity_log');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_org_cla_activity_log' });
+      }
+
+      const orgUid = req.params['orgUid'];
+      assertOrgUid(orgUid, 'get_org_cla_activity_log');
+
+      const signatureId = (req.params['signatureId'] ?? '').trim();
+      if (!signatureId) {
+        throw ServiceValidationError.forField('signatureId', 'signatureId path parameter is required', {
+          operation: 'get_org_cla_activity_log',
+        });
+      }
+
+      const rawPageSize = getStringQueryParam(req, 'pageSize');
+      const parsedPageSize = rawPageSize ? Number(rawPageSize) : NaN;
+      // Silent clamp — a page above 100 protects the producer, a request for zero rows prevents a
+      // runaway zero-loop. Same discipline as the sibling acknowledgments read.
+      const pageSize = Number.isFinite(parsedPageSize)
+        ? Math.min(Math.max(Math.trunc(parsedPageSize), ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN), ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX)
+        : ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT;
+
+      const nextKeyRaw = (getStringQueryParam(req, 'nextKey') ?? '').trim();
+      const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : undefined;
+
+      // `returnAllEvents` only raises the producer's page limit on the same partition.
+      // It is not read or forwarded; the page size this route already clamps is the bound.
+
+      const page = await this.orgClaService.getActivityLog(req, orgUid, signatureId, { pageSize, nextKey });
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (!page) {
+        logger.success(req, 'get_org_cla_activity_log', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      logger.success(req, 'get_org_cla_activity_log', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        result_count: page.resultCount,
+        has_next: !!page.nextKey,
+      });
+      res.json(page);
+    } catch (error) {
+      // The error handler closes the operation and picks the severity. Logging here first
+      // deletes the registered operation, so the handler then logs again under a path-derived
+      // name — and a client 4xx is recorded at error level. Sibling reads only call `next`.
       next(error);
     }
   }
@@ -629,6 +756,12 @@ export class OrgClasController {
       if (result.outcome === 'forbidden') {
         logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
         res.status(403).json({ message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' });
+        return;
+      }
+
+      if (result.outcome === 'not-approved') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, approved: false });
+        res.status(409).json({ message: ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE });
         return;
       }
 

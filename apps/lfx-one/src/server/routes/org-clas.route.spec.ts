@@ -21,6 +21,8 @@ const {
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  getActivityLog,
+  updateEclaAutoCreate,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -35,6 +37,8 @@ const {
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  getActivityLog: vi.fn(),
+  updateEclaAutoCreate: vi.fn(),
 }));
 
 vi.mock('../controllers/org-clas.controller', () => ({
@@ -52,6 +56,8 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public getActivityLog = getActivityLog;
+    public updateEclaAutoCreate = updateEclaAutoCreate;
   },
 }));
 
@@ -168,6 +174,12 @@ beforeEach(() => {
   });
   invalidateAcknowledgment.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'ack-signature-uuid-1' });
+  });
+  getActivityLog.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null });
+  });
+  updateEclaAutoCreate.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ autoCreateEcla: true });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -433,6 +445,41 @@ describe('org-clas router — acknowledgments read', () => {
 });
 
 /**
+ * Activity log read route (#1987).
+ *
+ * Read-only. The middleware chain is deliberately `requireOrgLensAccess` only — no
+ * `blockDuringImpersonation`, no CLA-manager check — because the log is a broader grant than the
+ * write tabs on this router: an org-lens caller who is not a CLA manager on this CCLA still
+ * reads it (auditors, program leads). Widening the read to force a manager check would refuse
+ * legitimate viewers; narrowing the read to block impersonation would prevent a support engineer
+ * from seeing what the target sees.
+ */
+describe('org-clas router — activity log read', () => {
+  it('refuses the read for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(403);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('admits the read for an org the caller holds a grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(200);
+    expect(getActivityLog).toHaveBeenCalled();
+  });
+
+  it('stays available while impersonating, because it reads nothing that a write would', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(200);
+    expect(getActivityLog).toHaveBeenCalled();
+  });
+});
+
+/**
  * Contributor Acknowledgments invalidate route (#2807).
  *
  * The guards live on the route line, so this is the only layer that can see them: a controller
@@ -521,6 +568,50 @@ describe('org-clas router — acknowledgment invalidate', () => {
 
     expect(invalidateAcknowledgment).toHaveBeenCalled();
     expect(getContributorAcknowledgments).not.toHaveBeenCalled();
+  });
+});
+
+describe('org-clas router — auto ecla toggle', () => {
+  function put(orgUid: string): Promise<Response> {
+    return fetch(`${baseUrl}/api/orgs/${orgUid}/lens/cla-groups/signature-uuid-1/ecla-auto-create`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ autoCreateEcla: true }),
+    });
+  }
+
+  it('admits a granted org when not impersonating', async () => {
+    const res = await put(GRANTED);
+
+    expect(res.status).toBe(200);
+    expect(updateEclaAutoCreate).toHaveBeenCalled();
+  });
+
+  it('refuses an org the caller holds no grant on', async () => {
+    const res = await put(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('refuses an impersonated write before the controller, with the read-only code', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put(GRANTED);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('runs the impersonation block before the grant check', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await put(UNGRANTED);
+
+    expect(res.status).toBe(403);
+    expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
   });
 });
 

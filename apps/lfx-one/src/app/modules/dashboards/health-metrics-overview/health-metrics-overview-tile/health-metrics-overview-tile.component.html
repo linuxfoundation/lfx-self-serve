@@ -24,6 +24,16 @@
         data-testid="health-metrics-overview-tile-insights-link">
         LFX Insights <i class="fa-light fa-arrow-up-right-from-square" aria-hidden="true"></i>
       </a>
+    } @else if (tile().route; as route) {
+      <a
+        [routerLink]="route.commands"
+        [fragment]="route.fragment"
+        [queryParams]="route.queryParams"
+        queryParamsHandling="merge"
+        class="text-xs font-medium text-blue-600 hover:underline"
+        data-testid="health-metrics-overview-tile-engagement-link">
+        View groups <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+      </a>
     } @else if (tile().showStatus !== false) {
       <span class="flex items-center gap-1.5 text-xs font-medium" [ngClass]="classificationMeta().textClass">
         <i [class]="classificationMeta().icon" aria-hidden="true"></i>

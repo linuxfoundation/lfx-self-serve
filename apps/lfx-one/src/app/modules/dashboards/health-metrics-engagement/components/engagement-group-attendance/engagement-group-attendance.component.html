@@ -23,6 +23,12 @@
       title="Group attendance unavailable"
       subtitle="We could not load group attendance for this foundation. Refresh the page to try again."
       data-testid="engagement-group-attendance-error" />
+  } @else if (!loading() && counts() === null) {
+    <lfx-empty-state
+      icon="fa-light fa-users"
+      title="No groups recorded for this foundation"
+      subtitle="The analytics model has no group attendance records for this foundation."
+      data-testid="engagement-group-attendance-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state
       icon="fa-light fa-users"
@@ -87,7 +93,7 @@
             }
           </td>
           <td>
-            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? 0 }}</span>
+            <span class="text-sm tabular-nums text-gray-800">{{ period?.meetingsHeld ?? '—' }}</span>
           </td>
           <td>
             <span class="text-sm text-gray-800">{{ view.lastMetLabel }}</span>

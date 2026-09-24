@@ -59,6 +59,13 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLe
   orgClasController.getContributorAcknowledgments(req, res, next)
 );
 
+// Activity log (#1987). Read is an org-lens grant only. Deliberately WIDER than the CLA-manager
+// posture the write tabs use: an org-lens caller who is not a CLA manager on this CCLA still
+// reads the log (auditors, program leads). The producer's own `IsUserAuthorizedForOrganization`
+// on this endpoint accepts an org-scoped caller for the same reason. The impersonated token is
+// forwarded upstream so a support engineer sees what the target sees.
+router.get('/:orgUid/lens/cla-groups/:signatureId/activity', requireOrgLensAccess, (req, res, next) => orgClasController.getActivityLog(req, res, next));
+
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
 // The reads above forward the impersonated identity to upstream deliberately; a write must not.
 // Changing an approval list revokes acknowledgements and emails the affected contributors, and
@@ -68,6 +75,15 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLe
 // refused for impersonating rather than told they lack a grant they may well hold.
 router.put('/:orgUid/lens/cla-groups/:signatureId/approval-list', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.updateApprovalList(req, res, next)
+);
+
+// Auto ECLA toggle (#1988). Same middleware order as the peer approval-list write above and for
+// the same reason: a support engineer flipping this flag under an impersonated session would
+// attribute a legally-recorded change to the person being impersonated, so the impersonation
+// block runs ahead of the grant check. The producer's own sanctions and ACL gates run
+// regardless, so a caller who somehow reached this path without them is still refused.
+router.put('/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.updateEclaAutoCreate(req, res, next)
 );
 
 router.get('/:orgUid/lens/cla-groups/:signatureId/managers', requireOrgLensAccess, (req, res, next) => orgClasController.listManagers(req, res, next));

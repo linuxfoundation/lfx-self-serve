@@ -1,20 +1,25 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input } from '@angular/core';
-import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Component, input, output } from '@angular/core';
+import { FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-toggle',
-  imports: [ToggleSwitchModule, ReactiveFormsModule, TooltipModule],
+  imports: [ToggleSwitchModule, FormsModule, ReactiveFormsModule, TooltipModule],
   templateUrl: './toggle.component.html',
   styleUrl: './toggle.component.scss',
 })
 export class ToggleComponent {
-  public form = input.required<FormGroup>();
-  public control = input.required<string>();
+  /** Reactive-form mode. Omit both `form` and `control` to bind `checked` directly. */
+  public form = input<FormGroup>();
+  public control = input<string>();
+  /** Standalone value, used when this toggle is not sitting on a form control. */
+  public checked = input<boolean>(false);
+  public readonly checkedChange = output<boolean>();
+  public disabled = input<boolean>(false);
   public label = input<string>();
   public ariaLabel = input<string>();
   public id = input<string>();

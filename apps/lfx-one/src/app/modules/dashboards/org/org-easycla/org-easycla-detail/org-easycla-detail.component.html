@@ -278,6 +278,44 @@
             </div>
           </div>
         }
+        <!--
+          Auto ECLA toggle (#1988). Hidden entirely when ACS denies the write — the disabled-with-
+          banner pattern needs #1989 to explain itself, and the design prefers withholding a
+          control the viewer cannot use over showing one that only fails. Hidden on the pre-sign
+          preview too: the flag lives on the corporate signature record, which does not exist yet
+          for a preview row. The control is intentionally coarse: one switch, no pending copy —
+          the optimistic flip and a toast for the written value or the refusal are the whole of the feedback.
+        -->
+        @if (showAutoEclaToggle()) {
+          <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
+            <lfx-toggle
+              [id]="'org-easycla-detail-auto-ecla-toggle'"
+              data-testid="org-easycla-detail-auto-ecla-toggle"
+              [checked]="autoEclaValue()"
+              (checkedChange)="onAutoEclaToggle($event)"
+              [disabled]="autoEclaPending()"
+              ariaLabel="Auto ECLA"
+              dataTest="org-easycla-detail-auto-ecla-toggle" />
+            <div class="flex flex-col gap-1">
+              <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>
+              <p class="text-xs text-gray-600" data-testid="org-easycla-detail-auto-ecla-hint">
+                @if (autoEclaValue()) {
+                  On — employees matching the approval list are covered automatically.
+                } @else {
+                  Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered.
+                }
+              </p>
+              <a
+                href="/docs"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-xs text-blue-600 hover:underline"
+                data-testid="org-easycla-detail-auto-ecla-learn-more"
+                >Learn more about Auto ECLA →</a
+              >
+            </div>
+          </div>
+        }
         @if (canDownload()) {
           <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
@@ -319,7 +357,19 @@
         id="org-easycla-detail-tab-panel-acknowledgments"
         aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
         data-testid="org-easycla-detail-acknowledgments">
-        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
+        <lfx-org-easycla-contributor-acknowledgments
+          [claGroup]="claGroup()!"
+          (countChanged)="onAcknowledgmentCountChanged($event)"
+          (approvalListRequested)="focusTab('approval')"
+          (approvalListChanged)="onPanelApprovalCountChanged($event)" />
+      </section>
+    } @else if (activeTab() === 'activity' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-activity"
+        aria-labelledby="org-easycla-detail-tab-trigger-activity"
+        data-testid="org-easycla-detail-activity">
+        <lfx-org-easycla-activity-log [claGroup]="claGroup()!" />
       </section>
     } @else {
       <section
@@ -329,13 +379,12 @@
         class="py-8"
         data-testid="org-easycla-detail-tab-empty">
         <!--
-          The CLA Managers, Approval List, and Contributor Acknowledgments tabs on an unsigned
-          agreement, where signing is what creates the content: the signatory becomes the initial
-          CLA Manager, approval entries are what that manager maintains, and acknowledgments are
-          what contributors place against the resulting rules. Left bare, the panel reads as a
-          page that failed to load rather than as a state — the same gap the empty Overview had.
-          One lock icon for all three, because "locked until signed" is what each panel is actually
-          saying.
+          The CLA Managers, Approval List, Contributor Acknowledgments, and Activity Log tabs on an
+          unsigned agreement, where signing is what creates the content: the signatory becomes the
+          initial CLA Manager, approval entries are what that manager maintains, acknowledgments are
+          what contributors place against the resulting rules, and the activity log is the record of
+          those changes. Left bare, the panel reads as a page that failed to load rather than as a
+          state — the same gap the empty Overview had.
         -->
         @if (lockedTab(); as locked) {
           <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />

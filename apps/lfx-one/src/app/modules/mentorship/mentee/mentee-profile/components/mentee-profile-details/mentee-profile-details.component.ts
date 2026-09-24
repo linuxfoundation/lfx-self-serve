@@ -20,7 +20,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_LABEL,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
-import { normalizeToUrl, stripHtml } from '@lfx-one/shared/utils';
+import { mentorshipDescriptionLength, normalizeToUrl } from '@lfx-one/shared/utils';
 
 /**
  * Read-only display of the mentee's own profile fields — About Me, Skills, Areas
@@ -66,9 +66,11 @@ export class MenteeProfileDetailsComponent {
    *     the editor stores `<p></p>` for an empty answer, which is truthy under `.trim()`.
    *   - Rendering has to go through `[innerHTML]` after `DomSanitizer.sanitize`,
    *     otherwise the template interpolates the tags literally.
+   * The length goes through `mentorshipDescriptionLength` so a stored value over the raw cap
+   * skips the quadratic strip (lfx-self-serve-ops#37).
    */
   protected readonly aboutMeHtml = this.initAboutMeHtml();
-  protected readonly aboutMeIsEmpty = computed(() => stripHtml(this.aboutMeHtml()).length === 0);
+  protected readonly aboutMeIsEmpty = computed(() => mentorshipDescriptionLength(this.aboutMeHtml()) === 0);
   protected readonly skillsHave = computed(() => this.profile().skillsHave);
   protected readonly skillsWant = computed(() => this.profile().skillsWant);
   protected readonly additionalNotes = computed(() => this.profile().additionalNotes?.trim() ?? '');

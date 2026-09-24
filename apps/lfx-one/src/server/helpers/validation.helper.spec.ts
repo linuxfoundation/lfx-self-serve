@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Request } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 
 // validation.helper.ts's OTHER exports (query-param validators unrelated to getStringQueryParam)
@@ -20,7 +21,9 @@ import { describe, expect, it, vi } from 'vitest';
 // undefined -> string | undefined) is directly, exhaustively pinned by name.
 vi.mock('@lfx-one/shared/utils', () => ({}));
 
-import { getStringQueryParam, validateFoundationUidParameter, validateItemKeyParameter } from './validation.helper';
+import { MAX_SNOWFLAKE_PAGINATION_PAGE } from '@lfx-one/shared/constants';
+
+import { clampInteger, getStringQueryParam, parseOffsetPagination, validateFoundationUidParameter, validateItemKeyParameter } from './validation.helper';
 
 describe('validateItemKeyParameter', () => {
   const req = {} as any;
@@ -99,5 +102,55 @@ describe('getStringQueryParam', () => {
 
   it('narrows a nested-object value to undefined — express parses ?x[a]=b into x: ParsedQs, not a string', () => {
     expect(getStringQueryParam({ query: { x: { a: 'b' } } } as any, 'x')).toBeUndefined();
+  });
+});
+
+describe('clampInteger', () => {
+  it.each([
+    [5.9, 5],
+    [-3, 0],
+    [1e25, 10],
+    [Number.NaN, 7],
+    [Number.POSITIVE_INFINITY, 7],
+  ])('bounds %s to an integer in range, falling back for non-finite input', (value, expected) => {
+    expect(clampInteger(value, 0, 10, 7)).toBe(expected);
+  });
+});
+
+describe('parseOffsetPagination', () => {
+  const options = { defaultPageSize: 20, maxPageSize: 100 };
+  // A bare query bag is all parseOffsetPagination reads; the rest of Request is irrelevant here.
+  const parse = (query: Record<string, unknown>) => parseOffsetPagination({ query } as unknown as Request, options);
+
+  it.each(['9999999999999999999999999', '1e25', '99999999999999999999'])('caps an oversized offset=%s at the deepest allowed page', (offset) => {
+    expect(parse({ offset, pageSize: '100' }).offset).toBe(MAX_SNOWFLAKE_PAGINATION_PAGE * 100);
+  });
+
+  it('scales the offset cap with the page size', () => {
+    expect(parse({ offset: '1e25', pageSize: '10' }).offset).toBe(MAX_SNOWFLAKE_PAGINATION_PAGE * 10);
+  });
+
+  it.each([
+    ['0.5', 0],
+    ['40.9', 40],
+    ['-3', 0],
+    ['abc', 0],
+    ['Infinity', 0],
+    [undefined, 0],
+  ])('normalises offset=%s to %s', (offset, expected) => {
+    expect(parse({ offset, pageSize: '20' }).offset).toBe(expected);
+  });
+
+  it.each([
+    [undefined, 20],
+    ['', 20],
+    ['0', 20],
+    ['-5', 20],
+    ['abc', 20],
+    ['101', 20],
+    ['1.5', 1],
+    ['100', 100],
+  ])('resolves pageSize=%s to %s — out of range falls back to the default', (pageSize, expected) => {
+    expect(parse({ pageSize }).pageSize).toBe(expected);
   });
 });

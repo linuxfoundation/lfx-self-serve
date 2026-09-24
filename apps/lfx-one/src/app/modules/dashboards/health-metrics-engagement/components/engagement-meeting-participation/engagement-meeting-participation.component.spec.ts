@@ -139,6 +139,7 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('All-meeting attendance');
     expect(text('engagement-meeting-participation-delta')).toBe('+4.0pp vs prior period');
     expect(text('engagement-meeting-participation-count')).toBe('12 meetings in period');
+    expect(text('engagement-meeting-participation-secondary')).toBe('12');
   });
 
   // The hero must read the view's own `all` row: summing the type rows double-counts a meeting
@@ -159,7 +160,39 @@ describe('EngagementMeetingParticipationComponent', () => {
     expect(text('engagement-meeting-participation-hero')).toContain('Meetings held');
     expect(text('engagement-meeting-participation-hero')).toContain('12');
     expect(text('engagement-meeting-participation-delta')).toBe('+20.0% vs prior period');
+    expect(text('engagement-meeting-participation-secondary')).toBe('70%');
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-attendance-bar"]')).toBeNull();
+  });
+
+  // The server can emit a present roll-up row whose cells are all unmeasured; none may read as zero.
+  it('renders every cell of an unmeasured roll-up as an em dash, in both modes', async () => {
+    const base = participationRow();
+    const total = participationRow({
+      totalGroups: null,
+      periods: base.periods.map((period) => ({
+        ...period,
+        meetingsHeld: null,
+        attendancePct: null,
+        activeGroups: null,
+        neverAttended: null,
+        attendanceChangePp: null,
+        meetingsChangePct: null,
+      })),
+    });
+    await render(response({ total }));
+
+    expect(text('engagement-meeting-participation-count')).toBe('Meetings in period not available yet');
+    expect(text('engagement-meeting-participation-hero')).toContain('—');
+    expect(text('engagement-meeting-participation-secondary')).toBe('—');
+    expect(text('engagement-meeting-participation-active-groups')).toBe('—');
+    expect(text('engagement-meeting-participation-never-attended')).toBe('—');
+
+    fixture.componentInstance['onModeChange']('meetings');
+    fixture.detectChanges();
+
+    expect(text('engagement-meeting-participation-hero')).toContain('—');
+    expect(text('engagement-meeting-participation-delta')).toBe('— vs prior period');
+    expect(text('engagement-meeting-participation-secondary')).toBe('—');
   });
 
   it('renders one row per meeting type, flagging the governance cut as Members detail', async () => {

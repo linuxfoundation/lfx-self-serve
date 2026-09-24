@@ -4,6 +4,7 @@
 import '@angular/compiler';
 
 import { Location } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { computed, signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
@@ -78,9 +79,13 @@ describe('OrgEasyclaDetailComponent', () => {
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const checkPermission = vi.fn();
+  const getContributorAcknowledgments = vi.fn();
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
+  const invalidateAcknowledgment = vi.fn();
+  const getActivityLog = vi.fn();
+  const setAutoCreateEcla = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
   const setDialogPt = vi.fn();
@@ -137,9 +142,13 @@ describe('OrgEasyclaDetailComponent', () => {
             getApprovalList,
             updateApprovalList,
             checkPermission,
+            getContributorAcknowledgments,
             getManagers,
             addManager,
             removeManager,
+            invalidateAcknowledgment,
+            getActivityLog,
+            setAutoCreateEcla,
           },
         },
         { provide: MessageService, useValue: { add: addMessage } },
@@ -215,9 +224,18 @@ describe('OrgEasyclaDetailComponent', () => {
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    getContributorAcknowledgments.mockReset();
+    getContributorAcknowledgments.mockReturnValue(
+      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 4, nextKey: null })
+    );
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
+    invalidateAcknowledgment.mockReset();
+    getActivityLog.mockReset();
+    getActivityLog.mockReturnValue(of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null }));
+    setAutoCreateEcla.mockReset();
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
     addMessage.mockReset();
     openDialog.mockReset();
     setDialogPt.mockReset();
@@ -1536,17 +1554,14 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.acknowledgments?.title);
     });
 
-    // Unbuilt for every agreement, signed or not — so "once this CLA is signed" would promise
-    // content signing does not produce.
-    it.each([['activity']] as const)('leaves the %s tab bare, since signing does not fill it', async (tab) => {
+    it('explains that the activity tab is waiting on the signature', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       const fixture = await render();
-      byTestId(fixture, `org-easycla-detail-tab-${tab}`)?.click();
+      byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
       fixture.detectChanges();
 
-      expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).not.toBeNull();
-      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.activity?.title);
     });
 
     /**
@@ -1614,13 +1629,44 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeTruthy();
   });
 
-  it('still leaves the tabs this feature does not build empty', async () => {
+  it('opens the Approval List tab from a Not Authorized acknowledgment', async () => {
+    // The add-to-list remedy link renders only when the tab resolves the `approval-list-update`
+    // grant, which needs a mapped project SFID to query ACS. The bare fixture carries none, so pin
+    // one here; checkPermission already answers true in this block.
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ pairProjectSfid: 'project-sfid-1' })] }));
+    getContributorAcknowledgments.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        list: [{ signatureId: 'ecla-1', approved: false, removedFromApprovalList: true }],
+        canEdit: true,
+        resultCount: 1,
+        totalCount: 1,
+        nextKey: null,
+      })
+    );
+    const fixture = await render();
+
+    byTestId(fixture, 'org-easycla-detail-tab-acknowledgments')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')?.click();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-approval-list')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeNull();
+  });
+
+  it('renders the Activity Log panel on a signed agreement when the Activity Log tab is selected', async () => {
     const fixture = await render();
 
     byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
     fixture.detectChanges();
 
-    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();
+    // The Activity Log tab body wires the OrgEasyclaActivityLogComponent (#1987), so the panel
+    // renders instead of falling to the bare-tab empty state that used to occupy this branch.
+    expect(byTestId(fixture, 'org-easycla-detail-activity')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeNull();
   });
 
   it('fetches no roster on first paint', async () => {
@@ -1629,12 +1675,112 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(getManagers).not.toHaveBeenCalled();
   });
 
-  it('shows the manager count and approval count on the tab bar, and no acknowledgments count', async () => {
+  it('shows the manager, approval, and acknowledgment counts on the tab bar', async () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-managers')?.textContent?.trim()).toBe('2');
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('4');
+  });
+
+  it('counts acknowledgments with a one-row read of the displayed agreement', async () => {
+    await render();
+
+    expect(getContributorAcknowledgments).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { pageSize: 1 });
+  });
+
+  it('reads no acknowledgment count for an unsigned agreement, which holds none', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ signed: false, status: 'not-started', signedOn: undefined })] }));
+    const fixture = await render();
+
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')).toBeNull();
+  });
+
+  it('leaves the acknowledgment badge empty when the count read fails', async () => {
+    getContributorAcknowledgments.mockReturnValue(throwError(() => new Error('boom')));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeTruthy();
+  });
+
+  // The detail page is reused across agreement changes, so a panel count captured for one
+  // agreement must not shadow a fresh page-load count when the same agreement is reopened.
+  it('drops a stale panel count when the agreement changes, so the reopened badge reads fresh', async () => {
+    getClaGroups.mockReturnValue(
+      of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA' })] })
+    );
+    getContributorAcknowledgments.mockImplementation((_orgUid: string, signatureId: string) =>
+      of({ signatureId, list: [], canEdit: true, resultCount: 0, totalCount: signatureId === 'signature-uuid-1' ? 5 : 3, nextKey: null })
+    );
+
+    const fixture = await render();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+
+    // The open panel reports a different count for the agreement on screen.
+    (
+      fixture.componentInstance as unknown as { onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void }
+    ).onAcknowledgmentCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 9,
+    });
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('9');
+
+    // Leave for another agreement and come back to the same one.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The stale panel count is gone; the badge reflects the fresh one-row read.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+  });
+
+  // The panel measures its approval count against a specific agreement; the parent must file it
+  // under that agreement, not whichever one it has since switched to on a reused route.
+  it('files a panel approval count under the agreement it was measured for, not the current one', async () => {
+    getClaGroups.mockReturnValue(
+      of({
+        orgUid: SELECTED_ACCOUNT.uid,
+        claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA', approvalCriteriaCount: 2 })],
+      })
+    );
+    const fixture = await render();
+
+    // A count arrives for the first agreement after the page has moved to the second.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 99,
+    });
+    fixture.detectChanges();
+
+    // The second agreement keeps its own row count; the stale count does not leak in.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('2');
+  });
+
+  // The badge keys on the displayed agreement, not the raw sig query param: when the param is
+  // stale or absent the agreement still resolves by group, and a panel count for it must apply.
+  it('applies a panel approval count for the displayed agreement even when the sig param is stale', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'other-signature' })] }));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'other-signature',
+      count: 3,
+    });
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('3');
   });
 
   /**
@@ -2082,7 +2228,10 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
-          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
+          {
+            provide: OrgLensClaService,
+            useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission, getContributorAcknowledgments },
+          },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
         ],
@@ -2684,6 +2833,9 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const checkPermission = vi.fn(() => of(true));
+  const getContributorAcknowledgments = vi.fn(() =>
+    of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 4, nextKey: null })
+  );
 
   let confirmations: Confirmation[];
 
@@ -2722,7 +2874,15 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
         {
           provide: OrgLensClaService,
-          useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },
+          useValue: {
+            getClaGroups,
+            getPdfUrl: vi.fn(),
+            getCclaPreview: vi.fn(),
+            getApprovalList,
+            updateApprovalList,
+            checkPermission,
+            getContributorAcknowledgments,
+          },
         },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
@@ -2823,5 +2983,553 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
     const fixture = await render(row({ approvalCriteriaCount: undefined }));
 
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('—');
+  });
+});
+
+/**
+ * The Auto ECLA toggle on the Overview (#1988).
+ *
+ * Rendered inside the signed-agreement path: the flag lives on the corporate signature record, so
+ * an unsigned row has nothing to update. Hidden entirely when ACS denies the write — the design
+ * withholds the control from a viewer who cannot use it, since the disabled-with-banner pattern
+ * needs #1989 to explain itself. The write is optimistic: the toggle answers the click first and
+ * rolls back on a refusal, using the producer's own sentence on the toast.
+ */
+describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
+  const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
+  const PAIR_PROJECT = 'a09410000182dD3AAI';
+
+  const selectedAccount = signal<{ uid?: string; accountName: string } | null>(SELECTED_ACCOUNT);
+  const mountPath = (): { paramMap: ReturnType<typeof convertToParamMap> }[] => [{ paramMap: convertToParamMap({}) }, { paramMap: paramMap.value }];
+  const selectedUrlSegment = computed(() => selectedAccount()?.uid ?? null);
+  const paramMap = new BehaviorSubject(convertToParamMap({ claGroupId: GROUP_ID }));
+  const queryParamMap = new BehaviorSubject(convertToParamMap({ sig: 'signature-uuid-1' }));
+
+  const getClaGroups = vi.fn();
+  const checkPermission = vi.fn();
+  const setAutoCreateEcla = vi.fn();
+  const getContributorAcknowledgments = vi.fn();
+  const addMessage = vi.fn();
+
+  function row(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
+    return {
+      id: 'signature-uuid-1',
+      claGroupId: GROUP_ID,
+      claGroupName: 'Nimbus Foundation CLA',
+      projects: [{ projectName: 'Cascade', projectSfid: PAIR_PROJECT }],
+      pairProjectSfid: PAIR_PROJECT,
+      signed: true,
+      status: 'signed',
+      needsClaManager: false,
+      claManagersCount: 2,
+      approvalCriteriaCount: 7,
+      autoCreateEcla: false,
+      ...overrides,
+    };
+  }
+
+  async function render(claGroup: OrgClaGroup = row(), groups?: OrgClaGroup[]): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: groups ?? [claGroup] }));
+
+    TestBed.resetTestingModule();
+    await TestBed.configureTestingModule({
+      imports: [OrgEasyclaDetailComponent],
+      providers: [
+        provideRouter([]),
+        provideNoopAnimations(),
+        {
+          provide: ActivatedRoute,
+          useValue: { paramMap, queryParamMap, snapshot: { paramMap: paramMap.value, queryParamMap: queryParamMap.value, pathFromRoot: mountPath() } },
+        },
+        { provide: AccountContextService, useValue: { selectedAccount, hasOrgSelectorAccess: signal(true), selectedUrlSegment } },
+        { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
+        { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
+        { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
+        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensClaService,
+          useValue: {
+            getClaGroups,
+            getPdfUrl: vi.fn(),
+            getCclaPreview: vi.fn(),
+            getApprovalList: vi.fn(),
+            updateApprovalList: vi.fn(),
+            checkPermission,
+            getManagers: vi.fn(() => of({ signatureId: 'signature-uuid-1', managers: [] })),
+            addManager: vi.fn(),
+            removeManager: vi.fn(),
+            getContributorAcknowledgments,
+            setAutoCreateEcla,
+          },
+        },
+        { provide: MessageService, useValue: { add: addMessage } },
+        ConfirmationService,
+      ],
+    }).compileComponents();
+
+    const fixture = TestBed.createComponent(OrgEasyclaDetailComponent);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    return fixture;
+  }
+
+  function byTestId(fixture: ComponentFixture<unknown>, id: string): HTMLElement | null {
+    return fixture.nativeElement.querySelector(`[data-testid="${id}"]`);
+  }
+
+  beforeEach(() => {
+    selectedAccount.set(SELECTED_ACCOUNT);
+    paramMap.next(convertToParamMap({ claGroupId: GROUP_ID }));
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    getClaGroups.mockReset();
+    checkPermission.mockReset();
+    checkPermission.mockReturnValue(of(true));
+    setAutoCreateEcla.mockReset();
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    getContributorAcknowledgments.mockReset();
+    getContributorAcknowledgments.mockReturnValue(
+      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null })
+    );
+    addMessage.mockReset();
+  });
+
+  it('asks ACS for the auto-ecla-update grant with the pair project SFID', async () => {
+    await render();
+
+    expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', PAIR_PROJECT);
+  });
+
+  it('renders the toggle when ACS allows the write on a signed row', async () => {
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('#org-easycla-detail-auto-ecla-toggle')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]')).not.toBeNull();
+  });
+
+  it('hides the toggle when ACS denies, rather than rendering it disabled', async () => {
+    checkPermission.mockReturnValue(of(false));
+
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+  });
+
+  it('withholds the toggle from an unsigned agreement, so no ACS hop fires either', async () => {
+    const fixture = await render(row({ signed: false, autoCreateEcla: undefined }));
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla')).toBeNull();
+    expect(checkPermission).not.toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'auto-ecla-update', expect.anything());
+  });
+
+  it('PUTs the target state and shows the new value optimistically', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect(setAutoCreateEcla).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', true);
+    expect(component.autoEclaValue()).toBe(true);
+  });
+
+  it('labels the switch Auto ECLA and links to the docs', async () => {
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    const label = fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]') as HTMLLabelElement;
+    expect(label.textContent?.trim()).toBe('Auto ECLA');
+    const targets = fixture.nativeElement.querySelectorAll('#org-easycla-detail-auto-ecla-toggle');
+    expect(targets.length).toBe(1);
+    expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
+    const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/docs');
+    expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
+  });
+
+  it('describes what on and off mean for people on the approval list', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: false }));
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-hint')?.textContent?.trim()).toBe(
+      'On — employees matching the approval list are covered automatically.'
+    );
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-hint')?.textContent?.trim()).toBe(
+      "Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered."
+    );
+  });
+
+  it('confirms the written value with a success toast', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+  });
+
+  it('keeps the requested value when a successful write comes back without the echo', async () => {
+    setAutoCreateEcla.mockReturnValue(of(null));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { autoEclaValue: () => boolean }).autoEclaValue()).toBe(true);
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+  });
+
+  it('does not confirm a write that finished after the manager left the agreement', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    answer.next({ autoCreateEcla: false });
+    answer.complete();
+
+    expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('rolls back and toasts with the producer sentence when the write is refused', async () => {
+    const error = new HttpErrorResponse({
+      status: 403,
+      error: { error: 'This organization is on the OFAC list. Contact support.' },
+    });
+    setAutoCreateEcla.mockReturnValue(throwError(() => error));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // Row's original false value survives the failed write, so the toggle tells the truth.
+    expect(component.autoEclaValue()).toBe(false);
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        detail: 'This organization is on the OFAC list. Contact support.',
+      })
+    );
+  });
+
+  it('falls back to generic copy when the refusal carries no producer sentence', async () => {
+    setAutoCreateEcla.mockReturnValue(throwError(() => ({ status: 500, error: null })));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: "Couldn't turn Auto ECLA on",
+        detail: 'Please try again in a moment.',
+      })
+    );
+  });
+
+  it('does not issue a second write while one is in flight', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    component.onAutoEclaToggle(true);
+    component.onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    // Only the first click reached the network — the second is refused while the first is running.
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+    expect(setAutoCreateEcla).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', true);
+
+    answer.next({ autoCreateEcla: true });
+    answer.complete();
+  });
+
+  it('clears the pending flag and ignores a late refusal after the organization changes', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+    };
+    component.onAutoEclaToggle(true);
+    expect(component.autoEclaPending()).toBe(true);
+
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaPending()).toBe(false);
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  it('does not start a second write when the manager returns to the agreement the first write is for', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+      autoEclaValue: () => boolean;
+    };
+
+    component.onAutoEclaToggle(true);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(false);
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('disables the toggle again when the agreement with a running write arrives after the organization switch', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    getClaGroups.mockReturnValue(of({ orgUid: '0014100000OtherOrgAA', claGroups: [] }));
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.autoEclaPending()).toBe(false);
+
+    const returning = new Subject<{ orgUid: string; claGroups: OrgClaGroup[] }>();
+    getClaGroups.mockReturnValue(returning.asObservable());
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.autoEclaPending()).toBe(false);
+
+    returning.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ autoCreateEcla: false })] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('refuses a second write after leaving and coming back while the first is still running', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: false }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    first.destroy();
+
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+      autoEclaValue: () => boolean;
+    };
+
+    expect(component.autoEclaPending()).toBe(true);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+
+    answer.next({ autoCreateEcla: true });
+    answer.complete();
+    returned.detectChanges();
+
+    expect(component.autoEclaPending()).toBe(false);
+    expect(component.autoEclaValue()).toBe(true);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the value being written when a stale row happens to match it, across leaving and coming back', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(of({ autoCreateEcla: true })).mockReturnValueOnce(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: false }));
+    const toggle = first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    toggle.onAutoEclaToggle(true);
+    first.detectChanges();
+    toggle.onAutoEclaToggle(false);
+    first.detectChanges();
+    first.destroy();
+
+    // The list now carries the first write.
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ autoCreateEcla: true })] }));
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { autoEclaPending: () => boolean; autoEclaValue: () => boolean };
+
+    expect(component.autoEclaPending()).toBe(true);
+    expect(component.autoEclaValue()).toBe(false);
+  });
+
+  it('trusts a list fetched after the write settled over the remembered value', async () => {
+    const first = await render(row({ autoCreateEcla: false }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    first.destroy();
+
+    // Another CLA manager turned it back off before this visit.
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    expect(component.autoEclaValue()).toBe(false);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows the rolled-back value after leaving and coming back when the running write is refused', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: true }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    first.destroy();
+
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { autoEclaValue: () => boolean };
+    expect(component.autoEclaValue()).toBe(false);
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    returned.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(true);
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  it('ignores an older response once a write for another organization is in flight', async () => {
+    const first = new Subject<{ autoCreateEcla: boolean }>();
+    const second = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaValue: () => boolean;
+    };
+
+    component.onAutoEclaToggle(true);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    component.onAutoEclaToggle(true);
+    first.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+    expect(component.autoEclaValue()).toBe(true);
+    expect(addMessage).not.toHaveBeenCalled();
+  });
+
+  it('rolls the optimistic value back without a toast when the refusal arrives on another agreement in the same project', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false });
+    const there = row({ id: 'signature-uuid-2', autoCreateEcla: false });
+    const fixture = await render(here, [here, there]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(addMessage).not.toHaveBeenCalled();
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(false);
+  });
+
+  it('does not start a second write for an agreement that already has one after another agreement was written', async () => {
+    const first = new Subject<{ autoCreateEcla: boolean }>();
+    const second = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(first.asObservable()).mockReturnValueOnce(second.asObservable());
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false });
+    const there = row({ id: 'signature-uuid-2', autoCreateEcla: false });
+    const fixture = await render(here, [here, there]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(true);
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    component.onAutoEclaToggle(false);
+
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('keeps a confirmed value after visiting an agreement on another project', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const here = row({ id: 'signature-uuid-1', autoCreateEcla: false, pairProjectSfid: PAIR_PROJECT });
+    const elsewhere = row({
+      id: 'signature-uuid-2',
+      autoCreateEcla: false,
+      pairProjectSfid: 'a09410000182dD9AAI',
+      projects: [{ projectName: 'Other', projectSfid: 'a09410000182dD9AAI' }],
+    });
+    const fixture = await render(here, [here, elsewhere]);
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(true);
   });
 });
