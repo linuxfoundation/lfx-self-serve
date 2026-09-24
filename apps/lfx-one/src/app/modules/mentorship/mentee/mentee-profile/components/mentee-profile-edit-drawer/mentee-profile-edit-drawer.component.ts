@@ -169,13 +169,16 @@ export class MenteeProfileEditDrawerComponent {
   /**
    * The stored `aboutMe` comes from the API, so it is cut to the raw cap before
    * `htmlClipboardToText`, whose tag strip is quadratic on adversarial input
-   * (lfx-self-serve-ops#37). A cut can land inside a tag or an entity, which the converter
-   * would keep as literal text, so a trailing partial one is dropped. The editor escapes a
-   * typed `<` as `&lt;`, so a raw `<` after the last `>` can only be an unfinished tag.
+   * (lfx-self-serve-ops#37). A cut can land inside a surrogate pair, a tag or an entity,
+   * which the converter would keep as a stray `�` or literal text, so a trailing partial one
+   * is dropped. The editor escapes a typed `<` and `&` as `&lt;` and `&amp;`, so a raw `<`
+   * after the last `>`, or a trailing `&` with no `;`, can only be something the cut split.
    */
   private boundStoredAboutMe(html: string): string {
     if (html.length <= MENTORSHIP_RICH_TEXT_RAW_MAX) return html;
-    const sliced = html.slice(0, MENTORSHIP_RICH_TEXT_RAW_MAX);
+    const lastUnit = html.charCodeAt(MENTORSHIP_RICH_TEXT_RAW_MAX - 1);
+    const splitsPair = lastUnit >= 0xd800 && lastUnit <= 0xdbff;
+    const sliced = html.slice(0, splitsPair ? MENTORSHIP_RICH_TEXT_RAW_MAX - 1 : MENTORSHIP_RICH_TEXT_RAW_MAX);
     const lastOpen = sliced.lastIndexOf('<');
     const tagSafe = lastOpen > sliced.lastIndexOf('>') ? sliced.slice(0, lastOpen) : sliced;
     return tagSafe.replace(/&#?\w*$/, '');

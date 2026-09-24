@@ -187,6 +187,16 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
   });
 
+  it('drops an emoji the raw-cap cut splits instead of seeding a lone surrogate', () => {
+    // The emoji's two UTF-16 units straddle the cut, so a plain slice would keep only the high surrogate.
+    const head = `<p>${'<strong>a</strong>'.repeat(900)}`;
+    const filler = 'b'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - head.length - 1);
+    drawer.open({ ...PROFILE, aboutMe: `${head}${filler}😀tail</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
+  });
+
   it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {
     const emitted: unknown[] = [];
     const sub = comp['form'].valueChanges.subscribe((value) => emitted.push(value));
