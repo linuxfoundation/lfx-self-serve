@@ -34,8 +34,8 @@ import { buildOrgCacheKey, valkeyService, withOrgCache } from './valkey.service'
 export class OrgLensRoiService {
   /**
    * Floating-point slack when re-checking that category rows still sum to their stated total. The
-   * warehouse residual measured across all covered accounts is ~6e-08 on a $145M base, so a cent is
-   * several orders of magnitude of headroom while still catching a genuinely wrong total.
+   * warehouse residual measured across all covered accounts is ~6e-08 even on the largest totals, so
+   * a cent is several orders of magnitude of headroom while still catching a genuinely wrong total.
    */
   private static readonly reconciliationEpsilonUsd = 0.01;
 
