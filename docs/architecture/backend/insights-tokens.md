@@ -48,5 +48,5 @@ List and revoke are **not** gated on eligibility. A user who loses Key Contact s
 
 - [Error Handling](./error-handling-architecture.md) — `MicroserviceError` and `upstreamCode`
 - [Impersonation](./impersonation.md) — `blockDuringImpersonation`
-- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag` and the localStorage override used by the e2e suite
+- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag`
 - Upstream contracts: `linuxfoundation/lfx-v2-pat-service` (`docs/api.md`) and `linuxfoundation/lfx-v2-member-service` (`gen/http/openapi3.yaml`)

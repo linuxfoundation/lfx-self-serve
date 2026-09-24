@@ -93,8 +93,11 @@ export class InsightsTokensComponent {
     const ref = this.dialogService.open(InsightsTokenCreateDialogComponent, {
       header: '',
       width: '520px',
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
+      // closeOnEscape defaults to true independently of closable; Escape mid-create would drop the one-time secret.
+      closeOnEscape: false,
       dismissableMask: false,
       showHeader: false,
       contentStyle: { padding: '0' },
@@ -165,8 +168,11 @@ export class InsightsTokensComponent {
     this.dialogService.open(InsightsTokenRevealDialogComponent, {
       header: '',
       width: '520px',
+      style: { maxWidth: '90vw' },
       modal: true,
       closable: true,
+      // The secret is shown once; only the explicit Close button may dismiss it.
+      closeOnEscape: false,
       dismissableMask: false,
       showHeader: false,
       contentStyle: { padding: '0' },

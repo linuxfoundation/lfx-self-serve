@@ -104,6 +104,18 @@ describe('InsightsTokensComponent', () => {
     );
   });
 
+  it('keeps Escape from dismissing either dialog, so a one-time secret cannot be lost', () => {
+    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }) });
+    create();
+
+    component['openCreateDialog']();
+
+    expect(dialogService.open).toHaveBeenCalledTimes(2);
+    for (const [, config] of dialogService.open.mock.calls) {
+      expect(config).toEqual(expect.objectContaining({ closeOnEscape: false, style: { maxWidth: '90vw' } }));
+    }
+  });
+
   it('does nothing when the create dialog is cancelled', () => {
     dialogService.open.mockReturnValueOnce({ onClose: of(undefined) });
     create();
