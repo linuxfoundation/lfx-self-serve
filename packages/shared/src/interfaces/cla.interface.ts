@@ -711,10 +711,12 @@ export interface OrgClaGroup {
    */
   approvalCriteriaCount?: number;
   /**
-   * Whether re-adding a previously-invalidated contributor to the Approval List restores their
-   * employee acknowledgement automatically (#1988). Per-CCLA setting the CLA manager toggles from
-   * the CLA Group detail Overview; the producer stores it on the corporate signature record and
-   * enforces it in the invalidation-and-restore path.
+   * Auto ECLA (#1988): whether EasyCLA acknowledges employees on the agreement's behalf when they
+   * match an individual Approval List entry (email, GitHub username, GitLab username). Per-CCLA
+   * setting the CLA manager toggles from the CLA Group detail Overview; the producer stores it on
+   * the corporate signature record. Turning it on also runs that step for people already on the
+   * list. It never restores an invalidated acknowledgement — that contributor must acknowledge
+   * again — and never acknowledges domain, GitHub org, or GitLab group matches.
    *
    * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
    * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
