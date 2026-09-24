@@ -15,8 +15,15 @@ import type { ColumnarTable, DedupedValues } from '../interfaces/compact-cache.i
  * row, `project_uid` / `job_title` / `reason` / `avatar` / `username` on a seat), and
  * cache-hit-only divergence is the worst class of bug to trace.
  *
- * A `\u0000`-prefixed string is used because it cannot collide with warehouse or committee-service
- * data: these payloads are JSON text fields, and a NUL is not legal inside one.
+ * A `\u0000`-prefixed string is used because it will not collide with real data in practice. It is
+ * NOT impossible — an escaped `\u0000` is legal inside a JSON string, and warehouse or upstream text
+ * could in principle carry one — but a field whose entire value is exactly this sentinel would have
+ * to occur, and the only consequence would be that one field decoding as absent.
+ *
+ * Trailing absent values are deliberately NOT trimmed off the encoded row, even though
+ * {@link fromColumnar} would decode a short tail as absent: callers' cache guards assert
+ * `row.length === k.length` to reject corrupt entries, and trimming would make every such entry
+ * fail that check and silently never hit.
  */
 const ABSENT = '\u0000absent';
 
@@ -58,8 +65,8 @@ export function fromColumnar<T>(table: ColumnarTable): T[] {
 
 /**
  * Shape guard for a cached {@link ColumnarTable}. Cheap by design — it checks the envelope, not
- * every row's arity, because the cost is paid on every cache read and `fromColumnar` already
- * degrades a short row to nulls. Callers layer their own domain guard on the decoded rows.
+ * every row's arity, because the cost is paid on every cache read and `fromColumnar` already treats
+ * a short row's tail as absent. Callers layer their own domain guard on the decoded rows.
  */
 export function isColumnarTable(value: unknown): boolean {
   const table = value as ColumnarTable | null;
