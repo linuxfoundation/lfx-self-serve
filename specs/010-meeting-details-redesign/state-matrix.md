@@ -25,7 +25,7 @@ what V2 renders. This is the matrix #1766 defers; the `FR-###` requirements are 
 | **D. Past access**        | `full` · `none` — meaningful only when A = `ended`                          | `full_access` from `GET /public/api/meetings/past/:id` (`checkPastMeetingAccess`)                       |
 | **E. Cadence**            | `series` · `single`                                                         | `meeting.recurrence !== null`                                                                           |
 | **F. RSVP tracking**      | `on` · `off` (pre-January-2024 meetings)                                    | normalized `Meeting.is_invite_responses_enabled` — never the raw `use_new_invite_email_address` alias   |
-| **G. Arrival credential** | `none` · `password` (`?password=` on the link) · ~~`magic-link`~~           | query string. Magic link is blocked on upstream **U-08** and out of scope until it exists               |
+| **G. Arrival credential** | `none` · `password` (`?password=` on the link) · ~~`magic-link`~~           | query string. Magic link is blocked on upstream **U-08** (#2934) and out of scope until it exists       |
 | **Page status**           | `loading` · `loaded` · `error` · `not-found`                                | V1's three-way chain (error / page / skeleton) plus the `/meetings/not-found` redirect                  |
 
 Axis **G** is not in the plan's axis list, and it is the one that decides reachability. It is
@@ -48,8 +48,10 @@ as page states.
 3. an authenticated caller matches a registrant by email;
 4. `?password=` matches the meeting password.
 
-Otherwise it returns **400 "Invalid password"**, and the client redirects 400/403/404 to
-`/meetings/not-found` (V1 TS:883). So:
+Otherwise it returns **400 "Invalid password"**, and the client redirects 400/403 to
+`/meetings/not-found` (V1 TS:883). A **404** is different: it first falls back to the past-meeting
+lookup (V1 TS:862–880), so a plain numeric id of a past meeting still loads, and only a
+404 / 403 / 400 from that fallback redirects. So:
 
 | Viewer                 | Privacy       | Credential | Outcome                                  |
 | ---------------------- | ------------- | ---------- | ---------------------------------------- |
@@ -170,26 +172,27 @@ before: organizer | registrant → RSVP tracking on ? rsvp : (registrant ? rsvp-
 Per viewer, for a `loaded` page. `ended/none` hides the agenda and materials row for everyone,
 anonymous included (V1 HTML:585).
 
-| Section                      | visitor          | outsider | registrant | organizer   | Notes                                                                                       |
-| ---------------------------- | ---------------- | -------- | ---------- | ----------- | ------------------------------------------------------------------------------------------- |
-| Header: title, badges, time  | ✅               | ✅       | ✅         | ✅          | single 4-way privacy chip in V2 (E1-04); V1 shows separate Private / Restricted badges      |
-| "Organized by"               | ❌               | ✅       | ✅         | ✅          | `created_by` / `owner` / `organizers` deleted for anonymous (BFF:140–142)                   |
-| Agenda                       | ✅               | ✅       | ✅         | ✅          | hidden when `ended/none`                                                                    |
-| Materials                    | ❌ sign-in state | ✅       | ✅         | ✅ + Manage | fetch is auth-gated; V1's anonymous copy is wrong on public meetings. Public route is E3-03 |
-| People / roster              | ❌               | ❌       | ✅         | ✅          | no count source for non-registrants (GH-1731); hidden when `ended/none`                     |
-| RSVP summary, filter, badges | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only                                               |
-| Join details (host key)      | ❌               | ❌       | ❌         | in window   | host key only inside −70 / +40 min, never on a past meeting                                 |
-| Meeting Tools                | D-4              | `full`   | `full`     | ✅          | per-tool unavailable states; unapproved AI summaries currently shown "Pending"              |
-| Occurrence strip             | series           | series   | series     | series      | cancelled occurrences are filtered out silently today; E6-05 designs the state              |
+| Section                        | visitor          | outsider | registrant | organizer   | Notes                                                                                       |
+| ------------------------------ | ---------------- | -------- | ---------- | ----------- | ------------------------------------------------------------------------------------------- |
+| Header: title, badges, time    | ✅               | ✅       | ✅         | ✅          | single 4-way privacy chip in V2 (E1-04); V1 shows separate Private / Restricted badges      |
+| "Organized by"                 | ❌               | ✅       | ✅         | ✅          | `created_by` / `owner` / `organizers` deleted for anonymous (BFF:140–142)                   |
+| Agenda                         | ✅               | ✅       | ✅         | ✅          | hidden when `ended/none`                                                                    |
+| Materials                      | ❌ sign-in state | ✅       | ✅         | ✅ + Manage | fetch is auth-gated; V1's anonymous copy is wrong on public meetings. Public route is E3-03 |
+| People / roster                | ❌               | ❌       | ✅         | ✅          | no count source for non-registrants (GH-1731); hidden when `ended/none`                     |
+| RSVP summary, filter, badges   | ❌               | ❌       | F=`on`     | F=`on`      | F=`off` removes all three; invitee count only                                               |
+| Join details                   | ❌               | ❌       | ✅         | ✅          | not once the meeting has ended (`joinDetails: !ended && onTheMeeting`)                      |
+| Host key (inside join details) | ❌               | ❌       | ❌         | in window   | only inside −70 / +40 min, never on a past meeting                                          |
+| Meeting Tools                  | D-4              | `full`   | `full`     | ✅          | per-tool unavailable states; unapproved AI summaries currently shown "Pending"              |
+| Occurrence strip               | series           | series   | series     | series      | cancelled occurrences are filtered out silently today; E6-05 designs the state              |
 
 ## Page status
 
-| Status      | Trigger                                                                                          | V1                                                  | V2                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------- |
-| `loading`   | no payload yet, or `meetingMatchesRoute()` false after in-place navigation                       | skeleton (`meeting-join-skeleton`, `role="status"`) | restyled skeleton (E1-01), same stale-content guard |
-| `error`     | any fetch failure other than 400 / 403 / 404; seeded through TransferState (`meetingLoadFailed`) | error block (`meeting-join-error`, `role="alert"`)  | restyled error state (E1-01)                        |
-| `not-found` | 400 / 403 / 404 (upcoming), 404 / 403 / 400 on a composite past id                               | redirect to `/meetings/not-found`                   | unchanged — V1's lookup owns it until #2920         |
-| `loaded`    | payload for the current route                                                                    | the tables above                                    | the tables above                                    |
+| Status      | Trigger                                                                                                                                    | V1                                                  | V2                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------- | --------------------------------------------------- |
+| `loading`   | no payload yet, or `meetingMatchesRoute()` false after in-place navigation                                                                 | skeleton (`meeting-join-skeleton`, `role="status"`) | restyled skeleton (E1-01), same stale-content guard |
+| `error`     | any fetch failure other than 400 / 403 / 404; seeded through TransferState (`meetingLoadFailed`)                                           | error block (`meeting-join-error`, `role="alert"`)  | restyled error state (E1-01)                        |
+| `not-found` | 400 / 403 on the upcoming lookup; a 404 there falls back to the past lookup, and 404 / 403 / 400 from that fallback (or on a composite id) | redirect to `/meetings/not-found`                   | unchanged — V1's lookup owns it until #2920         |
+| `loaded`    | payload for the current route                                                                                                              | the tables above                                    | the tables above                                    |
 
 ## Open questions carried from the plan
 

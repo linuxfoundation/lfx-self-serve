@@ -95,15 +95,16 @@ today; N-02 decides how much of each tier the public surface shows (FR-033).
 
 ## Not in the model yet
 
-Each needs an upstream change first (implementation plan §8; not yet filed as issues):
+Each needs an upstream change first (implementation plan §8). Each is filed here as a tracker, to
+be copied into the owning service repo:
 
-| Blocker | Missing field                                    | Blocks         |
-| ------- | ------------------------------------------------ | -------------- |
-| U-01    | attendance counts on `v1_past_meeting`           | E6-06          |
-| U-02    | per-occurrence RSVP-accepted counts              | E6-04 (soft)   |
-| U-03    | recording-exists flag per past occurrence        | E6-03 (marker) |
-| U-04    | Zoom meeting id + passcode on the detail payload | E7-01, E7-03   |
-| U-05    | dial-in numbers                                  | E7-01          |
-| U-06    | committee `logo_url`                             | E8-04 (soft)   |
-| U-07    | structured `agenda_items`                        | E9-01 – E9-03  |
-| U-08    | magic-link tokens                                | M-01           |
+| Blocker      | Missing field                                    | Blocks         |
+| ------------ | ------------------------------------------------ | -------------- |
+| U-01 (#2927) | attendance counts on `v1_past_meeting`           | E6-06          |
+| U-02 (#2928) | per-occurrence RSVP-accepted counts              | E6-04 (soft)   |
+| U-03 (#2929) | recording-exists flag per past occurrence        | E6-03 (marker) |
+| U-04 (#2930) | Zoom meeting id + passcode on the detail payload | E7-01, E7-03   |
+| U-05 (#2931) | dial-in numbers                                  | E7-01          |
+| U-06 (#2932) | committee `logo_url`                             | E8-04 (soft)   |
+| U-07 (#2933) | structured `agenda_items`                        | E9-01 – E9-03  |
+| U-08 (#2934) | magic-link tokens                                | M-01           |
