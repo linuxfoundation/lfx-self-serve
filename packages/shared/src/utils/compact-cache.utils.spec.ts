@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { dedupeByKey, fromColumnar, isColumnarAbsent, isColumnarTable, toColumnar } from './compact-cache.utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar } from './compact-cache.utils';
 
 interface Row {
   id: string;
@@ -80,6 +80,26 @@ describe('isColumnarTable', () => {
   // than reaching fromColumnar and decoding into empty objects.
   it.each([[[{ id: 'a' }]], [null], [{ k: 'id', r: [] }], [{ k: ['id'], r: [{ id: 'a' }] }], [{ k: [1], r: [] }]])('rejects %p', (value) => {
     expect(isColumnarTable(value)).toBe(false);
+  });
+});
+
+describe('hasExactColumns', () => {
+  it('accepts exactly what the writer emits', () => {
+    expect(hasExactColumns(toColumnar(ROWS, KEYS), KEYS)).toBe(true);
+  });
+
+  // Each of these decodes "successfully" through fromColumnar into an object that is missing data
+  // the writer always emits — a duplicated column lets the later value overwrite the earlier one,
+  // and a short row silently drops its tail as absent — so a guard has to reject them up front.
+  it.each([
+    ['a duplicated column', { k: ['id', 'id'], r: [['a', 'b']] }, ['id', 'name']],
+    ['a missing column', { k: ['id'], r: [['a']] }, ['id', 'name']],
+    ['an extra column', { k: ['id', 'name', 'x'], r: [['a', 'b', 'c']] }, ['id', 'name']],
+    ['reordered columns', { k: ['name', 'id'], r: [['b', 'a']] }, ['id', 'name']],
+    ['a short row', { k: ['id', 'name'], r: [['a']] }, ['id', 'name']],
+    ['a long row', { k: ['id', 'name'], r: [['a', 'b', 'c']] }, ['id', 'name']],
+  ])('rejects %s', (_label, table, keys) => {
+    expect(hasExactColumns(table, keys)).toBe(false);
   });
 });
 

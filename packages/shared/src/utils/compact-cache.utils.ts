@@ -108,6 +108,19 @@ export function isColumnarTable(value: unknown): value is ColumnarTable {
 }
 
 /**
+ * True when `table` carries exactly `keys`, in that order, and every row holds one value per key.
+ *
+ * The strict form of {@link isColumnarTable} for guards that must reject a corrupt or foreign entry
+ * before decoding it. Missing, extra, duplicated or reordered columns all fail, as does any short or
+ * long row: {@link fromColumnar} would otherwise decode such an entry silently — a duplicated column
+ * lets a later value overwrite an earlier one, and a short row drops its tail as absent — producing
+ * a well-formed-looking object that is missing data the writer always emits.
+ */
+export function hasExactColumns(table: ColumnarTable, keys: readonly string[]): boolean {
+  return table.k.length === keys.length && keys.every((key, index) => table.k[index] === key) && table.r.every((row) => row.length === keys.length);
+}
+
+/**
  * Deduplicates `items` by `keyOf` for cache storage (GH-1906), so a value repeated across many rows
  * — a project's people, a seat's committee, an attendee's event — is stored once and referenced by
  * index everywhere else.
