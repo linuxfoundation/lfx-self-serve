@@ -5,7 +5,7 @@ import '@angular/compiler';
 
 import { getMockMentorshipMentorProgramLists, getMockMentorshipMentorPrograms } from '@lfx-one/shared/constants';
 import type { Request } from 'express';
-import { beforeEach, describe, expect, it, vi, afterEach } from 'vitest';
+import { beforeEach, describe, expect, it, vi, afterEach, type MockInstance } from 'vitest';
 
 // The service resolves its request-scoped logger through this module; stubbing it here
 // avoids booting the real pino instance for a synchronous, in-memory lookup path.
@@ -22,6 +22,7 @@ vi.mock('./logger.service', () => ({
 
 const { MentorshipService } = await import('./mentorship.service');
 const { ResourceNotFoundError } = await import('../errors');
+const { MicroserviceProxyService } = await import('./microservice-proxy.service');
 
 function buildReq(): Request {
   return { path: '/api/mentorship/mentor/programs/mp_gridflow_fall26' } as Request;
@@ -157,5 +158,59 @@ describe('MentorshipService.getMenteeApplyTarget', () => {
 
   it('rejects an unknown term on a known program', async () => {
     await expect(service.getMenteeApplyTarget(buildReq(), 'mp_apicurio_winter26', 'missing-term')).rejects.toBeInstanceOf(ResourceNotFoundError);
+  });
+});
+
+describe('MentorshipService program review', () => {
+  const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+  const upstreamProgram = {
+    id: programId,
+    name: 'Test Program',
+    slug: 'test-program',
+    status: 'pending',
+    is_paid: false,
+    created_on: '2026-09-01T00:00:00Z',
+    updated_on: '2026-09-01T00:00:00Z',
+  };
+  let service: InstanceType<typeof MentorshipService>;
+  let proxyRequest: MockInstance<InstanceType<typeof MicroserviceProxyService>['proxyRequest']>;
+
+  beforeEach(() => {
+    proxyRequest = vi.spyOn(MicroserviceProxyService.prototype, 'proxyRequest');
+    service = new MentorshipService();
+  });
+
+  afterEach(() => {
+    proxyRequest.mockRestore();
+  });
+
+  it('reads the program from the mentorship service and returns only the review fields', async () => {
+    proxyRequest.mockResolvedValue(upstreamProgram);
+
+    const review = await service.getProgramReview(buildReq(), programId);
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}`, 'GET');
+    expect(review).toEqual({ id: programId, name: 'Test Program', status: 'pending' });
+  });
+
+  it.each([
+    ['approve', 'published'],
+    ['reject', 'rejected'],
+  ] as const)('maps the %s decision to the upstream %s status', async (decision, status) => {
+    proxyRequest.mockResolvedValue({ ...upstreamProgram, status });
+
+    const review = await service.submitProgramDecision(buildReq(), programId, decision);
+
+    expect(proxyRequest).toHaveBeenCalledWith(expect.anything(), 'LFX_V2_SERVICE', `/mentorship/v1/programs/${programId}/decision`, 'POST', undefined, {
+      status,
+    });
+    expect(review).toEqual({ id: programId, name: 'Test Program', status });
+  });
+
+  it('lets an upstream error through so its status reaches the page', async () => {
+    const forbidden = Object.assign(new Error('forbidden'), { statusCode: 403 });
+    proxyRequest.mockRejectedValue(forbidden);
+
+    await expect(service.submitProgramDecision(buildReq(), programId, 'approve')).rejects.toBe(forbidden);
   });
 });

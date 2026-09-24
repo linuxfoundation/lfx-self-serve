@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
+import { isMentorshipProgramReviewDecision, isMentorshipProgramStatus, MentorshipService } from '../services/mentorship.service';
 import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
@@ -310,6 +311,49 @@ export class MentorshipController {
     }
   }
 
+  // GET /api/mentorship/program-review/:programId
+  public async getProgramReview(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_mentorship_program_review');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'get_mentorship_program_review' });
+      }
+
+      const programId = this.parseReviewProgramId(req, 'get_mentorship_program_review');
+      const review = await this.mentorshipService.getProgramReview(req, programId);
+
+      logger.success(req, 'get_mentorship_program_review', startTime, { programId, status: review.status });
+      res.json(review);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // POST /api/mentorship/program-review/:programId/decision  { decision: 'approve' | 'reject' }
+  public async submitProgramDecision(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'submit_mentorship_program_decision');
+
+    try {
+      if (!(await getUsernameFromAuth(req))) {
+        throw new AuthenticationError('User authentication required', { operation: 'submit_mentorship_program_decision' });
+      }
+
+      const programId = this.parseReviewProgramId(req, 'submit_mentorship_program_decision');
+      const decision: unknown = req.body?.decision;
+      if (!isMentorshipProgramReviewDecision(decision)) {
+        throw ServiceValidationError.forField('decision', 'decision must be one of: approve, reject', { operation: 'submit_mentorship_program_decision' });
+      }
+
+      const review = await this.mentorshipService.submitProgramDecision(req, programId, decision);
+
+      logger.success(req, 'submit_mentorship_program_decision', startTime, { programId, decision, status: review.status });
+      res.json(review);
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/mentorship/cii/:projectId
   public async getCiiBadge(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_mentorship_cii_badge');
@@ -328,5 +372,14 @@ export class MentorshipController {
     } catch (error) {
       next(error);
     }
+  }
+
+  /** Review links carry the program UUID: upstream checks access on `mentorship_program:<id>`, so a slug cannot work. */
+  private parseReviewProgramId(req: Request, operation: string): string {
+    const programId = parseTrimmedString(req.params['programId']);
+    if (!programId || !isUuid(programId)) {
+      throw ServiceValidationError.forField('programId', 'programId must be a program UUID', { operation });
+    }
+    return programId;
   }
 }

@@ -97,3 +97,23 @@ describe('mentorship router — mentee endpoints (GH-2755)', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('mentorship router — program review', () => {
+  const programId = '6f1c2d3e-4a5b-4c6d-8e7f-9a0b1c2d3e4f';
+
+  it('routes GET /api/mentorship/program-review/:programId (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}`);
+
+    expect(res.status).toBe(401);
+  });
+
+  it('routes POST /api/mentorship/program-review/:programId/decision (auth required, not 404)', async () => {
+    const res = await fetch(`${baseUrl}/api/mentorship/program-review/${programId}/decision`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decision: 'approve' }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+});
