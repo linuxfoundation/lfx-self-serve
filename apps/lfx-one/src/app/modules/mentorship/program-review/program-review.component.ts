@@ -130,7 +130,9 @@ export class ProgramReviewComponent {
       if (program.status === 'pending') {
         return 'Another reviewer decided this program before you confirmed.';
       }
-      return `${program.name} — current status: ${MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS[program.status]}.`;
+      // Upstream owns the status set, so a status added there before this map shows its raw value.
+      const statusLabel = MENTORSHIP_UPSTREAM_PROGRAM_STATUS_LABELS[program.status] ?? program.status;
+      return `${program.name} — current status: ${statusLabel}.`;
     });
   }
 

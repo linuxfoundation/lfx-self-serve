@@ -113,6 +113,12 @@ describe('ProgramReviewComponent', () => {
     expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: Approved');
   });
 
+  it('shows the raw status when upstream sends one the label map does not know', () => {
+    build({ load: of(review('paused' as MentorshipUpstreamProgramStatus)) });
+
+    expect(byTestId('mentorship-program-review-already-decided')?.textContent).toContain('current status: paused');
+  });
+
   it.each([
     [403, 'mentorship-program-review-forbidden'],
     [404, 'mentorship-program-review-not-found'],
