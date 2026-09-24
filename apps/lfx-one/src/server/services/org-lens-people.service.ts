@@ -3,6 +3,7 @@
 
 import { EMPTY_ORG_ALL_EMPLOYEE_STATS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  CompactOrgAllEmployeesRawCache,
   OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
@@ -18,7 +19,7 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier, splitDisplayName } from '@lfx-one/shared/utils';
+import { fromColumnar, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -27,7 +28,7 @@ import { logger } from './logger.service';
 import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { withOrgCache, withOrgCompactCache } from './valkey.service';
 
 /** Per-(account, person) row from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL. */
 interface OrgPeopleAllRow {
@@ -147,13 +148,13 @@ export class OrgLensPeopleService {
    * cached shape.
    */
   public async getAllEmployeesInternal(accountId: string): Promise<OrgAllEmployeesInternalResponse> {
-    const raw = await withOrgCache(
-      accountId,
-      'people-all',
-      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
-      () => this.fetchAllEmployeesRaw(accountId),
-      isAllEmployeesRaw
-    );
+    // `people-all:v2`: the stored value is now the compact projection below (GH-1906) — roster rows
+    // columnar with `ACCOUNT_ID` hoisted — so a `people-all` entry must miss rather than decode.
+    const raw = await withOrgCompactCache(accountId, 'people-all:v2', VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, () => this.fetchAllEmployeesRaw(accountId), {
+      encode: encodeAllEmployeesRaw,
+      decode: decodeAllEmployeesRaw,
+      accept: isCompactAllEmployeesRaw,
+    });
 
     return {
       accountId,
@@ -656,22 +657,80 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
   return (email ?? '').trim() || 'Unknown member';
 }
 
-function isAllEmployeesRaw(value: unknown): boolean {
-  const v = value as { rowsRaw?: unknown; statsRaw?: unknown; foundationRaw?: unknown } | null;
+/**
+ * Compacts the three raw reads for Valkey storage (GH-1906). The roster is the bulk of the payload
+ * — 4.3 MB for the largest org, well past the 1 MiB write cap, so it was never actually stored —
+ * and almost half of that was the same 15 uppercase warehouse column names repeated on every one of
+ * ~10k rows. Columnar storage carries them once.
+ */
+function encodeAllEmployeesRaw(raw: {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  statsRaw: OrgPeopleStatsRow[];
+  foundationRaw: FoundationOptionRow[];
+}): CompactOrgAllEmployeesRawCache {
+  return {
+    // The roster query filters on ACCOUNT_ID, so every row carries the same value — stored once
+    // here and put back on each row at decode. Normalized to null when the rows don't carry it at
+    // all: an entry rejected for a missing hoisted field would be a cache that silently never
+    // hits, which is the exact failure this compaction exists to remove.
+    accountId: raw.rowsRaw.length ? (raw.rowsRaw[0].ACCOUNT_ID ?? null) : null,
+    rowsRaw: toColumnar(raw.rowsRaw, [
+      'PERSON_KEY',
+      'LFID',
+      'LF_USERNAME',
+      'CDP_MEMBER_ID',
+      'NAME',
+      'TITLE',
+      'EMAIL',
+      'PHOTO',
+      'SEATS_COUNT',
+      'BOARD_SEATS_COUNT',
+      'COMMITTEE_SEATS_COUNT',
+      'COMMITS_COUNT',
+      'EVENTS_COUNT',
+      'COURSES_COUNT',
+      // Left exactly as the driver returned it (a JSON string or a parsed array) so
+      // `parseFoundationIdArray` sees the same input it would on a cache miss.
+      'ENGAGED_FOUNDATION_IDS',
+    ]),
+    statsRaw: toColumnar(raw.statsRaw, ['ACCOUNT_ID', 'ACTIVE_IN_OSS', 'IN_GOVERNANCE', 'CODE_CONTRIBUTORS', 'EVENT_ATTENDEES', 'TRAINEES']),
+    foundationRaw: toColumnar(raw.foundationRaw, ['FOUNDATION_ID', 'FOUNDATION_NAME']),
+  };
+}
+
+/** Rebuilds the raw rows {@link encodeAllEmployeesRaw} stored, so both accessors map exactly what a cache miss would hand them. */
+function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
+  rowsRaw: OrgPeopleAllRowRaw[];
+  statsRaw: OrgPeopleStatsRow[];
+  foundationRaw: FoundationOptionRow[];
+} {
+  const rowsRaw = fromColumnar<OrgPeopleAllRowRaw>(value.rowsRaw);
+  if (value.accountId !== null) {
+    for (const row of rowsRaw) {
+      row.ACCOUNT_ID = value.accountId;
+    }
+  }
+  return {
+    rowsRaw,
+    statsRaw: fromColumnar<OrgPeopleStatsRow>(value.statsRaw),
+    foundationRaw: fromColumnar<FoundationOptionRow>(value.foundationRaw),
+  };
+}
+
+function isCompactAllEmployeesRaw(value: unknown): boolean {
+  const cache = value as CompactOrgAllEmployeesRawCache | null;
   return (
-    !!v &&
-    Array.isArray(v.rowsRaw) &&
-    Array.isArray(v.statsRaw) &&
-    Array.isArray(v.foundationRaw) &&
-    // Every row must carry LF_USERNAME, so entries cached before it was selected are rejected as a miss
-    // rather than replayed. A replayed row maps to a null username, which silently returns the people
-    // directory to email-only matching for the rest of the TTL. The value may legitimately be null, so
-    // this checks presence, not truthiness.
-    v.rowsRaw.every((row) => {
-      if (!row || typeof row !== 'object' || !('LF_USERNAME' in row)) return false;
-      const username = (row as { LF_USERNAME: unknown }).LF_USERNAME;
-      return username === null || typeof username === 'string';
-    })
+    !!cache &&
+    typeof cache === 'object' &&
+    (cache.accountId === null || typeof cache.accountId === 'string') &&
+    isColumnarTable(cache.rowsRaw) &&
+    isColumnarTable(cache.statsRaw) &&
+    isColumnarTable(cache.foundationRaw) &&
+    // Same rule the pre-compaction guard enforced per row, now a single column-name check: an entry
+    // written before LF_USERNAME was selected must be rejected rather than replayed, because a
+    // replayed row maps to a null username and silently returns the people directory to email-only
+    // matching for the rest of the TTL.
+    cache.rowsRaw.k.includes('LF_USERNAME')
   );
 }
 

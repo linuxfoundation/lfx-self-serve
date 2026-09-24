@@ -17,6 +17,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
   ...(await import('../../../../../packages/shared/src/utils/identity.utils')),
   ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
   ...(await import('../../../../../packages/shared/src/utils/string.utils')),
+  // Real, not stubbed: the roster cache encodes and decodes through these on every read/write, so a
+  // stub would make the round-trip assertions below vacuous.
+  ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
 }));
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
@@ -68,7 +71,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 import { OrgLensPeopleService } from './org-lens-people.service';
-import { ValkeyService } from './valkey.service';
+import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
 interface SqlDatabase {
   exec(sql: string): void;
@@ -445,5 +448,86 @@ describe('OrgLensPeopleService roster wire shape (#2179)', () => {
     const internal = await service.getAllEmployeesInternal(ACCOUNT);
     expect(execute).toHaveBeenCalledTimes(3);
     expect(internal.rows[0].emails).toEqual(['wireuser@example.com']);
+  });
+});
+
+describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
+  /** Two rows exercising both ENGAGED_FOUNDATION_IDS arrivals (the driver returns either) plus a null-heavy row. */
+  function mockRoster(): void {
+    execute
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            ACCOUNT_ID: ACCOUNT,
+            PERSON_KEY: 'person-one',
+            LFID: 'lfid-one',
+            LF_USERNAME: 'RosterUser',
+            CDP_MEMBER_ID: 'cdp-1',
+            NAME: 'Roster User',
+            TITLE: 'Engineer',
+            EMAIL: 'roster.user@example.com',
+            PHOTO: 'https://avatars.example.com/roster.png',
+            SEATS_COUNT: 2,
+            BOARD_SEATS_COUNT: 1,
+            COMMITTEE_SEATS_COUNT: 1,
+            COMMITS_COUNT: 30,
+            EVENTS_COUNT: 2,
+            COURSES_COUNT: 1,
+            ENGAGED_FOUNDATION_IDS: '["foundation-one","foundation-two"]',
+          },
+          {
+            ACCOUNT_ID: ACCOUNT,
+            PERSON_KEY: 'person-two',
+            LFID: null,
+            LF_USERNAME: null,
+            CDP_MEMBER_ID: null,
+            NAME: null,
+            TITLE: null,
+            EMAIL: null,
+            PHOTO: null,
+            SEATS_COUNT: 0,
+            BOARD_SEATS_COUNT: 0,
+            COMMITTEE_SEATS_COUNT: 0,
+            COMMITS_COUNT: 0,
+            EVENTS_COUNT: 0,
+            COURSES_COUNT: 0,
+            ENGAGED_FOUNDATION_IDS: ['foundation-one'],
+          },
+        ],
+      })
+      .mockResolvedValueOnce({ rows: [{ ACCOUNT_ID: ACCOUNT, ACTIVE_IN_OSS: 2, IN_GOVERNANCE: 1, CODE_CONTRIBUTORS: 1, EVENT_ATTENDEES: 1, TRAINEES: 1 }] })
+      .mockResolvedValueOnce({ rows: [{ FOUNDATION_ID: 'foundation-one', FOUNDATION_NAME: 'Foundation One' }] });
+  }
+
+  it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
+    mockRoster();
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+
+    // Second call reads the entry the first one wrote, through the real serialize/parse round trip
+    // the in-memory Valkey fixture performs.
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+
+    // `toStrictEqual` distinguishes null from undefined from an absent key — the distinction this
+    // exercises via `accessBadge`, which is optional and unset on a stored-only roster row. The
+    // serialized comparison additionally pins key order, which `mapEmployeeRow`'s object literal
+    // fixes and a decode must not perturb.
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(execute).toHaveBeenCalledTimes(3);
+    expect(fromHit.rows[0]).not.toHaveProperty('accessBadge');
+    // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it.
+    expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
+  });
+
+  it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {
+    // The shape guard, not just the key bump, has to reject this: decoding an array as a
+    // `ColumnarTable` would read `k`/`r` off it and serve an empty roster for the whole TTL.
+    const legacy = { rowsRaw: [{ PERSON_KEY: 'stale-person', LF_USERNAME: 'stale' }], statsRaw: [], foundationRaw: [] };
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-all:v2')!, JSON.stringify(legacy));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
   });
 });
