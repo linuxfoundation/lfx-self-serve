@@ -186,6 +186,26 @@ export const VALKEY_CACHE = {
   /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
   DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
 
-  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
+  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. Stays the default for every sub-resource absent from `MAX_VALUE_BYTES_BY_SUBRESOURCE`. */
   MAX_VALUE_BYTES: 1_048_576,
+
+  /**
+   * Per-sub-resource overrides of `MAX_VALUE_BYTES` (GH-1906), keyed by
+   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v2`.
+   * The trailing per-request discriminators a sub-resource may carry (a time range, a param
+   * signature, a person key) are deliberately *not* part of the lookup key: one cap covers every
+   * variant of a cache, and no identifier can reach this table. See `ValkeyService.maxBytesFor`,
+   * which resolves the key and is used by BOTH the write (`setJson`) and read (`parseCachedJson`)
+   * size checks — a cap raised on only one of them would write entries that every read rejects.
+   *
+   * An entry here is a deliberate, measured exception, not a knob: raising a cap means a single
+   * Valkey value of that size is worth the memory and the parse cost on every read. Every entry
+   * MUST cite the measured compact size it was sized from and the date it was measured, so a later
+   * reader can tell a still-justified cap from one whose payload has since shrunk (or grown).
+   *
+   * Empty by design: the GH-1906 compaction brought every Org Lens org-level cache back under the
+   * 1 MiB default at its largest measured production account, so no override was needed. See that
+   * PR's description for the full measured pre/post table.
+   */
+  MAX_VALUE_BYTES_BY_SUBRESOURCE: {} as Record<string, number>,
 } as const;
