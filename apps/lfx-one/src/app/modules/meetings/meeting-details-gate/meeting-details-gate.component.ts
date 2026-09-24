@@ -33,8 +33,8 @@ import { MeetingDetailsV2Component } from '../meeting-details-v2/meeting-details
  * post-hydration. That is a content swap, not a hydration mismatch — the `hydrated` latch means
  * Angular never reconciles two different trees. Making v2's *first* paint v2 requires giving SSR a
  * flag source (a LaunchDarkly server SDK, or the BFF stamping the decision into a cookie /
- * `runtimeConfig`); that is the prerequisite for ramping this flag past a tester list, so do that
- * rather than widening targeting through this gate.
+ * `runtimeConfig`); that is #2920, the prerequisite for ramping this flag past a tester list, so do
+ * that rather than widening targeting through this gate.
  *
  * Two consequences of that server-side `false` which #2874 should not have to rediscover. First,
  * the pre-v2 page is what SSR renders and what runs the public meeting lookup, including for a
