@@ -7,6 +7,9 @@ export * from './project.interface';
 // Committee interfaces
 export * from './committee.interface';
 
+// Compact Valkey cache storage shapes (GH-1906)
+export * from './compact-cache.interface';
+
 // Member interfaces
 export * from './member.interface';
 
@@ -248,6 +251,9 @@ export * from './org-key-contacts.internal.interface';
 // Org People interfaces
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+
+// Org Lens per-caller cache stored shapes (GH-1906)
+export * from './org-lens-cache.interface';
 
 // Org Lens Access tab (spec 025)
 export * from './org-lens-access.interface';
