@@ -162,15 +162,14 @@ describe('MenteeProfileEditDrawerComponent', () => {
 
   it('seeds a stored aboutMe over the raw cap without running the quadratic strip on all of it (lfx-self-serve-ops#37)', () => {
     // `aboutMe` comes back from the API, so it can exceed what the register form allows. Converting
-    // this nested-bracket payload in full would take seconds; the raw-cap slice bounds it.
+    // this nested-bracket payload in full would take seconds and trip the test timeout; the raw-cap
+    // slice bounds it.
     const hostile = `${'<'.repeat(100_000)}${'>'.repeat(100_000)}`;
     expect(hostile.length).toBeGreaterThan(MENTORSHIP_RICH_TEXT_RAW_MAX);
 
-    const start = performance.now();
     drawer.open({ ...PROFILE, aboutMe: hostile });
     fixture.detectChanges();
 
-    expect(performance.now() - start).toBeLessThan(1000);
     expect(comp['aboutMeLength']()).toBeLessThanOrEqual(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
   });
 

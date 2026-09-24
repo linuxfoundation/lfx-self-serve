@@ -86,14 +86,13 @@ describe('MentorProfileDetailsComponent', () => {
 
   it('treats a stored aboutMe over the raw cap as non-empty without running the quadratic strip (lfx-self-serve-ops#37)', () => {
     // `aboutMe` comes back from the API, so it can exceed what the register form allows. Stripping
-    // this nested-bracket payload directly would take seconds; the raw-cap check skips it.
+    // this nested-bracket payload directly would take seconds and trip the test timeout; the raw-cap
+    // check skips it.
     const hostile = `${'<'.repeat(100_000)}${'>'.repeat(100_000)}`;
     expect(hostile.length).toBeGreaterThan(MENTORSHIP_RICH_TEXT_RAW_MAX);
 
-    const start = performance.now();
     setup({ ...baseProfile, aboutMe: hostile });
 
-    expect(performance.now() - start).toBeLessThan(1000);
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-empty"]')).toBeNull();
     expect(element().querySelector('[data-testid="mentorship-mentor-profile-details-about-text"]')).not.toBeNull();
   });

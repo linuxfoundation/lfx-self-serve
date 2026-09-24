@@ -1082,12 +1082,12 @@ describe('mentorshipDescriptionLength', () => {
     expect(mentorshipDescriptionLength(html)).toBeGreaterThan(MENTORSHIP_ENROLL_DESCRIPTION_MAX);
   });
 
-  it('rejects adversarial nested-bracket input quickly instead of running the quadratic strip loop (lfx-self-serve-ops#37)', () => {
+  it('rejects adversarial nested-bracket input without running the quadratic strip loop (lfx-self-serve-ops#37)', () => {
+    // The too-large message is only reachable through the raw-cap early return, so it proves the
+    // strip was skipped. Stripping this payload would run for minutes and trip the test timeout.
     const half = 500_000;
     const hostile = `${'<'.repeat(half)}${'>'.repeat(half)}`;
-    const start = performance.now();
     const length = mentorshipDescriptionLength(hostile);
-    expect(performance.now() - start).toBeLessThan(50);
     expect(length).toBeGreaterThan(MENTORSHIP_MENTEE_INTRODUCTION_MAX);
     expect(getMentorshipMenteeRegisterErrors({ ...createEmptyMentorshipMenteeForm(), introduction: hostile }).introduction).toBe(
       MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE
