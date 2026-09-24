@@ -108,11 +108,12 @@ function has_real_email(s,    domain, before) {
   return 0
 }
 function has_real_domain_field(s,    value) {
-  while (match(s, /(^|[^a-z0-9_])([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*string)?[ \t]*[:=][ \t]*["'`][^"'`]*["'`]/)) {
+  # Either a typed assignment (X_DOMAIN: string | null = '...') or a direct ":" / "=" before the quote.
+  while (match(s, /(^|[^a-z0-9_])([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*["'`][^"'`]*["'`]/)) {
     value = substr(s, RSTART, RLENGTH)
     s = substr(s, RSTART + RLENGTH)
     # Strip through the assignment's last ":" or "=" before the opening quote, so a type
-    # annotation (X_DOMAIN: string = '...') or a quoted JSON key is not taken for the value.
+    # annotation (X_DOMAIN: string | null = '...') or a quoted JSON key is not taken for the value.
     sub(/^.*[:=][ \t]*["'`]/, "", value)
     sub(/["'`]$/, "", value)
     sub(/^[a-z][a-z0-9+.-]*:\/\//, "", value)
