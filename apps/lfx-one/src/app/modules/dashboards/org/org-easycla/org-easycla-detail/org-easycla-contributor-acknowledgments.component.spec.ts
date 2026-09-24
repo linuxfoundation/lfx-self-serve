@@ -414,7 +414,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       const tag = byTestId(fixture, 'org-easycla-acknowledgment-state-not-authorized');
       expect(textIn(tag)).toBe('Not Authorized');
-      expect(tag?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '').toContain('approval criteria (Email Domain Criteria) was removed');
+      expect(tag?.querySelector('[aria-label]')?.getAttribute('aria-label') ?? '').toContain('approval criteria (Email Domain Criteria) were removed');
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeNull();
       expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
     });

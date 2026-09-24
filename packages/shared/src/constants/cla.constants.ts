@@ -714,7 +714,7 @@ export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
 /** The explanation a Not Authorized row carries, worded as the M3 prototype words it. */
 export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
   tooltip: (criteria?: string): string =>
-    `Not Authorized is not the same as Invalidate. This person's approval criteria${criteria ? ` (${criteria})` : ''} was removed from the Approval List — no one purposefully revoked their access. If they should still be covered, add their criteria back to the Approval List. Use Invalidate only to deliberately revoke this acknowledgment.`,
+    `Not Authorized is not the same as Invalidate. This person's approval criteria${criteria ? ` (${criteria})` : ''} were removed from the Approval List — no one purposefully revoked their access. If they should still be covered, add their criteria back to the Approval List. Use Invalidate only to deliberately revoke this acknowledgment.`,
   detail: 'No longer matches Approval List criteria.',
   approvalListLink: 'Add the user to the Approval list',
   detailSuffix: ', or Invalidate to remove for good.',
