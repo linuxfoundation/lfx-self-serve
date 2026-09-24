@@ -1163,7 +1163,7 @@ describe('OrgEasyclaComponent', () => {
     // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
     it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
       const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(ACME_MOTORS.uid, [BETA_COASTAL, ACME_MOTORS], {
-        orgSegment: 'containership-inc',
+        orgSegment: 'beta-coastal-inc',
       });
 
       expect(setAccount).not.toHaveBeenCalled();
