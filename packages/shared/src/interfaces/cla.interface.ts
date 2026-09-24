@@ -6,6 +6,8 @@ import type { Signal } from '@angular/core';
 import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
+  ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES,
+  ORG_CLA_DESIGNEE_REFUSALS,
   ORG_CLA_DETAIL_TABS,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_MANAGER_REFUSALS,
@@ -1369,3 +1371,42 @@ export interface OrgClaManagerAddValidation {
 export type OrgClaManagerAddField = keyof OrgClaManagerAddRequest;
 
 export type OrgClaManagerRefusal = (typeof ORG_CLA_MANAGER_REFUSALS)[number];
+
+/**
+ * Yes on the "Are you authorized to be a CLA Manager?" question (#2780). The designee address is
+ * deliberately absent: the BFF reads it from the session, so a caller cannot assign someone else.
+ */
+export interface OrgClaDesigneeRequest {
+  /** The agreement's signing project — the same identifier the corporate signing request uses. */
+  projectSfid: string;
+}
+
+export interface OrgClaDesigneeResponse {
+  assigned: true;
+}
+
+/** No on the question: name the person who should become the initial CLA Manager designee. */
+export interface OrgClaDesigneeNominationRequest {
+  projectSfid: string;
+  fullName: string;
+  email: string;
+}
+
+/**
+ * `lf-login-requested` is a success: the CLA service emailed the named person to create an LF
+ * Login, and they become designee once they have one.
+ */
+export type OrgClaDesigneeNominationOutcome = (typeof ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES)[number];
+
+export interface OrgClaDesigneeNominationResponse {
+  outcome: OrgClaDesigneeNominationOutcome;
+  email: string;
+}
+
+/** Field-level errors from {@link validateOrgClaDesigneeNomination}; empty keys mean valid. */
+export interface OrgClaDesigneeNominationValidation {
+  fullName?: string;
+  email?: string;
+}
+
+export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
