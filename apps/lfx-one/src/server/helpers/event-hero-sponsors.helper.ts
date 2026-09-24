@@ -71,8 +71,7 @@ function extractHeroImage(html: string, baseUrl: string): string {
       break;
     }
   }
-  const metaMatch = metaCandidate ? [metaCandidate, metaCandidate] : null;
-  const metaImage = metaMatch?.[1] ? resolveUrl(metaMatch[1], baseUrl) : null;
+  const metaImage = metaCandidate ? resolveUrl(metaCandidate, baseUrl) : null;
   if (metaImage) return metaImage;
 
   // Fallback: an event page's own JSON-LD (schema.org Event) often carries a banner image

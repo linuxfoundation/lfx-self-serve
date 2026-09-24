@@ -3,7 +3,16 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { sanitizeDisplayText, decodeHtmlEntities, escapeHtml, hasVisibleText, htmlClipboardToText, stripHtml, stripResourceLoadingHtml } from './html-utils';
+import {
+  sanitizeDisplayText,
+  decodeHtmlEntities,
+  escapeHtml,
+  hasVisibleHtmlText,
+  hasVisibleText,
+  htmlClipboardToText,
+  stripHtml,
+  stripResourceLoadingHtml,
+} from './html-utils';
 
 describe('sanitizeDisplayText', () => {
   it('drops a BIDI override that would visually reverse the name', () => {
@@ -830,5 +839,48 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
 
   it('still refuses a non-http scheme even on a vouched-for host', () => {
     expect(stripResourceLoadingHtml('<p><a href="javascript:alert(1)">x</a></p>', BRIEF)).toBe('<p><a>x</a></p>');
+  });
+});
+
+/**
+ * The gate at THREE layers -- the controller, the service and the UI -- and until now it had no
+ * direct coverage: the spec tested `hasVisibleText` and `stripHtml` separately, which is not the
+ * same as testing their composition. The composition is the point: strip the markup FIRST, or
+ * the tag names themselves count as visible characters.
+ */
+describe('hasVisibleHtmlText', () => {
+  it.each([
+    ['an empty paragraph', '<p></p>'],
+    ['a lone break', '<p><br></p>'],
+    ['zero-width spaces', '<p>\u200B\u200B</p>'],
+    ['a soft hyphen', '<p>\u00AD</p>'],
+    ['a Hangul filler', '<p>\u3164</p>'],
+    ['nested empty elements', '<div><p><span></span></p></div>'],
+    ['whitespace only', '   '],
+    ['the empty string', ''],
+  ])('reports %s as having no visible text', (_label, html) => {
+    expect(hasVisibleHtmlText(html)).toBe(false);
+  });
+
+  it.each([
+    ['ordinary copy', '<p>Join us</p>'],
+    ['text inside nesting', '<div><p><strong>Register</strong></p></div>'],
+    ['a CJK name', '<p>\u5C71\u7530</p>'],
+    ['an NBSP between words', '<p>Linux\u00A0Foundation</p>'],
+  ])('reports %s as having visible text', (_label, html) => {
+    expect(hasVisibleHtmlText(html)).toBe(true);
+  });
+
+  it('strips markup BEFORE asking, so tag names never count as content', () => {
+    // The composition is what this predicate adds over `hasVisibleText`. Asking the raw string
+    // would see `p`, `span` and `div` and call an empty document non-empty.
+    expect(hasVisibleText('<p><span></span></p>')).toBe(true);
+    expect(hasVisibleHtmlText('<p><span></span></p>')).toBe(false);
+  });
+
+  it('treats markup that renders without TEXT as empty', () => {
+    // An image-only body has no words. Callers that want to accept one check for it separately;
+    // this predicate answers "is there anything to read".
+    expect(hasVisibleHtmlText('<p><img src="https://cdn.example.com/x.png"></p>')).toBe(false);
   });
 });
