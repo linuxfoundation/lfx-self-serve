@@ -66,6 +66,7 @@ export * from './cla-view.utils';
 export * from './cla-identifier.utils';
 export * from './cla-manager-actions.utils';
 export * from './org-cla-manager.utils';
+export * from './org-cla-designee.utils';
 export * from './org-cla-approval.utils';
 export * from './org-cla-permissions';
 export * from './org-cla-signatory.utils';
