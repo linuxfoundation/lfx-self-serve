@@ -49,6 +49,15 @@ describe('toColumnar / fromColumnar', () => {
     expect('name' in decoded).toBe(true);
   });
 
+  // The absence marker is itself a legal string, so a real value equal to it — or merely starting
+  // with the same NUL — must survive rather than be silently dropped. This matters on the COLD path
+  // too: a caller that decodes its freshly fetched value would otherwise lose the field on a miss.
+  it.each([['\u0000'], ['\u0000absent'], ['\u0000\u0000x'], ['x\u0000']])('round-trips the real string %j exactly', (name) => {
+    const [decoded] = roundTrip([{ id: 'a', name, count: 1 }]);
+
+    expect(decoded.name).toBe(name);
+  });
+
   // A truncated entry (another writer, a partial value) must not start asserting null for a field
   // it never carried — absent is the honest answer, and it matches what a miss would serialize.
   it('treats a truncated row tail as absent', () => {
@@ -84,6 +93,9 @@ describe('isColumnarAbsent', () => {
     expect(isColumnarAbsent(absentCell)).toBe(true);
     expect(isColumnarAbsent(nullCell)).toBe(false);
     expect(isColumnarAbsent(stringCell)).toBe(false);
+    // A real string that merely looks like the marker is escaped, so it is never taken for absence.
+    const [escapedCell] = toColumnar([{ id: 'a', name: '\u0000', count: 1 } as Row], ['name']).r[0];
+    expect(isColumnarAbsent(escapedCell)).toBe(false);
   });
 });
 
