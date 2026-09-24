@@ -241,5 +241,8 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
 }
 
 function foldForActivitySearch(value: string): string {
-  return value.normalize('NFD').replace(/\p{M}+/gu, '').toLocaleLowerCase();
+  return value
+    .normalize('NFD')
+    .replace(/\p{M}+/gu, '')
+    .toLocaleLowerCase();
 }
