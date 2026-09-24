@@ -467,7 +467,7 @@ export const CCLA_SIGN_COPY = {
  * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
  * string, and the client posts these literals rather than assembling ACS permissions itself.
  */
-export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete'] as const;
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete', 'auto-ecla-update'] as const;
 
 export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
 export const ACS_CLA_SIGN_ACTION = 'create';
@@ -475,6 +475,18 @@ export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
 export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
 export const ACS_CLA_MANAGER_DELETE_RESOURCE = 'cla_manager_delete';
 export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
+/**
+ * ACS resource / verb for the Auto ECLA toggle (#1988).
+ *
+ * Confirmed on the dev catalog (2026-09-23): resource `ecla_auto_create`, action `update`, on
+ * `PUT /cla-service/v4/signatures/company/{companyID}/clagroup/{claGroupID}/ecla-auto-create`.
+ * Enable and disable share that one grant. The definition file registers the resource under
+ * the project category. The live dev row is object type community and has been since the
+ * resource was created in November 2022. This check asks on `project|organization`, the grain
+ * the CLA manager grant is stored on.
+ */
+export const ACS_CLA_AUTO_ECLA_RESOURCE = 'ecla_auto_create';
+export const ACS_CLA_AUTO_ECLA_ACTION = 'update';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
 
 /**

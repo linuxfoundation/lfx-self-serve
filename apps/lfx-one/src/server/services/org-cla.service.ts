@@ -185,7 +185,10 @@ function writeResponseHasApprovalLists(lists: EasyClaSignatureApprovalLists): bo
  *   confuse because the console this replaces labels its rules section as though it listed
  *   contributors. Mapping it here is how it ends up under the wrong label.
  *
- * `autoCreateECLA` is likewise not carried: it belongs to a later feature.
+ * `autoCreateECLA` is carried, but only on signed rows and under the shared name
+ * `autoCreateEcla` (#1988). The Overview toggle renders only there, so an unsigned or preview
+ * row omits it. A missing upstream value maps to `false`, matching the producer's default when
+ * the column is unset.
  *
  * `signed` is carried, but only as the answer to "is there a document" — never as a display
  * status. `status` remains the single slot the template reads, because sanctions outrank
@@ -243,6 +246,10 @@ function toOrgClaGroup(entry: EasyClaCompanyClaGroup & { signatureID: string }, 
     // `?? 0` here would turn "this deployment cannot tell you" into "this agreement approves
     // nobody" — a legal claim, and a false one.
     ...(typeof entry.approvalCriteriaCount === 'number' ? { approvalCriteriaCount: entry.approvalCriteriaCount } : {}),
+    // Auto ECLA toggle state (#1988). Only on signed rows: the toggle in the Overview renders
+    // only there, so an unsigned or preview row does not need to carry the flag. Missing on the
+    // upstream row maps to false, matching the producer's own default when the column is unset.
+    ...(entry.signed === true ? { autoCreateEcla: entry.autoCreateECLA === true } : {}),
   };
 }
 
@@ -931,6 +938,81 @@ export class OrgClaService {
     }
   }
 
+  /**
+   * Turns Auto ECLA on or off for one signed CCLA (#1988).
+   *
+   * Enable and disable are one write against the same producer endpoint — the toggle is
+   * symmetric and both directions travel the same sanctions and ACL gates. Not a computed
+   * update: the caller sends the target state, and the producer records it as such.
+   *
+   * Resolves the agreement through the organization's own list first, mirroring
+   * `updateApprovalList` and `getPdfUrl`: `requireOrgLensAccess` proves which organization the
+   * caller may view as, and says nothing about which signatures belong to it. Only signed
+   * agreements accept the write, because the flag lives on the corporate signature record —
+   * an unsigned row has no record for the producer to update.
+   *
+   * The write path runs with the caller's own token (no impersonation forwarding). The route
+   * has `blockDuringImpersonation` in front of it; the direction is the same as the peer
+   * approval-list write, because a support engineer flipping this flag against an ordinary
+   * customer's CCLA would attribute a legally-recorded change to the person being impersonated.
+   *
+   * A 403 refusal from the producer is the sanctions path. The refusal
+   * sentence upstream sends belongs on screen — the CLA manager needs the reason and the
+   * support route — and does not belong in an application log. The `withProducerRefusalMessage`
+   * plus `withoutUpstreamBody` composition is the same one the corporate hand-off uses, and it
+   * is the whole of the difference between a sanctioned outcome and a 403 that just says
+   * "Forbidden". The producer answers 403 for a viewer without the ACS grant too, and both
+   * refusals travel this branch — the client hides the toggle when ACS says the grant is not
+   * held, so the runtime 403 the client actually sees is nearly always the sanctions one.
+   */
+  public async updateEclaAutoCreate(req: Request, orgUid: string, signatureId: string, enable: boolean): Promise<OrgClaEclaAutoCreateUpdateOutcome> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_update_ecla_auto_create');
+    if (!context) return { outcome: 'not-found' };
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_update_ecla_auto_create', 'agreement is not signed, so it has no Auto ECLA flag to change', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { outcome: 'not-signed' };
+    }
+
+    try {
+      await gatewayFetch<unknown>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/signatures/company/${encodeURIComponent(context.companyId)}/clagroup/${encodeURIComponent(context.claGroupId)}/ecla-auto-create`,
+        {
+          method: 'PUT',
+          // snake_case on the wire; keep it typed rather than spread so a rename here cannot leak
+          // an extra key upstream.
+          body: { auto_create_ecla: enable },
+          operation: 'org_cla_update_ecla_auto_create',
+          service: SERVICE,
+          errorMessage: 'Failed to update the Auto ECLA setting',
+          errorCode: 'UPSTREAM_ERROR',
+          // The refusal body is the copy the CLA manager needs to see (sanctions reason and
+          // support route). Kept out of application logs; the `withoutUpstreamBody` at the throw
+          // below takes it back off the error before it reaches the handler.
+          redactResponseBodyFromLogs: true,
+          // The handler returns 200 and sets no body. An empty 200 is the success, not a 502.
+          acceptEmptyBody: true,
+          // No `bearerToken` override: this route is blocked during impersonation, so there is
+          // no impersonated identity to forward. A write must not run as the impersonator either.
+        }
+      );
+    } catch (error) {
+      throw withoutUpstreamBody(withProducerRefusalMessage(error, 'org_cla_update_ecla_auto_create', SERVICE));
+    }
+
+    logger.info(req, 'org_cla_update_ecla_auto_create', 'updated the Auto ECLA setting', {
+      org_uid: orgUid,
+      signature_id: signatureId,
+      auto_create_ecla: enable,
+    });
+
+    return { outcome: 'updated', autoCreateEcla: enable };
+  }
+
   public async getManagers(req: Request, orgUid: string, signatureId: string): Promise<OrgClaManagerList | null> {
     const target = await this.resolveManagerTarget(req, orgUid, signatureId, 'org_cla_list_managers');
     if (!target) return null;
@@ -1360,22 +1442,37 @@ export class OrgClaService {
     entry: EasyClaCompanyClaGroup & { signatureID: string },
     operation: string
   ): void {
+    this.assertUnambiguousCompanyClaGroup(
+      entries,
+      entry,
+      operation,
+      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
+      'AMBIGUOUS_MANAGER_TARGET'
+    );
+  }
+
+  /**
+   * Company + CLA-group URLs are not signature-scoped. Upstream resolves one signature for the
+   * pair, so a second signature on that pair would be the one a write for the first can change.
+   */
+  private assertUnambiguousCompanyClaGroup(
+    entries: readonly (EasyClaCompanyClaGroup & { signatureID: string })[],
+    entry: EasyClaCompanyClaGroup & { signatureID: string },
+    operation: string,
+    message: string,
+    code: string
+  ): void {
     const companyId = entry.companyID?.trim() ?? '';
     const claGroupId = entry.claGroupID?.trim() ?? '';
     const peers = entries.filter((candidate) => candidate.companyID?.trim() === companyId && candidate.claGroupID?.trim() === claGroupId);
     if (peers.length <= 1) return;
 
-    throw new MicroserviceError(
-      'This CLA shares its company and CLA group with another agreement, so its managers cannot be read or changed here yet.',
-      409,
-      'AMBIGUOUS_MANAGER_TARGET',
-      { operation, service: SERVICE }
-    );
+    throw new MicroserviceError(message, 409, code, { operation, service: SERVICE });
   }
 
   private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
-    const entry = entries.find((candidate) => candidate.signatureID === signatureId);
+    const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
       logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
       return null;
@@ -1408,6 +1505,18 @@ export class OrgClaService {
         operation,
         service: SERVICE,
       });
+    }
+
+    // The Auto ECLA producer loads one corporate signature for the company and CLA group. A
+    // second signature on that pair would be the record a toggle of the first can change.
+    if (operation === 'org_cla_update_ecla_auto_create') {
+      this.assertUnambiguousCompanyClaGroup(
+        entries,
+        entry,
+        operation,
+        'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+        'AMBIGUOUS_AGREEMENT_TARGET'
+      );
     }
 
     return {
@@ -1659,6 +1768,21 @@ export type OrgClaApprovalUpdateOutcome =
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
   | { outcome: 'forbidden' };
+
+/**
+ * Result of an Auto ECLA toggle write (#1988).
+ *
+ * A union rather than a bare boolean plus a thrown error, because the two ordinary outcomes map
+ * to distinct HTTP answers: a signature the organization does not hold is a 404, and an unsigned
+ * agreement is a 400 with its own copy. `updated` is the success shape and carries the state the
+ * producer now records — the caller sends the target, the service echoes it back so the client
+ * can trust the new value without a re-read.
+ *
+ * Producer refusals (sanctions, ACL) travel as thrown 403s carrying the producer's own sentence
+ * on `clientMessage`; they are not one of these outcomes. Splitting them out here would force the
+ * BFF to translate copy the producer already wrote.
+ */
+export type OrgClaEclaAutoCreateUpdateOutcome = { outcome: 'updated'; autoCreateEcla: boolean } | { outcome: 'not-found' } | { outcome: 'not-signed' };
 
 /** Query parameters accepted on the acknowledgments read. Every field is already validated. */
 export interface ContributorAcknowledgmentQuery {
