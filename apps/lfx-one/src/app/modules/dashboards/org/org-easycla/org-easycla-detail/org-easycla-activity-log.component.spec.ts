@@ -230,6 +230,20 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(getActivityLog.mock.calls.length).toBe(initialFetchCount);
   });
 
+  it('matches an accented actor when the query is unaccented', async () => {
+    getActivityLog.mockReturnValueOnce(of(page([entry({ id: 'e1', summary: 'signed a corporate CLA', actor: 'José Mensah' })])));
+    const fixture = await render();
+
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('Jose');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(allByTestId(fixture, 'org-easycla-activity-log-actor').map(textIn)).toEqual(['José Mensah']);
+  });
+
   it('shows the filter-empty state (not the tab-empty state) when the fetched set is non-empty but the term matches nothing', async () => {
     getActivityLog.mockReturnValueOnce(of(page([entry({ id: 'e1', summary: 'aporter signed', actor: 'Ada' })])));
     const fixture = await render();

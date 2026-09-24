@@ -139,9 +139,8 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
   /**
    * Rows after client-side filtering.
    *
-   * The term matches on the actor and the summary. Case- and Unicode-insensitive comparison
-   * follows the sibling contributors search: `String.prototype.localeCompare` under the empty
-   * locale collates diacritics equal for both sides.
+   * The term matches on the actor and the summary. Comparison is case-insensitive, and
+   * accented and unaccented letters compare equal.
    *
    * Timestamps are not searched — a term like "2026" would false-positive on ISO-8601 strings
    * even for rows whose visible date is a different year in the viewer's locale.
@@ -220,8 +219,8 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
     const term = (this.searchTerm() ?? '').trim();
     const rows = list.list.map((entry) => this.toRow(entry));
     if (term.length === 0) return rows;
-    const lowerTerm = term.toLocaleLowerCase();
-    return rows.filter((row) => row.searchText.includes(lowerTerm));
+    const foldedTerm = foldForActivitySearch(term);
+    return rows.filter((row) => row.searchText.includes(foldedTerm));
   }
 
   private toRow(entry: OrgClaActivityLogEntry): OrgClaActivityLogRow {
@@ -231,7 +230,7 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
     // Precomputed lowercase concat, so the per-keystroke filter is O(rows) rather than
     // O(rows × fields × toLowerCase). A term is matched against actor + summary only —
     // deliberately not the ISO date.
-    const searchText = `${actor}\u0000${summary}`.toLocaleLowerCase();
+    const searchText = foldForActivitySearch(`${actor}\u0000${summary}`);
     return {
       entry,
       actor,
@@ -240,4 +239,8 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
       searchText,
     };
   }
+}
+
+function foldForActivitySearch(value: string): string {
+  return value.normalize('NFD').replace(/\p{M}+/gu, '').toLocaleLowerCase();
 }
