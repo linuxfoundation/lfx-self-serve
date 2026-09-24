@@ -805,6 +805,13 @@ export class VoteService {
     if (!match) {
       throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
     }
-    return Number.parseInt(match[1], 10);
+    // \d+ also passes 309+-digit tokens whose parseInt overflows float64 to Infinity (and
+    // 16+-digit ones to unsafe integers) — slice() would answer those with an empty terminal
+    // page instead of the malformed-token 400 this decoder promises.
+    const offset = Number.parseInt(match[1], 10);
+    if (!Number.isSafeInteger(offset)) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    return offset;
   }
 }

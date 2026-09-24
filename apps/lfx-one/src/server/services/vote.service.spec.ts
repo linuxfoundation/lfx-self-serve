@@ -878,6 +878,17 @@ describe('VoteService', () => {
       await expect(service.getVotes(req, { page_size: '1', page_token: 'not-an-offset' })).rejects.toThrow(ServiceValidationError);
     });
 
+    it('rejects an offset page_token whose digits overflow a safe integer instead of answering an empty terminal page', async () => {
+      const rows = [
+        { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
+      ];
+      fetchAllQueryResources.mockResolvedValue(rows);
+      getProjectsByIds.mockResolvedValue(new Map());
+
+      // 400 nines: parseInt overflows float64 to Infinity — slice() would return [] with no continuation.
+      await expect(service.getVotes(req, { page_token: `offset:${'9'.repeat(400)}` })).rejects.toThrow(ServiceValidationError);
+    });
+
     it('caps a client page_size at the upstream max so one response cannot pull an unbounded slice', async () => {
       const rows = Array.from({ length: 1001 }, (_, i) => ({
         vote_uid: `v-${String(i).padStart(4, '0')}`,
