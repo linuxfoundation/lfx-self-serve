@@ -1295,11 +1295,12 @@ export interface OrgClaActivityLogDisplayRow {
   whenLabel: string;
 }
 
+/** `key` names the org and signature the state was read for, so a state for another agreement is never shown. */
 export type OrgClaRecentActivityState =
   | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'loaded'; rows: OrgClaActivityLogDisplayRow[] }
-  | { status: 'failed' };
+  | { status: 'loading'; key: string }
+  | { status: 'loaded'; key: string; rows: OrgClaActivityLogDisplayRow[] }
+  | { status: 'failed'; key: string };
 
 /**
  * View-model row projection for the Activity Log table (#1987).

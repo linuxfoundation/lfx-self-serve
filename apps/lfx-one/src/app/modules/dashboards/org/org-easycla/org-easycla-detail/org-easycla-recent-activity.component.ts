@@ -40,41 +40,50 @@ export class OrgEasyclaRecentActivityComponent {
   protected readonly loadingRows = Array.from({ length: ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE }, (_, index) => index);
 
   private readonly target = computed(() => this.initTarget());
-  private readonly state = this.initState();
+  private readonly settledState = this.initState();
+  private readonly state = computed(() => this.initCurrentState());
 
   protected readonly loading = computed(() => this.state().status === 'loading');
   protected readonly rows = computed(() => this.initRows());
 
-  private initTarget(): { orgUid: string; signatureId: string } | null {
+  private initTarget(): { orgUid: string; signatureId: string; key: string } | null {
     const group = this.claGroup();
     const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
-    return this.isBrowser && group.signed && orgUid && group.id ? { orgUid, signatureId: group.id } : null;
+    return this.isBrowser && group.signed && orgUid && group.id ? { orgUid, signatureId: group.id, key: `${orgUid}/${group.id}` } : null;
   }
 
   private initState(): Signal<OrgClaRecentActivityState> {
     return toSignal(
       toObservable(this.target).pipe(
-        distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
+        distinctUntilChanged((a, b) => a?.key === b?.key),
         switchMap((target) => {
           if (!target) return of<OrgClaRecentActivityState>({ status: 'idle' });
           return this.claService.getActivityLog(target.orgUid, target.signatureId, { pageSize: ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE }).pipe(
             map(
               (page): OrgClaRecentActivityState => ({
                 status: 'loaded',
+                key: target.key,
                 rows: page.list.slice(0, ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE).map((entry) => toOrgClaActivityLogDisplayRow(entry)),
               })
             ),
             catchError((error: unknown) => {
               const httpError = error instanceof HttpErrorResponse ? error : null;
               console.error('Failed to load recent activity:', httpError?.status ?? 'unknown', httpError?.message ?? String(error));
-              return of<OrgClaRecentActivityState>({ status: 'failed' });
+              return of<OrgClaRecentActivityState>({ status: 'failed', key: target.key });
             }),
-            startWith<OrgClaRecentActivityState>({ status: 'loading' })
+            startWith<OrgClaRecentActivityState>({ status: 'loading', key: target.key })
           );
         })
       ),
       { initialValue: { status: 'idle' } as OrgClaRecentActivityState }
     );
+  }
+
+  private initCurrentState(): OrgClaRecentActivityState {
+    const target = this.target();
+    const state = this.settledState();
+    if (!target) return { status: 'idle' };
+    return state.status !== 'idle' && state.key === target.key ? state : { status: 'loading', key: target.key };
   }
 
   private initRows(): OrgClaActivityLogDisplayRow[] {

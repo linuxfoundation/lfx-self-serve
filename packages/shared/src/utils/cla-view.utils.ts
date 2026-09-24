@@ -195,6 +195,7 @@ export function formatClaSignedOnInstant(iso: string, timeZone?: string): string
   return `${dayLabel}, ${time}`;
 }
 
+/** Formats `when` in the viewer's time zone unless `timeZone` is given, so call it in the browser only — never during SSR. */
 export function toOrgClaActivityLogDisplayRow(entry: OrgClaActivityLogEntry, timeZone?: string): OrgClaActivityLogDisplayRow {
   return {
     entry,

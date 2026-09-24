@@ -250,4 +250,27 @@ describe('OrgEasyclaRecentActivityComponent', () => {
     expect(getActivityLog).toHaveBeenCalledTimes(2);
     expect(getActivityLog).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-2', { pageSize: 3 });
   });
+
+  it('never shows the previous agreement’s rows before the next agreement’s page arrives', async () => {
+    getActivityLog.mockReturnValue(of(page([entry({ id: 'old-1', summary: 'Alice Example added a CLA Manager' })])));
+    const fixture = await render();
+    expect(allByTestId(fixture, 'org-easycla-recent-activity-summary').map(textIn)).toEqual(['Alice Example added a CLA Manager']);
+
+    const next = new Subject<OrgClaActivityLogPage>();
+    getActivityLog.mockReturnValue(next);
+    fixture.componentRef.setInput('claGroup', claGroup({ id: 'signature-uuid-2' }));
+
+    expect(fixture.componentInstance['rows']()).toEqual([]);
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'org-easycla-recent-activity-row-old-1')).toBeNull();
+    await settle(fixture);
+    expect(byTestId(fixture, 'org-easycla-recent-activity-row-old-1')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-recent-activity-loading')).not.toBeNull();
+
+    next.next(page([entry({ id: 'new-1', summary: 'Bob Example enabled Auto ECLA' })], { signatureId: 'signature-uuid-2' }));
+    next.complete();
+    await settle(fixture);
+
+    expect(allByTestId(fixture, 'org-easycla-recent-activity-summary').map(textIn)).toEqual(['Bob Example enabled Auto ECLA']);
+  });
 });
