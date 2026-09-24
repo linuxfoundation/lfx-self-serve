@@ -19,6 +19,9 @@ export const PROGRAM_REVIEW_LOAD_TIMEOUT = 30_000;
 const REVIEW_URL = `/mentorship/program-review/${PROGRAM_ID}`;
 const REVIEW_API = `**/api/mentorship/program-review/${PROGRAM_ID}`;
 export const DECISION_API = `${REVIEW_API}/decision`;
+/** The page renders exactly one of these: loading, the confirm card, or a role="status" state container. */
+const OUTCOME_SELECTOR =
+  '[data-testid="mentorship-program-review-loading"], [data-testid="mentorship-program-review-confirm"], [role="status"][data-testid^="mentorship-program-review-"]';
 
 export async function stubProgramReview(page: Page, status: number, program?: { status: string }, delayMs = 0): Promise<void> {
   await page.route(REVIEW_API, async (route) => {
@@ -49,11 +52,17 @@ export async function gotoProgramReview(page: Page, decision: string = 'approve'
   await expect(page).not.toHaveURL(/auth0\.com/);
 }
 
-/** Navigates and waits for the browser's stubbed program GET, so the page shows the stubbed state. */
+/**
+ * Navigates and waits for the browser's stubbed program GET, so the page shows the stubbed state.
+ * Hydration leaves the unclaimed server-rendered outcome in the DOM until the app is stable, so it
+ * also waits until loading is gone and a single outcome remains — the client's own render.
+ */
 export async function openProgramReview(page: Page, decision: string = 'approve'): Promise<void> {
   const stubbedLoad = page.waitForResponse(isProgramLoad, { timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
   await gotoProgramReview(page, decision);
   await stubbedLoad;
+  await expect(page.getByTestId('mentorship-program-review-loading')).toHaveCount(0, { timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
+  await expect(page.getByTestId('mentorship-program-review').locator(OUTCOME_SELECTOR)).toHaveCount(1, { timeout: PROGRAM_REVIEW_LOAD_TIMEOUT });
 }
 
 function isProgramLoad(response: Response): boolean {
