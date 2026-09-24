@@ -43,10 +43,13 @@ base_ref="${1:-}"
 #   printf '%s' 'acmemotors' | shasum -a 256
 # Every run of one to three consecutive words in an added line is joined the same way and compared,
 # so an entry for "acmemotors" catches "Acme Motors, Inc.", "acme-motors", "ACME_MOTORS" and
-# "acmemotors.com" alike.
+# "acmemotors.com" alike. Keep the legal suffix when the bare name is also a product or platform the
+# app legitimately names in tests (an ad platform, a meeting tool), so the entry matches the
+# organization without blocking every mention of the product.
 denylisted_org_name_sha256=(
   7d3b5c83009fadf734c06eeecd7fbe256c69f71c8ba0429e4d7ad5f54b2e4097
   337b8d2c1e132acd75171f1acf0e73b20bc9541720d5003813f59ef0ad51f86f
+  e4b42aa06408849925ab1aed0fbb50a93b3d844444eeca9792bc00067e4699fa
 )
 
 # Account ids, each in both its 18- and 15-character forms, since fixtures may carry either:
@@ -57,6 +60,8 @@ denylisted_org_name_sha256=(
 denylisted_account_id_sha256=(
   c30821a431a63e0b446f294147f7e2421afac1f2a2a904eccf6f4d4478f6422d
   6baf1c8cd5e7798d33bd14e608c4d90d2eec126b2d35d319657bfcaa36c607ae
+  319779b3921415fc933bc2026749925f2b5854d6e7a35fc2f72ab500baf225ac
+  c4f52af51e918387ebad72930c16b622d5377a62294d2fa8fd4f561af9bd454b
 )
 
 # -M detects renames (--diff-filter=ACMR still needs R explicit alongside it so a rename-with-edits,
