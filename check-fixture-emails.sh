@@ -9,8 +9,9 @@
 # (acme-motors.example, user@example.com). Three checks run on each added line:
 #   1. org name   — a known real organization name (denylist below, case-insensitive).
 #   2. account id — a known real Salesforce-style account id (hashed denylist below, exact match).
-#   3. domain     — an email address, or a quoted organization-domain field value
-#                   (primaryDomain, accountDomain, emailDomain, domain), whose domain is not reserved.
+#   3. domain     — an email address, or a quoted value assigned to any field or constant whose name
+#                   ends in "domain" (primaryDomain, emailDomain, SYNTHETIC_ORG_DOMAIN, ...), whose
+#                   domain is not reserved.
 #
 # Scanned files: every file under apps/lfx-one/e2e/ (specs, helpers, mock data) plus any
 # *.spec.ts, *.fixture.ts or *.ndjson file elsewhere.
@@ -118,10 +119,12 @@ function has_real_email(s,    domain, before) {
   return 0
 }
 function has_real_domain_field(s,    value) {
-  while (match(s, /(^|[^a-z0-9_])(primary_?domain|account_?domain|email_?domain|domain)["'`]?[ \t]*[:=][ \t]*["'`][^"'`]*["'`]/)) {
+  while (match(s, /(^|[^a-z0-9_])[a-z0-9_]*domain["'`]?([ \t]*:[ \t]*string)?[ \t]*[:=][ \t]*["'`][^"'`]*["'`]/)) {
     value = substr(s, RSTART, RLENGTH)
     s = substr(s, RSTART + RLENGTH)
-    sub(/^[^:=]*[:=][ \t]*["'`]/, "", value)
+    # Strip through the assignment's last ":" or "=" before the opening quote, so a type
+    # annotation (X_DOMAIN: string = '...') or a quoted JSON key is not taken for the value.
+    sub(/^.*[:=][ \t]*["'`]/, "", value)
     sub(/["'`]$/, "", value)
     sub(/^[a-z][a-z0-9+.-]*:\/\//, "", value)
     sub(/^[^@\/]*@/, "", value)
