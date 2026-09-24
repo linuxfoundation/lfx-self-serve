@@ -22,17 +22,21 @@ describe('HealthMetricsOverviewRailComponent', () => {
   };
 
   const foundationSummary: HealthMetricsOverviewFoundationSummary = {
-    projects: 14,
+    dataAvailable: true,
+    projects: '14',
     tiers: '4 tiers',
     board: '12 seats',
     nextRenewals: '5 in the next 90 days',
   };
 
-  async function render(): Promise<void> {
+  async function render(
+    summary: HealthMetricsOverviewFoundationSummary = foundationSummary,
+    revenueInput: HealthMetricsOverviewRevenue = revenue
+  ): Promise<void> {
     await TestBed.configureTestingModule({ imports: [HealthMetricsOverviewRailComponent] }).compileComponents();
     fixture = TestBed.createComponent(HealthMetricsOverviewRailComponent);
-    fixture.componentRef.setInput('revenue', revenue);
-    fixture.componentRef.setInput('foundationSummary', foundationSummary);
+    fixture.componentRef.setInput('revenue', revenueInput);
+    fixture.componentRef.setInput('foundationSummary', summary);
     fixture.componentRef.setInput('topPx', 88);
     fixture.detectChanges();
   }
@@ -64,7 +68,32 @@ describe('HealthMetricsOverviewRailComponent', () => {
     const dataSourceTags: string[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="health-metrics-overview-rail-data-sources"] span')).map(
       (el) => (el as HTMLElement).textContent?.trim()
     );
-    expect(dataSourceTags).toEqual(['Membership', 'Meetings', 'Events', 'Surveys', 'LFX Insights']);
+    expect(dataSourceTags).toEqual(['Membership', 'Meetings', 'Events', 'LFX Insights']);
+  });
+
+  it('shows a not-available message instead of placeholder values when the foundation summary is unavailable', async () => {
+    await render({ dataAvailable: false, projects: '—', tiers: '—', board: '—', nextRenewals: '—' });
+
+    const rootEl: HTMLElement = fixture.nativeElement;
+    expect(rootEl.querySelector('[data-testid="health-metrics-overview-foundation-summary-unavailable"]')?.textContent).toContain('not available yet');
+    expect(rootEl.textContent).not.toContain('Membership tiers');
+  });
+
+  it('renders a null revenue stream as an em dash rather than $0 / 0%', async () => {
+    await render(foundationSummary, {
+      dataAvailable: true,
+      total: 600_000,
+      streams: [
+        { key: 'memberships', value: 600_000 },
+        { key: 'events', value: null },
+      ],
+    });
+
+    const eventsRow = Array.from<HTMLElement>(fixture.nativeElement.querySelectorAll('.flex-1')).find(
+      (el) => el.textContent?.trim() === 'Events'
+    )?.parentElement;
+    const cells = Array.from<HTMLElement>(eventsRow?.querySelectorAll('span') ?? []).map((el) => el.textContent?.trim());
+    expect(cells).toEqual(['', 'Events', '—', '—']);
   });
 
   it('applies the topPx input as the sticky offset', async () => {
