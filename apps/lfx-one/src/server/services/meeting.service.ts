@@ -873,6 +873,87 @@ export class MeetingService {
   }
 
   /**
+   * Authorizes a caller to read the meeting's registrant roster via the tolerant listing
+   * (fail_on_partial absent — may return a partial list on upstream failures).
+   *
+   * Two caller classes are valid:
+   * 1. Direct organizer of this meeting (`v1_meeting#organizer`) — the meeting-card organizer
+   *    view, which the client already guards with `@if (meeting().organizer)`.
+   * 2. Project writer for the meeting's project — covers the meeting edit wizard, where a
+   *    project writer or meeting coordinator may open the registrant manager before their
+   *    first save would have added them to the organizer list.
+   *
+   * The organizer check runs first (single round trip, no meeting fetch). Only if that fails
+   * is the meeting fetched for its `project_uid` and a writer check issued. Both use
+   * `checkSingleAccessStrict` so an unresolvable FGA result propagates as a 5xx rather than
+   * silently collapsing to a denial or a grant.
+   *
+   * The upstream query-service applies no per-user grant filtering on `v1_meeting_registrant`,
+   * so without this gate any authenticated user can harvest full registrant PII by supplying
+   * a meeting UID. See issue linuxfoundation/lfx-self-serve-ops#45.
+   *
+   * @throws AuthorizationError if the caller is neither a meeting organizer nor a project writer.
+   * @throws MicroserviceError if either access check could not be resolved.
+   */
+  public async getAuthorizedRegistrantsForListing(
+    req: Request,
+    meetingUid: string,
+    includeRsvp: boolean = false,
+    occurrenceId?: string
+  ): Promise<MeetingRegistrant[]> {
+    // `v1_meeting`, not `meeting` — organizer tuples hang off the v1 type everywhere in this
+    // codebase. `checkSingleAccessStrict` so an unresolvable check propagates as a 5xx rather
+    // than collapsing into a denial that looks like a valid authorization result.
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+
+    if (!isOrganizer) {
+      // Fast path missed — check project-level write access. Fetch the meeting first to obtain
+      // its project_uid; `access: false` skips the per-meeting organizer FGA probe that
+      // getMeetingById otherwise attaches to the returned object (we only need project_uid).
+      const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
+      const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: meeting.project_uid, access: 'writer' });
+      if (!isProjectWriter) {
+        throw new AuthorizationError('Not authorized to read the registrant roster for this meeting', {
+          operation: 'get_authorized_registrants_for_listing',
+          service: 'meeting_service',
+        });
+      }
+    }
+
+    return this.getMeetingRegistrants(req, meetingUid, includeRsvp, occurrenceId, false);
+  }
+
+  /**
+   * Authorizes a caller to read the RSVP responses for a meeting.
+   *
+   * Only meeting organizers (`v1_meeting#organizer`) are permitted — the `/rsvp` endpoint is
+   * called exclusively from the organizer-gated meeting-card section (unlike
+   * `getAuthorizedRegistrantsForListing`, there is no edit-wizard caller that needs a wider gate).
+   *
+   * The authorization check runs OUTSIDE `getMeetingRsvps` so that an `AuthorizationError`
+   * propagates as a real 403 rather than being absorbed by `getMeetingRsvps`'s catch-all, which
+   * returns `[]` on any upstream failure — a 403 silenced into an empty array would look like a
+   * meeting with no RSVPs rather than an access denial.
+   *
+   * The upstream query-service applies no per-user grant filtering on `v1_meeting_rsvp`, so
+   * without this gate any authenticated user can read RSVP responses and registrant PII for
+   * any meeting. See issue linuxfoundation/lfx-self-serve-ops#45.
+   *
+   * @throws AuthorizationError if the caller is not an organizer of the meeting.
+   * @throws MicroserviceError if the access check could not be resolved.
+   */
+  public async getAuthorizedMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    if (!isOrganizer) {
+      throw new AuthorizationError('Not authorized to read RSVPs for this meeting', {
+        operation: 'get_authorized_meeting_rsvps',
+        service: 'meeting_service',
+      });
+    }
+    return this.getMeetingRsvps(req, meetingUid);
+  }
+
+  /**
    * Authorizes a caller to see which group each of a meeting's registrants came in through.
    *
    * The roster itself is readable on the tolerant listing, which goes through on the caller's own

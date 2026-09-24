@@ -423,31 +423,30 @@ export class MeetingController {
       // per-user grant filtering to v1_meeting_registrant — so both strict paths are authorized
       // in MeetingService per the three-file pattern (docs/reviews/backend-checklist.md), never
       // taken on the caller's word. Scoped to a committee it is the committee "import registrants"
-      // flow, with that flow's own rules and size cap; unscoped it is the composer's Guests
-      // section, which has to be an organizer of the meeting it is editing. Only the tolerant
-      // listing — the one that may come back short — goes straight through on the caller's own
-      // bearer token.
+      // flow, with that flow's own rules and size cap; unscoped with fail_on_partial it is the
+      // composer's Guests section (organizer-only); without fail_on_partial it is the meeting-card
+      // organizer view and edit wizard (organizer or project writer). All three paths are
+      // authorized before any registrant data is returned.
       let registrants: MeetingRegistrant[];
       if (failOnPartial && committeeUid) {
         registrants = await this.meetingService.getAuthorizedRegistrantsForImport(req, uid, committeeUid);
       } else if (failOnPartial) {
         registrants = await this.meetingService.getAuthorizedCompleteRegistrants(req, uid, includeRsvp, occurrenceId);
       } else {
-        registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp, occurrenceId, failOnPartial);
+        registrants = await this.meetingService.getAuthorizedRegistrantsForListing(req, uid, includeRsvp, occurrenceId);
       }
 
       // Enrichment needs the meeting's committees as the source of truth for the v1↔v2 mapping.
       // A failed meeting fetch degrades to unenriched rows rather than failing the whole listing.
       //
       // Authorized first, and only on the tolerant branch: group attribution says which committee a
-      // registrant sits on, which the branches above have already established the caller may see
-      // — both authorize before they read. The tolerant listing has not, and never can: it goes
-      // through on the caller's own bearer token against a query-service that applies no grant
-      // filtering to `v1_meeting_registrant`, so without this an authenticated non-organizer
-      // replaying this URL with `include_committee=true` is handed the group attribution too. The
-      // check sits inside the try on the same reasoning as the fetch below — this listing's
-      // contract is that it may come back short, not that it errors — so a denial, and an
-      // organizer check that could not be resolved, both leave the rows unenriched.
+      // registrant sits on, which the branches above have already established the caller may see.
+      // The tolerant listing (getAuthorizedRegistrantsForListing) now also authorizes before it
+      // reads, but committee attribution is a separate FGA probe on the organizer relation — not
+      // the wider project-writer check — to keep the group-filter data behind the same gate as
+      // every other organizer surface. The check sits inside the try so a denial or an
+      // unresolvable check leaves the rows unenriched rather than failing the entire response
+      // (this listing's contract is that it may come back short, not that it errors).
       let payload = registrants;
       if (includeCommittee && registrants.length > 0) {
         try {
@@ -1150,8 +1149,8 @@ export class MeetingController {
         return;
       }
 
-      // Get all RSVPs for the meeting
-      const rsvps = await this.meetingService.getMeetingRsvps(req, uid);
+      // Get all RSVPs for the meeting — organizer-gated; see MeetingService.getAuthorizedMeetingRsvps
+      const rsvps = await this.meetingService.getAuthorizedMeetingRsvps(req, uid);
 
       // Log success
       logger.success(req, 'get_meeting_rsvps', startTime, {

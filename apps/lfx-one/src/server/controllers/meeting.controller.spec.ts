@@ -20,11 +20,13 @@ const { meetingSvc, aiSvc, committeeSvc, resolveCommitteeV2UidsToV1IdsMock, reso
   meetingSvc: {
     getMeetingById: vi.fn(),
     getMeetingRegistrants: vi.fn(),
+    getAuthorizedRegistrantsForListing: vi.fn(),
     assertCommitteeAttributionAllowed: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
     addMeetingRegistrant: vi.fn(),
     updateMeetingRegistrant: vi.fn(),
     createMeetingRsvp: vi.fn(),
+    getAuthorizedMeetingRsvps: vi.fn(),
   },
   aiSvc: { generateMeetingAgenda: vi.fn() },
   committeeSvc: { getCommitteeBase: vi.fn(), getCommitteeMembers: vi.fn() },
@@ -600,7 +602,7 @@ describe('MeetingController', () => {
     const registrant = { uid: 'reg-1', email: 'a@example.com', committee_uid: V1_COMMITTEE_SFID };
 
     beforeEach(() => {
-      meetingSvc.getMeetingRegistrants.mockResolvedValue([{ ...registrant }]);
+      meetingSvc.getAuthorizedRegistrantsForListing.mockResolvedValue([{ ...registrant }]);
       meetingSvc.assertCommitteeAttributionAllowed.mockResolvedValue(undefined);
       meetingSvc.getMeetingById.mockResolvedValue({ uid: MEETING_ID, committees: [{ uid: V2_COMMITTEE_UID }] });
       resolveCommitteeV2UidsToV1IdsMock.mockResolvedValue(new Map([[V2_COMMITTEE_UID, V1_COMMITTEE_SFID]]));

@@ -794,6 +794,149 @@ describe('MeetingService.getAuthorizedCompleteRegistrants', () => {
   });
 });
 
+describe('MeetingService.getAuthorizedRegistrantsForListing', () => {
+  let service: MeetingService;
+
+  const MEETING_UID = 'meeting-1';
+  const PROJECT_UID = 'project-1';
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+  // Minimal meeting object with the project_uid that getAuthorizedRegistrantsForListing needs
+  // when falling through to the project-writer check.
+  const meetingStub = { id: MEETING_UID, project_uid: PROJECT_UID };
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    service = new MeetingService();
+  });
+
+  // The core security property: without this gate any authenticated user can harvest full
+  // registrant PII by knowing a meeting UID (which is public via meeting pages and calendar feeds).
+  it('refuses a caller who is neither an organizer nor a project writer', async () => {
+    // organizer check → false; getMeetingById to resolve project_uid; project writer check → false
+    accessCheckSvc.checkSingleAccessStrict
+      .mockResolvedValueOnce(false) // organizer
+      .mockResolvedValueOnce(false); // project writer
+    proxyRequest.mockResolvedValueOnce(meetingStub); // getMeetingById
+
+    await expect(service.getAuthorizedRegistrantsForListing(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+    // Roster must never be fetched before authorization is resolved.
+    expect(proxyRequest).toHaveBeenCalledTimes(1); // only the getMeetingById call
+  });
+
+  it('allows a meeting organizer and returns their roster', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true); // organizer passes
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    const result = await service.getAuthorizedRegistrantsForListing(req, MEETING_UID);
+
+    expect(result).toEqual([{ uid: 'a', email: 'a@example.com' }]);
+    // On the organizer fast path getMeetingById must not be called — the point is to avoid the
+    // extra round trip when the caller is already an organizer.
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledTimes(1);
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  it('allows a project writer (non-organizer) and returns their roster', async () => {
+    accessCheckSvc.checkSingleAccessStrict
+      .mockResolvedValueOnce(false) // organizer check fails
+      .mockResolvedValueOnce(true); // project writer check passes
+    proxyRequest
+      .mockResolvedValueOnce(meetingStub) // getMeetingById to get project_uid
+      .mockResolvedValueOnce({ resources: [registrantRecord('b')] }); // registrant page
+
+    const result = await service.getAuthorizedRegistrantsForListing(req, MEETING_UID);
+
+    expect(result).toEqual([{ uid: 'b', email: 'b@example.com' }]);
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenNthCalledWith(2, req, { resource: 'project', id: PROJECT_UID, access: 'writer' });
+  });
+
+  it('probes organizer access on v1_meeting, not the bare meeting type', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    proxyRequest.mockResolvedValueOnce({ resources: [registrantRecord('a')] });
+
+    await service.getAuthorizedRegistrantsForListing(req, MEETING_UID);
+
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  it('propagates an unresolvable organizer check rather than treating it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('fga unreachable'));
+
+    await expect(service.getAuthorizedRegistrantsForListing(req, MEETING_UID)).rejects.toThrow('fga unreachable');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('propagates an unresolvable project-writer check rather than treating it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict
+      .mockResolvedValueOnce(false) // organizer fails
+      .mockRejectedValueOnce(new Error('fga unreachable')); // project writer check throws
+    proxyRequest.mockResolvedValueOnce(meetingStub); // getMeetingById
+
+    await expect(service.getAuthorizedRegistrantsForListing(req, MEETING_UID)).rejects.toThrow('fga unreachable');
+  });
+});
+
+describe('MeetingService.getAuthorizedMeetingRsvps', () => {
+  let service: MeetingService;
+
+  const MEETING_UID = 'meeting-1';
+  const rsvpRecord = (id: string) => ({ id: `v1_meeting_rsvp:${id}`, data: { uid: id, email: `${id}@example.com`, response_type: 'yes', registrant_id: id } });
+  const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
+
+  beforeEach(() => {
+    proxyRequest.mockReset();
+    accessCheckSvc.checkSingleAccessStrict.mockReset();
+    service = new MeetingService();
+  });
+
+  it('refuses a non-organizer with a 403 and does not read any RSVPs', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.getAuthorizedMeetingRsvps(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+
+  it('probes organizer access on the v1_meeting type', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    // getMeetingRsvps needs both the RSVPs and the registrant list for active-registrant filtering.
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [rsvpRecord('r1')] }) // raw RSVPs
+      .mockResolvedValueOnce({ resources: [registrantRecord('r1')] }); // registrants for filter
+
+    await service.getAuthorizedMeetingRsvps(req, MEETING_UID);
+
+    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenCalledWith(req, { resource: 'v1_meeting', id: MEETING_UID, access: 'organizer' });
+  });
+
+  it('returns RSVPs for a meeting organizer', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
+    proxyRequest
+      .mockResolvedValueOnce({ resources: [rsvpRecord('r1')] })
+      .mockResolvedValueOnce({ resources: [registrantRecord('r1')] });
+
+    const result = await service.getAuthorizedMeetingRsvps(req, MEETING_UID);
+
+    expect(result.length).toBeGreaterThan(0);
+  });
+
+  // Critical difference from getMeetingRsvps: the authorization error must NOT be absorbed by
+  // getMeetingRsvps's catch-all, which returns [] on any upstream failure — a 403 swallowed into
+  // an empty array would look like a meeting with no RSVPs, not an access denial.
+  it('propagates an AuthorizationError as a rejection, not as an empty array', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(false);
+
+    await expect(service.getAuthorizedMeetingRsvps(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
+  });
+
+  it('propagates an unresolvable organizer check rather than treating it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockRejectedValue(new Error('fga unreachable'));
+
+    await expect(service.getAuthorizedMeetingRsvps(req, MEETING_UID)).rejects.toThrow('fga unreachable');
+    expect(proxyRequest).not.toHaveBeenCalled();
+  });
+});
+
 // The roster and the group attribution are two different reads. The tolerant listing hands the
 // roster over on the caller's own token and is meant to; what it must not hand over alongside it is
 // which committee each person sits on — that is the committee's membership showing through a

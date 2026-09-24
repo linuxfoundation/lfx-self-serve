@@ -10,8 +10,10 @@ const COMMITTEE_UID = 'b0000000-0000-0000-0000-000000000002';
 const { meetingSvc, getEffectiveEmailMock, generateM2MTokenMock, addInvitedStatusToMeetingMock, enrichMeetingsWithCreatedByMock } = vi.hoisted(() => ({
   meetingSvc: {
     getMeetingRegistrants: vi.fn(),
+    getAuthorizedRegistrantsForListing: vi.fn(),
     getAuthorizedRegistrantsForImport: vi.fn(),
     getAuthorizedCompleteRegistrants: vi.fn(),
+    getAuthorizedMeetingRsvps: vi.fn(),
     getMeetingById: vi.fn(),
     getMeetingHostKey: vi.fn(),
     getMeetingRegistrantsByEmail: vi.fn(),
@@ -103,19 +105,47 @@ describe('MeetingController.getMeetingRegistrants — delegation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     controller = new MeetingController();
-    meetingSvc.getMeetingRegistrants.mockResolvedValue([]);
+    meetingSvc.getAuthorizedRegistrantsForListing.mockResolvedValue([]);
   });
 
-  it('calls the partial-tolerant getMeetingRegistrants for the 3 pre-existing callers (no fail_on_partial)', async () => {
+  // Routing a listing request to the ungated `getMeetingRegistrants` is how the whole roster
+  // leaks — callers that omit `fail_on_partial` (the meeting-card and edit wizard) must land on
+  // the authorized listing so the BFF verifies the caller's relation to the meeting before any
+  // registrant data is read.
+  it('routes the default listing (no fail_on_partial) through getAuthorizedRegistrantsForListing', async () => {
     const res = buildRes();
     const next = vi.fn();
 
     await controller.getMeetingRegistrants(buildReq({}), res, next);
 
     expect(meetingSvc.getAuthorizedRegistrantsForImport).not.toHaveBeenCalled();
-    expect(meetingSvc.getMeetingRegistrants).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined, false);
+    expect(meetingSvc.getAuthorizedCompleteRegistrants).not.toHaveBeenCalled();
+    expect(meetingSvc.getMeetingRegistrants).not.toHaveBeenCalled();
+    expect(meetingSvc.getAuthorizedRegistrantsForListing).toHaveBeenCalledWith(expect.anything(), MEETING_UID, false, undefined);
     expect(res.json).toHaveBeenCalledWith([]);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // include_rsvp and occurrence_id must be forwarded — the authorized listing is the same fetch
+  // with a gate in front, not a reduced one.
+  it('forwards include_rsvp and occurrence_id on the authorized listing branch', async () => {
+    const res = buildRes();
+
+    await controller.getMeetingRegistrants(buildReq({ include_rsvp: 'true', occurrence_id: 'occ-1' }), res, vi.fn());
+
+    expect(meetingSvc.getAuthorizedRegistrantsForListing).toHaveBeenCalledWith(expect.anything(), MEETING_UID, true, 'occ-1');
+  });
+
+  it('propagates a 403 from the authorized listing via next, without responding', async () => {
+    const authError = Object.assign(new Error('Not authorized'), { statusCode: 403 });
+    meetingSvc.getAuthorizedRegistrantsForListing.mockRejectedValue(authError);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRegistrants(buildReq({}), res, next);
+
+    expect(next).toHaveBeenCalledWith(authError);
+    expect(res.json).not.toHaveBeenCalled();
   });
 
   // Completeness without a committee is the composer's Guests section, not the import flow — but
@@ -391,5 +421,44 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
     // The enrichment's M2M identity travels in ApiRequestOptions.bearerToken, not on `req` (#1903),
     // so there is no swap to unwind — `req` still carries the caller's own token after the throw.
     expect(req.bearerToken).toBe(USER_TOKEN);
+  });
+});
+
+// The /rsvp endpoint had no server-side authorization gate at all — any authenticated user could
+// read RSVP responses and registrant PII for any meeting. After the fix, the controller must
+// route through getAuthorizedMeetingRsvps, which enforces the organizer relation before reading.
+describe('MeetingController.getMeetingRsvps — delegation', () => {
+  let controller: MeetingController;
+
+  const buildReq = (uid = MEETING_UID) =>
+    ({ params: { uid }, headers: {}, bearerToken: 'user-token' }) as any;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    controller = new MeetingController();
+    meetingSvc.getAuthorizedMeetingRsvps.mockResolvedValue([]);
+  });
+
+  it('delegates to getAuthorizedMeetingRsvps, not the ungated getMeetingRsvps', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRsvps(buildReq(), res, next);
+
+    expect(meetingSvc.getAuthorizedMeetingRsvps).toHaveBeenCalledWith(expect.anything(), MEETING_UID);
+    expect(res.json).toHaveBeenCalledWith([]);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('propagates a 403 from getAuthorizedMeetingRsvps via next, without responding', async () => {
+    const authError = Object.assign(new Error('Not authorized'), { statusCode: 403 });
+    meetingSvc.getAuthorizedMeetingRsvps.mockRejectedValue(authError);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await controller.getMeetingRsvps(buildReq(), res, next);
+
+    expect(next).toHaveBeenCalledWith(authError);
+    expect(res.json).not.toHaveBeenCalled();
   });
 });
