@@ -9,7 +9,7 @@ import '@angular/compiler';
 import { describe, expect, it } from 'vitest';
 
 import { MeetingVisibility } from '../enums';
-import type { ActionSlotInput, ActionSlotKind, Meeting, MeetingOccurrence, MeetingTimeState, MeetingViewerRole } from '../interfaces';
+import type { ActionSlotInput, ActionSlotKind, Meeting, MeetingOccurrence, MeetingPrivacyState, MeetingTimeState, MeetingViewerRole } from '../interfaces';
 import { resolveActionSlot, resolvePrivacy, resolveTimeState, resolveViewerRole, resolveVisibleSections } from './meeting-view-model.utils';
 
 const START = '2026-06-01T10:00:00.000Z';
@@ -40,6 +40,8 @@ function at(iso: string): Date {
 const PUBLIC_OPEN = resolvePrivacy(MeetingVisibility.PUBLIC, false);
 const PUBLIC_RESTRICTED = resolvePrivacy(MeetingVisibility.PUBLIC, true);
 const PRIVATE_OPEN = resolvePrivacy(MeetingVisibility.PRIVATE, false);
+const PRIVATE_RESTRICTED = resolvePrivacy(MeetingVisibility.PRIVATE, true);
+const ALL_PRIVACY = [PUBLIC_OPEN, PUBLIC_RESTRICTED, PRIVATE_OPEN, PRIVATE_RESTRICTED];
 
 const TIME_STATES: MeetingTimeState[] = ['before', 'live', 'ended'];
 const VIEWER_ROLES: MeetingViewerRole[] = ['visitor', 'outsider', 'registrant', 'organizer'];
@@ -174,25 +176,89 @@ describe('resolvePrivacy', () => {
 });
 
 describe('resolveActionSlot', () => {
-  it('returns a named kind for every combination of the input axes', () => {
-    for (const timeState of TIME_STATES) {
-      for (const viewerRole of VIEWER_ROLES) {
-        for (const privacy of [PUBLIC_OPEN, PUBLIC_RESTRICTED, PRIVATE_OPEN]) {
-          for (const fullAccess of [true, false]) {
-            for (const inviteResponsesEnabled of [true, false]) {
-              const kind = resolveActionSlot({ timeState, viewerRole, privacy, fullAccess, inviteResponsesEnabled });
-              expect(ALL_KINDS).toContain(kind);
-            }
-          }
-        }
-      }
-    }
+  // The full matrix, one row per (time, viewer, privacy) tuple and one expected kind per
+  // (fullAccess, inviteResponsesEnabled) pair, in the column order of ACCESS_RSVP_COLUMNS. Every
+  // cell is written out rather than derived, so changing any single decision in the resolver fails
+  // exactly the rows it touches. This table is the runtime half of the state matrix #1766 defers.
+  const ACCESS_RSVP_COLUMNS: { fullAccess: boolean; inviteResponsesEnabled: boolean }[] = [
+    { fullAccess: true, inviteResponsesEnabled: true },
+    { fullAccess: true, inviteResponsesEnabled: false },
+    { fullAccess: false, inviteResponsesEnabled: true },
+    { fullAccess: false, inviteResponsesEnabled: false },
+  ];
+
+  const MATRIX: [MeetingTimeState, MeetingViewerRole, MeetingPrivacyState, ActionSlotKind[]][] = [
+    ['before', 'visitor', PUBLIC_OPEN, ['register', 'register', 'register', 'register']],
+    ['before', 'visitor', PUBLIC_RESTRICTED, ['none', 'none', 'none', 'none']],
+    ['before', 'visitor', PRIVATE_OPEN, ['none', 'none', 'none', 'none']],
+    ['before', 'visitor', PRIVATE_RESTRICTED, ['none', 'none', 'none', 'none']],
+    ['before', 'outsider', PUBLIC_OPEN, ['register', 'register', 'register', 'register']],
+    ['before', 'outsider', PUBLIC_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['before', 'outsider', PRIVATE_OPEN, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['before', 'outsider', PRIVATE_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['before', 'registrant', PUBLIC_OPEN, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
+    ['before', 'registrant', PUBLIC_RESTRICTED, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
+    ['before', 'registrant', PRIVATE_OPEN, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
+    ['before', 'registrant', PRIVATE_RESTRICTED, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
+    ['before', 'organizer', PUBLIC_OPEN, ['rsvp', 'none', 'rsvp', 'none']],
+    ['before', 'organizer', PUBLIC_RESTRICTED, ['rsvp', 'none', 'rsvp', 'none']],
+    ['before', 'organizer', PRIVATE_OPEN, ['rsvp', 'none', 'rsvp', 'none']],
+    ['before', 'organizer', PRIVATE_RESTRICTED, ['rsvp', 'none', 'rsvp', 'none']],
+    ['live', 'visitor', PUBLIC_OPEN, ['guest-join', 'guest-join', 'guest-join', 'guest-join']],
+    ['live', 'visitor', PUBLIC_RESTRICTED, ['none', 'none', 'none', 'none']],
+    ['live', 'visitor', PRIVATE_OPEN, ['none', 'none', 'none', 'none']],
+    ['live', 'visitor', PRIVATE_RESTRICTED, ['none', 'none', 'none', 'none']],
+    ['live', 'outsider', PUBLIC_OPEN, ['register', 'register', 'register', 'register']],
+    ['live', 'outsider', PUBLIC_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['live', 'outsider', PRIVATE_OPEN, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['live', 'outsider', PRIVATE_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['live', 'registrant', PUBLIC_OPEN, ['join', 'join', 'join', 'join']],
+    ['live', 'registrant', PUBLIC_RESTRICTED, ['join', 'join', 'join', 'join']],
+    ['live', 'registrant', PRIVATE_OPEN, ['join', 'join', 'join', 'join']],
+    ['live', 'registrant', PRIVATE_RESTRICTED, ['join', 'join', 'join', 'join']],
+    ['live', 'organizer', PUBLIC_OPEN, ['join', 'join', 'join', 'join']],
+    ['live', 'organizer', PUBLIC_RESTRICTED, ['join', 'join', 'join', 'join']],
+    ['live', 'organizer', PRIVATE_OPEN, ['join', 'join', 'join', 'join']],
+    ['live', 'organizer', PRIVATE_RESTRICTED, ['join', 'join', 'join', 'join']],
+    ['ended', 'visitor', PUBLIC_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'visitor', PUBLIC_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'visitor', PRIVATE_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'visitor', PRIVATE_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'outsider', PUBLIC_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'outsider', PUBLIC_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'outsider', PRIVATE_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'outsider', PRIVATE_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'registrant', PUBLIC_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'registrant', PUBLIC_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'registrant', PRIVATE_OPEN, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'registrant', PRIVATE_RESTRICTED, ['tools', 'tools', 'no-access', 'no-access']],
+    ['ended', 'organizer', PUBLIC_OPEN, ['tools', 'tools', 'tools', 'tools']],
+    ['ended', 'organizer', PUBLIC_RESTRICTED, ['tools', 'tools', 'tools', 'tools']],
+    ['ended', 'organizer', PRIVATE_OPEN, ['tools', 'tools', 'tools', 'tools']],
+    ['ended', 'organizer', PRIVATE_RESTRICTED, ['tools', 'tools', 'tools', 'tools']],
+  ];
+
+  it('lists every (time, viewer, privacy) tuple exactly once', () => {
+    const keys = MATRIX.map(([timeState, viewerRole, privacy]) => `${timeState}|${viewerRole}|${privacy.visibility}|${privacy.restricted}`);
+    expect(new Set(keys).size).toBe(TIME_STATES.length * VIEWER_ROLES.length * ALL_PRIVACY.length);
+    expect(keys.length).toBe(new Set(keys).size);
   });
+
+  it('reaches every ActionSlotKind somewhere in the matrix', () => {
+    expect(new Set(MATRIX.flatMap(([, , , expected]) => expected))).toEqual(new Set(ALL_KINDS));
+  });
+
+  for (const [timeState, viewerRole, privacy, expected] of MATRIX) {
+    it(`resolves ${timeState} / ${viewerRole} / ${privacy.label}`, () => {
+      const actual = ACCESS_RSVP_COLUMNS.map((column) => resolveActionSlot({ timeState, viewerRole, privacy, ...column }));
+      expect(actual).toEqual(expected);
+    });
+  }
 
   it('never returns "rsvp" while invite responses are disabled', () => {
     for (const timeState of TIME_STATES) {
       for (const viewerRole of VIEWER_ROLES) {
-        for (const privacy of [PUBLIC_OPEN, PUBLIC_RESTRICTED, PRIVATE_OPEN]) {
+        for (const privacy of ALL_PRIVACY) {
           for (const fullAccess of [true, false]) {
             const kind = resolveActionSlot({ timeState, viewerRole, privacy, fullAccess, inviteResponsesEnabled: false });
             expect(kind).not.toBe('rsvp');
