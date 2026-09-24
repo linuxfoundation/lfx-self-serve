@@ -1888,6 +1888,7 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestSubjectB: Signal<string>;
     abTestBodyHtmlB: Signal<string>;
     abTestBodyHtmlBPreview: Signal<string>;
+    abTestBodyHtmlBForSend: Signal<string>;
     abTestPreheaderBForSend: Signal<string>;
     abTestPreheaderBPreview: Signal<string>;
     emailPreheaderPreview: Signal<string>;
@@ -2351,6 +2352,35 @@ describe('CampaignsComponent — email delivery channel', () => {
      *
      * That is the exact vector this allow-list exists to close, and nothing pinned it.
      */
+    it('shows variant B the refused CTA its draft will carry', () => {
+      // The B preview panel has no unlinked-label element of its own, so it must bind the SEND
+      // body -- the one that folds a refused CTA back in. Binding the preview body hid a call to
+      // action the draft actually ships, which is the preview/wire drift these signals exist to
+      // remove, reintroduced on the B side alone.
+      selectEmail();
+      internals().emailBriefOutput.set({
+        eventDetails: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          countryCode: 'NL',
+          registrationUrl: 'https://events.linuxfoundation.org/kubecon-eu-2026/',
+        },
+      } as unknown as CampaignBriefOutput);
+      internals().emailCopy.set({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Hello</p>',
+        cta: 'Register now',
+        // Supplied and then REFUSED: not the brief's url, so the label is dropped from the body.
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>Variant B body</p>');
+      fixture.detectChanges();
+
+      expect(internals().abTestBodyHtmlBForSend()).toContain('Register now');
+      expect(internals().abTestBodyHtmlBForSend()).toContain('Variant B body');
+    });
+
     it('does not let an invented CTA url whitelist its own host for body links', () => {
       selectEmail();
       internals().emailBriefOutput.set({
