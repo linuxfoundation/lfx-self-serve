@@ -57,8 +57,21 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   protected onConfirm(): void {
     if (this.checking()) return;
     const entries = this.canRemoveEntries() && this.removalForm.controls.alsoRemove.value ? (this.matchingEntries() ?? []) : [];
-    const result: OrgClaInvalidateAcknowledgmentDialogResult =
-      entries.length > 0 ? { removeApprovalEntries: entries.map(({ kind, value }) => ({ kind, value })) } : {};
+    // Deduplicate exact kind+value pairs before sending. An approval list can hold duplicate rows,
+    // but the producer collapses duplicates on removal — one value is enough — and the BFF caps a
+    // single write at ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES, so forwarding duplicates only risks
+    // tripping that cap after the invalidate has already succeeded. Case variants are distinct
+    // values and are kept; the displayed match list is untouched.
+    const seen = new Set<string>();
+    const removeApprovalEntries = entries
+      .map(({ kind, value }) => ({ kind, value }))
+      .filter((entry) => {
+        const key = `${entry.kind}:${entry.value}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const result: OrgClaInvalidateAcknowledgmentDialogResult = removeApprovalEntries.length > 0 ? { removeApprovalEntries } : {};
     this.dialogRef.close(result);
   }
 

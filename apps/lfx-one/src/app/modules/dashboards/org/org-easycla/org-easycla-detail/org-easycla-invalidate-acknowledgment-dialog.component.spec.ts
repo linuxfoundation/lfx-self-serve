@@ -136,6 +136,29 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     expect(box?.querySelectorAll('[data-testid="org-easycla-invalidate-dialog-match"]').length).toBe(2);
   });
 
+  // Exact kind+value duplicates collapse in the removal request: the producer treats one value as
+  // enough, and forwarding duplicates risks tripping the BFF's ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES
+  // cap after the invalidate has already succeeded. Case variants are distinct values and are kept.
+  it('deduplicates exact kind+value matches on confirm but keeps case variants', async () => {
+    const withDuplicates: OrgClaApprovalEntry[] = [
+      { kind: 'email', value: 'ada@example.org' },
+      { kind: 'email', value: 'ada@example.org' },
+      { kind: 'email', value: 'Ada@example.org' },
+      { kind: 'github-username', value: 'ada-l' },
+    ];
+    const fixture = await render(dialogData(withDuplicates));
+
+    confirmButton(fixture)?.click();
+
+    expect(close).toHaveBeenCalledWith({
+      removeApprovalEntries: [
+        { kind: 'email', value: 'ada@example.org' },
+        { kind: 'email', value: 'Ada@example.org' },
+        { kind: 'github-username', value: 'ada-l' },
+      ],
+    });
+  });
+
   it('keeps the entries when the manager unticks the box', async () => {
     const fixture = await render(dialogData([ENTRIES[0]]));
     const checkbox = alsoRemoveInput(fixture);
