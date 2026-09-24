@@ -15,8 +15,10 @@ import {
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { normalizeHealthScoreCategoryV2 } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, isColumnarTable, normalizeHealthScoreCategoryV2, toColumnar } from '@lfx-one/shared/utils';
 import type {
+  CompactOrgLensProjectRow,
+  CompactOrgLensProjectsCache,
   InfluenceBand,
   InfluenceTrendDirection,
   OrgLensProject,
@@ -41,7 +43,7 @@ import { escapeSqlLikePattern } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { SnowflakeService } from './snowflake.service';
-import { buildOrgCacheKey, valkeyService } from './valkey.service';
+import { withOrgCompactCache } from './valkey.service';
 
 export class OrgLensProjectsService {
   private static readonly memberServiceWriteHeaders = { 'X-Sync': 'true' };
@@ -49,23 +51,15 @@ export class OrgLensProjectsService {
   private readonly microserviceProxy = new MicroserviceProxyService();
 
   public async getProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
-    // `v6` bump: health now carries the v2 breakdown (`healthOverallScore` + Maintainer/Security/Development) mapped
-    // from the same snapshot row, replacing the v1 percentage columns (#2096) — bump drops cache entries computed
-    // under the old percentage shape.
-    const cacheKey = `projects:v6:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
-    const key = buildOrgCacheKey(accountId, cacheKey);
-    if (key !== null) {
-      const cached = await valkeyService.getJson<OrgLensProjectsResponse>(key, OrgLensProjectsService.isProjectsResponse);
-      if (cached !== null) {
-        return cached;
-      }
-    }
-
-    const response = await this.fetchProjects(accountId, orgName, slugs);
-    if (key !== null) {
-      await valkeyService.setJson(key, response, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS);
-    }
-    return response;
+    // `v7` bump: what is stored is no longer the response but the compact, people-deduplicated
+    // projection below (GH-1906). A `v6` entry decodes to nothing recognizable under the new
+    // reader, so it must miss outright rather than be read back.
+    const cacheKey = `projects:v7:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
+    return withOrgCompactCache(accountId, cacheKey, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, () => this.fetchProjects(accountId, orgName, slugs), {
+      encode: encodeProjectsResponse,
+      decode: decodeProjectsResponse,
+      accept: isCompactProjectsCache,
+    });
   }
 
   // NOTE: accountId is intentionally unused — this search spans the GLOBAL onboarded catalog (an admin can add any
@@ -973,28 +967,196 @@ export class OrgLensProjectsService {
   private projectPeopleTable(): string {
     return `${this.lfxOnePlatinumSchema()}.ORG_LENS_PROJECT_PEOPLE`;
   }
+}
 
-  private static isProjectsResponse(value: unknown): value is OrgLensProjectsResponse {
-    if (value === null || typeof value !== 'object') {
-      return false;
-    }
-    const candidate = value as OrgLensProjectsResponse;
-    if (typeof candidate.orgSlug !== 'string' || typeof candidate.orgName !== 'string' || !Array.isArray(candidate.projects)) {
-      return false;
-    }
-    return candidate.projects.every(
-      (project) =>
-        typeof project.slug === 'string' &&
-        typeof project.name === 'string' &&
-        // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch as
-        // current-shape payloads instead of serving a mixed schema from Valkey.
-        (project.metricsState === 'full' || project.metricsState === 'health-only' || project.metricsState === 'unavailable') &&
-        Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, project.health) &&
-        // Reject pre-v2-breakdown entries (no `healthOverallScore` key) so a cached band never renders with an
-        // unavailable popup.
-        (project.healthOverallScore === null || typeof project.healthOverallScore === 'number') &&
-        Array.isArray(project.maintainers) &&
-        Array.isArray(project.contributors)
-    );
+/**
+ * Compacts the response for Valkey storage (GH-1906): one deduplicated people dictionary for the
+ * whole response plus per-project index lists, and every remaining project field columnar.
+ *
+ * The dictionary is what makes this payload cacheable at all. Each project embeds its full
+ * maintainer/contributor/participant arrays, and a person appears in every project they touch: the
+ * largest org's default top-50 view carried ~36k person entries drawn from ~1.8k distinct people,
+ * serializing to 6.3 MB — six times the 1 MiB write cap, so that org never got a cache hit and
+ * every request paid the full Snowflake round trip. Truncating isn't available: the page needs
+ * complete membership for its counts, its sort, its CSV export and its employee filter (which keys
+ * on person id). Storing each person once is the only lever, and it is a large one.
+ */
+function encodeProjectsResponse(response: OrgLensProjectsResponse): CompactOrgLensProjectsCache {
+  // Keyed on the whole triple rather than on `id`: two entries sharing an id but disagreeing on
+  // name or avatar must not collapse onto the first one seen, or the decoded response would differ
+  // from the uncached one. Rows that genuinely agree still collapse, so nothing is lost.
+  const keyOf = (person: OrgLensProjectPerson): string => `${person.id}\u0000${person.name}\u0000${person.avatarUrl}`;
+  const people = dedupeByKey(
+    response.projects.flatMap((project) => [...project.maintainers, ...project.contributors, ...project.participants]),
+    keyOf
+  );
+  // Every person here came from the array `people` was built from, so the lookup always resolves.
+  const indicesOf = (persons: readonly OrgLensProjectPerson[]): number[] => persons.map((person) => people.indexOf.get(keyOf(person))!);
+
+  const rows: CompactOrgLensProjectRow[] = response.projects.map((project) => ({
+    slug: project.slug,
+    name: project.name,
+    logoUrl: project.logoUrl,
+    foundationSlug: project.foundation.slug,
+    foundationName: project.foundation.name,
+    foundationLogoUrl: project.foundation.logoUrl,
+    health: project.health,
+    healthOverallScore: project.healthOverallScore,
+    healthMaxScore: project.healthMaxScore,
+    healthCoveredCategoryCount: project.healthCoveredCategoryCount,
+    healthMaintainer: project.healthMaintainer,
+    healthSecurity: project.healthSecurity,
+    healthDevelopment: project.healthDevelopment,
+    technicalInfluence: project.technicalInfluence,
+    ecosystemInfluence: project.ecosystemInfluence,
+    influenceScore: project.influenceScore,
+    priorYearScore: project.priorYearScore,
+    trendDeltaPct: project.trend.deltaPct,
+    trendTechnicalDeltaPct: project.trend.technicalDeltaPct,
+    trendEcosystemDeltaPct: project.trend.ecosystemDeltaPct,
+    trendDirection: project.trend.direction,
+    trendSeries: project.trend.series,
+    commits1y: project.commits1y,
+    changeDriverLabel: project.changeDriver.label,
+    changeDriverDirection: project.changeDriver.direction,
+    description: project.description,
+    metricsState: project.metricsState,
+    // Passed straight through, `undefined` included: `toColumnar` stores an absent field distinctly
+    // from a null one and `fromColumnar` restores the absence, so a project that never carried this
+    // transitional flag doesn't start carrying `noActivityYet: null` on a cache hit.
+    noActivityYet: project.noActivityYet,
+  }));
+
+  return {
+    orgSlug: response.orgSlug,
+    orgName: response.orgName,
+    dataUpdatedAt: response.dataUpdatedAt,
+    people: toColumnar(people.values, ['id', 'name', 'avatarUrl']),
+    projects: toColumnar(rows, [
+      'slug',
+      'name',
+      'logoUrl',
+      'foundationSlug',
+      'foundationName',
+      'foundationLogoUrl',
+      'health',
+      'healthOverallScore',
+      'healthMaxScore',
+      'healthCoveredCategoryCount',
+      'healthMaintainer',
+      'healthSecurity',
+      'healthDevelopment',
+      'technicalInfluence',
+      'ecosystemInfluence',
+      'influenceScore',
+      'priorYearScore',
+      'trendDeltaPct',
+      'trendTechnicalDeltaPct',
+      'trendEcosystemDeltaPct',
+      'trendDirection',
+      'trendSeries',
+      'commits1y',
+      'changeDriverLabel',
+      'changeDriverDirection',
+      'description',
+      'metricsState',
+      'noActivityYet',
+    ]),
+    maintainers: response.projects.map((project) => indicesOf(project.maintainers)),
+    contributors: response.projects.map((project) => indicesOf(project.contributors)),
+    participants: response.projects.map((project) => indicesOf(project.participants)),
+  };
+}
+
+/**
+ * Rebuilds the exact `OrgLensProjectsResponse` {@link encodeProjectsResponse} stored — the wire
+ * contract is unchanged by the compaction, only what Valkey holds.
+ *
+ * Projects sharing a person share that person's decoded object rather than each getting a copy.
+ * That is safe here and deliberately so: this response is serialized straight to JSON by the route
+ * and nothing mutates a person in place. It also keeps the decode's allocation proportional to the
+ * ~1.8k distinct people rather than to the ~36k references to them.
+ */
+function decodeProjectsResponse(value: CompactOrgLensProjectsCache): OrgLensProjectsResponse {
+  const people = fromColumnar<OrgLensProjectPerson>(value.people);
+  const rows = fromColumnar<CompactOrgLensProjectRow>(value.projects);
+  return {
+    orgSlug: value.orgSlug,
+    orgName: value.orgName,
+    dataUpdatedAt: value.dataUpdatedAt,
+    projects: rows.map((row, index) => {
+      const project: OrgLensProject = {
+        slug: row.slug,
+        name: row.name,
+        logoUrl: row.logoUrl,
+        foundation: { slug: row.foundationSlug, name: row.foundationName, logoUrl: row.foundationLogoUrl },
+        health: row.health,
+        healthOverallScore: row.healthOverallScore,
+        healthMaxScore: row.healthMaxScore,
+        healthCoveredCategoryCount: row.healthCoveredCategoryCount,
+        healthMaintainer: row.healthMaintainer,
+        healthSecurity: row.healthSecurity,
+        healthDevelopment: row.healthDevelopment,
+        technicalInfluence: row.technicalInfluence,
+        ecosystemInfluence: row.ecosystemInfluence,
+        influenceScore: row.influenceScore,
+        priorYearScore: row.priorYearScore,
+        trend: {
+          deltaPct: row.trendDeltaPct,
+          technicalDeltaPct: row.trendTechnicalDeltaPct,
+          ecosystemDeltaPct: row.trendEcosystemDeltaPct,
+          direction: row.trendDirection,
+          series: row.trendSeries,
+        },
+        maintainers: value.maintainers[index].map((personIndex) => people[personIndex]),
+        contributors: value.contributors[index].map((personIndex) => people[personIndex]),
+        participants: value.participants[index].map((personIndex) => people[personIndex]),
+        commits1y: row.commits1y,
+        changeDriver: { label: row.changeDriverLabel, direction: row.changeDriverDirection },
+        description: row.description,
+        metricsState: row.metricsState,
+      };
+      // Appended last, and only when the stored row actually carried it, so the rebuilt project is
+      // key-for-key identical to the uncached one — `fetchNoActivityProjects` likewise appends this
+      // transitional flag after `metricsState`, and `mapProject` omits it entirely.
+      if ('noActivityYet' in row) {
+        project.noActivityYet = row.noActivityYet;
+      }
+      return project;
+    }),
+  };
+}
+
+/** Rejects anything that isn't a current-shape compact entry, so a legacy or partial value misses instead of decoding into garbage. */
+function isCompactProjectsCache(value: unknown): boolean {
+  const cache = value as CompactOrgLensProjectsCache | null;
+  if (!cache || typeof cache !== 'object') {
+    return false;
   }
+  if (typeof cache.orgSlug !== 'string' || typeof cache.orgName !== 'string' || typeof cache.dataUpdatedAt !== 'string') {
+    return false;
+  }
+  if (!isColumnarTable(cache.people) || !isColumnarTable(cache.projects)) {
+    return false;
+  }
+  // The pre-compaction guard rejected an entry whose projects lacked `metricsState` or
+  // `healthOverallScore`; those are column names now, so one scan of `k` replaces a scan of every
+  // project and covers the same drift.
+  const healthIndex = cache.projects.k.indexOf('health');
+  if (healthIndex === -1 || !cache.projects.k.includes('metricsState') || !cache.projects.k.includes('healthOverallScore')) {
+    return false;
+  }
+  if (!cache.projects.r.every((row) => Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, String(row[healthIndex])))) {
+    return false;
+  }
+  // Every reference must resolve, so the decode above can rebuild without a fallback for a
+  // dangling index — a truncated or hand-written entry is a miss, not a half-populated response.
+  const projectCount = cache.projects.r.length;
+  const peopleCount = cache.people.r.length;
+  return [cache.maintainers, cache.contributors, cache.participants].every(
+    (lists) =>
+      Array.isArray(lists) &&
+      lists.length === projectCount &&
+      lists.every((indices) => Array.isArray(indices) && indices.every((index) => Number.isInteger(index) && index >= 0 && index < peopleCount))
+  );
 }
