@@ -161,7 +161,11 @@ BEGIN {
   sub(/[ ,].*$/, "", start)
   line = start + 0
   in_hunk = 1
+  pending = ""
   next
+}
+!/^\+/ {
+  pending = ""
 }
 in_hunk && /^\+/ {
   text = substr($0, 2)
@@ -171,7 +175,10 @@ in_hunk && /^\+/ {
   where = file ":" line ": " shown
   print_name_candidates(lower, where)
   print_id_candidates(text, where)
-  if (has_real_email(lower) || has_real_domain_field(lower)) print "domain " where
+  # A formatter may wrap a long assignment after its operator (X_DOMAIN =\n  'customer.com'), so a
+  # domain key left open at the end of the previous added line is joined with this one.
+  if (has_real_email(lower) || has_real_domain_field(lower) || (pending != "" && has_real_domain_field(pending " " lower))) print "domain " where
+  pending = lower ~ /([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*$/ ? lower : ""
   line++
 }
 AWK
