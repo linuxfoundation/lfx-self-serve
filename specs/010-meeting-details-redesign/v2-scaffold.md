@@ -5,15 +5,20 @@ Plan ID **V2-02** · issue [#2874](https://github.com/linuxfoundation/lfx-self-s
 Where V1 and V2 code live, what each is called, what they share, and what "done" means for deleting
 V1. Every Phase 1 issue builds inside the layout below.
 
+> **Pending siblings.** Three things this file cites are not on `main` at the time of writing:
+> `spec.md` (E0-01, PR #2914), `testid-contract.md` (E0-04, PR #2913) and
+> `@lfx-one/shared/utils/meeting-view-model.utils` (E0-02, PR #2909). The rules this file relies on
+> are restated here, so it reads correctly before they land.
+
 ## Naming convention
 
 This follows the composer's precedent (`components/agenda-template-selector-v1/`): the outgoing tree
-takes a `-v1` suffix and the new one takes the plain name.
+takes a `-v1` suffix and the new one takes an unsuffixed name.
 
 | Tree | Directory                                | Component                     | Selector                         |
 | ---- | ---------------------------------------- | ----------------------------- | -------------------------------- |
 | V1   | `modules/meetings/meeting-join-v1/`      | `MeetingJoinComponent`        | `lfx-meeting-join`               |
-| V2   | `modules/meetings/meeting-details/`      | `MeetingDetailsComponent`     | `lfx-meeting-details`            |
+| V2   | `modules/meetings/meeting-details-page/` | `MeetingDetailsPageComponent` | `lfx-meeting-details-page`       |
 | Gate | `modules/meetings/meeting-details-gate/` | `MeetingDetailsGateComponent` | route target for `/meetings/:id` |
 
 **Only V1's directory is renamed. Its files, class and selector are not.** The composer renamed
@@ -22,21 +27,24 @@ everything, but this epic has a stricter rule: `meeting-join.component.ts` stays
 records as a pure rename, so `git log --follow` still reaches V1's history. Renaming the class or
 selector would edit V1 for no behavioural gain.
 
-V2 takes the plain name `meeting-details` rather than `meeting-join` because V2 is a details page
-that also joins, not a join page. The URL, `/meetings/:id`, does not change.
+V2 is `meeting-details-page`, not `meeting-join` (it is a details page that also joins) and not the
+bare `meeting-details`: `modules/meetings/components/meeting-details/` already owns
+`MeetingDetailsComponent` / `lfx-meeting-details` (the create/edit wizard's details step), and a V2
+file importing that component would hit a selector and class-name collision. Check the selector is
+free before naming any V2 component. The URL, `/meetings/:id`, does not change.
 
 ## Where V2 code lives
 
 ```text
 modules/meetings/
 ├── meeting-details-gate/        # the flag gate (V2-01, #2873) — the only file that knows both trees
-├── meeting-details/             # V2 page — the E1-01 shell replaces the scaffold body
+├── meeting-details-page/        # V2 page — the E1-01 shell replaces the scaffold body
 │   └── components/              # V2-only components (created by the first Phase 1 PR that needs one)
 ├── meeting-join-v1/             # V1 page — untouched, deleted when V2 ships
 └── components/                  # meetings-module components; V1 already uses several
 ```
 
-- **V2-only components** go in `meeting-details/components/<name>/`. Their names drop any `v2`
+- **V2-only components** go in `meeting-details-page/components/<name>/`. Their names drop any `v2`
   suffix; the directory already says which tree they belong to.
 - **Shared app wrappers** (`app/shared/components/`: `button`, `card`, `tag`, `avatar`, `select`,
   `table`, `empty-state` and the rest listed in `spec.md` § Reuse before you create) are used by both
@@ -60,7 +68,7 @@ modules/meetings/
 ## Loading
 
 The gate imports V2 statically but renders it inside `@defer (on immediate)`, so V2 is its own lazy
-chunk (`meeting-details-component`). The ~100% of visitors on V1, including every anonymous
+chunk (`meeting-details-page-component`). The ~100% of visitors on V1, including every anonymous
 visitor, never download it. The gate's doc comment records the trade-off this creates for targeted
 viewers and the follow-up that removes it (#2920).
 
@@ -80,10 +88,10 @@ This feeds the rollout / retirement doc (V2-03, #2875). V1 can be deleted when a
 Then, in one PR:
 
 - delete `meeting-join-v1/` and its spec,
-- collapse `meeting-details-gate/` so the route loads `MeetingDetailsComponent` directly,
+- collapse `meeting-details-gate/` so the route loads `MeetingDetailsPageComponent` directly,
 - drop the gate's read of `MEETING_V2_ENABLED_FLAG`. Leave the flag itself alone: the composer
   and other meetings surfaces read it too, and it retires only when the last of them has,
 - update `docs/architecture/frontend/public-meeting-join.md`, which still describes V1.
 
-Nothing in `meeting-details/` should need to change in that PR. If it does, V2 has taken a
+Nothing in `meeting-details-page/` should need to change in that PR. If it does, V2 has taken a
 dependency on V1 that this layout exists to prevent.

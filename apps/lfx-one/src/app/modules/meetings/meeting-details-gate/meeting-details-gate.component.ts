@@ -6,7 +6,7 @@ import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 
-import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
+import { MeetingDetailsPageComponent } from '../meeting-details-page/meeting-details-page.component';
 import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component';
 
 /**
@@ -47,6 +47,7 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  * precedent. The cost lands on targeted viewers only: v1 is torn down when the flag flips, so the
  * region is empty until the v2 chunk arrives. That gap is part of the same post-hydration swap #2920
  * removes, and it is why the deferred block triggers `on immediate` rather than waiting for idle.
+ * If the chunk never arrives, the block's `@error` branch renders v1 again rather than nothing.
  *
  * Anonymous viewers always get v1, enforced here rather than through targeting: this route is
  * `auth: 'optional'` (`auth.middleware.ts`) and a LaunchDarkly tester list cannot express "not
@@ -61,7 +62,7 @@ import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component'
  */
 @Component({
   selector: 'lfx-meeting-details-gate',
-  imports: [MeetingJoinComponent, MeetingDetailsComponent],
+  imports: [MeetingJoinComponent, MeetingDetailsPageComponent],
   templateUrl: './meeting-details-gate.component.html',
 })
 export class MeetingDetailsGateComponent {

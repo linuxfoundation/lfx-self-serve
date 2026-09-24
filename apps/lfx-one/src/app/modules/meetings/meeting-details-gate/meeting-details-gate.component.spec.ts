@@ -23,8 +23,8 @@ class MeetingJoinStubComponent {
   }
 }
 
-@Component({ selector: 'lfx-meeting-details', template: '<div data-testid="v2-stub"></div>' })
-class MeetingDetailsStubComponent {
+@Component({ selector: 'lfx-meeting-details-page', template: '<div data-testid="v2-stub"></div>' })
+class MeetingDetailsPageStubComponent {
   public constructor() {
     mountOrder.push('v2');
   }
@@ -44,7 +44,7 @@ describe('MeetingDetailsGateComponent', () => {
       ],
     })
       .overrideComponent(MeetingDetailsGateComponent, {
-        set: { imports: [MeetingJoinStubComponent, MeetingDetailsStubComponent] },
+        set: { imports: [MeetingJoinStubComponent, MeetingDetailsPageStubComponent] },
       })
       .compileComponents();
 
