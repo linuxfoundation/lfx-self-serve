@@ -152,7 +152,11 @@
         placeholder="Describe the mentorship program"
         [editorStyle]="{ minHeight: '220px' }"
         dataTest="mentorship-enroll-description" />
-      <p class="text-xs text-gray-400 text-right">{{ descriptionLength() }} / {{ descriptionMax }}</p>
+      @if (descriptionTooLarge()) {
+        <p class="text-xs text-red-600 text-right" data-testid="mentorship-enroll-description-counter">Over limit / {{ descriptionMax }}</p>
+      } @else {
+        <p class="text-xs text-gray-400 text-right" data-testid="mentorship-enroll-description-counter">{{ descriptionLength() }} / {{ descriptionMax }}</p>
+      }
       @if (errors().description) {
         <p class="text-xs text-red-600">{{ errors().description }}</p>
       }
