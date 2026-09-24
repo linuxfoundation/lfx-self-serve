@@ -237,13 +237,14 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
-  it('caches a detail row whose COURSE_OR_CERT_ID is null instead of missing forever', async () => {
+  it('caches rows whose PERSON_KEY and COURSE_OR_CERT_ID are null instead of missing forever', async () => {
     // Same rule as the event-attendee null EVENT_ID: the uncached mapper passes a null through, so
-    // a guard demanding a string there would make one such row a permanent miss for the org.
+    // a guard demanding a string in any loosened cell (roster and detail PERSON_KEY,
+    // COURSE_OR_CERT_ID) would make one such row a permanent miss — all three are nulled together.
     execute.mockReset();
     execute.mockImplementation(async (query: string) => {
       if (query.includes('ORG_PEOPLE_ALL')) {
-        return { rows: [{ PERSON_KEY: 'person-one', LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
+        return { rows: [{ PERSON_KEY: null, LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
       }
       if (query.includes('SELECT DISTINCT')) {
         return { rows: [] };
@@ -251,7 +252,7 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       return {
         rows: [
           {
-            PERSON_KEY: 'person-one',
+            PERSON_KEY: null,
             STATUS: 'Enrolled',
             COURSE_OR_CERT_ID: null,
             COURSE_ID: null,

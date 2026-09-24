@@ -274,14 +274,15 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
   });
 
-  it('caches an aggregate row whose PROJECT_ID is null instead of missing forever', async () => {
-    // Same rule as the event-attendee null EVENT_ID: `buildResponse` passes a null project id
-    // through, so a guard demanding a string there would make one such row a permanent miss.
+  it('caches an aggregate row whose PERSON_KEY and PROJECT_ID are null instead of missing forever', async () => {
+    // Same rule as the event-attendee null EVENT_ID: `buildResponse` passes a null person key and a
+    // null project id through, so a guard demanding a string in either would make one such row a
+    // permanent miss. Both loosened cells are nulled together so each guard branch is exercised.
     execute.mockReset();
     execute.mockResolvedValue({
       rows: [
         {
-          PERSON_KEY: 'person-one',
+          PERSON_KEY: null,
           PROJECT_ID: null,
           LFID: null,
           LF_USERNAME: null,
