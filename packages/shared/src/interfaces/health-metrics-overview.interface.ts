@@ -4,11 +4,13 @@
 import type {
   HEALTH_METRICS_OVERVIEW_AREAS,
   HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS,
+  HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_LINK_TARGETS,
   HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS,
 } from '../constants/health-metrics-overview.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
+import type { HealthMetricsEngagementQueryParams, HealthMetricsEngagementSectionKey } from './health-metrics-engagement.interface';
 
 /** Area key, fixed order per LFXV2-3365: Engagement, Events, Members, Non-Members, Training, Code. */
 export type HealthMetricsOverviewArea = (typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key'];
@@ -19,8 +21,25 @@ export type HealthMetricsOverviewClassification = keyof typeof HEALTH_METRICS_OV
 /** A rail revenue-stream key — fixed 3-stream set per `railHTML()`'s legend. */
 export type HealthMetricsOverviewRevenueStreamKey = keyof typeof HEALTH_METRICS_OVERVIEW_REVENUE_STREAMS;
 
-/** A recognized `hm_findings.link_target` value — every PCC anchor key plus the one external Insights target. */
-export type HealthMetricsOverviewLinkTarget = keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+/** A recognized `hm_findings.link_target` value — every PCC anchor key, every Engagement target, and the one external Insights target. */
+export type HealthMetricsOverviewLinkTarget =
+  | keyof typeof HEALTH_METRICS_OVERVIEW_LINK_TARGETS
+  | keyof typeof HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS
+  | typeof HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET;
+
+/** One entry of `HEALTH_METRICS_OVERVIEW_ENGAGEMENT_LINK_TARGETS`: the owning section and its arrival filters. */
+export interface HealthMetricsOverviewEngagementLinkSpec {
+  section: HealthMetricsEngagementSectionKey;
+  /** Merged into the current query string; `null` clears a filter the URL already carries. */
+  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
+}
+
+/** An in-app Overview link, bound to `routerLink` / `fragment` / `queryParams` by the finding item or tile. */
+export interface HealthMetricsOverviewFindingRoute {
+  commands: readonly string[];
+  fragment: HealthMetricsEngagementSectionKey;
+  queryParams: Readonly<HealthMetricsEngagementQueryParams>;
+}
 
 /**
  * Mirrors the `hm_area_state` dbt table (LFXV2-3364) — always one row per area per foundation per
@@ -79,6 +98,16 @@ export interface HealthOverviewKpisRow {
 export interface HealthOverviewRevenueRow {
   REVENUE_USD: number | null;
   FOUNDATION_TOTAL_REVENUE_USD: number | null;
+}
+
+/**
+ * One period's group counts behind the Engagement tile, read from `ENGAGEMENT_GROUP_ATTENDANCE` until
+ * `HEALTH_OVERVIEW_KPIS` carries engagement columns. Both counts share the expected-to-meet population;
+ * `null` means the view has no figure for that period.
+ */
+export interface HealthOverviewEngagementCounts {
+  activeGroups: number | null;
+  lowAttendanceGroups: number | null;
 }
 
 /**
@@ -169,6 +198,8 @@ export interface HealthMetricsOverviewTileViewModel {
   insightsUrl?: string;
   /** False to hide the status chip entirely — see {@link HealthMetricsAreaState.showStatus}. */
   showStatus?: boolean;
+  /** Set only for the `eng` area — the tile links into the Engagement tab's group attendance. */
+  route?: HealthMetricsOverviewFindingRoute;
 }
 
 /** Container-computed view model for `lfx-health-metrics-overview-finding-item` — one per finding row. */
@@ -184,7 +215,10 @@ export interface HealthMetricsOverviewFindingViewModel {
   /** Carried through from {@link HealthMetricsFinding.sortRank} — display order and, since it's unique per row, also this row's `@for` track key and `data-testid` suffix. */
   sortRank: number;
   evaluatedAt: string;
+  /** Set for a PCC or Insights link; mutually exclusive with {@link linkRoute}. */
   linkHref?: string;
+  /** Set for an `eng.*` finding, which links into the Engagement tab instead of PCC. */
+  linkRoute?: HealthMetricsOverviewFindingRoute;
   linkIsExternal: boolean;
   visual?: HealthMetricsFindingVisual;
 }
@@ -243,16 +277,19 @@ export interface HealthMetricsFindingVisualBarViewModel {
 export interface HealthMetricsOverviewRevenue {
   dataAvailable: boolean;
   total: number;
-  streams: { key: string; value: number }[];
+  /** `value` is `null` when the view has no figure for that stream — rendered as "—", not "$0". */
+  streams: { key: string; value: number | null }[];
 }
 
 /**
  * Rail "Foundation" block raw data — backed live by `HEALTH_OVERVIEW_PROFILE` (Health Metrics v2
  * doc). No `size` field: the doc's table has no backing column for it and it was dropped rather
  * than fabricated. `nextRenewals` reflects the table's only renewal window, 90 days (not 30).
+ * `dataAvailable` is false when the read failed or found no row; a null column renders as "—".
  */
 export interface HealthMetricsOverviewFoundationSummary {
-  projects: number;
+  dataAvailable: boolean;
+  projects: string;
   tiers: string;
   board: string;
   nextRenewals: string;
@@ -264,8 +301,8 @@ export interface HealthMetricsOverviewRevenueStreamViewModel {
   key: string;
   label: string;
   dotClass: string;
-  /** Rounded, for the "N%" legend text only — see {@link HealthMetricsOverviewRevenueStreamViewModel.widthPercent} for the bar segment. */
-  percent: number;
+  /** Rounded "N%" legend text, or "—" when the stream has no value — see `widthPercent` for the bar segment. */
+  percentLabel: string;
   /** Unrounded percent share, for the segmented bar's `[style.width.%]` — rounding each stream independently before sizing can leave a visible gap even when the raw shares sum to 100%. */
   widthPercent: number;
   valueLabel: string;

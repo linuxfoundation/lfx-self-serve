@@ -29,10 +29,13 @@
           }
         </div>
       } @else {
-        <div class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 py-12 text-center" data-testid="health-metrics-overview-all-clear">
-          <i class="fa-light fa-circle-check text-2xl text-emerald-500" aria-hidden="true"></i>
-          <p class="text-sm font-medium text-gray-700">Nothing needs your attention right now.</p>
-          <p class="text-sm text-gray-500">All tracked areas are going well or awaiting their next data refresh.</p>
+        <!-- Not an all-clear: with no findings feed yet, "nothing needs attention" would be a false claim. -->
+        <div
+          class="flex flex-col items-center gap-2 rounded-lg border border-gray-200 py-12 text-center"
+          data-testid="health-metrics-overview-findings-unavailable">
+          <i class="fa-light fa-clock text-2xl text-gray-400" aria-hidden="true"></i>
+          <p class="text-sm font-medium text-gray-700">Findings are not available yet.</p>
+          <p class="text-sm text-gray-500">Findings will appear here once they are generated for this foundation.</p>
         </div>
       }
     </section>

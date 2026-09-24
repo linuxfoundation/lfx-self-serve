@@ -2,18 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_GROUP_TYPE_LABELS,
-  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
-  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
-  HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
-  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
   SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
@@ -171,7 +171,7 @@ export class HealthMetricsEngagementService {
    */
   public async getGroupAttendance(req: Request, query: HealthMetricsEngagementGroupQuery): Promise<HealthMetricsEngagementGroupAttendance> {
     if (!isSupportedEngagementRange(query.range)) {
-      return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT;
+      return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED;
     }
 
     const suffix = RANGE_COLUMN_SUFFIX[query.range];
@@ -261,14 +261,17 @@ export class HealthMetricsEngagementService {
     const first = result.rows[0];
     // A page past the end still returns one row — the totals, with every page column null.
     const pageRows = result.rows.filter((row) => row.IS_PAGE_ROW === true);
+    const totalRecords = Number(first?.TOTAL_RECORDS ?? 0);
+
+    // An unfiltered scope with zero rows gets its own empty state and null counts, not "0 groups";
+    // a filtered cut with zero matches keeps its counts so "No groups of this type" can show.
+    const isUnfilteredScope = query.groupType === 'all' && !query.projectSlug;
+    const counts = isUnfilteredScope && totalRecords === 0 ? null : { groups: totalRecords, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) };
 
     return {
       rows: pageRows.map(mapGroupRow),
-      totalRecords: Number(first?.TOTAL_RECORDS ?? 0),
-      counts: {
-        groups: Number(first?.TOTAL_RECORDS ?? 0),
-        dormantGroups: Number(first?.DORMANT_GROUPS ?? 0),
-      },
+      totalRecords,
+      counts,
     };
   }
 
@@ -279,7 +282,7 @@ export class HealthMetricsEngagementService {
    */
   public async getMeetingParticipation(req: Request, query: HealthMetricsEngagementParticipationQuery): Promise<HealthMetricsEngagementMeetingParticipation> {
     if (!isSupportedEngagementRange(query.range)) {
-      return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT;
+      return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED;
     }
 
     const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
@@ -369,7 +372,7 @@ export class HealthMetricsEngagementService {
     });
 
     const first = rows[0];
-    if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT;
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED;
 
     return {
       rows: rows.map(mapOrgRow),
@@ -417,7 +420,7 @@ export class HealthMetricsEngagementService {
     });
 
     const first = rows[0];
-    if (!first) return HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT;
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED;
 
     return {
       rows: rows.map(mapNonMemberRow),
@@ -464,7 +467,7 @@ export class HealthMetricsEngagementService {
     });
 
     const first = rows[0];
-    if (!first) return HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT;
+    if (!first) return HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED;
 
     return {
       rows: rows.map(mapRepRow),
@@ -555,9 +558,9 @@ function mapGroupPeriod(row: GroupAttendanceRow, range: SupportedEngagementRange
 
   return {
     range,
-    meetingsHeld: Number(row[`MEETINGS_COUNT_${suffix}`] ?? 0),
-    invitedCount: Number(row[`INVITED_COUNT_${suffix}`] ?? 0),
-    attendedCount: Number(row[`ATTENDED_COUNT_${suffix}`] ?? 0),
+    meetingsHeld: toNullableNumber(row[`MEETINGS_COUNT_${suffix}`]),
+    invitedCount: toNullableNumber(row[`INVITED_COUNT_${suffix}`]),
+    attendedCount: toNullableNumber(row[`ATTENDED_COUNT_${suffix}`]),
     // A null share means nobody was invited at all, which the table renders as an em dash — keep it
     // distinct from a real 0%.
     attendancePct: attendance === null || attendance === undefined ? null : Number(attendance),
@@ -599,10 +602,10 @@ function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange)
 
   return {
     range,
-    meetingsHeld: Number(row[`SCOPE_MEETINGS_HELD_COUNT_${suffix}`] ?? 0),
-    meetingsTotal: Number(row[`MEETINGS_ORG_TOTAL_COUNT_${suffix}`] ?? 0),
-    invitedCount: Number(row[`MEETINGS_INVITED_COUNT_${suffix}`] ?? 0),
-    attendedCount: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
+    meetingsHeld: toNullableNumber(row[`SCOPE_MEETINGS_HELD_COUNT_${suffix}`]),
+    meetingsTotal: toNullableNumber(row[`MEETINGS_ORG_TOTAL_COUNT_${suffix}`]),
+    invitedCount: toNullableNumber(row[`MEETINGS_INVITED_COUNT_${suffix}`]),
+    attendedCount: toNullableNumber(row[`MEETINGS_ATTENDED_COUNT_${suffix}`]),
     // Null means no meeting concerned this org at all, which renders as an em dash — keep it
     // distinct from a real 0%.
     attendancePct: toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]),
@@ -643,8 +646,8 @@ function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEnga
 
   return {
     range,
-    meetingsAttended: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
-    distinctPeople: Number(row[`DISTINCT_PEOPLE_COUNT_${suffix}`] ?? 0),
+    meetingsAttended: toNullableNumber(row[`MEETINGS_ATTENDED_COUNT_${suffix}`]),
+    distinctPeople: toNullableNumber(row[`DISTINCT_PEOPLE_COUNT_${suffix}`]),
     sortRank: toNullableNumber(row[`SORT_RANK_${suffix}`]),
   };
 }
@@ -673,7 +676,7 @@ function mapParticipationRow(row: MeetingParticipationRow): HealthMetricsEngagem
     level: row.MEETING_TYPE_LEVEL === 'all' ? 'all' : 'group',
     group,
     label: row.MEETING_TYPE_LABEL ?? group ?? '',
-    totalGroups: Number(row.TOTAL_GROUPS_COUNT ?? 0),
+    totalGroups: toNullableNumber(row.TOTAL_GROUPS_COUNT),
     governance: group !== null && HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GOVERNANCE_GROUPS.includes(group),
     periods: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => mapParticipationPeriod(row, range)),
   };
@@ -683,24 +686,24 @@ function mapParticipationPeriod(row: MeetingParticipationRow, range: SupportedEn
   const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
   const priorSuffix = RANGE_PRIOR_COLUMN_SUFFIX[range]?.toUpperCase();
   const attendance = toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]);
-  const meetingsHeld = Number(row[`MEETINGS_HELD_COUNT_${suffix}`] ?? 0);
+  const meetingsHeld = toNullableNumber(row[`MEETINGS_HELD_COUNT_${suffix}`]);
   const priorAttendance = priorSuffix ? toNullableNumber(row[`ATTENDANCE_PCT_${priorSuffix}`]) : null;
   const priorMeetings = priorSuffix ? toNullableNumber(row[`MEETINGS_HELD_COUNT_${priorSuffix}`]) : null;
 
   return {
     range,
     meetingsHeld,
-    invitedCount: Number(row[`INVITED_COUNT_${suffix}`] ?? 0),
-    attendedCount: Number(row[`ATTENDED_COUNT_${suffix}`] ?? 0),
+    invitedCount: toNullableNumber(row[`INVITED_COUNT_${suffix}`]),
+    attendedCount: toNullableNumber(row[`ATTENDED_COUNT_${suffix}`]),
     // A null share means nobody was invited at all, which renders as an em dash — keep it distinct
     // from a real 0%.
     attendancePct: attendance,
-    activeGroups: Number(row[`ACTIVE_GROUPS_COUNT_${suffix}`] ?? 0),
-    neverAttended: Number(row[`NEVER_ATTENDED_COUNT_${suffix}`] ?? 0),
+    activeGroups: toNullableNumber(row[`ACTIVE_GROUPS_COUNT_${suffix}`]),
+    neverAttended: toNullableNumber(row[`NEVER_ATTENDED_COUNT_${suffix}`]),
     // Derived rather than read from the view's `*_CHANGE_*` columns: those cover YTD only, and
     // deriving keeps each delta in the same unit as the value it came from.
     attendanceChangePp: attendance === null || priorAttendance === null ? null : attendance - priorAttendance,
-    meetingsChangePct: priorMeetings === null || priorMeetings === 0 ? null : (meetingsHeld - priorMeetings) / priorMeetings,
+    meetingsChangePct: meetingsHeld === null || priorMeetings === null || priorMeetings === 0 ? null : (meetingsHeld - priorMeetings) / priorMeetings,
   };
 }
 
@@ -741,8 +744,8 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
 
   return {
     range,
-    meetingsInvited: Number(row[`MEETINGS_INVITED_COUNT_${suffix}`] ?? 0),
-    meetingsAttended: Number(row[`MEETINGS_ATTENDED_COUNT_${suffix}`] ?? 0),
+    meetingsInvited: toNullableNumber(row[`MEETINGS_INVITED_COUNT_${suffix}`]),
+    meetingsAttended: toNullableNumber(row[`MEETINGS_ATTENDED_COUNT_${suffix}`]),
     neverAttended: row[`HAS_NEVER_ATTENDED_${suffix}`] === true,
     lapsed: row[`IS_LAPSED_${suffix}`] === true,
   };

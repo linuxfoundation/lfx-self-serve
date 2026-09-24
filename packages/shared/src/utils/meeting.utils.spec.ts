@@ -78,56 +78,122 @@ import {
 } from './meeting.utils';
 
 /**
- * Builds a minimal PastMeeting fixture. The sort only reads `scheduled_start_time`/`start_time`,
- * so only those plus an identifying `uid` are set; the rest is cast to satisfy the interface.
+ * Canonical Meeting fixture defaults. Every required field on the `Meeting` interface is set with a
+ * placeholder value so tests supply only the overrides they assert on; a required field added to
+ * `Meeting` fails these tests at compile time rather than silently defaulting to `undefined`
+ * (the whole point of typing spec fixtures — see #2709 and `tsconfig.spec.json`).
  */
-function pastMeeting(partial: { uid: string; scheduled_start_time?: string; start_time?: string }): PastMeeting {
+function buildMeetingFixture(overrides: Partial<Meeting> = {}): Meeting {
   return {
-    uid: partial.uid,
-    scheduled_start_time: partial.scheduled_start_time as string,
-    start_time: partial.start_time as string,
-  } as PastMeeting;
+    id: '',
+    created_at: '',
+    modified_at: '',
+    project_uid: '',
+    start_time: '',
+    duration: 0,
+    timezone: '',
+    title: '',
+    description: '',
+    recurrence: null,
+    committees: [],
+    meeting_type: null,
+    visibility: null,
+    restricted: null,
+    recording_enabled: null,
+    transcript_enabled: null,
+    youtube_upload_enabled: null,
+    artifact_visibility: null,
+    cancel_on_committee_removal: null,
+    organizers: [],
+    password: null,
+    invited: false,
+    occurrences: [],
+    ...overrides,
+  };
 }
 
-const uids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.uid);
+/**
+ * Canonical PastMeeting fixture defaults, extending {@link meeting} with `PastMeeting`'s additional
+ * required fields (`scheduled_start_time`, `scheduled_end_time`, `meeting_id`, `occurrence_id`,
+ * `platform_meeting_id`, `sessions`).
+ */
+function pastMeeting(overrides: Partial<PastMeeting> = {}): PastMeeting {
+  return {
+    ...buildMeetingFixture(),
+    scheduled_start_time: '',
+    scheduled_end_time: '',
+    meeting_id: '',
+    occurrence_id: '',
+    platform_meeting_id: '',
+    sessions: [],
+    ...overrides,
+  };
+}
+
+/**
+ * Canonical MeetingOccurrence fixture defaults. Every required field is set with a placeholder so
+ * tests supply only what they assert on, and a required field added to `MeetingOccurrence` fails
+ * these tests at compile time rather than being silently absorbed by `as MeetingOccurrence` on an
+ * incomplete object literal.
+ */
+function occurrence(overrides: Partial<MeetingOccurrence> = {}): MeetingOccurrence {
+  return {
+    occurrence_id: '',
+    start_time: '',
+    duration: 0,
+    ...overrides,
+  };
+}
+
+const ids = (meetings: PastMeeting[]): string[] => meetings.map((m) => m.id);
 
 describe('sortPastMeetingsDescending', () => {
   it('orders past meetings most-recent-first by scheduled_start_time', () => {
     const input = [
-      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
-      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
-      pastMeeting({ uid: 'middle', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'middle', scheduled_start_time: '2026-02-01T10:00:00Z' }),
     ];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['newest', 'middle', 'oldest']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['newest', 'middle', 'oldest']);
   });
 
   it('falls back to start_time when scheduled_start_time is absent', () => {
-    const input = [pastMeeting({ uid: 'a', start_time: '2026-01-01T10:00:00Z' }), pastMeeting({ uid: 'b', start_time: '2026-05-01T10:00:00Z' })];
+    // `PastMeeting.scheduled_start_time` is typed as required, but `sortPastMeetingsDescending`
+    // defensively handles a missing field via `a.scheduled_start_time ?? a.start_time`. Deleting
+    // the field on the canonical fixture is what exercises that fallback branch — a canonical
+    // default of an empty string would be truthy for `??` and silently miss the fallback.
+    const withoutScheduled = (partial: { id: string; start_time: string }): PastMeeting => {
+      const fixture = pastMeeting(partial);
+      // @ts-expect-error — intentionally clearing a required field to exercise the ?? fallback
+      delete fixture.scheduled_start_time;
+      return fixture;
+    };
+    const input = [withoutScheduled({ id: 'a', start_time: '2026-01-01T10:00:00Z' }), withoutScheduled({ id: 'b', start_time: '2026-05-01T10:00:00Z' })];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['b', 'a']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['b', 'a']);
   });
 
   it('prefers scheduled_start_time over start_time when both are present', () => {
     const input = [
       // start_time would sort this first, but scheduled_start_time (the authoritative field) is older
-      pastMeeting({ uid: 'scheduled-older', scheduled_start_time: '2026-01-01T10:00:00Z', start_time: '2026-09-01T10:00:00Z' }),
-      pastMeeting({ uid: 'scheduled-newer', scheduled_start_time: '2026-06-01T10:00:00Z', start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'scheduled-older', scheduled_start_time: '2026-01-01T10:00:00Z', start_time: '2026-09-01T10:00:00Z' }),
+      pastMeeting({ id: 'scheduled-newer', scheduled_start_time: '2026-06-01T10:00:00Z', start_time: '2026-02-01T10:00:00Z' }),
     ];
 
-    expect(uids(sortPastMeetingsDescending(input))).toEqual(['scheduled-newer', 'scheduled-older']);
+    expect(ids(sortPastMeetingsDescending(input))).toEqual(['scheduled-newer', 'scheduled-older']);
   });
 
   it('does not mutate the input array', () => {
     const input = [
-      pastMeeting({ uid: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
-      pastMeeting({ uid: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'oldest', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'newest', scheduled_start_time: '2026-03-01T10:00:00Z' }),
     ];
-    const originalOrder = uids(input);
+    const originalOrder = ids(input);
 
     sortPastMeetingsDescending(input);
 
-    expect(uids(input)).toEqual(originalOrder);
+    expect(ids(input)).toEqual(originalOrder);
   });
 
   it('returns an empty array unchanged', () => {
@@ -138,31 +204,31 @@ describe('sortPastMeetingsDescending', () => {
     // Mirrors the dashboard scan: a name-cursor page may arrive with meetings more recent than
     // ones already loaded, so the merged accumulator must be re-sorted to stay most-recent-first.
     const page1 = [
-      pastMeeting({ uid: 'p1-feb', scheduled_start_time: '2026-02-01T10:00:00Z' }),
-      pastMeeting({ uid: 'p1-jan', scheduled_start_time: '2026-01-01T10:00:00Z' }),
+      pastMeeting({ id: 'p1-feb', scheduled_start_time: '2026-02-01T10:00:00Z' }),
+      pastMeeting({ id: 'p1-jan', scheduled_start_time: '2026-01-01T10:00:00Z' }),
     ];
     const page2 = [
-      pastMeeting({ uid: 'p2-may', scheduled_start_time: '2026-05-01T10:00:00Z' }),
-      pastMeeting({ uid: 'p2-mar', scheduled_start_time: '2026-03-01T10:00:00Z' }),
+      pastMeeting({ id: 'p2-may', scheduled_start_time: '2026-05-01T10:00:00Z' }),
+      pastMeeting({ id: 'p2-mar', scheduled_start_time: '2026-03-01T10:00:00Z' }),
     ];
 
     const merged = sortPastMeetingsDescending([...page1, ...page2]);
 
-    expect(uids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
+    expect(ids(merged)).toEqual(['p2-may', 'p2-mar', 'p1-feb', 'p1-jan']);
   });
 });
 
 describe('resolveRsvpOccurrenceId', () => {
-  const recurringMeeting = {
+  const recurringMeeting = buildMeetingFixture({
     recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
     occurrences: [
       { occurrence_id: '1785247200', start_time: '2026-07-28T14:00:00Z', duration: 60 },
       { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 },
     ],
     cancelled_occurrences: [],
-  } as Meeting;
+  });
 
-  const nonRecurringMeeting = { recurrence: null, occurrences: [] } as unknown as Meeting;
+  const nonRecurringMeeting = buildMeetingFixture({ recurrence: null, occurrences: [] });
 
   it('returns undefined for non-recurring meetings', () => {
     expect(resolveRsvpOccurrenceId(nonRecurringMeeting, { occurrenceId: '1785247200' })).toBeUndefined();
@@ -175,7 +241,7 @@ describe('resolveRsvpOccurrenceId', () => {
   it('prefers an explicit occurrence object', () => {
     expect(
       resolveRsvpOccurrenceId(recurringMeeting, {
-        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+        occurrence: occurrence({ occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 }),
       })
     ).toBe('1785852000');
   });
@@ -184,7 +250,7 @@ describe('resolveRsvpOccurrenceId', () => {
     expect(
       resolveRsvpOccurrenceId(recurringMeeting, {
         occurrenceId: '',
-        occurrence: { occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 } as MeetingOccurrence,
+        occurrence: occurrence({ occurrence_id: '1785852000', start_time: '2026-08-04T14:00:00Z', duration: 60 }),
       })
     ).toBe('1785852000');
   });
@@ -196,7 +262,7 @@ describe('resolveRsvpOccurrenceId', () => {
       const firstStart = new Date('2026-01-20T14:00:00.000Z');
       const secondStart = new Date('2026-01-27T14:00:00.000Z');
       const firstOccurrenceId = String(Math.floor(firstStart.getTime() / 1000));
-      const meeting = {
+      const fixture = buildMeetingFixture({
         recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' },
         occurrences: [
           { occurrence_id: firstOccurrenceId, start_time: firstStart.toISOString(), duration: 60 },
@@ -207,9 +273,9 @@ describe('resolveRsvpOccurrenceId', () => {
           },
         ],
         cancelled_occurrences: [],
-      } as Meeting;
+      });
 
-      expect(resolveRsvpOccurrenceId(meeting)).toBe(firstOccurrenceId);
+      expect(resolveRsvpOccurrenceId(fixture)).toBe(firstOccurrenceId);
     } finally {
       vi.useRealTimers();
     }
@@ -222,18 +288,18 @@ describe('resolveOccurrenceRecurrence', () => {
   // Per-occurrence override stamped after an all_following cadence change: quarterly on the 1st Thursday.
   const quarterly: MeetingRecurrence = { type: RecurrenceType.MONTHLY, repeat_interval: 3, monthly_week: 1, monthly_week_day: 5 };
 
-  const occurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
-    ({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence }) as MeetingOccurrence;
+  const withRecurrence = (recurrence?: MeetingRecurrence | null): MeetingOccurrence =>
+    occurrence({ occurrence_id: '1786039200', start_time: '2026-08-06T18:00:00Z', duration: 60, recurrence });
 
   const meeting = (recurrence: MeetingRecurrence | null): Pick<Meeting, 'recurrence'> => ({ recurrence });
 
   it('prefers the occurrence-level recurrence override when present', () => {
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly))).toBe(quarterly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(quarterly))).toBe(quarterly);
   });
 
   it('falls back to the top-level recurrence when the occurrence has none', () => {
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(null))).toBe(monthly);
-    expect(resolveOccurrenceRecurrence(meeting(monthly), occurrence(undefined))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(null))).toBe(monthly);
+    expect(resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(undefined))).toBe(monthly);
   });
 
   it('falls back to the top-level recurrence when no occurrence is supplied', () => {
@@ -242,7 +308,7 @@ describe('resolveOccurrenceRecurrence', () => {
   });
 
   it('is null-safe when neither the occurrence nor the meeting carries a recurrence', () => {
-    expect(resolveOccurrenceRecurrence(meeting(null), occurrence(null))).toBeNull();
+    expect(resolveOccurrenceRecurrence(meeting(null), withRecurrence(null))).toBeNull();
     expect(resolveOccurrenceRecurrence(meeting(null), null)).toBeNull();
   });
 
@@ -250,7 +316,7 @@ describe('resolveOccurrenceRecurrence', () => {
     // Mirrors the pipe: the resolved recurrence is fed to buildRecurrenceSummary after the
     // monthly/day-of-week shape is applied. The override (repeat_interval=3) must win over the
     // stale top-level monthly rule so the label reads "Quarterly", not "Monthly".
-    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(quarterly));
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(quarterly));
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Quarterly on the 1st Thursday');
@@ -258,7 +324,7 @@ describe('resolveOccurrenceRecurrence', () => {
 
   it('end-to-end label: with no occurrence override the same surfaces still render the stale top-level "Monthly on the 1st Thursday"', () => {
     // Documents current behaviour: without an override the label falls back to the series rule.
-    const resolved = resolveOccurrenceRecurrence(meeting(monthly), occurrence(null));
+    const resolved = resolveOccurrenceRecurrence(meeting(monthly), withRecurrence(null));
     const pattern = { ...resolved, patternType: 'monthly', monthlyType: 'dayOfWeek', endType: 'never' } as CustomRecurrencePattern;
 
     expect(buildRecurrenceSummary(pattern).fullSummary).toBe('Monthly on the 1st Thursday');
@@ -309,15 +375,15 @@ describe('convertRecurrenceToPattern', () => {
 });
 
 describe('selectCommitteeCadenceMeeting', () => {
-  const recurring = { uid: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } } as Meeting;
-  const oneOff = { uid: 'm2', recurrence: null } as Meeting;
+  const recurring = buildMeetingFixture({ id: 'm1', recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' } });
+  const oneOff = buildMeetingFixture({ id: 'm2', recurrence: null });
 
   it('returns null for an empty list', () => {
     expect(selectCommitteeCadenceMeeting([])).toBeNull();
   });
 
   it('returns the first meeting when none are recurring', () => {
-    const oneOff2 = { uid: 'm3', recurrence: null } as Meeting;
+    const oneOff2 = buildMeetingFixture({ id: 'm3', recurrence: null });
     expect(selectCommitteeCadenceMeeting([oneOff, oneOff2])).toBe(oneOff);
   });
 
@@ -330,7 +396,15 @@ describe('selectCommitteeCadenceMeeting', () => {
   });
 
   it('treats a meeting with recurrence entirely absent the same as an explicit null (truthy check, not a strict null check)', () => {
-    const noRecurrenceField = { uid: 'm4' } as Meeting;
+    // `Meeting.recurrence` is required in the type (`MeetingRecurrence | null`), but the runtime
+    // predicate is a truthy check (`!!m.recurrence`) — so a payload where the key is missing
+    // entirely (a JSON quirk, a hand-authored fixture, an out-of-band pipeline) takes the same
+    // non-recurring branch as an explicit `null`. Deleting the key on a real fixture is what
+    // proves that equivalence; a stricter interface change to `recurrence?:` would just move the
+    // guarantee into the type without changing the runtime behavior under test here.
+    const noRecurrenceField = buildMeetingFixture({ id: 'm4' });
+    // @ts-expect-error — intentionally deleting a required field to exercise the truthy check
+    delete noRecurrenceField.recurrence;
     expect(selectCommitteeCadenceMeeting([noRecurrenceField, recurring])).toBe(recurring);
   });
 });
@@ -341,93 +415,93 @@ describe('buildCommitteeCadenceSummary', () => {
   });
 
   it('composes a weekly cadence string with duration and platform', () => {
-    const meeting = {
+    const fixture = buildMeetingFixture({
       recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2,4' },
       duration: 60,
       platform: 'Zoom',
-    } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday, Wednesday · 60 min · Zoom');
+    });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('Weekly on Monday, Wednesday · 60 min · Zoom');
   });
 
   it('composes a bi-weekly cadence string', () => {
-    const meeting = {
+    const fixture = buildMeetingFixture({
       recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 2, weekly_days: '5' },
       duration: 30,
       platform: 'Zoom',
-    } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('Every 2 weeks on Thursday · 30 min · Zoom');
+    });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('Every 2 weeks on Thursday · 30 min · Zoom');
   });
 
   it('composes a monthly cadence string', () => {
-    const meeting = {
+    const fixture = buildMeetingFixture({
       recurrence: { type: RecurrenceType.MONTHLY, repeat_interval: 1, monthly_day: 15 },
       duration: 45,
       platform: 'Zoom',
-    } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('Monthly on day 15 · 45 min · Zoom');
+    });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('Monthly on day 15 · 45 min · Zoom');
   });
 
   it('labels a non-recurring meeting as "One-time meeting"', () => {
-    const meeting = { recurrence: null, duration: 30, platform: 'Zoom' } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('One-time meeting · 30 min · Zoom');
+    const fixture = buildMeetingFixture({ recurrence: null, duration: 30, platform: 'Zoom' });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('One-time meeting · 30 min · Zoom');
   });
 
   it('omits the platform segment when platform is absent', () => {
-    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 60 } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · 60 min');
+    const fixture = buildMeetingFixture({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 60 });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('Weekly on Monday · 60 min');
   });
 
   it('omits the duration segment when duration is falsy', () => {
-    const meeting = { recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 0, platform: 'Zoom' } as Meeting;
-    expect(buildCommitteeCadenceSummary([meeting])).toBe('Weekly on Monday · Zoom');
+    const fixture = buildMeetingFixture({ recurrence: { type: RecurrenceType.WEEKLY, repeat_interval: 1, weekly_days: '2' }, duration: 0, platform: 'Zoom' });
+    expect(buildCommitteeCadenceSummary([fixture])).toBe('Weekly on Monday · Zoom');
   });
 });
 
 describe('normalizeIndexedMeetingAiSummary', () => {
   it('derives ai_summary_enabled from zoom_config.ai_companion_enabled when top-level is absent', () => {
-    const meeting = { zoom_config: { ai_companion_enabled: true } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ zoom_config: { ai_companion_enabled: true } });
 
-    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+    expect(normalizeIndexedMeetingAiSummary(meetingFixture).ai_summary_enabled).toBe(true);
   });
 
   it('derives ai_summary_enabled false from zoom_config.ai_companion_enabled false', () => {
-    const meeting = { zoom_config: { ai_companion_enabled: false } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ zoom_config: { ai_companion_enabled: false } });
 
-    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+    expect(normalizeIndexedMeetingAiSummary(meetingFixture).ai_summary_enabled).toBe(false);
   });
 
   it('preserves explicit top-level ai_summary_enabled true over zoom_config false', () => {
-    const meeting = { ai_summary_enabled: true, zoom_config: { ai_companion_enabled: false } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ ai_summary_enabled: true, zoom_config: { ai_companion_enabled: false } });
 
-    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(true);
+    expect(normalizeIndexedMeetingAiSummary(meetingFixture).ai_summary_enabled).toBe(true);
   });
 
   it('preserves explicit top-level ai_summary_enabled false over zoom_config true', () => {
-    const meeting = { ai_summary_enabled: false, zoom_config: { ai_companion_enabled: true } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ ai_summary_enabled: false, zoom_config: { ai_companion_enabled: true } });
 
-    expect(normalizeIndexedMeetingAiSummary(meeting).ai_summary_enabled).toBe(false);
+    expect(normalizeIndexedMeetingAiSummary(meetingFixture).ai_summary_enabled).toBe(false);
   });
 
   it('returns the same reference when zoom_config is absent', () => {
-    const meeting = { ai_summary_enabled: true } as Meeting;
+    const meetingFixture = buildMeetingFixture({ ai_summary_enabled: true });
 
-    expect(normalizeIndexedMeetingAiSummary(meeting)).toBe(meeting);
+    expect(normalizeIndexedMeetingAiSummary(meetingFixture)).toBe(meetingFixture);
   });
 
   it('derives require_ai_summary_approval from zoom_config with the same precedence', () => {
-    const fromZoom = { zoom_config: { ai_summary_require_approval: true } } as Meeting;
+    const fromZoom = buildMeetingFixture({ zoom_config: { ai_summary_require_approval: true } });
     expect(normalizeIndexedMeetingAiSummary(fromZoom).require_ai_summary_approval).toBe(true);
 
-    const topLevelWins = {
+    const topLevelWins = buildMeetingFixture({
       require_ai_summary_approval: false,
       zoom_config: { ai_summary_require_approval: true },
-    } as Meeting;
+    });
     expect(normalizeIndexedMeetingAiSummary(topLevelWins).require_ai_summary_approval).toBe(false);
   });
 
   it('leaves ai_summary fields undefined when neither layer provides a value', () => {
-    const meeting = { zoom_config: { meeting_id: '123' } } as Meeting;
-    const result = normalizeIndexedMeetingAiSummary(meeting);
+    const meetingFixture = buildMeetingFixture({ zoom_config: { meeting_id: '123' } });
+    const result = normalizeIndexedMeetingAiSummary(meetingFixture);
     expect(result.ai_summary_enabled).toBeUndefined();
     expect(result.require_ai_summary_approval).toBeUndefined();
   });
@@ -435,37 +509,37 @@ describe('normalizeIndexedMeetingAiSummary', () => {
 
 describe('normalizeIndexedMeetingInviteResponses', () => {
   it('maps indexed use_new_invite_email_address true onto is_invite_responses_enabled', () => {
-    const meeting = { use_new_invite_email_address: true } as Meeting;
+    const meetingFixture = buildMeetingFixture({ use_new_invite_email_address: true });
 
-    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(true);
+    expect(normalizeIndexedMeetingInviteResponses(meetingFixture).is_invite_responses_enabled).toBe(true);
   });
 
   it('maps indexed use_new_invite_email_address false onto is_invite_responses_enabled', () => {
-    const meeting = { use_new_invite_email_address: false } as Meeting;
+    const meetingFixture = buildMeetingFixture({ use_new_invite_email_address: false });
 
-    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(false);
+    expect(normalizeIndexedMeetingInviteResponses(meetingFixture).is_invite_responses_enabled).toBe(false);
   });
 
   it('treats a missing indexed flag as false', () => {
-    const meeting = {} as Meeting;
+    const meetingFixture = buildMeetingFixture();
 
-    expect(normalizeIndexedMeetingInviteResponses(meeting).is_invite_responses_enabled).toBe(false);
+    expect(normalizeIndexedMeetingInviteResponses(meetingFixture).is_invite_responses_enabled).toBe(false);
   });
 
   it('preserves an explicit ITX is_invite_responses_enabled value', () => {
-    const enabled = { is_invite_responses_enabled: true, use_new_invite_email_address: false } as Meeting;
+    const enabled = buildMeetingFixture({ is_invite_responses_enabled: true, use_new_invite_email_address: false });
     expect(normalizeIndexedMeetingInviteResponses(enabled).is_invite_responses_enabled).toBe(true);
 
-    const disabled = { is_invite_responses_enabled: false, use_new_invite_email_address: true } as Meeting;
+    const disabled = buildMeetingFixture({ is_invite_responses_enabled: false, use_new_invite_email_address: true });
     expect(normalizeIndexedMeetingInviteResponses(disabled).is_invite_responses_enabled).toBe(false);
   });
 });
 
 describe('isMeetingInviteResponsesEnabled', () => {
   it('is true only for an explicit true flag', () => {
-    expect(isMeetingInviteResponsesEnabled({ is_invite_responses_enabled: true } as Meeting)).toBe(true);
-    expect(isMeetingInviteResponsesEnabled({ is_invite_responses_enabled: false } as Meeting)).toBe(false);
-    expect(isMeetingInviteResponsesEnabled({} as Meeting)).toBe(false);
+    expect(isMeetingInviteResponsesEnabled(buildMeetingFixture({ is_invite_responses_enabled: true }))).toBe(true);
+    expect(isMeetingInviteResponsesEnabled(buildMeetingFixture({ is_invite_responses_enabled: false }))).toBe(false);
+    expect(isMeetingInviteResponsesEnabled(buildMeetingFixture())).toBe(false);
     expect(isMeetingInviteResponsesEnabled(null)).toBe(false);
     expect(isMeetingInviteResponsesEnabled(undefined)).toBe(false);
   });
@@ -473,11 +547,11 @@ describe('isMeetingInviteResponsesEnabled', () => {
 
 describe('resolveMeetingOwner', () => {
   it('normalizes a valid owner to the display shape, keeping profile_picture', () => {
-    const meeting = {
+    const meetingFixture = buildMeetingFixture({
       owner: { user_id: 'u-1', name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' },
-    } as Meeting;
+    });
 
-    expect(resolveMeetingOwner(meeting)).toEqual({
+    expect(resolveMeetingOwner(meetingFixture)).toEqual({
       name: 'Ada Lovelace',
       username: 'alovelace',
       email: 'ada@example.com',
@@ -486,24 +560,24 @@ describe('resolveMeetingOwner', () => {
   });
 
   it('omits profile_picture when the owner has none', () => {
-    const meeting = { owner: { name: 'Ada', username: 'ada', email: 'ada@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ owner: { name: 'Ada', username: 'ada', email: 'ada@example.com' } });
 
-    expect(resolveMeetingOwner(meeting)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
+    expect(resolveMeetingOwner(meetingFixture)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
   });
 
   it('returns null for a zero-valued owner (meeting predates the field)', () => {
-    const meeting = { owner: { user_id: '', name: '', username: '', email: '', profile_picture: '' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ owner: { user_id: '', name: '', username: '', email: '', profile_picture: '' } });
 
-    expect(resolveMeetingOwner(meeting)).toBeNull();
+    expect(resolveMeetingOwner(meetingFixture)).toBeNull();
   });
 
   it('returns null for service-account owners — ITX defaults owner to the creator, so webhook meetings get zoom.webhooks', () => {
-    expect(resolveMeetingOwner({ owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } } as Meeting)).toBeNull();
-    expect(resolveMeetingOwner({ owner: { name: '', username: '', email: 'zoom.events@zoom.us' } } as Meeting)).toBeNull();
+    expect(resolveMeetingOwner(buildMeetingFixture({ owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } }))).toBeNull();
+    expect(resolveMeetingOwner(buildMeetingFixture({ owner: { name: '', username: '', email: 'zoom.events@zoom.us' } }))).toBeNull();
   });
 
   it('returns null when the owner is missing entirely', () => {
-    expect(resolveMeetingOwner({} as Meeting)).toBeNull();
+    expect(resolveMeetingOwner(buildMeetingFixture())).toBeNull();
     expect(resolveMeetingOwner(null)).toBeNull();
     expect(resolveMeetingOwner(undefined)).toBeNull();
   });
@@ -511,39 +585,41 @@ describe('resolveMeetingOwner', () => {
 
 describe('resolveMeetingOrganizer', () => {
   it('prefers the owner over a human created_by', () => {
-    const meeting = {
+    const meetingFixture = buildMeetingFixture({
       owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
       created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
-    } as Meeting;
+    });
 
-    expect(resolveMeetingOrganizer(meeting)?.name).toBe('Grace Hopper');
+    expect(resolveMeetingOrganizer(meetingFixture)?.name).toBe('Grace Hopper');
   });
 
   it('prefers the owner over the host fallback', () => {
-    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } });
     const hosts = [{ first_name: 'Alan', last_name: 'Turing', host: true }];
 
-    expect(resolveMeetingOrganizer(meeting, hosts)?.name).toBe('Grace Hopper');
+    expect(resolveMeetingOrganizer(meetingFixture, hosts)?.name).toBe('Grace Hopper');
   });
 
   it('falls back to created_by when the owner is zero-valued or a service account', () => {
-    const zeroValued = {
+    const zeroValued = buildMeetingFixture({
       owner: { user_id: '', name: '', username: '', email: '' },
       created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
-    } as Meeting;
-    const serviceOwner = {
+    });
+    const serviceOwner = buildMeetingFixture({
       owner: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' },
       created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
-    } as Meeting;
+    });
 
     expect(resolveMeetingOrganizer(zeroValued)?.name).toBe('Ada Lovelace');
     expect(resolveMeetingOrganizer(serviceOwner)?.name).toBe('Ada Lovelace');
   });
 
   it('returns created_by when it is a real human', () => {
-    const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({
+      created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com', profile_picture: 'https://x/a.jpg' },
+    });
 
-    expect(resolveMeetingOrganizer(meeting)).toEqual({
+    expect(resolveMeetingOrganizer(meetingFixture)).toEqual({
       name: 'Ada Lovelace',
       username: 'alovelace',
       email: 'ada@example.com',
@@ -552,39 +628,39 @@ describe('resolveMeetingOrganizer', () => {
   });
 
   it('omits profile_picture when created_by has none', () => {
-    const meeting = { created_by: { name: 'Ada', username: 'ada', email: 'ada@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Ada', username: 'ada', email: 'ada@example.com' } });
 
-    expect(resolveMeetingOrganizer(meeting)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
+    expect(resolveMeetingOrganizer(meetingFixture)).toEqual({ name: 'Ada', username: 'ada', email: 'ada@example.com' });
   });
 
   it('skips zoom.webhooks / zoom.events service-account usernames', () => {
-    const webhooks = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } } as Meeting;
-    const events = { created_by: { name: '', username: 'zoom.events', email: '' } } as Meeting;
+    const webhooks = buildMeetingFixture({ created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: 'noreply@zoom.us' } });
+    const events = buildMeetingFixture({ created_by: { name: '', username: 'zoom.events', email: '' } });
 
     expect(resolveMeetingOrganizer(webhooks)).toBeNull();
     expect(resolveMeetingOrganizer(events)).toBeNull();
   });
 
   it('skips service accounts matched by email or email local-part', () => {
-    const byEmail = { created_by: { name: '', username: '', email: 'zoom.webhooks@zoom.us' } } as Meeting;
+    const byEmail = buildMeetingFixture({ created_by: { name: '', username: '', email: 'zoom.webhooks@zoom.us' } });
 
     expect(resolveMeetingOrganizer(byEmail)).toBeNull();
   });
 
   it('returns null when created_by is empty and no hosts are given', () => {
-    expect(resolveMeetingOrganizer({ created_by: { name: '', username: '', email: '' } } as Meeting)).toBeNull();
-    expect(resolveMeetingOrganizer({} as Meeting)).toBeNull();
+    expect(resolveMeetingOrganizer(buildMeetingFixture({ created_by: { name: '', username: '', email: '' } }))).toBeNull();
+    expect(resolveMeetingOrganizer(buildMeetingFixture())).toBeNull();
     expect(resolveMeetingOrganizer(null)).toBeNull();
   });
 
   it('falls back to the first host when created_by is not a human', () => {
-    const meeting = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } });
     const hosts = [
       { first_name: 'Not', last_name: 'Host', host: false },
       { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', avatar_url: 'https://x/g.jpg', host: true },
     ];
 
-    expect(resolveMeetingOrganizer(meeting, hosts)).toEqual({
+    expect(resolveMeetingOrganizer(meetingFixture, hosts)).toEqual({
       name: 'Grace Hopper',
       username: 'ghopper',
       email: 'grace@example.com',
@@ -593,14 +669,14 @@ describe('resolveMeetingOrganizer', () => {
   });
 
   it('prefers a human created_by over host fallback', () => {
-    const meeting = { created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' } });
     const hosts = [{ first_name: 'Grace', last_name: 'Hopper', host: true }];
 
-    expect(resolveMeetingOrganizer(meeting, hosts)?.name).toBe('Ada Lovelace');
+    expect(resolveMeetingOrganizer(meetingFixture, hosts)?.name).toBe('Ada Lovelace');
   });
 
   it('returns null when hosts exist but none is flagged host', () => {
-    expect(resolveMeetingOrganizer({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toBeNull();
+    expect(resolveMeetingOrganizer(buildMeetingFixture(), [{ first_name: 'A', last_name: 'B', host: false }])).toBeNull();
   });
 });
 
@@ -619,83 +695,83 @@ describe('getMeetingOrganizerDisplayName', () => {
 
 describe('collectMeetingOrganizers', () => {
   it('returns the human created_by as the sole organizer when no hosts are supplied', () => {
-    const meeting = { created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } });
 
-    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' }]);
+    expect(collectMeetingOrganizers(meetingFixture)).toEqual([{ name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' }]);
   });
 
   it('uses the host set (sorted by name) as the authoritative organizers when hosts are present', () => {
-    const meeting = { created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' } });
     const hosts = [
       { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
       { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
       { first_name: 'Not', last_name: 'Host', host: false },
     ];
 
-    const organizers = collectMeetingOrganizers(meeting, hosts);
+    const organizers = collectMeetingOrganizers(meetingFixture, hosts);
     expect(organizers.map((o) => o.name)).toEqual(['Alan Turing', 'Grace Hopper']);
   });
 
   it('does NOT short-circuit on created_by — hosts drive the set so chip and modal agree', () => {
     // Regression: created_by (Christina) is one of two hosts; the chip must show BOTH, not just created_by.
-    const meeting = { created_by: { name: 'Christina Harter', username: 'charter', email: 'christina@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Christina Harter', username: 'charter', email: 'christina@example.com' } });
     const hosts = [
       { first_name: 'Christina', last_name: 'Harter', username: 'charter', email: 'christina@example.com', host: true },
       { first_name: 'Grant', last_name: 'Miller', username: 'gmiller', email: 'grant@example.com', host: true },
     ];
 
-    const organizers = collectMeetingOrganizers(meeting, hosts);
+    const organizers = collectMeetingOrganizers(meetingFixture, hosts);
     expect(organizers.map((o) => o.name)).toEqual(['Christina Harter', 'Grant Miller']);
   });
 
   it('folds a human created_by in when it is not among the hosts', () => {
-    const meeting = { created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ created_by: { name: 'Ada Lovelace', username: 'ada', email: 'ada@example.com' } });
     const hosts = [{ first_name: 'Grant', last_name: 'Miller', username: 'gmiller', email: 'grant@example.com', host: true }];
 
-    const organizers = collectMeetingOrganizers(meeting, hosts);
+    const organizers = collectMeetingOrganizers(meetingFixture, hosts);
     expect(organizers.map((o) => o.name)).toEqual(['Ada Lovelace', 'Grant Miller']);
   });
 
   it('returns an empty array when nothing resolves', () => {
-    expect(collectMeetingOrganizers({} as Meeting)).toEqual([]);
-    expect(collectMeetingOrganizers({} as Meeting, [{ first_name: 'A', last_name: 'B', host: false }])).toEqual([]);
+    expect(collectMeetingOrganizers(buildMeetingFixture())).toEqual([]);
+    expect(collectMeetingOrganizers(buildMeetingFixture(), [{ first_name: 'A', last_name: 'B', host: false }])).toEqual([]);
   });
 
   it('shows the owner as the sole organizer instead of created_by — ownership transfer replaces the creator slot', () => {
-    const meeting = {
+    const meetingFixture = buildMeetingFixture({
       owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' },
       created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
-    } as Meeting;
+    });
 
-    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' }]);
+    expect(collectMeetingOrganizers(meetingFixture)).toEqual([{ name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' }]);
   });
 
   it('folds the owner in before hosts when it is not among them', () => {
-    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } });
     const hosts = [{ first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true }];
 
-    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
+    expect(collectMeetingOrganizers(meetingFixture, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
   });
 
   it('keeps the owner first without duplicating them when they are also a host', () => {
     // Grace sorts after Alan alphabetically — the owner must still be index 0, because
     // buildMeetingOrganizerChip renders element 0 as the primary organizer.
-    const meeting = { owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } } as Meeting;
+    const meetingFixture = buildMeetingFixture({ owner: { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' } });
     const hosts = [
       { first_name: 'Grace', last_name: 'Hopper', username: 'ghopper', email: 'grace@example.com', host: true },
       { first_name: 'Alan', last_name: 'Turing', username: 'aturing', email: 'alan@example.com', host: true },
     ];
 
-    expect(collectMeetingOrganizers(meeting, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
+    expect(collectMeetingOrganizers(meetingFixture, hosts).map((o) => o.name)).toEqual(['Grace Hopper', 'Alan Turing']);
   });
 
   it('falls back to created_by as primary when the owner is zero-valued', () => {
-    const meeting = {
+    const meetingFixture = buildMeetingFixture({
       owner: { user_id: '', name: '', username: '', email: '' },
       created_by: { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' },
-    } as Meeting;
+    });
 
-    expect(collectMeetingOrganizers(meeting)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
+    expect(collectMeetingOrganizers(meetingFixture)).toEqual([{ name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' }]);
   });
 });
 
@@ -782,7 +858,7 @@ describe('buildMeetingOrganizerChip', () => {
 
 describe('isMeetingOrganizedByViewer', () => {
   const meetingBy = (createdBy: { name: string; username: string; email: string }, extra: Partial<Meeting> = {}): Meeting =>
-    ({ created_by: createdBy, ...extra }) as Meeting;
+    buildMeetingFixture({ created_by: createdBy, ...extra });
 
   const ada = { name: 'Ada Lovelace', username: 'alovelace', email: 'ada@example.com' };
   const grace = { name: 'Grace Hopper', username: 'ghopper', email: 'grace@example.com' };
@@ -808,7 +884,7 @@ describe('isMeetingOrganizedByViewer', () => {
   it('does not match service-account or empty created_by', () => {
     expect(isMeetingOrganizedByViewer(meetingBy({ name: 'Zoom Webhooks', username: 'zoom.webhooks', email: '' }), 'zoom.webhooks')).toBe(false);
     expect(isMeetingOrganizedByViewer(meetingBy({ name: '', username: '', email: '' }), 'alovelace')).toBe(false);
-    expect(isMeetingOrganizedByViewer({} as Meeting, 'alovelace')).toBe(false);
+    expect(isMeetingOrganizedByViewer(buildMeetingFixture(), 'alovelace')).toBe(false);
     expect(isMeetingOrganizedByViewer(null, 'alovelace')).toBe(false);
   });
 
@@ -1052,18 +1128,18 @@ describe('isVoteCalendarEventPast', () => {
 });
 
 describe('isMeetingOccurrenceCancelled', () => {
-  const occurrence = { occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' } as MeetingOccurrence;
+  const activeOccurrence = occurrence({ occurrence_id: '123', start_time: '2026-07-01T15:00:00Z', duration: 60, status: 'active' });
 
   it('returns true when occurrence status is cancel', () => {
-    expect(isMeetingOccurrenceCancelled({ ...occurrence, status: 'cancel' }, [])).toBe(true);
+    expect(isMeetingOccurrenceCancelled({ ...activeOccurrence, status: 'cancel' }, [])).toBe(true);
   });
 
   it('returns true when occurrence id is in cancelled_occurrences', () => {
-    expect(isMeetingOccurrenceCancelled(occurrence, ['123'])).toBe(true);
+    expect(isMeetingOccurrenceCancelled(activeOccurrence, ['123'])).toBe(true);
   });
 
   it('returns false for active occurrences with no cancelled ids', () => {
-    expect(isMeetingOccurrenceCancelled(occurrence, ['999'])).toBe(false);
+    expect(isMeetingOccurrenceCancelled(activeOccurrence, ['999'])).toBe(false);
   });
 });
 
@@ -1165,19 +1241,19 @@ describe('buildMeetingOccurrenceRoute', () => {
 
 describe('getMeetingSeriesUid', () => {
   it('returns meeting_id for past-meeting payloads whose id is the composite occurrence id', () => {
-    const past = { id: 'series-1-1789551000000', meeting_id: 'series-1' } as PastMeeting;
+    const past = pastMeeting({ id: 'series-1-1789551000000', meeting_id: 'series-1' });
 
     expect(getMeetingSeriesUid(past)).toBe('series-1');
   });
 
   it('returns id for live meeting payloads without meeting_id', () => {
-    const meeting = { id: 'series-1' } as Meeting;
+    const meetingFixture = buildMeetingFixture({ id: 'series-1' });
 
-    expect(getMeetingSeriesUid(meeting)).toBe('series-1');
+    expect(getMeetingSeriesUid(meetingFixture)).toBe('series-1');
   });
 
   it('falls back to id when meeting_id is present but empty', () => {
-    const past = { id: 'series-1', meeting_id: '' } as PastMeeting;
+    const past = pastMeeting({ id: 'series-1', meeting_id: '' });
 
     expect(getMeetingSeriesUid(past)).toBe('series-1');
   });

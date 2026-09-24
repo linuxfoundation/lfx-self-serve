@@ -79,6 +79,7 @@ import { logger } from './services/logger.service';
 import { NatsService } from './services/nats.service';
 import { sessionStoreService } from './services/session-store.service';
 import { SnowflakeService } from './services/snowflake.service';
+import { installAsyncRouteErrorBridge, installUnhandledRejectionLogger } from './utils/async-route-errors';
 import { buildImpersonationIdentityOverride, clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { initializeServerConsoleOverride } from './utils/console-override';
 import { isShuttingDown, markShuttingDown, runShutdownHooks } from './utils/shutdown';
@@ -98,6 +99,9 @@ if (process.env['NODE_ENV'] !== 'production') {
 // single-line structured JSON. Must run before any middleware or Angular SSR
 // renders so Angular component console calls are captured.
 initializeServerConsoleOverride();
+
+// Express 4 ignores the promise an async handler returns; route its rejections to apiErrorHandler.
+installAsyncRouteErrorBridge();
 
 const serverDistFolder = dirname(fileURLToPath(import.meta.url));
 const browserDistFolder = resolve(serverDistFolder, '../browser');
@@ -816,6 +820,7 @@ const isMain = isMainModule(metaUrl);
 const isPM2 = process.env['PM2'] === 'true';
 
 if (isMain || isPM2) {
+  installUnhandledRejectionLogger();
   startServer();
   const handleSignal = (sig: string): void => {
     gracefulShutdown(sig).catch((err) => {

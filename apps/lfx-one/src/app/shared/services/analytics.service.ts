@@ -1436,10 +1436,9 @@ export class AnalyticsService {
   }
 
   /**
-   * Fetches the live Events/Training/Members/Non-Members/Code area-state rows from `HEALTH_OVERVIEW_KPIS`,
-   * for every selectable period in one call. Engagement isn't part of that table's contract, so callers
-   * merge each period's rows with a fixture row for that area. Degrades to an empty map on failure — the
-   * caller then renders a neutral no-data placeholder for the live areas, never their fixture numbers.
+   * Fetches the live area-state rows for every tile, for every selectable period in one call. Engagement
+   * is read from `ENGAGEMENT_GROUP_ATTENDANCE`, the other five from `HEALTH_OVERVIEW_KPIS`. Degrades to an
+   * empty map on failure — the caller then renders a neutral no-data placeholder, never fixture numbers.
    */
   public getHealthOverviewKpis(foundationSlug: string): Observable<HealthMetricsOverviewKpisByRange> {
     const params = { foundationSlug };

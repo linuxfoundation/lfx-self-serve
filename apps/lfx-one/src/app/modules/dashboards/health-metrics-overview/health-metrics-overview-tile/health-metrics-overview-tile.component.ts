@@ -3,6 +3,7 @@
 
 import { NgClass } from '@angular/common';
 import { Component, computed, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { HEALTH_METRICS_OVERVIEW_CLASSIFICATIONS } from '@lfx-one/shared/constants';
 import { formatHealthMetricsOverviewAsOfLabel } from '@lfx-one/shared/utils';
 
@@ -10,7 +11,7 @@ import type { HealthMetricsOverviewTileViewModel } from '@lfx-one/shared/interfa
 
 @Component({
   selector: 'lfx-health-metrics-overview-tile',
-  imports: [NgClass],
+  imports: [NgClass, RouterLink],
   templateUrl: './health-metrics-overview-tile.component.html',
   styleUrl: './health-metrics-overview-tile.component.scss',
 })

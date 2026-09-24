@@ -150,6 +150,14 @@ Conventions, all of which the existing specs follow:
 run before any test executes. There is no separate `check-types` step for the app to catch it
 later.
 
+The shared package's specs (`packages/shared/src/**/*.spec.ts`) get the same treatment through a
+separate route: the Vitest runs are transpile-only (esbuild), so `packages/shared/tsconfig.spec.json`
+carries the type-check pass and is what the package's `yarn check-types` runs (see
+[Package Architecture](../shared/package-architecture.md#build-process)). Fixtures typed against
+shared interfaces stay in sync at compile time rather than silently desyncing on a required-field
+add; the fixture-builder convention is codified in
+[shared-and-sql-checklist § 5a](../../reviews/shared-and-sql-checklist.md#5a-shared-spec-fixtures-use-typed-builders-not-as-cast-literals-should-fix).
+
 Specs are also **linted like any other source file**. `**/*.spec.ts` used to sit in
 `eslint.config.js`'s ignore list, which meant every spec in the repo was exempt from the rules
 the code it tests must follow — a test file is the last place that should be, since a fake that
