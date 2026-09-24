@@ -237,6 +237,14 @@ anything. The scope class goes on a wrapper element **inside** the owning compon
 template: an emulated-encapsulation stylesheet rewrites selectors with a `_ngcontent`
 attribute, so a plain class selector cannot reach its own host element.
 
+That inheritance stops at anything rendered **outside** the scoped subtree. `lfx-select` and
+`lfx-multi-select` default `appendTo` to `'body'`, and PrimeNG tooltips attach to `body` as well,
+so their panels are DOM siblings of the app root and every `var(--md-*)` inside them resolves as
+unset. A scoped-token consumer that opens an overlay must keep it inside the scope: pass
+`appendTo` a template reference to an element within the scope container (or `'self'` where the
+panel can overflow its trigger without being clipped). Do not work around it by redefining the
+tokens on `body` or `:root` — that leaks the layer into the whole app.
+
 The same rewrite applies to **every** compound in a selector, not just the rightmost one.
 That matters whenever a token block keys off an ancestor outside the component — a
 `.dark-mode` class on the document root, say. Written plainly, `.dark-mode .scope { … }`

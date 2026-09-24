@@ -89,7 +89,7 @@ there — the stricter of the two surfaces — with the value on `--md-surface-c
 
 | Token                 | V2 value               | On chip | On card | Nearest `lfxColors`     | Difference                                                | Adopt upstream?                       |
 | --------------------- | ---------------------- | ------- | ------- | ----------------------- | --------------------------------------------------------- | ------------------------------------- |
-| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.600` `#009966` | V2 is less saturated and darker                           | Yes — converge on `emerald.600`       |
+| `--md-status-good`    | `#157347`              | 5.10:1  | 5.87:1  | `emerald.700` `#007A55` | V2 is less saturated                                      | Yes — converge on `emerald.700`       |
 | `--md-status-good-bg` | `rgb(21 115 71 / 10%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
 | `--md-status-warn`    | `#945e10`              | 4.62:1  | 5.43:1  | `amber.700` `#BB4D00`   | `amber.700` is far more orange; V2 reads as ochre         | **No** — hue; keep V2, raise upstream |
 | `--md-status-warn-bg` | `rgb(148 94 16 / 12%)` | —       | —       | —                       | derived                                                   | n/a — derived                         |
@@ -101,6 +101,10 @@ good, warn and live — every status chip would have failed AA. The divergence f
 that survives is **`--md-status-warn`, and the reason is hue, not contrast**: `amber.700`
 measures 5.03:1 on white and passes comfortably, it simply reads as orange where the design
 wants ochre.
+
+`--md-status-good` converges on `emerald.700`, not the hue-nearer `emerald.600`: `emerald.600`
+(`#009966`) measures only 3.65:1 on white and would reintroduce the chip-text failure the
+darkening fixed. `emerald.700` measures 5.36:1 on white and 4.67:1 on its own 10% tint.
 
 ### Radii and elevation
 
@@ -134,7 +138,32 @@ document root, which never carries that attribute. It would match nothing, perma
 the failure would look like "the toggle hasn't shipped yet". `:host-context` is the one
 construct whose ancestor part is deliberately left unscoped.
 
-Every dark value clears AA on the dark surfaces without adjustment.
+`lfxColors` has no dark theme, so every dark value is a divergence by construction; the
+nearest light-scale step is recorded for reference, not as a convergence target. Contrast is
+measured on the dark `--md-surface-card` (`#17191f`), and for accent and status hues also on
+their own tint, where chip text actually sits. Every text, accent and status value clears AA
+without adjustment; `--md-glyph-faint` stays non-text, as it is in light.
+
+| Token                | Dark value | On card | On own tint | Nearest `lfxColors`     |
+| -------------------- | ---------- | ------- | ----------- | ----------------------- |
+| `--md-surface-page`  | `#0e1013`  | —       | —           | `gray.950` `#030712`    |
+| `--md-surface-card`  | `#17191f`  | —       | —           | `gray.900` `#0F172B`    |
+| `--md-surface-hover` | `#1b1e24`  | —       | —           | `gray.900` `#0F172B`    |
+| `--md-border`        | `#282c34`  | —       | —           | `gray.800` `#1D293D`    |
+| `--md-border-strong` | `#3a3f48`  | —       | —           | `gray.700` `#314158`    |
+| `--md-divider`       | `#22262d`  | —       | —           | `gray.800` `#1D293D`    |
+| `--md-dot`           | `#3a3f48`  | —       | —           | `gray.700` `#314158`    |
+| `--md-text-heading`  | `#eef1f4`  | 15.50:1 | —           | `gray.100` `#F1F5F9`    |
+| `--md-text-body`     | `#c2c8d0`  | 10.43:1 | —           | `gray.300` `#CAD5E2`    |
+| `--md-text-muted`    | `#98a0ab`  | 6.65:1  | —           | `gray.400` `#90A1B9`    |
+| `--md-glyph-faint`   | `#6f7783`  | 3.88:1  | —           | `gray.500` `#62748E`    |
+| `--md-accent`        | `#4f9bff`  | 6.25:1  | 5.14:1      | `blue.400` `#85C2FF`    |
+| `--md-accent-ink`    | `#7db4ff`  | 8.24:1  | 6.78:1      | `blue.400` `#85C2FF`    |
+| `--md-status-good`   | `#3bb87c`  | 6.97:1  | 5.58:1      | `emerald.500` `#00BC7D` |
+| `--md-status-warn`   | `#e0a94a`  | 8.32:1  | 6.44:1      | `amber.300` `#FFD230`   |
+| `--md-status-live`   | `#ff6b60`  | 6.29:1  | 5.21:1      | `red.400` `#FF6467`     |
+
+The `-bg` tints are derived from their hue exactly as in light and are omitted.
 
 ## Convergence path
 

@@ -21,6 +21,11 @@
 // a wrapper element inside the V2 page component's own template (an emulated-encapsulation
 // stylesheet cannot reach its own host element with a plain class selector).
 //
+// Overlays are the exception. Anything rendered outside the subtree — `lfx-select` and
+// `lfx-multi-select` default `appendTo: 'body'`, and PrimeNG tooltips attach to `body` —
+// cannot inherit these properties. A V2 component that opens one passes `appendTo` a
+// reference to an element inside `.meeting-details-v2`. Never redefine the tokens on `body`.
+//
 //   // meeting-details-v2.component.scss
 //   @use './meeting-details-v2.tokens';
 //
@@ -83,7 +88,7 @@
   // A11Y: each status hue is darkened from the prototype so the chip text clears AA on
   // its own tinted background, which is where these are actually used. Prototype values
   // measured 3.6:1 on-chip across all three.
-  --md-status-good: #157347; // DIVERGENCE: nearest lfxColors.emerald.600 (#009966); 5.10:1 on chip, 5.87:1 on card
+  --md-status-good: #157347; // DIVERGENCE: converges on lfxColors.emerald.700 (#007A55, 5.36:1 on white) — NOT emerald.600, which is 3.65:1. 5.10:1 on chip, 5.87:1 on card
   --md-status-good-bg: rgb(21 115 71 / 10%); // derived from --md-status-good
 
   // ── Status: warn (awaiting RSVP, pending, low attendance) ─────────────────
@@ -114,6 +119,10 @@
 //
 // Dark values, taken from the prototype's own `[data-theme="dark"]` block.
 //
+// `lfxColors` has no dark theme, so every value here is a DIVERGENCE by construction. The
+// nearest light-scale step is recorded for reference only. Ratios are against the dark
+// --md-surface-card (#17191f); status and accent ratios are also given on their own tint.
+//
 // The app configures PrimeNG's `darkModeSelector: '.dark-mode'` but ships no toggle that
 // sets it, so this block is inert today. It is included so the V2 tree does not have to be
 // re-derived when a toggle lands, and so the prototype's dark contract is recorded rather
@@ -128,32 +137,32 @@
 // mechanism, change the ancestor here only — token names and consumers stay as they are.
 //
 :host-context(.dark-mode) .meeting-details-v2 {
-  --md-surface-page: #0e1013;
-  --md-surface-card: #17191f;
-  --md-surface-hover: #1b1e24;
+  --md-surface-page: #0e1013; // nearest lfxColors.gray.950 (#030712)
+  --md-surface-card: #17191f; // nearest lfxColors.gray.900 (#0F172B)
+  --md-surface-hover: #1b1e24; // nearest lfxColors.gray.900 (#0F172B)
 
-  --md-border: #282c34;
-  --md-border-strong: #3a3f48;
-  --md-divider: #22262d;
-  --md-dot: #3a3f48;
+  --md-border: #282c34; // nearest lfxColors.gray.800 (#1D293D)
+  --md-border-strong: #3a3f48; // nearest lfxColors.gray.700 (#314158)
+  --md-divider: #22262d; // nearest lfxColors.gray.800 (#1D293D)
+  --md-dot: #3a3f48; // nearest lfxColors.gray.700 (#314158)
 
-  --md-text-heading: #eef1f4;
-  --md-text-body: #c2c8d0;
-  --md-text-muted: #98a0ab;
-  --md-glyph-faint: #6f7783;
+  --md-text-heading: #eef1f4; // nearest lfxColors.gray.100 (#F1F5F9); 15.50:1
+  --md-text-body: #c2c8d0; // nearest lfxColors.gray.300 (#CAD5E2); 10.43:1
+  --md-text-muted: #98a0ab; // nearest lfxColors.gray.400 (#90A1B9); 6.65:1
+  --md-glyph-faint: #6f7783; // nearest lfxColors.gray.500 (#62748E); 3.88:1 — non-text, as in light
 
-  --md-accent: #4f9bff;
-  --md-accent-ink: #7db4ff;
-  --md-accent-bg: rgb(79 155 255 / 13%);
+  --md-accent: #4f9bff; // nearest lfxColors.blue.400 (#85C2FF); 6.25:1 on card, 5.14:1 on --md-accent-bg
+  --md-accent-ink: #7db4ff; // nearest lfxColors.blue.400 (#85C2FF); 8.24:1 on card, 6.78:1 on --md-accent-bg
+  --md-accent-bg: rgb(79 155 255 / 13%); // derived from --md-accent
 
-  --md-status-good: #3bb87c;
-  --md-status-good-bg: rgb(59 184 124 / 14%);
+  --md-status-good: #3bb87c; // nearest lfxColors.emerald.500 (#00BC7D); 6.97:1 on card, 5.58:1 on chip
+  --md-status-good-bg: rgb(59 184 124 / 14%); // derived from --md-status-good
 
-  --md-status-warn: #e0a94a;
-  --md-status-warn-bg: rgb(224 169 74 / 14%);
+  --md-status-warn: #e0a94a; // nearest lfxColors.amber.300 (#FFD230); 8.32:1 on card, 6.44:1 on chip
+  --md-status-warn-bg: rgb(224 169 74 / 14%); // derived from --md-status-warn
 
-  --md-status-live: #ff6b60;
-  --md-status-live-bg: rgb(255 107 96 / 14%);
+  --md-status-live: #ff6b60; // nearest lfxColors.red.400 (#FF6467); 6.29:1 on card, 5.21:1 on chip
+  --md-status-live-bg: rgb(255 107 96 / 14%); // derived from --md-status-live
 
   // --md-shadow-color is intentionally not overridden: the prototype's dark block leaves
   // the elevation colour alone.
