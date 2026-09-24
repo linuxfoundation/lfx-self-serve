@@ -291,6 +291,22 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(byTestId(fixture, 'org-easycla-activity-log-filter-empty')).toBeNull();
   });
 
+  it('keeps the tab-empty state when a term is typed into a log that has no events at all', async () => {
+    getActivityLog.mockReturnValueOnce(of(page([])));
+    const fixture = await render();
+
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('anything');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // "Clear the search to see every event" would be a false promise on a log with no events.
+    expect(byTestId(fixture, 'org-easycla-activity-log-empty')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-activity-log-filter-empty')).toBeNull();
+  });
+
   it('renders the error state with a subtitle-driven retry prompt when the read fails', async () => {
     getActivityLog.mockReturnValueOnce(throwError(() => new Error('read failed')));
     const fixture = await render();

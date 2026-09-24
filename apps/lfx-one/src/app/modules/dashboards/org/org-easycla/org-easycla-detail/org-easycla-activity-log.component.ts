@@ -152,10 +152,10 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
   protected readonly hasSearchTerm = computed(() => (this.searchTerm() ?? '').trim().length > 0);
-  protected readonly showEmptyState = computed(
-    () => !this.loading() && !this.errorMessage() && !this.hasSearchTerm() && (this.loadedList()?.list.length ?? 0) === 0 && !this.hasNextPage()
+  protected readonly showEmptyState = computed(() => !this.loading() && !this.errorMessage() && this.resultCount() === 0 && !this.hasNextPage());
+  protected readonly showFilterEmptyState = computed(
+    () => !this.loading() && !this.errorMessage() && this.hasSearchTerm() && this.resultCount() > 0 && this.filteredRows().length === 0
   );
-  protected readonly showFilterEmptyState = computed(() => !this.loading() && !this.errorMessage() && this.hasSearchTerm() && this.filteredRows().length === 0);
   protected readonly showErrorState = computed(() => !!this.errorMessage());
   protected readonly loadingMoreSignal = this.loadingMore.asReadonly();
 
