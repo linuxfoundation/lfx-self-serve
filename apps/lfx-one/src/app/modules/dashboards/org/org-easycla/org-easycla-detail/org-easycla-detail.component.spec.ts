@@ -2974,6 +2974,56 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(component.autoEclaValue()).toBe(true);
   });
 
+  it('labels the switch Auto ECLA and links to the docs', async () => {
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    const label = fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]') as HTMLLabelElement;
+    expect(label.textContent?.trim()).toBe('Auto ECLA');
+    const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
+    expect(link.getAttribute('href')).toBe('/docs');
+    expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
+  });
+
+  it('describes what on and off mean for people on the approval list', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: false }));
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-hint')?.textContent?.trim()).toBe(
+      'On — employees matching the approval list are covered automatically.'
+    );
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-auto-ecla-hint')?.textContent?.trim()).toBe(
+      "Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered."
+    );
+  });
+
+  it('confirms the written value with a success toast', async () => {
+    setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+  });
+
+  it('does not confirm a write that finished after the manager left the agreement', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: true }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    answer.next({ autoCreateEcla: false });
+    answer.complete();
+
+    expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
   it('rolls back and toasts with the producer sentence when the write is refused', async () => {
     const error = new HttpErrorResponse({
       status: 403,

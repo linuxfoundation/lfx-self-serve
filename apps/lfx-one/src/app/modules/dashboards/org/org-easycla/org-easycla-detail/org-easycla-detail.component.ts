@@ -843,8 +843,8 @@ export class OrgEasyclaDetailComponent {
    * Turns Auto ECLA on or off for the agreement on screen (#1988).
    *
    * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
-   * click without a round trip. On success the override stays (the state was written) and the
-   * saving flag is cleared. On failure the override is dropped — reverting to the row's own
+   * click without a round trip. On success the override stays (the state was written), the
+   * saving flag is cleared, and a success toast names the value written. On failure the override is dropped — reverting to the row's own
    * value, which the producer did not change — and the producer's own sentence is shown as an
    * error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
@@ -900,7 +900,13 @@ export class OrgEasyclaDetailComponent {
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
           // (which it does not, but if it did, the toggle should tell the truth).
-          this.rememberAutoEcla(target, response?.autoCreateEcla === true);
+          const written = response?.autoCreateEcla === true;
+          this.rememberAutoEcla(target, written);
+          if (!this.autoEclaStillHere(target)) return;
+          this.messageService.add({
+            severity: 'success',
+            summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+          });
         },
         error: (error: HttpErrorResponse) => {
           if (this.autoEclaInFlight.get(key) !== target) return;
