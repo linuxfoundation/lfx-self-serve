@@ -827,6 +827,38 @@ export function isPrivateHost(hostname: string): boolean {
 }
 
 /**
+ * The ports a URL may name if a server is ever going to FETCH it.
+ *
+ * Exported so the fetch path and this canonicalizer cannot drift: `fetchSafeUrl` enforces the
+ * same list, and a URL this function approves has to be one that path would also accept.
+ * Campaign-service fetches hero images and sponsor logos server-side, so a validator that
+ * accepts what the fetcher refuses persists a URL that is guaranteed to fail later -- or, worse,
+ * widens the SSRF surface past what the scrape pipeline allows.
+ *
+ * PORT is shared with the fetch path; SCHEME deliberately is NOT. `fetchSafeUrl` is https-only
+ * because it opens the connection itself. This canonicalizer also serves urls a RECIPIENT
+ * clicks -- `buttonUrl`, a hero link, an anchor in the body -- which this server never fetches,
+ * and refusing `http://` there would silently drop a legitimate sponsor or documentation link.
+ * A non-standard port has no such legitimate case, which is why the two rules differ.
+ */
+export const FETCHABLE_PORTS: readonly string[] = ['80', '443'];
+
+/**
+ * A refusal reason when `parsed` names a port no fetcher will accept, or '' when it is fine.
+ *
+ * Returns the MESSAGE rather than a boolean so the throwing caller (`fetchSafeUrl`) and the
+ * empty-string caller (`canonicalHttpUrl`) share one decision and one wording.
+ *
+ * `parsed.port` is '' whenever the port is the scheme's default, because WHATWG drops it -- so
+ * `https://host/x` and `https://host:443/x` both pass, and both serialize without the port.
+ * Only a NON-default port is ever tested.
+ */
+export function refuseUnfetchablePort(parsed: URL): string {
+  if (parsed.port === '' || FETCHABLE_PORTS.includes(parsed.port)) return '';
+  return `Only ports ${FETCHABLE_PORTS.join(' and ')} are allowed`;
+}
+
+/**
  * The canonical http(s) form of `value`, or '' when it is not a usable public URL.
  *
  * ONE implementation, because the server's allow-list and the client's preview must agree
@@ -856,6 +888,8 @@ export function canonicalHttpUrl(value: unknown): string {
     const parsed = new URL(trimmed);
     if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return '';
     if (isPrivateHost(parsed.hostname)) return '';
+    const portRefusal = refuseUnfetchablePort(parsed);
+    if (portRefusal !== '') return '';
     parsed.username = '';
     parsed.password = '';
     return parsed.href;

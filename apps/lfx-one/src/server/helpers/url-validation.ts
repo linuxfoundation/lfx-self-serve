@@ -26,7 +26,7 @@
  * @version 2.0.0
  */
 
-import { isPrivateHost } from '@lfx-one/shared/utils/url.utils';
+import { isPrivateHost, refuseUnfetchablePort } from '@lfx-one/shared/utils/url.utils';
 import { ServiceValidationError } from '../errors';
 
 /**
@@ -272,10 +272,16 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('Only HTTPS URLs are allowed');
   }
 
-  const port = parsed.port ? Number(parsed.port) : 443;
-  if (port !== 80 && port !== 443) {
-    throw new Error('Only ports 80 and 443 are allowed');
+  // The SHARED rule, not a second copy of it. `canonicalHttpUrl` enforces the same list, so a
+  // url that validator approves is one this path will also accept -- they drifted once already,
+  // with `canonicalHttpUrl` persisting `:8443` that this function refuses.
+  const portRefusal = refuseUnfetchablePort(parsed);
+  if (portRefusal !== '') {
+    throw new Error(portRefusal);
   }
+  // The number the CONNECTION needs, after the policy has approved it. Defaults to 443 because
+  // the scheme is https-only above, and WHATWG leaves `parsed.port` empty for a default port.
+  const port = parsed.port ? Number(parsed.port) : 443;
 
   const hostname = parsed.hostname.toLowerCase();
   // The SHARED judge, not a second denylist. A module-local `PRIVATE_IP_PATTERNS` lived here

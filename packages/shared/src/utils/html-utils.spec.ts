@@ -656,11 +656,22 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
     expect(stripResourceLoadingHtml(`<p><a href="${href}">x</a></p>`, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
-  it('keeps a vouched host regardless of case or port', () => {
-    // DNS is case-insensitive and a port does not change the host.
-    const html = '<p><a href="https://EVENTS.LINUXFOUNDATION.ORG:8443/x">x</a></p>';
+  it('keeps a vouched host regardless of case', () => {
+    // DNS is case-insensitive, so the host matches and the canonical form is lower-cased.
+    const html = '<p><a href="https://EVENTS.LINUXFOUNDATION.ORG/x">x</a></p>';
 
-    expect(stripResourceLoadingHtml(html, BRIEF)).toContain('href="https://events.linuxfoundation.org:8443/x"');
+    expect(stripResourceLoadingHtml(html, BRIEF)).toContain('href="https://events.linuxfoundation.org/x"');
+  });
+
+  it('drops a link on a vouched host that names a NON-DEFAULT port', () => {
+    // A matching host is not sufficient. `canonicalHttpUrl` now refuses any port other than
+    // 80/443, matching `fetchSafeUrl` -- campaign-service fetches hero and sponsor assets
+    // server-side, so a url this validator approves must be one that path would also accept.
+    // This assertion previously expected `:8443` to be KEPT; it was written before the port
+    // gate existed and was wrong once the two validators were reconciled.
+    const html = '<p><a href="https://events.linuxfoundation.org:8443/x">x</a></p>';
+
+    expect(stripResourceLoadingHtml(html, BRIEF)).toBe('<p><a>x</a></p>');
   });
 
   it.each([

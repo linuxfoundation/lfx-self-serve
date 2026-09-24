@@ -679,3 +679,33 @@ describe('canonicalHttpUrl', () => {
     expect(isPrivateHost('10.0.0.1')).toBe(true);
   });
 });
+
+/**
+ * `canonicalHttpUrl` and `fetchSafeUrl` answer overlapping questions, and they drifted once:
+ * this function persisted `:8443` on a public host while the fetch path refused it, so a url
+ * one validator approved was one the other would reject. They now share `refuseUnfetchablePort`.
+ */
+describe('canonicalHttpUrl — port policy, shared with the fetch path', () => {
+  it.each([
+    ['a non-standard https port', 'https://events.linuxfoundation.org:8443/x'],
+    ['a non-standard http port', 'http://events.linuxfoundation.org:8080/x'],
+    ['an SSH port', 'https://events.linuxfoundation.org:22/x'],
+  ])('refuses %s', (_label, url) => {
+    expect(canonicalHttpUrl(url)).toBe('');
+  });
+
+  it.each([
+    ['no explicit port', 'https://events.linuxfoundation.org/x', 'https://events.linuxfoundation.org/x'],
+    ['an explicit 443', 'https://events.linuxfoundation.org:443/x', 'https://events.linuxfoundation.org/x'],
+    ['an explicit 80 on http', 'http://events.linuxfoundation.org:80/x', 'http://events.linuxfoundation.org/x'],
+  ])('keeps %s, serialized without the default port', (_label, url, expected) => {
+    expect(canonicalHttpUrl(url)).toBe(expected);
+  });
+
+  it('still allows http, because not every url here is one this server fetches', () => {
+    // SCHEME is deliberately NOT shared with `fetchSafeUrl`, which is https-only because it opens
+    // the connection. A `buttonUrl` or body anchor is clicked by a RECIPIENT; refusing `http://`
+    // would drop a legitimate sponsor or documentation link.
+    expect(canonicalHttpUrl('http://events.linuxfoundation.org/x')).toBe('http://events.linuxfoundation.org/x');
+  });
+});
