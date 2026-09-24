@@ -23,7 +23,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
-import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
@@ -117,7 +117,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
   });
 
   await fulfillJson(page, '**/api/nav/org-items*', {
-    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true }],
+    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true }],
     next_page_token: null,
     upstream_failed: false,
     total: 1,
