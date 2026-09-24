@@ -377,6 +377,18 @@ describe('OrgNavigationService default selection', () => {
       expect(clearAccount).not.toHaveBeenCalled();
     });
 
+    // Spec 050: an address adopted while the empty-list decision waited stays selected.
+    it('keeps a selection an address adopted while the empty-list decision waited', () => {
+      grantsLoaded.set(false);
+      bootstrapWith([]);
+
+      isAdoptedFromAddress.mockReturnValue(true);
+      grantsLoaded.set(true);
+      TestBed.tick();
+
+      expect(clearAccount).not.toHaveBeenCalled();
+    });
+
     it('still reports an empty list for a non-contractor once the grants answer', () => {
       grantsLoaded.set(false);
       bootstrapWith([]);

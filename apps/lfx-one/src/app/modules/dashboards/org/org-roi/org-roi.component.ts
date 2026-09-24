@@ -9,7 +9,6 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensRoiMethodPreferenceService } from '@services/org-lens-roi-method-preference.service';
 import { OrgLensRoiService } from '@services/org-lens-roi.service';
-import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { classifySectionError, sectionEmptyState } from '@shared/utils/org-lens-empty-state.utils';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -63,7 +62,6 @@ const EMPTY_COVERAGE: OrgLensRoiCoverage = { orgUid: '', hasData: false, coverag
 })
 export class OrgRoiComponent {
   private readonly accountContext = inject(AccountContextService);
-  private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly roiService = inject(OrgLensRoiService);
   private readonly methodPreference = inject(OrgLensRoiMethodPreferenceService);
@@ -89,7 +87,7 @@ export class OrgRoiComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || (this.orgNavigationService.loaded() && this.emptyState.settled()));
+  protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
 
   protected readonly hasCompany: Signal<boolean> = computed(
     () => !!this.accountContext.selectedAccount().uid || !!this.accountContext.selectedAccount().accountId

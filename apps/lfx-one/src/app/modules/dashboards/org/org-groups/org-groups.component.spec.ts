@@ -84,7 +84,14 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
       {
         provide: OrgLensEmptyStateService,
-        useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(true), retrying: signal(false), retry: vi.fn() },
+        useValue: {
+          pageState: signal(null),
+          hasPageState: signal(false),
+          settled: signal(true),
+          pageReady: signal(orgNavigationLoaded),
+          retrying: signal(false),
+          retry: vi.fn(),
+        },
       },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
       // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
@@ -949,7 +956,14 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
         {
           provide: OrgLensEmptyStateService,
-          useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(orgLoaded), retrying: signal(false), retry: vi.fn() },
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(orgLoaded),
+            pageReady: signal(orgLoaded),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
         },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },

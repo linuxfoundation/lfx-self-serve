@@ -40,6 +40,8 @@ describe('OrgEasyclaComponent', () => {
     pageState,
     hasPageState: computed(() => pageState() !== null),
     settled: computed(() => grantsLoaded() && personaLoaded()),
+    // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
+    pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),
     retrying: signal(false),
     retry: vi.fn(),
   };

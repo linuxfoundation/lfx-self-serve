@@ -3,7 +3,7 @@
 
 import { computed, inject, Injectable, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
+import { OrgLensContractorProbe, OrgLensContractorVerdict, OrgLensEmptyStateName, OrgLensLookupBlocker } from '@lfx-one/shared/interfaces';
 import { concat, distinctUntilChanged, map, of, switchMap, take } from 'rxjs';
 
 import { AccountContextService } from './account-context.service';
@@ -69,11 +69,13 @@ export class OrgLensEmptyStateService {
   });
 
   /** The read gate's answer for `contractorProbeUid`; `admitted` is `undefined` until it lands. */
-  private readonly contractorProbe: Signal<{ uid: string; admitted: boolean | undefined } | null> = toSignal(
+  private readonly contractorProbe: Signal<OrgLensContractorProbe | null> = toSignal(
     toObservable(this.contractorProbeUid).pipe(
       distinctUntilChanged(),
       switchMap((uid) =>
-        uid ? concat(of({ uid, admitted: undefined }), this.roleGrants.readCheck(uid).pipe(map((admitted) => ({ uid, admitted })))) : of(null)
+        uid
+          ? concat(of<OrgLensContractorProbe>({ uid, admitted: undefined }), this.roleGrants.readCheck(uid).pipe(map((admitted) => ({ uid, admitted }))))
+          : of(null)
       )
     ),
     { initialValue: null }
@@ -88,6 +90,14 @@ export class OrgLensEmptyStateService {
 
   /** Both one-shot bootstrap loads have answered (and a contractor's read check, when one is owed); before this, pages render a skeleton, never a state. */
   public readonly settled: Signal<boolean> = computed(() => this.roleGrants.loaded() && this.persona.personaLoaded() && !this.contractorProbePending());
+
+  /**
+   * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
+   * A caller with no switcher access never starts that list (an admitted contractor with no roster row
+   * or persona seed, #2961), so waiting on it would hold them on the skeleton forever. The one rule every
+   * Org page and `/org/not-found` use.
+   */
+  public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
 
   /** The selected organization is in the caller's resolved set (direct, inherited, or LF-team entitlement). */
   public readonly selectedHeld: Signal<boolean> = computed(() => {
@@ -206,7 +216,7 @@ export class OrgLensEmptyStateService {
    * organization through; `null` when there is no verdict (not a contractor, or an answer still owed —
    * `settled` covers that). The probe answer counts only for the organization it was asked about.
    */
-  private contractorVerdict(holdsAnything: boolean): 'refused' | 'admitted' | null {
+  private contractorVerdict(holdsAnything: boolean): OrgLensContractorVerdict | null {
     if (!this.roleGrants.isContractor()) {
       return null;
     }

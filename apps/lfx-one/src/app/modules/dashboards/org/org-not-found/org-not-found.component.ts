@@ -41,9 +41,7 @@ export class OrgNotFoundComponent {
    * has too. A caller without switcher access never triggers the list fetch and must not be held on
    * the skeleton for it.
    */
-  protected readonly settled: Signal<boolean> = computed(
-    () => this.emptyState.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded())
-  );
+  protected readonly settled: Signal<boolean> = computed(() => this.emptyState.pageReady());
 
   /** The caller's own held organizations — the same access-filtered rows the switcher shows. */
   protected readonly orgList: Signal<{ uid: string; name: string }[]> = computed(() =>

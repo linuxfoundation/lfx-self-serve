@@ -525,7 +525,7 @@ test.describe('Org Lens empty states (spec 053)', () => {
   // selected organization, the resolver for an address), never on the roster, and always gives the
   // contractor reason rather than employee copy, a zero-metric overview or a retryable failure.
   test.describe('page level — LF contractor without a grant (#2961)', () => {
-    const CONTRACTOR_HEADLINE = 'Contractor accounts need an organization grant';
+    const CONTRACTOR_HEADLINE = ORG_LENS_EMPTY_STATE_COPY['contractor-no-grant'].headline;
 
     /** The read gate's answer for the selected organization; registered last so it wins over the lens stub. */
     async function stubReadCheck(page: Page, status: 204 | 403): Promise<void> {

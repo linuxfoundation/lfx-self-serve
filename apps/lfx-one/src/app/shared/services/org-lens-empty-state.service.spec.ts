@@ -497,6 +497,38 @@ describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', (
     expect(h.service.pageState()).toBeNull();
   });
 
+  // A contractor who holds organizations but has no selection yet is waiting for the default selection,
+  // not refused: no state, and nothing to ask the gate about.
+  it('shows nothing for a contractor who holds organizations while the default selection is pending', () => {
+    h.hasOrgSelectorAccess.set(true);
+    TestBed.tick();
+
+    expect(h.service.pageState()).toBeNull();
+    expect(h.readCheck).not.toHaveBeenCalled();
+  });
+
+  // An admitted contractor with no switcher access never starts the org list; the page must not wait for it.
+  it('is page-ready for an admitted contractor with no switcher access, without the org list', () => {
+    h.hasOrgSelectorAccess.set(false);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+    expect(h.service.pageReady()).toBe(false);
+
+    h.readAnswers[0].next(true);
+    expect(h.listLoaded()).toBe(false);
+    expect(h.service.pageReady()).toBe(true);
+  });
+
+  it('still waits for the org list when the caller has switcher access', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.selectedAccount.set(account(HELD));
+
+    expect(h.service.pageReady()).toBe(false);
+    h.listLoaded.set(true);
+    expect(h.service.pageReady()).toBe(true);
+  });
+
   it('never probes an organization the contractor holds through an explicit grant', () => {
     h.hasOrgSelectorAccess.set(true);
     h.writerSet.set(new Set([HELD]));

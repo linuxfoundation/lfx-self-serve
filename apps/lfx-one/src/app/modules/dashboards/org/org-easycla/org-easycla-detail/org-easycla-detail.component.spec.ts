@@ -70,6 +70,8 @@ describe('OrgEasyclaDetailComponent', () => {
     pageState,
     hasPageState: computed(() => pageState() !== null),
     settled: computed(() => grantsLoaded() && personaLoaded()),
+    // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
+    pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),
     retry: vi.fn(),
   };
   // Both halves of the address (#2364): the CLA Group in the path, and the signature that narrows
@@ -2878,7 +2880,14 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         {
           provide: OrgLensEmptyStateService,
-          useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(true), retrying: signal(false), retry: vi.fn() },
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(true),
+            pageReady: signal(true),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
         },
         {
           provide: OrgLensClaService,
@@ -3055,7 +3064,14 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
         {
           provide: OrgLensEmptyStateService,
-          useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(true), retrying: signal(false), retry: vi.fn() },
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(true),
+            pageReady: signal(true),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
         },
         {
           provide: OrgLensClaService,
