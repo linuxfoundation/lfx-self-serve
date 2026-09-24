@@ -30,7 +30,7 @@ Drawers are sliding side panels that show additional detail — such as metrics 
 
 ## What does the Organization Dependency card show?
 
-The **Organization Dependency** card on the Foundation overview shows how concentrated the foundation's contributions are — the group of organizations whose contributors performed 51% or more of all contributions, versus all remaining organizations. Select the card to open a drawer with the top-organization count, a contribution-share chart, and a link to detailed metrics in LFX Insights. The card is part of the Foundation lens — it's visible to board members, executive directors, LF Staff, and users with a writer role on the foundation.
+The **Organization Dependency** card on the Foundation overview shows how concentrated the foundation's contributions are — the group of organizations whose contributors performed 51% or more of all contributions, versus all remaining organizations. Select the card to open a drawer with the top-organization count, a contribution-share chart, and a link to detailed metrics in LFX Insights. The card is part of the Foundation lens — it's visible to board members, executive directors, LF Staff, users with a writer role on the foundation, and users with auditor access.
 
 ## How do I get access to the Foundation lens?
 
