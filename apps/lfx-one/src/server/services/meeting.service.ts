@@ -876,29 +876,36 @@ export class MeetingService {
    * Authorizes a caller to read the meeting's registrant roster via the tolerant listing
    * (fail_on_partial absent — may return a partial list on upstream failures).
    *
-   * Three caller classes are valid:
+   * Four caller classes are valid:
    * 1. Direct organizer of this meeting (`v1_meeting#organizer`) — the meeting-card organizer
    *    view, which the client already guards with `@if (meeting().organizer)`.
-   * 2. Project writer (`project#writer`) for the meeting's project — covers the meeting edit
-   *    wizard for project owners and writers. `committee#writer` is derived from `project#writer`
-   *    in the FGA model, so this check covers committee writers too.
+   * 2. Project writer (`project#writer`) for the meeting's project — covers project owners and
+   *    inherited parent-project writers in the edit wizard.
    * 3. Meeting coordinator (`project#meeting_coordinator`) — a direct-only FGA grant (not
-   *    derived from writer) that `writerGuard` / `hasMeetingWriteAccess` also accepts for the
-   *    edit wizard. Without this check, a coordinator who has not yet been added as a meeting
-   *    organizer (e.g. FGA lag right after creating a meeting) would receive a 403.
+   *    derived from `project#writer`) that `writerGuard` / `hasMeetingWriteAccess` also accepts
+   *    for the edit wizard.
+   * 4. Committee writer (`committee#writer`) for any committee associated with the meeting —
+   *    `writerGuard` admits committee writers on meeting routes when a `committee_uid` is
+   *    present. A committee writer need not hold any project-level grant, so the project checks
+   *    alone would deny them.
    *
-   * The organizer check runs first (single round trip, no meeting fetch). Only if that fails
-   * is the meeting fetched for its `project_uid` and writer + coordinator checks issued in a
-   * single parallel batch. All checks use `checkAccessStrict` / `checkSingleAccessStrict` so
-   * an unresolvable FGA result propagates as a 5xx rather than silently collapsing to a denial
-   * or a grant.
+   * Cases 2–4 handle the FGA propagation lag window: the live model derives
+   * `v1_meeting#organizer` from all three, so once fga-sync catches up they pass the fast path
+   * (case 1). During the lag the fallback keeps the edit wizard working for the full set of
+   * callers `writerGuard` admits.
+   *
+   * The organizer check runs first (single round trip, no meeting fetch). Only if that fails is
+   * the meeting fetched for its `project_uid` and `committees`, and all fallback checks are
+   * issued in a single parallel batch. All checks use `checkAccessStrict` /
+   * `checkSingleAccessStrict` so an unresolvable FGA result propagates as a 5xx rather than
+   * silently collapsing to a denial or a grant.
    *
    * The upstream query-service applies no per-user grant filtering on `v1_meeting_registrant`,
    * so without this gate any authenticated user can harvest full registrant PII by supplying
    * a meeting UID. See issue linuxfoundation/lfx-self-serve-ops#45.
    *
-   * @throws AuthorizationError if the caller is neither a meeting organizer, project writer,
-   *   nor meeting coordinator.
+   * @throws AuthorizationError if the caller is none of: meeting organizer, project writer,
+   *   meeting coordinator, or committee writer for an associated committee.
    * @throws MicroserviceError if any access check could not be resolved.
    */
   public async getAuthorizedRegistrantsForListing(
@@ -910,26 +917,34 @@ export class MeetingService {
     // `v1_meeting`, not `meeting` — organizer tuples hang off the v1 type everywhere in this
     // codebase. `checkSingleAccessStrict` so an unresolvable check propagates as a 5xx rather
     // than collapsing into a denial that looks like a valid authorization result.
-    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'v1_meeting', id: meetingUid, access: 'organizer' });
+    const isOrganizer = await this.accessCheckService.checkSingleAccessStrict(req, {
+      resource: 'v1_meeting',
+      id: meetingUid,
+      access: 'organizer',
+    });
 
     if (!isOrganizer) {
-      // Fast path missed — check project-level write access. Fetch the meeting first to obtain
-      // its project_uid; `access: false` skips the per-meeting organizer FGA probe that
-      // getMeetingById otherwise attaches to the returned object (we only need project_uid).
+      // Fast path missed — fetch the meeting for its project_uid and committees, then check all
+      // three fallback relations in a single batch. `access: false` skips the redundant
+      // per-meeting organizer FGA probe getMeetingById normally attaches to the returned object.
       const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
 
-      // Check project#writer and project#meeting_coordinator in one batch — meeting coordinators
-      // hold a direct-only FGA grant that is NOT derived from project#writer, so a writer check
-      // alone would deny them. `writerGuard` / `hasMeetingWriteAccess` accepts both, and the
-      // registrant manager in the edit wizard is reachable by either role.
-      const projectResults = await this.accessCheckService.checkAccessStrict(req, [
+      // Build the check list: project-level grants + one entry per associated committee.
+      const committeeUids = (meeting.committees ?? []).map((c) => c.uid).filter(Boolean);
+      const accessChecks = [
         { resource: 'project', id: meeting.project_uid, access: 'writer' },
         { resource: 'project', id: meeting.project_uid, access: 'meeting_coordinator' },
-      ]);
-      const isProjectWriter = projectResults.get(`${meeting.project_uid}#writer`) === true;
-      const isMeetingCoordinator = projectResults.get(`${meeting.project_uid}#meeting_coordinator`) === true;
+        ...committeeUids.map((uid) => ({ resource: 'committee', id: uid, access: 'writer' })),
+      ];
 
-      if (!isProjectWriter && !isMeetingCoordinator) {
+      const results = await this.accessCheckService.checkAccessStrict(req, accessChecks);
+
+      const isProjectWriter = results.get(`${meeting.project_uid}#writer`) === true;
+      const isMeetingCoordinator = results.get(`${meeting.project_uid}#meeting_coordinator`) === true;
+      // Committee writer on any committee associated with the meeting satisfies the gate.
+      const isCommitteeWriter = committeeUids.some((uid) => results.get(`${uid}#writer`) === true);
+
+      if (!isProjectWriter && !isMeetingCoordinator && !isCommitteeWriter) {
         throw new AuthorizationError('Not authorized to read the registrant roster for this meeting', {
           operation: 'get_authorized_registrants_for_listing',
           service: 'meeting_service',
