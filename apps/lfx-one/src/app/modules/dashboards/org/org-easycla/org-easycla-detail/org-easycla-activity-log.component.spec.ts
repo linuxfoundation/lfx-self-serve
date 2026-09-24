@@ -242,6 +242,26 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(allByTestId(fixture, 'org-easycla-activity-log-actor').map(textIn)).toEqual(['José Mensah']);
   });
 
+  it('matches a dotted capital I with a plain lowercase query, whatever the host locale', async () => {
+    getActivityLog.mockReturnValueOnce(
+      of(page([entry({ id: 'e1', summary: 'İstanbul office signed', actor: 'Ada' }), entry({ id: 'e2', summary: 'Istanbul office signed', actor: 'Ada' })]))
+    );
+    const lower = vi.spyOn(String.prototype, 'toLocaleLowerCase').mockImplementation(function (this: string) {
+      return this.replace(/I/g, 'ı').toLowerCase();
+    });
+    const fixture = await render();
+
+    const search = fixture.componentInstance as unknown as { filterForm: { controls: { search: { setValue: (value: string) => void } } } };
+    search.filterForm.controls.search.setValue('istanbul');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    lower.mockRestore();
+
+    expect(allByTestId(fixture, 'org-easycla-activity-log-summary')).toHaveLength(2);
+  });
+
   it('shows the filter-empty state (not the tab-empty state) when the fetched set is non-empty but the term matches nothing', async () => {
     getActivityLog.mockReturnValueOnce(of(page([entry({ id: 'e1', summary: 'aporter signed', actor: 'Ada' })])));
     const fixture = await render();

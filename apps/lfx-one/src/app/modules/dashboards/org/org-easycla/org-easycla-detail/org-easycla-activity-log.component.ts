@@ -242,5 +242,5 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
 }
 
 function foldForActivitySearch(value: string): string {
-  return stripDiacritics(value).toLocaleLowerCase();
+  return stripDiacritics(value).toLowerCase();
 }
