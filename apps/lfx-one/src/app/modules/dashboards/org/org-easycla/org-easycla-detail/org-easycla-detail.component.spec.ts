@@ -1750,6 +1750,23 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('2');
   });
 
+  // The badge keys on the displayed agreement, not the raw sig query param: when the param is
+  // stale or absent the agreement still resolves by group, and a panel count for it must apply.
+  it('applies a panel approval count for the displayed agreement even when the sig param is stale', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'other-signature' })] }));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'other-signature',
+      count: 3,
+    });
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('3');
+  });
+
   /**
    * A copied link outlives the list it was copied from, so a signature it names can be gone — the
    * row superseded, or the link shared by someone whose list differs. The group id is the

@@ -724,7 +724,7 @@ export class OrgEasyclaDetailComponent {
   }
 
   protected onApprovalCountChanged(count: number): void {
-    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+    this.approvalCountOverride.set({ signatureId: this.claGroup()?.id ?? '', count });
   }
 
   protected onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void {
@@ -1035,7 +1035,7 @@ export class OrgEasyclaDetailComponent {
 
   private initApprovalBadge(): string {
     const override = this.approvalCountOverride();
-    if (override && override.signatureId === this.signatureId()) return String(override.count);
+    if (override && override.signatureId === this.claGroup()?.id) return String(override.count);
 
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
