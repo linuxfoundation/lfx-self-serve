@@ -11,6 +11,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_EDIT_LABEL,
   MENTORSHIP_MENTEE_PROFILE_EDIT_SUBTITLE,
   MENTORSHIP_MENTEE_PROFILE_SAVE_LABEL,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
@@ -157,6 +158,20 @@ describe('MenteeProfileEditDrawerComponent', () => {
 
     expect(comp['form'].controls.introduction.value).toBe(atCap);
     expect(comp['aboutMeLength']()).toBe(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+  });
+
+  it('seeds a stored aboutMe over the raw cap without running the quadratic strip on all of it (lfx-self-serve-ops#37)', () => {
+    // `aboutMe` comes back from the API, so it can exceed what the register form allows. Converting
+    // this nested-bracket payload in full would take seconds; the raw-cap slice bounds it.
+    const hostile = `${'<'.repeat(100_000)}${'>'.repeat(100_000)}`;
+    expect(hostile.length).toBeGreaterThan(MENTORSHIP_RICH_TEXT_RAW_MAX);
+
+    const start = performance.now();
+    drawer.open({ ...PROFILE, aboutMe: hostile });
+    fixture.detectChanges();
+
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(comp['aboutMeLength']()).toBeLessThanOrEqual(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
   });
 
   it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {

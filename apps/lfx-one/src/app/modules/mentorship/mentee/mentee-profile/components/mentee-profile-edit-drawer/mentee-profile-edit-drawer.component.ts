@@ -20,6 +20,7 @@ import {
   MENTORSHIP_MENTEE_PROFILE_SKILLS_INTRO,
   MENTORSHIP_MENTEE_PROFILE_SKILLS_WANT_EDIT_LABEL,
   MENTORSHIP_MENTEE_RESUME_INTRO,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
 } from '@lfx-one/shared/constants';
 import { MentorshipMenteeProfileDetails } from '@lfx-one/shared/interfaces';
 import { capCodePointEdit, codePointLength, htmlClipboardToText, normalizeToUrl } from '@lfx-one/shared/utils';
@@ -148,8 +149,11 @@ export class MenteeProfileEditDrawerComponent {
     // Register and the drawer share the 3000 code-point cap. Convert block boundaries
     // to newlines, then cap, *before* patching so the control, counter, and baselines
     // share one value. patchValue must emit so skills pickers and the resume section
-    // (which snapshot `valueChanges`) pick up the seeded skills and filename.
-    const introduction = capCodePointEdit('', htmlClipboardToText(profile.aboutMe ?? ''), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+    // (which snapshot `valueChanges`) pick up the seeded skills and filename. The stored
+    // value comes from the API, so slice it to the raw cap before `htmlClipboardToText`,
+    // whose tag strip is quadratic on adversarial input (lfx-self-serve-ops#37).
+    const aboutMe = (profile.aboutMe ?? '').slice(0, MENTORSHIP_RICH_TEXT_RAW_MAX);
+    const introduction = capCodePointEdit('', htmlClipboardToText(aboutMe), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
     this.lastValidIntroduction = introduction;
     this.seededIntroduction = introduction;
     this.saveAttempted.set(false);
