@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { dedupeByKey, fromColumnar, isColumnarTable, toColumnar } from './compact-cache.utils';
+import { dedupeByKey, fromColumnar, isColumnarAbsent, isColumnarTable, toColumnar } from './compact-cache.utils';
 
 interface Row {
   id: string;
@@ -71,6 +71,19 @@ describe('isColumnarTable', () => {
   // than reaching fromColumnar and decoding into empty objects.
   it.each([[[{ id: 'a' }]], [null], [{ k: 'id', r: [] }], [{ k: ['id'], r: [{ id: 'a' }] }], [{ k: [1], r: [] }]])('rejects %p', (value) => {
     expect(isColumnarTable(value)).toBe(false);
+  });
+});
+
+describe('isColumnarAbsent', () => {
+  // Positional cache guards inspect stored cells BEFORE decode, so a required column has to be able
+  // to tell "the field never arrived" from "the field holds null" and from an ordinary string —
+  // otherwise a missing required value would pass as a present one.
+  it('identifies only the encoded absence of a field', () => {
+    const [absentCell, nullCell, stringCell] = toColumnar([{ id: 'a', name: null } as Row], ['badge', 'name', 'id']).r[0];
+
+    expect(isColumnarAbsent(absentCell)).toBe(true);
+    expect(isColumnarAbsent(nullCell)).toBe(false);
+    expect(isColumnarAbsent(stringCell)).toBe(false);
   });
 });
 

@@ -64,12 +64,25 @@ export function fromColumnar<T>(table: ColumnarTable): T[] {
 }
 
 /**
+ * True when a raw stored cell is the {@link ABSENT} sentinel, i.e. the source row never carried
+ * that field.
+ *
+ * For cache guards that validate stored rows positionally, before {@link fromColumnar} runs: a
+ * required column must reject this value the same way the pre-compaction guard rejected a missing
+ * key, instead of treating the sentinel as an ordinary string. Exported so no caller has to repeat
+ * the sentinel's encoding.
+ */
+export function isColumnarAbsent(value: unknown): boolean {
+  return value === ABSENT;
+}
+
+/**
  * Shape guard for a cached {@link ColumnarTable}. Cheap by design — it checks the envelope, not
  * every row's arity, because the cost is paid on every cache read and `fromColumnar` already treats
  * a short row's tail as absent. Callers layer their own domain guard on the decoded rows.
  */
-export function isColumnarTable(value: unknown): boolean {
-  const table = value as ColumnarTable | null;
+export function isColumnarTable(value: unknown): value is ColumnarTable {
+  const table = value as Partial<ColumnarTable> | null;
   return (
     !!table &&
     typeof table === 'object' &&
