@@ -614,7 +614,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       notAuthorized,
       notAuthorizedTooltip: notAuthorized ? ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY.tooltip(ack.removedCriteria) : '',
       invalidated,
-      invalidatedOnLabel: invalidated && ack.invalidatedAt ? formatClaSignedOnInstant(ack.invalidatedAt) : '',
+      invalidatedOnLabel: invalidated ? this.toInvalidatedOnLabel(ack) : '',
       invalidatedTooltip: invalidated ? this.formatInvalidatedTooltip(ack) : '',
       invalidatable: signatureId.length > 0,
       invalidatePending: signatureId.length > 0 && pending.has(signatureId),
@@ -663,5 +663,12 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     if (ack.invalidatedBy) parts.push(`Invalidated by ${ack.invalidatedBy}`);
     if (ack.invalidationReason) parts.push(`Reason: ${ack.invalidationReason}`);
     return parts.join(' · ');
+  }
+
+  /** The invalidation date, or '' when absent or unparseable, so the template never renders "on —". */
+  private toInvalidatedOnLabel(ack: OrgClaContributorAcknowledgment): string {
+    if (!ack.invalidatedAt) return '';
+    const label = formatClaSignedOnInstant(ack.invalidatedAt);
+    return label === '—' ? '' : label;
   }
 }

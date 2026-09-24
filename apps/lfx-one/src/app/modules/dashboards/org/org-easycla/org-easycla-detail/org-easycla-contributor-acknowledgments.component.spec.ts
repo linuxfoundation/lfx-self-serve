@@ -385,6 +385,14 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
     });
+
+    it('shows no date line when the invalidation timestamp is unparseable, rather than "on \u2014"', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ approved: false, invalidatedAt: 'not-a-date' })])));
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toBeNull();
+    });
   });
 
   describe('the Not Authorized state', () => {
