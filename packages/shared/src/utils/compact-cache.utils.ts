@@ -4,33 +4,53 @@
 import type { ColumnarTable, DedupedValues } from '../interfaces/compact-cache.interface';
 
 /**
+ * Sentinel standing in for a field that was ABSENT (or explicitly `undefined`) on the source row,
+ * as distinct from one that held `null`.
+ *
+ * The distinction is observable and must survive the cache. `JSON.stringify` omits an
+ * `undefined`-valued key entirely, so on a cache MISS an optional field the source left unset
+ * never reaches the client — while collapsing it to `null` at encode time would make the same
+ * response come back carrying `"field": null` on a HIT. That is a wire difference between a warm
+ * and a cold cache for every optional field in the Org Lens payloads (`accessBadge` on a roster
+ * row, `project_uid` / `job_title` / `reason` / `avatar` / `username` on a seat), and
+ * cache-hit-only divergence is the worst class of bug to trace.
+ *
+ * A `\u0000`-prefixed string is used because it cannot collide with warehouse or committee-service
+ * data: these payloads are JSON text fields, and a NUL is not legal inside one.
+ */
+const ABSENT = '\u0000absent';
+
+/**
  * Projects `rows` onto the columnar cache shape (GH-1906), storing `keys` once instead of on every
  * row.
  *
- * `undefined` is normalized to `null` at encode time rather than left to `JSON.stringify` (which
- * would do the same thing inside an array, silently): making it explicit keeps the encoded value
- * identical whether or not it round-trips through JSON, so a unit test that never serializes still
- * covers what the cache stores.
+ * A field that is absent or `undefined` is stored as {@link ABSENT} rather than `null`, so
+ * {@link fromColumnar} can rebuild the original object exactly — see that sentinel's note for why
+ * the two must not be collapsed.
  */
 export function toColumnar<T extends object>(rows: readonly T[], keys: readonly (keyof T & string)[]): ColumnarTable {
   return {
     k: [...keys],
-    r: rows.map((row) => keys.map((key) => (row[key] === undefined ? null : row[key]))),
+    r: rows.map((row) => keys.map((key) => (row[key] === undefined ? ABSENT : row[key]))),
   };
 }
 
 /**
- * Rebuilds the row objects encoded by {@link toColumnar}.
+ * Rebuilds the row objects encoded by {@link toColumnar}, restoring `null` and absent fields
+ * exactly as they were: a key stored as {@link ABSENT} is left off the rebuilt object, so
+ * `JSON.stringify` of a cache hit equals `JSON.stringify` of the cache miss that populated it.
  *
- * A row shorter than `k` (a truncated or hand-written entry) yields `null` for the missing fields
- * rather than `undefined`, so the result is JSON-identical to a row that stored explicit nulls and
- * the caller's cache shape guard sees one shape, not two.
+ * A row shorter than `k` (truncated, or written by hand) treats its missing tail as absent for the
+ * same reason — an entry that never carried the field must not start asserting `null` for it.
  */
 export function fromColumnar<T>(table: ColumnarTable): T[] {
   return table.r.map((values) => {
     const row: Record<string, unknown> = {};
     table.k.forEach((key, index) => {
-      row[key] = index < values.length && values[index] !== undefined ? values[index] : null;
+      const value = index < values.length ? values[index] : ABSENT;
+      if (value !== ABSENT && value !== undefined) {
+        row[key] = value;
+      }
     });
     return row as T;
   });

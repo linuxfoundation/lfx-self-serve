@@ -9,38 +9,50 @@ interface Row {
   id: string;
   name: string | null;
   count: number;
+  /** Optional on purpose: the absent-vs-null distinction below is what these tests exist to pin. */
+  badge?: string;
 }
 
 const ROWS: Row[] = [
-  { id: 'a', name: 'Alpha', count: 1 },
+  { id: 'a', name: 'Alpha', count: 1, badge: 'writer' },
   { id: 'b', name: null, count: 2 },
 ];
-const KEYS = ['id', 'name', 'count'] as const;
+const KEYS = ['id', 'name', 'count', 'badge'] as const;
+
+const roundTrip = (rows: readonly Row[]): Row[] => fromColumnar<Row>(JSON.parse(JSON.stringify(toColumnar(rows, KEYS))));
 
 describe('toColumnar / fromColumnar', () => {
-  // The invariant every compacted cache rests on: what the service returns after a cache hit must
-  // equal what it returned on the miss that populated it. Serializing in between is the point —
-  // the encoded value only ever reaches a decoder via JSON.
+  // The invariant every compacted cache rests on: what a service returns on a cache HIT must equal
+  // what it returned on the MISS that populated it. Serializing in between is the point — the
+  // encoded value only ever reaches a decoder via JSON.
   it('round-trips rows unchanged through JSON', () => {
-    const encoded = JSON.parse(JSON.stringify(toColumnar(ROWS, KEYS)));
-
-    expect(fromColumnar<Row>(encoded)).toEqual(ROWS);
+    expect(roundTrip(ROWS)).toEqual(ROWS);
   });
 
-  // An absent field must decode as an explicit null, not a missing key: the cache shape guards read
-  // fields off the decoded row, and `undefined` would make a stored row and a re-fetched row
-  // disagree about whether the field exists.
-  it('normalizes a missing field to null rather than dropping the key', () => {
-    const [decoded] = fromColumnar<Row>(toColumnar([{ id: 'a', count: 1 } as Row], KEYS));
+  // The regression this sentinel exists for. `JSON.stringify` drops an undefined-valued key, so an
+  // optional field the source left unset never reaches the client on a miss. Collapsing absent to
+  // null at encode time would make the very same response carry `"badge": null` on a hit —
+  // a warm-vs-cold-cache wire difference, which is the worst class of bug to trace.
+  it('serializes a cache hit identically to the miss that populated it', () => {
+    const miss: Row[] = [{ id: 'b', name: null, count: 2 }];
 
-    expect(decoded).toEqual({ id: 'a', name: null, count: 1 });
+    expect(JSON.stringify(roundTrip(miss))).toBe(JSON.stringify(miss));
+    expect('badge' in roundTrip(miss)[0]).toBe(false);
+  });
+
+  // The other half of the same distinction: a field that genuinely held null must come back null,
+  // not vanish. Dropping every falsy field would silently change what the client renders.
+  it('preserves an explicit null instead of treating it as absent', () => {
+    const [decoded] = roundTrip([{ id: 'a', name: null, count: 1, badge: 'writer' }]);
+
+    expect(decoded.name).toBeNull();
     expect('name' in decoded).toBe(true);
   });
 
-  // A truncated entry (another writer, a partial value) must degrade to the same shape as a row of
-  // nulls instead of producing undefined fields the guards would then have to special-case.
-  it('fills a short row with nulls', () => {
-    expect(fromColumnar<Row>({ k: [...KEYS], r: [['a']] })).toEqual([{ id: 'a', name: null, count: null }]);
+  // A truncated entry (another writer, a partial value) must not start asserting null for a field
+  // it never carried — absent is the honest answer, and it matches what a miss would serialize.
+  it('treats a truncated row tail as absent', () => {
+    expect(fromColumnar<Row>({ k: [...KEYS], r: [['a']] })).toEqual([{ id: 'a' }]);
   });
 
   // Decoding is driven by the stored key list, so an entry written before the key order changed
@@ -56,7 +68,7 @@ describe('isColumnarTable', () => {
   });
 
   // A pre-compaction entry is a plain row array. It has to miss so the caller re-fetches, rather
-  // than reaching fromColumnar and decoding into rows of undefined.
+  // than reaching fromColumnar and decoding into empty objects.
   it.each([[[{ id: 'a' }]], [null], [{ k: 'id', r: [] }], [{ k: ['id'], r: [{ id: 'a' }] }], [{ k: [1], r: [] }]])('rejects %p', (value) => {
     expect(isColumnarTable(value)).toBe(false);
   });
