@@ -66,7 +66,7 @@ export class OrgEasyclaRecentActivityComponent {
             ),
             catchError((error: unknown) => {
               const httpError = error instanceof HttpErrorResponse ? error : null;
-              console.warn('Failed to load recent activity:', httpError?.status ?? 'unknown', httpError?.message ?? String(error));
+              console.error('Failed to load recent activity:', httpError?.status ?? 'unknown', httpError?.message ?? String(error));
               return of<OrgClaRecentActivityState>({ status: 'failed' });
             }),
             startWith<OrgClaRecentActivityState>({ status: 'loading' })

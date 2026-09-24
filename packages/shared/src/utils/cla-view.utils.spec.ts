@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ALREADY_SIGNED_CLA_LABEL } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
@@ -274,6 +274,17 @@ describe('toOrgClaActivityLogDisplayRow', () => {
   it('em-dashes an absent actor, summary, or time rather than dropping the row', () => {
     const row = toOrgClaActivityLogDisplayRow({ id: 'event-2', when: '', actor: null, summary: '   ' });
     expect(row).toMatchObject({ actor: '—', summary: '—', whenLabel: '—' });
+  });
+
+  it('leaves timeZone unset on the production no-argument path', () => {
+    const toLocaleTimeString = vi.spyOn(Date.prototype, 'toLocaleTimeString');
+    try {
+      toOrgClaActivityLogDisplayRow(entry);
+      expect(toLocaleTimeString).toHaveBeenCalled();
+      expect((toLocaleTimeString.mock.lastCall?.[1] as Intl.DateTimeFormatOptions | undefined)?.timeZone).toBeUndefined();
+    } finally {
+      toLocaleTimeString.mockRestore();
+    }
   });
 
   it('keeps markup in a summary as literal text', () => {

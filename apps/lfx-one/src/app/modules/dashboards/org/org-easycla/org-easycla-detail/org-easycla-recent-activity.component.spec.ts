@@ -215,15 +215,15 @@ describe('OrgEasyclaRecentActivityComponent', () => {
     expect(fixture.nativeElement.querySelector('table')).toBeNull();
   });
 
-  it('renders nothing on a failed read, and only warns', async () => {
-    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+  it('renders nothing on a failed read, and logs the failure', async () => {
+    const logError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     getActivityLog.mockReturnValue(throwError(() => new Error('boom')));
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-recent-activity-loading')).toBeNull();
     expect(byTestId(fixture, 'org-easycla-recent-activity')).toBeNull();
     expect(textIn(fixture.nativeElement)).toBe('');
-    expect(warn).toHaveBeenCalled();
+    expect(logError).toHaveBeenCalledWith('Failed to load recent activity:', 'unknown', 'Error: boom');
   });
 
   it('never fetches, and shows no skeleton, for an unsigned agreement', async () => {
