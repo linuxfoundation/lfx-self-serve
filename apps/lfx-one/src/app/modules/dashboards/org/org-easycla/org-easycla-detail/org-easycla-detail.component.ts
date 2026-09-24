@@ -266,8 +266,9 @@ export class OrgEasyclaDetailComponent {
    * The running write and the value last asked for or confirmed live in
    * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
    * the page. Another agreement's flip cannot show through. A settled value is dropped when the
-   * list row carries it, and whenever this page requests the CLA list, so another manager's
-   * change shows once the list is fetched again. A running write's value is never dropped, and a
+   * list row carries it, and whenever this page loads the organization's CLA list (on arrival or
+   * an organization switch — not the retry that waits for a just-signed agreement), so another
+   * manager's change shows once that list is loaded again. A running write's value is never dropped, and a
    * project change does not refetch the list, so the value survives that.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
@@ -817,7 +818,7 @@ export class OrgEasyclaDetailComponent {
    * The running write is tracked per organization and agreement above this page, so it survives
    * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
    * shown only while this page is still that agreement. A remembered value is dropped once the list
-   * row carries it or the page requests the list again, never while its write is running.
+   * row carries it or the page loads the organization's CLA list again, never while its write is running.
    *
    * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */
