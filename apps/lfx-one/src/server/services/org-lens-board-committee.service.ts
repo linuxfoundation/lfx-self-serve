@@ -7,6 +7,7 @@ import type {
   CommitteeSeat,
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
+  CompactOrgSeatsEntry,
   KeyContactEmployee,
   OrgMembershipKeyContactPerson,
   OrgMembershipReassignSeatResponse,
@@ -14,11 +15,12 @@ import type {
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
 } from '@lfx-one/shared/interfaces';
-import { isFilterSafeIdentifier } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
 import { getEffectiveUsername } from '../utils/auth-helper';
+import { coalescePerUserOrgFetch } from '../utils/single-flight';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { OrgLensKeyContactsService } from './org-lens-key-contacts.service';
@@ -33,6 +35,39 @@ import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
  * this bound are omitted from the suggestions (manual entry still works).
  */
 const PICKER_MAX_SEAT_PAGES = 4;
+
+/** The committee identity every seat of the same committee repeats; deduped into a dictionary for the cache (GH-1906). */
+type SeatCommittee = Pick<CommitteeServiceOrgSeat, 'committee_uid' | 'committee_name' | 'committee_category' | 'project_uid' | 'project_slug'>;
+
+/** What is left of a seat once the committee dictionary and the org-wide `organization_id` are factored out, plus `c` — the seat's index into that dictionary. */
+type CompactSeatRow = Omit<CommitteeServiceOrgSeat, keyof SeatCommittee | 'organization_id'> & { c: number };
+
+const SEAT_COMMITTEE_KEYS = [
+  'committee_uid',
+  'committee_name',
+  'committee_category',
+  'project_uid',
+  'project_slug',
+] as const satisfies readonly (keyof SeatCommittee)[];
+
+const COMPACT_SEAT_KEYS = [
+  'c',
+  'uid',
+  'first_name',
+  'last_name',
+  'email',
+  'job_title',
+  'role_name',
+  'voting_status',
+  'appointed_by',
+  'is_org_editable',
+  'reason',
+  // Kept deliberately: `avatar` looks unread by a naive search, but `resolveSeatAvatar` prefers it
+  // and only derives a URL from `username` when it is absent — dropping it would silently downgrade
+  // every real avatar to the fallback.
+  'avatar',
+  'username',
+] as const satisfies readonly (keyof CompactSeatRow)[];
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
@@ -165,17 +200,34 @@ export class OrgLensBoardCommitteeService {
     return { accountId, foundationId, seat };
   }
 
-  /** Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory picker, cached per caller + org so the single full-roster drain is shared across consumers; only the full, non-truncated drain is cached here — the bounded picker and project-scoped `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as the full roster. */
+  /**
+   * Org-wide seat drain (no project filter) for the People Committee/Board tabs and the directory
+   * picker, cached per caller + org so the single full-roster drain is shared across consumers;
+   * only the full, non-truncated drain is cached here — the bounded picker and project-scoped
+   * `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as
+   * the full roster.
+   *
+   * On a miss the drain is additionally coalesced in-process (GH-1906): on a large org it takes
+   * longer than the 30-second entry it produces is allowed to live, so N concurrent tabs would
+   * otherwise each run the whole thing. What is coalesced — and stored — is the COMPACT envelope,
+   * so joined callers share one immutable value and each rebuilds its own seat array, exactly as
+   * two independent cache hits would.
+   */
   public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';
-    return withPerUserCache(
+    const entry = await withPerUserCache<CompactOrgSeatsEntry>(
       VALKEY_CACHE.ORG_SEATS_NAMESPACE,
       username,
       orgUid,
       VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      () => this.fetchOrgSeats(req, orgUid),
-      isOrgSeatArray
+      // Same effective principal (impersonation honoured) + org the cache key is built from, and
+      // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+      // bucket per blank principal would hand the first caller's permission-filtered roster to
+      // every other caller that happened to arrive without a resolvable identity.
+      () => coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid))),
+      isCompactOrgSeatsEntry
     );
+    return fromCompactOrgSeats(entry);
   }
 
   /**
@@ -383,7 +435,64 @@ export class OrgLensBoardCommitteeService {
   }
 }
 
-/** Rejects a corrupt/legacy seat entry whose elements aren't non-null objects (degrades to a miss before seat fields are read). */
-function isOrgSeatArray(value: unknown): boolean {
-  return Array.isArray(value) && value.every((el) => el !== null && typeof el === 'object' && !Array.isArray(el));
+/**
+ * Projects a drained roster onto the stored cache shape (GH-1906).
+ *
+ * Three sources of repetition go away: the per-seat field names (stored once in each columnar
+ * table), the committee identity every seat of the same committee carries, and `organization_id`,
+ * which the org-scoped upstream filter makes identical on every row.
+ */
+function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOrgSeatsEntry {
+  const committees = dedupeByKey(seats, (seat) => seat.committee_uid);
+  const rows = seats.map<CompactSeatRow>((seat) => ({
+    // Always present: the dictionary was built from this very list.
+    c: committees.indexOf.get(seat.committee_uid)!,
+    uid: seat.uid,
+    first_name: seat.first_name,
+    last_name: seat.last_name,
+    email: seat.email,
+    job_title: seat.job_title,
+    role_name: seat.role_name,
+    voting_status: seat.voting_status,
+    appointed_by: seat.appointed_by,
+    is_org_editable: seat.is_org_editable,
+    reason: seat.reason,
+    avatar: seat.avatar,
+    username: seat.username,
+  }));
+  return {
+    o: seats[0]?.organization_id ?? '',
+    c: toColumnar(committees.values, SEAT_COMMITTEE_KEYS),
+    s: toColumnar(rows, COMPACT_SEAT_KEYS),
+  };
+}
+
+/** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee fields and the hoisted `organization_id`. */
+function fromCompactOrgSeats(entry: CompactOrgSeatsEntry): CommitteeServiceOrgSeat[] {
+  const committees = fromColumnar<SeatCommittee>(entry.c);
+  return fromColumnar<CompactSeatRow>(entry.s).map(({ c, ...seat }) => ({ ...seat, ...committees[c], organization_id: entry.o }));
+}
+
+/**
+ * Rejects anything that is not a well-formed compact seats entry — which includes every
+ * pre-compaction (`org-seats:v1`) value, a plain array with no `o` — so it degrades to a miss
+ * rather than decoding into seats with no committee.
+ *
+ * The committee index is checked per row rather than left to the decoder: an out-of-range index is
+ * the one corruption that would silently produce a seat missing its committee identity instead of
+ * failing, and the check costs one integer comparison against a value the JSON parse already built.
+ */
+function isCompactOrgSeatsEntry(value: unknown): boolean {
+  const entry = value as CompactOrgSeatsEntry | null;
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+  if (typeof entry.o !== 'string' || !isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
+
+  const column = entry.s.k.indexOf('c');
+  if (column < 0) return false;
+
+  const committees = entry.c.r.length;
+  return entry.s.r.every((row) => {
+    const index = row[column];
+    return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < committees;
+  });
 }

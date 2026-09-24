@@ -18,8 +18,8 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-committee Snowflake-backed engagement cache (shared across callers). `v2`: the cached row shape changed from an email-keyed, single-window row to a uid-keyed row carrying all three windows — bumped so no entry written under the old shape can be read back as the new one. */
   COMMITTEE_ENGAGEMENT_NAMESPACE: 'committee-engagement-sf:v2',
 
-  /** Domain + schema-version segment for the per-user org seats cache. */
-  ORG_SEATS_NAMESPACE: 'org-seats:v1',
+  /** Domain + schema-version segment for the per-user org seats cache. `v2` (GH-1906): the stored value is the compact `CompactOrgSeatsEntry` envelope — committees deduped into a dictionary, `organization_id` hoisted, the rest columnar — not a plain seat array, so no `v1` entry can be decoded under the new shape. */
+  ORG_SEATS_NAMESPACE: 'org-seats:v2',
 
   /**
    * Domain + schema-version segment for the per-org Org Lens Groups aggregate (GH-1809), shared
@@ -40,10 +40,11 @@ export const VALKEY_CACHE = {
 
   /**
    * Domain + schema-version segment for the per-user org People directory cache. `v2`: merge-only
-   * fields are stripped before the write and the validator asserts their absence — stale `v1`
-   * entries must never be served as the new shape.
+   * fields are stripped before the write and the validator asserts their absence. `v3` (GH-1906):
+   * `rows` are stored columnar (`CompactOrgPeopleDirectoryEntry`) rather than as wire objects —
+   * stale `v1`/`v2` entries must never be served as the new shape.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v2',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
