@@ -73,16 +73,41 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
   });
 
   it('says what invalidating does and does not stop', async () => {
+    // The default data has no individual matches, so the sentence ends after "again" — the
+    // "remove the matching criteria below" clause only belongs where a removal control is shown.
     const fixture = await render();
     const body = byTestId(fixture, 'org-easycla-invalidate-dialog-body');
 
     expect(body?.textContent?.replace(/\s+/g, ' ').trim()).toBe(
-      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again — remove the matching criteria below if that shouldn't be possible."
+      "This marks Ada Lovelace as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against. If Ada Lovelace still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again."
     );
     expect(Array.from(body?.querySelectorAll('strong') ?? []).map((node) => node.textContent?.trim())).toEqual([
       'Ada Lovelace',
       "If Ada Lovelace still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again",
     ]);
+  });
+
+  it('promises the remove-criteria step only when a removal control is actually shown', async () => {
+    const bodyText = (fixture: ComponentFixture<unknown>): string =>
+      byTestId(fixture, 'org-easycla-invalidate-dialog-body')?.textContent?.replace(/\s+/g, ' ').trim() ?? '';
+
+    // Individual matches the reader may remove: the clause points at the checkbox below.
+    const withRemoval = await render(dialogData(ENTRIES, true));
+    expect(bodyText(withRemoval)).toContain("again — remove the matching criteria below if that shouldn't be possible.");
+
+    // No removal control renders in any of these states, so the clause must be absent and the
+    // sentence must simply end.
+    const noControl: OrgClaInvalidateAcknowledgmentDialogData[] = [
+      dialogData([], true), // no individual match
+      dialogData(ENTRIES, false), // matches, but the reader cannot edit the list
+      { contributor: 'Ada Lovelace', matchingEntries: signal(undefined), canRemoveEntries: signal(true) }, // lookup still checking
+      { contributor: 'Ada Lovelace', matchingEntries: signal(null), canRemoveEntries: signal(true) }, // lookup failed / unknown
+    ];
+    for (const data of noControl) {
+      const fixture = await render(data);
+      expect(bodyText(fixture)).not.toContain('remove the matching criteria below');
+      expect(bodyText(fixture).endsWith('again.')).toBe(true);
+    }
   });
 
   it('asks for nothing but the click: Confirm is enabled and closes with an empty request', async () => {

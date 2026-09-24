@@ -11,7 +11,7 @@
   <p class="m-0 text-sm text-gray-700" data-testid="org-easycla-invalidate-dialog-body">
     {{ copy.marksPrefix }} <strong>{{ contributor }}</strong
     >{{ copy.marksSuffix }} <strong>{{ reacknowledge }}</strong
-    >{{ copy.removeCriteria }}
+    >{{ reacknowledgeSuffix() }}
   </p>
 
   @if (checking()) {

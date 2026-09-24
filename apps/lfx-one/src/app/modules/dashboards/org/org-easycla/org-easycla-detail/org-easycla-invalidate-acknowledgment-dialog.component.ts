@@ -53,6 +53,10 @@ export class OrgEasyclaInvalidateAcknowledgmentDialogComponent {
   protected readonly matchedBy = computed(() => this.copy.matchedBy(this.matchRows().length));
   protected readonly alsoRemoveLabel = computed(() => this.copy.alsoRemove(this.contributor, this.matchRows().length));
   protected readonly checking = computed(() => this.matchingEntries() === undefined);
+  // The "remove the matching criteria below" clause points at the removal control, which only
+  // renders when there are individual matches and the reader may edit the list. Otherwise the
+  // sentence just ends, so the confirmation never promises a step that isn't there.
+  protected readonly reacknowledgeSuffix = computed(() => (this.matchRows().length > 0 && this.canRemoveEntries() ? this.copy.removeCriteria : '.'));
 
   protected onConfirm(): void {
     if (this.checking()) return;
