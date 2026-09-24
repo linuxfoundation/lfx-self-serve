@@ -158,12 +158,12 @@ describe('EngagementNonMemberParticipationComponent', () => {
     expect(emitted).toEqual([null, null]);
   });
 
-  // The server answers a zero-row read with the unmeasured shape, so the empty state reads as unmeasured.
-  it('renders the not-available state for an unmeasured foundation', async () => {
+  // The server answers a zero-row read with null counts, so the empty-scope state renders.
+  it('renders the empty-scope state for a foundation with no rows', async () => {
     await render(HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED);
 
     const empty: HTMLElement | null = fixture.nativeElement.querySelector('[data-testid="engagement-non-member-participation-empty"]');
-    expect(empty?.textContent).toContain('Non-member participation data is not available yet');
+    expect(empty?.textContent).toContain('No non-member organizations recorded for this foundation');
   });
 
   // The container holds a deep link's scroll until every section reports, so both ends must fire.

@@ -39,11 +39,11 @@
       title="Organization participation unavailable"
       subtitle="We could not load organization participation for this foundation. Refresh the page to try again."
       data-testid="engagement-org-participation-error" />
-  } @else if (!loading() && scopeUnmeasured()) {
+  } @else if (!loading() && scopeEmpty()) {
     <lfx-empty-state
       icon="fa-light fa-building"
-      title="Organization participation data is not available yet"
-      subtitle="This foundation has no organization participation data in the analytics model yet."
+      title="No organizations recorded for this foundation"
+      subtitle="The analytics model has no organization participation records for this foundation."
       data-testid="engagement-org-participation-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state

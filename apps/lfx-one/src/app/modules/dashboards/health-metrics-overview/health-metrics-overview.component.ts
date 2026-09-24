@@ -10,6 +10,7 @@ import {
   HEALTH_METRICS_OVERVIEW_INSIGHTS_LINK_TARGET,
   HEALTH_METRICS_OVERVIEW_NO_DATA_STAT_VALUE,
   HEALTH_METRICS_OVERVIEW_REVENUE_DEFAULT_SUMMARY,
+  HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS,
 } from '@lfx-one/shared/constants';
 import {
   buildHealthMetricsOverviewEngagementRoute,
@@ -222,6 +223,8 @@ export class HealthMetricsOverviewComponent {
       // Empty, not today's date — this area was never actually evaluated, so "as of today" would
       // claim fresh data for a tile that has none (formatHealthMetricsOverviewAsOfLabel hides it).
       evaluatedAt: '',
+      // Matches the live tile: a failed read must not surface a chip the live state never shows.
+      ...(HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS.has(area) && { showStatus: false }),
     };
   }
 

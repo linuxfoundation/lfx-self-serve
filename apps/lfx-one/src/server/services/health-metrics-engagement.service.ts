@@ -263,9 +263,8 @@ export class HealthMetricsEngagementService {
     const pageRows = result.rows.filter((row) => row.IS_PAGE_ROW === true);
     const totalRecords = Number(first?.TOTAL_RECORDS ?? 0);
 
-    // The unfiltered foundation scope reporting zero rows means the view never measured this
-    // foundation at all — unmeasured, not a real "no groups". A filtered cut with zero matches is a
-    // real measured zero and keeps its own counts so the "No groups of this type" state can show.
+    // An unfiltered scope with zero rows gets its own empty state and null counts, not "0 groups";
+    // a filtered cut with zero matches keeps its counts so "No groups of this type" can show.
     const isUnfilteredScope = query.groupType === 'all' && !query.projectSlug;
     const counts = isUnfilteredScope && totalRecords === 0 ? null : { groups: totalRecords, dormantGroups: Number(first?.DORMANT_GROUPS ?? 0) };
 

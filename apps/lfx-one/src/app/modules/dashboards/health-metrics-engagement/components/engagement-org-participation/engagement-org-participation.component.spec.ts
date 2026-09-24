@@ -154,7 +154,9 @@ describe('EngagementOrgParticipationComponent', () => {
   it('shows the not-available state when the view returns no rows for the scope', async () => {
     await render(response({ rows: [], counts: null }));
 
-    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain('not available yet');
+    expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-empty"]').textContent).toContain(
+      'No organizations recorded for this foundation'
+    );
   });
 
   // Two foundations can hold the same number of orgs, so the row count cannot stand in for identity.

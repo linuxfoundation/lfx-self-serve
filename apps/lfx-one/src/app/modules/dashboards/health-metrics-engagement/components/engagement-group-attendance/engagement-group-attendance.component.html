@@ -26,8 +26,8 @@
   } @else if (!loading() && counts() === null) {
     <lfx-empty-state
       icon="fa-light fa-users"
-      title="Group attendance data is not available yet"
-      subtitle="This foundation has no group attendance data in the analytics model yet."
+      title="No groups recorded for this foundation"
+      subtitle="The analytics model has no group attendance records for this foundation."
       data-testid="engagement-group-attendance-empty" />
   } @else if (!loading() && totalRecords() === 0) {
     <lfx-empty-state

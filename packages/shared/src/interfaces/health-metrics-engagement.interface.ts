@@ -112,7 +112,7 @@ export interface HealthMetricsEngagementGroupCounts {
 export interface HealthMetricsEngagementGroupAttendance {
   rows: HealthMetricsEngagementGroupRow[];
   totalRecords: number;
-  /** `null` when the unfiltered foundation scope has no rows at all — unmeasured, not a real zero. */
+  /** `null` when the unfiltered foundation scope has no rows at all — distinct from a real zero. */
   counts: HealthMetricsEngagementGroupCounts | null;
 }
 

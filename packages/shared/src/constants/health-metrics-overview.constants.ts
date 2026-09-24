@@ -132,6 +132,9 @@ export const HEALTH_METRICS_OVERVIEW_LIVE_KPI_AREAS: ReadonlySet<(typeof HEALTH_
   'code',
 ]);
 
+/** Areas whose tile never renders a status chip — live or neutral — since no rule classifies them yet. */
+export const HEALTH_METRICS_OVERVIEW_STATUSLESS_AREAS: ReadonlySet<(typeof HEALTH_METRICS_OVERVIEW_AREAS)[number]['key']> = new Set(['eng']);
+
 /**
  * Period-suffixed `HEALTH_OVERVIEW_KPIS` columns, in their aliased uppercase form. `ProjectService`
  * builds the all-periods SELECT list and projects each period's row from this one list, so the alias

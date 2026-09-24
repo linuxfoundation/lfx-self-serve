@@ -264,6 +264,9 @@ describe('HealthMetricsOverviewComponent', () => {
       expect(engTile.textContent).toContain('no data this period');
       expect(engTile.textContent).not.toContain('8 of 31');
       expect(engTile.textContent).not.toContain('View groups');
+      // Engagement never shows a status chip, failed read included; other areas keep "Awaiting data".
+      expect(engTile.textContent).not.toContain('Awaiting data');
+      expect(evtTile.textContent).toContain('Awaiting data');
       httpMock.verify();
     });
 
