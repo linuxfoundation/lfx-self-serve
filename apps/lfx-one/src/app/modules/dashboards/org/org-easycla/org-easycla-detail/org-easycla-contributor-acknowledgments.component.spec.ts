@@ -795,6 +795,53 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Approval List not updated' }));
     });
 
+    it('holds the refresh until the approval-list removal settles, so the GET cannot repaint the pre-removal state', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const removal = new Subject<{ signatureId: string; entries: unknown[]; canEdit: boolean }>();
+      updateApprovalList.mockReturnValueOnce(removal.asObservable());
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The invalidate has succeeded and the removal is in flight — the refresh must not have run,
+      // or a GET now could win the race and show the row still on the approval list.
+      expect(updateApprovalList).toHaveBeenCalled();
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore);
+
+      removal.next({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
+      removal.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
+    });
+
+    it('refreshes even when the approval-list removal fails, so the failed row is not left stale', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const removal = new Subject<{ signatureId: string; entries: unknown[]; canEdit: boolean }>();
+      updateApprovalList.mockReturnValueOnce(removal.asObservable());
+      const fixture = await render();
+      const fetchesBefore = getContributorAcknowledgments.mock.calls.length;
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore);
+
+      removal.error(new HttpErrorResponse({ status: 502 }));
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'warn', summary: 'Approval List not updated' }));
+      expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
+    });
+
     it('sends the write once when the dialog closes twice', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();

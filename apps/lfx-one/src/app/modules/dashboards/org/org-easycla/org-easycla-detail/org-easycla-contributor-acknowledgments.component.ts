@@ -417,25 +417,30 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     );
   }
 
-  private removeApprovalEntries(orgUid: string, claSignatureId: string, entries: OrgClaApprovalEntryInput[]): void {
-    this.claService.updateApprovalList(orgUid, claSignatureId, { add: [], remove: entries }).subscribe({
-      next: (list) => {
-        if (!this.destroyed && claSignatureId === this.signatureId())
-          this.approvalListChanged.emit({ signatureId: claSignatureId, count: list.entries.length });
-      },
-      error: (error: unknown) => {
-        console.warn(
-          'Failed to remove approval-list entries after an invalidate:',
-          (error as HttpErrorResponse)?.status,
-          (error as HttpErrorResponse)?.message
-        );
-        this.messageService.add({
-          severity: 'warn',
-          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedSummary,
-          detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedDetail,
-        });
-      },
-    });
+  private removeApprovalEntries(orgUid: string, claSignatureId: string, entries: OrgClaApprovalEntryInput[], onSettle?: () => void): void {
+    this.claService
+      .updateApprovalList(orgUid, claSignatureId, { add: [], remove: entries })
+      // The refresh has to wait for the removal to settle, so hand the caller a settle hook that
+      // runs whether the removal succeeds or fails — a failed removal still needs the row refetched.
+      .pipe(finalize(() => onSettle?.()))
+      .subscribe({
+        next: (list) => {
+          if (!this.destroyed && claSignatureId === this.signatureId())
+            this.approvalListChanged.emit({ signatureId: claSignatureId, count: list.entries.length });
+        },
+        error: (error: unknown) => {
+          console.warn(
+            'Failed to remove approval-list entries after an invalidate:',
+            (error as HttpErrorResponse)?.status,
+            (error as HttpErrorResponse)?.message
+          );
+          this.messageService.add({
+            severity: 'warn',
+            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedSummary,
+            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.removalFailedDetail,
+          });
+        },
+      });
   }
 
   /**
@@ -469,19 +474,14 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
             summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
             detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
           });
-          if (removeApprovalEntries.length > 0) this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries);
-          if (this.destroyed) return;
-          if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
-          if (this.pagesLoaded > 1) {
-            const generation = this.fetchGeneration() + 1;
-            this.fetchGeneration.set(generation);
-            this.loadingMore.set(true);
-            const search = (this.searchTerm() ?? '').trim();
-            this.markInvalidatedInPlace(signatureId);
-            this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+          // When the manager also clears the approval list, that removal changes this row's state
+          // upstream, so the refresh must wait for it to settle — otherwise the GET can win the race
+          // and repaint the pre-removal state. With no removal, refresh right away.
+          if (removeApprovalEntries.length > 0) {
+            this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId));
             return;
           }
-          this.reloadTrigger.update((value) => value + 1);
+          this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
         },
         error: (error: unknown) => {
           this.messageService.add({
@@ -491,6 +491,27 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           });
         },
       });
+  }
+
+  /**
+   * Refreshes the loaded rows after a successful invalidate. A loaded span of more than one page is
+   * marked Invalidated in place first, so the state does not flicker while the span refetches; a
+   * single page just retriggers its resource. Guards the pair, so a confirm that outran a CCLA
+   * change refreshes nothing it no longer owns.
+   */
+  private refreshAfterInvalidate(signatureId: string, orgUid: string, claSignatureId: string): void {
+    if (this.destroyed) return;
+    if (orgUid !== this.orgUid() || claSignatureId !== this.signatureId()) return;
+    if (this.pagesLoaded > 1) {
+      const generation = this.fetchGeneration() + 1;
+      this.fetchGeneration.set(generation);
+      this.loadingMore.set(true);
+      const search = (this.searchTerm() ?? '').trim();
+      this.markInvalidatedInPlace(signatureId);
+      this.refreshLoadedSpan(orgUid, claSignatureId, search, this.pagesLoaded, generation);
+      return;
+    }
+    this.reloadTrigger.update((value) => value + 1);
   }
 
   private markInvalidatedInPlace(signatureId: string): void {
