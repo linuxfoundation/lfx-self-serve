@@ -25,8 +25,8 @@ apps/lfx-one/src/app/modules/
 │   ├── meeting-manage/         # Pre-v2 full-page create/edit wizard — the shipping default
 │   ├── meeting-composer/       # v2 create/edit composer, a drawer over the current page (flag-gated)
 │   ├── meeting-details-gate/   # /meetings/:id route target — picks the tree behind MEETING_V2_ENABLED_FLAG
-│   ├── meeting-join/           # Pre-v2 public meeting join page — the shipping default
-│   ├── meeting-details-v2/     # v2 public meeting page (flag-gated; placeholder until #2874)
+│   ├── meeting-details-page/   # v2 public meeting page (flag-gated, deferred; scaffold until E1-01)
+│   ├── meeting-join-v1/        # Pre-v2 public meeting join page — the shipping default; retires with the flag
 │   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
 ├── mailing-lists/              # Mailing lists
@@ -61,7 +61,7 @@ apps/lfx-one/src/app/modules/
 >
 > **Meetings create/edit**: `meetings/` carries two implementations side by side. `meeting-manage/` is the pre-v2 full-page wizard and the current shipping default — `/meetings/create` and `/meetings/:id/edit` load it unconditionally. `meeting-composer/` is the v2 drawer, raised in place of the wizard from the meetings dashboard, the group meetings tab, meeting cards, the dashboard quicklinks and the create-artifact dialog only when the `meeting-v2-enabled` LaunchDarkly flag (`MEETING_V2_ENABLED_FLAG`, default `false`) is on for that user. The wizard stays in place until v2 is validated and the flag is retired.
 >
-> **Meeting details page**: the same flag gates the public meeting page. `/meetings/:id` loads `meeting-details-gate/`, one stable route target whose `@if` renders the pre-v2 `meeting-join/` page by default and `meeting-details-v2/` only for a signed-in, targeted viewer after hydration — a shim rather than a `canMatch` guard, because the flag provider is browser-only and SSR always evaluates it `false`. Anonymous visitors always get the pre-v2 page. See the gate's own doc comment for the full rationale.
+> **Meeting details page**: the same flag gates the public meeting page. `/meetings/:id` loads `meeting-details-gate/`, one stable route target whose `@if` renders the pre-v2 `meeting-join-v1/` page by default and `meeting-details-page/` (loaded through `@defer`) only for a signed-in, targeted viewer after hydration — a shim rather than a `canMatch` guard, because the flag provider is browser-only and SSR always evaluates it `false`. Anonymous visitors always get the pre-v2 page. See the gate's own doc comment for the full rationale, and `specs/010-meeting-details-redesign/v2-scaffold.md` for the v1/v2 naming convention.
 
 ### Key Principles
 
@@ -479,7 +479,7 @@ AppComponent
 
     Standalone routes (outside MainLayoutComponent):
     ├── /meetings/not-found      → MeetingNotFoundComponent
-    └── /meetings/:id            → MeetingDetailsGateComponent (flag gate → MeetingJoinComponent | MeetingDetailsV2Component)
+    └── /meetings/:id            → MeetingDetailsGateComponent (flag gate → MeetingJoinComponent | MeetingDetailsPageComponent)
 ```
 
 ## 🎯 Usage Guidelines

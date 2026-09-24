@@ -8,7 +8,14 @@
 -->
 @if (v2Enabled()) {
   <div data-testid="meeting-details-gate-v2">
-    <lfx-meeting-details-v2 />
+    <!-- Deferred so the v1 majority never downloads the v2 tree; see the component's doc comment. -->
+    @defer (on immediate) {
+      <lfx-meeting-details-page />
+    } @error {
+      <!-- The v2 chunk failed to load (a deploy mid-session, a dropped connection). v1 is in the
+           eager chunk, so falling back to it never leaves the viewer on an empty page. -->
+      <lfx-meeting-join />
+    }
   </div>
 } @else {
   <div data-testid="meeting-details-gate-v1">

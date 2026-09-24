@@ -4,7 +4,7 @@
 
 The public meeting join page (`/meetings/:id`) is a public SSR route that allows both anonymous and authenticated users to view meeting details and join a meeting. It is the primary entry point for invite-link recipients who may not have an LFX account.
 
-**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/`
+**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join-v1/`
 
 Key files:
 
@@ -129,7 +129,7 @@ Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 
 
 ## 🧱 Component Structure
 
-**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/meeting-join.component.ts`
+**Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join-v1/meeting-join.component.ts`
 
 This component is no longer the `/meetings/:id` route target itself: the route loads `meeting-details-gate/`, which renders this page by default and the v2 tree only behind `MEETING_V2_ENABLED_FLAG`. Everything below still describes the page an anonymous visitor — and anyone the flag is off for — gets, and SSR renders it either way.
 

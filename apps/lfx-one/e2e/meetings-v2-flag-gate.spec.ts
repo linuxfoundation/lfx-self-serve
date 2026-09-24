@@ -261,9 +261,9 @@ test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
   test('renders the v2 meeting page once the flag is on', async ({ page }) => {
     const release = await gotoMeetingDetails(page, true);
 
-    // Attached, not visible: the v2 placeholder is an empty element, so its wrapper has no box and
-    // toBeVisible() would time out even with the right branch rendered.
     await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+    // The v2 tree is behind `@defer`, so seeing the scaffold proves its lazy chunk loaded and mounted.
+    await expect(page.getByTestId('meeting-details-scaffold')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
     await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
 
     // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it

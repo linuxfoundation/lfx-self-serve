@@ -6,8 +6,8 @@ import { MEETING_V2_ENABLED_FLAG } from '@lfx-one/shared/constants';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { UserService } from '@services/user.service';
 
-import { MeetingJoinComponent } from '../meeting-join/meeting-join.component';
-import { MeetingDetailsV2Component } from '../meeting-details-v2/meeting-details-v2.component';
+import { MeetingDetailsPageComponent } from '../meeting-details-page/meeting-details-page.component';
+import { MeetingJoinComponent } from '../meeting-join-v1/meeting-join.component';
 
 /**
  * Route target for the public meeting page `/meetings/:id` (#2873). Renders the pre-v2 page by
@@ -41,11 +41,13 @@ import { MeetingDetailsV2Component } from '../meeting-details-v2/meeting-details
  * targeted viewer — so when that lookup fails it calls `router.navigate(['/meetings/not-found'])`
  * during SSR (`meeting-join.component.ts`) and the URL is decided for *both* branches. v1's lookup
  * therefore governs reachability until SSR has a flag source, which matters the moment v2 grows a
- * data flow of its own. Second, both branches are static `imports` here, so the route's chunk
- * carries each tree for the viewers on the other one; harmless while v2 is a placeholder, but when
- * #2874 lands a real v2 page, load it through `@defer (when v2Enabled())` or a dynamic import so the
- * ~100% of visitors on v1 do not download it — this route is public, SSR-first and anonymous-
- * reachable, unlike the authenticated in-shell route that sets the static-import precedent.
+ * data flow of its own. Second, v2 is loaded through `@defer`, so the route's chunk carries only v1
+ * and the ~100% of visitors on it never download the v2 tree. This route is public, SSR-first and
+ * anonymous-reachable, unlike the authenticated in-shell route that sets the static-import
+ * precedent. The cost lands on targeted viewers only: v1 is torn down when the flag flips, so the
+ * region is empty until the v2 chunk arrives. That gap is part of the same post-hydration swap #2920
+ * removes, and it is why the deferred block triggers `on immediate` rather than waiting for idle.
+ * If the chunk never arrives, the block's `@error` branch renders v1 again rather than nothing.
  *
  * Anonymous viewers always get v1, enforced here rather than through targeting: this route is
  * `auth: 'optional'` (`auth.middleware.ts`) and a LaunchDarkly tester list cannot express "not
@@ -60,7 +62,7 @@ import { MeetingDetailsV2Component } from '../meeting-details-v2/meeting-details
  */
 @Component({
   selector: 'lfx-meeting-details-gate',
-  imports: [MeetingJoinComponent, MeetingDetailsV2Component],
+  imports: [MeetingJoinComponent, MeetingDetailsPageComponent],
   templateUrl: './meeting-details-gate.component.html',
 })
 export class MeetingDetailsGateComponent {
