@@ -4,27 +4,38 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import type * as PersonaConstants from '../../../../../packages/shared/src/constants/persona.constants';
+
 // Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
 // vitest config, so every runtime (non-type-only) import needs a stub.
-vi.mock('@lfx-one/shared/constants', () => ({
-  // Batch size and classify concurrency are stubbed tiny (production: 100 / 8) so the wave-sizing
-  // test below can cross a wave boundary with a handful of candidates. Only
-  // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
-  ACCESS_CHECK_BATCH_SIZE: 2,
-  LF_TEAM_IDS: ['lf-staff', 'lf-contractor'],
-  ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
-  ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
-  ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
-  ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
-  // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
-  // can reach them with a handful of mocked docs. Every other test in this file uses leaf orgs
-  // (`is_parent: false`, no `parent_uid`), so the walk never runs and the values don't matter.
-  ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 4,
-  ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
-  ORG_ROLE_GRANTS_HARD_CAP: 500,
-  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
-  VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access' },
-}));
+vi.mock('@lfx-one/shared/constants', async () => {
+  // Deep-import the real LF team list so the contractor test below guards the production value
+  // rather than a hardcoded copy: with a literal here, re-adding 'lf-contractor' to
+  // persona.constants.ts would leave every test green. The barrel is mocked because it
+  // re-exports Angular-dependent constants; persona.constants.ts itself only has a type-only
+  // import from '../interfaces', so importing it directly is safe (same rationale as
+  // project.controller.spec.ts).
+  const personaConstants = await vi.importActual<typeof PersonaConstants>('../../../../../packages/shared/src/constants/persona.constants');
+  return {
+    // Batch size and classify concurrency are stubbed tiny (production: 100 / 8) so the wave-sizing
+    // test below can cross a wave boundary with a handful of candidates. Only
+    // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
+    ACCESS_CHECK_BATCH_SIZE: 2,
+    LF_TEAM_IDS: personaConstants.LF_TEAM_IDS,
+    ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
+    ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
+    ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
+    ORG_CASCADING_CHILDREN_FETCH_CONCURRENCY: 4,
+    // Traversal caps are stubbed FAR below production (500 / 2000) so the cap-boundary tests below
+    // can reach them with a handful of mocked docs. Every other test in this file uses leaf orgs
+    // (`is_parent: false`, no `parent_uid`), so the walk never runs and the values don't matter.
+    ORG_CASCADING_CHILDREN_PER_PARENT_HARD_CAP: 4,
+    ORG_CONNECTED_COMPONENT_CANDIDATE_HARD_CAP: 6,
+    ORG_ROLE_GRANTS_HARD_CAP: 500,
+    QUERY_SERVICE_FILTERS_OR_BATCH_SIZE: 100,
+    VALKEY_CACHE: { APP_PREFIX: 'lfx', ORG_ACCESS_NAMESPACE: 'org-access' },
+  };
+});
 vi.mock('@lfx-one/shared/utils', () => ({
   isFilterSafeUsername: (value: string) => /^[a-z0-9_-]+$/i.test(value),
   isFilterSafeIdentifier: (value: string) => /^[a-z0-9_-]+$/i.test(value),
@@ -58,10 +69,7 @@ const req = {} as Request;
 const USERNAME = 'staffer';
 
 /** The one batched membership question `resolveIsStaff` asks, in `LF_TEAM_IDS` order. */
-const TEAM_REQUESTS = [
-  { resource: 'team', id: 'lf-staff', access: 'member' },
-  { resource: 'team', id: 'lf-contractor', access: 'member' },
-];
+const TEAM_REQUESTS = [{ resource: 'team', id: 'lf-staff', access: 'member' }];
 
 /** Authorizer answer for that batch, keyed the way `checkAccessStrict` keys its result map. */
 function teamMembership(staff: boolean, contractor = false): Map<string, boolean> {
@@ -132,13 +140,15 @@ describe('OrgRoleGrantsService — LF team determination', () => {
     expect(response.isStaff).toBe(false);
   });
 
-  // Spec 044 / DR-002: contractors are a population, not a role — the same affordance lights for them.
-  it('reports isStaff for a contractor-only caller', async () => {
+  // Rollback of spec 044 / DR-002: contractor membership no longer lights the affordance. The
+  // authorizer is told the caller is a contractor and the answer must still be "not staff" —
+  // widening `LF_TEAM_IDS` back to include `lf-contractor` fails here.
+  it('reports isStaff false for a contractor-only caller', async () => {
     setTeamAnswer(teamMembership(false, true));
 
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
-    expect(response.isStaff).toBe(true);
+    expect(response.isStaff).toBe(false);
   });
 
   // FR-010 (spec 044): team membership is read-only. The write gate (`OrgLensAccessService.

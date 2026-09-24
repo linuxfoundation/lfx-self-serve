@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { contentDispositionAttachment } from '../helpers/content-disposition.helper';
+import { parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
 import {
@@ -57,8 +58,7 @@ export class EventsController {
         });
       }
 
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase() as EventSortOrder;
       const rawIsPast = req.query['isPast'];
       const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
@@ -76,8 +76,6 @@ export class EventsController {
       const isTravelFundRequestAccepted = req.query['isTravelFundRequestAccepted'] === 'true' ? true : undefined;
       const excludePastTravelFundDeadline = req.query['excludePastTravelFundDeadline'] === 'true' ? true : undefined;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
       if (rawIsPast === 'true') {
@@ -138,8 +136,7 @@ export class EventsController {
     });
 
     try {
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase() as EventSortOrder;
       const rawIsPast = req.query['isPast'];
       const eventId = req.query['eventId'] ? String(req.query['eventId']) : undefined;
@@ -155,8 +152,6 @@ export class EventsController {
       const status = rawStatus && VALID_EVENT_STATUS_VALUES.has(rawStatus) ? (rawStatus as EventStatusFilter) : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'ASC';
       let isPast: boolean | undefined;
       if (rawIsPast === 'true') {
@@ -456,12 +451,9 @@ export class EventsController {
         throw new AuthenticationError('User authentication required', { operation: operationName });
       }
 
-      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
-      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'DESC').toUpperCase() as EventSortOrder;
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'DESC';
 
       const options: GetEventRequestsOptions = {

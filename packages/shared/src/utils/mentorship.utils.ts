@@ -14,6 +14,8 @@ import {
   MENTORSHIP_INVALID_URL,
   MENTORSHIP_MAX_OPEN_TERMS,
   MENTORSHIP_MAX_OPEN_TERMS_MESSAGE,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+  MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
   MENTORSHIP_TERM_NAME_MAX,
   MOCK_MENTORSHIP_LF_PROJECTS,
 } from '../constants/mentorship-enroll.constants';
@@ -118,8 +120,31 @@ export function lastDayOfMentorshipMonth(isoMonthStart: string): string {
   return toMentorshipDateOnly(last);
 }
 
+/**
+ * Plain-text length of a rich-text field. Input over `MENTORSHIP_RICH_TEXT_RAW_MAX` returns its raw
+ * length without stripping, so it still fails every `*_MAX` check but never reaches the quadratic
+ * `stripHtml` loop (lfx-self-serve-ops#37).
+ */
 export function mentorshipDescriptionLength(html: string): number {
+  if (isMentorshipRichTextOverRawMax(html)) return html.length;
   return stripHtml(html).length;
+}
+
+/** True when a rich-text field's raw HTML is over `MENTORSHIP_RICH_TEXT_RAW_MAX`, so its plain-text count is not computed. */
+export function isMentorshipRichTextOverRawMax(html: string): boolean {
+  return html.length > MENTORSHIP_RICH_TEXT_RAW_MAX;
+}
+
+/**
+ * Validation message for a required rich-text field, or `undefined` when valid. Over-raw-cap input
+ * gets `MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE` rather than a plain-text limit it may not exceed.
+ */
+function mentorshipRichTextError(html: string, max: number, requiredMessage: string, maxMessage: string): string | undefined {
+  if (isMentorshipRichTextOverRawMax(html)) return MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE;
+  const length = mentorshipDescriptionLength(html);
+  if (length === 0) return requiredMessage;
+  if (length > max) return maxMessage;
+  return undefined;
 }
 
 /**
@@ -197,11 +222,13 @@ export function getMentorshipEnrollStepErrors(step: MentorshipEnrollStep, form: 
       errors.projectId = 'Select a valid Linux Foundation project.';
     }
     if (!form.technologies.length) errors.technologies = 'Add at least one technology.';
-    if (mentorshipDescriptionLength(form.description) === 0) {
-      errors.description = 'Program description is required.';
-    } else if (mentorshipDescriptionLength(form.description) > MENTORSHIP_ENROLL_DESCRIPTION_MAX) {
-      errors.description = `Description must be ${MENTORSHIP_ENROLL_DESCRIPTION_MAX} characters or fewer.`;
-    }
+    const descriptionError = mentorshipRichTextError(
+      form.description,
+      MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+      'Program description is required.',
+      `Description must be ${MENTORSHIP_ENROLL_DESCRIPTION_MAX} characters or fewer.`
+    );
+    if (descriptionError) errors.description = descriptionError;
     if (isBlank(form.repositoryUrl)) {
       errors.repositoryUrl = "A link to the program's repository is required.";
     } else if (!isMentorshipHttpUrl(form.repositoryUrl)) {
@@ -294,11 +321,13 @@ export function isMentorshipResumeFileName(fileName: string): boolean {
 export function getMentorshipMentorRegisterErrors(form: MentorshipMentorRegisterForm): MentorshipMentorRegisterFieldErrors {
   const errors: MentorshipMentorRegisterFieldErrors = {};
 
-  if (mentorshipDescriptionLength(form.introduction) === 0) {
-    errors.introduction = 'Introduction is required.';
-  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTOR_INTRODUCTION_MAX) {
-    errors.introduction = `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`;
-  }
+  const introductionError = mentorshipRichTextError(
+    form.introduction,
+    MENTORSHIP_MENTOR_INTRODUCTION_MAX,
+    'Introduction is required.',
+    `Introduction must be ${MENTORSHIP_MENTOR_INTRODUCTION_MAX} characters or fewer.`
+  );
+  if (introductionError) errors.introduction = introductionError;
   if (!form.skills.length) errors.skills = 'Add at least one skill.';
   if (!isMentorshipTermsAccepted(form.complianceAccepted)) errors.complianceAccepted = 'Please confirm the compliance statement.';
   if (!isMentorshipTermsAccepted(form.termsAccepted)) errors.termsAccepted = 'Please accept the terms and conditions.';
@@ -381,11 +410,13 @@ export function createEmptyMentorshipMenteeForm(): MentorshipMenteeRegisterForm 
 export function getMentorshipMenteeRegisterErrors(form: MentorshipMenteeRegisterForm): MentorshipMenteeRegisterFieldErrors {
   const errors: MentorshipMenteeRegisterFieldErrors = {};
 
-  if (mentorshipDescriptionLength(form.introduction) === 0) {
-    errors.introduction = 'Introduction is required.';
-  } else if (mentorshipDescriptionLength(form.introduction) > MENTORSHIP_MENTEE_INTRODUCTION_MAX) {
-    errors.introduction = `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`;
-  }
+  const introductionError = mentorshipRichTextError(
+    form.introduction,
+    MENTORSHIP_MENTEE_INTRODUCTION_MAX,
+    'Introduction is required.',
+    `Introduction must be ${MENTORSHIP_MENTEE_INTRODUCTION_MAX} characters or fewer.`
+  );
+  if (introductionError) errors.introduction = introductionError;
   if (!form.skillsHave.length) errors.skillsHave = 'Add at least one skill you currently have.';
   if (!form.skillsWant.length) errors.skillsWant = 'Add at least one skill you would like to improve.';
   if (!isMentorshipTermsAccepted(form.ageEligible)) errors.ageEligible = 'Please confirm you are 18 years of age or older.';

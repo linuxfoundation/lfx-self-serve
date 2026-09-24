@@ -13,6 +13,8 @@ import { ACCOUNT_COOKIE_KEY } from '@lfx-one/shared/constants/accounts.constants
 import { ORG_EASYCLA_PATH, ORG_EASYCLA_SIGNATURE_PARAM } from '@lfx-one/shared/constants/cla.constants';
 import { ORG_LENS_CLA_M3_ENABLED_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import type {
+  OrgClaActivityLogEntry,
+  OrgClaActivityLogPage,
   OrgClaApprovalList,
   OrgClaContributorAcknowledgment,
   OrgClaContributorAcknowledgmentList,
@@ -45,6 +47,7 @@ export const MANAGER_DELETE_ROUTE = '**/api/orgs/*/lens/cla-groups/*/managers/*'
 
 /** Contributor acknowledgments for one agreement. Query string carries search and nextKey. */
 export const ACKNOWLEDGMENTS_ROUTE = '**/api/orgs/*/lens/cla-groups/*/acknowledgments**';
+export const ACTIVITY_LOG_ROUTE = '**/api/orgs/*/lens/cla-groups/*/activity**';
 
 /**
  * The detail page's presigned-URL route.
@@ -518,6 +521,7 @@ export function acknowledgment(overrides: Partial<OrgClaContributorAcknowledgmen
     cclaVersion: 'v2.1',
     signedOn: '2026-03-11T09:20:00Z',
     approved: true,
+    removedFromApprovalList: false,
     ...overrides,
   };
 }
@@ -568,4 +572,50 @@ export async function gotoAcknowledgments(
 export async function openAcknowledgmentsTab(page: Page): Promise<void> {
   await page.getByTestId('org-easycla-detail-tab-acknowledgments').click();
   await expect(page.getByTestId('org-easycla-acknowledgments')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+}
+
+export function activityLogEntry(overrides: Partial<OrgClaActivityLogEntry> = {}): OrgClaActivityLogEntry {
+  return {
+    id: 'event-1',
+    when: '2026-03-11T09:20:00Z',
+    actor: 'Ada Porter',
+    summary: 'Ada Porter signed a corporate CLA',
+    ...overrides,
+  };
+}
+
+export function activityLogPage(overrides: Partial<OrgClaActivityLogPage> = {}): OrgClaActivityLogPage {
+  const list = overrides.list ?? [activityLogEntry()];
+  return {
+    signatureId: 'signature-uuid-1',
+    list,
+    resultCount: list.length,
+    nextKey: null,
+    ...overrides,
+  };
+}
+
+export async function stubActivityLog(page: Page, options: { initial?: OrgClaActivityLogPage; next?: OrgClaActivityLogPage } = {}): Promise<void> {
+  const initial = options.initial ?? activityLogPage({ list: [], resultCount: 0 });
+
+  await page.route(ACTIVITY_LOG_ROUTE, (route) => {
+    if (route.request().method() !== 'GET') return route.abort();
+    const url = new URL(route.request().url());
+    const nextKey = url.searchParams.get('nextKey')?.trim() ?? '';
+    const body = nextKey && options.next ? options.next : initial;
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  });
+}
+
+export async function gotoActivityLog(page: Page, options: { initial?: OrgClaActivityLogPage; next?: OrgClaActivityLogPage } = {}): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubActivityLog(p, options);
+  });
+  await openActivityLogTab(page);
+}
+
+export async function openActivityLogTab(page: Page): Promise<void> {
+  await page.getByTestId('org-easycla-detail-tab-activity').click();
+  await expect(page.getByTestId('org-easycla-activity-log')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }

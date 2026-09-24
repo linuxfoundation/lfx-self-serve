@@ -146,9 +146,9 @@ describe('requireOrgLensAccess', () => {
   });
 
   it('allows a caller the authorizer confirms as auditor on an org they hold no roster grant on', async () => {
-    // LF team members (staff and contractor), a cascade the roster did not surface, and key-contact
-    // promotion all resolve through the one `b2b_org#auditor` relation — the gate asks the
-    // authorizer instead of mirroring a team list (spec 044 / DR-001). Pinning this matters because
+    // LF staff, a cascade the roster did not surface, and key-contact promotion all resolve through
+    // the one `b2b_org#auditor` relation — the gate asks the authorizer instead of mirroring a team
+    // list (spec 044 / DR-001). Pinning this matters because
     // it is what makes a 200 the correct answer for such a caller on an arbitrary org — behaviour
     // that is easy to mistake for a missing gate.
     getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: false });

@@ -4,9 +4,10 @@
 import type { Request } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Mirrors org-lens-meetings.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this
-// app's vitest config, so every runtime (non-type-only) import needs a stub.
-vi.mock('@lfx-one/shared/constants', () => ({
+// The real constants (plain-Node safe; see packages/shared/src/constants/index.spec.ts) with this
+// suite's caps pinned, so validation.helper loads for real.
+vi.mock('@lfx-one/shared/constants', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   ANALYTICS_TOP_PROJECTS_LIMIT: 5,
   DEFAULT_LFX_ONE_PLATINUM_SCHEMA: 'ANALYTICS.PLATINUM_LFX_ONE',
   MENTION_FEED_BODY_MAX_CHARS: 1000,
@@ -24,9 +25,9 @@ vi.mock('../helpers/social-listening-params.helper', () => ({
   encodeMentionFeedPageToken: (cursor: { ts: string | null; key: string }) => Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url'),
 }));
 
-vi.mock('../helpers/validation.helper', () => ({
-  escapeSqlLikePattern: (term: string) => term.replace(/[!%_]/g, (ch: string) => `!${ch}`),
-}));
+// validation.helper imports `@lfx-one/shared/utils`, whose barrel pulls Angular; see validation.helper.spec.ts.
+// The real clampInteger and escapeSqlLikePattern run here.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
 const { execute, withSocialListeningCache } = vi.hoisted(() => ({
   execute: vi.fn(),

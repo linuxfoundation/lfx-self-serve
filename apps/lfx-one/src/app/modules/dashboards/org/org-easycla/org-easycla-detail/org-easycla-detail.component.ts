@@ -41,9 +41,11 @@ import {
   orgClaCoverageChips,
   orgClaCoverageSummary,
   orgClaGroupForAddress,
+  orgClaPairProjectSfid,
   orgClaPreviewGroup,
   isOrgClaSendByEmailChoice,
 } from '@lfx-one/shared/utils';
+import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -83,14 +85,17 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
+import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
 import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { orgClaCoverageDialogConfig, OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
+import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.component';
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
@@ -102,12 +107,14 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     ButtonComponent,
     EmptyStateComponent,
     MessageComponent,
+    OrgEasyclaActivityLogComponent,
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,
+    ToggleComponent,
   ],
   providers: [DialogService],
   templateUrl: './org-easycla-detail.component.html',
@@ -144,6 +151,7 @@ export class OrgEasyclaDetailComponent {
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
+  private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -153,6 +161,8 @@ export class OrgEasyclaDetailComponent {
   // The signed-row wait is started from an adoption callback, which is outside the construction-time
   // injection context `toObservable` would otherwise take implicitly.
   private readonly injector = inject(Injector);
+
+  private autoEclaDetached = false;
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -247,6 +257,23 @@ export class OrgEasyclaDetailComponent {
    * next agreement's badge.
    */
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
+
+  /** Set by the acknowledgments tab each time it loads, so the badge follows what the tab shows. */
+  private readonly panelAcknowledgmentCount = signal<{ signatureId: string; count: number } | null>(null);
+
+  /**
+   * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
+   * `null` while the hop is in flight — the toggle is withheld during that window rather than
+   * shown enabled from an unchecked grant. `false` hides the toggle entirely, matching the
+   * design's choice to hide rather than disable a control the viewer cannot use, until the
+   * read-only banner (#1989) exists to explain a disabled state.
+   *
+   * The running write and the value last asked for or confirmed live in
+   * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
+   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
+   * row itself carries it, including across a project change that does not refetch the list.
+   */
+  private readonly autoEclaAllowed = signal<boolean | null>(null);
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -454,6 +481,37 @@ export class OrgEasyclaDetailComponent {
   // exists. Offering the download on an agreement without one is a control that can only fail.
   protected readonly canDownload = computed(() => this.claGroup()?.signed === true);
 
+  /**
+   * Whether the Auto ECLA toggle is shown at all.
+   *
+   * Three conjuncts: the row is signed (the producer stores the flag on the corporate signature,
+   * so an unsigned row has nothing to update), ACS granted the write (hide-on-deny — the design
+   * withholds the control from a viewer who cannot use it, since the disabled-with-banner
+   * pattern needs #1989 to explain itself), and this page is not showing the pre-sign preview
+   * (the row it would flip does not exist yet).
+   */
+  protected readonly showAutoEclaToggle = computed(() => this.claGroup()?.signed === true && !this.showingPreview() && this.autoEclaAllowed() === true);
+
+  /**
+   * The current toggle value the template binds to.
+   *
+   * Prefers the remembered value for this organization and agreement over the row's own flag, so
+   * a confirmed write survives a trip to another project. Falls back to `false` when the row
+   * carries no value, matching the producer's own default when the column is unset.
+   */
+  protected readonly autoEclaValue = computed(() => this.initAutoEclaValue());
+
+  /**
+   * A write is still running for the agreement on screen. The toggle stays visible but is refused
+   * for its duration, so a rapid double-click, or leaving and coming back, cannot open a second
+   * write for the same agreement. Another agreement's write does not disable this one.
+   */
+  protected readonly autoEclaPending = computed(() => this.initAutoEclaPending());
+
+  private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
+
+  private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
+
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
   /**
@@ -533,16 +591,42 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly approvalBadge = computed(() => this.initApprovalBadge());
 
+  /**
+   * Every acknowledgment on the displayed agreement, whatever its state, for the tab badge.
+   *
+   * Not the list row's `approvedContributorsCount`: that leaves out invalidated acknowledgments,
+   * so the badge would disagree with the rows the tab lists. The acknowledgments read counts every
+   * row, and a one-row page is enough for its `totalCount`. Browser-only, and only for a signed
+   * agreement — an unsigned one holds no acknowledgments.
+   */
+  private readonly fetchedAcknowledgmentCount = this.initFetchedAcknowledgmentCount();
+
+  protected readonly acknowledgmentsBadge = computed(() => this.initAcknowledgmentsBadge());
+
   protected readonly tabs = computed(() => this.initTabs());
 
   protected readonly lockedTab = computed(() => this.initLockedTab());
 
   public constructor() {
+    this.destroyRef.onDestroy(() => {
+      this.autoEclaDetached = true;
+    });
+
     // Either arm of the context, because neither destroys this component: an organization switch
     // re-drives the list fetch, and Angular reuses the component when `:signatureId` changes. So
     // without this the attestation stays open over a page that has moved on, and confirming it
     // would open a session for the agreement the viewer left rather than the one on screen.
-    this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.uncommittedSigningDialog?.close());
+    this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
+      this.uncommittedSigningDialog?.close();
+    });
+
+    // Drop a remembered value once the list row carries it. Until then it survives a project
+    // change, because that change does not refetch the list.
+    toObservable(computed(() => this.initAutoEclaSettledRow()))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((settled) => {
+        if (settled) this.autoEclaWrites.forget(settled.orgUid, settled.signatureId, settled.value);
+      });
 
     // The choice was made under the organization the viewer has since left, and Start would open a
     // session against the one they arrived at; nothing here can be re-derived for it either, since
@@ -572,6 +656,27 @@ export class OrgEasyclaDetailComponent {
 
     this.followReturnAddress();
 
+    // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
+    // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
+    // the grant to `project|organization`. The project is the pinned pair project, else the first
+    // covered project, else the foundation. Withheld while the group is unsigned (nothing to toggle) or while the pair
+    // is unresolvable (a data problem upstream that the toggle would silently open a 403 into).
+    // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
+    toObservable(this.autoEclaPermissionPair)
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => {
+          this.autoEclaAllowed.set(null);
+        }),
+        switchMap((pair) => {
+          if (!pair) return of(false);
+          const [orgUid, projectSfid] = pair.split('::');
+          return this.claService.checkPermission(orgUid, 'auto-ecla-update', projectSfid);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe((allowed) => this.autoEclaAllowed.set(allowed));
+
     // No redirect for an address that resolves to nothing (#2364). A pasted or bookmarked group
     // address — or one whose picker selection did not survive the trip — stays put and renders
     // `cannotPreview`, because the group address is the one a named signing overview will claim and
@@ -582,6 +687,20 @@ export class OrgEasyclaDetailComponent {
 
   protected selectTab(tab: OrgClaDetailTab): void {
     this.activeTab.set(tab);
+  }
+
+  /**
+   * Switch to a tab and move focus to its trigger — the click-driven counterpart to the
+   * arrow-key path in onTabKeydown. The Not Authorized "Add the user to the Approval list"
+   * control lives on a panel this call destroys, so without moving focus a keyboard or
+   * screen-reader user is stranded on a removed node. The trigger buttons are always in the
+   * tablist, so focusing one synchronously after selectTab is safe.
+   */
+  protected focusTab(tab: OrgClaDetailTab): void {
+    this.selectTab(tab);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`org-easycla-detail-tab-trigger-${tab}`)?.focus();
+    }
   }
 
   protected onManagerCountChanged(count: number): void {
@@ -602,10 +721,7 @@ export class OrgEasyclaDetailComponent {
     if (next === null) return;
 
     event.preventDefault();
-    this.selectTab(ids[next]);
-    if (isPlatformBrowser(this.platformId)) {
-      document.getElementById(`org-easycla-detail-tab-trigger-${ids[next]}`)?.focus();
-    }
+    this.focusTab(ids[next]);
   }
 
   protected openCoverage(): void {
@@ -709,7 +825,83 @@ export class OrgEasyclaDetailComponent {
   }
 
   protected onApprovalCountChanged(count: number): void {
-    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+    this.approvalCountOverride.set({ signatureId: this.claGroup()?.id ?? '', count });
+  }
+
+  protected onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void {
+    this.approvalCountOverride.set(event);
+  }
+
+  protected onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void {
+    this.panelAcknowledgmentCount.set(event);
+  }
+
+  /**
+   * Turns Auto ECLA on or off for the agreement on screen (#1988).
+   *
+   * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
+   * click without a round trip. On success the override stays (the state was written), the
+   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * is restored to the value shown before the click, which the producer did not change, and the
+   * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
+   * that sentence on `error`, not `message`, so the toast reads both through
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save
+   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
+   * leaves the page: unsubscribing would abort a write the producer may already be recording.
+   * The running write is tracked per organization and agreement above this page, so it survives
+   * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
+   * shown only while this page is still that agreement. A remembered value stays until the list
+   * row carries it, including after a project change that does not refetch the list.
+   *
+   * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
+   */
+  protected onAutoEclaToggle(next: boolean): void {
+    if (this.autoEclaPending()) return;
+
+    const group = this.claGroup();
+    const orgUid = this.selectedOrgUid();
+    if (!group?.signed || !orgUid) return;
+
+    const signatureId = group.id;
+    const target = { orgUid, signatureId };
+    const previous = this.autoEclaValue();
+    if (previous === next) return;
+
+    this.rememberAutoEcla(target, next);
+
+    this.autoEclaWrites.track(orgUid, signatureId, this.claService.setAutoCreateEcla(orgUid, signatureId, next)).subscribe({
+      next: (response) => {
+        // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
+        // on the ordinary path and disagreement here means the server refused the ask silently
+        // (which it does not, but if it did, the toggle should tell the truth). A 200 without the
+        // echo still means the ask was written, so it must not read as "off".
+        const written = typeof response?.autoCreateEcla === 'boolean' ? response.autoCreateEcla : next;
+        this.rememberAutoEcla(target, written);
+        if (!this.autoEclaStillHere(target)) return;
+        this.messageService.add({
+          severity: 'success',
+          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.rememberAutoEcla(target, previous);
+        if (!this.autoEclaStillHere(target)) return;
+        this.messageService.add({
+          severity: 'error',
+          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
+        });
+      },
+    });
+  }
+
+  private rememberAutoEcla(target: { orgUid: string; signatureId: string }, value: boolean): void {
+    this.autoEclaWrites.remember(target.orgUid, target.signatureId, value);
+  }
+
+  /** True while the page is still the organization and agreement this write was started for. */
+  private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
+    return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
   }
 
   /**
@@ -1012,7 +1204,7 @@ export class OrgEasyclaDetailComponent {
 
   private initApprovalBadge(): string {
     const override = this.approvalCountOverride();
-    if (override && override.signatureId === this.signatureId()) return String(override.count);
+    if (override && override.signatureId === this.claGroup()?.id) return String(override.count);
 
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
@@ -1026,6 +1218,49 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  private initAutoEclaValue(): boolean {
+    const orgUid = this.selectedOrgUid();
+    const signatureId = this.claGroup()?.id;
+    if (orgUid && signatureId) {
+      const remembered = this.autoEclaWrites.remembered(orgUid, signatureId);
+      if (remembered !== undefined) return remembered;
+    }
+    return this.claGroup()?.autoCreateEcla === true;
+  }
+
+  /**
+   * The agreement on screen when its list row already carries the remembered value, else null.
+   * Null while its write is running: a stale row can match the value being written by chance, and
+   * dropping it then would let a page opened mid-write show a list fetched before the write.
+   */
+  private initAutoEclaSettledRow(): { orgUid: string; signatureId: string; value: boolean } | null {
+    const group = this.claGroup();
+    const orgUid = this.selectedOrgUid();
+    if (!group?.id || !orgUid || this.autoEclaWrites.running(orgUid, group.id)) return null;
+    const remembered = this.autoEclaWrites.remembered(orgUid, group.id);
+    if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return null;
+    return { orgUid, signatureId: group.id, value: remembered };
+  }
+
+  private initAutoEclaPending(): boolean {
+    const orgUid = this.selectedOrgUid();
+    const signatureId = this.claGroup()?.id;
+    return !!orgUid && !!signatureId && this.autoEclaWrites.running(orgUid, signatureId);
+  }
+
+  private initAutoEclaProjectSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairProjectSfid(group) ?? '') : '';
+  }
+
+  private initAutoEclaPermissionPair(): string {
+    const group = this.claGroup();
+    if (!group?.signed || this.showingPreview()) return '';
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.autoEclaProjectSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
   }
 
   /**
@@ -1042,9 +1277,48 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_LOCKED_TAB_COPY[this.activeTab()] ?? null;
   }
 
+  private initFetchedAcknowledgmentCount(): Signal<{ signatureId: string; count: number } | null> {
+    const target = computed(() => this.initAcknowledgmentCountTarget());
+    return toSignal(
+      toObservable(target).pipe(
+        distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
+        // Drop a panel override left over from the previous agreement so it cannot shadow this read.
+        tap(() => this.panelAcknowledgmentCount.set(null)),
+        switchMap((next) => {
+          if (!next || !isPlatformBrowser(this.platformId)) return of(null);
+          return this.claService.getContributorAcknowledgments(next.orgUid, next.signatureId, { pageSize: 1 }).pipe(
+            map((list) => ({ signatureId: next.signatureId, count: list.totalCount })),
+            // A failed count leaves the badge empty; the tab itself reports the failure when opened.
+            catchError((error: unknown) => {
+              console.warn('Failed to load the contributor acknowledgment count:', (error as HttpErrorResponse)?.status, (error as HttpErrorResponse)?.message);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initAcknowledgmentCountTarget(): { orgUid: string; signatureId: string } | null {
+    const group = this.claGroup();
+    const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
+    return group?.signed && orgUid ? { orgUid, signatureId: group.id } : null;
+  }
+
+  private initAcknowledgmentsBadge(): string {
+    const group = this.claGroup();
+    if (!group?.signed) return '';
+    const panel = this.panelAcknowledgmentCount();
+    if (panel?.signatureId === group.id) return String(panel.count);
+    const fetched = this.fetchedAcknowledgmentCount();
+    return fetched?.signatureId === group.id ? String(fetched.count) : '';
+  }
+
   private tabBadge(tab: OrgClaDetailTab): string {
     if (tab === 'managers') return this.managersBadge();
     if (tab === 'approval') return this.approvalBadge();
+    if (tab === 'acknowledgments') return this.acknowledgmentsBadge();
     return '';
   }
 
@@ -1123,6 +1397,7 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.autoEclaWrites.forgetSettled();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(

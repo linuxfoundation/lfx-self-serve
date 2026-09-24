@@ -14,12 +14,14 @@ const {
   requestCorporateSignature,
   getApprovalList,
   updateApprovalList,
+  updateEclaAutoCreate,
   checkAcs,
   getManagers,
   addManager,
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  getActivityLog,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -28,12 +30,14 @@ const {
   requestCorporateSignature: vi.fn(),
   getApprovalList: vi.fn(),
   updateApprovalList: vi.fn(),
+  updateEclaAutoCreate: vi.fn(),
   checkAcs: vi.fn(),
   getManagers: vi.fn(),
   addManager: vi.fn(),
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  getActivityLog: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -46,11 +50,13 @@ vi.mock('../services/org-cla.service', () => ({
     public requestCorporateSignature = requestCorporateSignature;
     public getApprovalList = getApprovalList;
     public updateApprovalList = updateApprovalList;
+    public updateEclaAutoCreate = updateEclaAutoCreate;
     public getManagers = getManagers;
     public addManager = addManager;
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public getActivityLog = getActivityLog;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -1011,6 +1017,96 @@ describe('OrgClasController.updateApprovalList — applying the delta', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Auto ECLA toggle (#1988)
+//
+// The handler uses `requireAgreementContext`, which enforces a UUID-shaped signatureId. The
+// shared `approvalReq` helper uses `signature-uuid-1` — fine for `updateApprovalList` (which does
+// only a `.trim()` check), but rejected as a validation error here before the service is called.
+// A local helper carries a real UUID so these tests exercise the write path rather than the guard.
+// ---------------------------------------------------------------------------
+
+function autoEclaReq(body?: unknown, signatureId = '0f9b8c7d-1234-4abc-89de-0123456789ab') {
+  return { params: { orgUid: ORG_UID, signatureId }, body, query: {} } as any;
+}
+
+describe('OrgClasController.updateEclaAutoCreate — validating the body', () => {
+  it('rejects a missing body with 400', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({}), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Body must include boolean "autoCreateEcla"' });
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stringified boolean rather than coercing it, so "false" cannot turn the toggle on', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: 'false' }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+
+  it('rejects a numeric value rather than coercing it, so 0 cannot flip the flag', async () => {
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: 0 }), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(updateEclaAutoCreate).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrgClasController.updateEclaAutoCreate — applying the write', () => {
+  const SIGNATURE_UUID = '0f9b8c7d-1234-4abc-89de-0123456789ab';
+
+  it('forwards the target state and the grant-checked orgUid, and echoes the new value back', async () => {
+    updateEclaAutoCreate.mockResolvedValue({ outcome: 'updated', autoCreateEcla: true });
+    const res = buildRes();
+    const req = autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID);
+
+    await new OrgClasController().updateEclaAutoCreate(req, res, vi.fn());
+
+    expect(updateEclaAutoCreate).toHaveBeenCalledWith(req, ORG_UID, SIGNATURE_UUID, true);
+    expect(res.json).toHaveBeenCalledWith({ autoCreateEcla: true });
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    updateEclaAutoCreate.mockResolvedValue({ outcome: 'not-found' });
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ message: 'CLA agreement not found' });
+  });
+
+  it('answers 400 with its own copy for an unsigned agreement', async () => {
+    updateEclaAutoCreate.mockResolvedValue({ outcome: 'not-signed' });
+    const res = buildRes();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+  });
+
+  it('hands an upstream failure to the error handler rather than answering it', async () => {
+    updateEclaAutoCreate.mockRejectedValue(new Error('upstream exploded'));
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().updateEclaAutoCreate(autoEclaReq({ autoCreateEcla: true }, SIGNATURE_UUID), res, next);
+
+    expect(next).toHaveBeenCalledWith(expect.any(Error));
+    expect(res.json).not.toHaveBeenCalled();
+  });
+});
+
 describe('OrgClasController.checkPermission', () => {
   const ORG = '0014100000Te2ovAAB';
   const PROJECT = 'a09410000182dD2AAI';
@@ -1055,6 +1151,19 @@ describe('OrgClasController.checkPermission', () => {
     await new OrgClasController().checkPermission(req({ action: 'cla-manager-delete', projectSfid: PROJECT }), res, vi.fn());
 
     expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'cla-manager-delete', PROJECT);
+    expect(res.json).toHaveBeenCalledWith({ allowed: true });
+  });
+
+  // The Overview toggle uses the ACS hop before rendering (#1988), so the typed action has to
+  // be accepted here. Without this a viewer who legitimately holds the grant would still see the
+  // toggle hidden — the check fails-closed at 400.
+  it('accepts the auto-ecla-update action the Overview toggle uses', async () => {
+    checkAcs.mockResolvedValue(true);
+    const res = buildRes();
+
+    await new OrgClasController().checkPermission(req({ action: 'auto-ecla-update', projectSfid: PROJECT }), res, vi.fn());
+
+    expect(checkAcs).toHaveBeenCalledWith(expect.anything(), ORG, 'auto-ecla-update', PROJECT);
     expect(res.json).toHaveBeenCalledWith({ allowed: true });
   });
 });
@@ -1280,6 +1389,16 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
     expect(res.status).toHaveBeenCalledWith(403);
   });
 
+  it('answers 409 with a plain sentence when the acknowledgment is not approved', async () => {
+    invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-approved' });
+    const res = buildRes();
+
+    await new OrgClasController().invalidateAcknowledgment(invalidateReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ message: "This acknowledgment is no longer approved, so it can't be invalidated yet." });
+  });
+
   it('answers 400 with its own copy for an unsigned agreement', async () => {
     invalidateAcknowledgment.mockResolvedValue({ outcome: 'not-signed' });
     const res = buildRes();
@@ -1317,5 +1436,104 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
 
     expect(JSON.stringify(metadata)).not.toContain('left the company in March');
     expect(metadata).toContainEqual(expect.objectContaining({ reason: 'other' }));
+  });
+});
+
+/**
+ * Activity Log read (#1987). The route guard is asserted in the router spec; this layer's job is
+ * to translate query parameters correctly, clamp the page size before it reaches the producer,
+ * answer 404 for a signature this organization does not hold, and NOT forward
+ * `returnAllEvents` even if the client tried to send it. That flag only raises the page
+ * limit on the same partition.
+ */
+function activityReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function activityPage(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getActivityLog', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: 'cursor-xyz' }));
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: undefined }));
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  // `returnAllEvents` only raises the page limit on the same partition. Even if a client
+  // sent it, the controller must not hand it to the service — the service does not read it
+  // either, so this is one of two layers pinning that the flag stops at the BFF.
+  it('never forwards a returnAllEvents flag to the service, even if the caller tried', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ returnAllEvents: 'true' }), buildRes(), vi.fn());
+
+    const lastCallOptions = getActivityLog.mock.calls.at(-1)?.[3] as Record<string, unknown>;
+    expect(lastCallOptions).not.toHaveProperty('returnAllEvents');
+    expect(JSON.stringify(lastCallOptions ?? {})).not.toContain('returnAllEvents');
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getActivityLog.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries actor names and timestamps, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 });

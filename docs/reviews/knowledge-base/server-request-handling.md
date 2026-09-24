@@ -128,7 +128,7 @@ Patterns where new backend routes are mounted without the right auth middleware,
 
 **Failure message:** Raw query-param cast bypasses input hardening; can yield arrays from repeated keys; loses runtime safety.
 
-**Fix:** use `getStringQueryParam(req, 'name')` from `apps/lfx-one/src/server/helpers/validation.helper.ts`. Project-wide convention. (Only `getStringQueryParam` exists today — for numeric/boolean params, read via `getStringQueryParam` and coerce/validate explicitly rather than casting `req.query[...]`.)
+**Fix:** use `getStringQueryParam(req, 'name')` from `apps/lfx-one/src/server/helpers/validation.helper.ts`. Project-wide convention. For `pageSize`/`offset` on offset-paginated Snowflake reads, use `parseOffsetPagination(req, { defaultPageSize, maxPageSize })` from the same file (and `clampInteger` for other numeric values interpolated into SQL). For other numeric/boolean params, read via `getStringQueryParam` and coerce/validate explicitly rather than casting `req.query[...]`.
 
 ---
 

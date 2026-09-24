@@ -422,14 +422,14 @@ export class OrgRoleGrantsService {
 
   /**
    * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
-   * (`lf-staff`, `lf-contractor`), the populations that carry `auditor` on every `b2b_org`
-   * (member-service `docs/fga-contract.md`, spec 044). One batched `checkAccessStrict` over both teams.
+   * (`lf-staff`), the population that carries `auditor` on every `b2b_org` (member-service
+   * `docs/fga-contract.md`). One batched `checkAccessStrict` over that list.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
-   * `b2b_org:<uid>#auditor` directly. It intentionally differs from
-   * `PersonaDetectionService.checkLFStaff`, which stays staff-only for the non-Org-Lens surfaces it
-   * gates (DR-002).
+   * `b2b_org:<uid>#auditor` directly. It resolves to the same membership as
+   * `PersonaDetectionService.checkLFStaff` today, but stays a separate list with separate
+   * consumers: that one gates non-Org-Lens surfaces, so widening either must not widen the other.
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization

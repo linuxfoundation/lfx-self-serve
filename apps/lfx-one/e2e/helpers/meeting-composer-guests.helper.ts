@@ -35,7 +35,7 @@ export const DIRECTORY_GUEST: UserSearchResult = {
   last_name: 'Byron',
   job_title: 'Principal Engineer',
   organization: { name: 'Acme Motors', website: null },
-  type: 'meeting_registrant',
+  type: 'v1_meeting_registrant',
   username: 'abyron-e2e',
 };
 
@@ -245,9 +245,12 @@ export async function stubComposerBackend(page: Page): Promise<void> {
   await page.route('**/api/user/past-meetings*', (route) => fulfillJson(route, []));
   await page.route('**/api/user/pending-invitations*', (route) => fulfillJson(route, []));
 
-  // The guest directory. Term-independent on purpose: the specs assert what happens to a hit, not
-  // how the backend ranks one.
-  await page.route('**/api/search/users*', (route) => fulfillJson(route, { results: [DIRECTORY_GUEST] }));
+  // The guest directory, type-faithful: only `v1_meeting_registrant` answers the hit — a wrong type
+  // gets zero rows, which is exactly how GH-2773 manifested. Term-independent on purpose.
+  await page.route('**/api/search/users*', (route) => {
+    const type = new URL(route.request().url()).searchParams.get('type');
+    return fulfillJson(route, { results: type === 'v1_meeting_registrant' ? [DIRECTORY_GUEST] : [] });
+  });
 
   // `*` does not cross a `/` in Playwright's glob, so `**/api/committees*` would miss
   // `/api/committees/<uid>/members`. An empty list keeps the group manager in its resolved

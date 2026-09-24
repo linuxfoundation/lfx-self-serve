@@ -63,7 +63,7 @@ export class OrgRoleGrantsService {
   public readonly loading: Signal<boolean> = this.loadingInternal.asReadonly();
   public readonly error: Signal<string | null> = this.errorInternal.asReadonly();
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
-  /** Caller is a member of an LF team (`lf-staff` or `lf-contractor`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
+  /** Caller is a member of an LF team (`lf-staff`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
   public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
