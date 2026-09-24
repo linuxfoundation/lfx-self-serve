@@ -330,7 +330,7 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
   const SLUGS = ['k8s', 'etcd', 'ghost'];
 
   /** One shared person across two projects, so a round trip has to survive the people dictionary. */
-  function person(slug: string, id: string, role: string, name: string | null, avatar: string | null) {
+  function person(slug: string, id: string | null, role: string, name: string | null, avatar: string | null) {
     return { PROJECT_SLUG: slug, PARTICIPANT_ID: id, INVOLVEMENT_ROLE: role, PARTICIPANT_NAME: name, PARTICIPANT_AVATAR_URL: avatar };
   }
 
@@ -538,6 +538,29 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
 
     expect(response.projects.map((project) => project.slug)).toEqual(['k8s', 'etcd']);
     expect(cacheValues.size).toBe(0);
+  });
+
+  it('caches a project person whose PARTICIPANT_ID is null instead of missing forever', async () => {
+    // `mapPeople` passes a null participant id and name straight through, and main's guard never
+    // inspected these cells at all — so a guard demanding strings here would be stricter than the
+    // uncached path and make one such person a permanent miss for the org.
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        return { rows: [person('k8s', null, 'maintainer', null, null)] };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) {
+        return { rows: [projectsRow()] };
+      }
+      return { rows: [] };
+    });
+    const fromMiss = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    const warehouseReads = execute.mock.calls.length;
+
+    const fromHit = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(execute.mock.calls.length).toBe(warehouseReads);
+    expect(fromHit).toStrictEqual(fromMiss);
   });
 
   it('treats a pre-compaction cached response as a miss rather than decoding it', async () => {

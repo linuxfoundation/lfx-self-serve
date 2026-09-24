@@ -265,6 +265,9 @@ function isCompactContributorRows(value: unknown): boolean {
   // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
   // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
   // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
   const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
   const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
   const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
@@ -273,8 +276,8 @@ function isCompactContributorRows(value: unknown): boolean {
   // but the cache must never be stricter than the uncached path — which passes a NULL straight
   // through — or one such row would make that org's entry a permanent miss.
   if (
-    !cache.rows.r.every((row) => isStoredString(row[personKeyIndex]) && (row[memberIdIndex] === null || isStoredString(row[memberIdIndex]))) ||
-    !cache.projects.r.every((row) => isStoredString(row[projectIdIndex]))
+    !cache.rows.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[memberIdIndex])) ||
+    !cache.projects.r.every((row) => isStoredNullableString(row[projectIdIndex]))
   ) {
     return false;
   }
@@ -291,4 +294,9 @@ function isCompactContributorRows(value: unknown): boolean {
 /** A required stored cell: present (not the absence marker) and a string. */
 function isStoredString(cell: unknown): boolean {
   return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }

@@ -1176,10 +1176,13 @@ function isCompactProjectsCache(value: unknown): boolean {
     ['healthOverallScore', 'healthMaxScore', 'healthCoveredCategoryCount', 'healthMaintainer', 'healthSecurity', 'healthDevelopment'] as const
   ).map((column) => ORG_LENS_PROJECT_ROW_COLUMNS.indexOf(column));
   const isStoredString = (cell: unknown): boolean => typeof cell === 'string' && !isColumnarAbsent(cell);
+  const isStoredNullableString = (cell: unknown): boolean => cell === null || isStoredString(cell);
   const isStoredNumberOrNull = (cell: unknown): boolean => cell === null || typeof cell === 'number';
   const projectValuesValid = cache.projects.r.every((row) => {
     const metricsState = row[metricsStateIndex];
     return (
+      // `slug` and `name` stay string-only: `isProjectsResponse` on main required both, so this is
+      // parity with the pre-compaction guard, not new strictness.
       isStoredString(row[slugIndex]) &&
       isStoredString(row[nameIndex]) &&
       // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch as
@@ -1194,8 +1197,10 @@ function isCompactProjectsCache(value: unknown): boolean {
   if (!projectValuesValid) {
     return false;
   }
-  // The people dictionary is validated the same way: every decoded person reaches the browser.
-  const peopleValuesValid = cache.people.r.every((row) => row.every((cell) => isStoredString(cell)));
+  // The people dictionary is validated the same way, except that `null` is legal: main's guard
+  // never inspected these cells at all, and `mapPeople` can produce a null `id` or `name` from null
+  // warehouse columns — a guard must never be stricter than the uncached path it caches for.
+  const peopleValuesValid = cache.people.r.every((row) => row.every((cell) => isStoredNullableString(cell)));
   if (!peopleValuesValid) {
     return false;
   }

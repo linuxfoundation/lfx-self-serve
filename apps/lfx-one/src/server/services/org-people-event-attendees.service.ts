@@ -276,13 +276,16 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
   // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
   // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
   const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
   const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
   if (
-    !cache.details.r.every((row) => isStoredString(row[personKeyIndex])) ||
-    !cache.events.r.every((row) => isStoredString(row[eventIdIndex])) ||
-    !cache.attendeeRows.r.every((row) => isStoredString(row[attendeeKeyIndex]))
+    !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex])) ||
+    !cache.events.r.every((row) => isStoredNullableString(row[eventIdIndex])) ||
+    !cache.attendeeRows.r.every((row) => isStoredNullableString(row[attendeeKeyIndex]))
   ) {
     return false;
   }
@@ -299,4 +302,9 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
 /** A required stored cell: present (not the absence marker) and a string. */
 function isStoredString(cell: unknown): boolean {
   return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }

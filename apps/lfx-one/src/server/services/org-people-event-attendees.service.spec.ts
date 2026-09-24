@@ -276,6 +276,47 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
+  it('caches a detail row whose EVENT_ID is null instead of missing forever', async () => {
+    // The detail query does not filter nulls — only the options query does — and the uncached
+    // mapper passes a null EVENT_ID straight through. A guard demanding a string there would turn
+    // one such row into a permanent miss for the whole org.
+    execute.mockReset();
+    execute.mockImplementation(async (query: string) => {
+      if (query.includes('ORG_PEOPLE_ALL')) {
+        return { rows: [{ PERSON_KEY: 'person-one', LFID: null, CDP_MEMBER_ID: null, NAME: null, TITLE: null, EMAIL: null }] };
+      }
+      if (query.includes('SELECT DISTINCT')) {
+        return { rows: [] };
+      }
+      return {
+        rows: [
+          {
+            PERSON_KEY: 'person-one',
+            EVENT_ID: null,
+            EVENT_NAME: null,
+            EVENT_LOCATION: null,
+            EVENT_CITY: null,
+            EVENT_COUNTRY: null,
+            EVENT_URL: null,
+            EVENT_START_DATE: null,
+            EVENT_END_DATE: null,
+            IS_SPEAKER: null,
+            IS_PAST_EVENT: null,
+            FOUNDATION_ID: null,
+            FOUNDATION_NAME: null,
+          },
+        ],
+      };
+    });
+    const fromMiss = await service.getEventAttendees(ACCOUNT);
+    const warehouseReads = execute.mock.calls.length;
+
+    const fromHit = await service.getEventAttendees(ACCOUNT);
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+    expect(fromHit).toStrictEqual(fromMiss);
+  });
+
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.

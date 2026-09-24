@@ -274,6 +274,42 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
   });
 
+  it('caches an aggregate row whose PROJECT_ID is null instead of missing forever', async () => {
+    // Same rule as the event-attendee null EVENT_ID: `buildResponse` passes a null project id
+    // through, so a guard demanding a string there would make one such row a permanent miss.
+    execute.mockReset();
+    execute.mockResolvedValue({
+      rows: [
+        {
+          PERSON_KEY: 'person-one',
+          PROJECT_ID: null,
+          LFID: null,
+          LF_USERNAME: null,
+          CDP_MEMBER_ID: null,
+          DISPLAY_NAME: null,
+          TITLE: null,
+          PROJECT_NAME: null,
+          PROJECT_SLUG: null,
+          FOUNDATION_ID: null,
+          FOUNDATION_NAME: null,
+          FOUNDATION_SLUG: null,
+          COMMITS: null,
+          CODE_ACTIVITIES: null,
+          LAST_ACTIVE_DATE: null,
+          IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
+          IS_DECLARED_MAINTAINER_FOR_ORG: null,
+        },
+      ],
+    });
+    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const warehouseReads = execute.mock.calls.length;
+
+    const fromHit = await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+    expect(fromHit).toStrictEqual(fromMiss);
+  });
+
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.

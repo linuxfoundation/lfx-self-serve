@@ -257,12 +257,15 @@ function isCompactTraineesRaw(value: unknown): boolean {
   // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
   // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
   // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
   const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
   const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
   const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');
   if (
-    !cache.details.r.every((row) => isStoredString(row[personKeyIndex]) && isStoredString(row[courseOrCertIndex])) ||
-    !cache.traineeRows.r.every((row) => isStoredString(row[traineeKeyIndex]))
+    !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[courseOrCertIndex])) ||
+    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex]))
   ) {
     return false;
   }
@@ -279,6 +282,11 @@ function isCompactTraineesRaw(value: unknown): boolean {
 /** A required stored cell: present (not the absence marker) and a string. */
 function isStoredString(cell: unknown): boolean {
   return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }
 
 /** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */
