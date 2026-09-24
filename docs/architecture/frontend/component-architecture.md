@@ -238,19 +238,19 @@ set the first time a query carries a non-empty slug, with the response tap writi
   caption an unread scope as a measured empty one, which is a different and much more confident
   claim than "still loading".
 - That first empty-slug pass must **not** emit `settled`. It would drop every section out of the
-  container's wait set before a single read has run, releasing the pending fragment — and
-  `onSectionReading` cannot re-arm a key that is already cleared, so the deep link lands at the wrong
+  shell's wait set before a single read has run, releasing the pending fragment — and
+  the shell's `sectionReading` cannot re-arm a key that is already cleared, so the deep link lands at the wrong
   offset once the real read reflows the pane. A read that never gets a foundation is bounded by the
   pending-section TTL instead.
 - A foundation **cleared after** a read still settles, because the latch stays set. Without it the
-  section wedges on the skeleton forever, and — since the container holds a fragment deep link until
+  section wedges on the skeleton forever, and — since the shell holds a fragment deep link until
   every listed section reports — it would also hold every deep link until the TTL.
 
 Known limitation: once latched, a scope cleared after a read renders the _measured-empty_ card
 rather than a neutral one. Distinguishing the third state ("no foundation selected") belongs to the
 page-wide neutral state, not to four per-section copies of the same computed.
 
-A Level 2 page whose content column scrolls on its own (`health-metrics-engagement`) bounds that column to the viewport and gives the observer that element as its `root`, with a `0px 0px -70% 0px` margin — the sticky-header offset only belongs in the margin when the window is what scrolls. Detect the container at runtime (computed `overflow-y` plus `scrollHeight > clientHeight`) rather than assuming it, so the same code falls back to window scroll at narrow widths.
+A Level 2 page whose content column scrolls on its own (`health-metrics-l2-shell.component.ts`) bounds that column to the viewport and gives the observer that element as its `root`, with a `0px 0px -70% 0px` margin — the sticky-header offset only belongs in the margin when the window is what scrolls. Detect the container at runtime (computed `overflow-y` plus `scrollHeight > clientHeight`) rather than assuming it, so the same code falls back to window scroll at narrow widths.
 
 ## 🎨 Component Development Pattern
 

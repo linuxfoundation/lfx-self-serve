@@ -74,15 +74,15 @@ export class HealthMetricsL2ShellComponent implements OnInit {
 
   // `null` until measured client-side; the CSS variable then bounds the pane so only it scrolls.
   protected readonly panesHeight = signal<string | null>(null);
+  // Held until the sections exist, then again until every async section has settled: a deep link
+  // re-scrolls once per read that lands, because each one moves the anchors below it.
+  private readonly pendingSection = signal<string | null>(null);
   protected readonly activeSection = linkedSignal(() => this.sections()[0]?.key ?? '');
 
   // Ids resolved once per input rather than per render — the template only reads fields.
   protected readonly sectionViews = computed<HealthMetricsL2SectionView[]>(() => buildHealthMetricsL2SectionViews(this.sections(), this.idPrefix()));
   protected readonly bodyByKey = computed(() => new Map<string, TemplateRef<unknown>>(this.bodies().map((body) => [body.key(), body.template])));
 
-  // Held until the sections exist, then again until every async section has settled: a deep link
-  // re-scrolls once per read that lands, because each one moves the anchors below it.
-  private readonly pendingSection = signal<string | null>(null);
   /**
    * The data sections that have not reported yet. Whichever settles first must not release the
    * pending key: another one reflowing afterwards would move the anchor out from under it.
