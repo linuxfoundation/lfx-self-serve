@@ -689,6 +689,52 @@ export const ORG_CLA_DESIGNEE_NAME_PATTERN = /^[a-zA-Z0-9_]+( [a-zA-Z0-9_]+)*$/;
 export const ORG_CLA_DESIGNEE_NAME_MIN = 2;
 export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
 
+/** Corporate Console's question before Start, verbatim. Contact Company Admin is not offered. */
+export const ORG_CLA_MANAGER_QUESTION_COPY = {
+  title: 'No Signed CLA Found',
+  question: 'Are you authorized to be a CLA Manager for your organization?',
+  message: 'A CLA Manager is the person who manages the list of approved contributors to this project for your company.',
+  note: 'If not sure please select "No"',
+  noLabel: 'No',
+  yesLabel: 'Yes',
+} as const;
+
+/** The unsigned overview for a viewer already identified as the initial CLA Manager (Corporate Console, verbatim). */
+export const ORG_CLA_DESIGNEE_START_COPY = {
+  identified: 'Someone has identified you as the initial CLA Manager from your company for this project.',
+  role: 'The CLA Manager is the person who manages the list of approved contributors.',
+  stepsHeading: 'To proceed, click below to start the process:',
+  steps: [
+    {
+      label: 'Step 1:',
+      body: 'You will be able to either sign the CLA, or send it to someone else for signature if you are not authorized by your company to sign it.',
+    },
+    { label: 'Step 2:', body: 'Then, you will be able to start approving contributors and adding other CLA Managers.' },
+  ],
+} as const;
+
+export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
+  title: 'Identify CLA Manager',
+  message: 'Please enter the name and email address of the person from your company who will be the CLA Manager for this project',
+  nameLabel: 'Name',
+  emailLabel: 'Email address',
+  submitLabel: 'Submit Request',
+  cancelLabel: 'Cancel',
+  /** `email` is the address the viewer entered. */
+  assigned: (email: string): string => `Request submitted. An email has been sent to ${email} to let them know they are the initial CLA Manager.`,
+  lfLoginRequested: (email: string): string =>
+    `Request submitted. ${email} does not have an LF Login yet, so an email has been sent asking them to create one. They become the initial CLA Manager once they do.`,
+} as const;
+
+/** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
+export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<(typeof ORG_CLA_DESIGNEE_REFUSALS)[number], string> = {
+  'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
+  'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
+  sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',
+  'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
+  unknown: 'We could not complete the request. Try again, or contact support if it keeps failing.',
+};
+
 // ---------------------------------------------------------------------------
 // Contributor Acknowledgments (#1986)
 // ---------------------------------------------------------------------------

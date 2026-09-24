@@ -9,6 +9,10 @@ import type {
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgmentList,
+  OrgClaDesigneeNominationRequest,
+  OrgClaDesigneeNominationResponse,
+  OrgClaDesigneeRequest,
+  OrgClaDesigneeResponse,
   OrgClaEclaAutoCreateResponse,
   OrgClaGroupList,
   OrgClaInvalidateAcknowledgmentRequest,
@@ -122,6 +126,20 @@ export class OrgLensClaService {
     return this.http.put<OrgClaEclaAutoCreateResponse>(this.eclaAutoCreateUrl(orgUid, signatureId), { autoCreateEcla });
   }
 
+  /**
+   * Yes on the manager question (#2780): makes the viewer the initial CLA Manager designee for the
+   * agreement's signing project. The server takes the address from the session.
+   */
+  public assignDesignee(orgUid: string, projectSfid: string): Observable<OrgClaDesigneeResponse> {
+    const body: OrgClaDesigneeRequest = { projectSfid };
+    return this.http.post<OrgClaDesigneeResponse>(this.designeeUrl(orgUid), body);
+  }
+
+  /** No on the manager question: names the person who should become the initial CLA Manager designee. */
+  public nominateDesignee(orgUid: string, request: OrgClaDesigneeNominationRequest): Observable<OrgClaDesigneeNominationResponse> {
+    return this.http.post<OrgClaDesigneeNominationResponse>(`${this.designeeUrl(orgUid)}/nominations`, request);
+  }
+
   public getManagers(orgUid: string, signatureId: string): Observable<OrgClaManagerList> {
     return this.http.get<OrgClaManagerList>(`${this.managersUrl(orgUid, signatureId)}`);
   }
@@ -186,6 +204,10 @@ export class OrgLensClaService {
     if (typeof options.pageSize === 'number' && Number.isFinite(options.pageSize)) params = params.set('pageSize', String(options.pageSize));
     if (options.nextKey) params = params.set('nextKey', options.nextKey);
     return this.http.get<OrgClaActivityLogPage>(this.activityLogUrl(orgUid, signatureId), { params });
+  }
+
+  private designeeUrl(orgUid: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/designee`;
   }
 
   private approvalListUrl(orgUid: string, signatureId: string): string {

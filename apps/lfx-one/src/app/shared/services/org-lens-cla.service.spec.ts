@@ -197,3 +197,37 @@ describe('OrgLensClaService.setAutoCreateEcla', () => {
     expect(http.put).toHaveBeenCalledWith(url, { autoCreateEcla: false });
   });
 });
+
+describe('OrgLensClaService designee client (#2780)', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const PROJECT = 'a09410000182dD3AAI';
+  const designeeBase = `/api/orgs/${ORG}/lens/cla-groups/designee`;
+
+  let service: OrgLensClaService;
+  let http: { post: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { post: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('assignDesignee posts only the signing project, never an address', async () => {
+    http.post.mockReturnValue(of({ assigned: true }));
+
+    await expect(firstValueFrom(service.assignDesignee(ORG, PROJECT))).resolves.toEqual({ assigned: true });
+    expect(http.post).toHaveBeenCalledWith(designeeBase, { projectSfid: PROJECT });
+  });
+
+  it('nominateDesignee posts the named person to the nominations route', async () => {
+    const request = { projectSfid: PROJECT, fullName: 'Pat Contributor', email: 'contributor@example.org' };
+    http.post.mockReturnValue(of({ outcome: 'assigned', email: request.email }));
+
+    await expect(firstValueFrom(service.nominateDesignee(ORG, request))).resolves.toEqual({ outcome: 'assigned', email: request.email });
+    expect(http.post).toHaveBeenCalledWith(`${designeeBase}/nominations`, request);
+  });
+});
