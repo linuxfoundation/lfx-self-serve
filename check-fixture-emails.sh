@@ -54,19 +54,22 @@ denylisted_org_name_sha256=(
   041afb31378771546300c4c642c92ac5e2540dcced7b34e5879bfa55bf84a3a1
 )
 
-# Account ids, each in both its 18- and 15-character forms, since fixtures may carry either:
-#   printf '%s' '<id>' | shasum -a 256
+# Account ids, each in both its 18- and 15-character forms, since fixtures may carry either. The
+# 18-character form is case-insensitive, so it is hashed lowercased; the 15-character form is
+# case-sensitive and hashed exactly as written:
+#   printf '%s' '<18-char id>' | tr 'A-Z' 'a-z' | shasum -a 256
+#   printf '%s' '<15-char id>' | shasum -a 256
 # Fixtures must take ids from apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts (invented
 # ids of the same shape). The id SHAPE itself ("001" + 15 alphanumerics) cannot be blocked: the app
 # validates that shape, so synthetic ids must satisfy it too.
 denylisted_account_id_sha256=(
-  c30821a431a63e0b446f294147f7e2421afac1f2a2a904eccf6f4d4478f6422d
+  b20ce6d16699c8b1032e715b03cf087bed002cdd5dba02ce961f85a5ff36d5bb
   6baf1c8cd5e7798d33bd14e608c4d90d2eec126b2d35d319657bfcaa36c607ae
-  319779b3921415fc933bc2026749925f2b5854d6e7a35fc2f72ab500baf225ac
+  957fb1c7f47ee6e8043e0fe8ba25d54d4f6b1d0efc3fbd57ed379b2b844e438f
   c4f52af51e918387ebad72930c16b622d5377a62294d2fa8fd4f561af9bd454b
-  940b380e9e2857030d82c260701739b09eaf946b4f473e1db8ac4fc2393d5123
+  50cd12398e2ec69f0f23f65a5523f56927f6a84f9d5137ac949b93e33d16f75f
   8f16d01aa8c8d57485a1efb7018cb6e0d843a86ab9cb8ee282207a245af7b3c7
-  2ab6bdcb735b28404e5ee128bfb0f3c6eae7b9c81713f79c5d0ccd04197bd371
+  093f30365465c83e8f2fb98402747bf2ec0e8d42c5b4888e993e83f8834caaec
   206cbec1997e35bc9a0a3ebc8260172fe54698221a8c1a0e45e8e44bd8ca7554
 )
 
@@ -188,7 +191,7 @@ while (my $entry = <STDIN>) {
     print "org-name $2\n" if $names{ sha256_hex($1) };
   } elsif ($entry =~ /^id-candidate (\S+) (.*)$/) {
     my ($token, $where) = ($1, $2);
-    for my $form (substr($token, 0, 18), substr($token, 0, 15)) {
+    for my $form (lc(substr($token, 0, 18)), substr($token, 0, 15)) {
       if ($ids{ sha256_hex($form) }) {
         print "account-id $where\n";
         last;
