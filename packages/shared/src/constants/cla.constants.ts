@@ -521,20 +521,18 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
- * agreement is signed, taken verbatim from the M3 prototype's locked panels.
+ * Why the Approval List, Contributor Acknowledgments, and Activity Log tabs hold nothing until
+ * the agreement is signed, taken from the M3 prototype's locked panels. CLA Managers uses its
+ * own unsigned copy.
  *
- * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
- * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
- * entries are what that manager maintains, and acknowledgments are what contributors then place
- * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
- * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
- * and saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Each of these is a list that comes into existence with the signature: approval entries are
+ * what the manager maintains, acknowledgments are what contributors place against those rules,
+ * and the activity log is the record of that signing and of the changes after it. On an
+ * unsigned agreement there is nothing to list, so the panel says so rather than rendering blank.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
- * panels render — which is why they are copy rather than an empty section. This is the same gap
- * the empty Overview had.
+ * panels render — which is why they are copy rather than an empty section.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
   approval: {
@@ -544,6 +542,10 @@ export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: s
   acknowledgments: {
     title: 'No contributor acknowledgments yet',
     subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
+  },
+  activity: {
+    title: 'The activity log becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first. Changes to signing, CLA Managers, and the approval list will appear here.',
   },
 };
 

@@ -1554,17 +1554,14 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.acknowledgments?.title);
     });
 
-    // Unbuilt for every agreement, signed or not — so "once this CLA is signed" would promise
-    // content signing does not produce.
-    it.each([['activity']] as const)('leaves the %s tab bare, since signing does not fill it', async (tab) => {
+    it('explains that the activity tab is waiting on the signature', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       const fixture = await render();
-      byTestId(fixture, `org-easycla-detail-tab-${tab}`)?.click();
+      byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
       fixture.detectChanges();
 
-      expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).not.toBeNull();
-      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.activity?.title);
     });
 
     /**
