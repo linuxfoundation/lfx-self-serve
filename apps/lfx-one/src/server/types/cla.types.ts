@@ -618,7 +618,8 @@ export interface EasyClaCorporateContributorList {
   resultCount?: number;
   totalCount?: number;
   nextKey?: string;
-  list?: EasyClaCorporateContributor[];
+  /** `null` on an empty page — the producer serializes an empty slice as `null`. */
+  list?: EasyClaCorporateContributor[] | null;
 }
 
 /**

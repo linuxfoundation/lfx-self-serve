@@ -79,10 +79,10 @@ describe('OrgEasyclaDetailComponent', () => {
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const checkPermission = vi.fn();
+  const getContributorAcknowledgments = vi.fn();
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
-  const getContributorAcknowledgments = vi.fn();
   const invalidateAcknowledgment = vi.fn();
   const getActivityLog = vi.fn();
   const setAutoCreateEcla = vi.fn();
@@ -142,10 +142,10 @@ describe('OrgEasyclaDetailComponent', () => {
             getApprovalList,
             updateApprovalList,
             checkPermission,
+            getContributorAcknowledgments,
             getManagers,
             addManager,
             removeManager,
-            getContributorAcknowledgments,
             invalidateAcknowledgment,
             getActivityLog,
             setAutoCreateEcla,
@@ -224,13 +224,13 @@ describe('OrgEasyclaDetailComponent', () => {
     getApprovalList.mockReset();
     updateApprovalList.mockReset();
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    getContributorAcknowledgments.mockReset();
+    getContributorAcknowledgments.mockReturnValue(
+      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 4, nextKey: null })
+    );
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
-    getContributorAcknowledgments.mockReset();
-    getContributorAcknowledgments.mockReturnValue(
-      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null })
-    );
     invalidateAcknowledgment.mockReset();
     getActivityLog.mockReset();
     getActivityLog.mockReturnValue(of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null }));
@@ -1629,6 +1629,34 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeTruthy();
   });
 
+  it('opens the Approval List tab from a Not Authorized acknowledgment', async () => {
+    // The add-to-list remedy link renders only when the tab resolves the `approval-list-update`
+    // grant, which needs a mapped project SFID to query ACS. The bare fixture carries none, so pin
+    // one here; checkPermission already answers true in this block.
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ pairProjectSfid: 'project-sfid-1' })] }));
+    getContributorAcknowledgments.mockReturnValue(
+      of({
+        signatureId: 'signature-uuid-1',
+        list: [{ signatureId: 'ecla-1', approved: false, removedFromApprovalList: true }],
+        canEdit: true,
+        resultCount: 1,
+        totalCount: 1,
+        nextKey: null,
+      })
+    );
+    const fixture = await render();
+
+    byTestId(fixture, 'org-easycla-detail-tab-acknowledgments')?.click();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+    byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')?.click();
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-approval-list')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeNull();
+  });
+
   it('renders the Activity Log panel on a signed agreement when the Activity Log tab is selected', async () => {
     const fixture = await render();
 
@@ -1647,12 +1675,112 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(getManagers).not.toHaveBeenCalled();
   });
 
-  it('shows the manager count and approval count on the tab bar, and no acknowledgments count', async () => {
+  it('shows the manager, approval, and acknowledgment counts on the tab bar', async () => {
     const fixture = await render();
 
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-managers')?.textContent?.trim()).toBe('2');
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('4');
+  });
+
+  it('counts acknowledgments with a one-row read of the displayed agreement', async () => {
+    await render();
+
+    expect(getContributorAcknowledgments).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { pageSize: 1 });
+  });
+
+  it('reads no acknowledgment count for an unsigned agreement, which holds none', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ signed: false, status: 'not-started', signedOn: undefined })] }));
+    const fixture = await render();
+
+    expect(getContributorAcknowledgments).not.toHaveBeenCalled();
     expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')).toBeNull();
+  });
+
+  it('leaves the acknowledgment badge empty when the count read fails', async () => {
+    getContributorAcknowledgments.mockReturnValue(throwError(() => new Error('boom')));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')).toBeNull();
+    expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeTruthy();
+  });
+
+  // The detail page is reused across agreement changes, so a panel count captured for one
+  // agreement must not shadow a fresh page-load count when the same agreement is reopened.
+  it('drops a stale panel count when the agreement changes, so the reopened badge reads fresh', async () => {
+    getClaGroups.mockReturnValue(
+      of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA' })] })
+    );
+    getContributorAcknowledgments.mockImplementation((_orgUid: string, signatureId: string) =>
+      of({ signatureId, list: [], canEdit: true, resultCount: 0, totalCount: signatureId === 'signature-uuid-1' ? 5 : 3, nextKey: null })
+    );
+
+    const fixture = await render();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+
+    // The open panel reports a different count for the agreement on screen.
+    (
+      fixture.componentInstance as unknown as { onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void }
+    ).onAcknowledgmentCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 9,
+    });
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('9');
+
+    // Leave for another agreement and come back to the same one.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The stale panel count is gone; the badge reflects the fresh one-row read.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+  });
+
+  // The panel measures its approval count against a specific agreement; the parent must file it
+  // under that agreement, not whichever one it has since switched to on a reused route.
+  it('files a panel approval count under the agreement it was measured for, not the current one', async () => {
+    getClaGroups.mockReturnValue(
+      of({
+        orgUid: SELECTED_ACCOUNT.uid,
+        claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA', approvalCriteriaCount: 2 })],
+      })
+    );
+    const fixture = await render();
+
+    // A count arrives for the first agreement after the page has moved to the second.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 99,
+    });
+    fixture.detectChanges();
+
+    // The second agreement keeps its own row count; the stale count does not leak in.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('2');
+  });
+
+  // The badge keys on the displayed agreement, not the raw sig query param: when the param is
+  // stale or absent the agreement still resolves by group, and a panel count for it must apply.
+  it('applies a panel approval count for the displayed agreement even when the sig param is stale', async () => {
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ id: 'other-signature' })] }));
+    const fixture = await render();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('7');
+
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'other-signature',
+      count: 3,
+    });
+    fixture.detectChanges();
+
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('3');
   });
 
   /**
@@ -2100,7 +2228,10 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: PersonaService, useValue: { personaLoaded } },
           { provide: OrgNavigationService, useValue: { items, loaded: navLoaded, resetAndReload } },
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
-          { provide: OrgLensClaService, useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission } },
+          {
+            provide: OrgLensClaService,
+            useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission, getContributorAcknowledgments },
+          },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
         ],
@@ -2702,6 +2833,9 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
   const checkPermission = vi.fn(() => of(true));
+  const getContributorAcknowledgments = vi.fn(() =>
+    of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 4, nextKey: null })
+  );
 
   let confirmations: Confirmation[];
 
@@ -2740,7 +2874,15 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
         {
           provide: OrgLensClaService,
-          useValue: { getClaGroups, getPdfUrl: vi.fn(), getCclaPreview: vi.fn(), getApprovalList, updateApprovalList, checkPermission },
+          useValue: {
+            getClaGroups,
+            getPdfUrl: vi.fn(),
+            getCclaPreview: vi.fn(),
+            getApprovalList,
+            updateApprovalList,
+            checkPermission,
+            getContributorAcknowledgments,
+          },
         },
         { provide: MessageService, useValue: { add: vi.fn() } },
         ConfirmationService,
@@ -2866,6 +3008,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
   const getClaGroups = vi.fn();
   const checkPermission = vi.fn();
   const setAutoCreateEcla = vi.fn();
+  const getContributorAcknowledgments = vi.fn();
   const addMessage = vi.fn();
 
   function row(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
@@ -2915,6 +3058,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
             getManagers: vi.fn(() => of({ signatureId: 'signature-uuid-1', managers: [] })),
             addManager: vi.fn(),
             removeManager: vi.fn(),
+            getContributorAcknowledgments,
             setAutoCreateEcla,
           },
         },
@@ -2943,6 +3087,10 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     checkPermission.mockReturnValue(of(true));
     setAutoCreateEcla.mockReset();
     setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
+    getContributorAcknowledgments.mockReset();
+    getContributorAcknowledgments.mockReturnValue(
+      of({ signatureId: 'signature-uuid-1', list: [], canEdit: true, resultCount: 0, totalCount: 0, nextKey: null })
+    );
     addMessage.mockReset();
   });
 

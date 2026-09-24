@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Signal } from '@angular/core';
+
 import type {
   CLA_MANAGER_REQUEST_TYPES,
   ORG_CLA_APPROVAL_CRITERIA,
@@ -1081,10 +1083,11 @@ export interface OrgClaApprovalEntriesDialogData {
 /**
  * One acknowledgment as the table renders it.
  *
- * Every field except `signatureId`, `cclaVersion`, and `approved` is optional; missing attributes
- * render as an em-dash rather than dropping the row. The row is Invalidated when `approved` is
- * false OR any of `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy
- * rows can carry the stamps with `approved: true`; the stamps are authoritative).
+ * Every field except `signatureId`, `cclaVersion`, `approved`, and `removedFromApprovalList` is optional; missing
+ * attributes render as an em-dash rather than dropping the row. The row is Not Authorized when
+ * `removedFromApprovalList` is true. Otherwise it is Invalidated when `approved` is false OR any of
+ * `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy rows can carry the
+ * stamps with `approved: true`; the stamps are authoritative).
  */
 export interface OrgClaContributorAcknowledgment {
   /** Per-ack signature id. Stable. Used to address an invalidate. */
@@ -1096,13 +1099,13 @@ export interface OrgClaContributorAcknowledgment {
   /** GitLab username (login). Display only; NOT a stable identifier. */
   gitlabUsername?: string;
   email?: string;
-  /** DocuSign name the contributor signed under. */
+  /** The contributor's name as the producer records it on the acknowledgment. */
   name?: string;
   /**
    * The CCLA version the acknowledgment was recorded against.
    *
    * Normalized to a `v`-prefixed string ("v1", "v2.1", …) at the mapper; a value already prefixed
-   * with `v`/`V` is returned unchanged. An empty version renders as an em-dash at the row.
+   * with `v`/`V` is returned unchanged, and an empty version stays empty.
    */
   cclaVersion: string;
   /** When the acknowledgment was recorded, when the producer reported it. */
@@ -1114,6 +1117,14 @@ export interface OrgClaContributorAcknowledgment {
   invalidatedBy?: string;
   /** Reason recorded with the invalidation. Free text from the invalidator. */
   invalidationReason?: string;
+  /**
+   * True when the acknowledgment lost its approval only because its criteria were removed from the
+   * approval list — Not Authorized, not Invalidated. Server-derived from the producer's reason or
+   * note.
+   */
+  removedFromApprovalList: boolean;
+  /** The approval-list criteria that were removed, as the producer names them. */
+  removedCriteria?: string;
 }
 
 /**
@@ -1146,14 +1157,21 @@ export interface OrgClaContributorAcknowledgmentList {
 export interface OrgClaAcknowledgmentRow {
   ack: OrgClaContributorAcknowledgment;
   name: string;
+  avatarIdentity: string | null;
   identity: {
+    /** LF Login shown before the GitHub link when the row carries both, as `LF Login/GitHub`. */
+    lfLogin: string | null;
     display: string;
     href: string | null;
     ariaLabel: string;
   };
-  cclaVersion: string;
   signedOnLabel: string;
+  /** Not Authorized: its approval-list criteria were removed. Never also `invalidated`. */
+  notAuthorized: boolean;
+  notAuthorizedTooltip: string;
   invalidated: boolean;
+  /** The invalidation date shown under the Invalidated tag, or empty when the producer stamped none. */
+  invalidatedOnLabel: string;
   invalidatedTooltip: string;
   /**
    * Whether this row can be invalidated at all, independent of who is asking.
@@ -1173,9 +1191,8 @@ export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[num
 /**
  * Body posted to the BFF invalidate endpoint.
  *
- * Both fields are optional at the contract level — the producer accepts an empty body — but the
- * UI dialog requires a reason before it lets the caller confirm. `note` is trimmed and length-
- * capped at the server; anything past the cap is refused as 400, not truncated.
+ * Both fields are optional at the contract level — the producer accepts an empty body. `note` is
+ * trimmed and length-capped at the server; anything past the cap is refused as 400, not truncated.
  */
 export interface OrgClaInvalidateAcknowledgmentRequest {
   reason?: OrgClaInvalidationReason;
@@ -1186,6 +1203,20 @@ export interface OrgClaInvalidateAcknowledgmentRequest {
 export interface OrgClaInvalidateAcknowledgmentDialogData {
   /** Identity the panel already resolved. The dialog does not repeat that fallback chain. */
   contributor: string;
+  /**
+   * Approval-list entries added for this contributor alone — their email, GitHub username or
+   * GitLab username. `undefined` while the list is read; `null` when it could not be read, so the
+   * dialog makes no claim either way.
+   */
+  matchingEntries: Signal<OrgClaApprovalEntry[] | null | undefined>;
+  /** Whether the caller may edit the approval list, so the dialog may offer to remove those entries. */
+  canRemoveEntries: Signal<boolean>;
+}
+
+/** What the confirmation dialog closes with on confirm. */
+export interface OrgClaInvalidateAcknowledgmentDialogResult extends OrgClaInvalidateAcknowledgmentRequest {
+  /** Entries to remove from the approval list once the invalidate succeeds. */
+  removeApprovalEntries?: OrgClaApprovalEntryInput[];
 }
 
 /**

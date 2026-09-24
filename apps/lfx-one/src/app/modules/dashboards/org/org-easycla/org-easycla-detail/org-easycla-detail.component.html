@@ -357,7 +357,11 @@
         id="org-easycla-detail-tab-panel-acknowledgments"
         aria-labelledby="org-easycla-detail-tab-trigger-acknowledgments"
         data-testid="org-easycla-detail-acknowledgments">
-        <lfx-org-easycla-contributor-acknowledgments [claGroup]="claGroup()!" />
+        <lfx-org-easycla-contributor-acknowledgments
+          [claGroup]="claGroup()!"
+          (countChanged)="onAcknowledgmentCountChanged($event)"
+          (approvalListRequested)="focusTab('approval')"
+          (approvalListChanged)="onPanelApprovalCountChanged($event)" />
       </section>
     } @else if (activeTab() === 'activity' && claGroup()?.signed) {
       <section

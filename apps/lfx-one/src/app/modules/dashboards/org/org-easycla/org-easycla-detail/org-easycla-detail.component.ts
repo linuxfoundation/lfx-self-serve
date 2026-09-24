@@ -258,6 +258,9 @@ export class OrgEasyclaDetailComponent {
    */
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
 
+  /** Set by the acknowledgments tab each time it loads, so the badge follows what the tab shows. */
+  private readonly panelAcknowledgmentCount = signal<{ signatureId: string; count: number } | null>(null);
+
   /**
    * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
    * `null` while the hop is in flight — the toggle is withheld during that window rather than
@@ -588,6 +591,18 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly approvalBadge = computed(() => this.initApprovalBadge());
 
+  /**
+   * Every acknowledgment on the displayed agreement, whatever its state, for the tab badge.
+   *
+   * Not the list row's `approvedContributorsCount`: that leaves out invalidated acknowledgments,
+   * so the badge would disagree with the rows the tab lists. The acknowledgments read counts every
+   * row, and a one-row page is enough for its `totalCount`. Browser-only, and only for a signed
+   * agreement — an unsigned one holds no acknowledgments.
+   */
+  private readonly fetchedAcknowledgmentCount = this.initFetchedAcknowledgmentCount();
+
+  protected readonly acknowledgmentsBadge = computed(() => this.initAcknowledgmentsBadge());
+
   protected readonly tabs = computed(() => this.initTabs());
 
   protected readonly lockedTab = computed(() => this.initLockedTab());
@@ -674,6 +689,20 @@ export class OrgEasyclaDetailComponent {
     this.activeTab.set(tab);
   }
 
+  /**
+   * Switch to a tab and move focus to its trigger — the click-driven counterpart to the
+   * arrow-key path in onTabKeydown. The Not Authorized "Add the user to the Approval list"
+   * control lives on a panel this call destroys, so without moving focus a keyboard or
+   * screen-reader user is stranded on a removed node. The trigger buttons are always in the
+   * tablist, so focusing one synchronously after selectTab is safe.
+   */
+  protected focusTab(tab: OrgClaDetailTab): void {
+    this.selectTab(tab);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`org-easycla-detail-tab-trigger-${tab}`)?.focus();
+    }
+  }
+
   protected onManagerCountChanged(count: number): void {
     const signatureId = this.claGroup()?.id;
     if (!signatureId) return;
@@ -692,10 +721,7 @@ export class OrgEasyclaDetailComponent {
     if (next === null) return;
 
     event.preventDefault();
-    this.selectTab(ids[next]);
-    if (isPlatformBrowser(this.platformId)) {
-      document.getElementById(`org-easycla-detail-tab-trigger-${ids[next]}`)?.focus();
-    }
+    this.focusTab(ids[next]);
   }
 
   protected openCoverage(): void {
@@ -799,7 +825,15 @@ export class OrgEasyclaDetailComponent {
   }
 
   protected onApprovalCountChanged(count: number): void {
-    this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
+    this.approvalCountOverride.set({ signatureId: this.claGroup()?.id ?? '', count });
+  }
+
+  protected onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void {
+    this.approvalCountOverride.set(event);
+  }
+
+  protected onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void {
+    this.panelAcknowledgmentCount.set(event);
   }
 
   /**
@@ -1170,7 +1204,7 @@ export class OrgEasyclaDetailComponent {
 
   private initApprovalBadge(): string {
     const override = this.approvalCountOverride();
-    if (override && override.signatureId === this.signatureId()) return String(override.count);
+    if (override && override.signatureId === this.claGroup()?.id) return String(override.count);
 
     const count = this.claGroup()?.approvalCriteriaCount;
     return count === undefined ? '—' : String(count);
@@ -1243,9 +1277,48 @@ export class OrgEasyclaDetailComponent {
     return ORG_CLA_LOCKED_TAB_COPY[this.activeTab()] ?? null;
   }
 
+  private initFetchedAcknowledgmentCount(): Signal<{ signatureId: string; count: number } | null> {
+    const target = computed(() => this.initAcknowledgmentCountTarget());
+    return toSignal(
+      toObservable(target).pipe(
+        distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
+        // Drop a panel override left over from the previous agreement so it cannot shadow this read.
+        tap(() => this.panelAcknowledgmentCount.set(null)),
+        switchMap((next) => {
+          if (!next || !isPlatformBrowser(this.platformId)) return of(null);
+          return this.claService.getContributorAcknowledgments(next.orgUid, next.signatureId, { pageSize: 1 }).pipe(
+            map((list) => ({ signatureId: next.signatureId, count: list.totalCount })),
+            // A failed count leaves the badge empty; the tab itself reports the failure when opened.
+            catchError((error: unknown) => {
+              console.warn('Failed to load the contributor acknowledgment count:', (error as HttpErrorResponse)?.status, (error as HttpErrorResponse)?.message);
+              return of(null);
+            })
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initAcknowledgmentCountTarget(): { orgUid: string; signatureId: string } | null {
+    const group = this.claGroup();
+    const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
+    return group?.signed && orgUid ? { orgUid, signatureId: group.id } : null;
+  }
+
+  private initAcknowledgmentsBadge(): string {
+    const group = this.claGroup();
+    if (!group?.signed) return '';
+    const panel = this.panelAcknowledgmentCount();
+    if (panel?.signatureId === group.id) return String(panel.count);
+    const fetched = this.fetchedAcknowledgmentCount();
+    return fetched?.signatureId === group.id ? String(fetched.count) : '';
+  }
+
   private tabBadge(tab: OrgClaDetailTab): string {
     if (tab === 'managers') return this.managersBadge();
     if (tab === 'approval') return this.approvalBadge();
+    if (tab === 'acknowledgments') return this.acknowledgmentsBadge();
     return '';
   }
 
