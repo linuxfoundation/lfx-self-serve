@@ -28,6 +28,10 @@
 #
 # Exits 0 if no added line trips a check.
 # Exits 1 and prints the offending file:line matches, grouped by check, otherwise.
+# Exits 2 if the check cannot run (a failed git diff or scan), so it never passes by default.
+
+# A failed git diff anywhere in a pipeline must fail the check, not read as "nothing changed".
+set -o pipefail
 
 base_ref="${1:-}"
 
@@ -91,7 +95,11 @@ else
   diff_args=(-M --diff-filter=ACMR --cached)
 fi
 
-changed_files=$(git diff "${diff_args[@]}" --name-only | grep -E '^apps/lfx-one/e2e/|\.(spec\.ts|fixture\.ts|ndjson)$')
+if ! all_changed_files=$(git diff "${diff_args[@]}" --name-only); then
+  echo "❌ Fixture data check could not list changed files (git diff ${diff_args[*]} failed)." >&2
+  exit 2
+fi
+changed_files=$(printf '%s\n' "${all_changed_files}" | grep -E '^apps/lfx-one/e2e/|\.(spec\.ts|fixture\.ts|ndjson)$')
 
 if [ -z "${changed_files}" ]; then
   exit 0
