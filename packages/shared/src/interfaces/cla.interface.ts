@@ -710,6 +710,21 @@ export interface OrgClaGroup {
    * since an approval-list call per card is an N+1 on the landing page.
    */
   approvalCriteriaCount?: number;
+  /**
+   * Auto ECLA (#1988): whether EasyCLA acknowledges employees on the agreement's behalf when they
+   * match an individual Approval List entry (email, GitHub username, GitLab username). Per-CCLA
+   * setting the CLA manager toggles from the CLA Group detail Overview; the producer stores it on
+   * the corporate signature record. Turning it on also runs that step for people already on the
+   * list. It never restores an invalidated acknowledgement — that contributor must acknowledge
+   * again — and never acknowledges domain, GitHub org, or GitLab group matches.
+   *
+   * Optional because absence carries meaning: unsigned, not-started, and picker-preview rows
+   * omit it. A signed row carries it even when the agreement is sanctioned. Sanctions occupy
+   * the status slot and do not hide the toggle; the Overview shows it for a signed row that is
+   * not a preview, when the caller holds the grant. Absent from an upstream field maps to
+   * `false` at the mapper, matching the producer's own default.
+   */
+  autoCreateEcla?: boolean;
 }
 
 /**
@@ -1284,6 +1299,18 @@ export interface OrgClaPermissionCheckRequest {
 
 export interface OrgClaPermissionCheckResponse {
   allowed: boolean;
+}
+
+/**
+ * Response of the Auto ECLA toggle write (#1988).
+ *
+ * The BFF echoes the state it just wrote — the caller sends the target and this returns it —
+ * so a client can trust the new value without a re-read of the whole CLA list. The producer
+ * itself does not answer with a body on this endpoint; the echo is added at the BFF for the
+ * same reason the peer approval-list write returns the full list rather than an ACK.
+ */
+export interface OrgClaEclaAutoCreateResponse {
+  autoCreateEcla: boolean;
 }
 
 export interface OrgClaManager {

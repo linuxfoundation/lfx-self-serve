@@ -9,6 +9,7 @@ import type {
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgmentList,
+  OrgClaEclaAutoCreateResponse,
   OrgClaGroupList,
   OrgClaInvalidateAcknowledgmentRequest,
   OrgClaInvalidateAcknowledgmentResult,
@@ -110,6 +111,17 @@ export class OrgLensClaService {
     return this.http.put<OrgClaApprovalList>(this.approvalListUrl(orgUid, signatureId), update);
   }
 
+  /**
+   * Turns Auto ECLA on or off for one signed CCLA (#1988).
+   *
+   * The server echoes the just-written state so the caller can trust the new value without a
+   * re-read of the whole CLA list. Refusals arrive as HTTP errors — a 403 body carries the
+   * producer's own sentence on `error` (sanctions, ACL) and the toggle uses that verbatim.
+   */
+  public setAutoCreateEcla(orgUid: string, signatureId: string, autoCreateEcla: boolean): Observable<OrgClaEclaAutoCreateResponse> {
+    return this.http.put<OrgClaEclaAutoCreateResponse>(this.eclaAutoCreateUrl(orgUid, signatureId), { autoCreateEcla });
+  }
+
   public getManagers(orgUid: string, signatureId: string): Observable<OrgClaManagerList> {
     return this.http.get<OrgClaManagerList>(`${this.managersUrl(orgUid, signatureId)}`);
   }
@@ -178,6 +190,10 @@ export class OrgLensClaService {
 
   private approvalListUrl(orgUid: string, signatureId: string): string {
     return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/approval-list`;
+  }
+
+  private eclaAutoCreateUrl(orgUid: string, signatureId: string): string {
+    return `/api/orgs/${encodeURIComponent(orgUid)}/lens/cla-groups/${encodeURIComponent(signatureId)}/ecla-auto-create`;
   }
 
   private managersUrl(orgUid: string, signatureId: string): string {

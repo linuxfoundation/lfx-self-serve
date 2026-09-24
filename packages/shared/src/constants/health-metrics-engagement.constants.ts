@@ -8,6 +8,7 @@ import type {
   HealthMetricsEngagementMeetingParticipation,
   HealthMetricsEngagementNonMemberParticipation,
   HealthMetricsEngagementOrgParticipation,
+  HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
 
@@ -192,6 +193,7 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'participation',
   'committees',
   'orgs',
+  'reps',
   'nonmem',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
 
@@ -251,10 +253,11 @@ export const HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT: HealthMetr
 };
 
 /**
- * Debounce on the org search box. The filter runs over the whole loaded scope, so a keystroke is
- * more expensive than a typical typeahead and deserves the same pause as the other local filters.
+ * Debounce shared by the org and representatives search boxes. Either filter runs over the whole
+ * loaded scope, so a keystroke is more expensive than a typical typeahead and deserves the same
+ * pause as the other local filters.
  */
-export const HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS = 200;
+export const HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS = 200;
 
 /** Client-side page size for the org table — the whole foundation arrives in one read. */
 export const HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE = 25;
@@ -316,6 +319,46 @@ export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT: HealthM
  * component never asked the server about.
  */
 export const HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED: HealthMetricsEngagementNonMemberParticipation = {
+  rows: [],
+  counts: null,
+};
+
+/** Client-side page size for the representatives table — the whole foundation arrives in one read. */
+export const HEALTH_METRICS_ENGAGEMENT_REP_PAGE_SIZE = 25;
+
+/**
+ * Sanity cap on that one read. Higher than the org and non-member caps because this view's grain is
+ * one row per person per group *per project*, so it multiplies out further than either of those.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP = 20000;
+
+/**
+ * The representatives table's cuts, all three scoped to the people invited in the selected period —
+ * the population the view's own caption counts. "Never attended" is `HAS_NEVER_ATTENDED_<period>`
+ * and "Lapsed" is `IS_LAPSED_<period>`, so neither cut is a client-side date comparison.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REP_FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'never', label: 'Never attended' },
+  { key: 'lapsed', label: 'Lapsed' },
+] as const;
+
+/**
+ * A foundation the view holds no representatives for — a measured empty scope, which is why every
+ * period's counts are zero rather than null. The server never returns it for a failed read; that
+ * error propagates.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT: HealthMetricsEngagementRepresentatives = {
+  rows: [],
+  counts: HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => ({ range, reps: 0, neverAttendedReps: 0 })),
+};
+
+/**
+ * The client's no-read shape: pre-hydration, no foundation selected, and after a failed read.
+ * Its counts are `null` because nothing was measured — zeroes here would caption a scope the
+ * component never asked the server about.
+ */
+export const HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED: HealthMetricsEngagementRepresentatives = {
   rows: [],
   counts: null,
 };

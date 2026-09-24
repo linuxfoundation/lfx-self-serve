@@ -4,11 +4,12 @@
 import type { NextFunction, Request, Response } from 'express';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation } = vi.hoisted(() => ({
+const { getGroupAttendance, getMeetingParticipation, getNonMemberParticipation, getOrgParticipation, getRepresentatives } = vi.hoisted(() => ({
   getGroupAttendance: vi.fn(),
   getMeetingParticipation: vi.fn(),
   getNonMemberParticipation: vi.fn(),
   getOrgParticipation: vi.fn(),
+  getRepresentatives: vi.fn(),
 }));
 
 vi.mock('../services/health-metrics-engagement.service', async () => {
@@ -21,6 +22,7 @@ vi.mock('../services/health-metrics-engagement.service', async () => {
       public getMeetingParticipation = getMeetingParticipation;
       public getNonMemberParticipation = getNonMemberParticipation;
       public getOrgParticipation = getOrgParticipation;
+      public getRepresentatives = getRepresentatives;
     },
   };
 });
@@ -45,6 +47,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
 } from '@lfx-one/shared/constants';
 
 import { ServiceValidationError } from '../errors';
@@ -317,6 +320,59 @@ describe('AnalyticsController.getEngagementNonMemberParticipation', () => {
     getNonMemberParticipation.mockRejectedValue(new Error('snowflake down'));
 
     const { res, next, promise } = callNonMembers({ foundationSlug: 'acme' });
+    await promise;
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledWith(expect.objectContaining({ message: 'snowflake down' }));
+  });
+});
+
+function callReps(queryParams: Record<string, string>): { res: Response; next: NextFunction; promise: Promise<void> } {
+  const controller = new AnalyticsController();
+  const res = { json: vi.fn() } as unknown as Response;
+  const next = vi.fn() as unknown as NextFunction;
+  const req = { query: queryParams } as unknown as Request;
+
+  return { res, next, promise: controller.getEngagementRepresentatives(req, res, next) };
+}
+
+describe('AnalyticsController.getEngagementRepresentatives', () => {
+  beforeEach(() => {
+    getRepresentatives.mockReset();
+    getRepresentatives.mockResolvedValue(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+  });
+
+  // Scope is expressed by the caption columns rather than a project key, so a project on the wire
+  // would be a param the service ignores.
+  it('takes the foundation alone and answers with the service response', async () => {
+    const { res, next, promise } = callReps({ foundationSlug: 'acme', projectSlug: 'acme-core' });
+    await promise;
+
+    expect(next).not.toHaveBeenCalled();
+    expect(getRepresentatives).toHaveBeenCalledWith(expect.anything(), { foundationSlug: 'acme' });
+    expect(res.json).toHaveBeenCalledWith(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+  });
+
+  it('requires a foundation slug, since that is what scopes an ED to their own data', async () => {
+    const { next, promise } = callReps({});
+    await promise;
+
+    expect(getRepresentatives).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('rejects a foundation slug that is not a slug', async () => {
+    const { next, promise } = callReps({ foundationSlug: "acme' OR 1=1" });
+    await promise;
+
+    expect(getRepresentatives).not.toHaveBeenCalled();
+    expect(rejectedField(next)).toBe('foundationSlug');
+  });
+
+  it('hands a service failure to the error middleware rather than answering with a body', async () => {
+    getRepresentatives.mockRejectedValue(new Error('snowflake down'));
+
+    const { res, next, promise } = callReps({ foundationSlug: 'acme' });
     await promise;
 
     expect(res.json).not.toHaveBeenCalled();

@@ -52,3 +52,35 @@ describe('ProfilePanelComponent — impersonation (#2399, #2400)', () => {
     expect(visibilityRequested).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * "Member since" field in the metadata grid, alongside job title/organization/etc. (#2837).
+ * Hidden entirely when absent — no dash placeholder — matching every other optional field.
+ */
+describe('ProfilePanelComponent — member since (#2837)', () => {
+  let fixture: ComponentFixture<ProfilePanelComponent>;
+
+  beforeEach(() => {
+    TestBed.configureTestingModule({ imports: [ProfilePanelComponent] });
+    fixture = TestBed.createComponent(ProfilePanelComponent);
+    fixture.detectChanges();
+  });
+
+  it('renders the member-since field when set', () => {
+    fixture.componentRef.setInput('memberSince', 'Mar 2023');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
+    expect(el).not.toBeNull();
+    expect(el.textContent).toContain('Member since');
+    expect(el.textContent).toContain('Mar 2023');
+  });
+
+  it('hides the member-since field when empty', () => {
+    fixture.componentRef.setInput('memberSince', '');
+    fixture.detectChanges();
+
+    const el = fixture.nativeElement.querySelector('[data-testid="profile-panel-member-since"]');
+    expect(el).toBeNull();
+  });
+});

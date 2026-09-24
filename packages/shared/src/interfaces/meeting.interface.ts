@@ -295,7 +295,13 @@ export interface Meeting {
   transcript_enabled: boolean | null;
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
-  /** Show meeting attendees on meeting details page */
+  /**
+   * Share the guest list in calendar invites: when on, each guest's ICS lists the other
+   * attendees and their last known RSVP instead of the recipient alone. Board and restricted
+   * meetings can never opt in — `isShowMeetingAttendeesLocked` disables the control and the BFF
+   * forces the field off on write. This does not currently change what the LFX meeting page or
+   * the BFF roster endpoints return; that gating is tracked separately.
+   */
   show_meeting_attendees?: boolean | null;
   /**
    * Whether LFX invite-response (RSVP) tracking is enabled for this meeting.
@@ -461,7 +467,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
-  show_meeting_attendees?: boolean; // Show meeting attendees on meeting details page
+  show_meeting_attendees?: boolean; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
@@ -492,7 +498,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
-  show_meeting_attendees?: boolean | null; // Show meeting attendees on meeting details page
+  show_meeting_attendees?: boolean | null; // Share the guest list in calendar invites only; see Meeting.show_meeting_attendees for the full rule
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   cancel_on_committee_removal?: CancelOnCommitteeRemoval | null; // Per-meeting override for cancel-on-committee-removal; "inherit" defers to the project default
   early_join_time_minutes?: number; // Minutes before meeting registrants can join

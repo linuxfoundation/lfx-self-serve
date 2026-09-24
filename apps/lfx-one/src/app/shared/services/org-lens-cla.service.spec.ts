@@ -163,3 +163,37 @@ describe('OrgLensClaService activity log client', () => {
     expect(params.get('nextKey')).toBe('cursor-page-2');
   });
 });
+
+describe('OrgLensClaService.setAutoCreateEcla', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const SIGNATURE = 'signature-uuid-1';
+  const url = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/${encodeURIComponent(SIGNATURE)}/ecla-auto-create`;
+
+  let service: OrgLensClaService;
+  let http: { get: ReturnType<typeof vi.fn>; post: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { get: vi.fn(), post: vi.fn(), put: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('PUTs the target state to the Auto ECLA BFF route on enable', async () => {
+    http.put.mockReturnValue(of({ autoCreateEcla: true }));
+
+    await expect(firstValueFrom(service.setAutoCreateEcla(ORG, SIGNATURE, true))).resolves.toEqual({ autoCreateEcla: true });
+    expect(http.put).toHaveBeenCalledWith(url, { autoCreateEcla: true });
+  });
+
+  it('PUTs false explicitly rather than omitting the key, so the producer cannot read the request as no-change', async () => {
+    http.put.mockReturnValue(of({ autoCreateEcla: false }));
+
+    await firstValueFrom(service.setAutoCreateEcla(ORG, SIGNATURE, false));
+
+    expect(http.put).toHaveBeenCalledWith(url, { autoCreateEcla: false });
+  });
+});

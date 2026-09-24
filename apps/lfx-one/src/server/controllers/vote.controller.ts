@@ -1,8 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommentResponseInput, CreatePollCommentPrompt, CreateVoteRequest, CreateVoteResponseRequest, UpdateVoteRequest } from '@lfx-one/shared/interfaces';
-import { VOTE_COMMENT_PROMPT_MAX_COUNT, VOTE_COMMENT_PROMPT_MAX_LENGTH, VOTE_COMMENT_RESPONSE_MAX_LENGTH } from '@lfx-one/shared/constants';
+import {
+  CommentResponseInput,
+  CreatePollCommentPrompt,
+  CreateVoteRequest,
+  CreateVoteResponseRequest,
+  EnableVoteRequest,
+  UpdateVoteRequest,
+} from '@lfx-one/shared/interfaces';
+import {
+  VOTE_COMMENT_PROMPT_MAX_COUNT,
+  VOTE_COMMENT_PROMPT_MAX_LENGTH,
+  VOTE_COMMENT_RESPONSE_MAX_LENGTH,
+  VOTE_CREATE_COMPLETED_AT_HEADER,
+} from '@lfx-one/shared/constants';
 import { codePointLength } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
@@ -135,6 +147,10 @@ export class VoteController {
 
       const validatedCommentPrompts = this.validateCommentPrompts(voteData.poll_comment_prompts, validationContext);
 
+      // No client-disconnect abort (matches every BFF write endpoint): a navigate-away leaves the
+      // create completing server-side — the vote lands created and is recoverable from the list.
+      // Accepted per GH-2729 review m-8.
+
       const vote = await this.voteService.createVote(req, { ...voteData, poll_comment_prompts: validatedCommentPrompts });
 
       logger.success(req, 'create_vote', startTime, {
@@ -143,6 +159,9 @@ export class VoteController {
         name: vote.name,
       });
 
+      // Stamp the create-completion time (GH-2826): the client echoes it as the enable route's grace
+      // hint so a just-created vote's first enable PUT waits out the tuple-propagation remainder.
+      res.setHeader(VOTE_CREATE_COMPLETED_AT_HEADER, Date.now().toString());
       res.status(201).json(vote);
     } catch (error) {
       next(error);
@@ -444,7 +463,11 @@ export class VoteController {
         return;
       }
 
-      const vote = await this.voteService.enableVote(req, uid);
+      const body = req.body as EnableVoteRequest | undefined;
+      const hint = body?.create_completed_at;
+      const createCompletedAt = typeof hint === 'number' && Number.isFinite(hint) ? hint : undefined;
+
+      const vote = await this.voteService.enableVote(req, uid, { createCompletedAt });
 
       logger.success(req, 'enable_vote', startTime, {
         vote_uid: uid,

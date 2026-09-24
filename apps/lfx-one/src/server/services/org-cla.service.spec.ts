@@ -270,11 +270,31 @@ describe('OrgClaService.listClaGroups — what must not cross to the client', ()
     expect(row).not.toHaveProperty('claManagers');
   });
 
-  it('does not carry the auto-ECLA flag, which belongs to a later surface', async () => {
-    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ autoCreateECLA: true })));
+  it('carries the auto-ECLA flag on a signed row under the shared field name (#1988)', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, autoCreateECLA: true })));
 
     const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
 
+    expect(row.autoCreateEcla).toBe(true);
+    // The unmapped upstream spelling must not leak through — the Overview reads only the shared
+    // name, so a row that carried both would silently disagree with the field it is authorized on.
+    expect(row).not.toHaveProperty('autoCreateECLA');
+  });
+
+  it('reads a missing upstream auto-ECLA flag as false on a signed row (#1988)', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: true, autoCreateECLA: undefined })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row.autoCreateEcla).toBe(false);
+  });
+
+  it('omits the auto-ECLA flag entirely on an unsigned row so the toggle cannot render (#1988)', async () => {
+    gatewayFetch.mockResolvedValue(upstreamList(upstreamEntry({ signed: false, autoCreateECLA: true })));
+
+    const [row] = (await new OrgClaService().listClaGroups(req(), ORG_UID)).claGroups;
+
+    expect(row).not.toHaveProperty('autoCreateEcla');
     expect(row).not.toHaveProperty('autoCreateECLA');
   });
 });
@@ -1889,6 +1909,164 @@ describe('OrgClaService — an approval list that cannot be addressed', () => {
       'https://gw.example.org/cla-service/v4/signatures/project/a09410000182dD2AAI/company/company-uuid-1',
       expect.objectContaining({ operation: 'org_cla_get_approval_list' })
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Auto ECLA toggle (#1988)
+// ---------------------------------------------------------------------------
+
+describe('OrgClaService.updateEclaAutoCreate — the upstream call', () => {
+  beforeEach(() => {
+    gatewayFetch.mockReset();
+  });
+
+  it('addresses the write by the two resolved ids (company id, CLA group id)', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true);
+
+    expect(gatewayFetch).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      'https://gw.example.org/cla-service/v4/signatures/company/company-uuid-1/clagroup/cla-group-uuid-1/ecla-auto-create',
+      expect.objectContaining({ method: 'PUT', operation: 'org_cla_update_ecla_auto_create' })
+    );
+  });
+
+  // The request boundary accepts hyphenated and unhyphenated spellings in either case, so the list
+  // lookup must too, or a valid spelling of an existing agreement answers 404.
+  it.each([
+    ['unhyphenated', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case', CLA_GROUP_ID.toUpperCase()],
+  ])('finds the agreement from an %s signature id', async (_label, signatureId) => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: CLA_GROUP_ID }))).mockResolvedValueOnce(null);
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, signatureId, true)).toEqual({ outcome: 'updated', autoCreateEcla: true });
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('sends the target state on the snake_case field the producer reads', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true);
+    expect(gatewayFetch.mock.calls[1][2].body).toEqual({ auto_create_ecla: true });
+
+    gatewayFetch.mockReset();
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+    await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', false);
+    expect(gatewayFetch.mock.calls[1][2].body).toEqual({ auto_create_ecla: false });
+  });
+
+  // The route blocks this path during impersonation, so there is no impersonated identity to
+  // forward. A support engineer flipping this flag would otherwise attribute a legally-recorded
+  // change to the person being impersonated. Mirror of the peer approval-list assertion.
+  it('forwards no bearer token on the write', async () => {
+    isImpersonating.mockReturnValue(true);
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().updateEclaAutoCreate(req({ bearerToken: 'target-token' }), ORG_UID, 'signature-uuid-1', true);
+
+    const [, , options] = gatewayFetch.mock.calls[1];
+    expect(options.bearerToken).toBeUndefined();
+  });
+
+  // The refusal body is the CLA manager's own copy (sanctions reason and support route). Keeping
+  // it out of application logs is what makes it safe to leave the message on-screen; same
+  // discipline as the corporate sign hand-off.
+  it('keeps the upstream refusal body out of application logs', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true);
+
+    expect(gatewayFetch.mock.calls[1][2].redactResponseBodyFromLogs).toBe(true);
+    expect(gatewayFetch.mock.calls[1][2].acceptEmptyBody).toBe(true);
+  });
+});
+
+describe('OrgClaService.updateEclaAutoCreate — the outcomes that are not failures', () => {
+  beforeEach(() => {
+    gatewayFetch.mockReset();
+  });
+
+  it('reports the state the producer now holds when the write succeeds', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).resolves.toEqual({
+      outcome: 'updated',
+      autoCreateEcla: true,
+    });
+  });
+
+  it('reports not-found for a signature this organization does not hold, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-this-org-signed' })));
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-another-org-signed', true)).toEqual({ outcome: 'not-found' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports not-signed for an agreement with no CCLA to hold the flag, without calling upstream', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).toEqual({ outcome: 'not-signed' });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses the write when two signatures share the company and CLA group, without calling the producer', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'signature-a' }), upstreamEntry({ signatureID: 'signature-b' })));
+
+    await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-b', true)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'AMBIGUOUS_AGREEMENT_TARGET',
+      message: 'This CLA shares its company and CLA group with another agreement, so its Auto ECLA setting cannot be changed here yet.',
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    expect(gatewayFetch).not.toHaveBeenCalledWith(expect.anything(), expect.stringContaining('/ecla-auto-create'), expect.anything());
+  });
+});
+
+describe('OrgClaService.updateEclaAutoCreate — the sanctions and ACL refusal', () => {
+  beforeEach(() => {
+    gatewayFetch.mockReset();
+  });
+
+  it('propagates a 403 refusal as a client-facing sentence, without leaking the body into logs', async () => {
+    const refusalBody = JSON.stringify({
+      code: 'sanctioned',
+      message: 'This organization is on the OFAC list. Contact support@example.org for review.',
+      company_id: 'company-uuid-1',
+      company_sfid: ORG_UID,
+    });
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(
+      new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', {
+        operation: 'org_cla_update_ecla_auto_create',
+        service: 'org_cla_service',
+        errorBody: refusalBody,
+      })
+    );
+
+    const thrown = await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true).catch((error: unknown) => error);
+    expect(thrown).toBeInstanceOf(MicroserviceError);
+    // The producer sentence reaches the client via `clientMessage`; the raw body is dropped from
+    // the error so the shared error handler cannot log it a second time. `toResponse()` names
+    // the client-facing field `error`, so that is what carries the refusal sentence to the UI.
+    expect((thrown as MicroserviceErrorType).toResponse()['error']).toContain('OFAC');
+    expect(JSON.stringify((thrown as MicroserviceErrorType).getLogContext())).not.toContain('OFAC');
+    expect(JSON.stringify(customErrorSerializer(thrown as MicroserviceErrorType))).not.toContain('OFAC');
+  });
+
+  it('leaves a non-403 refusal alone rather than relabelling it', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockRejectedValueOnce(
+      new MicroserviceError('Upstream 502', 502, 'UPSTREAM_ERROR', {
+        operation: 'org_cla_update_ecla_auto_create',
+        service: 'org_cla_service',
+      })
+    );
+
+    await expect(new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, 'signature-uuid-1', true)).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_ERROR',
+    });
   });
 });
 

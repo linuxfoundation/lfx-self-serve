@@ -4,6 +4,7 @@
 import { Router } from 'express';
 
 import { VoteController } from '../controllers/vote.controller';
+import { voteWriteRateLimiter } from '../middleware/rate-limit.middleware';
 
 const router = Router();
 
@@ -33,7 +34,7 @@ router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(re
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 
 // POST /votes - create a new vote
-router.post('/', (req, res, next) => voteController.createVote(req, res, next));
+router.post('/', voteWriteRateLimiter, (req, res, next) => voteController.createVote(req, res, next));
 
 // PUT /votes/:uid - update a vote
 router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next));
@@ -42,6 +43,6 @@ router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next
 router.delete('/:uid', (req, res, next) => voteController.deleteVote(req, res, next));
 
 // PUT /votes/:uid/enable - enable a vote
-router.put('/:uid/enable', (req, res, next) => voteController.enableVote(req, res, next));
+router.put('/:uid/enable', voteWriteRateLimiter, (req, res, next) => voteController.enableVote(req, res, next));
 
 export default router;

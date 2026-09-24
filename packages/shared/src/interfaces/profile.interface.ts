@@ -57,6 +57,8 @@ export interface ProfileHeaderData {
   phoneNumber?: string;
   tshirtSize?: string;
   aboutMe?: string;
+  /** Account join date (ISO), for the "Member since" label. See #2836/#2837. */
+  createdAt?: string;
 }
 
 /**

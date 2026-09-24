@@ -58,9 +58,11 @@ import {
   getUserTimezone,
   isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
+  markMeetingFormForValidation,
   normalizeMeetingApiVotingStatuses,
   resolveMeetingOwner,
   sanitizeMeetingCommittees,
+  syncShowMeetingAttendeesLock,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator, timeFormatValidator } from '@lfx-one/shared/validators';
 import { CommitteeService } from '@services/committee.service';
@@ -623,11 +625,7 @@ export class MeetingComposerFormService {
     }
 
     const form = this.form();
-    Object.keys(form.controls).forEach((key) => {
-      const control = form.get(key);
-      control?.markAsTouched();
-      control?.markAsDirty();
-    });
+    markMeetingFormForValidation(form);
 
     // `markAsTouched`/`markAsDirty` emit on neither `valueChanges` nor `statusChanges`, so the bump has
     // to be explicit for anything reading control state through `revision`.
@@ -1082,7 +1080,7 @@ export class MeetingComposerFormService {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
-        show_meeting_attendees: new FormControl({ value: false, disabled: true }),
+        show_meeting_attendees: new FormControl(false),
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
@@ -1188,6 +1186,13 @@ export class MeetingComposerFormService {
           previousType = currentType;
         })
       );
+    }
+
+    const restrictedControl = form.get('restricted');
+    const attendeesTypeControl = form.get('meeting_type');
+    if (restrictedControl && attendeesTypeControl) {
+      syncShowMeetingAttendeesLock(form);
+      this.formSubscriptions.add(merge(restrictedControl.valueChanges, attendeesTypeControl.valueChanges).subscribe(() => syncShowMeetingAttendeesLock(form)));
     }
   }
 
@@ -1452,7 +1457,7 @@ export class MeetingComposerFormService {
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
       youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
-      show_meeting_attendees: false, // Coming Soon — disabled in form
+      show_meeting_attendees: formValue.show_meeting_attendees || false,
       ai_summary_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.zoom_ai_enabled ? formValue.require_ai_summary_approval || false : false,
       artifact_visibility: formValue.recording_enabled || formValue.zoom_ai_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
@@ -1562,6 +1567,12 @@ export class MeetingComposerFormService {
 
   private populateFormWithMeetingData(meeting: Meeting): void {
     const form = this.form();
+    // A hydrated value is not an edit. The group picker reads this control's `dirty` flag to tell
+    // the organizer's own choice from a patch, and `dirty` is sticky: `validateForSubmit` marks
+    // every control dirty in bulk, so a reload after a failed submit would otherwise let the patch
+    // below read as a choice. Cleared before the patch rather than after, because the patch is
+    // loud and the picker decides as it arrives.
+    form.get('show_meeting_attendees')?.markAsPristine();
     this.originalStartTime.set(meeting.start_time);
 
     // Parse start_time into the meeting's own timezone so the date and time pickers show
@@ -1654,6 +1665,7 @@ export class MeetingComposerFormService {
 
     this.populateExistingLinks();
     this.updateFormValidator();
+    syncShowMeetingAttendeesLock(form);
   }
 
   private populateRecurrenceGroup(meeting: Meeting, isCustomRecurrence: boolean): void {
