@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (loading()) {
+  <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" aria-busy="true" data-testid="org-easycla-recent-activity-loading">
+    <p-skeleton height="1.25rem" width="10rem" />
+    @for (r of loadingRows; track r) {
+      <p-skeleton height="2.25rem" />
+    }
+  </div>
+} @else if (rows().length > 0) {
+  <section
+    class="flex flex-col gap-3 border-t border-gray-200 pt-4"
+    aria-labelledby="org-easycla-recent-activity-heading"
+    data-testid="org-easycla-recent-activity">
+    <div class="flex flex-wrap items-baseline justify-between gap-2">
+      <h2 id="org-easycla-recent-activity-heading" class="font-medium text-lg text-gray-900" data-testid="org-easycla-recent-activity-heading">
+        {{ heading }}
+      </h2>
+      <button
+        type="button"
+        class="inline-flex items-center gap-1 text-sm font-medium text-blue-600 hover:underline"
+        (click)="viewFullActivityLog.emit()"
+        data-testid="org-easycla-recent-activity-view-all">
+        {{ viewAllLabel }}
+        <i class="fa-light fa-arrow-right" aria-hidden="true"></i>
+      </button>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full border-collapse text-sm" data-testid="org-easycla-recent-activity-table">
+        <thead>
+          <tr class="border-b border-gray-200 text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+            <th class="px-3 py-2">{{ columnHeaders.action }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.actor }}</th>
+            <th class="px-3 py-2">{{ columnHeaders.when }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.entry.id) {
+            <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-easycla-recent-activity-row-' + row.entry.id">
+              <td class="px-3 py-2 text-gray-900" data-testid="org-easycla-recent-activity-summary">{{ row.summary }}</td>
+              <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-recent-activity-actor">{{ row.actor }}</td>
+              <td class="px-3 py-2 text-gray-700" data-testid="org-easycla-recent-activity-when">{{ row.whenLabel }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  </section>
+}

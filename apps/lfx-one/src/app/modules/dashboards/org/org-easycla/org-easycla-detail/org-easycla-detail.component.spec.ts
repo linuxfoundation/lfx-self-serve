@@ -1982,6 +1982,69 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-ccla-title')).toBeNull();
   });
 
+  describe('the Overview Recent activity block', () => {
+    const recentPage = {
+      signatureId: 'signature-uuid-1',
+      list: [{ id: 'event-1', when: '2026-01-15T09:20:00Z', actor: 'Alice Example', summary: 'Alice Example enabled Auto ECLA' }],
+      resultCount: 1,
+      nextKey: 'opaque-cursor',
+    };
+
+    async function settle(fixture: ComponentFixture<OrgEasyclaDetailComponent>): Promise<void> {
+      await fixture.whenStable();
+      fixture.detectChanges();
+      await fixture.whenStable();
+      fixture.detectChanges();
+    }
+
+    it('shows the first page of the log on a signed Overview, requested at the preview size', async () => {
+      getActivityLog.mockReturnValue(of(recentPage));
+      const fixture = await render();
+      await settle(fixture);
+
+      expect(getActivityLog).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { pageSize: 3 });
+      const block = byTestId(fixture, 'org-easycla-recent-activity');
+      expect(byTestId(fixture, 'org-easycla-detail-overview')?.contains(block)).toBe(true);
+      expect(block?.textContent).toContain('Alice Example enabled Auto ECLA');
+    });
+
+    it('renders no block, and no empty table, when the log has no events', async () => {
+      const fixture = await render();
+      await settle(fixture);
+
+      expect(getActivityLog).toHaveBeenCalledTimes(1);
+      expect(byTestId(fixture, 'org-easycla-recent-activity')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-recent-activity-loading')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-overview')?.querySelector('table')).toBeNull();
+    });
+
+    it('never mounts, or fetches, on an agreement the organization has not signed', async () => {
+      getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ status: 'not-started', signed: false, signedOn: undefined })] }));
+      const fixture = await render();
+      await settle(fixture);
+
+      expect(fixture.nativeElement.querySelector('lfx-org-easycla-recent-activity')).toBeNull();
+      expect(getActivityLog).not.toHaveBeenCalled();
+    });
+
+    it('opens the Activity Log tab from View full activity log, focusing its trigger, and the tab fetches its own first page', async () => {
+      getActivityLog.mockReturnValue(of(recentPage));
+      const fixture = await render();
+      await settle(fixture);
+
+      (byTestId(fixture, 'org-easycla-recent-activity-view-all') as HTMLButtonElement).click();
+      fixture.detectChanges();
+      await settle(fixture);
+
+      expect(byTestId(fixture, 'org-easycla-detail-tab-activity')?.getAttribute('aria-selected')).toBe('true');
+      expect(document.activeElement?.id).toBe('org-easycla-detail-tab-trigger-activity');
+      expect(byTestId(fixture, 'org-easycla-detail-activity')).toBeTruthy();
+      expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeNull();
+      expect(getActivityLog).toHaveBeenCalledTimes(2);
+      expect(getActivityLog).toHaveBeenLastCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
+    });
+  });
+
   describe('tab bar keyboard navigation', () => {
     function pressOnTabs(fixture: ComponentFixture<OrgEasyclaDetailComponent>, key: string): KeyboardEvent {
       const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true });
@@ -2230,7 +2293,7 @@ describe('OrgEasyclaDetailComponent', () => {
           { provide: OrgLensEmptyStateService, useValue: emptyStateService },
           {
             provide: OrgLensClaService,
-            useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission, getContributorAcknowledgments },
+            useValue: { getClaGroups, getPdfUrl, getApprovalList, updateApprovalList, checkPermission, getContributorAcknowledgments, getActivityLog },
           },
           { provide: MessageService, useValue: { add: addMessage } },
           ConfirmationService,
@@ -2882,6 +2945,7 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
             updateApprovalList,
             checkPermission,
             getContributorAcknowledgments,
+            getActivityLog: vi.fn(() => of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null })),
           },
         },
         { provide: MessageService, useValue: { add: vi.fn() } },
@@ -3059,6 +3123,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
             addManager: vi.fn(),
             removeManager: vi.fn(),
             getContributorAcknowledgments,
+            getActivityLog: vi.fn(() => of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null })),
             setAutoCreateEcla,
           },
         },

@@ -875,3 +875,9 @@ export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';
+
+export const ORG_CLA_RECENT_ACTIVITY_HEADING = 'Recent activity';
+
+export const ORG_CLA_RECENT_ACTIVITY_VIEW_ALL_LABEL = 'View full activity log';
+
+export const ORG_CLA_RECENT_ACTIVITY_PAGE_SIZE = 3;

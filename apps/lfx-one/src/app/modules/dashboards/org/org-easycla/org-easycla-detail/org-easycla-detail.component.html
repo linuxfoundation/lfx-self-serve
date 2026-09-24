@@ -333,6 +333,9 @@
             (onClick)="onDownload()"
             data-testid="org-easycla-detail-download" />
         }
+        @if (group.signed) {
+          <lfx-org-easycla-recent-activity [claGroup]="group" (viewFullActivityLog)="focusTab('activity')" />
+        }
       </section>
     } @else if (activeTab() === 'managers' && claGroup(); as group) {
       <div role="tabpanel" [id]="'org-easycla-detail-tab-panel-managers'" [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-managers'">

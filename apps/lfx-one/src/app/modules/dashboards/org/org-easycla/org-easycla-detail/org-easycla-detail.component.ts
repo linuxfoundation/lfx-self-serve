@@ -99,6 +99,7 @@ import { OrgEasyclaActivityLogComponent } from './org-easycla-activity-log.compo
 import { OrgEasyclaApprovalListComponent } from './org-easycla-approval-list.component';
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
 import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-managers.component';
+import { OrgEasyclaRecentActivityComponent } from './org-easycla-recent-activity.component';
 
 @Component({
   selector: 'lfx-org-easycla-detail',
@@ -111,6 +112,7 @@ import { OrgEasyclaManagersComponent } from './org-easycla-managers/org-easycla-
     OrgEasyclaApprovalListComponent,
     OrgEasyclaContributorAcknowledgmentsComponent,
     OrgEasyclaManagersComponent,
+    OrgEasyclaRecentActivityComponent,
     OrgLensEmptyStateComponent,
     SkeletonModule,
     TagComponent,

@@ -1288,17 +1288,26 @@ export interface OrgClaActivityLogPage {
   nextKey: string | null;
 }
 
+export interface OrgClaActivityLogDisplayRow {
+  entry: OrgClaActivityLogEntry;
+  actor: string;
+  summary: string;
+  whenLabel: string;
+}
+
+export type OrgClaRecentActivityState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'loaded'; rows: OrgClaActivityLogDisplayRow[] }
+  | { status: 'failed' };
+
 /**
  * View-model row projection for the Activity Log table (#1987).
  *
  * `searchText` is a precomputed haystack of actor and summary joined with a NUL byte, so a
  * client-side filter term cannot false-positive by spanning the two fields.
  */
-export interface OrgClaActivityLogRow {
-  entry: OrgClaActivityLogEntry;
-  actor: string;
-  summary: string;
-  whenLabel: string;
+export interface OrgClaActivityLogRow extends OrgClaActivityLogDisplayRow {
   searchText: string;
 }
 
