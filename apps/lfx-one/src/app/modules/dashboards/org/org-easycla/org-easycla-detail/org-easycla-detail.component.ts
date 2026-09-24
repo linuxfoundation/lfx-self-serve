@@ -257,20 +257,18 @@ export class OrgEasyclaDetailComponent {
   private readonly approvalCountOverride = signal<{ signatureId: string; count: number } | null>(null);
 
   /**
-   * Auto ECLA toggle state (#1988). Three signals, one purpose.
+   * Whether ACS grants the current viewer the Auto ECLA write for this agreement's pair (#1988).
+   * `null` while the hop is in flight — the toggle is withheld during that window rather than
+   * shown enabled from an unchecked grant. `false` hides the toggle entirely, matching the
+   * design's choice to hide rather than disable a control the viewer cannot use, until the
+   * read-only banner (#1989) exists to explain a disabled state.
    *
-   * - `autoEclaAllowed`: whether ACS grants the current viewer the Auto ECLA write for this
-   *   agreement's pair. `null` while the hop is in flight — the toggle is withheld during that
-   *   window rather than shown enabled from an unchecked grant. `false` hides the toggle
-   *   entirely, matching the design's choice to hide rather than disable a control the viewer
-   *   cannot use, until the read-only banner (#1989) exists to explain a disabled state.
-   * - `autoEclaOverrides`: the value last asked for or confirmed, keyed on organization and
-   *   signature. Another agreement's flip cannot show through. A confirmed value stays until
-   *   the list row itself carries it, including across a project change that does not refetch
-   *   the list.
+   * The running write and the value last asked for or confirmed live in
+   * `OrgClaAutoEclaWritesService`, keyed on organization and signature, so both survive leaving
+   * the page. Another agreement's flip cannot show through. A confirmed value stays until the list
+   * row itself carries it, including across a project change that does not refetch the list.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
-  private readonly autoEclaOverrides = signal<Readonly<Record<string, boolean>>>({});
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount()?.uid);
@@ -607,19 +605,10 @@ export class OrgEasyclaDetailComponent {
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
-    toObservable(computed(() => ({ group: this.claGroup(), orgUid: this.selectedOrgUid(), overrides: this.autoEclaOverrides() })))
+    toObservable(computed(() => this.initAutoEclaSettledRow()))
       .pipe(takeUntilDestroyed(this.destroyRef))
-      .subscribe(({ group, orgUid, overrides }) => {
-        if (!group?.id || !orgUid) return;
-        const key = this.autoEclaKey({ orgUid, signatureId: group.id });
-        const remembered = overrides[key];
-        if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return;
-        this.autoEclaOverrides.update((current) => {
-          if (current[key] !== remembered) return current;
-          const next = { ...current };
-          delete next[key];
-          return next;
-        });
+      .subscribe((settled) => {
+        if (settled) this.autoEclaWrites.forget(settled.orgUid, settled.signatureId, settled.value);
       });
 
     // The choice was made under the organization the viewer has since left, and Start would open a
@@ -870,13 +859,8 @@ export class OrgEasyclaDetailComponent {
     });
   }
 
-  private autoEclaKey(target: { orgUid: string; signatureId: string }): string {
-    return `${target.orgUid}::${target.signatureId}`;
-  }
-
   private rememberAutoEcla(target: { orgUid: string; signatureId: string }, value: boolean): void {
-    const key = this.autoEclaKey(target);
-    this.autoEclaOverrides.update((current) => ({ ...current, [key]: value }));
+    this.autoEclaWrites.remember(target.orgUid, target.signatureId, value);
   }
 
   /** True while the page is still the organization and agreement this write was started for. */
@@ -1204,10 +1188,20 @@ export class OrgEasyclaDetailComponent {
     const orgUid = this.selectedOrgUid();
     const signatureId = this.claGroup()?.id;
     if (orgUid && signatureId) {
-      const remembered = this.autoEclaOverrides()[this.autoEclaKey({ orgUid, signatureId })];
+      const remembered = this.autoEclaWrites.remembered(orgUid, signatureId);
       if (remembered !== undefined) return remembered;
     }
     return this.claGroup()?.autoCreateEcla === true;
+  }
+
+  /** The agreement on screen when its list row already carries the remembered value, else null. */
+  private initAutoEclaSettledRow(): { orgUid: string; signatureId: string; value: boolean } | null {
+    const group = this.claGroup();
+    const orgUid = this.selectedOrgUid();
+    if (!group?.id || !orgUid) return null;
+    const remembered = this.autoEclaWrites.remembered(orgUid, group.id);
+    if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return null;
+    return { orgUid, signatureId: group.id, value: remembered };
   }
 
   private initAutoEclaPending(): boolean {

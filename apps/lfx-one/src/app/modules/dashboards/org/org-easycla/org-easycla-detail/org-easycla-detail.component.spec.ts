@@ -3186,7 +3186,11 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     returned.detectChanges();
     await returned.whenStable();
     returned.detectChanges();
-    const component = returned.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+    const component = returned.componentInstance as unknown as {
+      onAutoEclaToggle: (v: boolean) => void;
+      autoEclaPending: () => boolean;
+      autoEclaValue: () => boolean;
+    };
 
     expect(component.autoEclaPending()).toBe(true);
     component.onAutoEclaToggle(true);
@@ -3197,6 +3201,30 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     returned.detectChanges();
 
     expect(component.autoEclaPending()).toBe(false);
+    expect(component.autoEclaValue()).toBe(true);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows the rolled-back value after leaving and coming back when the running write is refused', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: true }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(false);
+    first.destroy();
+
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { autoEclaValue: () => boolean };
+    expect(component.autoEclaValue()).toBe(false);
+
+    answer.error(new HttpErrorResponse({ status: 403, error: { error: 'This organization is on the OFAC list. Contact support.' } }));
+    returned.detectChanges();
+
+    expect(component.autoEclaValue()).toBe(true);
+    expect(addMessage).not.toHaveBeenCalled();
   });
 
   it('ignores an older response once a write for another organization is in flight', async () => {
