@@ -50,12 +50,6 @@
       [subtitle]="'Refresh the page to try again.'" />
   } @else if (showEmptyState()) {
     <lfx-empty-state data-testid="org-easycla-activity-log-empty" icon="fa-light fa-list-timeline" [title]="emptyCopy.title" [subtitle]="emptyCopy.subtitle" />
-  } @else if (showFilterEmptyState() && !hasNextPage()) {
-    <lfx-empty-state
-      data-testid="org-easycla-activity-log-filter-empty"
-      icon="fa-light fa-magnifying-glass"
-      [title]="filterEmptyCopy.title"
-      [subtitle]="filterEmptyCopy.subtitle" />
   } @else {
     @if (showFilterEmptyState()) {
       <lfx-empty-state

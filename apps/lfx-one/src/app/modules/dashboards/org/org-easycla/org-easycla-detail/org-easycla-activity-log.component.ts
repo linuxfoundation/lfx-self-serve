@@ -17,7 +17,7 @@ import {
   ORG_CLA_ACTIVITY_LOG_SUBHEADER,
 } from '@lfx-one/shared/constants';
 import type { OrgClaActivityLogEntry, OrgClaActivityLogPage, OrgClaActivityLogRow, OrgClaGroup } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, stripDiacritics } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
@@ -146,6 +146,9 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
    */
   protected readonly filteredRows = computed<OrgClaActivityLogRow[]>(() => this.initFilteredRows());
 
+  /** Display rows for everything loaded so far, keyed on the list alone so a keystroke only filters. */
+  private readonly rows = computed<OrgClaActivityLogRow[]>(() => this.loadedList()?.list.map((entry) => this.toRow(entry)) ?? []);
+
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly resultCount = computed(() => this.loadedList()?.list.length ?? 0);
   protected readonly hasSearchTerm = computed(() => (this.searchTerm() ?? '').trim().length > 0);
@@ -213,10 +216,8 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
   }
 
   private initFilteredRows(): OrgClaActivityLogRow[] {
-    const list = this.loadedList();
-    if (!list) return [];
+    const rows = this.rows();
     const term = (this.searchTerm() ?? '').trim();
-    const rows = list.list.map((entry) => this.toRow(entry));
     if (term.length === 0) return rows;
     const foldedTerm = foldForActivitySearch(term);
     return rows.filter((row) => row.searchText.includes(foldedTerm));
@@ -241,8 +242,5 @@ export class OrgEasyclaActivityLogComponent implements OnInit {
 }
 
 function foldForActivitySearch(value: string): string {
-  return value
-    .normalize('NFD')
-    .replace(/\p{M}+/gu, '')
-    .toLocaleLowerCase();
+  return stripDiacritics(value).toLocaleLowerCase();
 }
