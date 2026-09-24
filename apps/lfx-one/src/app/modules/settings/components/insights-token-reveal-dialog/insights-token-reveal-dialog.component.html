@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col" data-testid="insights-token-reveal-dialog">
+  <div class="flex justify-end px-4 pt-4">
+    <lfx-button
+      type="button"
+      severity="secondary"
+      size="small"
+      [text]="true"
+      icon="fa-light fa-xmark"
+      ariaLabel="Close"
+      (onClick)="close()"
+      data-testid="insights-token-reveal-close-button">
+    </lfx-button>
+  </div>
+
+  <div class="flex flex-col items-center gap-5 px-6 pb-6">
+    <!-- 96px ring per the design prototype -->
+    <div class="relative w-[96px] h-[96px] rounded-full bg-white border-8 border-slate-100 flex items-center justify-center">
+      <i class="fa-light fa-key text-4xl text-slate-600" aria-hidden="true"></i>
+      <span class="absolute top-0 right-0 w-[26px] h-[26px] rounded-full bg-emerald-600 flex items-center justify-center">
+        <i class="fa-solid fa-check text-xs text-white" aria-hidden="true"></i>
+      </span>
+    </div>
+
+    <h3 [id]="headingId" class="text-base font-semibold text-slate-900">Token successfully created</h3>
+
+    <div class="flex flex-col w-full">
+      <div class="flex items-center gap-3 p-3 rounded-t-lg bg-slate-900">
+        <code class="flex-1 min-w-0 font-mono text-xs text-slate-200 break-all select-all" data-testid="insights-token-reveal-secret">{{ secret }}</code>
+        <button
+          type="button"
+          class="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-white transition-colors"
+          [class]="copied() ? 'bg-emerald-600' : 'bg-slate-800 hover:bg-slate-700'"
+          (click)="copy()"
+          data-testid="insights-token-reveal-copy-button">
+          <i class="fa-light" [class.fa-copy]="!copied()" [class.fa-check]="copied()" aria-hidden="true"></i>
+          <span aria-live="polite">{{ copied() ? 'Copied' : 'Copy' }}</span>
+        </button>
+      </div>
+      <div class="flex items-start gap-2 p-3 rounded-b-lg bg-amber-50 border border-t-0 border-amber-100" data-testid="insights-token-reveal-warning">
+        <i class="fa-light fa-triangle-exclamation text-amber-600 mt-0.5" aria-hidden="true"></i>
+        <p class="text-xs text-slate-700 leading-normal"><b>Copy this token now.</b> For your security, we won't show it again.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex flex-col gap-2 px-6 py-5 bg-slate-50 border-t border-slate-200" data-testid="insights-token-reveal-usage">
+    <h4 class="text-sm font-semibold text-slate-900">Using it</h4>
+    <p class="text-xs text-slate-600 leading-normal">Send this token as a bearer token. There's no separate token endpoint to call.</p>
+    <pre
+      class="m-0 p-3 rounded-lg bg-white border border-slate-200 font-mono text-xs text-slate-700 whitespace-pre-wrap [overflow-wrap:anywhere]"
+      data-testid="insights-token-reveal-snippet">curl -H <span class="text-violet-600">"Authorization: Bearer lfi_…"</span> \
+  <span class="text-violet-600">{{ exampleUrl }}</span></pre>
+    <p class="text-xs text-slate-500 leading-normal">
+      Usage limits are shared across your organization's Key Contacts. Learn more in
+      <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline" data-testid="insights-token-reveal-docs-link"
+        >LFX Insights API Docs</a
+      >.
+    </p>
+  </div>
+</div>
