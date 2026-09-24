@@ -461,9 +461,48 @@ describe('analytics router — org-lens-account-context resolves only accounts t
     expect(checkSingleAccessStrict).not.toHaveBeenCalled();
   });
 
-  it('fails closed with 503 when the authorizer cannot answer', async () => {
+  // Same two independent sources as the single-org gate (assertOrgLensRead): either one admits.
+  it('includes an org the caller holds only a roster grant on, without asking the authorizer for it', async () => {
+    caller({ grants: [OWN] });
+    checkAccessStrict.mockImplementation(
+      async (_req: unknown, resources: { id: string; access: string }[]) => new Map(resources.map((r) => [`${r.id}#${r.access}`, false]))
+    );
+
+    const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN},${VICTIM}`);
+
+    expect(res.status).toBe(200);
+    expect(queried(OWN)).toBe(true);
+    expect(queried(VICTIM)).toBe(false);
+    expect(checkAccessStrict).toHaveBeenCalledWith(expect.anything(), [{ resource: 'b2b_org', id: VICTIM, access: 'auditor' }]);
+  });
+
+  it('includes an org only the authorizer admits (LF team, cascade, key contact)', async () => {
+    caller({});
+    checkAccessStrict.mockImplementation(
+      async (_req: unknown, resources: { id: string; access: string }[]) => new Map(resources.map((r) => [`${r.id}#${r.access}`, r.id === OWN]))
+    );
+
+    const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN},${VICTIM}`);
+
+    expect(res.status).toBe(200);
+    expect(queried(OWN)).toBe(true);
+    expect(queried(VICTIM)).toBe(false);
+  });
+
+  it('fails closed with 503 when the authorizer cannot answer for an id the roster did not resolve', async () => {
     caller({ grants: [OWN] });
     checkAccessStrict.mockRejectedValue(new Error('authorizer down'));
+
+    const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN},${VICTIM}`);
+
+    expect(res.status).toBe(503);
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  // A denial is only verified once the roster loaded: with it down, "no" could be a missed grant.
+  it('fails closed with 503 when the roster failed and the authorizer does not admit an id', async () => {
+    caller({});
+    getAccessAwareOrgs.mockResolvedValue({ resolved: new Map(), upstreamFailed: true, degraded: false });
 
     const res = await fetch(`${baseUrl}/api/analytics/org-lens-account-context?accountIds=${OWN}`);
 
