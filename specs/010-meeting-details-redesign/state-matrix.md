@@ -92,9 +92,8 @@ The central table. One row per legal (time, viewer, privacy) group, collapsing c
 identically. Axis E never changes the slot kind; it only adds the RSVP scope modal on `series`.
 
 **V1** is what `main` renders (chain at V1 HTML:387 → 440 → 487 → 507, no terminal else).
-**V2** is `resolveActionSlot` as proposed in PR #2909. **Status**: `=` parity · `fix` V2
-deliberately repairs a V1 dead end · **`DIVERGES`** V2 removes something V1 allows — needs a
-decision before E2-01 builds on it.
+**V2** is `resolveActionSlot` in PR #2909, after decisions D-1 to D-4 below. **Status**: `=`
+parity · `fix` V2 deliberately repairs a V1 dead end · `D-n` the row a decision settled.
 
 ### Before
 
@@ -104,7 +103,7 @@ decision before E2-01 builds on it.
 | visitor    | not open (password)            | —   | empty column; guest form below                                | `none`                | =                          |
 | outsider   | public-open                    | —   | Register                                                      | `register`            | =                          |
 | outsider   | public/private-restricted (pw) | —   | **empty column, no copy**                                     | `invitation-required` | fix                        |
-| outsider   | private-open (pw)              | —   | empty column                                                  | `invitation-required` | **DIVERGES** — see D-3     |
+| outsider   | private-open (pw)              | —   | empty column                                                  | `none`                | = (D-3)                    |
 | registrant | any                            | on  | RSVP (+ scope modal on series)                                | `rsvp`                | =                          |
 | registrant | any                            | off | **empty column** (Register needs `!invited`)                  | `rsvp-unavailable`    | fix (N-01)                 |
 | organizer  | any                            | on  | organizer card: RSVP aggregate, Set/Update My RSVP if invited | `rsvp`                | =                          |
@@ -112,64 +111,59 @@ decision before E2-01 builds on it.
 
 ### Live
 
-| Viewer     | Privacy (credential) | V1                                                                                                                 | V2 (#2909)            | Status             |
-| ---------- | -------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------- | ------------------ |
-| visitor    | public-open          | guest form joins                                                                                                   | `guest-join`          | =                  |
-| visitor    | private-open (pw)    | **guest form joins** — join-url checks the password, not privacy                                                   | `none`                | **DIVERGES** — D-1 |
-| visitor    | restricted (pw)      | **guest form joins when the email matches a registrant** — the anonymous invitee path                              | `none`                | **DIVERGES** — D-1 |
-| outsider   | public-open          | **Join** — the Join branch wins for any signed-in viewer; join-url does not require registration when unrestricted | `register`            | **DIVERGES** — D-2 |
-| outsider   | private-open (pw)    | **Join** (succeeds)                                                                                                | `invitation-required` | **DIVERGES** — D-3 |
-| outsider   | restricted (pw)      | Join, then `NOT_REGISTERED_FOR_MEETING` error + "use a different email" link                                       | `invitation-required` | fix                |
-| registrant | any                  | Join (RSVP not shown — Join branch comes first)                                                                    | `join`                | =                  |
-| organizer  | any                  | Join                                                                                                               | `join`                | =                  |
+| Viewer     | Privacy (credential) | V1                                                                                                                 | V2 (#2909)            | Status  |
+| ---------- | -------------------- | ------------------------------------------------------------------------------------------------------------------ | --------------------- | ------- |
+| visitor    | public-open          | guest form joins                                                                                                   | `guest-join`          | =       |
+| visitor    | private-open (pw)    | **guest form joins** — join-url checks the password, not privacy                                                   | `guest-join`          | = (D-1) |
+| visitor    | restricted (pw)      | **guest form joins when the email matches a registrant** — the anonymous invitee path                              | `guest-join`          | = (D-1) |
+| outsider   | public-open          | **Join** — the Join branch wins for any signed-in viewer; join-url does not require registration when unrestricted | `join`                | = (D-2) |
+| outsider   | private-open (pw)    | **Join** (succeeds)                                                                                                | `join`                | = (D-3) |
+| outsider   | restricted (pw)      | Join, then `NOT_REGISTERED_FOR_MEETING` error + "use a different email" link                                       | `invitation-required` | fix     |
+| registrant | any                  | Join (RSVP not shown — Join branch comes first)                                                                    | `join`                | =       |
+| organizer  | any                  | Join                                                                                                               | `join`                | =       |
 
 ### Ended
 
-| Viewer                | D      | V1                                                                                                     | V2 (#2909)  | Status                     |
-| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------- | -------------------------- |
-| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                    | `tools`     | =                          |
-| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state | `tools`     | =                          |
-| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                     | `no-access` | =                          |
-| visitor               | `full` | **no column** — branch D needs `authenticated()`, and every artifact route is `/api/*` (auth required) | `tools`     | **blocked on E4-04** — D-4 |
-| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                           | `no-access` | =                          |
+| Viewer                | D      | V1                                                                                                     | V2 (#2909)  | Status                            |
+| --------------------- | ------ | ------------------------------------------------------------------------------------------------------ | ----------- | --------------------------------- |
+| organizer             | any    | Meeting Tools (organizer always has `full` per FGA)                                                    | `tools`     | =                                 |
+| outsider / registrant | `full` | Meeting Tools — recording / AI summary (Approved·Pending) / transcript, each with an unavailable state | `tools`     | =                                 |
+| outsider / registrant | `none` | no column; amber "This is a private meeting" lock panel; agenda + materials hidden                     | `no-access` | =                                 |
+| visitor               | `full` | **no column** — branch D needs `authenticated()`, and every artifact route is `/api/*` (auth required) | `tools`     | D-4 — sign-in variant until E4-04 |
+| visitor               | `none` | no column; "Sign in to view meeting details" card; agenda + materials hidden                           | `no-access` | =                                 |
 
-## Decisions needed before E2-01
+## Decisions (signed off 2026-09-24)
 
-The divergences share one root cause: `resolveActionSlot` keys **joining** on
-`privacy.openToPublic` (public **and** unrestricted), but in the app only **registration** needs
-that. Joining needs only `!restricted` once the page has loaded, because reaching a non-open page
-already required the password; and for a restricted meeting the server — not the page — decides,
-by matching the joiner's email against the registrants.
+Verification found four places where the first version of `resolveActionSlot` removed something V1
+allows. They shared one root cause: it keyed **joining** on `privacy.openToPublic` (public **and**
+unrestricted), but in the app only **registration** needs that. Joining needs only `!restricted`
+once the page has loaded, because reaching a non-open page already required the password; and on a
+restricted meeting the server, not the page, decides, by matching the joiner's email against the
+registrants. All four recommendations were accepted; D-1 to D-3 are applied in PR #2909.
 
-- **D-1 — Anonymous viewers in the join window on a non-open meeting.** V1 lets them join through
-  the guest form; for a restricted meeting that is how an invitee without an LFX session joins from
-  their invite link. V2 returns `none`, which would lock them out. **Recommendation:** `guest-join`
-  for every visitor in the window; the server's registrant-email check already enforces restriction.
-- **D-2 — Signed-in outsider on a live public-open meeting.** V1 lets them join directly. V2 routes
-  them through Register first. That was a deliberate choice in #2909 (it has a named test), but it
-  adds a step V1 does not need. **Recommendation:** `join`, for parity. Registration is still
-  offered before the window.
-- **D-3 — Signed-in outsider on a private-open meeting (they hold the link).** "Anyone with the link
-  can join" is the meeting's own setting, so `invitation-required` is wrong copy. **Recommendation:**
-  `join` when live; `none` before the window (the time banner already says when it opens; they
-  cannot register, because the BFF only registers for public meetings).
-- **D-4 — Anonymous viewer of an ended public-open meeting.** `full_access` is true, but every
-  artifact route requires auth, so `tools` would render a card that cannot load. **Recommendation:**
-  keep `tools` in the resolver, and have E4-01 render the sign-in variant until E4-04 ships the
-  public artifact routes.
+- **D-1 — Anonymous viewers in the join window get `guest-join`, whatever the privacy.** On a
+  restricted meeting this is how an invitee without an LFX session joins from their invite link;
+  the join-url endpoint's registrant-email check enforces the restriction.
+- **D-2 — A signed-in outsider on a live public-open meeting gets `join`,** as in V1, not a
+  Register step first. Registration is still offered before the window.
+- **D-3 — A signed-in outsider on a private-open meeting (they hold the link) gets `join` when
+  live and `none` before the window.** "Anyone with the link can join" is the meeting's own
+  setting, so `invitation-required` would be wrong; they cannot register, because the BFF only
+  registers for public meetings, and the time banner already says when the window opens.
+- **D-4 — An anonymous viewer of an ended public-open meeting keeps `tools`.** `full_access` is
+  true, but every artifact route requires auth, so E4-01 renders the tools slot's sign-in variant
+  until E4-04 ships public artifact routes. No resolver change.
 
-Taken together, D-1 to D-3 change `resolveActionSlot`'s live and before branches to:
+The resolver's live and before branches are therefore:
 
 ```text
 live:   organizer | registrant → join
         visitor               → guest-join
         outsider              → restricted ? invitation-required : join
-before: organizer | registrant → (unchanged)
+before: organizer | registrant → RSVP tracking on ? rsvp : (registrant ? rsvp-unavailable : none)
         visitor               → public-open ? register : none
         outsider              → public-open ? register : restricted ? invitation-required : none
 ```
-
-That is a change to PR #2909's resolver and its 48-row table, so it waits for sign-off.
 
 ## Section visibility
 
