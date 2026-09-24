@@ -29,7 +29,7 @@ The **Foundation** lens (`/foundation/overview`) is available to board members, 
 
 ### Organization Dependency
 
-The Foundation overview includes an **Organization Dependency** card among its health metrics. It shows how concentrated contributions are across organizations: the group of organizations whose contributors performed 51% or more of all contributions in the selected time period, compared with all other organizations.
+The Foundation overview includes an **Organization Dependency** card among its health metrics. It shows how concentrated contributions are across organizations: the group of organizations whose contributors performed 51% or more of all contributions, compared with all other organizations.
 
 Select the card to open a drawer with the top-organization count, a chart comparing that group's contribution share against all other organizations, and a link to detailed contribution metrics in LFX Insights.
 
