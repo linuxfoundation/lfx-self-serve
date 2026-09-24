@@ -29,7 +29,7 @@ diverges from the app's look. That file is the definition boundary: literal valu
 there and nowhere else, every consumer still resolves `var(--*)`, and each token records its
 nearest `lfxColors` equivalent. See `docs/architecture/frontend/styling-system.md`
 § Scoped design token layers for the full rules, and
-`apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss`
+`apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss`
 for the worked example.
 
 ## Layout primitives

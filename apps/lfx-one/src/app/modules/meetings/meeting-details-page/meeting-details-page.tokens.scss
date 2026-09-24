@@ -26,10 +26,10 @@
 // cannot inherit these properties. A V2 component that opens one passes `appendTo` a
 // reference to an element inside `.meeting-details-v2`. Never redefine the tokens on `body`.
 //
-//   // meeting-details-v2.component.scss
-//   @use './meeting-details-v2.tokens';
+//   // meeting-details-page.component.scss
+//   @use './meeting-details-page.tokens';
 //
-//   <!-- meeting-details-v2.component.html -->
+//   <!-- meeting-details-page.component.html -->
 //   <div class="meeting-details-v2"> … </div>
 //
 // Naming

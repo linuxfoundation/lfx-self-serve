@@ -268,7 +268,7 @@ broken. Use `:host-context()`, whose ancestor part is deliberately left unscoped
 <div class="feature-scope">…</div>
 ```
 
-Worked example: `apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss`,
+Worked example: `apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss`,
 with its deviation table in `specs/010-meeting-details-redesign/design-token-deviations.md`.
 
 ## 🎭 Icon System

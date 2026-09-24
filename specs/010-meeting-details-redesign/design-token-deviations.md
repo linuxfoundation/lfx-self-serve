@@ -1,7 +1,7 @@
 # Design token deviations — meeting details V2
 
 **Issue**: [E0-05 / #1769](https://github.com/linuxfoundation/lfx-self-serve/issues/1769) ·
-**Token layer**: [`apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss`](../../apps/lfx-one/src/app/modules/meetings/meeting-details-v2/meeting-details-v2.tokens.scss)
+**Token layer**: [`apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss`](../../apps/lfx-one/src/app/modules/meetings/meeting-details-page/meeting-details-page.tokens.scss)
 
 The V2 prototype's look and feel differs from the current app **on purpose**. This document
 records exactly where, so the divergence is a deliberate, reviewable list rather than an
