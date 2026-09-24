@@ -51,7 +51,7 @@ denylisted_org_name_sha256=(
   337b8d2c1e132acd75171f1acf0e73b20bc9541720d5003813f59ef0ad51f86f
   e4b42aa06408849925ab1aed0fbb50a93b3d844444eeca9792bc00067e4699fa
   c38c199c1a55d87677fd7ba6774fee62be04faaf15dac8f60c0f1e25495cab1d
-  041afb31378771546300c4c642c92ac5e2540dcced7b34e5879bfa55bf84a3a1
+  cce4a2de03e82358f0c511461103adb0ccf0e4517fdff3945131b060b4afe84e
 )
 
 # Account ids, each in both its 18- and 15-character forms, since fixtures may carry either. The
