@@ -13,6 +13,7 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { logger } from './logger.service';
@@ -36,7 +37,9 @@ export class InsightsTokensService {
       v: '1',
       audience: INSIGHTS_TOKEN_AUDIENCE,
     });
-    return (response?.tokens ?? []).map((token) => this.toInsightsToken(token));
+    const tokens = (response?.tokens ?? []).map((token) => this.toInsightsToken(token));
+    logger.debug(req, 'list_insights_tokens', 'Fetched Insights tokens from PAT service', { count: tokens.length });
+    return tokens;
   }
 
   /** Issues a token. The plaintext secret is returned exactly once by the PAT service. */
@@ -49,12 +52,15 @@ export class InsightsTokensService {
       { v: '1' },
       { name, audience: INSIGHTS_TOKEN_AUDIENCE }
     );
+    // Never log the name or the secret; the token uid is enough to trace the call.
+    logger.debug(req, 'create_insights_token', 'PAT service issued Insights token', { token_uid: response.token.uid });
     return { token: this.toInsightsToken(response.token), secret: response.secret };
   }
 
   /** Revokes one of the caller's tokens. The PAT service returns 404 for tokens the caller does not own. */
   public async revokeToken(req: Request, uid: string): Promise<void> {
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/tokens/${encodeURIComponent(uid)}`, 'DELETE', { v: '1' });
+    logger.debug(req, 'revoke_insights_token', 'PAT service revoked Insights token', { token_uid: uid });
   }
 
   /**
@@ -77,6 +83,7 @@ export class InsightsTokensService {
 
     try {
       const m2mToken = await generateM2MToken(req);
+      logger.debug(req, 'get_insights_token_eligibility', 'Minted M2M token; looking up member tiers');
       const tiers = await this.microserviceProxy.proxyRequest<MemberOrgTier[]>(
         req,
         'LFX_V2_SERVICE',
@@ -98,9 +105,16 @@ export class InsightsTokensService {
         })
         .map((tier) => ({ uid: tier.b2b_org_uid, name: (tier.company_name as string).trim() }));
 
+      logger.debug(req, 'get_insights_token_eligibility', 'Resolved member tiers', {
+        tier_count: Array.isArray(tiers) ? tiers.length : 0,
+        org_count: orgs.length,
+      });
       return { canCreate: orgs.length > 0, orgs, checkFailed: false };
     } catch (error) {
-      logger.warning(req, 'get_insights_token_eligibility', 'Member tier lookup failed; failing closed', { err: error });
+      // Not `{ err: error }`: a MicroserviceError's path/operation embed the username from the tier URL.
+      const status = error instanceof MicroserviceError ? error.statusCode : undefined;
+      const code = error instanceof MicroserviceError ? error.code : (error as Error)?.name;
+      logger.warning(req, 'get_insights_token_eligibility', 'Member tier lookup failed; failing closed', { status, code });
       return INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE;
     }
   }

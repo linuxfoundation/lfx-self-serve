@@ -32,6 +32,7 @@ vi.mock('@lfx-one/shared/constants', () => import('../../../../../packages/share
 
 import type { Request } from 'express';
 
+import { MicroserviceError } from '../errors/microservice.error';
 import { InsightsTokensService } from './insights-tokens.service';
 
 const req = { bearerToken: 'user-token' } as unknown as Request;
@@ -129,6 +130,15 @@ describe('InsightsTokensService', () => {
       proxyRequest.mockRejectedValueOnce(new Error('403 Forbidden'));
       expect(await service.getEligibility(req)).toEqual({ canCreate: false, orgs: [], checkFailed: true });
       expect(loggerWarning).toHaveBeenCalled();
+    });
+
+    it('keeps the username out of the failure log, even though the upstream error path carries it', async () => {
+      proxyRequest.mockRejectedValueOnce(
+        MicroserviceError.fromMicroserviceResponse(403, 'Forbidden', {}, 'LFX_V2_SERVICE', '/b2b_orgs/member-tiers/jdoe', 'get__b2b_orgs_member-tiers_jdoe')
+      );
+      await service.getEligibility(req);
+      expect(loggerWarning).toHaveBeenCalledWith(req, 'get_insights_token_eligibility', expect.any(String), { status: 403, code: 'FORBIDDEN' });
+      expect(JSON.stringify(loggerWarning.mock.calls)).not.toContain('jdoe');
     });
 
     it('fails closed when the M2M token cannot be minted', async () => {
