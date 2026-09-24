@@ -95,7 +95,7 @@ if [ -z "${changed_files}" ]; then
   exit 0
 fi
 
-# Reads one file's -U0 diff and, for each added line, prints "<kind> ... <file>:<line>: <text>",
+# Reads one file's -U1 diff and, for each added line, prints "<kind> ... <file>:<line>: <text>",
 # where <line> is the line number in the new file: a "domain" hit, plus the "name-candidate" and
 # "id-candidate" tokens the hash pass below checks. Portable across BSD awk, gawk and mawk (POSIX
 # ERE only, no \b or interval expressions). Reserved domains are the TLDs .example, .test, .invalid
@@ -129,6 +129,8 @@ function has_real_domain_field(s,    value) {
     sub(/^\/\//, "", value)
     sub(/^[^@\/]*@/, "", value)
     sub(/[\/:?#].*$/, "", value)
+    # A fully qualified hostname's trailing dot names the same host.
+    sub(/\.$/, "", value)
     if (real_domain(value)) return 1
   }
   return 0
@@ -152,6 +154,10 @@ function print_id_candidates(s, where,    before, token) {
     if (before !~ /[A-Za-z0-9]/ && length(token) >= 15) print "id-candidate " token " " where
   }
 }
+# True when a line ends with a domain key and its operator, the value wrapped onto the next line.
+function opens_domain_value(s) {
+  return s ~ /([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*$/
+}
 BEGIN {
   file = ENVIRON["SCAN_FILE"]
 }
@@ -164,8 +170,14 @@ BEGIN {
   pending = ""
   next
 }
-!/^\+/ {
-  pending = ""
+# A formatter may wrap a long assignment after its operator (X_DOMAIN =\n  'customer.com'). The
+# one line of context lets an open key on an unchanged line reach a changed value on the next;
+# context lines are carried forward but never checked, and removed lines neither set nor clear it.
+in_hunk && /^ / {
+  lower = tolower(substr($0, 2))
+  pending = opens_domain_value(lower) ? lower : ""
+  line++
+  next
 }
 in_hunk && /^\+/ {
   text = substr($0, 2)
@@ -175,10 +187,8 @@ in_hunk && /^\+/ {
   where = file ":" line ": " shown
   print_name_candidates(lower, where)
   print_id_candidates(text, where)
-  # A formatter may wrap a long assignment after its operator (X_DOMAIN =\n  'customer.com'), so a
-  # domain key left open at the end of the previous added line is joined with this one.
   if (has_real_email(lower) || has_real_domain_field(lower) || (pending != "" && has_real_domain_field(pending " " lower))) print "domain " where
-  pending = lower ~ /([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*[a-z0-9_ \t|<>.]+=|[ \t]*[:=])[ \t]*$/ ? lower : ""
+  pending = opens_domain_value(lower) ? lower : ""
   line++
 }
 AWK
@@ -215,7 +225,7 @@ candidates=""
 while IFS= read -r file; do
   [ -n "${file}" ] || continue
   # A scan that fails must fail the check, never pass it silently.
-  if ! matches=$(git diff "${diff_args[@]}" -U0 -- "${file}" | SCAN_FILE="${file}" awk "${scan_program}"); then
+  if ! matches=$(git diff "${diff_args[@]}" -U1 -- "${file}" | SCAN_FILE="${file}" awk "${scan_program}"); then
     echo "❌ Fixture data check could not scan ${file}." >&2
     exit 2
   fi
