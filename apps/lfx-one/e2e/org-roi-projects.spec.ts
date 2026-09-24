@@ -38,7 +38,7 @@ test.setTimeout(120_000);
  * so two of them lose money — negative net return is 6.45% of production project rows across 775
  * organizations, so it is exercised here as a mainline path rather than as a variant fixture.
  */
-const [KUBERNETES, OPENSTACK, CEPH] = MOCK_PROJECT_INPUTS;
+const [KUBERNETES, NORTHWIND_MESH, QUARRY_STORE] = MOCK_PROJECT_INPUTS;
 
 const ALL_LOSS_MAKING = {
   method: 'logit',
@@ -60,8 +60,8 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     const legend = page.getByTestId('org-roi-projects-donut-legend');
     await expect(legend).toContainText(KUBERNETES.name);
     await expect(legend).toContainText(formatCurrency(KUBERNETES.expenditure));
-    await expect(legend).toContainText(OPENSTACK.name);
-    await expect(legend).toContainText(CEPH.name);
+    await expect(legend).toContainText(NORTHWIND_MESH.name);
+    await expect(legend).toContainText(QUARRY_STORE.name);
     // Three projects cover 81.6% of investment, so the other five collapse into one entry.
     await expect(legend).toContainText('Other (5 projects)');
   });
@@ -71,16 +71,16 @@ test.describe('Org Lens ROI Metrics — leading projects', () => {
     await gotoOrgRoiPage(page);
 
     const legend = page.getByTestId('org-roi-projects-donut-legend');
-    await expect(legend).toContainText(CEPH.name);
+    await expect(legend).toContainText(QUARRY_STORE.name);
 
     await page.getByTestId('org-roi-projects-donut-measure-return').click();
     await expect(page.getByTestId('org-roi-projects-donut-measure-return')).toHaveAttribute('aria-pressed', 'true');
 
-    // Two projects already cover 82.2% of return, so Ceph moves from a slice into the remainder.
+    // Two projects already cover 82.2% of return, so Quarry Store moves from a slice into the remainder.
     await expect(legend).toContainText(formatCurrency(KUBERNETES.return));
-    await expect(legend).toContainText(formatCurrency(OPENSTACK.return));
+    await expect(legend).toContainText(formatCurrency(NORTHWIND_MESH.return));
     await expect(legend).toContainText('Other (6 projects)');
-    await expect(legend).not.toContainText(CEPH.name);
+    await expect(legend).not.toContainText(QUARRY_STORE.name);
   });
 
   test('reports the true signed value of a negative net return', async ({ page }) => {

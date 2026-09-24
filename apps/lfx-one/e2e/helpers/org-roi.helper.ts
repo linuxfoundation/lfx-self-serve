@@ -121,10 +121,14 @@ export const MOCK_SUMMARY = {
 
 export const MOCK_COVERAGE = { orgUid: MOCK_ACCOUNT_ID, hasData: true, coverageReason: 'covered' };
 
-/** One year of a distribution. ROI and BCR are computed from the row's own figures. */
+/**
+ * One year of a distribution. ROI and BCR are computed from the row's own figures, and are null —
+ * never zero — when there is no investment to divide by, as the warehouse returns them.
+ */
 export function annualRow(year: number, totalReturn: number, expenditure: number): OrgLensRoiAnnualRow {
   const profit = totalReturn - expenditure;
-  return { year, totalReturn, expenditure, profit, roi: profit / expenditure, bcr: totalReturn / expenditure };
+  const hasInvestment = expenditure > 0;
+  return { year, totalReturn, expenditure, profit, roi: hasInvestment ? profit / expenditure : null, bcr: hasInvestment ? totalReturn / expenditure : null };
 }
 
 /** Weights for the last three years, oldest first. The year still in progress carries the least. */
@@ -191,11 +195,11 @@ function projectRow(projectSlug: string, projectName: string, totalExpenditure: 
  */
 export const MOCK_PROJECT_INPUTS = [
   { slug: 'kubernetes', name: 'Kubernetes', expenditure: 15_000_000, return: 600_000_000 },
-  { slug: 'openstack', name: 'OpenStack', expenditure: 10_000_000, return: 300_000_000 },
-  { slug: 'ceph', name: 'Ceph', expenditure: 6_000_000, return: 120_000_000 },
-  { slug: 'podman', name: 'Podman', expenditure: 3_500_000, return: 45_000_000 },
-  { slug: 'fedora-infra', name: 'Fedora Infrastructure', expenditure: 1_600_000, return: 18_000_000 },
-  { slug: 'ansible-docs', name: 'Ansible Docs', expenditure: 1_200_000, return: 11_620_000 },
+  { slug: 'northwind-mesh', name: 'Northwind Mesh', expenditure: 10_000_000, return: 300_000_000 },
+  { slug: 'quarry-store', name: 'Quarry Store', expenditure: 6_000_000, return: 120_000_000 },
+  { slug: 'lantern-shell', name: 'Lantern Shell', expenditure: 3_500_000, return: 45_000_000 },
+  { slug: 'orchard-infra', name: 'Orchard Infrastructure', expenditure: 1_600_000, return: 18_000_000 },
+  { slug: 'beacon-docs', name: 'Beacon Docs', expenditure: 1_200_000, return: 11_620_000 },
   { slug: 'legacy-bridge', name: 'Legacy Bridge', expenditure: 500_000, return: 300_000 },
   { slug: 'sunset-tooling', name: 'Sunset Tooling', expenditure: 200_000, return: 50_000 },
 ];
