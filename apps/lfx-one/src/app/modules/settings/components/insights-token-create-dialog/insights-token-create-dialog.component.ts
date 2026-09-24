@@ -8,9 +8,9 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR, INSIGHTS_TOKEN_ERROR_MESSAGES, INSIGHTS_TOKEN_NAME_MAX_LENGTH } from '@lfx-one/shared/constants';
-import { CreateInsightsTokenResponse, InsightsTokenCreateDialogData, InsightsTokenErrorCode } from '@lfx-one/shared/interfaces';
+import { CreateInsightsTokenResponse, InsightsTokenErrorCode } from '@lfx-one/shared/interfaces';
 import { InsightsTokensService } from '@services/insights-tokens.service';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { finalize } from 'rxjs';
 
 /** Name-only create form for an LFX Insights API token. Closes with the `CreateInsightsTokenResponse` on success. */
@@ -20,14 +20,16 @@ import { finalize } from 'rxjs';
   templateUrl: './insights-token-create-dialog.component.html',
 })
 export class InsightsTokenCreateDialogComponent {
-  private readonly dialogConfig = inject<DynamicDialogConfig<InsightsTokenCreateDialogData>>(DynamicDialogConfig);
+  /** The opener passes this to `nameDynamicDialog` so the headless dialog is named by its heading. */
+  public static readonly headingId = 'insights-token-create-heading';
+
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly insightsTokensService = inject(InsightsTokensService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
 
+  protected readonly headingId = InsightsTokenCreateDialogComponent.headingId;
   protected readonly maxLength = INSIGHTS_TOKEN_NAME_MAX_LENGTH;
-  protected readonly orgName = this.dialogConfig.data?.orgName ?? '';
   protected readonly form = new FormGroup({
     name: new FormControl('', { nonNullable: true, validators: [Validators.required, Validators.maxLength(INSIGHTS_TOKEN_NAME_MAX_LENGTH)] }),
   });

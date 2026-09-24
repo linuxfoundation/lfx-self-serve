@@ -9,7 +9,6 @@ import { INSIGHTS_PUBLIC_API_DOCS_URL, INSIGHTS_TOKEN_INELIGIBLE, INSIGHTS_TOKEN
 import {
   CreateInsightsTokenResponse,
   InsightsToken,
-  InsightsTokenCreateDialogData,
   InsightsTokenEligibility,
   InsightsTokenListItem,
   InsightsTokenRevealDialogData,
@@ -17,8 +16,9 @@ import {
 import { formatRelativeTime } from '@lfx-one/shared/utils';
 import { InsightsTokensService } from '@services/insights-tokens.service';
 import { UserService } from '@services/user.service';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, finalize, forkJoin, map, of } from 'rxjs';
 
 import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dialog/insights-token-create-dialog.component';
@@ -101,10 +101,10 @@ export class InsightsTokensComponent {
       dismissableMask: false,
       showHeader: false,
       contentStyle: { padding: '0' },
-      data: { orgName: this.eligibility().orgs[0]?.name ?? '' } satisfies InsightsTokenCreateDialogData,
-    });
+    }) as DynamicDialogRef;
+    nameDynamicDialog(this.dialogService, ref, InsightsTokenCreateDialogComponent.headingId);
 
-    ref?.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
+    ref.onClose.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((created: CreateInsightsTokenResponse | undefined) => {
       if (!created) {
         return;
       }
@@ -165,7 +165,7 @@ export class InsightsTokensComponent {
 
   /** The secret lives only in this dialog's data; it is never kept in component state. */
   private openRevealDialog(data: InsightsTokenRevealDialogData): void {
-    this.dialogService.open(InsightsTokenRevealDialogComponent, {
+    const ref = this.dialogService.open(InsightsTokenRevealDialogComponent, {
       header: '',
       width: '520px',
       style: { maxWidth: '90vw' },
@@ -177,6 +177,7 @@ export class InsightsTokensComponent {
       showHeader: false,
       contentStyle: { padding: '0' },
       data,
-    });
+    }) as DynamicDialogRef;
+    nameDynamicDialog(this.dialogService, ref, InsightsTokenRevealDialogComponent.headingId);
   }
 }

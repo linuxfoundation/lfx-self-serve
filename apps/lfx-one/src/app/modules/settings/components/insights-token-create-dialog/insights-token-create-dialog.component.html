@@ -3,10 +3,7 @@
 
 <form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col" data-testid="insights-token-create-dialog">
   <div class="flex flex-col gap-1 px-6 pt-6 pb-4">
-    <h3 class="text-base font-semibold text-slate-900">New LFX Insights API token</h3>
-    @if (orgName) {
-      <p class="text-sm text-slate-500" data-testid="insights-token-create-org">Issued for {{ orgName }}</p>
-    }
+    <h3 [id]="headingId" class="text-base font-semibold text-slate-900">New LFX Insights API token</h3>
   </div>
 
   <div class="flex flex-col gap-2 px-6 pb-6">

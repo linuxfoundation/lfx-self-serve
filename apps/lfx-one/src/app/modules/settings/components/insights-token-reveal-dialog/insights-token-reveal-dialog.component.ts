@@ -16,12 +16,16 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   templateUrl: './insights-token-reveal-dialog.component.html',
 })
 export class InsightsTokenRevealDialogComponent {
+  /** The opener passes this to `nameDynamicDialog` so the headless dialog is named by its heading. */
+  public static readonly headingId = 'insights-token-reveal-heading';
+
   private readonly dialogConfig = inject<DynamicDialogConfig<InsightsTokenRevealDialogData>>(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly clipboard = inject(Clipboard);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
+  protected readonly headingId = InsightsTokenRevealDialogComponent.headingId;
   protected readonly secret = typeof this.dialogConfig.data?.secret === 'string' ? this.dialogConfig.data.secret : '';
   protected readonly exampleUrl = INSIGHTS_PUBLIC_API_EXAMPLE_URL;
   protected readonly docsUrl = INSIGHTS_PUBLIC_API_DOCS_URL;

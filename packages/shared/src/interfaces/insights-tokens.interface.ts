@@ -76,12 +76,6 @@ export interface InsightsTokenRevealDialogData {
   secret: string;
 }
 
-/** Data passed to the create dialog. */
-export interface InsightsTokenCreateDialogData {
-  /** Org shown in the "Issued for …" subtitle — the first org the user is a Key Contact of. */
-  orgName: string;
-}
-
 /** Display model for one row of the Insights token list. */
 export interface InsightsTokenListItem {
   token: InsightsToken;

@@ -12,6 +12,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { InsightsTokenCreateDialogComponent } from '../insights-token-create-dialog/insights-token-create-dialog.component';
 import { InsightsTokenRevealDialogComponent } from '../insights-token-reveal-dialog/insights-token-reveal-dialog.component';
 import { InsightsTokensComponent } from './insights-tokens.component';
 
@@ -24,7 +25,8 @@ describe('InsightsTokensComponent', () => {
     getEligibility: ReturnType<typeof vi.fn>;
     revokeToken: ReturnType<typeof vi.fn>;
   };
-  let dialogService: { open: ReturnType<typeof vi.fn> };
+  let dialogService: { open: ReturnType<typeof vi.fn>; dialogComponentRefMap: { get: () => unknown } };
+  let setDialogPt: ReturnType<typeof vi.fn>;
   let confirmationService: { confirm: ReturnType<typeof vi.fn> };
   let messageService: { add: ReturnType<typeof vi.fn> };
   let userService: { impersonating: WritableSignal<boolean> };
@@ -52,7 +54,8 @@ describe('InsightsTokensComponent', () => {
       getEligibility: vi.fn(() => of(ELIGIBLE)),
       revokeToken: vi.fn(() => of(undefined)),
     };
-    dialogService = { open: vi.fn() };
+    setDialogPt = vi.fn();
+    dialogService = { open: vi.fn(), dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) } };
     confirmationService = { confirm: vi.fn() };
     messageService = { add: vi.fn() };
     userService = { impersonating: signal(false) };
@@ -96,7 +99,7 @@ describe('InsightsTokensComponent', () => {
 
     component['openCreateDialog']();
 
-    expect(dialogService.open.mock.calls[0][1].data).toEqual({ orgName: 'Acme' });
+    expect(dialogService.open.mock.calls[0][1].data).toBeUndefined();
     expect(component['items']().map((item) => item.token.uid)).toEqual(['t-2', 't-1']);
     expect(dialogService.open).toHaveBeenLastCalledWith(
       InsightsTokenRevealDialogComponent,
@@ -114,6 +117,18 @@ describe('InsightsTokensComponent', () => {
     for (const [, config] of dialogService.open.mock.calls) {
       expect(config).toEqual(expect.objectContaining({ closeOnEscape: false, style: { maxWidth: '90vw' } }));
     }
+  });
+
+  it('names both headless dialogs by their headings for screen readers', () => {
+    dialogService.open.mockReturnValueOnce({ onClose: of({ token: TOKEN, secret: 'lfi_secret' }) });
+    create();
+
+    component['openCreateDialog']();
+
+    expect(setDialogPt.mock.calls).toEqual([
+      ['pt', { pcDialog: { root: { 'aria-labelledby': InsightsTokenCreateDialogComponent.headingId } } }],
+      ['pt', { pcDialog: { root: { 'aria-labelledby': InsightsTokenRevealDialogComponent.headingId } } }],
+    ]);
   });
 
   it('does nothing when the create dialog is cancelled', () => {

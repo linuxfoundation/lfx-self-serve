@@ -5,7 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { TestBed } from '@angular/core/testing';
 import { INSIGHTS_TOKEN_CREATE_FALLBACK_ERROR, INSIGHTS_TOKEN_ERROR_MESSAGES } from '@lfx-one/shared/constants';
 import { InsightsTokensService } from '@services/insights-tokens.service';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DynamicDialogRef } from 'primeng/dynamicdialog';
 import { of, throwError } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -26,7 +26,6 @@ describe('InsightsTokenCreateDialogComponent', () => {
       providers: [
         { provide: InsightsTokensService, useValue: service },
         { provide: DynamicDialogRef, useValue: dialogRef },
-        { provide: DynamicDialogConfig, useValue: { data: { orgName: 'Acme' } } },
       ],
     });
     TestBed.overrideComponent(InsightsTokenCreateDialogComponent, { set: { template: '', imports: [] } });
@@ -34,10 +33,6 @@ describe('InsightsTokenCreateDialogComponent', () => {
   });
 
   afterEach(() => TestBed.resetTestingModule());
-
-  it('reads the org name from dialog data', () => {
-    expect(component['orgName']).toBe('Acme');
-  });
 
   it('only allows submitting a non-blank name', () => {
     expect(component['canSubmit']()).toBe(false);
