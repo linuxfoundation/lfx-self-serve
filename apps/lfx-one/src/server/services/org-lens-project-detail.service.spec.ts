@@ -553,3 +553,36 @@ describe('OrgLensProjectDetailService.getCardRoster paging', () => {
     expect(rosterSql()).toContain('LIMIT 10 OFFSET 20');
   });
 });
+
+describe('OrgLensProjectDetailService.getTechnicalBoard paging', () => {
+  const service = new OrgLensProjectDetailService();
+
+  beforeEach(() => {
+    execute.mockReset();
+    buildOrgCacheKey.mockReturnValue(null);
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('PROJECT_NAME')) return { rows: [heroRow] };
+      return { rows: sql.includes('COUNT(*)') ? [{ N: 0 }] : [] };
+    });
+  });
+
+  function boardSql(): string {
+    const call = execute.mock.calls.find(([sql]) => typeof sql === 'string' && sql.includes('OFFSET'));
+    expect(call).toBeDefined();
+    return call![0] as string;
+  }
+
+  it('caps an oversized page at the deepest allowed page', async () => {
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 1e25, 10, '');
+
+    const sql = boardSql();
+    expect(sql).toContain('LIMIT 10 OFFSET 1000000');
+    expect(sql).not.toContain('e+');
+  });
+
+  it('truncates a fractional page', async () => {
+    await service.getTechnicalBoard(ORG, SLUG, '1y', 'influence', 2.7, 10, '');
+
+    expect(boardSql()).toContain('LIMIT 10 OFFSET 20');
+  });
+});

@@ -509,7 +509,7 @@ export class OrgLensProjectDetailService {
     if (provider === null) return { rows: [], total: 0 };
 
     const slug = projectSlug.trim().toLowerCase();
-    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
+    const safeSize = clampInteger(pageSize, 1, 100, 1);
     const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
 
@@ -811,7 +811,7 @@ export class OrgLensProjectDetailService {
   ): Promise<OrgLensLeaderboardPage | null> {
     const slug = projectSlug.trim().toLowerCase();
     const timeRangeType = PD_TIME_RANGE_TYPE[range];
-    const safeSize = Math.min(Math.max(Math.trunc(pageSize) || 0, 1), 100);
+    const safeSize = clampInteger(pageSize, 1, 100, 1);
     const safePage = clampInteger(page, 0, MAX_SNOWFLAKE_PAGINATION_PAGE, 0);
     const offset = safePage * safeSize;
     const term = search.trim();

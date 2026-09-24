@@ -520,9 +520,9 @@ export class HealthMetricsEngagementService {
 
       // SnowflakeService's own generic sentence is replaced by this widget's; any other client message
       // was chosen by the site that threw it and passes through untouched.
-      const siteClientMessage =
+      const hasSiteClientMessage =
         error instanceof BaseApiError && error.clientMessage !== undefined && error.clientMessage !== SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE;
-      if (!(error instanceof BaseApiError) || siteClientMessage) throw error;
+      if (!(error instanceof BaseApiError) || hasSiteClientMessage) throw error;
 
       throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
         operation: error.operation,

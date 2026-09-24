@@ -31,6 +31,7 @@ vi.mock('./logger.service', () => ({
 
 import { SNOWFLAKE_CONFIG, SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE } from '@lfx-one/shared/constants';
 import { SnowflakeCircuitState } from '@lfx-one/shared/enums';
+import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
 import { tracer } from '../server-tracer';
@@ -195,5 +196,36 @@ describe('SnowflakeService circuit breaker', () => {
     const thrown = await service.execute('SELECT 1').catch((error: unknown) => error);
 
     expect(SnowflakeService.isMissingObjectError(thrown)).toBe(true);
+  });
+});
+
+describe('SnowflakeService pool creation failure', () => {
+  const span = { setStatus: vi.fn(), setAttribute: vi.fn(), recordException: vi.fn(), end: vi.fn() };
+
+  afterEach(() => {
+    SnowflakeService.resetInstance();
+    vi.unstubAllEnvs();
+    vi.clearAllMocks();
+  });
+
+  it('serves the generic client message and no SDK or account text when the pool cannot be created', async () => {
+    for (const name of ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_ROLE', 'SNOWFLAKE_DATABASE', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_API_KEY']) {
+      vi.stubEnv(name, 'test-value');
+    }
+    vi.mocked(tracer.startActiveSpan).mockImplementation(((_name: string, _options: unknown, fn: (s: typeof span) => unknown) => fn(span)) as never);
+    vi.mocked(snowflakeSdk.createPool).mockImplementation(() => {
+      throw new Error('Unable to connect: Incorrect username or password. Account acme.snowflakecomputing.com');
+    });
+
+    const thrown = await SnowflakeService.getInstance()
+      .execute('SELECT 1')
+      .catch((error: unknown) => error);
+
+    expect(thrown).toBeInstanceOf(MicroserviceError);
+    const response = (thrown as MicroserviceError).toResponse();
+    expect(response['error']).toBe(SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE);
+    const body = JSON.stringify(response);
+    expect(body).not.toContain('acme.snowflakecomputing.com');
+    expect(body).not.toContain('Incorrect username or password');
   });
 });

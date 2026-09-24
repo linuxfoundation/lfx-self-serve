@@ -275,8 +275,8 @@ export class SnowflakeService {
 
             // Wrap Snowflake SDK errors in MicroserviceError for proper error handling. `message` keeps the SDK
             // text because callers match on it (isMissingObjectError / isInvalidIdentifierError); the client
-            // only ever sees `clientMessage`. Never add `originalMessage` or `details`/`errors`/`error` keys to
-            // `errorBody` here: MicroserviceError.toResponse forwards those to the browser.
+            // only ever sees `clientMessage`. Never pass the `originalMessage` option or add `details`/`errors`/`error`
+            // keys to `errorBody` here: MicroserviceError.toResponse forwards those to the browser.
             const errorMessage = error instanceof Error ? error.message : String(error);
             throw new MicroserviceError(`Snowflake query execution failed: ${errorMessage}`, 500, 'SNOWFLAKE_QUERY_ERROR', {
               clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,

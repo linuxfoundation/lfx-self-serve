@@ -288,6 +288,22 @@ describe('HealthMetricsEngagementService', () => {
     expect(error.toResponse()['error']).toBe('Try again shortly.');
   });
 
+  // An open circuit throws before the query runs, with no client message of its own.
+  it('rewraps a Snowflake error that carries no client message, such as an open circuit', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError('Snowflake circuit breaker OPEN — retrying in 42s', 503, 'SNOWFLAKE_CIRCUIT_OPEN', {
+        operation: 'circuit_breaker_check',
+        service: 'snowflake',
+      })
+    );
+
+    const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Group attendance is unavailable right now.');
+    expect(error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(error.toResponse()).not.toHaveProperty('service');
+  });
+
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
