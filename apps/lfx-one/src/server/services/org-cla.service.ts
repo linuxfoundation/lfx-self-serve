@@ -1593,7 +1593,8 @@ export class OrgClaService {
     }
 
     return {
-      signatureId,
+      // The row's own spelling: downstream reads match upstream records on it exactly.
+      signatureId: entry.signatureID,
       claGroupId,
       companyId,
       companySfid: orgUid,

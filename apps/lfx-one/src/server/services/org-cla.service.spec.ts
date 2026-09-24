@@ -1415,6 +1415,22 @@ describe('OrgClaService.getApprovalList — flattening the six lists', () => {
     expect(list?.entries).toEqual([{ kind: 'domain', value: 'example.com' }]);
   });
 
+  // The list lookup accepts other spellings of the id; the CCLA read matches on it exactly, so it
+  // must carry the row's own spelling or an existing agreement reads as an empty list.
+  it.each([
+    ['unhyphenated', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case', CLA_GROUP_ID.toUpperCase()],
+  ])('reads the approval list for an %s signature id', async (_label, signatureId) => {
+    stageApprovalRead(corporateSignature({ signatureID: CLA_GROUP_ID, emailApprovalList: null, domainApprovalList: [item('example.com')] }), [
+      upstreamEntry({ signatureID: CLA_GROUP_ID }),
+    ]);
+
+    const list = await new OrgClaService().getApprovalList(req(), ORG_UID, signatureId);
+
+    expect(list?.entries).toEqual([{ kind: 'domain', value: 'example.com' }]);
+    expect(list?.signatureId).toBe(CLA_GROUP_ID);
+  });
+
   // Not a rule: it cannot be matched against, and it cannot be removed either, since the producer
   // validates a removal by the same rules as an addition and would reject the empty string. A row
   // whose only control is guaranteed to fail is worse than no row.
