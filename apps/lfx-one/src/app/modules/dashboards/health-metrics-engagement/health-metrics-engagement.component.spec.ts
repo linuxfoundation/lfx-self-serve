@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, output } from '@angular/core';
+import { Component, output, OutputEmitterRef } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { By } from '@angular/platform-browser';
 import { ActivatedRoute } from '@angular/router';
@@ -89,6 +89,18 @@ describe('HealthMetricsEngagementComponent', () => {
   function stubChild(): GroupAttendanceStubComponent {
     return fixture.debugElement.query(By.directive(GroupAttendanceStubComponent)).componentInstance as GroupAttendanceStubComponent;
   }
+
+  // The body each data section is projected as, for the tests that drive its `reading`/`settled` relays.
+  const sectionChildren: Record<
+    (typeof HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS)[number],
+    () => { reading: OutputEmitterRef<void>; settled: OutputEmitterRef<void> }
+  > = {
+    participation: participationChild,
+    committees: stubChild,
+    orgs: orgChild,
+    reps: repChild,
+    nonmem: nonMemberChild,
+  };
 
   /** One settled group read: the badge counts, then the settle the deep link actually waits on. */
   function groupSettles(counts: HealthMetricsEngagementGroupCounts | null = { groups: 34, dormantGroups: 3 }): void {
@@ -242,5 +254,30 @@ describe('HealthMetricsEngagementComponent', () => {
     await fixture.whenStable();
 
     expect(scrollIntoView).toHaveBeenCalledTimes(settledCalls);
+  });
+
+  // A dropped or misrouted `(reading)` binding would release a late deep link before that re-read lands.
+  it.each(HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS)('holds a late deep link while the "%s" section re-reads', async (key) => {
+    const scrollIntoView = Element.prototype.scrollIntoView as ReturnType<typeof vi.fn>;
+    for (const settledKey of HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS) sectionChildren[settledKey]().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    sectionChildren[key]().reading.emit();
+    fragment.next('committees');
+    scrollIntoView.mockClear();
+
+    sectionChildren[key]().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
+
+    // That read was the only one outstanding, so the key is released: a further settle does not re-scroll.
+    sectionChildren[key]().settled.emit();
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(scrollIntoView).toHaveBeenCalledTimes(1);
   });
 });

@@ -54,12 +54,14 @@ export class HealthMetricsL2ShellComponent implements OnInit {
   private readonly platformId = inject(PLATFORM_ID);
   private readonly injector = inject(Injector);
 
+  /** Read once at init, like `dataSections`: the scroll-spy and deep-link wait set are not rebuilt later. */
   public readonly sections = input.required<readonly HealthMetricsL2Section[]>();
   /** Prefixes each section's DOM id; the URL fragment stays the bare key. */
   public readonly idPrefix = input.required<string>();
   /**
    * Sections whose read can still change the pane's height, so a deep link is released only once
-   * every one has settled. Each must emit `reading`/`settled` through the shell's methods.
+   * every one has settled. Each must emit `reading`/`settled` through the shell's methods. Read once
+   * at init, so it must not change afterwards.
    */
   public readonly dataSections = input.required<readonly string[]>();
   public readonly subNavItems = input.required<readonly HealthMetricsL2SubNavItem[]>();
