@@ -10,6 +10,7 @@ import type { HealthMetricsEngagementGroupTypeFilter } from '@lfx-one/shared/int
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
+import { filterReadableAccountIds } from '../helpers/org-analytics-access.helper';
 import { assertHealthMetricsRange, getStringQueryParam, getValidatedClassification, getValidatedPeriod, parseEntityType } from '../helpers/validation.helper';
 import { HealthMetricsEngagementService, isSupportedEngagementRange } from '../services/health-metrics-engagement.service';
 import { logger } from '../services/logger.service';
@@ -3225,16 +3226,21 @@ export class AnalyticsController {
    * accounts — one denormalised row per account_id with cdev mapping
    * and highest active corporate membership tier.
    * Query params: accountIds (required) - Comma-separated Salesforce account IDs (max 50)
+   *
+   * Only accounts the caller holds read permission on are resolved (`filterReadableAccountIds`, one
+   * batched `b2b_org#auditor` check); the rest are dropped rather than failing the whole org-selector enrichment.
    */
   public async getOrgLensAccountContext(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_org_lens_account_context');
 
     try {
       const accountIds = this.parseAccountIdsParam(req, 'get_org_lens_account_context');
-      const response = await this.organizationService.getOrgLensAccountContext(accountIds);
+      const readableIds = await filterReadableAccountIds(req, accountIds, 'get_org_lens_account_context');
+      const response = readableIds.length > 0 ? await this.organizationService.getOrgLensAccountContext(readableIds) : [];
 
       logger.success(req, 'get_org_lens_account_context', startTime, {
         requested_count: accountIds.length,
+        readable_count: readableIds.length,
         resolved_count: response.length,
       });
 
@@ -3490,7 +3496,10 @@ export class AnalyticsController {
     return slugs;
   }
 
-  /** Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format. */
+  /**
+   * Parse and validate the `accountId` query parameter (single Salesforce account ID); enforces presence and 15/18-char alphanumeric format.
+   * Every route that uses it sits behind `requireOrgAnalyticsAccess`, which already admits only the canonical 18-char id.
+   */
   private parseAccountIdParam(req: Request, operation: string): string {
     const accountId = getStringQueryParam(req, 'accountId');
     if (!accountId) {
@@ -3506,6 +3515,7 @@ export class AnalyticsController {
    * Parse and validate the `accountIds` query parameter (comma-separated
    * Salesforce account IDs). De-duplicates, enforces a 50-id ceiling, and
    * checks each id matches the Salesforce 15/18-char alphanumeric format.
+   * `filterReadableAccountIds` then keeps only canonical 18-char ids the caller holds `b2b_org#auditor` on.
    */
   private parseAccountIdsParam(req: Request, operation: string): string[] {
     const raw = getStringQueryParam(req, 'accountIds');

@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { AnalyticsController } from '../controllers/analytics.controller';
 import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
 import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } from '../middleware/require-marketing-access.middleware';
+import { requireOrgAnalyticsAccess } from '../middleware/require-org-analytics-access.middleware';
 
 const router = Router();
 
@@ -15,23 +16,28 @@ const analyticsController = new AnalyticsController();
 router.get('/active-weeks-streak', (req, res, next) => analyticsController.getActiveWeeksStreak(req, res, next));
 router.get('/pull-requests-merged', (req, res, next) => analyticsController.getPullRequestsMerged(req, res, next));
 router.get('/code-commits', (req, res, next) => analyticsController.getCodeCommits(req, res, next));
+
+// Org-scoped rows (Board Member dashboard, org drawers, org overview): each reads another organization's
+// Snowflake rows by the caller-supplied `accountId`, so `requireOrgAnalyticsAccess` authorizes that
+// account before the handler runs — the id filters the data, it never authorizes it (ADR-0038).
+
 // Certified employees endpoint
-router.get('/certified-employees', (req, res, next) => analyticsController.getCertifiedEmployees(req, res, next));
+router.get('/certified-employees', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getCertifiedEmployees(req, res, next));
 
 // Membership tier endpoint
-router.get('/membership-tier', (req, res, next) => analyticsController.getMembershipTier(req, res, next));
+router.get('/membership-tier', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getMembershipTier(req, res, next));
 
 // Organization maintainers endpoint
-router.get('/organization-maintainers', (req, res, next) => analyticsController.getOrganizationMaintainers(req, res, next));
+router.get('/organization-maintainers', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrganizationMaintainers(req, res, next));
 
 // Organization contributors endpoint
-router.get('/organization-contributors', (req, res, next) => analyticsController.getOrganizationContributors(req, res, next));
+router.get('/organization-contributors', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrganizationContributors(req, res, next));
 
 // Training enrollments endpoint
-router.get('/training-enrollments', (req, res, next) => analyticsController.getTrainingEnrollments(req, res, next));
+router.get('/training-enrollments', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getTrainingEnrollments(req, res, next));
 
 // Event attendance monthly endpoint
-router.get('/event-attendance-monthly', (req, res, next) => analyticsController.getEventAttendanceMonthly(req, res, next));
+router.get('/event-attendance-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getEventAttendanceMonthly(req, res, next));
 
 // Project issues resolution endpoint
 router.get('/project-issues-resolution', (req, res, next) => analyticsController.getProjectIssuesResolution(req, res, next));
@@ -111,41 +117,55 @@ router.get('/health-events-monthly', (req, res, next) => analyticsController.get
 router.get('/code-commits-daily', (req, res, next) => analyticsController.getCodeCommitsDaily(req, res, next));
 
 // Org active contributors monthly trend endpoint (org involvement drawer)
-router.get('/org-contributors-monthly', (req, res, next) => analyticsController.getOrgContributorsMonthly(req, res, next));
+router.get('/org-contributors-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgContributorsMonthly(req, res, next));
 
 // Org active contributors project distribution endpoint (org involvement drawer)
-router.get('/org-contributors-project-distribution', (req, res, next) => analyticsController.getOrgContributorsProjectDistribution(req, res, next));
+router.get('/org-contributors-project-distribution', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.getOrgContributorsProjectDistribution(req, res, next)
+);
 
 // Org maintainers monthly trend endpoint (org maintainers drawer)
-router.get('/org-maintainers-monthly', (req, res, next) => analyticsController.getOrgMaintainersMonthly(req, res, next));
+router.get('/org-maintainers-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgMaintainersMonthly(req, res, next));
 
 // Org maintainers distribution endpoint (org maintainers drawer)
-router.get('/org-maintainers-distribution', (req, res, next) => analyticsController.getOrgMaintainersDistribution(req, res, next));
+router.get('/org-maintainers-distribution', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgMaintainersDistribution(req, res, next));
 
 // Org maintainers key members endpoint (org maintainers drawer)
-router.get('/org-maintainers-key-members', (req, res, next) => analyticsController.getOrgMaintainersKeyMembers(req, res, next));
+router.get('/org-maintainers-key-members', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgMaintainersKeyMembers(req, res, next));
 
 // Org event attendees monthly endpoint (org event attendees drawer)
-router.get('/org-event-attendees-monthly', (req, res, next) => analyticsController.getOrgEventAttendeesMonthly(req, res, next));
+router.get('/org-event-attendees-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgEventAttendeesMonthly(req, res, next));
 
 // Org event speakers monthly endpoint (org event speakers drawer)
-router.get('/org-event-speakers-monthly', (req, res, next) => analyticsController.getOrgEventSpeakersMonthly(req, res, next));
+router.get('/org-event-speakers-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.getOrgEventSpeakersMonthly(req, res, next));
 
 // Org training enrollments endpoints (org training enrollments drawer)
-router.get('/org-training-enrollments-monthly', (req, res, next) => analyticsController.getOrgTrainingEnrollmentsMonthly(req, res, next));
-router.get('/org-training-enrollments-distribution', (req, res, next) => analyticsController.getOrgTrainingEnrollmentsDistribution(req, res, next));
+router.get('/org-training-enrollments-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.getOrgTrainingEnrollmentsMonthly(req, res, next)
+);
+router.get('/org-training-enrollments-distribution', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.getOrgTrainingEnrollmentsDistribution(req, res, next)
+);
 
 // Org certified employees endpoints (org certified employees drawer)
-router.get('/org-certified-employees-monthly', (req, res, next) => analyticsController.getOrgCertifiedEmployeesMonthly(req, res, next));
-router.get('/org-certified-employees-distribution', (req, res, next) => analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next));
+router.get('/org-certified-employees-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.getOrgCertifiedEmployeesMonthly(req, res, next)
+);
+router.get('/org-certified-employees-distribution', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next)
+);
 
 // Organization involvement endpoints (cross-foundation, accountId only — org overview page)
-router.get('/org-foundation-coverage', (req, res, next) => analyticsController.orgFoundationCoverage(req, res, next));
-router.get('/org-involvement-contributors-monthly', (req, res, next) => analyticsController.orgContributorsMonthly(req, res, next));
-router.get('/org-involvement-maintainers-monthly', (req, res, next) => analyticsController.orgMaintainersMonthly(req, res, next));
-router.get('/org-involvement-event-attendance-monthly', (req, res, next) => analyticsController.orgEventAttendanceMonthly(req, res, next));
-router.get('/org-involvement-certified-employees-monthly', (req, res, next) => analyticsController.orgCertifiedEmployeesMonthly(req, res, next));
-router.get('/org-involvement-training-enrollments', (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
+router.get('/org-foundation-coverage', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgFoundationCoverage(req, res, next));
+router.get('/org-involvement-contributors-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgContributorsMonthly(req, res, next));
+router.get('/org-involvement-maintainers-monthly', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgMaintainersMonthly(req, res, next));
+router.get('/org-involvement-event-attendance-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.orgEventAttendanceMonthly(req, res, next)
+);
+router.get('/org-involvement-certified-employees-monthly', requireOrgAnalyticsAccess, (req, res, next) =>
+  analyticsController.orgCertifiedEmployeesMonthly(req, res, next)
+);
+router.get('/org-involvement-training-enrollments', requireOrgAnalyticsAccess, (req, res, next) => analyticsController.orgTrainingEnrollments(req, res, next));
 
 // Marketing-ops gated (LFXV2-2235): returns web activity summary metrics. Shared with LF Staff
 // Marketing Overview dashboard. See note above on `requireMarketingAuditorOrLfStaff`.
@@ -263,7 +283,9 @@ router.get('/marketing-attribution', requireMarketingAuditorOrLfStaff, (req, res
 // Multi-foundation summary endpoint (multi-foundation dashboard)
 router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
 
-// Org Lens — bootstrap account context (display attrs + cdev mapping + tier)
+// Org Lens — bootstrap account context (display attrs + cdev mapping + tier). Takes a batch of
+// account ids, so the handler filters it to the readable ones (`filterReadableAccountIds`) rather
+// than failing the whole bootstrap enrichment on one id.
 router.get('/org-lens-account-context', (req, res, next) => analyticsController.getOrgLensAccountContext(req, res, next));
 
 export default router;
