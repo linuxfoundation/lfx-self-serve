@@ -44,6 +44,19 @@ export class OrgClaAutoEclaWritesService {
     });
   }
 
+  /**
+   * Drops every remembered value whose write has settled. Called when a CLA list is requested: a
+   * list asked for after the write finished is the truth, including a change another CLA manager
+   * made since. Values for writes still running stay, because their list may predate the write.
+   */
+  public forgetSettled(): void {
+    const running = this.inFlight();
+    this.values.update((current) => {
+      const kept = Object.entries(current).filter(([key]) => running.has(key));
+      return kept.length === Object.keys(current).length ? current : Object.fromEntries(kept);
+    });
+  }
+
   /** Marks the agreement as writing when `write` is subscribed and clears it when it settles. */
   public track<T>(orgUid: string, signatureId: string, write: Observable<T>): Observable<T> {
     const key = this.key(orgUid, signatureId);

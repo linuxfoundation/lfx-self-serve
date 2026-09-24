@@ -1318,6 +1318,7 @@ export class OrgEasyclaDetailComponent {
       tap(() => {
         this.claLoadingState.set(true);
         this.fetchError.set(false);
+        this.autoEclaWrites.forgetSettled();
       }),
       switchMap((uid) =>
         this.claService.getClaGroups(uid).pipe(

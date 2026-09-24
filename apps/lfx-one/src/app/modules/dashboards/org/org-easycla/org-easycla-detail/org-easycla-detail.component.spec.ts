@@ -3206,6 +3206,23 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
   });
 
+  it('trusts a list fetched after the write settled over the remembered value', async () => {
+    const first = await render(row({ autoCreateEcla: false }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    first.destroy();
+
+    // Another CLA manager turned it back off before this visit.
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaValue: () => boolean };
+
+    expect(component.autoEclaValue()).toBe(false);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(2);
+  });
+
   it('shows the rolled-back value after leaving and coming back when the running write is refused', async () => {
     const answer = new Subject<{ autoCreateEcla: boolean }>();
     setAutoCreateEcla.mockReturnValue(answer.asObservable());
