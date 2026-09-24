@@ -250,7 +250,7 @@ function decodeEventAttendeesRaw(value: CompactOrgEventAttendeesRawCache): {
 }
 
 function isCompactEventAttendeesRaw(value: unknown): boolean {
-  const cache = value as CompactOrgEventAttendeesRawCache | null;
+  const cache = value as Partial<CompactOrgEventAttendeesRawCache> | null;
   if (
     !cache ||
     typeof cache !== 'object' ||

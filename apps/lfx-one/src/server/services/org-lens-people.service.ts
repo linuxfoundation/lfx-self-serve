@@ -718,7 +718,7 @@ function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
 }
 
 function isCompactAllEmployeesRaw(value: unknown): boolean {
-  const cache = value as CompactOrgAllEmployeesRawCache | null;
+  const cache = value as Partial<CompactOrgAllEmployeesRawCache> | null;
   return (
     !!cache &&
     typeof cache === 'object' &&

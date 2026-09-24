@@ -1129,7 +1129,7 @@ function decodeProjectsResponse(value: CompactOrgLensProjectsCache): OrgLensProj
 
 /** Rejects anything that isn't a current-shape compact entry, so a legacy or partial value misses instead of decoding into garbage. */
 function isCompactProjectsCache(value: unknown): boolean {
-  const cache = value as CompactOrgLensProjectsCache | null;
+  const cache = value as Partial<CompactOrgLensProjectsCache> | null;
   if (!cache || typeof cache !== 'object') {
     return false;
   }

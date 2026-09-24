@@ -261,7 +261,7 @@ function decodeContributorRows(value: CompactOrgContributorRowsCache): Contribut
 }
 
 function isCompactContributorRows(value: unknown): boolean {
-  const cache = value as CompactOrgContributorRowsCache | null;
+  const cache = value as Partial<CompactOrgContributorRowsCache> | null;
   if (!cache || typeof cache !== 'object' || !isColumnarTable(cache.projects) || !isColumnarTable(cache.rows)) {
     return false;
   }

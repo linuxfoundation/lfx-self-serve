@@ -222,7 +222,7 @@ function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
 }
 
 function isCompactTraineesRaw(value: unknown): boolean {
-  const cache = value as CompactOrgTraineesRawCache | null;
+  const cache = value as Partial<CompactOrgTraineesRawCache> | null;
   if (
     !cache ||
     typeof cache !== 'object' ||
