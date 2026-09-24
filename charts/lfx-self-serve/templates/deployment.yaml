@@ -33,6 +33,7 @@ spec:
         {{- end }}
       labels:
         {{- include "lfx-self-serve.labels" . | nindent 8 }}
+        app: {{ include "lfx-self-serve.name" . }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
