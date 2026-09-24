@@ -11,6 +11,7 @@ import {
   ORG_CLA_APPROVAL_UPDATE_MAX_ENTRIES,
   ORG_CLA_AUTHORITY_NAME_MAX_LENGTH,
   ORG_CLA_AUTHORITY_NAME_MIN_LENGTH,
+  ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE,
   ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH,
   ORG_CLA_INVALIDATION_REASONS,
   ORG_CLA_REVIEW_COPY_FILENAME,
@@ -688,6 +689,12 @@ export class OrgClasController {
       if (result.outcome === 'forbidden') {
         logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, can_edit: false });
         res.status(403).json({ message: 'Only a CLA manager named on this CLA can invalidate acknowledgments' });
+        return;
+      }
+
+      if (result.outcome === 'not-approved') {
+        logger.success(req, 'invalidate_org_cla_acknowledgment', startTime, { org_uid: orgUid, signature_id: signatureId, approved: false });
+        res.status(409).json({ message: ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE });
         return;
       }
 

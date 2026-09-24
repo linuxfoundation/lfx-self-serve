@@ -2146,7 +2146,7 @@ function upstreamManager(overrides: Record<string, unknown> = {}): Record<string
  * `getApprovalList` and `getPdfUrl`), then paginates via the producer's `nextKey`. The mapper
  * carries the invariants the shared contract states: never drop a row for a missing LF Login,
  * treat `github_id` and `gitlab_id` as display logins, and normalize `signature_version` to a
- * `v`-prefixed string with an empty passthrough for the em-dash fallback at the row.
+ * `v`-prefixed string.
  */
 function contributor(overrides: Partial<EasyClaCorporateContributor> = {}): EasyClaCorporateContributor {
   return {
@@ -2729,7 +2729,7 @@ describe('OrgClaService.getContributorAcknowledgments — the answer shape', () 
 
 describe('OrgClaService.getContributorAcknowledgments — the identity fallback', () => {
   // Parent story #1973 AC1 requires every acknowledged contributor to be visible. A row with any
-  // one of LF Login / GitHub / GitLab / email / DocuSign name populated must render, because the
+  // one of LF Login / GitHub / GitLab / email / name populated must render, because the
   // corporate console shows every one of them today.
   it('never drops a row when LF Login is absent — a GitHub-only contributor survives', async () => {
     stageAckRead(contributorPage({ list: [contributor({ linux_foundation_id: '', github_id: 'gh-only', email: '' })] }));
@@ -2750,15 +2750,14 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]).toMatchObject({ githubUsername: 'gh-login', gitlabUsername: 'gl-login' });
   });
 
-  it('falls through a blank name and a blank signed date to the creation time, not the last modification', async () => {
+  it('falls through a blank signed date to the creation time, not the last modification', async () => {
     // Invalidation refreshes signatureModified. Using it as Acknowledged On would show the
     // invalidation instant for a row the producer recorded with no DocuSign date.
     stageAckRead(
       contributorPage({
         list: [
           contributor({
-            name: '   ',
-            userDocusignName: 'Ada Lovelace',
+            name: 'Ada Lovelace',
             userDocusignDateSigned: '  ',
             timestamp: '2026-01-02T00:00:00Z',
             signatureModified: '2026-04-01T00:00:00Z',
@@ -2784,23 +2783,20 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(list?.list[0]?.signedOn).toBeUndefined();
   });
 
-  it('prefers the DocuSign name when the profile name differs', async () => {
-    // The producer puts the profile name (or username) on `name` and the name on the DocuSign
-    // document on `userDocusignName`. The shared contract's `name` is the signing name, so a
-    // row that carries both must surface the DocuSign one.
-    stageAckRead(contributorPage({ list: [contributor({ name: 'ada', userDocusignName: 'Ada Lovelace' })] }));
+  it('never reads the DocuSign name, which is not an identity on an acknowledgment', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: 'Someone Else' })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
     expect(list?.list[0]?.name).toBe('Ada Lovelace');
   });
 
-  it('keeps the profile name when no DocuSign name was recorded', async () => {
-    stageAckRead(contributorPage({ list: [contributor({ name: 'Ada Lovelace', userDocusignName: '   ' })] }));
+  it('leaves the name empty when only a DocuSign name was recorded', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ name: '   ', userDocusignName: 'Ada Lovelace' })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
 
-    expect(list?.list[0]?.name).toBe('Ada Lovelace');
+    expect(list?.list[0]?.name).toBeUndefined();
   });
 
   it('trims and drops empty attributes to undefined so the row renders an em-dash rather than an empty string', async () => {
@@ -2837,7 +2833,7 @@ describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () 
     expect(list?.list[0]?.cclaVersion).toBe('v1');
   });
 
-  it('passes an empty version through as an empty string so the row renders an em-dash', async () => {
+  it('passes an empty version through as an empty string', async () => {
     stageAckRead(contributorPage({ list: [contributor({ signature_version: '' })] }));
 
     const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
@@ -2846,9 +2842,89 @@ describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () 
   });
 });
 
+describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () => {
+  async function mapped(overrides: Partial<EasyClaCorporateContributor>) {
+    stageAckRead(contributorPage({ list: [contributor(overrides)] }));
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+    return list?.list[0];
+  }
+
+  it('marks an approval-list removal Not Authorized, with the criteria the producer names', async () => {
+    const row = await mapped({ signatureApproved: false, invalidationReason: 'approved list removal (Email Domain Criteria)' });
+
+    expect(row).toMatchObject({ removedFromApprovalList: true, removedCriteria: 'Email Domain Criteria' });
+  });
+
+  it('marks an approval-list removal without criteria Not Authorized', async () => {
+    const row = await mapped({ signatureApproved: false, invalidationReason: 'approved list removal' });
+
+    expect(row?.removedFromApprovalList).toBe(true);
+    expect(row?.removedCriteria).toBeUndefined();
+  });
+
+  it('reads the removal from the note on a record that predates the invalidation reason', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      note: 'Signature invalidated (approved set to false) by cla-manager due to GitHub Org Criteria  removal',
+    });
+
+    expect(row).toMatchObject({ removedFromApprovalList: true, removedCriteria: 'GitHub Org Criteria' });
+  });
+
+  it('reads only the latest invalidation in an accumulated note', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      note:
+        'Signature invalidated (approved set to false) by cla-manager due to Email Domain Criteria  removal ' +
+        'Signature invalidated (approved set to false) by cla-manager for contributor ',
+    });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+
+  it.each([
+    ['repeated clauses', `Signature invalidated (approved set to false) by cla-manager${' due to x'.repeat(2000)}`],
+    ['a long whitespace run', `Signature invalidated (approved set to false) by cla-manager due to x${' '.repeat(10000)}x`],
+  ])('rejects a long legacy note with %s promptly', async (_label, note) => {
+    const started = performance.now();
+    const row = await mapped({ signatureApproved: false, note });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+    expect(performance.now() - started).toBeLessThan(250);
+  });
+
+  it.each([
+    ['a manager invalidation reason', { invalidationReason: 'left the company' }],
+    ['a CLA Group deletion note', { note: 'Signature invalidated (approved set to false) by pcc-admin due to CLA Group/Project: p-1 deletion' }],
+    ['a manual invalidation note', { note: 'Signature invalidated (approved set to false) by cla-manager for contributor ' }],
+    ['no evidence at all', {}],
+  ])('does not mark %s Not Authorized', async (_label, overrides) => {
+    const row = await mapped({ signatureApproved: false, ...overrides });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+
+  it('keeps a manager invalidation reason Invalidated even when a later removal note is present', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      invalidationReason: 'left the company',
+      note: 'Signature invalidated (approved set to false) by cla-manager due to Email Criteria  removal',
+    });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+    expect(row?.removedCriteria).toBeUndefined();
+  });
+
+  it('never marks an approved row Not Authorized', async () => {
+    const row = await mapped({ signatureApproved: true, invalidationReason: 'approved list removal (Email Domain Criteria)' });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+  });
+});
+
 describe('OrgClaService.getContributorAcknowledgments — malformed producer rows', () => {
   it.each([
-    ['null', null],
+    ['null beside a non-zero row count', null],
     ['omitted', undefined],
     ['an empty string', ''],
   ])('rejects a contributor page whose list is %s rather than showing an empty agreement', async (_label, list) => {
@@ -2858,6 +2934,16 @@ describe('OrgClaService.getContributorAcknowledgments — malformed producer row
       statusCode: 502,
       code: 'UPSTREAM_INVALID_RESPONSE',
     });
+  });
+
+  // The producer's real empty page: its v2 handler copies the result with `copier.Copy`, which
+  // turns an empty slice into nil, so the wire body is `list: null` with zero counts.
+  it('reads the producer’s null list with a zero row count as an empty page', async () => {
+    stageAckRead(contributorPage({ list: null, resultCount: 0, totalCount: 0 }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list).toMatchObject({ list: [], resultCount: 0, totalCount: 0, nextKey: null });
   });
 
   it('keeps an empty array as an empty page', async () => {
@@ -3104,6 +3190,26 @@ describe('OrgClaService.invalidateAcknowledgment — the producer call', () => {
       expect.any(String),
       expect.objectContaining({ body: { reason: 'should-be-corporate', note: 'moved to the corporate agreement' } })
     );
+  });
+
+  it('answers not-approved when the producer refuses an acknowledgment that is not approved', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+    gatewayFetch.mockResolvedValueOnce(contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] }));
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to invalidate the acknowledgment: 409 Conflict', 409, 'UPSTREAM_ERROR', { service: 'cla_service' })
+    );
+
+    expect(await new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).toEqual({ outcome: 'not-approved' });
+  });
+
+  it('rethrows any other producer failure', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ claManagers: [{ userID: 'u1', lfUsername: 'aporter' }] })));
+    gatewayFetch.mockResolvedValueOnce(contributorPage({ list: [contributor({ signatureID: 'ecla-sig-1' })] }));
+    gatewayFetch.mockRejectedValueOnce(
+      new MicroserviceError('Failed to invalidate the acknowledgment: 500', 500, 'UPSTREAM_ERROR', { service: 'cla_service' })
+    );
+
+    await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({ statusCode: 500 });
   });
 
   it('omits a blank note rather than storing an empty reason string on the signature', async () => {

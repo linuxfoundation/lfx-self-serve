@@ -1294,25 +1294,40 @@ export class OrgClaService {
 
     // PUT, not POST: the producer declares this operation as `put` on
     // `/v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`.
-    const upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
-      {
-        method: 'PUT',
-        body,
-        operation: 'org_cla_invalidate_acknowledgment',
-        service: SERVICE,
-        errorMessage: 'Failed to invalidate the acknowledgment',
-        errorCode: 'UPSTREAM_ERROR',
-        // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
-        // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
-        // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
-        // would be the one writing identities out.
-        redactResponseBody: true,
-        // No `bearerToken` override: the route blocks this path during impersonation, so there is
-        // no impersonated identity to forward. A write must run as the acting user.
+    let upstream: EasyClaEclaInvalidateResult | null;
+    try {
+      upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+        {
+          method: 'PUT',
+          body,
+          operation: 'org_cla_invalidate_acknowledgment',
+          service: SERVICE,
+          errorMessage: 'Failed to invalidate the acknowledgment',
+          errorCode: 'UPSTREAM_ERROR',
+          // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
+          // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
+          // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
+          // would be the one writing identities out.
+          redactResponseBody: true,
+          // No `bearerToken` override: the route blocks this path during impersonation, so there is
+          // no impersonated identity to forward. A write must run as the acting user.
+        }
+      );
+    } catch (error) {
+      // The producer refuses any acknowledgment that is not approved with 409 — a Not Authorized
+      // row, or one invalidated since the list was read.
+      if (error instanceof MicroserviceError && error.statusCode === 409) {
+        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment is not approved, so the producer refused the invalidate', {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          acknowledgment_signature_id: acknowledgmentSignatureId,
+        });
+        return { outcome: 'not-approved' };
       }
-    );
+      throw error;
+    }
 
     if (!upstream || typeof upstream !== 'object') {
       throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
@@ -1665,9 +1680,14 @@ export class OrgClaService {
       });
     }
 
-    // A missing, null, or non-array list is a malformed body, not an empty page. Truthiness would
-    // let those through, and the mapper would render them as "no acknowledgments yet". An empty
-    // array is the real empty page and passes this check. Same rule as the organization-list read.
+    // The producer serializes an empty page as `list: null`, not `[]`: its v2 handler copies the
+    // result with `copier.Copy`, which turns an empty slice into nil. So `null` is the empty page
+    // only when the producer's own row count for the page agrees. A missing or non-array list, or
+    // `null` beside a non-zero count, is still malformed — rendering those as "no acknowledgments
+    // yet" would hide a real failure.
+    if (upstream.list === null && upstream.resultCount === 0) {
+      return { ...upstream, list: [] };
+    }
     if (!Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch the contributor acknowledgments: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
@@ -1746,7 +1766,7 @@ const CONTRIBUTOR_ACK_VERIFY_MAX_PAGES = 100;
 /**
  * Result of a per-acknowledgment invalidate (#1986, #2807).
  *
- * Mirrors `OrgClaApprovalUpdateOutcome`: three ordinary refusals map to three distinct HTTP
+ * Mirrors `OrgClaApprovalUpdateOutcome`: four ordinary refusals map to four distinct HTTP
  * answers and only `invalidated` carries a receipt. Impersonation is refused by middleware before
  * this union is reachable.
  */
@@ -1754,7 +1774,8 @@ export type OrgClaInvalidateAcknowledgmentOutcome =
   | { outcome: 'invalidated'; result: OrgClaInvalidateAcknowledgmentResult }
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
-  | { outcome: 'forbidden' };
+  | { outcome: 'forbidden' }
+  | { outcome: 'not-approved' };
 
 /**
  * Result of an approval-list write.
@@ -1805,15 +1826,14 @@ export interface ContributorAcknowledgmentQuery {
  * mapper carries them forward as `githubUsername` / `gitlabUsername` for that reason.
  *
  * `approved` defaults to `true` when the producer omits it — the field was added later and older
- * rows predate it. `name` is the DocuSign signing name: the producer stores that on
- * `userDocusignName` and puts the profile name (or, when that is empty, the username) on `name`,
- * so a row that has both can disagree. Prefer the DocuSign field and keep `name` as the fallback
- * for rows recorded before that field existed. `signedOn` prefers `userDocusignDateSigned` (a
- * signing timestamp) and falls back to `timestamp` (the signature's creation time). It does not
- * use `signatureModified`: an invalidation refreshes that field, so it would show the
- * invalidation instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed
- * string; a value already prefixed with `v`/`V` is returned unchanged, an empty version stays
- * empty so the row renders an em-dash.
+ * rows predate it. `name` is the producer's `name`, never `userDocusignName`: an acknowledgment is
+ * not signed through DocuSign, so that field is not an identity for it. `signedOn` is
+ * `userDocusignDateSigned` despite its name: the producer fills it with the DocuSign date when one
+ * exists and with the creation time otherwise, which for an acknowledgment is when the employee
+ * acknowledged. `timestamp` (the creation time) is the fallback when that is blank. It does not use
+ * `signatureModified`: an invalidation refreshes that field, so it would show the invalidation
+ * instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed string; a value already
+ * prefixed with `v`/`V` is returned unchanged, and an empty version stays empty.
  */
 function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefined | null): OrgClaContributorAcknowledgment | null {
   const signatureId = row?.signatureID?.trim() ?? '';
@@ -1830,13 +1850,14 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
     email: nonEmpty(row?.email),
-    name: nonEmpty(row?.userDocusignName) ?? nonEmpty(row?.name),
+    name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),
     invalidationReason: nonEmpty(row?.invalidationReason),
+    ...approvalListRemoval(row),
   };
 }
 
@@ -1844,13 +1865,45 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
  * Normalizes a producer `signature_version` to a `v`-prefixed string.
  *
  * A value already prefixed with `v`/`V` is returned unchanged (so `v1` stays `v1` — never `vv1`);
- * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty so the row's render
- * site can substitute an em-dash.
+ * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty.
  */
 function normalizeCclaVersion(value: string | undefined): string {
   const trimmed = value?.trim() ?? '';
   if (!trimmed) return '';
   return /^v/i.test(trimmed) ? trimmed : `v${trimmed}`;
+}
+
+const APPROVAL_LIST_REMOVAL_REASON = /^approved list removal(?:\s*\((.*)\))?$/i;
+const LEGACY_INVALIDATION_NOTE = 'signature invalidated (approved set to false)';
+const LEGACY_APPROVAL_LIST_REMOVAL_NOTE = /^signature invalidated \(approved set to false\) by (?:(?! due to ).)* due to (.{1,100}?)\s+removal\b/i;
+
+/**
+ * Whether an unapproved acknowledgment lost its approval-list criteria rather than being
+ * invalidated on purpose, and which criteria.
+ *
+ * The producer marks an approval-list removal with the reason `approved list removal (<criteria>)`.
+ * Records from before that reason existed carry only the note
+ * `Signature invalidated (approved set to false) by <user> due to <criteria>  removal`; notes
+ * accumulate, so only the latest invalidation entry is read. An approved row is never a removal.
+ */
+function approvalListRemoval(
+  row: EasyClaCorporateContributor | undefined | null
+): Pick<OrgClaContributorAcknowledgment, 'removedFromApprovalList' | 'removedCriteria'> {
+  if (row?.signatureApproved !== false) return { removedFromApprovalList: false };
+
+  const reason = row.invalidationReason?.trim() ?? '';
+  if (reason) {
+    const match = APPROVAL_LIST_REMOVAL_REASON.exec(reason);
+    if (!match) return { removedFromApprovalList: false };
+    const criteria = match[1]?.trim();
+    return { removedFromApprovalList: true, ...(criteria ? { removedCriteria: criteria } : {}) };
+  }
+
+  const note = row.note ?? '';
+  const latest = note.slice(Math.max(0, note.toLowerCase().lastIndexOf(LEGACY_INVALIDATION_NOTE)));
+  const legacy = LEGACY_APPROVAL_LIST_REMOVAL_NOTE.exec(latest);
+  if (!legacy) return { removedFromApprovalList: false };
+  return { removedFromApprovalList: true, removedCriteria: legacy[1].trim() };
 }
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */
