@@ -4,6 +4,7 @@
 import { Request, NextFunction } from 'express';
 import {
   HEALTH_METRICS_RANGES,
+  MAX_SNOWFLAKE_PAGINATION_PAGE,
   MONTH_FORMAT_REGEX,
   AKRITES_ESCALATION_PATHS,
   AKRITES_INACTIVE_REASON_OPTIONS,
@@ -192,6 +193,29 @@ export function validateRequiredParameter<T>(
 export function getStringQueryParam(req: Request, name: string): string | undefined {
   const value = req.query[name];
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Truncates `value` to an integer within `[min, max]`; non-finite input (NaN, ±Infinity) returns `fallback`.
+ * Values interpolated into SQL as literals (Snowflake cannot bind `LIMIT`/`OFFSET`) must pass through this.
+ */
+export function clampInteger(value: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(value)) return fallback;
+
+  return Math.min(Math.max(Math.trunc(value), min), max);
+}
+
+/**
+ * Parses `pageSize`/`offset` query params for an offset-paginated Snowflake read. An out-of-range or
+ * non-numeric `pageSize` falls back to the default; `offset` is clamped to `[0, MAX_SNOWFLAKE_PAGINATION_PAGE × pageSize]`
+ * so the interpolated literal can never be one Snowflake rejects.
+ */
+export function parseOffsetPagination(req: Request, options: { defaultPageSize: number; maxPageSize: number }): { pageSize: number; offset: number } {
+  const rawPageSize = Math.trunc(Number(req.query['pageSize'] ?? options.defaultPageSize));
+  const pageSize = rawPageSize > 0 && rawPageSize <= options.maxPageSize ? rawPageSize : options.defaultPageSize;
+  const offset = clampInteger(Number(req.query['offset'] ?? 0), 0, MAX_SNOWFLAKE_PAGINATION_PAGE * pageSize, 0);
+
+  return { pageSize, offset };
 }
 
 /**

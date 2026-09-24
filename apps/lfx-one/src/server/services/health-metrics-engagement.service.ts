@@ -15,6 +15,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_RANGES,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementGroupAttendance,
@@ -46,6 +47,7 @@ import type {
 import { BaseApiError } from '../errors/base.error';
 import { MicroserviceError } from '../errors/microservice.error';
 import { getCodeForStatus } from '../helpers/http-status.helper';
+import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
 
@@ -516,7 +518,11 @@ export class HealthMetricsEngagementService {
         });
       }
 
-      if (!(error instanceof BaseApiError) || error.clientMessage) throw error;
+      // SnowflakeService's own generic sentence is replaced by this widget's; any other client message
+      // was chosen by the site that threw it and passes through untouched.
+      const hasSiteClientMessage =
+        error instanceof BaseApiError && error.clientMessage !== undefined && error.clientMessage !== SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE;
+      if (!(error instanceof BaseApiError) || hasSiteClientMessage) throw error;
 
       throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
         operation: error.operation,
@@ -770,10 +776,4 @@ function toIsoDate(value: Date | string | null): string | null {
   if (!value) return null;
 
   return value instanceof Date ? value.toISOString().slice(0, 10) : String(value).slice(0, 10);
-}
-
-function clampInteger(value: number, min: number, max: number, fallback: number): number {
-  if (!Number.isFinite(value)) return fallback;
-
-  return Math.min(Math.max(Math.trunc(value), min), max);
 }

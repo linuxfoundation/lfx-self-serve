@@ -21,6 +21,9 @@ vi.mock('./snowflake.service', () => ({
 vi.mock('./logger.service', () => ({
   logger: { startOperation: vi.fn(() => 0), success: vi.fn(), warning, error: loggerError, debug: vi.fn(), info: vi.fn() },
 }));
+// validation.helper (clampInteger) imports `@lfx-one/shared/utils`, whose barrel pulls Angular and cannot
+// load outside a test bed; see validation.helper.spec.ts. The real clampInteger is what runs here.
+vi.mock('@lfx-one/shared/utils', () => ({}));
 
 import {
   HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_DEFAULT,
@@ -31,6 +34,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
+  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -240,6 +244,7 @@ describe('HealthMetricsEngagementService', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_GROUP_ATTENDANCE' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -281,6 +286,22 @@ describe('HealthMetricsEngagementService', () => {
     const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
 
     expect(error.toResponse()['error']).toBe('Try again shortly.');
+  });
+
+  // An open circuit throws before the query runs, with no client message of its own.
+  it('rewraps a Snowflake error that carries no client message, such as an open circuit', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError('Snowflake circuit breaker OPEN — retrying in 42s', 503, 'SNOWFLAKE_CIRCUIT_OPEN', {
+        operation: 'circuit_breaker_check',
+        service: 'snowflake',
+      })
+    );
+
+    const error = (await service.getGroupAttendance(req, query()).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Group attendance is unavailable right now.');
+    expect(error.code).toBe('SERVICE_UNAVAILABLE');
+    expect(error.toResponse()).not.toHaveProperty('service');
   });
 
   it('rethrows any other Snowflake failure rather than reporting an empty foundation', async () => {
@@ -437,6 +458,7 @@ describe('HealthMetricsEngagementService.getMeetingParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_MEETING_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -595,6 +617,7 @@ describe('HealthMetricsEngagementService.getOrgParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_ORG_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -736,6 +759,7 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_NON_MEMBER_PARTICIPATION' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);
@@ -913,6 +937,7 @@ describe('HealthMetricsEngagementService.getRepresentatives', () => {
       new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
         operation: 'snowflake_execute',
         service: 'snowflake',
+        clientMessage: SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
       })
     );
     isMissingObjectError.mockReturnValue(true);

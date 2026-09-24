@@ -654,10 +654,10 @@ export class AnalyticsController {
 ### Best Practices for Callers
 
 1. **Lazy Initialization**: Create `SnowflakeService` instances on-demand to avoid startup overhead
-2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input
+2. **Parameterized Queries**: Always use `?` placeholders with bind parameters - never concatenate user input. `LIMIT`/`OFFSET` are the one exception — Snowflake cannot bind them — so interpolate only values bounded by `parseOffsetPagination` (HTTP layer) or `clampInteger` (service layer), capped at `MAX_SNOWFLAKE_PAGINATION_PAGE` (see Common Issues §5)
 3. **Date Handling**: Pass `Date` objects directly as bind parameters - they're automatically converted to ISO strings
 4. **Type Safety**: Define TypeScript interfaces for query result rows
-5. **Error Handling**: Catch and handle Snowflake-specific errors appropriately
+5. **Error Handling**: Catch and handle Snowflake-specific errors appropriately. Errors from `SnowflakeService` already carry the generic `SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as `clientMessage`; replace it with a more specific one if needed, never with the SDK text or `message`
 6. **Query Optimization**: Use specific column selection, appropriate WHERE clauses, and leverage Snowflake features
 7. **Logic Ownership**: Define metrics and reusable transformations in [`lf-dbt`](https://github.com/linuxfoundation/lf-dbt); application queries retrieve the modeled columns
 
@@ -875,6 +875,26 @@ Solution:
   3. Review application logic for query construction
 ```
 
+#### 5. Out-of-Range LIMIT/OFFSET
+
+```text
+Error: Snowflake query execution failed: SQL compilation error: Invalid row count '…' in result offset clause
+Cause: An out-of-range LIMIT (002010) or OFFSET (002011) literal — Snowflake cannot bind either, so both are interpolated
+Solution:
+  1. Bound pagination at the HTTP layer with parseOffsetPagination / clampInteger (helpers/validation.helper.ts),
+     capped at MAX_SNOWFLAKE_PAGINATION_PAGE pages
+```
+
+This is a request fault, not a Snowflake outage, so it does not count toward the circuit breaker; like a full pool
+queue, it only frees the HALF_OPEN probe slot. Every other compilation error still counts — including "does not
+exist or not authorized", which can mean a revoked GRANT — unless the caller passed `expectMissingObject` (or
+`expectInvalidIdentifier`). `SnowflakeService` then records a success, so that caller must alert on the error itself.
+
+Every `SNOWFLAKE_QUERY_ERROR` / `SNOWFLAKE_CONNECTION_ERROR` that `SnowflakeService` throws carries the generic
+`SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE` as its `clientMessage` (a caller may replace it with a more specific one); the
+SDK text stays in `message` (which callers such as `isMissingObjectError` match on) and in the logs, never in the
+response body.
+
 ## 🎯 Best Practices
 
 ### Performance Optimization
@@ -919,7 +939,7 @@ Solution:
 
 3. **Query Validation**:
    - Always use parameterized queries
-   - Never concatenate user input into SQL
+   - Never concatenate user input into SQL; the only interpolated values are `LIMIT`/`OFFSET`, bounded by `parseOffsetPagination` / `clampInteger`
    - Validate input data types
    - Log all query attempts with context
 

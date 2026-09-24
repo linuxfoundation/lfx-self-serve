@@ -6,7 +6,7 @@ import type { GetOrgEventsOptions } from '@lfx-one/shared/interfaces';
 import type { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, ServiceValidationError } from '../errors';
-import { getStringQueryParam } from '../helpers/validation.helper';
+import { getStringQueryParam, parseOffsetPagination } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { OrgLensEventsService } from '../services/org-lens-events.service';
 import { getEffectiveEmail } from '../utils/auth-helper';
@@ -56,15 +56,12 @@ export class OrgLensEventsController {
         throw new AuthenticationError('User authentication required', { operation: 'get_org_lens_events' });
       }
 
-      const rawPageSize = Math.trunc(Number(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE));
-      const rawOffset = Math.trunc(Number(req.query['offset'] ?? 0));
+      const { pageSize, offset } = parseOffsetPagination(req, { defaultPageSize: DEFAULT_EVENTS_PAGE_SIZE, maxPageSize: MAX_EVENTS_PAGE_SIZE });
       const rawSortOrder = String(req.query['sortOrder'] ?? 'ASC').toUpperCase();
       const rawIsPast = req.query['isPast'];
       const rawStatus = getStringQueryParam(req, 'status');
       const rawSortField = getStringQueryParam(req, 'sortField') ?? 'EVENT_START_DATE';
 
-      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
-      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
       const sortOrder = rawSortOrder === 'DESC' ? 'DESC' : 'ASC';
       const isPast = rawIsPast === 'true';
       const status = rawStatus && VALID_ORG_EVENT_STATUS_VALUES.has(rawStatus) ? rawStatus : null;
