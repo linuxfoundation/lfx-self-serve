@@ -12,6 +12,7 @@ import { CommitteeMemberVotingStatus, MeetingVisibility } from '@lfx-one/shared/
 import { CANCEL_ON_COMMITTEE_REMOVAL_OPTIONS, COMMITTEE_LABEL, MEETING_VOTING_STATUSES } from '@lfx-one/shared/constants';
 import {
   fromMeetingApiVotingStatuses,
+  isShowMeetingAttendeesLocked,
   meetingSelectionHasVotingFilter,
   sanitizeMeetingCommittees,
   sanitizeMeetingCommitteeUids,
@@ -20,7 +21,7 @@ import {
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, filter, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, forkJoin, ignoreElements, map, merge, Observable, of, startWith, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -50,6 +51,16 @@ export class MeetingCommitteeManagerComponent {
   public readonly contextLoading = input<boolean>(false);
   /** Whether the caller's {@link committeeContext} lookup failed, so the scoping group is missing. */
   public readonly contextFailed = input<boolean>(false);
+  /**
+   * The organizer's saved decision about sharing the guest list, or `null` when there is none.
+   * @description The decision cannot be read off the form: a create nobody has touched and a
+   * meeting whose organizer switched sharing off both present as `false`. Only the loaded meeting
+   * says which, so the caller resolves it with `getSavedAttendeeVisibility` and passes the answer.
+   * Without it, a group default silently turns sharing back on for a meeting deliberately saved
+   * with it off — hydration emits nothing this component could see, because both callers mount it
+   * only once the load has settled.
+   */
+  public readonly savedAttendeeVisibility = input<boolean | null>(null);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
@@ -105,6 +116,42 @@ export class MeetingCommitteeManagerComponent {
    * no way to ask again without leaving the composer.
    */
   private readonly optionsRetryToken = signal(0);
+
+  /**
+   * Last known board/restricted lock for the attendees toggle.
+   * @description `applyCommitteeAttendeePreference` must re-run when the lock lifts so a skipped
+   * committee preference is not dropped, but not when the organizer switches between unlocked
+   * types — that would turn the toggle back on after they explicitly turned it off.
+   */
+  private attendeeVisibilityLocked = false;
+
+  /**
+   * Whether the attendees toggle is currently holding a committee's preference rather than a
+   * value of the organizer's own.
+   * @description The unlock may only put back what this component itself applied or was stopped
+   * from applying. Reading the control instead cannot work: the lock writes `false` too, and a
+   * saved `false` an organizer chose on an earlier visit looks exactly like one the lock just
+   * wrote — restoring on that reading would silently re-share a roster they had turned off.
+   *
+   * Set when a committee preference is applied or withheld by the lock; cleared as soon as the
+   * organizer edits the toggle or the selection stops carrying the preference. An emission on
+   * that control counts as an organizer edit only when the control is dirty and
+   * {@link applyingAttendeeWrite} is not set — hydration patches it loudly too. See
+   * {@link watchAttendeeEdits}.
+   */
+  private committeeOwnsAttendeeToggle = false;
+
+  /**
+   * The organizer's own edit to the toggle since the form was last hydrated, or `null` if they
+   * have not made one.
+   * @description Read through {@link organizerAttendeeChoice}, which falls back to the saved value
+   * so an edit session starts from the decision the meeting already carries. Seeded from the
+   * control by {@link seedSessionAttendeeChoice}, because an edit can predate this component.
+   */
+  private sessionAttendeeChoice: boolean | null = null;
+
+  /** Guards the flags above against this component's own writes. */
+  private applyingAttendeeWrite = false;
 
   /**
    * Emission gate for `committeeMembersChange`.
@@ -190,16 +237,46 @@ export class MeetingCommitteeManagerComponent {
 
         // Clear voting statuses if no voting committees selected. Reads the same signal the roster
         // filter does, so a missing option list cannot clear a filter the filter itself still honours.
-        const committees = this.committeeOptions();
         if (!this.hasVotingEnabledCommittee()) {
           this.committeeForm.patchValue({ votingStatuses: [] }, { emitEvent: false });
           this.selectedVotingStatuses.set([]);
         }
 
-        // If any selected committee has show_meeting_attendees enabled, toggle it on for the meeting
-        const hasShowMeetingAttendees = committees.some((c) => ids.includes(c.uid) && c.show_meeting_attendees === true);
-        if (hasShowMeetingAttendees) {
-          this.form().get('show_meeting_attendees')?.setValue(true);
+        this.applyCommitteeAttendeePreference();
+      });
+
+    toObservable(this.form)
+      .pipe(
+        switchMap((form) => {
+          const meetingTypeControl = form.get('meeting_type');
+          const restrictedControl = form.get('restricted');
+          if (!meetingTypeControl || !restrictedControl) {
+            return EMPTY;
+          }
+          this.attendeeVisibilityLocked = isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value);
+          this.seedSessionAttendeeChoice(form, this.attendeeVisibilityLocked);
+          return merge(
+            merge(meetingTypeControl.valueChanges, restrictedControl.valueChanges).pipe(
+              map(() => isShowMeetingAttendeesLocked(meetingTypeControl.value, restrictedControl.value))
+            ),
+            this.watchAttendeeEdits(form)
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((locked) => {
+        const wasLocked = this.attendeeVisibilityLocked;
+        this.attendeeVisibilityLocked = locked;
+        if (!wasLocked || locked) {
+          return;
+        }
+        // The organizer's own value outranks a committee's: the lock wrote `false` over it
+        // silently, so putting it back is undoing the lock, not making a choice for them.
+        if (this.restoreOrganizerAttendeeChoice()) {
+          return;
+        }
+        if (this.committeeOwnsAttendeeToggle) {
+          this.applyCommitteeAttendeePreference();
         }
       });
 
@@ -392,6 +469,134 @@ export class MeetingCommitteeManagerComponent {
       this.selectedVotingStatuses.set([]);
     }
     this.updateParentForm(ids, options);
+  }
+
+  /**
+   * Watches the organizer's own edits to the attendees toggle, handing ownership of the value
+   * back to them.
+   * @description Only a dirty control counts. An emission alone does not mean the organizer did
+   * anything: hydration patches this control loudly, and on a locked meeting it patches the very
+   * stale `true` that {@link getSavedAttendeeVisibility} exists to discard, moments before the
+   * lock silently forces it back off. Recording that as their choice would let the unlock
+   * resurrect it through this cache instead of through the saved value, bypassing the guard
+   * entirely. The toggle binds through `formControlName`, so a human flipping it marks the
+   * control dirty and a programmatic patch does not — that, not the emission, is the signal.
+   *
+   * Read `dirty` as "edited since this control was last hydrated", not as "a human flipped it at
+   * some point": the flag is sticky, and both hosts mark every control dirty in bulk when a
+   * submit fails. They each mark this one pristine before hydrating to keep the reading true, and
+   * {@link applyingAttendeeWrite} still covers this component's own writes, which land on whatever
+   * dirty state the form happens to be in.
+   *
+   * Returned as part of the lock stream rather than subscribed on the side, so the `switchMap`
+   * tears it down when the form input is replaced; a side subscription would outlive its control
+   * and accumulate one per form. `ignoreElements` keeps it a side effect: the edits are the
+   * point, the emissions are not.
+   */
+  private watchAttendeeEdits(form: FormGroup): Observable<never> {
+    const attendeesControl = form.get('show_meeting_attendees');
+    if (!attendeesControl) {
+      return EMPTY;
+    }
+    return attendeesControl.valueChanges.pipe(
+      tap((value) => {
+        if (!this.applyingAttendeeWrite && attendeesControl.dirty) {
+          this.committeeOwnsAttendeeToggle = false;
+          this.sessionAttendeeChoice = value === true;
+        }
+      }),
+      ignoreElements()
+    );
+  }
+
+  /**
+   * Picks up an organizer edit that predates this component.
+   * @description The composer renders the Guests section under an `@switch`, so leaving it and
+   * coming back destroys and rebuilds this component while the form — and the edit on it — lives
+   * on in the host's form service. A rebuilt instance starting at `null` would read their opt-out
+   * as "no decision" and let the next group default turn sharing back on, which is the case
+   * {@link organizerAttendeeChoice} exists to prevent.
+   *
+   * The control already carries the answer. `dirty` is the same evidence {@link watchAttendeeEdits}
+   * records an edit on, so a dirty control at mount means its value is the organizer's, made since
+   * the last hydration. A pristine one clears the field rather than leaving it, so replacing the
+   * form input does not carry a previous meeting's decision into the new one.
+   *
+   * Never while locked, though: `syncShowMeetingAttendeesLock` writes `false` and disables the
+   * control without clearing `dirty`, so a locked control reads as an opt-out no matter what the
+   * organizer actually chose. Seeding there would turn an opt-in into a phantom `false` that
+   * outranks the saved value and every group default for the rest of the session, and no unlock
+   * would undo it. A locked mount reports no decision instead — the same answer
+   * {@link getSavedAttendeeVisibility} gives the hosts for a locked meeting, and for the same
+   * reason: while the lock is on, nothing the form holds is evidence of a choice.
+   */
+  private seedSessionAttendeeChoice(form: FormGroup, locked: boolean): void {
+    const control = form.get('show_meeting_attendees');
+    this.sessionAttendeeChoice = control?.dirty && !locked ? control.value === true : null;
+  }
+
+  /**
+   * The organizer's standing decision for this meeting, or `null` if they have not made one.
+   * @description Their edit in this session if there is one, otherwise what the meeting was saved
+   * with — a value the caller has already qualified, so a forced or stale saved flag arrives as
+   * `null` rather than as a choice. Reading the lock here instead would sample it at whatever
+   * moment this component happened to be asked, and the manage page mounts the picker against an
+   * empty form well before the meeting it describes has loaded.
+   */
+  private organizerAttendeeChoice(): boolean | null {
+    return this.sessionAttendeeChoice ?? this.savedAttendeeVisibility();
+  }
+
+  /** Puts back an organizer's own `true` that the lock overwrote. Reports whether it applied. */
+  private restoreOrganizerAttendeeChoice(): boolean {
+    if (this.organizerAttendeeChoice() !== true) {
+      return false;
+    }
+    this.setAttendeeVisibility(true);
+    this.committeeOwnsAttendeeToggle = false;
+    return true;
+  }
+
+  /** Writes the toggle without the write being mistaken for an organizer edit. */
+  private setAttendeeVisibility(value: boolean): void {
+    const control = this.form().get('show_meeting_attendees');
+    if (!control || control.value === value) {
+      return;
+    }
+    this.applyingAttendeeWrite = true;
+    control.setValue(value);
+    this.applyingAttendeeWrite = false;
+  }
+
+  /**
+   * Turns on the meeting-level attendees toggle when a selected committee has it enabled,
+   * unless board/restricted meetings lock the control off.
+   * @description An organizer who turned the toggle off outranks every committee default, so
+   * neither picking a new committee nor lifting the lock can put it back on.
+   *
+   * Also maintains {@link committeeOwnsAttendeeToggle}: a preference applied or withheld here
+   * is one the unlock may put back, and a selection that no longer carries a preference leaves
+   * nothing to put back. The unlock calls this again rather than replaying a remembered value,
+   * so it always acts on the committees selected at that moment.
+   */
+  private applyCommitteeAttendeePreference(): void {
+    if (this.organizerAttendeeChoice() === false) {
+      return;
+    }
+
+    const ids = this.selectedCommitteeIds();
+    const hasShowMeetingAttendees = this.committeeOptions().some((committee) => ids.includes(committee.uid) && committee.show_meeting_attendees === true);
+    const attendeesControl = this.form().get('show_meeting_attendees');
+    if (!hasShowMeetingAttendees || !attendeesControl) {
+      this.committeeOwnsAttendeeToggle = false;
+      return;
+    }
+    if (isShowMeetingAttendeesLocked(this.form().get('meeting_type')?.value, this.form().get('restricted')?.value)) {
+      this.committeeOwnsAttendeeToggle = true;
+      return;
+    }
+    this.setAttendeeVisibility(true);
+    this.committeeOwnsAttendeeToggle = true;
   }
 
   private updateParentForm(committeeIds: string[], options: Committee[] = this.committeeOptions()): void {

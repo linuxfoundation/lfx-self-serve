@@ -15,9 +15,11 @@ describe('isOrgClaPermissionAction', () => {
     expect(isOrgClaPermissionAction('approval-list-update')).toBe(true);
     expect(isOrgClaPermissionAction('cla-manager-delete')).toBe(true);
     expect(isOrgClaPermissionAction('ecla-invalidate')).toBe(true);
+    expect(isOrgClaPermissionAction('auto-ecla-update')).toBe(true);
     expect(isOrgClaPermissionAction('cla-signatory')).toBe(false);
     expect(isOrgClaPermissionAction('self_serve_request_corporate_signature:create')).toBe(false);
     expect(isOrgClaPermissionAction('cla_manager_delete:remove')).toBe(false);
+    expect(isOrgClaPermissionAction('ecla_auto_create:update')).toBe(false);
   });
 });
 
@@ -99,6 +101,15 @@ describe('buildOrgClaAcsPermission', () => {
   it('interpolates the ecla-invalidate string the gateway enforces on the invalidate endpoint', () => {
     expect(buildOrgClaAcsPermission({ action: 'ecla-invalidate', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
       `ecla_invalidate:update:project|organization:${PROJECT}|${COMPANY}`
+    );
+  });
+
+  it('interpolates the Auto ECLA update string against the project/organization pair — enable and disable share one grant', () => {
+    // Pair grain matches the peer `approval-list-update` action — same verb, same
+    // `project|organization` object type. Enable and disable are one grant, so this is the only
+    // action the Auto ECLA toggle ever asks for.
+    expect(buildOrgClaAcsPermission({ action: 'auto-ecla-update', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
+      `ecla_auto_create:update:project|organization:${PROJECT}|${COMPANY}`
     );
   });
 });

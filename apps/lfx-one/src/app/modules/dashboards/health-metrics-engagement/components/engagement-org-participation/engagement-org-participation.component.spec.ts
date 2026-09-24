@@ -4,7 +4,7 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
-import { HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
+import { HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { of, throwError } from 'rxjs';
@@ -89,7 +89,7 @@ describe('EngagementOrgParticipationComponent', () => {
   function typeSearch(term: string): void {
     vi.useFakeTimers();
     fixture.componentInstance['searchForm'].controls.search.setValue(term);
-    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS);
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS);
     fixture.detectChanges();
   }
 
@@ -194,7 +194,7 @@ describe('EngagementOrgParticipationComponent', () => {
 
     vi.useFakeTimers();
     fixture.componentInstance['searchForm'].controls.search.setValue('vendor');
-    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS - 1);
+    vi.advanceTimersByTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS - 1);
     fixture.detectChanges();
 
     expect(fixture.nativeElement.querySelector('[data-testid="engagement-org-participation-row-a-1"]')).not.toBeNull();

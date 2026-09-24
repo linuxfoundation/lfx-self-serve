@@ -496,6 +496,65 @@ export class OrgClasController {
     }
   }
 
+  /**
+   * PUT /api/orgs/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create
+   *
+   * Turns Auto ECLA on or off for one signed CCLA (#1988). The route is behind
+   * `blockDuringImpersonation` + `requireOrgLensAccess`; the service raises a 403 with the
+   * producer's own refusal sentence on the sanctions path, and this handler leaves that error
+   * to the shared error handler rather than translating it here — the producer's copy is what
+   * belongs on screen.
+   *
+   * `Cache-Control: no-store` because the response echoes the just-written state, and a CDN
+   * substituting an earlier body would tell the manager the toggle held a value it does not.
+   */
+  public async updateEclaAutoCreate(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_org_cla_ecla_auto_create');
+
+    try {
+      const { orgUid, signatureId } = await this.requireAgreementContext(req, 'update_org_cla_ecla_auto_create');
+
+      // Boolean-only body. Coercion is refused: a stringified `"false"` is `true` under `Boolean`,
+      // and the toggle would then always turn on. Same discipline as the approval-list write
+      // above, which rejects a non-string value rather than `String()`-ing it.
+      const body = req.body as { autoCreateEcla?: unknown } | undefined;
+      if (typeof body?.autoCreateEcla !== 'boolean') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          rejected: 'invalid_body',
+        });
+        res.status(400).json({ message: 'Body must include boolean "autoCreateEcla"' });
+        return;
+      }
+
+      const result = await this.orgClaService.updateEclaAutoCreate(req, orgUid, signatureId, body.autoCreateEcla);
+
+      res.setHeader('Cache-Control', 'no-store');
+
+      if (result.outcome === 'not-found') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, found: false });
+        res.status(404).json({ message: 'CLA agreement not found' });
+        return;
+      }
+
+      if (result.outcome === 'not-signed') {
+        logger.success(req, 'update_org_cla_ecla_auto_create', startTime, { org_uid: orgUid, signature_id: signatureId, signed: false });
+        res.status(400).json({ message: 'This CLA has not been signed yet, so its Auto ECLA setting cannot be changed' });
+        return;
+      }
+
+      logger.success(req, 'update_org_cla_ecla_auto_create', startTime, {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        auto_create_ecla: result.autoCreateEcla,
+      });
+      res.json({ autoCreateEcla: result.autoCreateEcla });
+    } catch (error) {
+      next(error);
+    }
+  }
+
   // GET /api/orgs/:orgUid/lens/cla-groups/:signatureId/acknowledgments
   //
   // Reads the paginated contributor acknowledgments (ECLA signatures) for one CCLA. Impersonation

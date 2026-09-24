@@ -68,6 +68,11 @@ describe('OrgLensEmptyStateComponent', () => {
 
     expect(byTestId(fixture, 'primary')?.textContent?.trim()).toBe('Your organizations');
     expect(byTestId(fixture, 'org-list')?.querySelectorAll('li')).toHaveLength(2);
+    // #2533 mockup: the rows come first and the label follows; the label is not a control.
+    const list = byTestId(fixture, 'org-list') as HTMLElement;
+    const label = byTestId(fixture, 'primary') as HTMLElement;
+    expect(list.compareDocumentPosition(label) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(byTestId(fixture, 'primary')?.closest('a, button')).toBeNull();
     byTestId(fixture, 'org-b')?.dispatchEvent(new Event('click'));
 
     expect(picked).toEqual(['b']);
@@ -107,10 +112,11 @@ describe('OrgLensEmptyStateComponent', () => {
     expect(byTestId(fixture, 'retry')?.querySelector('button')?.disabled).toBe(true);
   });
 
-  it('lists the caller\u2019s organizations beneath the staff invite without making them the primary', () => {
+  // Staff reach any organization through switcher search, so their not-found state lists none.
+  it('does not list the caller\u2019s organizations on the staff not-found state', () => {
     const fixture = render('not-found-staff', { orgList: ORG_LIST });
 
-    expect(byTestId(fixture, 'org-list')).not.toBeNull();
+    expect(byTestId(fixture, 'org-list')).toBeNull();
     expect(byTestId(fixture, 'primary')?.textContent).toContain('Go to Organization Lens');
   });
 

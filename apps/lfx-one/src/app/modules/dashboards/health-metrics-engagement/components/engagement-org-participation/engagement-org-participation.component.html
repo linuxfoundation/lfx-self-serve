@@ -87,7 +87,12 @@
           </td>
           <td>
             <!-- Lapsed is the view's own flag, so the stale styling never disagrees with the segment. -->
-            <span class="text-sm" [class]="row.lapsed ? 'text-amber-600' : 'text-gray-800'">{{ view.lastEngagedLabel }}</span>
+            <span class="text-sm" [class]="row.lapsed ? 'text-amber-700' : 'text-gray-800'">
+              {{ view.lastEngagedLabel }}
+              @if (row.lapsed) {
+                <span class="sr-only">— lapsed</span>
+              }
+            </span>
           </td>
           <td class="w-[150px]">
             <lfx-engagement-attendance-bar [attendancePct]="period?.attendancePct ?? null" [meetingsHeld]="period?.meetingsHeld ?? 0" />

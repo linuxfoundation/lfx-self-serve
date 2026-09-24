@@ -547,7 +547,8 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     key: 'show_meeting_attendees',
     icon: 'fa-light fa-users-rectangle',
     title: 'Show Meeting Attendees',
-    description: 'Display who attended or is attending committee meetings',
+    description:
+      "Let guests see who else is invited, and who has accepted, in their calendar app's invite. Also pre-selects the per-meeting Show attendees option when this committee is picked for a meeting. Board and restricted meetings never list other guests in their invites.",
     color: lfxColors.blue[500],
   },
 ];

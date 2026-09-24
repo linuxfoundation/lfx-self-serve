@@ -70,12 +70,16 @@ export const LF_FOUNDATION_ROOT_SLUG = 'tlf';
 export const LF_STAFF_TEAM_ID = 'lf-staff';
 
 /**
- * LF team populations holding global auditor — Org Lens affordance only (spec 044 / DR-002).
- * Both teams hold `auditor` on the tenant root project and, via member-service, on every
- * `b2b_org`; membership in any of them lights the Org Lens switcher and catalogue search. It is
- * never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly.
+ * LF teams whose membership lights the Org Lens switcher and catalogue search — `lf-staff` only.
+ * `lf-contractor` was added under spec 044 and rolled back (lfx-self-serve#2157): its blanket
+ * `b2b_org` auditor grant is being removed, and the tenant-root auditor tuple that justified it is
+ * deleted by lfx-self-serve#2814 Release 2. `lf-staff`'s own org-wide grant is unaffected.
+ * Contractors keep explicit per-org grants only.
+ *
+ * Never a read gate: `assertOrgLensRead` asks the authorizer for `b2b_org:<uid>#auditor` directly,
+ * so an explicitly-granted contractor still reads that org — this list only drives the affordance.
  */
-export const LF_TEAM_IDS = ['lf-staff', 'lf-contractor'] as const;
+export const LF_TEAM_IDS = ['lf-staff'] as const;
 
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {

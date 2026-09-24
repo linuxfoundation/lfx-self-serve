@@ -5,7 +5,7 @@ import { Router } from 'express';
 
 import { AnalyticsController } from '../controllers/analytics.controller';
 import { requireDashboardAccess } from '../middleware/require-dashboard-access.middleware';
-import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff } from '../middleware/require-marketing-access.middleware';
+import { requireMarketingAuditor, requireMarketingAuditorOrLfStaff, requireNorthStarAccess } from '../middleware/require-marketing-access.middleware';
 
 const router = Router();
 
@@ -170,11 +170,17 @@ router.get('/keyword-performance', requireMarketingAuditor, (req, res, next) => 
 router.get('/social-media', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMedia(req, res, next));
 router.get('/social-media/monthly', requireMarketingAuditor, (req, res, next) => analyticsController.getSocialMediaMonthly(req, res, next));
 
-// North Star metrics endpoints (executive director dashboard)
-router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
-router.get('/member-acquisition', (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
-router.get('/engaged-community', (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
-router.get('/flywheel-conversion', (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
+// North Star metrics endpoints (executive director dashboard). These return confidential foundation
+// revenue/retention KPIs straight from Snowflake with the BFF's own credentials, so the BFF is the
+// only authorization point. They render in Marketing Overview alongside `event-growth`/`brand-reach`
+// (and the ED + LF Staff health-metrics flywheel card), so they share that audience's gate: LF Staff,
+// EDs scoped to the requested foundation, and marketing_auditor grantees. The handlers aggregate every
+// foundation for `tlf`, so `requireNorthStarAccess` refuses a project-scoped grant on `tlf` and
+// requires the ROOT grant for that umbrella view.
+router.get('/member-retention', requireNorthStarAccess, (req, res, next) => analyticsController.getMemberRetention(req, res, next));
+router.get('/member-acquisition', requireNorthStarAccess, (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
+router.get('/engaged-community', requireNorthStarAccess, (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
+router.get('/flywheel-conversion', requireNorthStarAccess, (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
 
 // Health metrics page endpoints (ED + LF Staff) — the health-metrics route is gated client-side by
 // dashboardAccessGuard; requireDashboardAccess enforces the same policy server-side so the
@@ -216,6 +222,9 @@ router.get('/engagement-org-participation', requireDashboardAccess, (req, res, n
 router.get('/engagement-non-member-participation', requireDashboardAccess, (req, res, next) =>
   analyticsController.getEngagementNonMemberParticipation(req, res, next)
 );
+
+// Health Metrics Engagement "Representatives" section (#2802)
+router.get('/engagement-representatives', requireDashboardAccess, (req, res, next) => analyticsController.getEngagementRepresentatives(req, res, next));
 
 // ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
 // Marketing-ops gated (LFXV2-2235): returns event growth trends and metrics.

@@ -672,6 +672,8 @@ export class CommitteeOverviewComponent {
         switchMap((c) => {
           this.votesLoading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
+            // Optimistic merge (GH-2730): overlay just-opened votes' known-active status over stale index rows.
+            map((votes) => this.voteService.mergeRecentlyOpenedVotes(votes)),
             catchError(() => of([])),
             finalize(() => this.votesLoading.set(false))
           );

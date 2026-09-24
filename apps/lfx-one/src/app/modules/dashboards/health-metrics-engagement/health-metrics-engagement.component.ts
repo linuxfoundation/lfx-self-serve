@@ -20,6 +20,7 @@ import { EngagementGroupAttendanceComponent } from './components/engagement-grou
 import { EngagementMeetingParticipationComponent } from './components/engagement-meeting-participation/engagement-meeting-participation.component';
 import { EngagementNonMemberParticipationComponent } from './components/engagement-non-member-participation/engagement-non-member-participation.component';
 import { EngagementOrgParticipationComponent } from './components/engagement-org-participation/engagement-org-participation.component';
+import { EngagementRepresentativesComponent } from './components/engagement-representatives/engagement-representatives.component';
 import { EngagementSubNavComponent } from './components/engagement-sub-nav/engagement-sub-nav.component';
 import { HealthMetricsChromeService } from '../health-metrics-gate/health-metrics-chrome.service';
 
@@ -27,6 +28,7 @@ import type {
   HealthMetricsEngagementGroupCounts,
   HealthMetricsEngagementNonMemberCounts,
   HealthMetricsEngagementOrgCounts,
+  HealthMetricsEngagementRepPeriodCounts,
   HealthMetricsEngagementSectionKey,
   HealthMetricsEngagementSectionView,
   HealthMetricsEngagementSubNavItem,
@@ -44,6 +46,7 @@ import type {
     EngagementMeetingParticipationComponent,
     EngagementNonMemberParticipationComponent,
     EngagementOrgParticipationComponent,
+    EngagementRepresentativesComponent,
     EngagementSubNavComponent,
   ],
   templateUrl: './health-metrics-engagement.component.html',
@@ -67,10 +70,10 @@ export class HealthMetricsEngagementComponent {
   protected readonly panesHeight = signal<string | null>(null);
   protected readonly activeSection = signal<HealthMetricsEngagementSectionKey>(HEALTH_METRICS_ENGAGEMENT_SECTIONS[0].key);
 
-  // `null` until that section reports, which renders no badge rather than a misleading zero. The
-  // remaining badge-bearing section (`reps`) lands in the follow-up PR on #2802.
+  // `null` until that section reports, which renders no badge rather than a misleading zero.
   protected readonly groupCounts = signal<HealthMetricsEngagementGroupCounts | null>(null);
   protected readonly orgCounts = signal<HealthMetricsEngagementOrgCounts | null>(null);
+  protected readonly repCounts = signal<HealthMetricsEngagementRepPeriodCounts | null>(null);
   protected readonly nonMemberCounts = signal<HealthMetricsEngagementNonMemberCounts | null>(null);
 
   protected readonly subNavItems = computed<HealthMetricsEngagementSubNavItem[]>(() =>
@@ -79,8 +82,8 @@ export class HealthMetricsEngagementComponent {
       dormantGroups: this.groupCounts()?.dormantGroups ?? 0,
       orgs: this.orgCounts()?.orgs ?? null,
       lapsedOrgs: this.orgCounts()?.lapsedOrgs ?? 0,
-      reps: null,
-      neverAttendedReps: 0,
+      reps: this.repCounts()?.reps ?? null,
+      neverAttendedReps: this.repCounts()?.neverAttendedReps ?? 0,
       nonMemberOrgs: this.nonMemberCounts()?.orgs ?? null,
     })
   );
@@ -186,6 +189,21 @@ export class HealthMetricsEngagementComponent {
   /** A foundation change re-reads the table, which reflows the pane all over again. */
   protected onOrgReading(): void {
     this.onSectionReading('orgs');
+  }
+
+  /** Representatives report their counts per period, so the badge follows the period pill. */
+  protected onRepCounts(counts: HealthMetricsEngagementRepPeriodCounts | null): void {
+    this.repCounts.set(counts);
+  }
+
+  /** The representatives table sits above the last section, so its rows landing move its anchor. */
+  protected onRepSettled(): void {
+    this.onSectionSettled('reps');
+  }
+
+  /** A foundation change re-reads the table, which reflows the pane all over again. */
+  protected onRepReading(): void {
+    this.onSectionReading('reps');
   }
 
   /** Non-member participation reports the foundation-wide non-member org count for its badge. */

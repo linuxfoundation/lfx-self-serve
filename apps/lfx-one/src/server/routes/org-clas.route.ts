@@ -70,6 +70,15 @@ router.put('/:orgUid/lens/cla-groups/:signatureId/approval-list', blockDuringImp
   orgClasController.updateApprovalList(req, res, next)
 );
 
+// Auto ECLA toggle (#1988). Same middleware order as the peer approval-list write above and for
+// the same reason: a support engineer flipping this flag under an impersonated session would
+// attribute a legally-recorded change to the person being impersonated, so the impersonation
+// block runs ahead of the grant check. The producer's own sanctions and ACL gates run
+// regardless, so a caller who somehow reached this path without them is still refused.
+router.put('/:orgUid/lens/cla-groups/:signatureId/ecla-auto-create', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
+  orgClasController.updateEclaAutoCreate(req, res, next)
+);
+
 router.get('/:orgUid/lens/cla-groups/:signatureId/managers', requireOrgLensAccess, (req, res, next) => orgClasController.listManagers(req, res, next));
 router.post('/:orgUid/lens/cla-groups/:signatureId/managers', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.addManager(req, res, next)

@@ -15,7 +15,9 @@
  * - S3a–S3c: the two halves of #2090 — a held-but-partial lookup renders the page plus the switcher
  *   notice, an unheld partial or failed lookup renders the page-level could-not-load state.
  * - S4: staff check failed carries the correlation reference and never falls through.
- * - S5: staff and contractor sessions are one wire shape, so the same body runs twice.
+ * - S5: an LF-staff session sees the search invite; a contractor holding an explicit org grant (not
+ *   in `LF_TEAM_IDS` since the rollback of lfx-self-serve#2157) keeps the switcher but loses
+ *   catalogue search.
  * - S7 lives in `org-projects.spec.ts` / `org-selector.spec.ts` (legacy wording updated in place).
  */
 
@@ -46,6 +48,7 @@ const NO_ACCESS_COPY = ORG_LENS_EMPTY_STATE_COPY['no-access'];
 
 type RoleGrantsOverrides = Partial<{
   writers: string[];
+  auditors: string[];
   isStaff: boolean;
   degraded: boolean;
   lookupOutcome: 'ok' | 'partial' | 'failed';
@@ -281,6 +284,9 @@ test.describe('Org Lens empty states (spec 053)', () => {
       // Following the primary must reach its destination, not just render (SC-004).
       await state.primary.click();
       await expect(page).toHaveURL(/\/profile\/attributions(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      // The profile is a Me page: the lens must follow, not stay on Organization with its menu.
+      await expect(page.getByTestId('lens-me-tab')).toHaveAttribute('aria-pressed', 'true', { timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('lens-org-tab')).toHaveAttribute('aria-pressed', 'false');
     });
 
     // Unheld and nonexistent are one scenario at the wire (spec 050 DR-002), so S2b and S2d share
@@ -463,31 +469,55 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
       await expect(root).toHaveAttribute('data-state', 'not-found-staff');
       await expect(page.getByTestId('org-not-found-primary')).toBeVisible();
-      await expect(page.getByTestId('org-not-found-org-list')).toContainText(ORG_A_NAME);
+      // Staff reach any organization through switcher search: the staff state lists none of their own.
+      await expect(page.getByTestId('org-not-found-org-list')).toHaveCount(0);
       await expect(page.locator('body')).not.toContainText('You do not have access');
       await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
     });
   });
 
-  test.describe('page level — LF team parity (FR-012)', () => {
-    // Staff and contractor are one population on the wire (`isStaff` covers `lf-staff` and
-    // `lf-contractor`), so the same body runs for both; the assertions are identical by construction.
-    for (const session of ['staff', 'contractor'] as const) {
-      test(`S5 (${session}): an LF-team session with no selection sees the staff search invite, never a no-access state`, async ({ page }) => {
-        await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
+  test.describe('page level — LF team affordance (FR-012)', () => {
+    test('S5 (staff): an LF-team session with no selection sees the staff search invite, never a no-access state', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isStaff: true }) });
 
-        await gotoOverview(page);
+      await gotoOverview(page);
 
-        await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
-        await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
-        await expect(overviewState(page).root).toHaveCount(0);
-        await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
-        await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
-        // The switcher is the control that fills an LF-team member's empty list — it must be there.
-        await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-state')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toBeVisible();
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toContainText('Search for an organization');
+      await expect(overviewState(page).root).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText(RETIRED_NO_ORG_HEADLINE);
+      await expect(page.locator('body')).not.toContainText('You do not have access to this organization');
+      // The switcher is the control that fills an LF-team member's empty list — it must be there.
+      await expect(page.getByTestId('org-selector')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+    });
+
+    // Since the rollback of lfx-self-serve#2157, lf-contractor is not in `LF_TEAM_IDS`, so the server
+    // answers `isStaff: false` for a contractor. A contractor holding one explicit org grant keeps
+    // the switcher (they hold an org) but loses the catalogue search this rollback removes. The e2e
+    // stubs `isStaff` on the wire, so it pins the UI contract only; what fails if `lf-contractor` is
+    // re-added to `LF_TEAM_IDS` is the unit spec (`org-role-grants.service.spec.ts`). The switcher
+    // sequence copies M4 in `org-multi-grant-switch.spec.ts` (non-LF-team: no catalogue search).
+    test('S5 (contractor): a contractor with an explicit org grant keeps the switcher but gets no catalogue search', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isStaff: false, auditors: [ORG_A_UID] }),
+        orgItems: [orgItemRow(ORG_A_UID, ORG_A_SLUG, ORG_A_NAME)],
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+        resolvable: [HELD_ORG],
       });
-    }
+
+      await gotoOverview(page);
+
+      await expect(page.getByTestId('org-overview-empty-description-staff')).toHaveCount(0);
+      const trigger = page.getByTestId('org-selector');
+      await expect(trigger).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await trigger.click();
+      const listbox = page.locator('#org-selector-listbox');
+      await expect(listbox).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(listbox).toContainText(ORG_A_NAME);
+      // The removed affordance: no LF-team catalogue search input.
+      await expect(page.getByTestId('org-search-input')).toHaveCount(0);
+    });
   });
 
   // One section stands in for all of them (the shared component is the only renderer). The ROI

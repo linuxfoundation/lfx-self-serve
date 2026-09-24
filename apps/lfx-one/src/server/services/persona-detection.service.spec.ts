@@ -71,10 +71,9 @@ describe('PersonaDetectionService', () => {
   });
 
   describe('checkLFStaff', () => {
-    // Spec 044 / DR-002: staff-only by decision. Its consumers are the dashboard / ED / marketing
-    // bypasses, none of which were extended to contractors. Widening this check to `LF_TEAM_IDS`
-    // fails here: the authorizer is told the caller is a contractor and the answer must still be
-    // "not staff".
+    // Staff-only by decision: its consumers are the dashboard / ED / marketing bypasses, none of
+    // which were extended to contractors. Adding `lf-contractor` back to this check fails here:
+    // the authorizer is told the caller is a contractor and the answer must still be "not staff".
     it('asks the authorizer for `team:lf-staff` membership only — a contractor-only caller is not staff', async () => {
       checkSingleAccess.mockImplementation((_req: Request, args: { id: string }) => Promise.resolve(args.id === 'lf-contractor'));
 

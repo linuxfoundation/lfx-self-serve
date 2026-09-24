@@ -3413,6 +3413,39 @@ export class AnalyticsController {
   }
 
   /**
+   * `GET /api/analytics/engagement-representatives` — every representative, every period. Search,
+   * the filter cut and the period all resolve client-side, so none of them reaches the wire.
+   */
+  public async getEngagementRepresentatives(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_engagement_representatives');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_engagement_representatives',
+        });
+      }
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_engagement_representatives',
+        });
+      }
+
+      const response = await this.healthMetricsEngagementService.getRepresentatives(req, { foundationSlug });
+
+      logger.success(req, 'get_engagement_representatives', startTime, {
+        foundation_slug: foundationSlug,
+        row_count: response.rows.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * Parse and validate a comma-separated slugs query parameter.
    * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
    */

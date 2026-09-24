@@ -29,6 +29,8 @@ import {
   HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP,
   HEALTH_METRICS_ENGAGEMENT_ORG_PARTICIPATION_DEFAULT,
   HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+  HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT,
 } from '@lfx-one/shared/constants';
 
 import { MicroserviceError } from '../errors/microservice.error';
@@ -747,6 +749,183 @@ describe('HealthMetricsEngagementService.getNonMemberParticipation', () => {
     execute.mockRejectedValue(new Error('connection reset'));
 
     await expect(service.getNonMemberParticipation(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
+  });
+});
+
+describe('HealthMetricsEngagementService.getRepresentatives', () => {
+  const service = new HealthMetricsEngagementService();
+
+  /** The column suffix each period is read under, newest first as the fixture writes them. */
+  const SUFFIXES = ['YTD', 'LAST_COMPLETED_YEAR', 'PREV_COMPLETED_YEAR', '3RD_LAST_COMPLETED_YEAR'];
+
+  /** One warehouse row: unlike the other views, every caption count here carries a period suffix. */
+  function repWarehouseRow(overrides: Record<string, unknown> = {}) {
+    const periods = SUFFIXES.reduce<Record<string, unknown>>(
+      (columns, suffix, index) => ({
+        ...columns,
+        [`MEETINGS_INVITED_COUNT_${suffix}`]: 6,
+        [`MEETINGS_ATTENDED_COUNT_${suffix}`]: 2 + index,
+        [`HAS_NEVER_ATTENDED_${suffix}`]: false,
+        [`IS_LAPSED_${suffix}`]: false,
+        [`SCOPE_REPS_COUNT_${suffix}`]: 486 + index,
+        [`SCOPE_NEVER_ATTENDED_REPS_COUNT_${suffix}`]: 112,
+      }),
+      {}
+    );
+
+    return {
+      REP_KEY: 'r-1',
+      PERSON_DISPLAY_NAME: 'Dana Fields',
+      ACCOUNT_NAME: 'Acme Motors',
+      COMMITTEE_NAME: 'Technical Steering Committee',
+      LAST_ATTENDED_DATE: new Date('2026-08-14T00:00:00.000Z'),
+      ...periods,
+      ...overrides,
+    };
+  }
+
+  beforeEach(() => {
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [repWarehouseRow()] });
+    isMissingObjectError.mockReset();
+    isMissingObjectError.mockReturnValue(false);
+    loggerError.mockReset();
+    warning.mockReset();
+  });
+
+  // The period pill projects these rows client-side, so one read has to serve every period.
+  it('reads every period in one pass, scoped to the foundation', async () => {
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastBinds()).toEqual(['acme']);
+    expect(response.rows[0]?.periods.map((period) => period.range)).toEqual(['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD']);
+    expect(response.rows[0]).toMatchObject({
+      key: 'r-1',
+      personName: 'Dana Fields',
+      accountName: 'Acme Motors',
+      committeeName: 'Technical Steering Committee',
+      lastAttendedDate: '2026-08-14',
+    });
+    expect(response.rows[0]?.periods[3]).toEqual({ range: 'YTD', meetingsInvited: 6, meetingsAttended: 2, neverAttended: false, lapsed: false });
+  });
+
+  // The view owns these metrics. Re-deriving never-attended or lapsed from rolled-up project rows
+  // restates a definition dbt publishes, and OR-ing the per-project flags gets it wrong outright:
+  // someone who attended under one project and no-showed under another has attended.
+  it('reads the published rows and flags rather than aggregating them', async () => {
+    await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('GROUP BY');
+    expect(lastSql()).not.toContain('BOOLOR_AGG(');
+    expect(lastSql()).not.toContain('SUM(');
+    expect(lastSql()).not.toContain('MAX(');
+    expect(lastSql()).toContain('has_never_attended_ytd');
+  });
+
+  // The person key may hold a lowercased email, so it is never read and never mapped. Asserting on
+  // the value, not the column name: the name alone could not appear whatever the SELECT asked for.
+  it('never reads the person key into the response', async () => {
+    execute.mockResolvedValueOnce({ rows: [repWarehouseRow({ PERSON_KEY: 'dana.fields@acme-motors.example' })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('person_key');
+    expect(JSON.stringify(response)).not.toContain('dana.fields@acme-motors.example');
+    expect(Object.keys(response.rows[0] ?? {})).not.toContain('personKey');
+  });
+
+  // Unlike the org and non-member captions, this view counts its scope per period.
+  it('reads a caption count pair for every period off a row rather than counting the rows', async () => {
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(lastSql()).not.toContain('COUNT(');
+    expect(response.counts).toEqual([
+      { range: 'COMPLETED_YEAR_3', reps: 489, neverAttendedReps: 112 },
+      { range: 'COMPLETED_YEAR_2', reps: 488, neverAttendedReps: 112 },
+      { range: 'COMPLETED_YEAR', reps: 487, neverAttendedReps: 112 },
+      { range: 'YTD', reps: 486, neverAttendedReps: 112 },
+    ]);
+  });
+
+  // A zero in one period would caption a full table as empty, so a single null drops the whole set.
+  it('reports no counts at all when any period leaves its scope count null', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ SCOPE_REPS_COUNT_PREV_COMPLETED_YEAR: null })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(1);
+    expect(response.counts).toBeNull();
+  });
+
+  it('carries the view flags through rather than re-deriving them from the last attended date', async () => {
+    execute.mockResolvedValue({ rows: [repWarehouseRow({ LAST_ATTENDED_DATE: null, HAS_NEVER_ATTENDED_YTD: true, IS_LAPSED_LAST_COMPLETED_YEAR: true })] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows[0]?.lastAttendedDate).toBeNull();
+    expect(response.rows[0]?.periods[3]).toMatchObject({ neverAttended: true, lapsed: false });
+    expect(response.rows[0]?.periods[2]).toMatchObject({ neverAttended: false, lapsed: true });
+  });
+
+  // The client sorts, filters and pages this payload in memory, so the read carries its own ceiling.
+  it('caps the read and orders longest-absent first, independently of the selected period', async () => {
+    await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    // One past the cap: a scope of exactly the cap must not be reported as truncated.
+    expect(lastSql()).toContain(`LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}`);
+    // Never-attended sorts first, then the longest absence — and the order never moves with the pill.
+    expect(lastSql()).toContain('ORDER BY last_attended_date ASC NULLS FIRST');
+    // Two people can share a name, and a tie at the cap boundary would drop a different one per read.
+    expect(lastSql()).toContain('rep_key ASC');
+  });
+
+  it('truncates to the cap and says so out loud when the scope overruns it', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1 }, () => repWarehouseRow()) });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP);
+    expect(warning).toHaveBeenCalledWith(req, 'get_engagement_representatives', 'Representative rows hit the read cap', {
+      foundation_slug: 'acme',
+      row_cap: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
+    });
+  });
+
+  it('stays quiet for a scope of exactly the cap, which is complete rather than truncated', async () => {
+    execute.mockResolvedValue({ rows: Array.from({ length: HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP }, () => repWarehouseRow()) });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response.rows).toHaveLength(HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP);
+    expect(warning).not.toHaveBeenCalled();
+  });
+
+  it('reports the zeroed default for an empty scope instead of reading an absent first row', async () => {
+    execute.mockResolvedValue({ rows: [] });
+
+    const response = await service.getRepresentatives(req, { foundationSlug: 'acme' });
+
+    expect(response).toEqual(HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_DEFAULT);
+  });
+
+  it('sends its own client message for a missing view rather than the warehouse object name', async () => {
+    execute.mockRejectedValue(
+      new MicroserviceError("Object 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATIVES' does not exist", 500, 'SNOWFLAKE_QUERY_ERROR', {
+        operation: 'snowflake_execute',
+        service: 'snowflake',
+      })
+    );
+    isMissingObjectError.mockReturnValue(true);
+
+    const error = (await service.getRepresentatives(req, { foundationSlug: 'acme' }).catch((thrown: unknown) => thrown)) as MicroserviceError;
+
+    expect(error.toResponse()['error']).toBe('Representatives are unavailable right now.');
+  });
+
+  it('rethrows any other Snowflake failure', async () => {
+    execute.mockRejectedValue(new Error('connection reset'));
+
+    await expect(service.getRepresentatives(req, { foundationSlug: 'acme' })).rejects.toThrow('connection reset');
   });
 });
 

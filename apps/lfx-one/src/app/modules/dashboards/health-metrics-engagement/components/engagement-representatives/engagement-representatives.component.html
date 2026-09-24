@@ -1,0 +1,102 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="engagement-representatives">
+  <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div class="w-full sm:w-64">
+        <!-- The placeholder and icon give the box no accessible name, so the label carries it. -->
+        <label class="sr-only" for="engagement-representatives-search">Search person or organization</label>
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          inputId="engagement-representatives-search"
+          placeholder="Search person or organization..."
+          icon="fa-light fa-search"
+          size="small"
+          styleClass="w-full"
+          dataTest="engagement-representatives-search-input" />
+      </div>
+      <lfx-filter-pills
+        [options]="filterOptions"
+        [selectedFilter]="filter()"
+        (filterChange)="onFilterChange($event)"
+        data-testid="engagement-representatives-filters" />
+    </div>
+    <!-- 13px caption is the design's own pixel size. -->
+    <span class="text-[13px] text-gray-500" data-testid="engagement-representatives-count">
+      @if (loading() || loadFailed()) {
+        &mdash;
+      } @else {
+        {{ countLabel() }}
+      }
+    </span>
+  </div>
+
+  @if (loadFailed()) {
+    <lfx-empty-state
+      icon="fa-light fa-triangle-exclamation"
+      title="Representatives unavailable"
+      subtitle="We could not load representatives for this foundation. Refresh the page to try again."
+      data-testid="engagement-representatives-error" />
+  } @else if (!loading() && totalRecords() === 0) {
+    <lfx-empty-state
+      icon="fa-light fa-user"
+      title="No representatives match this filter"
+      subtitle="Nobody in this foundation falls into this group right now."
+      data-testid="engagement-representatives-empty" />
+  } @else {
+    <lfx-table
+      [value]="rowViews()"
+      [loading]="loading()"
+      [paginator]="totalRecords() > size()"
+      [rows]="size()"
+      [first]="first()"
+      [totalRecords]="totalRecords()"
+      [showCurrentPageReport]="true"
+      [showFirstLastIcon]="false"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      (onPage)="onTablePage($event)"
+      data-testid="engagement-representatives-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Representative</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Group</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Attended</span></th>
+          <th scope="col"><span class="text-xs font-medium text-gray-500">Last attended</span></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-view>
+        @let row = view.row;
+        @let period = view.period;
+        <tr [attr.data-testid]="'engagement-representatives-row-' + row.key">
+          <td>
+            <div class="flex flex-col">
+              <span class="text-sm font-medium text-gray-900">{{ row.personName }}</span>
+              <span class="text-xs text-gray-500">{{ row.accountName }}</span>
+            </div>
+          </td>
+          <td>
+            <span class="text-sm text-gray-800">{{ row.committeeName }}</span>
+          </td>
+          <td>
+            <span class="text-sm tabular-nums text-gray-800">{{ view.attendedLabel }}</span>
+          </td>
+          <td>
+            <!-- Never-attended and lapsed are the view's own per-period flags, so the styling never
+                 disagrees with the segment the reader picked. -->
+            <span class="text-sm" [class]="period?.neverAttended || period?.lapsed ? 'text-amber-700' : 'text-gray-800'">
+              {{ view.lastAttendedLabel }}
+              @if (period?.neverAttended) {
+                <span class="sr-only">— never attended</span>
+              } @else if (period?.lapsed) {
+                <span class="sr-only">— lapsed</span>
+              }
+            </span>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</div>

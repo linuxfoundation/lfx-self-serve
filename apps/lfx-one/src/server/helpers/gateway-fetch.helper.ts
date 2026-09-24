@@ -39,6 +39,14 @@ export interface GatewayFetchOptions {
    * Ignored when `redactResponseBody` is set, which discards the body outright.
    */
   redactResponseBodyFromLogs?: boolean;
+  /**
+   * A 2xx with an empty body is success and returns null.
+   *
+   * Auto ECLA's producer returns 200 and sets no payload. Without this, that empty body is a 502
+   * and the toggle rolls back a write the producer already recorded. Left off, a non-204 empty
+   * body is still a failure — other callers expect JSON.
+   */
+  acceptEmptyBody?: boolean;
 }
 
 /**
@@ -137,7 +145,8 @@ export function rethrowGatewayTransportFailure(req: Request, options: GatewayFet
  * pass options.bearerToken to override (e.g. for user-token-authenticated calls).
  * Handles timeout (504), network failure (502), non-OK upstream responses,
  * and invalid JSON — all surfaced as MicroserviceError.
- * 204 responses return null; all other empty bodies throw MicroserviceError.
+ * 204 responses return null. Any other empty body throws MicroserviceError, unless
+ * `acceptEmptyBody` is set, in which case that empty 2xx is also null.
  */
 export async function gatewayFetch<T>(req: Request, url: string, options: GatewayFetchOptions): Promise<T | null> {
   const upstream = await fetchGatewayResponse(req, url, options);
@@ -150,7 +159,7 @@ export async function gatewayFetch<T>(req: Request, url: string, options: Gatewa
   }
 
   if (!rawBody.trim()) {
-    if (upstream.status === 204) {
+    if (upstream.status === 204 || options.acceptEmptyBody) {
       return null;
     }
 

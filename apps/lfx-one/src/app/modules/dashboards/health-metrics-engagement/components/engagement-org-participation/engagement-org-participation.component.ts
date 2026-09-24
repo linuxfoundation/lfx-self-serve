@@ -13,8 +13,8 @@ import { TableComponent } from '@components/table/table.component';
 import {
   HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS,
   HEALTH_METRICS_ENGAGEMENT_ORG_PAGE_SIZE,
-  HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS,
   HEALTH_METRICS_ENGAGEMENT_ORG_UNMEASURED,
+  HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS,
 } from '@lfx-one/shared/constants';
 import {
   filterHealthMetricsEngagementOrgRows,
@@ -86,7 +86,7 @@ export class EngagementOrgParticipationComponent {
 
   // Debounced: the filter runs over the whole loaded scope, so an undebounced keystroke re-sorts
   // every org the foundation has.
-  protected readonly search = toSignal(this.searchForm.controls.search.valueChanges.pipe(debounceTime(HEALTH_METRICS_ENGAGEMENT_ORG_SEARCH_DEBOUNCE_MS)), {
+  protected readonly search = toSignal(this.searchForm.controls.search.valueChanges.pipe(debounceTime(HEALTH_METRICS_ENGAGEMENT_SEARCH_DEBOUNCE_MS)), {
     initialValue: '',
   });
 
