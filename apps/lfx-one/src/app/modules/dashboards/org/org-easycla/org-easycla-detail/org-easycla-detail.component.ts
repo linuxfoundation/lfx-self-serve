@@ -727,6 +727,10 @@ export class OrgEasyclaDetailComponent {
     this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
   }
 
+  protected onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void {
+    this.approvalCountOverride.set(event);
+  }
+
   protected onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void {
     this.panelAcknowledgmentCount.set(event);
   }
@@ -1066,6 +1070,8 @@ export class OrgEasyclaDetailComponent {
     return toSignal(
       toObservable(target).pipe(
         distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
+        // Drop a panel override left over from the previous agreement so it cannot shadow this read.
+        tap(() => this.panelAcknowledgmentCount.set(null)),
         switchMap((next) => {
           if (!next || !isPlatformBrowser(this.platformId)) return of(null);
           return this.claService.getContributorAcknowledgments(next.orgUid, next.signatureId, { pageSize: 1 }).pipe(

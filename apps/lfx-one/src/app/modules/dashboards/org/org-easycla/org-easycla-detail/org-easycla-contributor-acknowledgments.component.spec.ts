@@ -710,8 +710,8 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       updateApprovalList.mockReturnValueOnce(of({ signatureId: 'signature-uuid-1', entries: [{ kind: 'domain', value: 'example.org' }], canEdit: true }));
       const fixture = await render();
-      const counts: number[] = [];
-      fixture.componentInstance.approvalListChanged.subscribe((count) => counts.push(count));
+      const counts: { signatureId: string; count: number }[] = [];
+      fixture.componentInstance.approvalListChanged.subscribe((event) => counts.push(event));
 
       click(fixture, 'org-easycla-acknowledgment-invalidate');
       dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
@@ -722,7 +722,9 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         add: [],
         remove: [{ kind: 'email', value: 'ada@example.org' }],
       });
-      expect(counts).toEqual([1]);
+      // The count carries the agreement it was measured against, so the parent cannot file it
+      // under a different agreement it may have switched to mid-flight.
+      expect(counts).toEqual([{ signatureId: 'signature-uuid-1', count: 1 }]);
     });
 
     it('leaves the approval list alone when the invalidate fails', async () => {

@@ -1689,6 +1689,67 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-overview')).toBeTruthy();
   });
 
+  // The detail page is reused across agreement changes, so a panel count captured for one
+  // agreement must not shadow a fresh page-load count when the same agreement is reopened.
+  it('drops a stale panel count when the agreement changes, so the reopened badge reads fresh', async () => {
+    getClaGroups.mockReturnValue(
+      of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA' })] })
+    );
+    getContributorAcknowledgments.mockImplementation((_orgUid: string, signatureId: string) =>
+      of({ signatureId, list: [], canEdit: true, resultCount: 0, totalCount: signatureId === 'signature-uuid-1' ? 5 : 3, nextKey: null })
+    );
+
+    const fixture = await render();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+
+    // The open panel reports a different count for the agreement on screen.
+    (
+      fixture.componentInstance as unknown as { onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void }
+    ).onAcknowledgmentCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 9,
+    });
+    fixture.detectChanges();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('9');
+
+    // Leave for another agreement and come back to the same one.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-1' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    // The stale panel count is gone; the badge reflects the fresh one-row read.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-acknowledgments')?.textContent?.trim()).toBe('5');
+  });
+
+  // The panel measures its approval count against a specific agreement; the parent must file it
+  // under that agreement, not whichever one it has since switched to on a reused route.
+  it('files a panel approval count under the agreement it was measured for, not the current one', async () => {
+    getClaGroups.mockReturnValue(
+      of({
+        orgUid: SELECTED_ACCOUNT.uid,
+        claGroups: [claGroup(), claGroup({ id: 'signature-uuid-2', claGroupName: 'Other CLA', approvalCriteriaCount: 2 })],
+      })
+    );
+    const fixture = await render();
+
+    // A count arrives for the first agreement after the page has moved to the second.
+    queryParamMap.next(convertToParamMap({ sig: 'signature-uuid-2' }));
+    fixture.detectChanges();
+    await fixture.whenStable();
+    (fixture.componentInstance as unknown as { onPanelApprovalCountChanged(event: { signatureId: string; count: number }): void }).onPanelApprovalCountChanged({
+      signatureId: 'signature-uuid-1',
+      count: 99,
+    });
+    fixture.detectChanges();
+
+    // The second agreement keeps its own row count; the stale count does not leak in.
+    expect(byTestId(fixture, 'org-easycla-detail-tab-badge-approval')?.textContent?.trim()).toBe('2');
+  });
+
   /**
    * A copied link outlives the list it was copied from, so a signature it names can be gone — the
    * row superseded, or the link shared by someone whose list differs. The group id is the

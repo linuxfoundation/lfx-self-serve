@@ -112,7 +112,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   public readonly approvalListRequested = output<void>();
 
   /** The approval list's new entry count, after an invalidate also removed the contributor's entries. */
-  public readonly approvalListChanged = output<number>();
+  public readonly approvalListChanged = output<{ signatureId: string; count: number }>();
 
   protected readonly heading = ORG_CLA_ACKNOWLEDGMENTS_HEADING;
   protected readonly subtitle = ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE;
@@ -416,7 +416,8 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private removeApprovalEntries(orgUid: string, claSignatureId: string, entries: OrgClaApprovalEntryInput[]): void {
     this.claService.updateApprovalList(orgUid, claSignatureId, { add: [], remove: entries }).subscribe({
       next: (list) => {
-        if (!this.destroyed && claSignatureId === this.signatureId()) this.approvalListChanged.emit(list.entries.length);
+        if (!this.destroyed && claSignatureId === this.signatureId())
+          this.approvalListChanged.emit({ signatureId: claSignatureId, count: list.entries.length });
       },
       error: (error: unknown) => {
         console.warn(
