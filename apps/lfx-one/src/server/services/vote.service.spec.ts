@@ -867,7 +867,7 @@ describe('VoteService', () => {
       expect(result.page_token).toBe('offset:50');
     });
 
-    it('restarts at the first page when the page_token is garbage or foreign', async () => {
+    it('rejects an explicit-but-malformed page_token with a 400 instead of silently restarting at page 1', async () => {
       const rows = [
         { vote_uid: 'v-0', name: 'A', status: 'ended', creation_time: '2025-06-02T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
         { vote_uid: 'v-1', name: 'B', status: 'ended', creation_time: '2025-06-01T00:00:00Z', project_uid: PROJECT_UID, end_time: '2025-07-01T00:00:00Z' },
@@ -875,10 +875,7 @@ describe('VoteService', () => {
       fetchAllQueryResources.mockResolvedValue(rows);
       getProjectsByIds.mockResolvedValue(new Map());
 
-      const result = await service.getVotes(req, { page_size: '1', page_token: 'not-an-offset' });
-
-      expect(result.data.map((v) => v.uid)).toEqual(['v-0']);
-      expect(result.page_token).toBe('offset:1');
+      await expect(service.getVotes(req, { page_size: '1', page_token: 'not-an-offset' })).rejects.toThrow(ServiceValidationError);
     });
 
     it('caps a client page_size at the upstream max so one response cannot pull an unbounded slice', async () => {

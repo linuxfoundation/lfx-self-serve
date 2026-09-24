@@ -152,7 +152,13 @@ export class VoteService {
    * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
    * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
    * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
-   * pagination and filters. `includeProject` (default true) enriches the returned slice with
+   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
+   * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
+   * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
+   * `creation_time`-desc puts a just-created vote first within its tier, the carrier TTL (30 s) bounds
+   * the window, and reconciling client carrier state pre-sort would bleed optimistic UI state into
+   * this endpoint's contract. `includeProject` (default true) enriches the returned slice with
    * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
    * caller discards them.
    */
@@ -164,6 +170,13 @@ export class VoteService {
 
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+
+    // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
+    // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
+    // shows up in a latency graph. DEBUG, not WARN: the param set is caller-controlled.
+    if (Object.keys(upstreamParams).length === 0) {
+      logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
+    }
 
     // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
     // a later page failing must surface as an error, not a 200 with votes silently missing.
@@ -782,10 +795,16 @@ export class VoteService {
     return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, VoteService.voteListUpstreamPageSize) : VoteService.voteListDefaultPageSize;
   }
 
-  /** Decodes getVotes' opaque `offset:<n>` page token — anything else (garbage, foreign cursor) restarts at the first page. */
+  /** Decodes getVotes' opaque `offset:<n>` page token — an omitted token starts at the first page; an explicit-but-malformed one (garbage, foreign cursor) is a 400, never a silent fallback for a bad explicit value (committee-activity's `decodePageToken` rule): silently restarting at page 1 would hand a page-2 caller page 1's rows labeled as page 2. */
   private parseVoteListOffset(raw: unknown): number {
     const value = Array.isArray(raw) ? raw[0] : raw;
+    if (value === undefined) {
+      return 0;
+    }
     const match = typeof value === 'string' ? /^offset:(\d+)$/.exec(value) : null;
-    return match ? Number.parseInt(match[1], 10) : 0;
+    if (!match) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    return Number.parseInt(match[1], 10);
   }
 }

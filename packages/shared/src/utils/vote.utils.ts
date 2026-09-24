@@ -449,5 +449,10 @@ export function compareVotesByRecency(a: Vote, b: Vote): number {
     return createdB - createdA;
   }
 
-  return a.uid.localeCompare(b.uid);
+  // Codepoint comparison, not localeCompare — this tiebreak exists to keep offset pagination
+  // deterministic, and locale-aware collation is ICU-build-dependent, so two server instances on
+  // different Node builds could order equal-timestamp votes differently mid-pagination
+  // (committee-activity's compareEventsDesc precedent).
+  if (a.uid === b.uid) return 0;
+  return a.uid < b.uid ? -1 : 1;
 }
