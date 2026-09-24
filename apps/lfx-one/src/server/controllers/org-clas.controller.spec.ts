@@ -5,7 +5,10 @@ import '@angular/compiler';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { getUsernameFromAuth } = vi.hoisted(() => ({ getUsernameFromAuth: vi.fn<() => Promise<string | null>>() }));
+const { getUsernameFromAuth, getEffectiveEmail } = vi.hoisted(() => ({
+  getUsernameFromAuth: vi.fn<() => Promise<string | null>>(),
+  getEffectiveEmail: vi.fn<() => string | null>(),
+}));
 const {
   listClaGroups,
   getPdfUrl,
@@ -22,7 +25,11 @@ const {
   getContributorAcknowledgments,
   invalidateAcknowledgment,
   getActivityLog,
+  assignDesignee,
+  nominateDesignee,
 } = vi.hoisted(() => ({
+  assignDesignee: vi.fn(),
+  nominateDesignee: vi.fn(),
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
@@ -40,7 +47,7 @@ const {
   getActivityLog: vi.fn(),
 }));
 
-vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
+vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth, getEffectiveEmail }));
 vi.mock('../services/org-cla.service', () => ({
   OrgClaService: class {
     public listClaGroups = listClaGroups;
@@ -57,6 +64,8 @@ vi.mock('../services/org-cla.service', () => ({
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
     public getActivityLog = getActivityLog;
+    public assignDesignee = assignDesignee;
+    public nominateDesignee = nominateDesignee;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -82,6 +91,7 @@ function buildRes() {
 beforeEach(() => {
   vi.clearAllMocks();
   getUsernameFromAuth.mockResolvedValue('alice');
+  getEffectiveEmail.mockReturnValue('contributor@example.org');
 });
 
 describe('OrgClasController.listClaGroups', () => {
@@ -1535,5 +1545,119 @@ describe('OrgClasController.getActivityLog', () => {
     await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
 
     expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+});
+
+describe('OrgClasController — CLA manager designee (#2780)', () => {
+  const ORG_UID = '0014100000Te2ovAAB';
+  const PROJECT_SFID = 'a09410000182dD3AAI';
+
+  describe('assignDesignee', () => {
+    it('assigns the session address, never one from the body', async () => {
+      assignDesignee.mockResolvedValue({ assigned: true });
+      const res = buildRes();
+
+      await new OrgClasController().assignDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, userEmail: 'someone-else@example.org', email: 'someone-else@example.org' } } as any,
+        res,
+        vi.fn()
+      );
+
+      expect(assignDesignee).toHaveBeenCalledWith(expect.anything(), ORG_UID, PROJECT_SFID, 'contributor@example.org');
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.json).toHaveBeenCalledWith({ assigned: true });
+    });
+
+    it.each([undefined, '', '../../admin', 42])('rejects the project id %s before calling the service', async (projectSfid) => {
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('refuses a session with no address rather than assigning nobody', async () => {
+      getEffectiveEmail.mockReturnValue(null);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('refuses an unauthenticated caller', async () => {
+      getUsernameFromAuth.mockResolvedValue(null);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+      expect(assignDesignee).not.toHaveBeenCalled();
+    });
+
+    it('hands a service refusal to the error handler', async () => {
+      const refusal = new Error('refused');
+      assignDesignee.mockRejectedValue(refusal);
+      const next = vi.fn();
+
+      await new OrgClasController().assignDesignee({ params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID } } as any, buildRes(), next);
+
+      expect(next).toHaveBeenCalledWith(refusal);
+    });
+  });
+
+  describe('nominateDesignee', () => {
+    it('forwards the trimmed name and address and keeps the address out of the log', async () => {
+      nominateDesignee.mockResolvedValue({ outcome: 'lf-login-requested', email: 'contributor@example.org' });
+      const res = buildRes();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, fullName: ' Pat Contributor ', email: ' contributor@example.org ' } } as any,
+        res,
+        vi.fn()
+      );
+
+      expect(nominateDesignee).toHaveBeenCalledWith(expect.anything(), ORG_UID, {
+        projectSfid: PROJECT_SFID,
+        fullName: 'Pat Contributor',
+        email: 'contributor@example.org',
+      });
+      expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+      expect(res.json).toHaveBeenCalledWith({ outcome: 'lf-login-requested', email: 'contributor@example.org' });
+      const [, operation, , metadata] = loggerMock.success.mock.calls[0] as unknown as [unknown, string, unknown, Record<string, unknown>];
+      expect(operation).toBe('nominate_org_cla_designee');
+      expect(metadata).toEqual({ org_uid: ORG_UID, project_sfid: PROJECT_SFID, outcome: 'lf-login-requested' });
+    });
+
+    it('names each invalid field before calling the service', async () => {
+      const next = vi.fn();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { projectSfid: PROJECT_SFID, fullName: 'Zoë Contributor', email: 'not-an-email' } } as any,
+        buildRes(),
+        next
+      );
+
+      const error = next.mock.calls[0][0] as InstanceType<typeof ServiceValidationError>;
+      expect(error).toBeInstanceOf(ServiceValidationError);
+      expect(JSON.stringify(error.toResponse())).toContain('fullName');
+      expect(JSON.stringify(error.toResponse())).toContain('email');
+      expect(nominateDesignee).not.toHaveBeenCalled();
+    });
+
+    it('rejects a missing project id before calling the service', async () => {
+      const next = vi.fn();
+
+      await new OrgClasController().nominateDesignee(
+        { params: { orgUid: ORG_UID }, body: { fullName: 'Pat Contributor', email: 'contributor@example.org' } } as any,
+        buildRes(),
+        next
+      );
+
+      expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+      expect(nominateDesignee).not.toHaveBeenCalled();
+    });
   });
 });
