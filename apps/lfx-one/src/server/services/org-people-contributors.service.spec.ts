@@ -42,6 +42,8 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import type { CompactOrgContributorRowsCache } from '@lfx-one/shared/interfaces';
+
 import { OrgPeopleContributorsService } from './org-people-contributors.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
@@ -143,10 +145,17 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
   });
 
-  it('rebuilds the project-level columns the rows no longer carry, including the documented id fallbacks', async () => {
-    // A decode that dropped a dictionary column would silently relabel every project row with its
-    // id, and quietly empty the foundation filter.
+  it('rebuilds the project-level columns on the cache-hit path, including the documented id fallbacks', async () => {
+    // Deliberately the SECOND call: the first populates the cache and returns the rows the
+    // warehouse handed back, so only a read-back exercises the decoder at all. A decode that
+    // dropped a dictionary column would silently relabel every project row with its id, and
+    // quietly empty the foundation filter.
+    await service.getContributors(ACCOUNT, 'all');
+    const warehouseReads = execute.mock.calls.length;
+
     const { projects, projectOptions, foundationOptions } = await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
     expect(projects[0]).toEqual({
       personKey: 'person-one',
@@ -163,6 +172,27 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(projects[1]?.projectName).toBe('project-two');
     expect(projectOptions.map((option) => option.projectId)).toEqual(['project-one', 'project-two']);
     expect(foundationOptions).toEqual([{ foundationId: 'foundation-one', foundationName: 'CNCF' }]);
+    // Two of the three aggregate rows share a project, so the stored dictionary has to be shorter
+    // than the row table — a `keyOf` regression that stopped collapsing them would not be.
+    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgContributorRowsCache;
+    expect(stored.projects.r.length).toBe(2);
+    expect(stored.rows.r.length).toBe(3);
+  });
+
+  it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
+    // missing data, so the guard has to reject the entry up front rather than serve a tab with
+    // holes in it for the rest of the TTL.
+    await service.getContributors(ACCOUNT, 'all');
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
+    stored.rows.r = stored.rows.r.map((row) => row.slice(0, -1));
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
   it('keys each time range separately so one window cannot serve another', async () => {

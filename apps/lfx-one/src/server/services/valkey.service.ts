@@ -266,10 +266,17 @@ export class ValkeyService implements CachePort {
    * is already slow, and it means a test comparing a hit against the miss that populated it is
    * comparing two genuinely different computations instead of the same one twice.
    *
-   * There is no `storable` counterpart to `withCache`'s: these callers cache whole warehouse reads,
-   * which have no "lookup failed but well-shaped" result to withhold.
+   * `storable` mirrors `withCache`'s: a value that is well-formed but incomplete — a Projects
+   * response whose optional no-activity hydration failed, say — is served to this caller and then
+   * not written, so one upstream blip can't pin a degraded page in the cache for the whole TTL.
    */
-  public async withCompactCache<T, S>(key: string | null, ttlSeconds: number, fetcher: () => Promise<T>, codec: CacheCodec<T, S>): Promise<T> {
+  public async withCompactCache<T, S>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    codec: CacheCodec<T, S>,
+    storable?: (value: T) => boolean
+  ): Promise<T> {
     // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
     if (key === null || !this.client) {
       logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
@@ -286,6 +293,12 @@ export class ValkeyService implements CachePort {
 
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
     const result = await fetcher();
+    if (storable && !storable(result)) {
+      logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
+        cache_key: ValkeyService.redactKey(key),
+      });
+      return result;
+    }
     await this.setJson(key, codec.encode(result), ttlSeconds);
     return result;
   }
@@ -713,9 +726,10 @@ export function withOrgCompactCache<T, S>(
   subResource: string,
   ttlSeconds: number,
   fetcher: () => Promise<T>,
-  codec: CacheCodec<T, S>
+  codec: CacheCodec<T, S>,
+  storable?: (value: T) => boolean
 ): Promise<T> {
-  return valkeyService.withCompactCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, codec);
+  return valkeyService.withCompactCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, codec, storable);
 }
 
 /** Read-through helper for the per-org Groups-aggregate namespace; a null key (unsafe org uid) fetches directly. */

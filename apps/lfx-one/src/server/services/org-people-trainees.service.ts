@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_TRAINEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_TRAINEES_RESPONSE,
+  ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
+  ORG_TRAINEE_COURSE_OPTION_COLUMNS,
+  ORG_TRAINEE_DETAIL_COLUMNS,
+  ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS,
+  ORG_TRAINEE_ROW_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgTraineesRawCache,
   OrgPeopleAllTraineeRow,
@@ -14,7 +22,7 @@ import type {
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCompactCache } from './valkey.service';
@@ -193,13 +201,13 @@ function encodeTraineesRaw(raw: {
   const courses = dedupeByKey(raw.detailRows, keyOf);
 
   return {
-    traineeRows: toColumnar(raw.traineeRows, ['PERSON_KEY', 'LFID', 'CDP_MEMBER_ID', 'NAME', 'TITLE', 'EMAIL']),
-    courses: toColumnar(courses.values, ['COURSE_ID', 'COURSE_NAME', 'FOUNDATION_ID', 'FOUNDATION_NAME']),
-    details: toColumnar(raw.detailRows, ['PERSON_KEY', 'STATUS', 'COURSE_OR_CERT_ID', 'ACTIVITY_TS']),
+    traineeRows: toColumnar(raw.traineeRows, ORG_TRAINEE_ROW_COLUMNS),
+    courses: toColumnar(courses.values, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS),
+    details: toColumnar(raw.detailRows, ORG_TRAINEE_DETAIL_COLUMNS),
     // Every detail row was part of the set `courses` was built from, so the lookup always resolves.
     detailCourses: raw.detailRows.map((row) => courses.indexOf.get(keyOf(row))!),
-    foundationRows: toColumnar(raw.foundationRows, ['FOUNDATION_ID', 'FOUNDATION_NAME']),
-    courseRows: toColumnar(raw.courseRows, ['COURSE_ID', 'COURSE_NAME']),
+    foundationRows: toColumnar(raw.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS),
+    courseRows: toColumnar(raw.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS),
   };
 }
 
@@ -230,7 +238,15 @@ function isCompactTraineesRaw(value: unknown): boolean {
     !isColumnarTable(cache.courses) ||
     !isColumnarTable(cache.details) ||
     !isColumnarTable(cache.foundationRows) ||
-    !isColumnarTable(cache.courseRows)
+    !isColumnarTable(cache.courseRows) ||
+    // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+    // the tab renders with holes in it for the rest of the TTL instead of refetching.
+    !hasExactColumns(cache.traineeRows, ORG_TRAINEE_ROW_COLUMNS) ||
+    !hasExactColumns(cache.courses, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS) ||
+    !hasExactColumns(cache.details, ORG_TRAINEE_DETAIL_COLUMNS) ||
+    !hasExactColumns(cache.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS) ||
+    !hasExactColumns(cache.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS)
   ) {
     return false;
   }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, ORG_CONTRIBUTOR_PROJECT_COLUMNS, ORG_CONTRIBUTOR_ROW_COLUMNS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
@@ -13,7 +13,7 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -233,20 +233,8 @@ function encodeContributorRows(rows: ContributorPersonProjectRow[]): CompactOrgC
   const projects = dedupeByKey(rows, keyOf);
 
   return {
-    projects: toColumnar(projects.values, ['PROJECT_ID', 'PROJECT_NAME', 'PROJECT_SLUG', 'FOUNDATION_ID', 'FOUNDATION_NAME', 'FOUNDATION_SLUG']),
-    rows: toColumnar(rows, [
-      'PERSON_KEY',
-      'LFID',
-      'LF_USERNAME',
-      'CDP_MEMBER_ID',
-      'DISPLAY_NAME',
-      'TITLE',
-      'COMMITS',
-      'CODE_ACTIVITIES',
-      'LAST_ACTIVE_DATE',
-      'IS_DECLARED_MAINTAINER_FOR_PROJECT',
-      'IS_DECLARED_MAINTAINER_FOR_ORG',
-    ]),
+    projects: toColumnar(projects.values, ORG_CONTRIBUTOR_PROJECT_COLUMNS),
+    rows: toColumnar(rows, ORG_CONTRIBUTOR_ROW_COLUMNS),
     // Every row was part of the set `projects` was built from, so the lookup always resolves.
     rowProjects: rows.map((row) => projects.indexOf.get(keyOf(row))!),
   };
@@ -263,6 +251,12 @@ function decodeContributorRows(value: CompactOrgContributorRowsCache): Contribut
 function isCompactContributorRows(value: unknown): boolean {
   const cache = value as Partial<CompactOrgContributorRowsCache> | null;
   if (!cache || typeof cache !== 'object' || !isColumnarTable(cache.projects) || !isColumnarTable(cache.rows)) {
+    return false;
+  }
+  // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+  // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+  // the tab renders with holes in it for the rest of the TTL instead of refetching.
+  if (!hasExactColumns(cache.projects, ORG_CONTRIBUTOR_PROJECT_COLUMNS) || !hasExactColumns(cache.rows, ORG_CONTRIBUTOR_ROW_COLUMNS)) {
     return false;
   }
   // Every reference must resolve, so the decode can rebuild each row in full rather than silently

@@ -1,9 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEE_STATS, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_ALL_EMPLOYEE_STATS,
+  ORG_PEOPLE_ALL_ROW_COLUMNS,
+  ORG_PEOPLE_ALL_STATS_COLUMNS,
+  ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgAllEmployeesRawCache,
+  OrgPeopleAllRowRaw,
+  OrgPeopleAllStatsRow,
+  OrgPeopleFoundationOptionRow,
   OrgAllEmployeeCodeContribution,
   OrgAllEmployeeCommitteeMembership,
   OrgAllEmployeeDetail,
@@ -19,7 +28,7 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -29,44 +38,6 @@ import { OrgPeopleDirectoryService } from './org-people-directory.service';
 import { toWireResponse } from './org-people-wire.mapper';
 import { SnowflakeService } from './snowflake.service';
 import { withOrgCache, withOrgCompactCache } from './valkey.service';
-
-/** Per-(account, person) row from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL. */
-interface OrgPeopleAllRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  LFID: string | null;
-  LF_USERNAME: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-  PHOTO: string | null;
-  SEATS_COUNT: number;
-  BOARD_SEATS_COUNT: number;
-  COMMITTEE_SEATS_COUNT: number;
-  COMMITS_COUNT: number;
-  EVENTS_COUNT: number;
-  COURSES_COUNT: number;
-}
-
-/** Roster row including the raw ENGAGED_FOUNDATION_IDS column (Snowflake ARRAY may arrive as a JSON string or a parsed array). */
-type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
-
-/** One-row aggregate from PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS. */
-interface OrgPeopleStatsRow {
-  ACCOUNT_ID: string;
-  ACTIVE_IN_OSS: number;
-  IN_GOVERNANCE: number;
-  CODE_CONTRIBUTORS: number;
-  EVENT_ATTENDEES: number;
-  TRAINEES: number;
-}
-
-/** Distinct (foundation_id, foundation_name) pair powering the All Foundations dropdown. */
-interface FoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
 
 interface CommitteeMembershipRow {
   ACCOUNT_ID: string;
@@ -272,7 +243,7 @@ export class OrgLensPeopleService {
   /** Three parallel Snowflake reads returning raw rows; mapping happens after the cache read. */
   private async fetchAllEmployeesRaw(
     accountId: string
-  ): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; statsRaw: OrgPeopleStatsRow[]; foundationRaw: FoundationOptionRow[] }> {
+  ): Promise<{ rowsRaw: OrgPeopleAllRowRaw[]; statsRaw: OrgPeopleAllStatsRow[]; foundationRaw: OrgPeopleFoundationOptionRow[] }> {
     const rowsQuery = `
       SELECT
         ACCOUNT_ID,
@@ -334,8 +305,8 @@ export class OrgLensPeopleService {
 
     const [rowsResult, statsResult, foundationResult] = await Promise.all([
       this.snowflakeService.execute<OrgPeopleAllRowRaw>(rowsQuery, [accountId]),
-      this.snowflakeService.execute<OrgPeopleStatsRow>(statsQuery, [accountId]),
-      this.snowflakeService.execute<FoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
+      this.snowflakeService.execute<OrgPeopleAllStatsRow>(statsQuery, [accountId]),
+      this.snowflakeService.execute<OrgPeopleFoundationOptionRow>(foundationQuery, [accountId, accountId, accountId, accountId]),
     ]);
 
     return { rowsRaw: rowsResult.rows, statsRaw: statsResult.rows, foundationRaw: foundationResult.rows };
@@ -367,7 +338,7 @@ export class OrgLensPeopleService {
     };
   }
 
-  private mapStats(rows: OrgPeopleStatsRow[]): OrgAllEmployeeStats {
+  private mapStats(rows: OrgPeopleAllStatsRow[]): OrgAllEmployeeStats {
     if (rows.length === 0) {
       return EMPTY_ORG_ALL_EMPLOYEE_STATS;
     }
@@ -659,14 +630,14 @@ function cleanDisplayName(rawName: string | null, email: string | null): string 
 
 /**
  * Compacts the three raw reads for Valkey storage (GH-1906). The roster is the bulk of the payload
- * — 4.3 MB for the largest org, well past the 1 MiB write cap, so it was never actually stored —
- * and almost half of that was the same 15 uppercase warehouse column names repeated on every one of
- * ~10k rows. Columnar storage carries them once.
+ * — well past the 1 MiB write cap at the largest org measured, so it was never actually stored —
+ * and almost half of that was the same 15 uppercase warehouse column names repeated on every row.
+ * Columnar storage carries them once.
  */
 function encodeAllEmployeesRaw(raw: {
   rowsRaw: OrgPeopleAllRowRaw[];
-  statsRaw: OrgPeopleStatsRow[];
-  foundationRaw: FoundationOptionRow[];
+  statsRaw: OrgPeopleAllStatsRow[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
 }): CompactOrgAllEmployeesRawCache {
   return {
     // The roster query filters on ACCOUNT_ID, so every row carries the same value — stored once
@@ -674,35 +645,19 @@ function encodeAllEmployeesRaw(raw: {
     // all: an entry rejected for a missing hoisted field would be a cache that silently never
     // hits, which is the exact failure this compaction exists to remove.
     accountId: raw.rowsRaw.length ? (raw.rowsRaw[0].ACCOUNT_ID ?? null) : null,
-    rowsRaw: toColumnar(raw.rowsRaw, [
-      'PERSON_KEY',
-      'LFID',
-      'LF_USERNAME',
-      'CDP_MEMBER_ID',
-      'NAME',
-      'TITLE',
-      'EMAIL',
-      'PHOTO',
-      'SEATS_COUNT',
-      'BOARD_SEATS_COUNT',
-      'COMMITTEE_SEATS_COUNT',
-      'COMMITS_COUNT',
-      'EVENTS_COUNT',
-      'COURSES_COUNT',
-      // Left exactly as the driver returned it (a JSON string or a parsed array) so
-      // `parseFoundationIdArray` sees the same input it would on a cache miss.
-      'ENGAGED_FOUNDATION_IDS',
-    ]),
-    statsRaw: toColumnar(raw.statsRaw, ['ACCOUNT_ID', 'ACTIVE_IN_OSS', 'IN_GOVERNANCE', 'CODE_CONTRIBUTORS', 'EVENT_ATTENDEES', 'TRAINEES']),
-    foundationRaw: toColumnar(raw.foundationRaw, ['FOUNDATION_ID', 'FOUNDATION_NAME']),
+    // `ENGAGED_FOUNDATION_IDS` is stored exactly as the driver returned it (a JSON string or a
+    // parsed array) so `parseFoundationIdArray` sees the same input it would on a cache miss.
+    rowsRaw: toColumnar(raw.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS),
+    statsRaw: toColumnar(raw.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS),
+    foundationRaw: toColumnar(raw.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS),
   };
 }
 
 /** Rebuilds the raw rows {@link encodeAllEmployeesRaw} stored, so both accessors map exactly what a cache miss would hand them. */
 function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
   rowsRaw: OrgPeopleAllRowRaw[];
-  statsRaw: OrgPeopleStatsRow[];
-  foundationRaw: FoundationOptionRow[];
+  statsRaw: OrgPeopleAllStatsRow[];
+  foundationRaw: OrgPeopleFoundationOptionRow[];
 } {
   const rowsRaw = fromColumnar<OrgPeopleAllRowRaw>(value.rowsRaw);
   if (value.accountId !== null) {
@@ -712,8 +667,8 @@ function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
   }
   return {
     rowsRaw,
-    statsRaw: fromColumnar<OrgPeopleStatsRow>(value.statsRaw),
-    foundationRaw: fromColumnar<FoundationOptionRow>(value.foundationRaw),
+    statsRaw: fromColumnar<OrgPeopleAllStatsRow>(value.statsRaw),
+    foundationRaw: fromColumnar<OrgPeopleFoundationOptionRow>(value.foundationRaw),
   };
 }
 
@@ -726,11 +681,15 @@ function isCompactAllEmployeesRaw(value: unknown): boolean {
     isColumnarTable(cache.rowsRaw) &&
     isColumnarTable(cache.statsRaw) &&
     isColumnarTable(cache.foundationRaw) &&
-    // Same rule the pre-compaction guard enforced per row, now a single column-name check: an entry
-    // written before LF_USERNAME was selected must be rejected rather than replayed, because a
-    // replayed row maps to a null username and silently returns the people directory to email-only
-    // matching for the rest of the TTL.
-    cache.rowsRaw.k.includes('LF_USERNAME')
+    // Exact columns, not `includes`: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss.
+    // This also subsumes the rule the pre-compaction guard enforced per row — an entry written
+    // before LF_USERNAME was selected is rejected rather than replayed, because a replayed row maps
+    // to a null username and silently returns the people directory to email-only matching for the
+    // rest of the TTL.
+    hasExactColumns(cache.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS) &&
+    hasExactColumns(cache.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS) &&
+    hasExactColumns(cache.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS)
   );
 }
 

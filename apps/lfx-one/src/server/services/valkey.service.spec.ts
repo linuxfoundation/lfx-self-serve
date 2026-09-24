@@ -346,49 +346,41 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     expect(JSON.stringify(payload)).not.toContain(ORG_UID);
   });
 
-  it('writes AND reads back a value over the global cap but under its per-sub-resource override', async () => {
+  it('writes AND reads back a value over the global cap but under a configured per-sub-resource cap', async () => {
     // The cap is enforced on both the write and the read. Raising it in only one place yields a
     // cache that stores entries every subsequent read then rejects as oversized — a silent
-    // permanent miss. The override is installed here rather than read from the table so this stays
-    // pinned to that wiring, and restored afterwards rather than deleted, so it can't quietly strip
-    // a real production cap from a shared constant for the rest of the run.
-    const capKey = `${VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE}:${UNCAPPED_LABEL}`;
-    const overrides = VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE;
-    const previous: number | undefined = overrides[capKey];
-    overrides[capKey] = VALKEY_CACHE.MAX_VALUE_BYTES * 2;
-    try {
-      const key = buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!;
-      const serialized = JSON.stringify(oversized);
-      expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
-      setMock.mockResolvedValue('OK');
-      getMock.mockResolvedValue(serialized);
+    // permanent miss, which is exactly the class of bug this work exists to remove. Driven through
+    // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
+    // release decision, not a runtime knob, and a test that overwrote it would be changing
+    // production behaviour for every later test in the run.
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v2')!;
+    const serialized = JSON.stringify(oversized);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(serialized);
 
-      await expect(ValkeyService.getInstance().setJson(key, oversized, 60)).resolves.toBe(true);
-      await expect(ValkeyService.getInstance().getJson(key)).resolves.toEqual(oversized);
-    } finally {
-      if (previous === undefined) {
-        delete overrides[capKey];
-      } else {
-        overrides[capKey] = previous;
-      }
-    }
+    await expect(ValkeyService.getInstance().setJson(key, oversized, 60)).resolves.toBe(true);
+    await expect(ValkeyService.getInstance().getJson(key)).resolves.toEqual(oversized);
   });
 
-  it('still applies the global cap to a sub-resource with no override', async () => {
+  it('still applies the global cap to a sub-resource with no configured cap', async () => {
     setMock.mockResolvedValue('OK');
 
     await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, oversized, 60)).resolves.toBe(false);
     expect(setMock).not.toHaveBeenCalled();
   });
 
-  it('applies a configured per-sub-resource cap to the caches that were measured to need one', async () => {
-    // Guards the table itself, not the mechanism: each entry here exists because that cache's
-    // largest measured production value does not fit under the 1 MiB default, so a value just over
-    // the default must be storable for exactly these sub-resources.
+  it('applies a configured cap to every cache measured to need one, and to no other', async () => {
+    // Guards the table itself, not the mechanism: each entry exists because that cache's largest
+    // measured value does not fit under the 1 MiB default, so a value just over the default must be
+    // storable for exactly these sub-resources and refused for their siblings.
     setMock.mockResolvedValue('OK');
 
     for (const subResource of ['people-all:v2', 'people-event-attendees:v2', 'people-trainees:v2']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
+    }
+    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
   });
 });

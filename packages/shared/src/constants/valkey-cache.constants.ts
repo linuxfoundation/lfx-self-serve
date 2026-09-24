@@ -204,7 +204,9 @@ export const VALKEY_CACHE = {
    * reader can tell a still-justified cap from one whose payload has since shrunk (or grown).
    *
    * Sized at the measured compact maximum × ~1.25, rounded up to a whole MiB, so an org growing a
-   * quarter again doesn't silently fall out of the cache.
+   * quarter again doesn't silently fall out of the cache. `Readonly` on purpose: these are release
+   * decisions, not a runtime knob, and a test that reached in to overwrite one would be changing
+   * production behaviour for every later test in the run.
    */
   MAX_VALUE_BYTES_BY_SUBRESOURCE: {
     // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,050,250
@@ -222,5 +224,5 @@ export const VALKEY_CACHE = {
     // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
     // every row, so there is nothing left to deduplicate.
     'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
-  } as Record<string, number>,
+  } as Readonly<Record<string, number>>,
 } as const;

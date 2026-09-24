@@ -108,13 +108,17 @@ describe('isColumnarAbsent', () => {
   // to tell "the field never arrived" from "the field holds null" and from an ordinary string —
   // otherwise a missing required value would pass as a present one.
   it('identifies only the encoded absence of a field', () => {
-    const [absentCell, nullCell, stringCell] = toColumnar([{ id: 'a', name: null } as Row], ['badge', 'name', 'id']).r[0];
+    // Typed as `Row` rather than inferred, so `badge` — the optional field whose absence is the
+    // whole point — is a legal key for `toColumnar` to project.
+    const unbadged: Row[] = [{ id: 'a', name: null, count: 0 }];
+    const [absentCell, nullCell, stringCell] = toColumnar(unbadged, ['badge', 'name', 'id']).r[0];
 
     expect(isColumnarAbsent(absentCell)).toBe(true);
     expect(isColumnarAbsent(nullCell)).toBe(false);
     expect(isColumnarAbsent(stringCell)).toBe(false);
     // A real string that merely looks like the marker is escaped, so it is never taken for absence.
-    const [escapedCell] = toColumnar([{ id: 'a', name: '\u0000', count: 1 } as Row], ['name']).r[0];
+    const looksLikeMarker: Row[] = [{ id: 'a', name: '\u0000', count: 1 }];
+    const [escapedCell] = toColumnar(looksLikeMarker, ['name']).r[0];
     expect(isColumnarAbsent(escapedCell)).toBe(false);
   });
 });

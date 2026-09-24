@@ -1,7 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_EVENT_ATTENDEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_EVENT_ATTENDEES_RESPONSE,
+  ORG_EVENT_ATTENDEE_ROW_COLUMNS,
+  ORG_EVENT_DETAIL_COLUMNS,
+  ORG_EVENT_DICTIONARY_COLUMNS,
+  ORG_EVENT_FOUNDATION_OPTION_COLUMNS,
+  ORG_EVENT_OPTION_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
   CompactOrgEventAttendeesRawCache,
   EventAttendeeEventOptionRow,
@@ -14,7 +22,7 @@ import type {
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, isColumnarTable, normalizeToUrl, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, normalizeToUrl, toColumnar } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -210,24 +218,13 @@ function encodeEventAttendeesRaw(raw: {
   const events = dedupeByKey(raw.detailRows, keyOf);
 
   return {
-    attendeeRows: toColumnar(raw.attendeeRows, ['PERSON_KEY', 'LFID', 'CDP_MEMBER_ID', 'NAME', 'TITLE', 'EMAIL']),
-    events: toColumnar(events.values, [
-      'EVENT_ID',
-      'EVENT_NAME',
-      'EVENT_LOCATION',
-      'EVENT_CITY',
-      'EVENT_COUNTRY',
-      'EVENT_URL',
-      'EVENT_START_DATE',
-      'EVENT_END_DATE',
-      'FOUNDATION_ID',
-      'FOUNDATION_NAME',
-    ]),
-    details: toColumnar(raw.detailRows, ['PERSON_KEY', 'IS_SPEAKER', 'IS_PAST_EVENT']),
+    attendeeRows: toColumnar(raw.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS),
+    events: toColumnar(events.values, ORG_EVENT_DICTIONARY_COLUMNS),
+    details: toColumnar(raw.detailRows, ORG_EVENT_DETAIL_COLUMNS),
     // Every detail row was part of the set `events` was built from, so the lookup always resolves.
     detailEvents: raw.detailRows.map((row) => events.indexOf.get(keyOf(row))!),
-    foundationRows: toColumnar(raw.foundationRows, ['FOUNDATION_ID', 'FOUNDATION_NAME']),
-    eventRows: toColumnar(raw.eventRows, ['EVENT_ID', 'EVENT_NAME', 'EVENT_END_DATE']),
+    foundationRows: toColumnar(raw.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS),
+    eventRows: toColumnar(raw.eventRows, ORG_EVENT_OPTION_COLUMNS),
   };
 }
 
@@ -258,7 +255,15 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
     !isColumnarTable(cache.events) ||
     !isColumnarTable(cache.details) ||
     !isColumnarTable(cache.foundationRows) ||
-    !isColumnarTable(cache.eventRows)
+    !isColumnarTable(cache.eventRows) ||
+    // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+    // the tab renders with holes in it for the rest of the TTL instead of refetching.
+    !hasExactColumns(cache.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS) ||
+    !hasExactColumns(cache.events, ORG_EVENT_DICTIONARY_COLUMNS) ||
+    !hasExactColumns(cache.details, ORG_EVENT_DETAIL_COLUMNS) ||
+    !hasExactColumns(cache.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS) ||
+    !hasExactColumns(cache.eventRows, ORG_EVENT_OPTION_COLUMNS)
   ) {
     return false;
   }

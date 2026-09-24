@@ -3,7 +3,7 @@
 
 import { createRequire } from 'node:module';
 
-import type { OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
+import type { CompactOrgAllEmployeesRawCache, OrgPersonCompanyEmailsResponse } from '@lfx-one/shared/interfaces';
 import { agreedUsername } from '@lfx-one/shared/utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -24,6 +24,9 @@ vi.mock('@lfx-one/shared/utils', async () => ({
 vi.mock('@lfx-one/shared/constants', async () => ({
   ...(await import('../../../../../packages/shared/src/constants/org-people.constants')),
   ...(await import('../../../../../packages/shared/src/constants/valkey-cache.constants')),
+  // Real, not stubbed: the roster guard validates the stored columns against these lists, so a
+  // hand-written copy here would let a column-drift regression pass.
+  ...(await import('../../../../../packages/shared/src/constants/org-cache-compact.constants')),
 }));
 
 vi.mock('./snowflake.service', () => ({
@@ -514,9 +517,31 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     expect(fromHit).toStrictEqual(fromMiss);
     expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
     expect(execute).toHaveBeenCalledTimes(3);
-    expect(fromHit.rows[0]).not.toHaveProperty('accessBadge');
-    // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it.
+    // ENGAGED_FOUNDATION_IDS must parse identically whichever way the driver returned it — the
+    // column is stored verbatim, so a decode that normalized it would show up here.
     expect(fromHit.rows.map((row) => row.engagedFoundationIds)).toEqual([['foundation-one', 'foundation-two'], ['foundation-one']]);
+    // ACCOUNT_ID is hoisted off every row at encode; a decode that forgot to put it back would
+    // leave the stored rows unusable for anything keyed on it.
+    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgAllEmployeesRawCache;
+    expect(stored.accountId).toBe(ACCOUNT);
+    expect(stored.rowsRaw.k).not.toContain('ACCOUNT_ID');
+  });
+
+  it('rejects a stored roster whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
+    // missing data, so the guard has to reject the entry up front rather than serve a roster with
+    // holes in it — silently dropping LF_USERNAME returns the directory to email-only matching.
+    mockRoster();
+    await service.getAllEmployeesInternal(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
+    stored.rowsRaw.k = stored.rowsRaw.k.filter((column) => column !== 'LF_USERNAME');
+    cacheValues.set(key, JSON.stringify(stored));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
   });
 
   it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {

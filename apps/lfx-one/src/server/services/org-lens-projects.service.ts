@@ -13,9 +13,11 @@ import {
   ORG_PROJECTS_SEARCH_MAX_RESULTS,
   ORG_PROJECTS_SEARCH_MIN_LENGTH,
   ORG_PROJECTS_SEARCH_PRELOAD_LIMIT,
+  ORG_LENS_PROJECT_PEOPLE_COLUMNS,
+  ORG_LENS_PROJECT_ROW_COLUMNS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { dedupeByKey, fromColumnar, isColumnarTable, normalizeHealthScoreCategoryV2, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, normalizeHealthScoreCategoryV2, toColumnar } from '@lfx-one/shared/utils';
 import type {
   CompactOrgLensProjectRow,
   CompactOrgLensProjectsCache,
@@ -55,11 +57,26 @@ export class OrgLensProjectsService {
     // projection below (GH-1906). A `v6` entry decodes to nothing recognizable under the new
     // reader, so it must miss outright rather than be read back.
     const cacheKey = `projects:v7:${this.paramSignature([orgName, ...(slugs ?? ['__top__'])])}`;
-    return withOrgCompactCache(accountId, cacheKey, VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS, () => this.fetchProjects(accountId, orgName, slugs), {
-      encode: encodeProjectsResponse,
-      decode: decodeProjectsResponse,
-      accept: isCompactProjectsCache,
-    });
+    // Set by the fetcher below, read by `storable` immediately after it resolves. A flag rather
+    // than a field on the response because it must never reach the browser or the stored value —
+    // it describes this one fetch, not the page.
+    let noActivityDegraded = false;
+    return withOrgCompactCache(
+      accountId,
+      cacheKey,
+      VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
+      async () => {
+        const fetched = await this.fetchProjects(accountId, orgName, slugs);
+        noActivityDegraded = fetched.noActivityDegraded;
+        return fetched.response;
+      },
+      { encode: encodeProjectsResponse, decode: decodeProjectsResponse, accept: isCompactProjectsCache },
+      // A degraded response is silently missing projects the caller explicitly asked for. Serving
+      // it once is the established fallback; storing it is not — and now that compaction brings
+      // the largest orgs under the write cap for the first time, an unstored degraded response
+      // would become an hour of wrong answers rather than a single one.
+      () => !noActivityDegraded
+    );
   }
 
   // NOTE: accountId is intentionally unused — this search spans the GLOBAL onboarded catalog (an admin can add any
@@ -368,10 +385,21 @@ export class OrgLensProjectsService {
     };
   }
 
-  private async fetchProjects(accountId: string, orgName: string, slugs: string[] | null): Promise<OrgLensProjectsResponse> {
+  /**
+   * `noActivityDegraded` reports that the optional no-activity hydration failed, so the response is
+   * well-formed but silently missing projects the caller asked for. Returned alongside the response
+   * rather than set on it because it describes this fetch, not the page: it must never reach the
+   * browser or the cached value — `getProjects` uses it only to decline the write.
+   */
+  private async fetchProjects(
+    accountId: string,
+    orgName: string,
+    slugs: string[] | null
+  ): Promise<{ response: OrgLensProjectsResponse; noActivityDegraded: boolean }> {
     const projectsResult = await this.snowflakeService.execute<OrgLensProjectRow>(this.buildProjectsQuery(slugs), this.buildProjectsBinds(accountId, slugs));
     const projectRows = projectsResult.rows;
     const projectSlugs = projectRows.map((row) => row.PROJECT_SLUG);
+    let noActivityDegraded = false;
     // Run both slug-keyed reads concurrently to avoid a second sequential Snowflake round trip. fetchNoActivityProjects
     // fires only for requested slugs with no ORG_LENS_PROJECTS row (post-relaxation, no-activity participation is a real `full` row above).
     const [peopleRows, noActivityProjects] = await Promise.all([
@@ -380,15 +408,19 @@ export class OrgLensProjectsService {
       // absent); never let its failure fail the whole response — degrade to activity rows only, as before.
       this.fetchNoActivityProjects(slugs, projectSlugs).catch((err) => {
         logger.warning(undefined, 'fetch_no_activity_org_projects', 'No-activity org project hydration failed; returning activity rows only', { err });
+        noActivityDegraded = true;
         return [] as OrgLensProject[];
       }),
     ]);
 
     return {
-      orgSlug: this.slugify(orgName) || accountId,
-      orgName: orgName || 'Your organization',
-      dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
-      projects: [...projectRows.map((row) => this.mapProject(row, peopleRows)), ...noActivityProjects],
+      response: {
+        orgSlug: this.slugify(orgName) || accountId,
+        orgName: orgName || 'Your organization',
+        dataUpdatedAt: this.latestTimestamp(projectRows) ?? new Date().toISOString(),
+        projects: [...projectRows.map((row) => this.mapProject(row, peopleRows)), ...noActivityProjects],
+      },
+      noActivityDegraded,
     };
   }
 
@@ -1031,37 +1063,8 @@ function encodeProjectsResponse(response: OrgLensProjectsResponse): CompactOrgLe
     orgSlug: response.orgSlug,
     orgName: response.orgName,
     dataUpdatedAt: response.dataUpdatedAt,
-    people: toColumnar(people.values, ['id', 'name', 'avatarUrl']),
-    projects: toColumnar(rows, [
-      'slug',
-      'name',
-      'logoUrl',
-      'foundationSlug',
-      'foundationName',
-      'foundationLogoUrl',
-      'health',
-      'healthOverallScore',
-      'healthMaxScore',
-      'healthCoveredCategoryCount',
-      'healthMaintainer',
-      'healthSecurity',
-      'healthDevelopment',
-      'technicalInfluence',
-      'ecosystemInfluence',
-      'influenceScore',
-      'priorYearScore',
-      'trendDeltaPct',
-      'trendTechnicalDeltaPct',
-      'trendEcosystemDeltaPct',
-      'trendDirection',
-      'trendSeries',
-      'commits1y',
-      'changeDriverLabel',
-      'changeDriverDirection',
-      'description',
-      'metricsState',
-      'noActivityYet',
-    ]),
+    people: toColumnar(people.values, ORG_LENS_PROJECT_PEOPLE_COLUMNS),
+    projects: toColumnar(rows, ORG_LENS_PROJECT_ROW_COLUMNS),
     maintainers: response.projects.map((project) => indicesOf(project.maintainers)),
     contributors: response.projects.map((project) => indicesOf(project.contributors)),
     participants: response.projects.map((project) => indicesOf(project.participants)),
@@ -1139,13 +1142,17 @@ function isCompactProjectsCache(value: unknown): boolean {
   if (!isColumnarTable(cache.people) || !isColumnarTable(cache.projects)) {
     return false;
   }
-  // The pre-compaction guard rejected an entry whose projects lacked `metricsState` or
-  // `healthOverallScore`; those are column names now, so one scan of `k` replaces a scan of every
-  // project and covers the same drift.
-  const healthIndex = cache.projects.k.indexOf('health');
-  if (healthIndex === -1 || !cache.projects.k.includes('metricsState') || !cache.projects.k.includes('healthOverallScore')) {
+  // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+  // "successfully" into projects missing data the writer always emits, which is worse than a miss —
+  // the page renders with holes in it for the rest of the TTL instead of refetching. This also
+  // subsumes what the pre-compaction guard checked per project (a `metricsState` or
+  // `healthOverallScore` that predates the v2 breakdown), since those are column names now.
+  if (!hasExactColumns(cache.people, ORG_LENS_PROJECT_PEOPLE_COLUMNS) || !hasExactColumns(cache.projects, ORG_LENS_PROJECT_ROW_COLUMNS)) {
     return false;
   }
+  // The band still has to be one the UI knows: an unrecognized label would render as a blank badge
+  // rather than the explicit "unavailable" treatment.
+  const healthIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('health');
   if (!cache.projects.r.every((row) => Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, String(row[healthIndex])))) {
     return false;
   }

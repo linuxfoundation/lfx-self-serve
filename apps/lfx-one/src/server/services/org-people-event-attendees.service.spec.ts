@@ -43,6 +43,8 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import type { CompactOrgEventAttendeesRawCache } from '@lfx-one/shared/interfaces';
+
 import { OrgPeopleEventAttendeesService } from './org-people-event-attendees.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
@@ -151,11 +153,17 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
   });
 
-  it('rebuilds every event-level column the detail rows no longer carry', async () => {
-    // The dedup is the whole saving here (4.8 MB of a 5.69 MB payload), so a decode that dropped a
-    // dictionary column would empty most of the expanded sub-table while still round-tripping the
-    // rows themselves.
+  it('rebuilds every event-level column the detail rows no longer carry, on the cache-hit path', async () => {
+    // Deliberately the SECOND call: the first populates the cache and returns the rows the
+    // warehouse handed back, so only a read-back exercises the decoder at all. The dedup is the
+    // whole saving here, so a decode that dropped a dictionary column would empty most of the
+    // expanded sub-table while still round-tripping the rows themselves.
+    await service.getEventAttendees(ACCOUNT);
+    const warehouseReads = execute.mock.calls.length;
+
     const { details } = await service.getEventAttendees(ACCOUNT);
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
     expect(details[0]).toEqual({
       personKey: 'person-one',
@@ -173,6 +181,27 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
       isPastEvent: true,
     });
     expect(details.map((row) => row.eventId)).toEqual(['event-one', 'event-one', 'event-two']);
+    // Two of the three detail rows share an event, so the stored dictionary has to be shorter than
+    // the detail table — a `keyOf` regression that stopped collapsing them would not be.
+    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgEventAttendeesRawCache;
+    expect(stored.events.r.length).toBe(2);
+    expect(stored.details.r.length).toBe(3);
+  });
+
+  it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
+    // missing data, so the guard has to reject the entry up front rather than serve a tab with
+    // holes in it for the rest of the TTL.
+    await service.getEventAttendees(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgEventAttendeesRawCache;
+    stored.details.k = [...stored.details.k, 'PERSON_KEY'];
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getEventAttendees(ACCOUNT);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {

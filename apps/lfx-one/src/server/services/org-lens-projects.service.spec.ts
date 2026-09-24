@@ -398,6 +398,48 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     ]);
   });
 
+  it('serves but does not store a response whose no-activity hydration failed', async () => {
+    // `fetchProjects` degrades to activity rows only when the onboarded-catalog read fails, which
+    // is the right answer for one request and the wrong one for an hour: the response is silently
+    // missing projects the caller explicitly asked for. Now that compaction brings the largest orgs
+    // under the write cap for the first time, that response would actually get stored.
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ONBOARDED_PROJECTS')) {
+        throw new Error('onboarded catalog unavailable');
+      }
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        return { rows: [] };
+      }
+      return { rows: [projectsRow()] };
+    });
+
+    const degraded = await service.getProjects(ACCOUNT_ID, ORG_NAME, ['k8s', 'ghost']);
+
+    expect(degraded.projects.map((project) => project.slug)).toEqual(['k8s']);
+    expect(cacheValues.size).toBe(0);
+
+    // And the next call refetches rather than replaying the gap.
+    const warehouseReads = execute.mock.calls.length;
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, ['k8s', 'ghost']);
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into
+    // projects missing data, so the guard has to reject the entry up front rather than render a
+    // page with holes in it for the rest of the TTL.
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    const [key] = [...cacheValues.keys()];
+    const stored = storedValue();
+    stored.people.k = [...stored.people.k, 'id'];
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
   it('treats a pre-compaction cached response as a miss rather than decoding it', async () => {
     // A `v6` entry is the full response object. Nothing evicts it on deploy other than the key
     // change, so the guard has to reject the shape too — decoding one would read `projects.k`/

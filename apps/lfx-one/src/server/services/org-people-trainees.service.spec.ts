@@ -42,6 +42,8 @@ vi.mock('./logger.service', () => ({
   logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
 }));
 
+import type { CompactOrgTraineesRawCache } from '@lfx-one/shared/interfaces';
+
 import { OrgPeopleTraineesService } from './org-people-trainees.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
@@ -132,11 +134,17 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
     expect(execute).toHaveBeenCalledTimes(warehouseReads);
   });
 
-  it('rebuilds the course-level columns the detail rows no longer carry, including the null-course fallback', async () => {
-    // A decode that dropped a dictionary column would leave the expanded section blank; the
-    // null-COURSE_ID row also pins the documented fallback to COURSE_OR_CERT_ID, which the client
-    // groups on.
+  it('rebuilds the course-level columns on the cache-hit path, including the null-course fallback', async () => {
+    // Deliberately the SECOND call: the first populates the cache and returns the rows the
+    // warehouse handed back, so only a read-back exercises the decoder at all. A decode that
+    // dropped a dictionary column would leave the expanded section blank; the null-COURSE_ID row
+    // also pins the documented fallback to COURSE_OR_CERT_ID, which the client groups on.
+    await service.getTrainees(ACCOUNT);
+    const warehouseReads = execute.mock.calls.length;
+
     const { details } = await service.getTrainees(ACCOUNT);
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
 
     expect(details[0]).toEqual({
       personKey: 'person-one',
@@ -149,6 +157,27 @@ describe('OrgPeopleTraineesService compact cache (GH-1906)', () => {
       activityTs: '2026-04-12T10:30:00.000Z',
     });
     expect(details.map((row) => row.courseId)).toEqual(['course-one', 'course-one', 'enroll-two']);
+    // Two of the three detail rows share a course, so the stored dictionary has to be shorter than
+    // the detail table — a `keyOf` regression that stopped collapsing them would not be.
+    const stored = JSON.parse([...cacheValues.values()][0]) as CompactOrgTraineesRawCache;
+    expect(stored.courses.r.length).toBe(2);
+    expect(stored.details.r.length).toBe(3);
+  });
+
+  it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
+    // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
+    // missing data, so the guard has to reject the entry up front rather than serve a tab with
+    // holes in it for the rest of the TTL.
+    await service.getTrainees(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgTraineesRawCache;
+    stored.courses.k = [...stored.courses.k].reverse();
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getTrainees(ACCOUNT);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
