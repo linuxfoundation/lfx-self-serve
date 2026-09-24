@@ -123,6 +123,19 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     expect(close).toHaveBeenCalledWith({ removeApprovalEntries: ENTRIES });
   });
 
+  // An approval list can hold identical duplicate entries, so a track key of kind+value alone would
+  // collide and trip Angular's duplicate-key path; both must still render.
+  it('renders duplicate matching entries without a tracking-key collision', async () => {
+    const duplicates: OrgClaApprovalEntry[] = [
+      { kind: 'email', value: 'ada@example.org' },
+      { kind: 'email', value: 'ada@example.org' },
+    ];
+    const fixture = await render(dialogData(duplicates));
+    const box = byTestId(fixture, 'org-easycla-invalidate-dialog-matches');
+
+    expect(box?.querySelectorAll('[data-testid="org-easycla-invalidate-dialog-match"]').length).toBe(2);
+  });
+
   it('keeps the entries when the manager unticks the box', async () => {
     const fixture = await render(dialogData([ENTRIES[0]]));
     const checkbox = alsoRemoveInput(fixture);

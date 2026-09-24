@@ -23,7 +23,7 @@
         >{{ matchedBy() }}
       </p>
       <ul class="my-2 ml-5 list-disc p-0">
-        @for (entry of matchRows(); track entry.kind + entry.value) {
+        @for (entry of matchRows(); track $index + ':' + entry.kind + ':' + entry.value) {
           <li data-testid="org-easycla-invalidate-dialog-match">
             <span class="mr-1 rounded bg-blue-50 px-1.5 py-0.5 text-xs font-medium text-blue-700">{{ entry.criteriaLabel }}</span> {{ entry.value }}
           </li>
