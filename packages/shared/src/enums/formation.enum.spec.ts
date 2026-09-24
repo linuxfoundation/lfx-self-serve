@@ -15,6 +15,9 @@ import { FORMATION_SUB_STAGE_LABELS } from '../constants/formation.constants';
 import { FormationActionType, FormationOwnerTeam, FormationTemplateSectionKey } from './formation.enum';
 import type { Formation, FormationItem, FormationTemplate, FormationTemplateSubItem } from '../interfaces/formation.interface';
 
+// @ts-expect-error — Formation must not reintroduce the removed entity_type field
+type FormationMustNotHaveEntityType = Formation['entity_type'];
+
 describe('FormationTemplateSectionKey', () => {
   it('is exhaustive against the two-section seeded template taxonomy', () => {
     expect(Object.values(FormationTemplateSectionKey).sort()).toEqual(['community_and_launch', 'legal_and_entity']);
@@ -121,12 +124,12 @@ describe('FormationTemplate shape', () => {
 describe('Formation shape', () => {
   // These two derivation-input fields (#1957, GH-2163 §1) replace the removed `entity_type` field.
   // Since #2709 `check-types` now type-checks this file via `packages/shared/tsconfig.spec.json`,
-  // so `satisfies Formation` on the literal below does gate presence, nullability, and the
-  // continued absence of `entity_type` from the interface at compile time — a required field added
-  // to `Formation` fails this test with `TS2322` on the literal. What `satisfies` still cannot do
-  // is prove JSON transport preserves `parent_uid: null` (JSON.stringify drops `undefined` but
-  // keeps `null` — a subtle serialization difference the interface's type can't encode), so the
-  // round-trip assertion below remains the gate for that specific claim.
+  // `satisfies Formation` on the literal below gates required-field presence and nullability — a
+  // required field added to `Formation` fails this test with `TS2322` on the literal. The separate
+  // type assertion above guards that the removed `entity_type` key stays absent, including if it
+  // were reintroduced as optional. Neither type-level check proves JSON transport preserves
+  // `parent_uid: null` (JSON.stringify drops `undefined` but keeps `null`), so the round-trip
+  // assertion below remains the gate for that serialization behavior.
   it('round-trips is_foundation and a null parent_uid (top-level project) through JSON', () => {
     const formation = {
       uid: 'formation-test',
