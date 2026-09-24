@@ -26,6 +26,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   const invalidateAcknowledgment = vi.fn();
   const getApprovalList = vi.fn();
   const updateApprovalList = vi.fn();
+  const checkPermission = vi.fn();
   const addMessage = vi.fn();
   /** Emits what the confirmation closed with: a request on confirm, `null` on dismiss. */
   let dialogClosed: Subject<unknown>;
@@ -48,6 +49,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   function ack(overrides: Partial<OrgClaContributorAcknowledgment> = {}): OrgClaContributorAcknowledgment {
     return {
       signatureId: `ecla-${Math.random().toString(36).slice(2, 8)}`,
+      cclaVersion: 'v1',
       approved: true,
       removedFromApprovalList: false,
       ...overrides,
@@ -76,7 +78,10 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       providers: [
         provideNoopAnimations(),
         { provide: AccountContextService, useValue: { selectedAccount } },
-        { provide: OrgLensClaService, useValue: { getContributorAcknowledgments, invalidateAcknowledgment, getApprovalList, updateApprovalList } },
+        {
+          provide: OrgLensClaService,
+          useValue: { getContributorAcknowledgments, invalidateAcknowledgment, getApprovalList, updateApprovalList, checkPermission },
+        },
         { provide: MessageService, useValue: { add: addMessage } },
       ],
     })
@@ -135,6 +140,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
     invalidateAcknowledgment.mockReturnValue(of({ signatureId: 'ecla-1' }));
     getApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
+    checkPermission.mockReturnValue(of(true));
     dialogClosed = new Subject<unknown>();
     openDialog.mockReturnValue({ onClose: dialogClosed.asObservable(), close: vi.fn() });
   });
@@ -429,15 +435,15 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   describe('the tab badge count', () => {
     it('reports the agreement total when an unsearched list loads', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 7 })));
-      const counts: number[] = [];
+      const counts: { signatureId: string; count: number }[] = [];
       await render(claGroup(), (component) => component.countChanged.subscribe((count) => counts.push(count)));
 
-      expect(counts).toEqual([7]);
+      expect(counts).toEqual([{ signatureId: 'signature-uuid-1', count: 7 }]);
     });
 
     it('does not report a searched total, which counts only the matches', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 7 })));
-      const counts: number[] = [];
+      const counts: { signatureId: string; count: number }[] = [];
       const fixture = await render(claGroup(), (component) => component.countChanged.subscribe((count) => counts.push(count)));
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack()], { totalCount: 1 })));
 
@@ -451,7 +457,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       }
 
       expect(getContributorAcknowledgments.mock.calls.some((call) => call[2]?.search === 'ada')).toBe(true);
-      expect(counts).toEqual([7]);
+      expect(counts).toEqual([{ signatureId: 'signature-uuid-1', count: 7 }]);
     });
   });
 
@@ -543,14 +549,28 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(button?.textContent?.trim()).toBe('Invalidate');
     });
 
-    // `canEdit` is decided server-side from the CCLA's manager roster. An org viewer who is not on
-    // it would be refused by the BFF anyway; withholding the control is what stops them being
-    // offered an action that cannot succeed.
-    it('withholds the control when the server says the caller may not edit', async () => {
-      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: false })));
+    it('withholds the control when ACS denies ecla-invalidate', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      checkPermission.mockImplementation((_orgUid: string, action: string) => of(action !== 'ecla-invalidate'));
       const fixture = await render();
 
       expect(invalidateButton(fixture)).toBeNull();
+    });
+
+    it('withholds the control until the ecla-invalidate check resolves, failing closed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const grant = new Subject<boolean>();
+      checkPermission.mockImplementation((_orgUid: string, action: string) => (action === 'ecla-invalidate' ? grant.asObservable() : of(true)));
+      const fixture = await render();
+
+      expect(invalidateButton(fixture)).toBeNull();
+
+      grant.next(true);
+      grant.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(invalidateButton(fixture)).toBeTruthy();
     });
 
     it('withholds the control on a row that is already invalidated', async () => {
@@ -654,7 +674,26 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
         { kind: 'email', value: 'ada@example.org' },
         { kind: 'github-username', value: 'ADA-L' },
       ]);
-      expect(data.canRemoveEntries()).toBe(false);
+    });
+
+    it('offers the also-remove option when ACS allows approval-list-update', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'ada@example.org' })], { canEdit: true })));
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.canRemoveEntries()).toBe(true);
+    });
+
+    it('hides the also-remove option when ACS denies approval-list-update, even though invalidate is allowed', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1', email: 'ada@example.org' })], { canEdit: true })));
+      checkPermission.mockImplementation((_orgUid: string, action: string) => of(action !== 'approval-list-update'));
+      const fixture = await render();
+
+      expect(invalidateButton(fixture)).toBeTruthy();
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+
+      expect(openDialog.mock.calls[0][1].data.canRemoveEntries()).toBe(false);
     });
 
     it('tells the dialog the approval list is unknown when it cannot be read', async () => {
@@ -781,6 +820,45 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(allByTestId(fixture, 'org-easycla-acknowledgment-name').map(textIn)).toEqual(['Ada Lovelace', 'Grace Hopper']);
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
       expect(invalidateAcknowledgment).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', 'ecla-2', { reason: 'compliance' });
+    });
+
+    it('shows a Not Authorized row as Invalidated once its invalidate succeeds, even if the refresh fails', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page(
+            [
+              ack({
+                signatureId: 'ecla-2',
+                name: 'Grace Hopper',
+                approved: false,
+                removedFromApprovalList: true,
+                removedCriteria: 'Email Criteria',
+              }),
+            ],
+            { totalCount: 2, nextKey: null, canEdit: true }
+          )
+        )
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-not-authorized')).toBeTruthy();
+
+      invalidateAcknowledgment.mockReturnValueOnce(of({ signatureId: 'ecla-2' }));
+      getContributorAcknowledgments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-not-authorized')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
     });
 
     it('drops a Load-more response that arrives after the invalidate refresh starts', async () => {

@@ -4,6 +4,8 @@
 import {
   ACS_CLA_APPROVAL_LIST_ACTION,
   ACS_CLA_APPROVAL_LIST_RESOURCE,
+  ACS_CLA_ECLA_INVALIDATE_ACTION,
+  ACS_CLA_ECLA_INVALIDATE_RESOURCE,
   ACS_CLA_MANAGER_DELETE_ACTION,
   ACS_CLA_MANAGER_DELETE_RESOURCE,
   ACS_CLA_PROJECT_ORG_OBJECT_TYPE,
@@ -47,6 +49,8 @@ function acsParts(action: OrgClaPermissionAction): { resource: string; verb: str
       return { resource: ACS_CLA_APPROVAL_LIST_RESOURCE, verb: ACS_CLA_APPROVAL_LIST_ACTION };
     case 'cla-manager-delete':
       return { resource: ACS_CLA_MANAGER_DELETE_RESOURCE, verb: ACS_CLA_MANAGER_DELETE_ACTION };
+    case 'ecla-invalidate':
+      return { resource: ACS_CLA_ECLA_INVALIDATE_RESOURCE, verb: ACS_CLA_ECLA_INVALIDATE_ACTION };
   }
 }
 

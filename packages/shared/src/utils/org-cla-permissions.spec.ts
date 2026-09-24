@@ -14,6 +14,7 @@ describe('isOrgClaPermissionAction', () => {
     expect(isOrgClaPermissionAction('sign')).toBe(true);
     expect(isOrgClaPermissionAction('approval-list-update')).toBe(true);
     expect(isOrgClaPermissionAction('cla-manager-delete')).toBe(true);
+    expect(isOrgClaPermissionAction('ecla-invalidate')).toBe(true);
     expect(isOrgClaPermissionAction('cla-signatory')).toBe(false);
     expect(isOrgClaPermissionAction('self_serve_request_corporate_signature:create')).toBe(false);
     expect(isOrgClaPermissionAction('cla_manager_delete:remove')).toBe(false);
@@ -92,6 +93,12 @@ describe('buildOrgClaAcsPermission', () => {
   it('interpolates the manager-delete string the gateway already enforces', () => {
     expect(buildOrgClaAcsPermission({ action: 'cla-manager-delete', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
       `cla_manager_delete:remove:project|organization:${PROJECT}|${COMPANY}`
+    );
+  });
+
+  it('interpolates the ecla-invalidate string the gateway enforces on the invalidate endpoint', () => {
+    expect(buildOrgClaAcsPermission({ action: 'ecla-invalidate', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(
+      `ecla_invalidate:update:project|organization:${PROJECT}|${COMPANY}`
     );
   });
 });

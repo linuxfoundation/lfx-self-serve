@@ -27,7 +27,7 @@ import type {
   OrgClaInvalidateAcknowledgmentDialogResult,
   OrgClaInvalidateAcknowledgmentRequest,
 } from '@lfx-one/shared/interfaces';
-import { formatClaSignedOnInstant } from '@lfx-one/shared/utils';
+import { formatClaSignedOnInstant, orgClaPairProjectSfid } from '@lfx-one/shared/utils';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -106,7 +106,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * The detail page's tab badge counts from its own read on page load; this keeps it matching the
    * table once the tab has loaded. A searched load is not emitted: its total is the matches.
    */
-  public readonly countChanged = output<number>();
+  public readonly countChanged = output<{ signatureId: string; count: number }>();
 
   /** The Not Authorized row's "Add the user to the Approval list" link. The page switches tabs. */
   public readonly approvalListRequested = output<void>();
@@ -196,7 +196,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
           tap((list) => {
             this.page.set(list);
             this.errorMessage.set(null);
-            if (!search.trim()) this.countChanged.emit(list.totalCount);
+            if (!search.trim()) this.countChanged.emit({ signatureId, count: list.totalCount });
           }),
           catchError((error: unknown) => {
             const message =
@@ -228,8 +228,13 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     return list.list.map((ack) => this.toRow(ack, pending));
   });
 
-  /** Server-decided from the CCLA's manager roster. Never inferred client-side. */
-  protected readonly canEdit = computed(() => this.loadedList()?.canEdit === true);
+  // ACS decides both affordances, per the self permission check the gateway also enforces (#1980).
+  // Each starts null (checking) and fails closed, so the control stays hidden until ACS says yes.
+  // Invalidate is gated on `ecla-invalidate`; the dialog's also-remove option on
+  // `approval-list-update`, so a manager who can invalidate but not edit the list still invalidates.
+  private readonly invalidateGrant = signal<boolean | null>(null);
+  private readonly removeFromListGrant = signal<boolean | null>(null);
+  protected readonly canInvalidate = computed(() => this.invalidateGrant() === true);
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly showEmptyState = computed(
@@ -253,6 +258,34 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       .subscribe(() => {
         this.invalidateDialog?.close();
         this.invalidateDialog = null;
+      });
+
+    toObservable(
+      computed(() => {
+        const orgUid = this.orgUid();
+        const projectSfid = orgClaPairProjectSfid(this.claGroup());
+        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+      })
+    )
+      .pipe(
+        distinctUntilChanged(),
+        tap(() => {
+          this.invalidateGrant.set(null);
+          this.removeFromListGrant.set(null);
+        }),
+        switchMap((pair) => {
+          if (!pair) return of<[boolean, boolean]>([false, false]);
+          const [orgUid, projectSfid] = pair.split('::');
+          return combineLatest([
+            this.claService.checkPermission(orgUid, 'ecla-invalidate', projectSfid),
+            this.claService.checkPermission(orgUid, 'approval-list-update', projectSfid),
+          ]);
+        }),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(([canInvalidate, canRemove]) => {
+        this.invalidateGrant.set(canInvalidate);
+        this.removeFromListGrant.set(canRemove);
       });
 
     // The dialog attaches to `document.body`, so it would outlive this panel if the CLA manager
@@ -315,7 +348,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
    * the dialog: a dismissed dialog cannot leave a write half-done.
    */
   protected onInvalidate(row: OrgClaAcknowledgmentRow): void {
-    if (!this.canEdit() || row.invalidated || !row.invalidatable || row.invalidatePending) return;
+    if (!this.canInvalidate() || row.invalidated || !row.invalidatable || row.invalidatePending) return;
 
     // Close any dialog already open, so a fast click on a second row leaves one modal rather than
     // two competing for keyboard focus.
@@ -323,7 +356,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     const orgUid = this.orgUid();
     const claSignatureId = this.signatureId();
     const matchingEntries = signal<OrgClaApprovalEntry[] | null | undefined>(undefined);
-    const canRemoveEntries = signal(false);
+    const canRemoveEntries = signal(this.removeFromListGrant() === true);
     const dialogRef = this.dialogService.open(OrgEasyclaInvalidateAcknowledgmentDialogComponent, {
       showHeader: false,
       modal: true,
@@ -343,7 +376,6 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (list) => {
-          canRemoveEntries.set(list.canEdit);
           matchingEntries.set(this.entriesAddedFor(row.ack, list.entries));
         },
         error: (error: unknown) => {
@@ -461,7 +493,9 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     if (!list) return;
     this.page.set({
       ...list,
-      list: list.list.map((ack) => (ack.signatureId === signatureId ? { ...ack, approved: false } : ack)),
+      list: list.list.map((ack) =>
+        ack.signatureId === signatureId ? { ...ack, approved: false, removedFromApprovalList: false, removedCriteria: undefined } : ack
+      ),
     });
   }
 

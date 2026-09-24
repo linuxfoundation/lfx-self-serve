@@ -1951,7 +1951,8 @@ function upstreamManager(overrides: Record<string, unknown> = {}): Record<string
  * The service resolves the CCLA through the organization's own list first (matching
  * `getApprovalList` and `getPdfUrl`), then paginates via the producer's `nextKey`. The mapper
  * carries the invariants the shared contract states: never drop a row for a missing LF Login,
- * and treat `github_id` and `gitlab_id` as display logins.
+ * treat `github_id` and `gitlab_id` as display logins, and normalize `signature_version` to a
+ * `v`-prefixed string.
  */
 function contributor(overrides: Partial<EasyClaCorporateContributor> = {}): EasyClaCorporateContributor {
   return {
@@ -2618,6 +2619,32 @@ describe('OrgClaService.getContributorAcknowledgments — the identity fallback'
     expect(row?.email).toBeUndefined();
     expect(row?.githubUsername).toBeUndefined();
     expect(row?.gitlabUsername).toBeUndefined();
+  });
+});
+
+describe('OrgClaService.getContributorAcknowledgments — the CCLA version', () => {
+  it('prefixes a bare version with `v`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '2.1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v2.1');
+  });
+
+  it('leaves an already-prefixed version unchanged so `v1` stays `v1` rather than becoming `vv1`', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: 'v1' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('v1');
+  });
+
+  it('passes an empty version through as an empty string', async () => {
+    stageAckRead(contributorPage({ list: [contributor({ signature_version: '' })] }));
+
+    const list = await new OrgClaService().getContributorAcknowledgments(req(), ORG_UID, 'signature-uuid-1', { search: '', pageSize: 50 });
+
+    expect(list?.list[0]?.cclaVersion).toBe('');
   });
 });
 

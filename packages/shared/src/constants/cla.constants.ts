@@ -467,12 +467,14 @@ export const CCLA_SIGN_COPY = {
  * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
  * string, and the client posts these literals rather than assembling ACS permissions itself.
  */
-export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete'] as const;
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete', 'ecla-invalidate'] as const;
 
 export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
 export const ACS_CLA_SIGN_ACTION = 'create';
 export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
 export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_ECLA_INVALIDATE_RESOURCE = 'ecla_invalidate';
+export const ACS_CLA_ECLA_INVALIDATE_ACTION = 'update';
 export const ACS_CLA_MANAGER_DELETE_RESOURCE = 'cla_manager_delete';
 export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
 export const ACS_CLA_PROJECT_ORG_OBJECT_TYPE = 'project|organization';
@@ -724,8 +726,7 @@ export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 /**
  * Reasons a CLA manager can pick when invalidating an acknowledgment.
  *
- * The producer accepts these four enum values; the free-text note is separate. The tuple order
- * is the UI order the picker presents them in.
+ * The producer accepts these four enum values; the free-text note is separate.
  */
 export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
 

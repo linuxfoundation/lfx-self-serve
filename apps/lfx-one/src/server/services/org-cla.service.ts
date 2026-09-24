@@ -1707,7 +1707,8 @@ export interface ContributorAcknowledgmentQuery {
  * exists and with the creation time otherwise, which for an acknowledgment is when the employee
  * acknowledged. `timestamp` (the creation time) is the fallback when that is blank. It does not use
  * `signatureModified`: an invalidation refreshes that field, so it would show the invalidation
- * instant under Acknowledged On.
+ * instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed string; a value already
+ * prefixed with `v`/`V` is returned unchanged, and an empty version stays empty.
  */
 function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefined | null): OrgClaContributorAcknowledgment | null {
   const signatureId = row?.signatureID?.trim() ?? '';
@@ -1725,6 +1726,7 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     gitlabUsername: nonEmpty(row?.gitlab_id),
     email: nonEmpty(row?.email),
     name: nonEmpty(row?.name),
+    cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
@@ -1732,6 +1734,18 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     invalidationReason: nonEmpty(row?.invalidationReason),
     ...approvalListRemoval(row),
   };
+}
+
+/**
+ * Normalizes a producer `signature_version` to a `v`-prefixed string.
+ *
+ * A value already prefixed with `v`/`V` is returned unchanged (so `v1` stays `v1` — never `vv1`);
+ * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty.
+ */
+function normalizeCclaVersion(value: string | undefined): string {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed) return '';
+  return /^v/i.test(trimmed) ? trimmed : `v${trimmed}`;
 }
 
 const APPROVAL_LIST_REMOVAL_REASON = /^approved list removal(?:\s*\((.*)\))?$/i;

@@ -50,7 +50,7 @@
             <th class="px-3 py-2">{{ columnHeaders.identity }}</th>
             <th class="px-3 py-2">{{ columnHeaders.signedOn }}</th>
             <th class="px-3 py-2">{{ columnHeaders.state }}</th>
-            @if (canEdit()) {
+            @if (canInvalidate()) {
               <th class="px-3 py-2 text-right"><span class="sr-only">Actions</span></th>
             }
           </tr>
@@ -118,7 +118,7 @@
                     data-testid="org-easycla-acknowledgment-state-acknowledged" />
                 }
               </td>
-              @if (canEdit()) {
+              @if (canInvalidate()) {
                 <td class="px-3 py-2 text-right">
                   @if (!row.invalidated) {
                     <lfx-button
@@ -139,7 +139,10 @@
             </tr>
           } @empty {
             <tr>
-              <td [attr.colspan]="canEdit() ? 5 : 4" class="px-3 py-6 text-center text-sm text-gray-500" data-testid="org-easycla-acknowledgments-search-empty">
+              <td
+                [attr.colspan]="canInvalidate() ? 5 : 4"
+                class="px-3 py-6 text-center text-sm text-gray-500"
+                data-testid="org-easycla-acknowledgments-search-empty">
                 No acknowledgments match your search.
               </td>
             </tr>

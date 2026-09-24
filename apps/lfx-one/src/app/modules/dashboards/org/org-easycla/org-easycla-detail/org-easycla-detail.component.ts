@@ -727,10 +727,8 @@ export class OrgEasyclaDetailComponent {
     this.approvalCountOverride.set({ signatureId: this.signatureId(), count });
   }
 
-  protected onAcknowledgmentCountChanged(count: number): void {
-    const signatureId = this.claGroup()?.id;
-    if (!signatureId) return;
-    this.panelAcknowledgmentCount.set({ signatureId, count });
+  protected onAcknowledgmentCountChanged(event: { signatureId: string; count: number }): void {
+    this.panelAcknowledgmentCount.set(event);
   }
 
   /**

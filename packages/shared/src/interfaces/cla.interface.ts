@@ -1068,7 +1068,7 @@ export interface OrgClaApprovalEntriesDialogData {
 /**
  * One acknowledgment as the table renders it.
  *
- * Every field except `signatureId`, `approved`, and `removedFromApprovalList` is optional; missing
+ * Every field except `signatureId`, `cclaVersion`, `approved`, and `removedFromApprovalList` is optional; missing
  * attributes render as an em-dash rather than dropping the row. The row is Not Authorized when
  * `removedFromApprovalList` is true. Otherwise it is Invalidated when `approved` is false OR any of
  * `invalidatedAt` / `invalidatedBy` / `invalidationReason` is populated (legacy rows can carry the
@@ -1086,6 +1086,13 @@ export interface OrgClaContributorAcknowledgment {
   email?: string;
   /** The contributor's name as the producer records it on the acknowledgment. */
   name?: string;
+  /**
+   * The CCLA version the acknowledgment was recorded against.
+   *
+   * Normalized to a `v`-prefixed string ("v1", "v2.1", …) at the mapper; a value already prefixed
+   * with `v`/`V` is returned unchanged, and an empty version stays empty.
+   */
+  cclaVersion: string;
   /** When the acknowledgment was recorded, when the producer reported it. */
   signedOn?: string;
   /** False when the signature is invalidated. Default true for legacy rows the producer omits. */
@@ -1169,9 +1176,8 @@ export type OrgClaInvalidationReason = (typeof ORG_CLA_INVALIDATION_REASONS)[num
 /**
  * Body posted to the BFF invalidate endpoint.
  *
- * Both fields are optional at the contract level — the producer accepts an empty body — but the
- * UI dialog requires a reason before it lets the caller confirm. `note` is trimmed and length-
- * capped at the server; anything past the cap is refused as 400, not truncated.
+ * Both fields are optional at the contract level — the producer accepts an empty body. `note` is
+ * trimmed and length-capped at the server; anything past the cap is refused as 400, not truncated.
  */
 export interface OrgClaInvalidateAcknowledgmentRequest {
   reason?: OrgClaInvalidationReason;
