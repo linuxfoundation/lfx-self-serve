@@ -51,10 +51,14 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
  * bounded by the tag and cannot be grown by the attacker.
  */
 
-function openTags(html: string, tagName: string): string[] {
-  const tags: string[] = [];
+function openTags(html: string, tagName: string): { tag: string; index: number }[] {
+  const tags: { tag: string; index: number }[] = [];
   const re = new RegExp(`<${tagName}\\b[^<>]*>`, 'gi');
-  for (const match of html.matchAll(re)) tags.push(match[0]);
+  // The INDEX rides along, not just the tag text. `extractSponsors` reads a context window
+  // before each `<img>` to decide whether it sits in a sponsor section, so a helper that
+  // returned strings alone could not serve it -- which is why that scan was a second copy of
+  // this regex rather than a call to this function.
+  for (const match of html.matchAll(re)) tags.push({ tag: match[0], index: match.index ?? 0 });
   return tags;
 }
 
@@ -63,7 +67,7 @@ function extractHeroImage(html: string, baseUrl: string): string {
   // whole-page alternation did -- the attribute order within the tag no longer needs its own
   // pattern, which is what the second `html.match` was for.
   let metaCandidate = '';
-  for (const tag of openTags(html, 'meta')) {
+  for (const { tag } of openTags(html, 'meta')) {
     if (!/property=["']og:image["']/i.test(tag)) continue;
     const content = tag.match(/\bcontent=["']([^"']+)["']/i)?.[1];
     if (content) {
@@ -183,10 +187,9 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
   const seen = new Set<string>();
   if (heroImageUrl) seen.add(heroImageUrl);
 
-  for (const imgMatch of html.matchAll(/<img\b[^<>]*>/gi)) {
+  for (const { tag, index } of openTags(html, 'img')) {
     if (sponsors.length >= MAX_SPONSORS) break;
 
-    const tag = imgMatch[0];
     const src = tag.match(/\bsrc=["']([^"']+)["']/i)?.[1];
     if (!src) continue;
 
@@ -198,8 +201,8 @@ function extractSponsors(html: string, baseUrl: string, heroImageUrl: string): C
     const alt = sanitizeDisplayText(decodeHtmlEntities(tag.match(/\balt=["']([^"']*)["']/i)?.[1] ?? ''));
     // A page rarely marks sponsor logos with a dedicated attribute, so a nearby heading or
     // container class (e.g. "Our Sponsors", class="sponsor-grid") is the most reliable signal.
-    const contextStart = Math.max(0, (imgMatch.index ?? 0) - CONTEXT_WINDOW_CHARS);
-    const context = html.slice(contextStart, imgMatch.index ?? 0);
+    const contextStart = Math.max(0, index - CONTEXT_WINDOW_CHARS);
+    const context = html.slice(contextStart, index);
     const looksLikeSponsor = SPONSOR_KEYWORD_RE.test(alt) || SPONSOR_KEYWORD_RE.test(src) || SPONSOR_KEYWORD_RE.test(context);
     if (!looksLikeSponsor) continue;
 

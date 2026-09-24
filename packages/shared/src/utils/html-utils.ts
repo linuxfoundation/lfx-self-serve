@@ -14,7 +14,6 @@ const NAMED_HTML_ENTITIES: Record<string, string> = {
   apos: "'",
 };
 
-/** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
 /**
  * Whether a string contains anything a reader would actually SEE.
  *
@@ -64,6 +63,7 @@ export function hasVisibleHtmlText(html: string): boolean {
   return hasVisibleText(stripHtml(html));
 }
 
+/** Whether a numeric entity names a real code point — `String.fromCodePoint` throws otherwise. */
 function isDecodableCodePoint(code: number): boolean {
   // The SURROGATE range is excluded, not just the out-of-range values. `String.fromCodePoint`
   // accepts 0xD800-0xDFFF without throwing and returns an unpaired surrogate, so `&#xD800;`

@@ -287,6 +287,23 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
     return Number(process.hrtime.bigint() - started) / 1e6;
   }
 
+  it('reads the sponsor context window from EACH image position, not the document start', () => {
+    // The window is positional: an `<img>` is a sponsor because a sponsor heading sits shortly
+    // BEFORE it. A scan that ignored each match's index would see the whole document as context
+    // and mark every image a sponsor -- including one far below, under its own heading.
+    //
+    // This is what makes `openTags` return an index rather than just the tag text.
+    const html =
+      '<h2>Our Sponsors</h2><img src="https://cdn.example.com/sponsor.png" alt="Acme" />' +
+      `${'<p>filler</p>'.repeat(120)}` +
+      '<h2>Speakers</h2><img src="https://cdn.example.com/speaker.png" alt="Jane" />';
+
+    const names = extractHeroAndSponsors(html, BASE_URL).sponsors.map((s) => s.name);
+
+    expect(names).toContain('Acme');
+    expect(names).not.toContain('Jane');
+  });
+
   it('does not backtrack on unterminated meta tags', () => {
     // 256 KiB took 4.4 s before the fix and ~0.3 ms after; 1 s is far above the fixed cost and far
     // below the broken one, so this cannot flake either way.

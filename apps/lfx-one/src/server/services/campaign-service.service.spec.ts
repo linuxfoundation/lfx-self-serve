@@ -900,9 +900,9 @@ describe('CampaignServiceClient.saveBrief', () => {
   });
 
   it('adopts a row whose blobs differ only in key order', async () => {
-    // JSONB normalizes key order on storage, which is why the comparison is STRUCTURAL rather
-    // than textual — and why my earlier objection to comparing the blobs at all was wrong. A row
-    // that really is ours must still be recognised when the keys come back reordered.
+    // JSONB normalizes key order on storage, so the comparison has to be STRUCTURAL rather than
+    // textual: a row that really is ours must still be recognised when the keys come back
+    // reordered.
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
