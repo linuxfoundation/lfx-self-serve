@@ -75,7 +75,8 @@ join | rsvp | register | invitation-required | guest-join | tools | no-access | 
 > The signed-in outsider on a restricted or private meeting is **not** one of the additions: it
 > resolves to `invitation-required`, which was already in the original six. V1 fails that state
 > silently too, but the fix there is rendering the existing kind, not a new one. Assert each state
-> against the kind above, not against the silent-failure list in `spec.md`.
+> against the kind above, not against the silent-failure list in `spec.md` § Smaller traps.
+> That file is E0-01 and lands with PR #2914; it is not on `main` at the time of writing.
 
 The attribute is always present and always carries one of the nine values; `none` is a rendered
 kind, not an absent attribute. A test asserting "no action is offered" asserts
