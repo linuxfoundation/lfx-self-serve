@@ -66,14 +66,16 @@ join | rsvp | register | invitation-required | guest-join | tools | no-access | 
 > above are correct; the issue body is stale. What each addition names, as `resolveActionSlot`
 > decides it:
 >
-> - `guest-join` — an anonymous visitor inside the join window of a public, unrestricted meeting.
+> - `guest-join` — any anonymous visitor inside the join window, whatever the privacy. On a
+>   restricted meeting the server matches the submitted email against the registrants; this is how
+>   an invitee without an LFX session joins from their invite link.
 > - `no-access` — an ended meeting whose artifacts the viewer cannot see (no `full_access`, not an
 >   organizer). V1 renders an empty page here.
 > - `rsvp-unavailable` — a registrant before a pre-2024 meeting, where invite responses were never
 >   collected. V1 renders an empty rail here.
 >
-> The signed-in outsider on a restricted or private meeting is **not** one of the additions: it
-> resolves to `invitation-required`, which was already in the original six. V1 fails that state
+> The signed-in outsider on a restricted meeting is **not** one of the additions: it resolves to
+> `invitation-required`, which was already in the original six. V1 fails that state
 > silently too, but the fix there is rendering the existing kind, not a new one. Assert each state
 > against the kind above, not against the silent-failure list in `spec.md` § Smaller traps.
 > That file is E0-01 and lands with PR #2914; it is not on `main` at the time of writing.
