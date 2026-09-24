@@ -90,7 +90,7 @@ const orgClasRouter = (await import('./org-clas.route')).default;
 const { apiErrorHandler } = await import('../middleware/error-handler.middleware');
 
 const GRANTED = '0014100000Te2ovAAB';
-const UNGRANTED = '0014100000Te2QjAAJ';
+const UNGRANTED = '0014100000BetaAAAA';
 
 let server: Server;
 let baseUrl: string;

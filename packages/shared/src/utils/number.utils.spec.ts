@@ -62,13 +62,13 @@ describe('formatCurrency compact thresholds', () => {
   it('switches to billions at the threshold that would otherwise round to 1000.0M', () => {
     expect(formatCurrency(999_949_999)).toBe('$999.9M');
     expect(formatCurrency(999_950_000)).toBe('$1B');
-    expect(formatCurrency(5_576_366_821.32)).toBe('$5.6B');
+    expect(formatCurrency(1_094_970_000)).toBe('$1.1B');
   });
 
   it('keeps the millions and thousands branches unchanged below the billions threshold', () => {
     expect(formatCurrency(999_949)).toBe('$999.9K');
     expect(formatCurrency(999_950)).toBe('$1M');
-    expect(formatCurrency(147_932_363.97)).toBe('$147.9M');
+    expect(formatCurrency(123_456_789.12)).toBe('$123.5M');
     expect(formatCurrency(999)).toBe('$999');
   });
 

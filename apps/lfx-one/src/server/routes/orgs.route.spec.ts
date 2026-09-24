@@ -66,7 +66,7 @@ vi.mock('../services/logger.service', () => ({
 const orgsRouter = (await import('./orgs.route')).default;
 
 const GRANTED = '0014100000Te2ovAAB';
-const UNGRANTED = '0014100000Te2QjAAJ';
+const UNGRANTED = '0014100000BetaAAAA';
 
 let server: Server;
 let baseUrl: string;
