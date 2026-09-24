@@ -6,9 +6,12 @@ import { Component, computed, inject, PLATFORM_ID, Signal } from '@angular/core'
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { DEFAULT_PEOPLE_TAB_ID, PEOPLE_TABS, VALID_PEOPLE_TAB_IDS } from '@lfx-one/shared/constants';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 
 import type { PeopleTabConfig, PeopleTabId } from '@lfx-one/shared/interfaces';
 
@@ -25,6 +28,7 @@ import { TraineesComponent } from './components/trainees/trainees.component';
   selector: 'lfx-org-people',
   imports: [
     EmptyStateComponent,
+    OrgLensEmptyStateComponent,
     AllEmployeesComponent,
     KeyContactsComponent,
     BoardMembersComponent,
@@ -42,8 +46,15 @@ export class OrgPeopleComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly platformId = inject(PLATFORM_ID);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly tabs = PEOPLE_TABS;
+
+  // Spec 053 — the page-level state replacing every tab (e.g. `contractor-no-grant`, `could-not-load`),
+  // or null when the page renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   private readonly queryParamMap = toSignal(this.route.queryParamMap, {
     initialValue: this.route.snapshot.queryParamMap,
@@ -97,7 +108,8 @@ export class OrgPeopleComponent {
   }
 
   private initHeading(): string {
-    const name = this.companyName();
+    // A page-level state must never name the selected organization, so the title stays generic.
+    const name = this.pageState() ? null : this.companyName();
     return name ? `People — ${name}` : 'People';
   }
 }

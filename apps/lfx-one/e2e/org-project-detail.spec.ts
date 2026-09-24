@@ -40,7 +40,8 @@ test.describe('Org Project Detail — testid resolution', () => {
   });
 
   test('renders breadcrumb, hero and tab strip', async ({ page }) => {
-    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible();
+    // The breadcrumb renders with the page content, after the page-level access verdict settles (#2961).
+    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-hero')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-name')).toHaveText('Kubernetes');
     await expect(page.getByTestId('project-detail-first-commit')).toBeVisible();

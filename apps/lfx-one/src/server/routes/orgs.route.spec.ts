@@ -114,7 +114,10 @@ describe('orgs router — Org Lens read gate', () => {
   it('answers the read-check probe with 403 when refused and 204 when admitted', async () => {
     expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(403);
 
-    expect((await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/read-check`)).status).toBe(204);
+    const admitted = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/read-check`);
+    expect(admitted.status).toBe(204);
+    // A per-user verdict must never be reused from a cache after the grant changes.
+    expect(admitted.headers.get('cache-control')).toBe('no-store');
 
     checkSingleAccessStrict.mockResolvedValue(true);
     expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(204);

@@ -581,6 +581,24 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
     });
 
+    // Every Org page renders the shared page state, not only Overview (#2977 review): People stands in
+    // for the pages that used to show their own load errors to a refused contractor.
+    test('C1-people: the People page renders contractor-no-grant for a refused persona-seeded organization', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+      });
+      await stubReadCheck(page, 403);
+
+      await page.goto('/org/people', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      const root = page.getByTestId('org-people-no-access-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(root).not.toContainText(ORG_A_NAME);
+    });
+
     // The negative case: the read gate also admits FGA-only readers (key-contact auditors) that no
     // roster lists. A roster-based rule would lock them out; this one keeps their page.
     test('C-admit: a persona-seeded organization the read gate admits renders the page', async ({ page }) => {

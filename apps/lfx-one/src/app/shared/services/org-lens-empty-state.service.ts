@@ -94,8 +94,9 @@ export class OrgLensEmptyStateService {
   /**
    * The page can leave its skeleton: `settled`, and the caller's org list has loaded when they have one.
    * A caller with no switcher access never starts that list (an admitted contractor with no roster row
-   * or persona seed, #2961), so waiting on it would hold them on the skeleton forever. The one rule every
-   * Org page and `/org/not-found` use.
+   * or persona seed, #2961), so waiting on it would hold them on the skeleton forever. Used by the pages
+   * that wait for the default selection from that list (overview, projects, ROI, meetings, groups,
+   * EasyCLA) and by `/org/not-found`; the other Org pages never waited for the list and gate on `settled`.
    */
   public readonly pageReady: Signal<boolean> = computed(() => this.settled() && (!this.accountContext.hasOrgSelectorAccess() || this.orgNavigation.loaded()));
 

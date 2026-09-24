@@ -36,10 +36,13 @@ import { catchError, debounceTime, finalize, of, switchMap } from 'rxjs';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { AccountContextService } from '@shared/services/account-context.service';
+import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
 import { OrgLensTrainingService } from '@shared/services/org-lens-training.service';
+import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
 
 import { CertEmployeesDrawerComponent } from './components/cert-employees-drawer/cert-employees-drawer.component';
 import { OrgCertificationsTableComponent } from './components/org-certifications-table/org-certifications-table.component';
@@ -53,6 +56,7 @@ import { TrainingEmployeesDrawerComponent } from './components/training-employee
     CardTabsBarComponent,
     InputTextComponent,
     SelectComponent,
+    OrgLensEmptyStateComponent,
     OrgCertificationsTableComponent,
     OrgTrainingsTableComponent,
     CertEmployeesDrawerComponent,
@@ -68,6 +72,8 @@ export class OrgTrainingComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly trainingService = inject(OrgLensTrainingService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // ─── Configuration ─────────────────────────────────────────────────────────
   // Shared constants are readonly; copy into mutable arrays for the component inputs that expect them.
@@ -111,6 +117,9 @@ export class OrgTrainingComponent {
   private readonly levelValue = signal<string | null>(null);
 
   // ─── Computed / toSignal ───────────────────────────────────────────────────
+  // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
   protected readonly orgUid = computed(() => this.accountContext.selectedAccount()?.uid ?? '');
   protected readonly activeTab: Signal<OrgTrainingTabId> = this.initActiveTab();

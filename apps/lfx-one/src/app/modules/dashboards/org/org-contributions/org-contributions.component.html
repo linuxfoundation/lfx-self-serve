@@ -9,7 +9,16 @@
     </p>
   </header>
 
-  @if (!hasCompany()) {
+  @if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-contributions-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
+  } @else if (!emptyState.settled()) {
+    <!-- Org context still settling — render nothing so the no-company state doesn't flash. -->
+  } @else if (!hasCompany()) {
     <lfx-empty-state
       icon="fa-light fa-building"
       title="Select an organization to view code contributions."

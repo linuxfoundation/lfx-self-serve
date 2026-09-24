@@ -11,6 +11,7 @@ import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.co
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { PersonDetailDrawerComponent } from '@components/person-detail-drawer/person-detail-drawer.component';
 import { SelectComponent } from '@components/select/select.component';
 import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
@@ -37,6 +38,8 @@ import type {
   StatCardItem,
 } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonDetailDrawerService } from '@services/person-detail-drawer.service';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, map, of, skip, switchMap, tap } from 'rxjs';
 
@@ -52,6 +55,7 @@ import { decorateCommitFeedRow, decorateRepoRow } from './org-contributions.util
     CardComponent,
     CardTabsBarComponent,
     EmptyStateComponent,
+    OrgLensEmptyStateComponent,
     InputTextComponent,
     SelectComponent,
     MultiSelectComponent,
@@ -67,6 +71,8 @@ export class OrgContributionsComponent {
   private readonly drawer = inject(PersonDetailDrawerService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   protected readonly dateRangeOptions: ContributionsDateRangeOption[] = [...CONTRIBUTIONS_DATE_RANGE_OPTIONS];
   protected readonly pageSizeOptions: number[] = [...CONTRIBUTIONS_PAGE_SIZE_OPTIONS];
@@ -95,6 +101,10 @@ export class OrgContributionsComponent {
   private readonly fetchErrorState = signal<boolean>(false);
   protected readonly isLoading = this.loadingState.asReadonly();
   protected readonly fetchError = this.fetchErrorState.asReadonly();
+
+  // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly hasCompany = computed(() => !!this.accountContext.selectedAccount().uid);
   protected readonly companyName = computed(() => this.accountContext.selectedAccount().accountName);

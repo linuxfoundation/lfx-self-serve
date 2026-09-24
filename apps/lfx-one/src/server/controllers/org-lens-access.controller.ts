@@ -33,6 +33,8 @@ export class OrgLensAccessController {
     const orgUid = req.params['orgUid'];
     const startTime = logger.startOperation(req, 'check_org_lens_read', { org_uid: orgUid });
     logger.success(req, 'check_org_lens_read', startTime, { org_uid: orgUid });
+    // A per-user verdict: never reuse a cached admission after a grant changes.
+    res.setHeader('Cache-Control', 'no-store');
     res.status(204).end();
   }
 
