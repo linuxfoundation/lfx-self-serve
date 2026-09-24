@@ -12,7 +12,9 @@ import {
   ORG_EASYCLA_RETURN_SIGNED_VALUE,
 } from '@lfx-one/shared/constants';
 import {
+  classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
+  isOrgClaDesigneeLfLoginRequested,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
   orgClaPairProjectSfid,
@@ -30,6 +32,10 @@ import type {
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgment,
   OrgClaContributorAcknowledgmentList,
+  OrgClaDesigneeNominationRequest,
+  OrgClaDesigneeNominationResponse,
+  OrgClaDesigneeRefusal,
+  OrgClaDesigneeResponse,
   OrgClaGroup,
   OrgClaGroupList,
   OrgClaGroupProject,
@@ -48,6 +54,7 @@ import type { Request } from 'express';
 import type {
   EasyClaApprovalItem,
   EasyClaApprovalListUpdateRequest,
+  EasyClaCompany,
   EasyClaCompanyClaGroup,
   EasyClaCompanyClaGroupList,
   EasyClaCompanyClaManager,
@@ -359,6 +366,40 @@ function asManagerRefusal(error: unknown, operation: string, errorMessage: strin
   const refusal = classifyOrgClaManagerRefusal(error.statusCode, error.errorBody);
 
   return new MicroserviceError(`${errorMessage}: refused (${refusal})`, error.statusCode, error.code, {
+    operation,
+    service: SERVICE,
+    errorBody: { error: refusal },
+  });
+}
+
+/** The status each designee refusal is relayed at; the client reads the reason off `upstreamCode`. */
+const DESIGNEE_REFUSAL_STATUS: Record<OrgClaDesigneeRefusal, number> = {
+  'already-signed': 409,
+  'no-lf-login': 400,
+  sanctioned: 403,
+  'not-authorized': 403,
+  unknown: 502,
+};
+
+/**
+ * Relabels a CLA service refusal on a designee write. The upstream body is dropped once it has
+ * been classified: its sentence names the requested address, and the error handler logs whatever
+ * body the error still carries.
+ */
+function asDesigneeRefusal(error: unknown, operation: string, errorMessage: string): unknown {
+  if (!(error instanceof MicroserviceError)) return error;
+
+  if (error.statusCode >= 500 || error.transportFailure) {
+    return new MicroserviceError(error.message, error.statusCode, error.code, {
+      operation,
+      service: SERVICE,
+      transportFailure: error.transportFailure,
+    });
+  }
+
+  const refusal = classifyOrgClaDesigneeRefusal(error.statusCode, error.errorBody);
+
+  return new MicroserviceError(`${errorMessage}: refused (${refusal})`, DESIGNEE_REFUSAL_STATUS[refusal], error.code, {
     operation,
     service: SERVICE,
     errorBody: { error: refusal },
@@ -1171,6 +1212,83 @@ export class OrgClaService {
   }
 
   /**
+   * Makes the caller the initial CLA Manager designee for an agreement their organization has not
+   * signed yet (#2780) — Yes on "Are you authorized to be a CLA Manager?".
+   *
+   * The address is the session's, passed in by the controller and never read from the body, so a
+   * caller can only ever assign themselves. The CLA service answers 409 when that address already
+   * holds the role, which is the outcome the caller asked for, so it is reported as assigned.
+   */
+  public async assignDesignee(req: Request, orgUid: string, projectSfid: string, userEmail: string): Promise<OrgClaDesigneeResponse> {
+    const operation = 'org_cla_assign_designee';
+    const companyId = await this.resolveCompanyId(req, orgUid, operation);
+
+    try {
+      await gatewayFetch<unknown>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(companyId)}/project/${encodeURIComponent(projectSfid)}/cla-manager-designee`,
+        {
+          operation,
+          service: SERVICE,
+          errorMessage: 'Failed to assign the CLA manager designee',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body: { userEmail },
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      if (!(error instanceof MicroserviceError) || error.statusCode !== 409) {
+        throw asDesigneeRefusal(error, operation, 'Failed to assign the CLA manager designee');
+      }
+    }
+
+    logger.debug(req, operation, 'assigned the caller as cla manager designee', { org_uid: orgUid, project_sfid: projectSfid });
+    return { assigned: true };
+  }
+
+  /**
+   * Names someone else as the initial CLA Manager designee (#2780) — No on the question.
+   *
+   * `contactAdmin: false` is fixed: Organization Lens does not offer Corporate Console's "contact
+   * the company admin" branch. Two refusals are successes to the caller. A 409 means the named
+   * person already holds the role. A 400 for a missing LF Login arrives after the CLA service has
+   * emailed them to create one, and they become designee once they do.
+   */
+  public async nominateDesignee(req: Request, orgUid: string, request: OrgClaDesigneeNominationRequest): Promise<OrgClaDesigneeNominationResponse> {
+    const operation = 'org_cla_nominate_designee';
+    const companyId = await this.resolveCompanyId(req, orgUid, operation);
+
+    try {
+      await gatewayFetch<unknown>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(companyId)}/project/${encodeURIComponent(request.projectSfid)}/cla-manager/requests`,
+        {
+          operation,
+          service: SERVICE,
+          errorMessage: 'Failed to request a CLA manager designee',
+          errorCode: 'UPSTREAM_ERROR',
+          method: 'POST',
+          body: { contactAdmin: false, fullName: request.fullName, userEmail: request.email },
+          redactResponseBodyFromLogs: true,
+        }
+      );
+    } catch (error) {
+      if (error instanceof MicroserviceError && error.statusCode === 409) {
+        return { outcome: 'assigned', email: request.email };
+      }
+      if (error instanceof MicroserviceError && isOrgClaDesigneeLfLoginRequested(error.statusCode, error.errorBody)) {
+        logger.debug(req, operation, 'named person has no lf login; the cla service emailed them', { org_uid: orgUid, project_sfid: request.projectSfid });
+        return { outcome: 'lf-login-requested', email: request.email };
+      }
+      throw asDesigneeRefusal(error, operation, 'Failed to request a CLA manager designee');
+    }
+
+    logger.debug(req, operation, 'nominated a cla manager designee', { org_uid: orgUid, project_sfid: request.projectSfid });
+    return { outcome: 'assigned', email: request.email };
+  }
+
+  /**
    * Lists one agreement's contributor acknowledgments (#1986).
    *
    * Resolved through the organization's own CLA list first, exactly as `getApprovalList` and
@@ -1491,6 +1609,37 @@ export class OrgClaService {
     }
 
     return upstream.list;
+  }
+
+  /**
+   * The CLA service's internal company id for the organization. The designee writes serve an
+   * organization that may hold no agreement yet, so the id cannot come off the CLA list the
+   * manager writes resolve through.
+   */
+  private async resolveCompanyId(req: Request, orgUid: string, operation: string): Promise<string> {
+    let company: EasyClaCompany | null;
+    try {
+      company = await gatewayFetch<EasyClaCompany>(req, `${claServiceBaseUrl(SERVICE)}/v4/company/external/${encodeURIComponent(orgUid)}`, {
+        operation,
+        service: SERVICE,
+        errorMessage: 'Failed to resolve the organization in EasyCLA',
+        errorCode: 'UPSTREAM_ERROR',
+        redactResponseBody: true,
+      });
+    } catch (error) {
+      throw asDesigneeRefusal(error, operation, 'Failed to resolve the organization in EasyCLA');
+    }
+
+    const companyId = company?.companyID?.trim() ?? '';
+    if (!companyId) {
+      throw new MicroserviceError('Failed to resolve the organization in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+        errorBody: { error: 'unknown' },
+      });
+    }
+
+    return companyId;
   }
 
   /**

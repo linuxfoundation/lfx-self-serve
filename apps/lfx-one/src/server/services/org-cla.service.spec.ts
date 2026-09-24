@@ -48,6 +48,9 @@ vi.mock('@lfx-one/shared/utils', async () => {
   const permissions = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-permissions')>(
     '../../../../../packages/shared/src/utils/org-cla-permissions'
   );
+  const designee = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-cla-designee.utils')>(
+    '../../../../../packages/shared/src/utils/org-cla-designee.utils'
+  );
   const orgLensUrl = await vi.importActual<typeof import('../../../../../packages/shared/src/utils/org-lens-url.utils')>(
     '../../../../../packages/shared/src/utils/org-lens-url.utils'
   );
@@ -56,6 +59,8 @@ vi.mock('@lfx-one/shared/utils', async () => {
     canonicalClaGroupId: actual.canonicalClaGroupId,
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
+    classifyOrgClaDesigneeRefusal: designee.classifyOrgClaDesigneeRefusal,
+    isOrgClaDesigneeLfLoginRequested: designee.isOrgClaDesigneeLfLoginRequested,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
     // The return-address builders ship as written: the spec asserts the minted shapes.
     orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
@@ -3583,6 +3588,192 @@ describe('OrgClaService.getActivityLog — malformed producer bodies', () => {
     await expect(new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 })).rejects.toMatchObject({
       statusCode: 502,
       code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+});
+
+describe('OrgClaService — CLA manager designee (#2780)', () => {
+  const PROJECT_SFID = 'a09410000182dD3AAI';
+  const NOMINATION = { projectSfid: PROJECT_SFID, fullName: 'Pat Contributor', email: 'contributor@example.org' };
+
+  function upstreamRefusal(status: number, message: string): MicroserviceErrorType {
+    return new MicroserviceError(`Failed: ${status}`, status, 'UPSTREAM_ERROR', {
+      operation: 'test',
+      errorBody: JSON.stringify({ Code: String(status), Message: `EasyCLA - ${status} - user :contributor@example.org, error: ${message}` }),
+    });
+  }
+
+  function companyThen(write: () => unknown): void {
+    gatewayFetch.mockResolvedValueOnce({ companyID: 'company-uuid-1' });
+    gatewayFetch.mockImplementationOnce(async () => write());
+  }
+
+  async function refusalOf(promise: Promise<unknown>): Promise<MicroserviceErrorType> {
+    try {
+      await promise;
+    } catch (error) {
+      return error as MicroserviceErrorType;
+    }
+    throw new Error('expected a refusal');
+  }
+
+  describe('resolving the company', () => {
+    it('looks the company up by the organization, not by anything the caller sent', async () => {
+      companyThen(() => ({}));
+
+      await new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org');
+
+      expect(gatewayFetch).toHaveBeenNthCalledWith(
+        1,
+        expect.anything(),
+        `https://gw.example.org/cla-service/v4/company/external/${ORG_UID}`,
+        expect.objectContaining({ redactResponseBody: true })
+      );
+    });
+
+    it('refuses to write when the lookup names no company', async () => {
+      gatewayFetch.mockResolvedValueOnce({});
+
+      const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
+
+      expect(error.statusCode).toBe(502);
+      expect(error.toResponse()['upstreamCode']).toBe('unknown');
+      expect(gatewayFetch).toHaveBeenCalledTimes(1);
+    });
+
+    it('relays a lookup the caller may not make as not authorized', async () => {
+      gatewayFetch.mockRejectedValueOnce(upstreamRefusal(403, 'user does not have access'));
+
+      const error = await refusalOf(new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION));
+
+      expect(error.statusCode).toBe(403);
+      expect(error.toResponse()['upstreamCode']).toBe('not-authorized');
+    });
+  });
+
+  describe('assignDesignee', () => {
+    it('assigns the session address on the signing project', async () => {
+      companyThen(() => ({ userEmail: 'contributor@example.org' }));
+
+      const result = await new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org');
+
+      expect(result).toEqual({ assigned: true });
+      expect(gatewayFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        `https://gw.example.org/cla-service/v4/company/company-uuid-1/project/${PROJECT_SFID}/cla-manager-designee`,
+        expect.objectContaining({ method: 'POST', body: { userEmail: 'contributor@example.org' }, redactResponseBodyFromLogs: true })
+      );
+    });
+
+    it('treats an address that already holds the role as assigned', async () => {
+      companyThen(() => {
+        throw upstreamRefusal(409, 'user already assigned cla-manager');
+      });
+
+      await expect(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org')).resolves.toEqual({ assigned: true });
+    });
+
+    it.each([
+      ['project already signed', 409, 'already-signed'],
+      ['lfx user not found', 400, 'no-lf-login'],
+      ['something unexpected', 502, 'unknown'],
+    ] as const)('relays "%s" at %i as %s', async (message, status, code) => {
+      companyThen(() => {
+        throw upstreamRefusal(400, message);
+      });
+
+      const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
+
+      expect(error.statusCode).toBe(status);
+      expect(error.toResponse()['upstreamCode']).toBe(code);
+    });
+
+    it('relays a sanctioned organization as sanctioned', async () => {
+      companyThen(() => {
+        throw new MicroserviceError('Forbidden', 403, 'UPSTREAM_ERROR', {
+          errorBody: { code: 'company_sanctioned', message: 'This organization cannot sign.' },
+        });
+      });
+
+      const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
+
+      expect(error.statusCode).toBe(403);
+      expect(error.toResponse()['upstreamCode']).toBe('sanctioned');
+    });
+
+    it('keeps the upstream sentence, which names the address, off the relayed error', async () => {
+      companyThen(() => {
+        throw upstreamRefusal(400, 'project already signed');
+      });
+
+      const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
+
+      expect(JSON.stringify(customErrorSerializer(error))).not.toContain('contributor@example.org');
+    });
+
+    it('keeps an upstream outage at its own status without the body', async () => {
+      companyThen(() => {
+        throw new MicroserviceError('Unavailable', 503, 'UPSTREAM_ERROR', { errorBody: 'user :contributor@example.org' });
+      });
+
+      const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
+
+      expect(error.statusCode).toBe(503);
+      expect(error.errorBody).toBeUndefined();
+    });
+  });
+
+  describe('nominateDesignee', () => {
+    it('requests the named person without contacting the company admin', async () => {
+      companyThen(() => ({}));
+
+      const result = await new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION);
+
+      expect(result).toEqual({ outcome: 'assigned', email: 'contributor@example.org' });
+      expect(gatewayFetch).toHaveBeenNthCalledWith(
+        2,
+        expect.anything(),
+        `https://gw.example.org/cla-service/v4/company/company-uuid-1/project/${PROJECT_SFID}/cla-manager/requests`,
+        expect.objectContaining({
+          method: 'POST',
+          body: { contactAdmin: false, fullName: 'Pat Contributor', userEmail: 'contributor@example.org' },
+          redactResponseBodyFromLogs: true,
+        })
+      );
+    });
+
+    it('treats a person who already holds the role as assigned', async () => {
+      companyThen(() => {
+        throw upstreamRefusal(409, 'user is already cla-manager');
+      });
+
+      await expect(new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION)).resolves.toEqual({
+        outcome: 'assigned',
+        email: 'contributor@example.org',
+      });
+    });
+
+    it('reports a missing LF Login as the invitation the CLA service already sent', async () => {
+      companyThen(() => {
+        throw upstreamRefusal(400, 'user has no LF Login');
+      });
+
+      await expect(new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION)).resolves.toEqual({
+        outcome: 'lf-login-requested',
+        email: 'contributor@example.org',
+      });
+    });
+
+    it('relays an already-signed agreement as a conflict', async () => {
+      companyThen(() => {
+        throw upstreamRefusal(400, 'project already signed');
+      });
+
+      const error = await refusalOf(new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION));
+
+      expect(error.statusCode).toBe(409);
+      expect(error.toResponse()['upstreamCode']).toBe('already-signed');
     });
   });
 });
