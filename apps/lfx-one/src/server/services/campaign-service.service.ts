@@ -985,9 +985,21 @@ export class CampaignServiceClient {
       // Deciding it per field mixed the two response shapes: `cta || legacy.cta` refilled a button
       // an operator had deliberately left with no destination, and a sections body that is
       // image-only -- which is supposed to fail the empty-body guard below -- could be refilled
-      // from a leftover flat field and pass. An empty value in a sections response is an ANSWER;
-      // only the absence of sections entirely means "this is the older flat shape".
-      const isLegacyShape = sections.length === 0;
+      // from a leftover flat field and pass. An empty value in a sections response is an ANSWER.
+      // ABSENT sections AND a no-stage request. Both halves are load-bearing, and
+      // `sections.length === 0` expressed neither.
+      //
+      // `copy.sections === undefined` distinguishes ABSENT from PRESENT-BUT-EMPTY, which
+      // `sections.length === 0` cannot: a valid `sections: []` response is an ANSWER, and
+      // treating it as the legacy shape let stale flat `body`/`cta` fields resurrect over it.
+      //
+      // `stage === undefined` is campaign-service's own rule, stated in its api-catalog: "the
+      // legacy repackaging is applied only on this no-stage path -- a stage-aware request whose
+      // model output regresses to the flat shape is REFUSED rather than silently converted."
+      // Accepting a flat response to a stage-aware call returned copy written without the stage
+      // the caller asked for, under a 200. It now falls through to the empty-body error, which
+      // is the controlled refusal the contract describes.
+      const isLegacyShape = copy.sections === undefined && stage === undefined;
       const legacyText = (value: unknown): string => (typeof value === 'string' ? value : '');
       // The LEGACY shape's own declared destination, not `generatedDestinations`. That list is
       // derived from `sections`, and `isLegacyShape` IS `sections.length === 0` -- so passing it

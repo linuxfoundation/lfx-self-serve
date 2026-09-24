@@ -2429,6 +2429,34 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(result.copy?.ctaUrl).not.toBe('https://leftover.example.com');
   });
 
+  it('refuses a flat response to a STAGE-AWARE request', async () => {
+    // campaign-service's api-catalog: "the legacy repackaging is applied only on this no-stage
+    // path -- a stage-aware request whose model output regresses to the flat shape is REFUSED
+    // rather than silently converted." Accepting it returned copy written without the stage the
+    // caller asked for, under a 200. It now falls through to the controlled empty-body error.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', body: '<p>Legacy body</p>', cta: 'Register', ctaUrl: 'https://example.com' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
+
+    expect(result.copy).toBeUndefined();
+    expect(result.error).toContain('no usable content');
+  });
+
+  it('does not treat a PRESENT-but-empty sections array as the legacy shape', async () => {
+    // `sections: []` is an ANSWER, not an absent field. `sections.length === 0` could not tell
+    // the two apart, so stale flat `body`/`cta` fields resurrected over a valid empty response.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', sections: [], body: '<p>Stale body</p>', cta: 'Stale', ctaUrl: 'https://stale.example' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy).toBeUndefined();
+    expect(result.error).toContain('no usable content');
+  });
+
   it('still uses the flat fields when sections is absent entirely', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(
       apiResponse({ subject: 'S', preheader: 'P', body: '<p>Legacy body</p>', cta: 'Register', ctaUrl: 'https://example.com' })
