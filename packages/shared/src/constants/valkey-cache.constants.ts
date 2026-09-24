@@ -203,9 +203,24 @@ export const VALKEY_CACHE = {
    * MUST cite the measured compact size it was sized from and the date it was measured, so a later
    * reader can tell a still-justified cap from one whose payload has since shrunk (or grown).
    *
-   * Empty by design: the GH-1906 compaction brought every Org Lens org-level cache back under the
-   * 1 MiB default at its largest measured production account, so no override was needed. See that
-   * PR's description for the full measured pre/post table.
+   * Sized at the measured compact maximum × ~1.25, rounded up to a whole MiB, so an org growing a
+   * quarter again doesn't silently fall out of the cache.
    */
-  MAX_VALUE_BYTES_BY_SUBRESOURCE: {} as Record<string, number>,
+  MAX_VALUE_BYTES_BY_SUBRESOURCE: {
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,050,250
+    // bytes for the largest org measured (down from 4,446,040 pre-compaction).
+    // This roster compacts least of the five (×2.2) because its rows are mostly long values —
+    // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
+    'org-lens-sf:v1:people-all:v2': 3 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
+    // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
+    // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
+    // every detail row — so the remaining excess is real data, not repetition.
+    'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,443,884
+    // bytes for the largest org measured (down from 6,440,061 pre-compaction). Same irreducible
+    // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
+    // every row, so there is nothing left to deduplicate.
+    'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+  } as Record<string, number>,
 } as const;
