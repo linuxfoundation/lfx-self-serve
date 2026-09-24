@@ -183,19 +183,6 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
   ok: 'bg-blue-500',
 };
 
-/** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX = 24;
-
-/** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
-
-/**
- * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
- * Sized at roughly double the server's ~15s worst-case budget for one read, leaving room for
- * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
- */
-export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
-
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
  * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
@@ -208,9 +195,6 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'reps',
   'nonmem',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
-
-/** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
-export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
 
 /** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [

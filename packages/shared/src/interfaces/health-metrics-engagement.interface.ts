@@ -10,6 +10,7 @@ import type {
   HEALTH_METRICS_TABS,
 } from '../constants/health-metrics-engagement.constants';
 import type { HealthMetricsRange } from './dashboard-metric.interface';
+import type { HealthMetricsL2SubNavItem } from './health-metrics-l2.interface';
 
 /** Section key from the design's `L2VIEWS`; doubles as the URL fragment and the scroll-spy allowlist. */
 export type HealthMetricsEngagementSectionKey = (typeof HEALTH_METRICS_ENGAGEMENT_SECTIONS)[number]['key'];
@@ -30,26 +31,9 @@ export interface HealthMetricsTab {
   route: string | null;
 }
 
-/** A section with its DOM ids resolved once, so the template never calls a builder per render. */
-export interface HealthMetricsEngagementSectionView {
+/** Engagement's sub-nav badge, keyed to its own sections. */
+export interface HealthMetricsEngagementSubNavItem extends HealthMetricsL2SubNavItem {
   key: HealthMetricsEngagementSectionKey;
-  label: string;
-  heading: string;
-  description: string;
-  footnote: string;
-  footnoteCaution: boolean;
-  id: string;
-  headingId: string;
-}
-
-/** Sub-nav badge for one section: a count plus an optional qualifier note. */
-export interface HealthMetricsEngagementSubNavItem {
-  key: HealthMetricsEngagementSectionKey;
-  label: string;
-  /** `null` for sections the design gives no badge (`participation`, `trend`). */
-  count: number | null;
-  /** e.g. `3 dormant`; empty when nothing qualifies. */
-  note: string;
 }
 
 /**
