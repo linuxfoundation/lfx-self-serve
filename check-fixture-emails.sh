@@ -111,6 +111,7 @@ function has_real_domain_field(s,    value) {
     sub(/^.*[:=][ \t]*["'`]/, "", value)
     sub(/["'`]$/, "", value)
     sub(/^[a-z][a-z0-9+.-]*:\/\//, "", value)
+    sub(/^\/\//, "", value)
     sub(/^[^@\/]*@/, "", value)
     sub(/[\/:?#].*$/, "", value)
     if (real_domain(value)) return 1
