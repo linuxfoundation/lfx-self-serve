@@ -1626,6 +1626,10 @@ describe('OrgEasyclaDetailComponent', () => {
   });
 
   it('opens the Approval List tab from a Not Authorized acknowledgment', async () => {
+    // The add-to-list remedy link renders only when the tab resolves the `approval-list-update`
+    // grant, which needs a mapped project SFID to query ACS. The bare fixture carries none, so pin
+    // one here; checkPermission already answers true in this block.
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup({ pairProjectSfid: 'project-sfid-1' })] }));
     getContributorAcknowledgments.mockReturnValue(
       of({
         signatureId: 'signature-uuid-1',

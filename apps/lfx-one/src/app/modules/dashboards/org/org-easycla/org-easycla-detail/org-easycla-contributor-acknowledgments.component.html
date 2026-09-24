@@ -99,11 +99,8 @@
                         class="text-blue-600 hover:underline"
                         (click)="approvalListRequested.emit()"
                         data-testid="org-easycla-acknowledgment-add-to-approval-list">
-                        {{ notAuthorizedCopy.approvalListLink }}
-                      </button>
-                      @if (canInvalidate()) {
-                        <span>{{ notAuthorizedCopy.detailSuffix }}</span>
-                      }
+                        {{ notAuthorizedCopy.approvalListLink }}</button
+                      >{{ canInvalidate() ? notAuthorizedCopy.detailSuffix : '' }}
                     } @else if (canInvalidate()) {
                       &nbsp;<span>{{ notAuthorizedCopy.invalidateOnly }}</span>
                     }
