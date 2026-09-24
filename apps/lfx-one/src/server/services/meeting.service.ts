@@ -876,24 +876,30 @@ export class MeetingService {
    * Authorizes a caller to read the meeting's registrant roster via the tolerant listing
    * (fail_on_partial absent — may return a partial list on upstream failures).
    *
-   * Two caller classes are valid:
+   * Three caller classes are valid:
    * 1. Direct organizer of this meeting (`v1_meeting#organizer`) — the meeting-card organizer
    *    view, which the client already guards with `@if (meeting().organizer)`.
-   * 2. Project writer for the meeting's project — covers the meeting edit wizard, where a
-   *    project writer or meeting coordinator may open the registrant manager before their
-   *    first save would have added them to the organizer list.
+   * 2. Project writer (`project#writer`) for the meeting's project — covers the meeting edit
+   *    wizard for project owners and writers. `committee#writer` is derived from `project#writer`
+   *    in the FGA model, so this check covers committee writers too.
+   * 3. Meeting coordinator (`project#meeting_coordinator`) — a direct-only FGA grant (not
+   *    derived from writer) that `writerGuard` / `hasMeetingWriteAccess` also accepts for the
+   *    edit wizard. Without this check, a coordinator who has not yet been added as a meeting
+   *    organizer (e.g. FGA lag right after creating a meeting) would receive a 403.
    *
    * The organizer check runs first (single round trip, no meeting fetch). Only if that fails
-   * is the meeting fetched for its `project_uid` and a writer check issued. Both use
-   * `checkSingleAccessStrict` so an unresolvable FGA result propagates as a 5xx rather than
-   * silently collapsing to a denial or a grant.
+   * is the meeting fetched for its `project_uid` and writer + coordinator checks issued in a
+   * single parallel batch. All checks use `checkAccessStrict` / `checkSingleAccessStrict` so
+   * an unresolvable FGA result propagates as a 5xx rather than silently collapsing to a denial
+   * or a grant.
    *
    * The upstream query-service applies no per-user grant filtering on `v1_meeting_registrant`,
    * so without this gate any authenticated user can harvest full registrant PII by supplying
    * a meeting UID. See issue linuxfoundation/lfx-self-serve-ops#45.
    *
-   * @throws AuthorizationError if the caller is neither a meeting organizer nor a project writer.
-   * @throws MicroserviceError if either access check could not be resolved.
+   * @throws AuthorizationError if the caller is neither a meeting organizer, project writer,
+   *   nor meeting coordinator.
+   * @throws MicroserviceError if any access check could not be resolved.
    */
   public async getAuthorizedRegistrantsForListing(
     req: Request,
@@ -911,8 +917,19 @@ export class MeetingService {
       // its project_uid; `access: false` skips the per-meeting organizer FGA probe that
       // getMeetingById otherwise attaches to the returned object (we only need project_uid).
       const meeting = await this.getMeetingById(req, meetingUid, 'v1_meeting', { access: false });
-      const isProjectWriter = await this.accessCheckService.checkSingleAccessStrict(req, { resource: 'project', id: meeting.project_uid, access: 'writer' });
-      if (!isProjectWriter) {
+
+      // Check project#writer and project#meeting_coordinator in one batch — meeting coordinators
+      // hold a direct-only FGA grant that is NOT derived from project#writer, so a writer check
+      // alone would deny them. `writerGuard` / `hasMeetingWriteAccess` accepts both, and the
+      // registrant manager in the edit wizard is reachable by either role.
+      const projectResults = await this.accessCheckService.checkAccessStrict(req, [
+        { resource: 'project', id: meeting.project_uid, access: 'writer' },
+        { resource: 'project', id: meeting.project_uid, access: 'meeting_coordinator' },
+      ]);
+      const isProjectWriter = projectResults.get(`${meeting.project_uid}#writer`) === true;
+      const isMeetingCoordinator = projectResults.get(`${meeting.project_uid}#meeting_coordinator`) === true;
+
+      if (!isProjectWriter && !isMeetingCoordinator) {
         throw new AuthorizationError('Not authorized to read the registrant roster for this meeting', {
           operation: 'get_authorized_registrants_for_listing',
           service: 'meeting_service',

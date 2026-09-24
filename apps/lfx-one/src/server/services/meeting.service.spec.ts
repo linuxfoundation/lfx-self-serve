@@ -20,7 +20,7 @@ const { proxyRequest, proxyRequestWithResponse, committeeSvc, accessCheckSvc } =
   proxyRequest: vi.fn(),
   proxyRequestWithResponse: vi.fn(),
   committeeSvc: { getCommitteeById: vi.fn() },
-  accessCheckSvc: { checkSingleAccess: vi.fn(), checkSingleAccessStrict: vi.fn() },
+  accessCheckSvc: { checkSingleAccess: vi.fn(), checkSingleAccessStrict: vi.fn(), checkAccessStrict: vi.fn() },
 }));
 
 vi.mock('@lfx-one/shared/enums', async (importOriginal) => importOriginal());
@@ -801,22 +801,29 @@ describe('MeetingService.getAuthorizedRegistrantsForListing', () => {
   const PROJECT_UID = 'project-1';
   const registrantRecord = (id: string) => ({ id: `v1_meeting_registrant:${id}`, data: { uid: id, email: `${id}@example.com` } as MeetingRegistrant });
   // Minimal meeting object with the project_uid that getAuthorizedRegistrantsForListing needs
-  // when falling through to the project-writer check.
+  // when falling through to the project-level fallback check.
   const meetingStub = { id: MEETING_UID, project_uid: PROJECT_UID };
+
+  // Helper: returns a resolved Map for the project-level batch check (writer + meeting_coordinator).
+  const projectBatchResult = (writer: boolean, coordinator: boolean) =>
+    new Map([
+      [`${PROJECT_UID}#writer`, writer],
+      [`${PROJECT_UID}#meeting_coordinator`, coordinator],
+    ]);
 
   beforeEach(() => {
     proxyRequest.mockReset();
     accessCheckSvc.checkSingleAccessStrict.mockReset();
+    accessCheckSvc.checkAccessStrict.mockReset();
     service = new MeetingService();
   });
 
   // The core security property: without this gate any authenticated user can harvest full
   // registrant PII by knowing a meeting UID (which is public via meeting pages and calendar feeds).
-  it('refuses a caller who is neither an organizer nor a project writer', async () => {
-    // organizer check → false; getMeetingById to resolve project_uid; project writer check → false
-    accessCheckSvc.checkSingleAccessStrict
-      .mockResolvedValueOnce(false) // organizer
-      .mockResolvedValueOnce(false); // project writer
+  it('refuses a caller who is neither an organizer, project writer, nor meeting coordinator', async () => {
+    // organizer check → false; batch check → neither writer nor coordinator
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValueOnce(false); // organizer
+    accessCheckSvc.checkAccessStrict.mockResolvedValueOnce(projectBatchResult(false, false));
     proxyRequest.mockResolvedValueOnce(meetingStub); // getMeetingById
 
     await expect(service.getAuthorizedRegistrantsForListing(req, MEETING_UID)).rejects.toMatchObject({ statusCode: 403 });
@@ -838,9 +845,8 @@ describe('MeetingService.getAuthorizedRegistrantsForListing', () => {
   });
 
   it('allows a project writer (non-organizer) and returns their roster', async () => {
-    accessCheckSvc.checkSingleAccessStrict
-      .mockResolvedValueOnce(false) // organizer check fails
-      .mockResolvedValueOnce(true); // project writer check passes
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValueOnce(false); // organizer check fails
+    accessCheckSvc.checkAccessStrict.mockResolvedValueOnce(projectBatchResult(true, false)); // writer passes
     proxyRequest
       .mockResolvedValueOnce(meetingStub) // getMeetingById to get project_uid
       .mockResolvedValueOnce({ resources: [registrantRecord('b')] }); // registrant page
@@ -848,7 +854,30 @@ describe('MeetingService.getAuthorizedRegistrantsForListing', () => {
     const result = await service.getAuthorizedRegistrantsForListing(req, MEETING_UID);
 
     expect(result).toEqual([{ uid: 'b', email: 'b@example.com' }]);
-    expect(accessCheckSvc.checkSingleAccessStrict).toHaveBeenNthCalledWith(2, req, { resource: 'project', id: PROJECT_UID, access: 'writer' });
+    expect(accessCheckSvc.checkAccessStrict).toHaveBeenCalledWith(req, [
+      { resource: 'project', id: PROJECT_UID, access: 'writer' },
+      { resource: 'project', id: PROJECT_UID, access: 'meeting_coordinator' },
+    ]);
+  });
+
+  // Regression: meeting coordinators (project#meeting_coordinator) are admitted by writerGuard /
+  // hasMeetingWriteAccess but hold a direct-only FGA grant not derived from project#writer.
+  // Without this check, a coordinator who has not yet been added as organizer (e.g. immediately
+  // after creating a meeting, before the FGA tuple propagates) would receive a 403.
+  it('allows a meeting coordinator (non-organizer, non-writer) and returns their roster', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValueOnce(false); // organizer check fails
+    accessCheckSvc.checkAccessStrict.mockResolvedValueOnce(projectBatchResult(false, true)); // coordinator passes
+    proxyRequest
+      .mockResolvedValueOnce(meetingStub) // getMeetingById
+      .mockResolvedValueOnce({ resources: [registrantRecord('c')] }); // registrant page
+
+    const result = await service.getAuthorizedRegistrantsForListing(req, MEETING_UID);
+
+    expect(result).toEqual([{ uid: 'c', email: 'c@example.com' }]);
+    expect(accessCheckSvc.checkAccessStrict).toHaveBeenCalledWith(req, [
+      { resource: 'project', id: PROJECT_UID, access: 'writer' },
+      { resource: 'project', id: PROJECT_UID, access: 'meeting_coordinator' },
+    ]);
   });
 
   it('probes organizer access on v1_meeting, not the bare meeting type', async () => {
@@ -867,10 +896,9 @@ describe('MeetingService.getAuthorizedRegistrantsForListing', () => {
     expect(proxyRequest).not.toHaveBeenCalled();
   });
 
-  it('propagates an unresolvable project-writer check rather than treating it as a denial', async () => {
-    accessCheckSvc.checkSingleAccessStrict
-      .mockResolvedValueOnce(false) // organizer fails
-      .mockRejectedValueOnce(new Error('fga unreachable')); // project writer check throws
+  it('propagates an unresolvable project-level batch check rather than treating it as a denial', async () => {
+    accessCheckSvc.checkSingleAccessStrict.mockResolvedValueOnce(false); // organizer fails
+    accessCheckSvc.checkAccessStrict.mockRejectedValueOnce(new Error('fga unreachable')); // batch check throws
     proxyRequest.mockResolvedValueOnce(meetingStub); // getMeetingById
 
     await expect(service.getAuthorizedRegistrantsForListing(req, MEETING_UID)).rejects.toThrow('fga unreachable');
