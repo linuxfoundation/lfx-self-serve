@@ -4,11 +4,11 @@
 
 Key Contacts of a member organization create long-lived `lfi_…` tokens for the LFX Insights public API from **Profile → Settings → Developer Settings**. The BFF is a thin proxy over two upstream services and adds one server-side rule: only a Key Contact may create a token.
 
-The Developer Settings UI for these endpoints ships separately and will be gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`, default `false`). The flag is UI-only; it does not gate these routes.
+The UI group (`lfx-insights-tokens`) is gated by the `insights-public-api` LaunchDarkly flag (`INSIGHTS_PUBLIC_API_FLAG`). The flag defaults to `false`, so SSR renders nothing and there is no hydration flash.
 
 ## Endpoints
 
-All four routes live in `profile.route.ts` and are handled by `insights-tokens.controller.ts`. While impersonating, list and eligibility stay readable and resolve to the impersonated user (the list is metadata only and never carries a secret). Create and revoke are mounted with `blockDuringImpersonation`: a minted token is a live credential the impersonator would keep, and neither call carries the impersonator's identity upstream. `profile.route.spec.ts` pins that split. List, eligibility and create responses set `Cache-Control: no-store`. Revoke returns an empty `204`.
+All four routes live in `profile.route.ts` and are handled by `insights-tokens.controller.ts`. While impersonating, list and eligibility stay readable and resolve to the impersonated user (the list is metadata only and never carries a secret). Create and revoke are mounted with `blockDuringImpersonation`: a minted token is a live credential the impersonator would keep, and neither call carries the impersonator's identity upstream. `profile.route.spec.ts` pins that split. The UI loads both reads and disables the create and revoke buttons while impersonating. List, eligibility and create responses set `Cache-Control: no-store`. Revoke returns an empty `204`.
 
 | Route                                          | Upstream call                                          | Token     |
 | ---------------------------------------------- | ------------------------------------------------------ | --------- |
@@ -27,7 +27,7 @@ The member-tiers endpoint returns one entry per org where the user is a Key Cont
 - An empty list, or a session with no username, returns `INSIGHTS_TOKEN_INELIGIBLE`, which has `checkFailed: false`.
 - An upstream or M2M error fails closed with `INSIGHTS_TOKEN_ELIGIBILITY_UNAVAILABLE`. That value has `canCreate: false` and `checkFailed: true`. The failure is logged at warning level with only its status and error code, because the tier URL, and so the error's path, carries the username.
 
-`checkFailed` lets the UI tell apart "you are not a Key Contact" (lock notice) from "we could not verify right now" (retryable notice).
+`checkFailed` lets the UI tell apart "you are not a Key Contact" (lock notice) from "we could not verify right now" (retryable notice). The Angular service maps a failed eligibility request to the same unavailable value.
 
 ## Create flow
 
@@ -38,9 +38,9 @@ The member-tiers endpoint returns one entry per org where the user is a Key Cont
 3. If `!canCreate`, it returns `403` with `upstreamCode: not_key_contact`.
 4. Otherwise it calls PAT service create and returns `201 { token, secret }`.
 
-PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The codes are listed in `INSIGHTS_TOKEN_ERROR_CODES`.
+PAT service `409` errors (`token_name_taken`, `token_limit_reached`) pass through `MicroserviceError` as `upstreamCode`. The create dialog maps each code in `INSIGHTS_TOKEN_ERROR_CODES` to an inline message.
 
-The secret is returned exactly once, and only by create; list responses carry `lookupId` but never the secret. Tokens do not expire; they stay valid until revoked.
+The secret is returned exactly once. It exists only in the reveal dialog's data, and the list displays `lfi_{lookupId}` followed by a mask. Tokens do not expire; they stay valid until revoked.
 
 List and revoke are **not** gated on eligibility. A user who loses Key Contact status can still see and revoke their existing tokens.
 
@@ -48,5 +48,5 @@ List and revoke are **not** gated on eligibility. A user who loses Key Contact s
 
 - [Error Handling](./error-handling-architecture.md) — `MicroserviceError` and `upstreamCode`
 - [Impersonation](./impersonation.md) — `blockDuringImpersonation`
-- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag`
+- [Feature Flags](../frontend/feature-flags.md) — `getBooleanFlag` and the localStorage override used by the e2e suite
 - Upstream contracts: `linuxfoundation/lfx-v2-pat-service` (`docs/api.md`) and `linuxfoundation/lfx-v2-member-service` (`gen/http/openapi3.yaml`)

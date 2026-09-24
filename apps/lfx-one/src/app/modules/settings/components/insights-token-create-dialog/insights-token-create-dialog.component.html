@@ -1,0 +1,51 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="submit()" class="flex flex-col" data-testid="insights-token-create-dialog">
+  <div class="flex flex-col gap-1 px-6 pt-6 pb-4">
+    <h3 class="text-base font-semibold text-slate-900">New LFX Insights API token</h3>
+    @if (orgName) {
+      <p class="text-sm text-slate-500" data-testid="insights-token-create-org">Issued for {{ orgName }}</p>
+    }
+  </div>
+
+  <div class="flex flex-col gap-2 px-6 pb-6">
+    <label for="insights-token-name" class="text-sm font-medium text-slate-700">Token name</label>
+    <lfx-input-text
+      [form]="form"
+      control="name"
+      inputId="insights-token-name"
+      placeholder="e.g. Weekly health report"
+      [maxlength]="maxLength"
+      [required]="true"
+      [invalid]="!!errorMessage()"
+      [describedBy]="errorMessage() ? 'insights-token-name-error' : null"
+      autocomplete="off"
+      dataTest="insights-token-create-name-input">
+    </lfx-input-text>
+    @if (errorMessage()) {
+      <p id="insights-token-name-error" class="text-xs text-red-600" role="alert" data-testid="insights-token-create-error">{{ errorMessage() }}</p>
+    }
+  </div>
+
+  <div class="flex justify-end gap-2 px-6 py-4 bg-slate-50 border-t border-slate-200">
+    <lfx-button
+      type="button"
+      severity="secondary"
+      variant="outlined"
+      size="small"
+      label="Cancel"
+      [disabled]="submitting()"
+      (onClick)="cancel()"
+      data-testid="insights-token-create-cancel-button">
+    </lfx-button>
+    <lfx-button
+      type="submit"
+      size="small"
+      label="Create token"
+      [loading]="submitting()"
+      [disabled]="!canSubmit()"
+      data-testid="insights-token-create-submit-button">
+    </lfx-button>
+  </div>
+</form>

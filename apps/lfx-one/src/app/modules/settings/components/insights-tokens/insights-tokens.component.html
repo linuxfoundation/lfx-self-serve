@@ -1,0 +1,137 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-4" aria-labelledby="insights-tokens-heading" data-testid="insights-tokens-group">
+  <div class="flex items-start justify-between gap-4">
+    <div class="flex min-w-0 flex-1 flex-col gap-1">
+      <h3 id="insights-tokens-heading" class="text-sm font-semibold text-slate-900">LFX Insights API Tokens</h3>
+      <p class="text-xs text-slate-500 leading-normal">
+        Tokens for accessing the LFX Insights API. Pull project health and contribution data into your own dashboards, reports, and tools. Learn more in
+        <a [href]="docsUrl" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline" data-testid="insights-tokens-docs-link"
+          >LFX Insights API Docs</a
+        >.
+      </p>
+    </div>
+    @if (!loading() && canCreate() && hasTokens()) {
+      <lfx-button
+        type="button"
+        size="small"
+        [text]="true"
+        icon="fa-light fa-plus"
+        label="New token"
+        class="shrink-0"
+        styleClass="whitespace-nowrap"
+        [disabled]="impersonating()"
+        [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+        (onClick)="openCreateDialog()"
+        data-testid="insights-tokens-new-button">
+      </lfx-button>
+    }
+  </div>
+
+  @if (loading()) {
+    <div class="flex items-center py-4" data-testid="insights-tokens-loading">
+      <i class="fa-light fa-circle-notch fa-spin text-xl text-blue-400"></i>
+      <span class="ml-3 text-sm text-gray-600">Loading tokens...</span>
+    </div>
+  } @else {
+    @if (eligibilityCheckFailed()) {
+      <div class="flex items-start justify-between gap-4 p-4 rounded-xl bg-amber-50 border border-amber-100" data-testid="insights-tokens-eligibility-error">
+        <div class="flex gap-3">
+          <i class="fa-light fa-triangle-exclamation text-amber-600 mt-0.5 shrink-0" aria-hidden="true"></i>
+          <div class="flex flex-col gap-1">
+            <h4 class="text-sm font-semibold text-slate-900">We couldn't verify your Key Contact status</h4>
+            <p class="text-xs text-slate-600 leading-normal">Creating LFX Insights tokens is unavailable right now. Please try again in a few minutes.</p>
+          </div>
+        </div>
+        <lfx-button
+          type="button"
+          severity="secondary"
+          variant="outlined"
+          size="small"
+          label="Retry"
+          styleClass="shrink-0"
+          (onClick)="load()"
+          data-testid="insights-tokens-eligibility-retry-button">
+        </lfx-button>
+      </div>
+    } @else if (!canCreate()) {
+      <div class="flex gap-3 p-4 rounded-xl bg-violet-50 border border-violet-100" data-testid="insights-tokens-lock-notice">
+        <div class="w-8 h-8 rounded-full bg-violet-100 flex items-center justify-center shrink-0">
+          <i class="fa-light fa-lock text-violet-600" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-1">
+          <h4 class="text-sm font-semibold text-slate-900">Only Key Contacts can create LFX Insights tokens</h4>
+          <p class="text-xs text-slate-600 leading-normal">
+            Tokens are issued to your organization's Key Contacts. Ask one of your organization's Key Contacts to create a token for your integration.
+          </p>
+        </div>
+      </div>
+    }
+
+    @if (loadError()) {
+      <div class="flex items-center justify-between gap-4 py-2" data-testid="insights-tokens-error">
+        <p class="text-sm text-slate-600">We couldn't load your LFX Insights API tokens.</p>
+        <lfx-button
+          type="button"
+          severity="secondary"
+          variant="outlined"
+          size="small"
+          label="Retry"
+          (onClick)="load()"
+          data-testid="insights-tokens-retry-button">
+        </lfx-button>
+      </div>
+    } @else if (hasTokens()) {
+      <ul class="flex flex-col" data-testid="insights-tokens-list">
+        @for (item of items(); track item.token.uid) {
+          <li
+            class="flex items-center justify-between gap-4 py-3 border-t border-slate-100 first:border-t-0"
+            [attr.data-testid]="'insights-tokens-row-' + item.token.uid">
+            <div class="flex items-start gap-3 min-w-0">
+              <i class="fa-light fa-key text-slate-600 mt-0.5 shrink-0" aria-hidden="true"></i>
+              <div class="flex flex-col gap-0.5 min-w-0">
+                <h4 class="text-sm font-medium text-slate-900 break-words" data-testid="insights-tokens-name">{{ item.token.name }}</h4>
+                <p class="text-xs text-slate-500 font-mono break-all" data-testid="insights-tokens-value">{{ item.maskedValue }}</p>
+                <p class="text-xs text-slate-400" data-testid="insights-tokens-meta">
+                  Created {{ item.token.createdAt | date: 'd MMM y' }} · {{ item.lastUsedLabel }}
+                </p>
+              </div>
+            </div>
+            <lfx-button
+              type="button"
+              severity="secondary"
+              variant="outlined"
+              size="small"
+              label="Revoke"
+              styleClass="shrink-0"
+              [loading]="revokingUid() === item.token.uid"
+              [disabled]="revokingUid() !== null || impersonating()"
+              [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : 'Revoke ' + item.token.name"
+              (onClick)="confirmRevoke(item.token)"
+              data-testid="insights-tokens-revoke-button">
+            </lfx-button>
+          </li>
+        }
+      </ul>
+    } @else if (canCreate()) {
+      <div class="flex flex-col items-center gap-2 py-6 text-center" data-testid="insights-tokens-empty">
+        <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+          <i class="fa-light fa-key text-slate-500" aria-hidden="true"></i>
+        </div>
+        <p class="text-sm text-slate-600">No LFX Insights API tokens yet.</p>
+        <lfx-button
+          type="button"
+          size="small"
+          [text]="true"
+          icon="fa-light fa-plus"
+          label="New token"
+          [disabled]="impersonating()"
+          [ariaLabel]="impersonating() ? 'This action is unavailable while impersonating another user' : undefined"
+          (onClick)="openCreateDialog()"
+          data-testid="insights-tokens-empty-new-button">
+        </lfx-button>
+      </div>
+    }
+  }
+</section>
