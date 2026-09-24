@@ -460,37 +460,42 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   ): void {
     const signatureId = row.ack.signatureId;
     this.trackPending(signatureId, true);
-    this.claService
-      .invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request)
-      .pipe(
-        finalize(() => {
-          if (!this.destroyed) this.trackPending(signatureId, false);
-        })
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
-            detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
+    // The row stays pending until the whole operation settles — the invalidate and, when the
+    // manager also clears the approval list, that removal too — so the Invalidate control cannot
+    // fire a second write during the removal wait.
+    const settlePending = (): void => {
+      if (!this.destroyed) this.trackPending(signatureId, false);
+    };
+    this.claService.invalidateAcknowledgment(orgUid, claSignatureId, signatureId, request).subscribe({
+      next: () => {
+        this.messageService.add({
+          severity: 'success',
+          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.successSummary,
+          detail: ORG_CLA_INVALIDATE_RECEIPT_COPY.successDetail(this.contributorLabel(row)),
+        });
+        // When the manager also clears the approval list, that removal changes this row's state
+        // upstream, so the refresh must wait for it to settle — otherwise the GET can win the race
+        // and repaint the pre-removal state. The row stays pending until then. With no removal,
+        // settle and refresh right away.
+        if (removeApprovalEntries.length > 0) {
+          this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => {
+            settlePending();
+            this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
           });
-          // When the manager also clears the approval list, that removal changes this row's state
-          // upstream, so the refresh must wait for it to settle — otherwise the GET can win the race
-          // and repaint the pre-removal state. With no removal, refresh right away.
-          if (removeApprovalEntries.length > 0) {
-            this.removeApprovalEntries(orgUid, claSignatureId, removeApprovalEntries, () => this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId));
-            return;
-          }
-          this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
-        },
-        error: (error: unknown) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
-            detail: this.invalidateFailureDetail(error),
-          });
-        },
-      });
+          return;
+        }
+        settlePending();
+        this.refreshAfterInvalidate(signatureId, orgUid, claSignatureId);
+      },
+      error: (error: unknown) => {
+        settlePending();
+        this.messageService.add({
+          severity: 'error',
+          summary: ORG_CLA_INVALIDATE_RECEIPT_COPY.failureSummary,
+          detail: this.invalidateFailureDetail(error),
+        });
+      },
+    });
   }
 
   /**

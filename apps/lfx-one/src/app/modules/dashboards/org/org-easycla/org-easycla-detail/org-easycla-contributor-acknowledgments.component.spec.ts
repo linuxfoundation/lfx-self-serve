@@ -842,6 +842,31 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(getContributorAcknowledgments.mock.calls.length).toBe(fetchesBefore + 1);
     });
 
+    it('keeps the Invalidate control pending until the approval-list removal settles, so a second write cannot fire', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
+      const removal = new Subject<{ signatureId: string; entries: unknown[]; canEdit: boolean }>();
+      updateApprovalList.mockReturnValueOnce(removal.asObservable());
+      const fixture = await render();
+
+      click(fixture, 'org-easycla-acknowledgment-invalidate');
+      dialogClosed.next({ removeApprovalEntries: [{ kind: 'email', value: 'ada@example.org' }] });
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // The invalidate has returned, but the removal is still in flight — the row must stay pending so
+      // the Invalidate control is disabled and cannot fire a second write during the wait.
+      const button = fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button') as HTMLButtonElement | null;
+      expect(button?.disabled).toBe(true);
+
+      removal.next({ signatureId: 'signature-uuid-1', entries: [], canEdit: true });
+      removal.complete();
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Once the removal settles the row has refreshed, so the pending control is no longer stuck on.
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
     it('sends the write once when the dialog closes twice', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(of(page([ack({ signatureId: 'ecla-1' })], { canEdit: true })));
       const fixture = await render();
