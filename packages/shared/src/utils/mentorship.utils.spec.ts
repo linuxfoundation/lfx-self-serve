@@ -3,7 +3,13 @@
 
 import { describe, expect, it, vi } from 'vitest';
 
-import { createDefaultMentorshipTerm, createEmptyMentorshipEnrollForm } from '../constants/mentorship-enroll.constants';
+import {
+  createDefaultMentorshipTerm,
+  createEmptyMentorshipEnrollForm,
+  MENTORSHIP_ENROLL_DESCRIPTION_MAX,
+  MENTORSHIP_RICH_TEXT_RAW_MAX,
+  MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE,
+} from '../constants/mentorship-enroll.constants';
 import {
   MENTORSHIP_MENTEE_INTRODUCTION_MAX,
   MOCK_MENTORSHIP_MENTEE_OVERVIEW_APPLICANT,
@@ -38,6 +44,7 @@ import {
   getMentorshipTermDateErrors,
   isMentorshipTermEnded,
   mentorshipDateOnlyFloor,
+  mentorshipDescriptionLength,
   mentorshipOpenTermCount,
   mentorshipTermHasApplications,
   isMentorshipCiiProjectId,
@@ -46,6 +53,7 @@ import {
   isMentorshipIsoDate,
   isMentorshipLogoFileName,
   isMentorshipResumeFileName,
+  isMentorshipRichTextOverRawMax,
   isMentorshipTermsAccepted,
   matchesMentorshipPersonSearch,
   mentorshipApplicantActionsFor,
@@ -1053,5 +1061,64 @@ describe('buildMentorshipMenteeTaskViews', () => {
     const views = buildMentorshipMenteeTaskViews(MOCK_MENTORSHIP_MENTEE_TASKS.data);
     expect(views.length).toBe(MOCK_MENTORSHIP_MENTEE_TASKS.data.length);
     expect(views.every((v) => typeof v.statusClass === 'string')).toBe(true);
+  });
+});
+
+describe('mentorshipDescriptionLength', () => {
+  it('counts plain-text characters, ignoring tags and decoding entities', () => {
+    expect(mentorshipDescriptionLength('<p>Hi &amp; <strong>bye</strong></p>')).toBe(8);
+    expect(mentorshipDescriptionLength('')).toBe(0);
+  });
+
+  it('still strips tags for input exactly at MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
+    const html = `<p>${'a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - 7)}</p>`;
+    expect(html.length).toBe(MENTORSHIP_RICH_TEXT_RAW_MAX);
+    expect(mentorshipDescriptionLength(html)).toBe(MENTORSHIP_RICH_TEXT_RAW_MAX - 7);
+  });
+
+  it('returns the raw length for input over MENTORSHIP_RICH_TEXT_RAW_MAX, so it fails every rich-text cap', () => {
+    const html = `<p>${'a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX)}</p>`;
+    expect(mentorshipDescriptionLength(html)).toBe(html.length);
+    expect(mentorshipDescriptionLength(html)).toBeGreaterThan(MENTORSHIP_ENROLL_DESCRIPTION_MAX);
+  });
+
+  it('rejects adversarial nested-bracket input quickly instead of running the quadratic strip loop (lfx-self-serve-ops#37)', () => {
+    const half = 500_000;
+    const hostile = `${'<'.repeat(half)}${'>'.repeat(half)}`;
+    const start = performance.now();
+    const length = mentorshipDescriptionLength(hostile);
+    expect(performance.now() - start).toBeLessThan(50);
+    expect(length).toBeGreaterThan(MENTORSHIP_MENTEE_INTRODUCTION_MAX);
+    expect(getMentorshipMenteeRegisterErrors({ ...createEmptyMentorshipMenteeForm(), introduction: hostile }).introduction).toBe(
+      MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE
+    );
+  });
+});
+
+describe('isMentorshipRichTextOverRawMax', () => {
+  it('is false at the raw cap and true one character over it', () => {
+    expect(isMentorshipRichTextOverRawMax('a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX))).toBe(false);
+    expect(isMentorshipRichTextOverRawMax('a'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX + 1))).toBe(true);
+  });
+});
+
+describe('rich-text fields over MENTORSHIP_RICH_TEXT_RAW_MAX', () => {
+  // Short visible text wrapped in enough formatting to pass the raw cap — the plain-text limit is not
+  // what the user hit, so the validators must say so instead of quoting a character count.
+  const overRawCap = `<p>${'<strong>a</strong>'.repeat(Math.ceil(MENTORSHIP_RICH_TEXT_RAW_MAX / 18) + 1)}</p>`;
+
+  it('reports formatting as the problem on the enroll description', () => {
+    const form = { ...createEmptyMentorshipEnrollForm(), description: overRawCap };
+    expect(getMentorshipEnrollStepErrors('details', form).description).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+
+  it('reports formatting as the problem on the mentor introduction', () => {
+    const form = { ...createEmptyMentorshipMentorForm(), introduction: overRawCap };
+    expect(getMentorshipMentorRegisterErrors(form).introduction).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
+  });
+
+  it('reports formatting as the problem on the mentee introduction', () => {
+    const form = { ...createEmptyMentorshipMenteeForm(), introduction: overRawCap };
+    expect(getMentorshipMenteeRegisterErrors(form).introduction).toBe(MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE);
   });
 });

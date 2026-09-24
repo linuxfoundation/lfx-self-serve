@@ -38,7 +38,7 @@ import {
   mentorshipCiiProjectUrl,
 } from '@lfx-one/shared/constants';
 import { MentorshipCiiLookupStatus, MentorshipEnrollFieldErrors, MentorshipLfProject, MentorshipNameLookupStatus } from '@lfx-one/shared/interfaces';
-import { isMentorshipCiiProjectId, isMentorshipLogoFileName, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
+import { isMentorshipCiiProjectId, isMentorshipLogoFileName, isMentorshipRichTextOverRawMax, mentorshipDescriptionLength } from '@lfx-one/shared/utils';
 import { MentorshipService } from '@services/mentorship.service';
 import {
   catchError,
@@ -116,9 +116,9 @@ export class EnrollDetailsStepComponent {
   });
 
   protected readonly nameLength = computed(() => String(this.formSnapshot()['name'] ?? this.form().controls['name']?.value ?? '').length);
-  protected readonly descriptionLength = computed(() =>
-    mentorshipDescriptionLength(String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''))
-  );
+  private readonly descriptionHtml = computed(() => String(this.formSnapshot()['description'] ?? this.form().controls['description']?.value ?? ''));
+  protected readonly descriptionTooLarge = computed(() => isMentorshipRichTextOverRawMax(this.descriptionHtml()));
+  protected readonly descriptionLength = computed(() => mentorshipDescriptionLength(this.descriptionHtml()));
   protected readonly technologies = computed(() => {
     const fromSnapshot = this.formSnapshot()['technologies'];
     if (Array.isArray(fromSnapshot)) return fromSnapshot as string[];

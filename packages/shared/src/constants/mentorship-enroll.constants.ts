@@ -23,6 +23,15 @@ export const MENTORSHIP_ENROLL_STEP_LABELS: Record<MentorshipEnrollStep, string>
 export const MENTORSHIP_ENROLL_NAME_MIN = 3;
 export const MENTORSHIP_ENROLL_NAME_MAX = 100;
 export const MENTORSHIP_ENROLL_DESCRIPTION_MAX = 3000;
+/**
+ * Upper bound on the raw rich-text HTML handed to `mentorshipDescriptionLength`, checked before
+ * any tag stripping. `stripHtml` is quadratic on adversarial input like `<<<…>>>`, so anything
+ * longer is rejected by length alone. 6× the plain-text cap fits heavily formatted or link-dense
+ * Tiptap output while keeping the worst-case strip near 100ms.
+ */
+export const MENTORSHIP_RICH_TEXT_RAW_MAX = MENTORSHIP_ENROLL_DESCRIPTION_MAX * 6;
+/** Shown when a rich-text field's raw HTML exceeds `MENTORSHIP_RICH_TEXT_RAW_MAX`, where the plain-text count is meaningless. */
+export const MENTORSHIP_RICH_TEXT_TOO_LARGE_MESSAGE = 'This text has too much formatting. Remove some links or styling and try again.';
 export const MENTORSHIP_TERM_NAME_MAX = 50;
 export const MENTORSHIP_MAX_OPEN_TERMS = 4;
 export const MENTORSHIP_CUSTOM_PREREQ_NAME_MAX = 20;
