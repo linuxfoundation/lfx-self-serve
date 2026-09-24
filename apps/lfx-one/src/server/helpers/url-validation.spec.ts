@@ -277,3 +277,36 @@ describe('resolved-address SSRF gate uses the shared judge', () => {
     expect(rejection).not.toMatch(/private IP/);
   });
 });
+
+describe('fetch path enforces the shared port allow-list', () => {
+  /**
+   * `refuseUnfetchablePort` lives in `@lfx-one/shared/utils/url.utils` and is called from BOTH
+   * this path and `canonicalHttpUrl`, so the two cannot drift. They did drift once:
+   * `canonicalHttpUrl` persisted `:8443` on a public host while this path refused it, meaning a
+   * url one validator approved was one the other would reject.
+   *
+   * The canonicalizer's half is covered in `url.utils.spec.ts`. This is the fetch-path half.
+   */
+  it.each([
+    ['a non-standard https port', 'https://events.example.com:8443/e'],
+    ['an SSH port', 'https://events.example.com:22/e'],
+    ['a high ephemeral port', 'https://events.example.com:49152/e'],
+  ])('refuses %s', async (_label, url) => {
+    const { fetchSafeUrl } = await import('./url-validation');
+
+    // Refused before DNS resolution, so no mock is needed -- the port gate runs on the parsed
+    // URL, ahead of the address checks above.
+    await expect(fetchSafeUrl(url, new AbortController().signal)).rejects.toThrow(/Only ports 80 and 443/);
+  });
+
+  it('allows an explicit default port', async () => {
+    // The CONTROL: WHATWG drops a default port, so `:443` must not be mistaken for a custom one.
+    // Without this, a gate that refused every explicit port would pass the cases above.
+    const dns = await import('node:dns');
+    const { fetchSafeUrl } = await import('./url-validation');
+    vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
+    vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
+
+    await expect(fetchSafeUrl('https://events.example.com:443/e', new AbortController().signal)).rejects.not.toThrow(/Only ports/);
+  });
+});

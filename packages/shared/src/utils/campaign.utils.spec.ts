@@ -48,14 +48,14 @@ describe('normalizeSponsors', () => {
 
   it('sanitizes the name, because it reaches a recipient as display text', () => {
     // A BIDI override renders a name as something other than what it contains.
-    const [sponsor] = normalizeSponsors([{ name: 'Acme‮kcatta', logoUrl: logo(1) }]);
+    const [sponsor] = normalizeSponsors([{ name: 'Acme\u202Ekcatta', logoUrl: logo(1) }]);
 
-    expect(sponsor?.name).not.toContain('‮');
+    expect(sponsor?.name).not.toContain('\u202E');
   });
 
   it('drops an entry whose name sanitizes to nothing', () => {
     // Invisible-only names render blank while reading as non-empty.
-    expect(normalizeSponsors([{ name: '​​', logoUrl: logo(1) }])).toEqual([]);
+    expect(normalizeSponsors([{ name: '\u200B\u200B', logoUrl: logo(1) }])).toEqual([]);
   });
 
   it('truncates a long name by CODE POINT, not by UTF-16 unit', () => {
@@ -71,12 +71,25 @@ describe('normalizeSponsors', () => {
     expect(normalizeSponsors(many)).toHaveLength(MAX_SPONSORS);
   });
 
-  it('bounds the work BEFORE parsing, so a huge list cannot cost a url parse per entry', () => {
-    // The pre-slice is why `preSliceFactor` exists: the scrape path passes a wider factor because
-    // its input is unbounded, but neither path parses the whole list.
-    const huge = Array.from({ length: 5000 }, (_, i) => ({ name: `S${i}`, logoUrl: logo(i) }));
+  it('parses only the pre-sliced window, never the whole list', () => {
+    // `toHaveLength(MAX_SPONSORS)` alone proves nothing here -- the FINAL slice guarantees it
+    // whether or not the pre-slice exists. What the pre-slice actually buys is not parsing
+    // entries beyond the window, so this counts the parses: a getter on `logoUrl` fires once per
+    // entry the pipeline touches.
+    //
+    // The caller that passes a wider factor is `campaign.controller.ts` (a DIRECT request, whose
+    // list is unbounded), not the scrape path.
+    let parsed = 0;
+    const counting = Array.from({ length: 5000 }, (_, i) => ({
+      name: `S${i}`,
+      get logoUrl(): string {
+        parsed++;
+        return logo(i);
+      },
+    }));
 
-    expect(normalizeSponsors(huge)).toHaveLength(MAX_SPONSORS);
+    expect(normalizeSponsors(counting)).toHaveLength(MAX_SPONSORS);
+    expect(parsed).toBe(MAX_SPONSORS);
   });
 
   it('lets preSliceFactor keep entries the default would have cut before parsing', () => {

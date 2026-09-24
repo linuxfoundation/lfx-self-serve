@@ -294,14 +294,26 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
     //
     // This is what makes `openTags` return an index rather than just the tag text.
     const html =
-      '<h2>Our Sponsors</h2><img src="https://cdn.example.com/sponsor.png" alt="Acme" />' +
+      // NEITHER url nor alt carries a sponsor keyword, so the ONLY thing that can classify these
+      // is the text shortly before each one -- which is exactly what the index is for.
+      '<h2>Our Sponsors</h2><img src="https://cdn.example.com/a.png" alt="Acme" />' +
       `${'<p>filler</p>'.repeat(120)}` +
-      '<h2>Speakers</h2><img src="https://cdn.example.com/speaker.png" alt="Jane" />';
+      '<h2>Speakers</h2><img src="https://cdn.example.com/b.png" alt="Jane" />';
 
     const names = extractHeroAndSponsors(html, BASE_URL).sponsors.map((s) => s.name);
 
     expect(names).toContain('Acme');
     expect(names).not.toContain('Jane');
+  });
+
+  it('extracts a sponsor: name from alt, logo canonicalized', () => {
+    // The end-to-end case this file lacked -- the hero-image cases above never assert that a
+    // sponsor comes back at all, only that one is not mistaken for the hero.
+    const html = '<div class="sponsors"><img src="https://cdn.example.com/acme.png" alt="Acme Corp" /></div>';
+
+    const [sponsor] = extractHeroAndSponsors(html, BASE_URL).sponsors;
+
+    expect(sponsor).toEqual({ name: 'Acme Corp', logoUrl: 'https://cdn.example.com/acme.png' });
   });
 
   it('does not backtrack on unterminated meta tags', () => {

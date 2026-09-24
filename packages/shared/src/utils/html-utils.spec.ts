@@ -266,8 +266,8 @@ describe('invisible-only values and surrogate entities', () => {
     // back empty, which a whole-value emptiness check satisfies without removing anything. A
     // soft hyphen inside `Acme\u00ADCorp` survived into recipient-visible sponsor text.
     //
-    // Enumerated by CATEGORY rather than by the code points that happened to be reported --
-    // naming them individually is what made this filter wrong four rounds running.
+    // Enumerated by CATEGORY, not by individual code point: a denylist of named spellings cannot
+    // converge, because the next unnamed one behaves identically.
     for (const [label, input] of [
       ['soft hyphen', 'Acme\u00ADCorp'],
       ['Mongolian vowel separator', 'Acme\u180ECorp'],
@@ -673,11 +673,9 @@ describe('stripResourceLoadingHtml — anchor destinations', () => {
   });
 
   it('drops a link on a vouched host that names a NON-DEFAULT port', () => {
-    // A matching host is not sufficient. `canonicalHttpUrl` now refuses any port other than
-    // 80/443, matching `fetchSafeUrl` -- campaign-service fetches hero and sponsor assets
-    // server-side, so a url this validator approves must be one that path would also accept.
-    // This assertion previously expected `:8443` to be KEPT; it was written before the port
-    // gate existed and was wrong once the two validators were reconciled.
+    // A matching host is not sufficient: `canonicalHttpUrl` refuses any port other than 80/443,
+    // the same list `fetchSafeUrl` enforces, because campaign-service fetches hero and sponsor
+    // assets server-side. The shared rule is the PORT -- scheme still differs by design.
     const html = '<p><a href="https://events.linuxfoundation.org:8443/x">x</a></p>';
 
     expect(stripResourceLoadingHtml(html, BRIEF)).toBe('<p><a>x</a></p>');

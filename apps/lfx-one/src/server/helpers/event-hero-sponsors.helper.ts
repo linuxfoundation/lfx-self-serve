@@ -34,8 +34,17 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
   }
 }
 
+/** One open tag and where it starts, so a caller can read the text around it. */
+interface OpenTag {
+  tag: string;
+  index: number;
+}
+
 /**
- * Every `<tagName ...>` open tag in the document, as raw tag text.
+ * Yields every `<tagName ...>` open tag in the document, with its position.
+ *
+ * LAZY, not an array: `extractSponsors` stops at `MAX_SPONSORS`, and materializing every match
+ * first would scan the whole page regardless of how early the caller breaks.
  *
  * WHY THIS EXISTS, rather than matching attributes against the whole page:
  * `/<meta[^>]+property=...[^>]*content=.../` has two unbounded `[^>]` runs that must BOTH match
@@ -51,15 +60,13 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
  * bounded by the tag and cannot be grown by the attacker.
  */
 
-function openTags(html: string, tagName: string): { tag: string; index: number }[] {
-  const tags: { tag: string; index: number }[] = [];
+function* openTags(html: string, tagName: string): Generator<OpenTag> {
   const re = new RegExp(`<${tagName}\\b[^<>]*>`, 'gi');
   // The INDEX rides along, not just the tag text. `extractSponsors` reads a context window
   // before each `<img>` to decide whether it sits in a sponsor section, so a helper that
   // returned strings alone could not serve it -- which is why that scan was a second copy of
   // this regex rather than a call to this function.
-  for (const match of html.matchAll(re)) tags.push({ tag: match[0], index: match.index ?? 0 });
-  return tags;
+  for (const match of html.matchAll(re)) yield { tag: match[0], index: match.index ?? 0 };
 }
 
 function extractHeroImage(html: string, baseUrl: string): string {

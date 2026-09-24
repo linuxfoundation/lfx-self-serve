@@ -272,9 +272,12 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('Only HTTPS URLs are allowed');
   }
 
-  // The SHARED rule, not a second copy of it. `canonicalHttpUrl` enforces the same list, so a
-  // url that validator approves is one this path will also accept -- they drifted once already,
-  // with `canonicalHttpUrl` persisting `:8443` that this function refuses.
+  // The SHARED rule, not a second copy of it: `canonicalHttpUrl` calls the same helper, so the
+  // PORT policy has one definition. They drifted once, with `canonicalHttpUrl` persisting `:8443`
+  // that this function refuses.
+  //
+  // Ports only. This path is https-only (above); `canonicalHttpUrl` still accepts `http:`,
+  // because it also judges urls a RECIPIENT clicks and never fetches.
   const portRefusal = refuseUnfetchablePort(parsed);
   if (portRefusal !== '') {
     throw new Error(portRefusal);

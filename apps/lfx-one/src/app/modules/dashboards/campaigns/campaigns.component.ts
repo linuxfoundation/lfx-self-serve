@@ -76,6 +76,22 @@ import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-t
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
+/**
+ * `body` plus a call to action whose destination was refused, appended as plain text.
+ *
+ * The server keeps a button's label inline in `body` only when the section carried NO url
+ * (`!section.url`). A url that was SUPPLIED and then refused -- a hallucinated host, a
+ * whitespace string -- takes the label out of `body` there and sends no native button either,
+ * so the call to action vanishes from the staged draft while the preview still shows it.
+ *
+ * Shared by both variants deliberately: A and B are generated through the same endpoint and lose
+ * the label the same way, and a second copy of this rule is what let them drift apart before.
+ */
+function withUnlinkedCta(body: string, unlinkedLabel: string): string {
+  if (unlinkedLabel === '') return body;
+  return `${body}<div><strong>${escapeHtml(unlinkedLabel)}</strong></div>`;
+}
+
 @Component({
   selector: 'lfx-campaigns',
   imports: [
@@ -1152,7 +1168,7 @@ export class CampaignsComponent {
    * duplicate-predicate defect this PR exists to remove, so it gets the same fix: delete the
    * second place.
    */
-  protected readonly abTestPreheaderBForSend = computed<string>(() => (this.abTestPreheaderB() ?? '').trim());
+  protected readonly abTestPreheaderBForSend = computed<string>(() => sanitizeDisplayText(this.abTestPreheaderB() ?? ''));
 
   /**
    * What the preview shows for variant A: trimmed, so a whitespace-only value reads as absent.
@@ -1266,7 +1282,11 @@ export class CampaignsComponent {
    *
    * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
    */
-  protected readonly emailBodyIsStageable = computed<boolean>(() => hasVisibleHtmlText(this.emailCopy()?.body ?? ''));
+  // The SANITIZED body, not the raw one: a tracking-pixel-only payload is non-empty as raw HTML
+  // and empty after `stripResourceLoadingHtml`, so judging the raw value staged hero/button/
+  // sponsor modules against a body that ships as nothing. Variant B already gated on its
+  // stripped value; this is the A-side twin of that.
+  protected readonly emailBodyIsStageable = computed<boolean>(() => hasVisibleHtmlText(this.emailBodyHtmlPreview()));
 
   /**
    * The hero image URL exactly as it will be staged, or '' when it will not be.
@@ -1339,7 +1359,7 @@ export class CampaignsComponent {
     // Requires a stageable BODY too, not just a valid destination: the button is written by the
     // same full-tree rebuild as the hero, so a button with no body drops the cloned template's
     // body exactly as a hero would. Same data-loss path, different field.
-    this.emailCtaIsStageable() && this.emailBodyIsStageable() ? (this.emailCopy()?.cta ?? '').trim() : ''
+    this.emailCtaIsStageable() && this.emailBodyIsStageable() ? sanitizeDisplayText(this.emailCopy()?.cta ?? '') : ''
   );
 
   /**
@@ -1393,12 +1413,18 @@ export class CampaignsComponent {
    * Appended as plain text, matching how the server renders an unlinked button: the label is the
    * content, and only the link is missing.
    */
-  protected readonly emailBodyHtmlForSend = computed<string>(() => {
-    const body = this.emailBodyHtmlPreview();
-    const unlinked = this.emailCtaUnlinkedLabel();
-    if (unlinked === '') return body;
-    return `${body}<div><strong>${escapeHtml(unlinked)}</strong></div>`;
-  });
+  protected readonly emailBodyHtmlForSend = computed<string>(() => withUnlinkedCta(this.emailBodyHtmlPreview(), this.emailCtaUnlinkedLabel()));
+
+  /**
+   * Variant B's body with the same refused-CTA fold-back A gets.
+   *
+   * B is generated through the SAME `/email-copy` endpoint, so a refused destination strips the
+   * button's label out of B's body exactly as it does A's -- and without this, nothing put it
+   * back, so the call to action vanished from the B draft alone. One definition
+   * (`withUnlinkedCta`) serves both, because two copies of this rule is how A and B drifted in
+   * the first place.
+   */
+  protected readonly abTestBodyHtmlBForSend = computed<string>(() => withUnlinkedCta(this.abTestBodyHtmlBPreview(), this.emailCtaUnlinkedLabel()));
 
   /**
    * The hero image's HOST, for a preview that describes the image without fetching it.
@@ -2710,7 +2736,7 @@ export class CampaignsComponent {
     // worse than sanitizing neither: a tracking pixel pasted into the B textarea vanished from
     // the operator's preview while still shipping in the sent email, so the one person who could
     // have spotted it was the only one who could not see it.
-    const abTestBodyHtmlB = this.abTestBodyHtmlBPreview();
+    const abTestBodyHtmlB = this.abTestBodyHtmlBForSend();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.

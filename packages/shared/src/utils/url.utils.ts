@@ -829,8 +829,9 @@ export function isPrivateHost(hostname: string): boolean {
 /**
  * The ports a URL may name if a server is ever going to FETCH it.
  *
- * Exported so the fetch path and this canonicalizer cannot drift: `fetchSafeUrl` enforces the
- * same list, and a URL this function approves has to be one that path would also accept.
+ * Module-private: `refuseUnfetchablePort` below is what the fetch path imports, so the list has
+ * one definition and no second place to edit. The shared rule is the PORT only -- see the note
+ * on scheme below.
  * Campaign-service fetches hero images and sponsor logos server-side, so a validator that
  * accepts what the fetcher refuses persists a URL that is guaranteed to fail later -- or, worse,
  * widens the SSRF surface past what the scrape pipeline allows.
@@ -841,7 +842,7 @@ export function isPrivateHost(hostname: string): boolean {
  * and refusing `http://` there would silently drop a legitimate sponsor or documentation link.
  * A non-standard port has no such legitimate case, which is why the two rules differ.
  */
-export const FETCHABLE_PORTS: readonly string[] = ['80', '443'];
+const FETCHABLE_PORTS: readonly string[] = ['80', '443'];
 
 /**
  * A refusal reason when `parsed` names a port no fetcher will accept, or '' when it is fine.
@@ -878,6 +879,11 @@ export function refuseUnfetchablePort(parsed: URL): string {
  * credentials would travel into the message and every log that records the fetch.
  *
  * @param value - A candidate URL from a scraped page, a restored brief, or a direct request
+ * REFUSES a non-default PORT, via the same `refuseUnfetchablePort` the fetch path uses: a url
+ * this function approves must be one `fetchSafeUrl` would also accept, because campaign-service
+ * fetches hero images and sponsor logos server-side. Scheme is deliberately NOT shared -- see
+ * `refuseUnfetchablePort` for why `http:` stays allowed here.
+ *
  * @returns The canonical absolute http(s) URL with userinfo stripped, or '' when unusable
  */
 export function canonicalHttpUrl(value: unknown): string {
