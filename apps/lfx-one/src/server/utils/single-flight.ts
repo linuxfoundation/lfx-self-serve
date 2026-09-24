@@ -20,6 +20,12 @@ const inFlight = new Map<string, Promise<unknown>>();
  *
  * The entry is dropped when the promise settles either way, so a rejection is never retained and
  * the next caller starts a fresh fetch rather than replaying the failure.
+ *
+ * Why not `LockManager` (`utils/lock-manager.ts`), which deduplicates concurrent Snowflake queries
+ * the same way: it logs its raw key as `query_hash` on every hit and miss, and the keys coalesced
+ * here are `{namespace}:{username}:{orgUid}` — reusing it would write usernames to the logs. Its
+ * stale-lock sweep is also sized from Snowflake query timeouts rather than these upstreams. The
+ * per-principal fail-closed rule lives in {@link coalescePerUserOrgFetch}, not in this primitive.
  */
 export function singleFlight<T>(key: string, factory: () => Promise<T>): Promise<T> {
   const joined = inFlight.get(key) as Promise<T> | undefined;

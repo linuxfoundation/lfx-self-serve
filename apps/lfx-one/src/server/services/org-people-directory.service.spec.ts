@@ -82,7 +82,10 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // committee-engagement.service.spec.ts). `isBoardCategory` and `splitDisplayName` mirror the real
 // implementations, since the merge's board-vs-committee split and name fill depend on their behaviour.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({
+// The stored column list is re-exported from its REAL module, so the guard and round-trip tests run
+// against the writer's actual contract rather than a copy that could silently drift from it.
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   VALKEY_CACHE: { ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
   EMPTY_ORG_ALL_EMPLOYEES_RESPONSE: {
     accountId: '',

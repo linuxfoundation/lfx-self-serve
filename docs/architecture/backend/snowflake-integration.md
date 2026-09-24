@@ -313,6 +313,15 @@ public getStats(): LockStats {
 }
 ```
 
+### Related: per-caller request coalescing (`single-flight.ts`)
+
+`apps/lfx-one/src/server/utils/single-flight.ts` applies the same in-flight deduplication to the per-caller Org Lens caches (committee/board seats and the merged People directory, GH-1906), whose producers can outlive their own 30-second cache entry. It is a separate primitive rather than a `LockManager` instance for two reasons:
+
+- **Its keys carry a username.** Coalescing keys are `{namespace}:{username}:{orgUid}`, and `LockManager` logs its raw key as `query_hash` on every hit and miss.
+- **It fails closed per principal.** `coalescePerUserOrgFetch` never coalesces an empty or non-filter-safe username or org uid — the same predicates `buildPerUserOrgKey` uses — so one caller's permission-filtered result can never be handed to another. Such callers fetch directly instead.
+
+Like `LockManager`, it is in-process and per replica, holds a promise only while it is pending, and drops the entry when the promise settles, so a rejection is never replayed.
+
 ## 🛡️ Security Features
 
 ### SQL Injection Protection

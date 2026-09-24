@@ -49,7 +49,10 @@ vi.mock('./valkey.service', () => ({
 // helpers and the filter-safety predicates are re-exported from their REAL modules: the whole point
 // of these tests is that a seat survives the actual encoder, not a restatement of it.
 vi.mock('@lfx-one/shared/interfaces', () => ({}));
-vi.mock('@lfx-one/shared/constants', () => ({
+// The stored column lists are re-exported from their REAL module, so the guard tests run against
+// the writer's actual contract rather than a copy that could silently drift from it.
+vi.mock('@lfx-one/shared/constants', async () => ({
+  ...(await vi.importActual<object>('@lfx-one/shared/constants/org-lens-cache.constants')),
   isBoardCategory: (category: string | null | undefined) => (category ?? '').trim().toLowerCase() === 'board',
   VALKEY_CACHE: { ORG_SEATS_NAMESPACE: 'org-seats:v2', ORG_LENS_PERUSER_TTL_SECONDS: 30 },
 }));
@@ -165,7 +168,9 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH
     const stale = seat({ uid: 'seat-0' });
     delete stale.project_uid;
     delete stale.project_slug;
-    const drained = [stale, seat(), seat({ uid: 'seat-4', committee_category: 'Board' })];
+    // …and `organization_id` is no exception: it rides in the same dictionary, so a seat that
+    // disagrees keeps its own value instead of inheriting the first seat's.
+    const drained = [stale, seat(), seat({ uid: 'seat-4', committee_category: 'Board' }), seat({ uid: 'seat-5', organization_id: '0014100000OtherAAA' })];
     proxyRequest.mockResolvedValue(page(drained));
     const service = new OrgLensBoardCommitteeService();
 
@@ -213,6 +218,41 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH
     const stored = JSON.parse(cache.entry!);
 
     stored.s.r[0][stored.s.k.indexOf('c')] = 7;
+
+    expect(cache.accept!(stored)).toBe(false);
+  });
+
+  // Corrupt or foreign entries that fromColumnar would otherwise decode "successfully" into seats
+  // silently missing their committee: a duplicated `c` column lets a later out-of-range index
+  // overwrite the valid first one, and an empty committee row decodes to no committee fields at all.
+  it.each([
+    [
+      'a duplicated committee-index column',
+      (stored: { s: { k: string[]; r: unknown[][] } }) => {
+        stored.s.k = [...stored.s.k, 'c'];
+        stored.s.r = stored.s.r.map((row) => [...row, 99]);
+      },
+    ],
+    [
+      'an empty committee row',
+      (stored: { c: { k: string[]; r: unknown[][] } }) => {
+        stored.c.r = [[]];
+      },
+    ],
+    [
+      'a committee table missing a column',
+      (stored: { c: { k: string[]; r: unknown[][] } }) => {
+        stored.c.k = stored.c.k.slice(1);
+        stored.c.r = stored.c.r.map((row) => row.slice(1));
+      },
+    ],
+  ])('rejects an entry with %s', async (_label, corrupt) => {
+    proxyRequest.mockResolvedValue(page([seat()]));
+    const service = new OrgLensBoardCommitteeService();
+    await service.fetchAllOrgSeats(req, ORG);
+    const stored = JSON.parse(cache.entry!);
+
+    corrupt(stored);
 
     expect(cache.accept!(stored)).toBe(false);
   });

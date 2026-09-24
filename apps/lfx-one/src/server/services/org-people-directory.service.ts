@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { EMPTY_ORG_ALL_EMPLOYEES_RESPONSE, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import { isBoardCategory } from '@lfx-one/shared/constants';
 import type {
   ColumnarTable,
@@ -18,7 +18,7 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -50,65 +50,50 @@ function isStoredString(value: unknown): boolean {
   return typeof value === 'string' && !isColumnarAbsent(value);
 }
 
-/** Stored column list for a cached directory row, in the interface's own field order. */
-const DIRECTORY_ROW_KEYS = [
-  'personKey',
-  'lfid',
-  'lfUsername',
-  'cdpMemberId',
-  'name',
-  'firstName',
-  'lastName',
-  'title',
-  'email',
-  'accessBadge',
-  'avatarUrl',
-  'sources',
-  'seatsCount',
-  'boardSeatsCount',
-  'committeeSeatsCount',
-  'commitsCount',
-  'eventsCount',
-  'coursesCount',
-  'engagedFoundationIds',
-] as const satisfies readonly (keyof OrgAllEmployeeRow)[];
-
 /**
- * Per-column checks for a stored row, covering exactly the fields the pre-compaction wire guard
- * asserted: the cached value is replayed straight to the client, so a corrupt element would
+ * One stored cell of a cached directory row, checked for exactly the fields the pre-compaction wire
+ * guard asserted: the cached value is replayed straight to the client, so a corrupt element would
  * otherwise crash on `sources` spreading or `name.localeCompare`.
+ *
+ * Switched on the row's own key union, so a misspelled case fails to compile instead of silently
+ * leaving that column unchecked.
  */
-const DIRECTORY_ROW_VALIDATORS: Record<string, (value: unknown) => boolean> = {
-  personKey: isStoredString,
-  name: isStoredString,
-  email: (value) => value === null || isStoredString(value),
-  lfUsername: (value) => value === null || isStoredString(value),
-  sources: isStringArray,
-  engagedFoundationIds: isStringArray,
-  seatsCount: (value) => typeof value === 'number',
-  boardSeatsCount: (value) => typeof value === 'number',
-  committeeSeatsCount: (value) => typeof value === 'number',
-  commitsCount: (value) => typeof value === 'number',
-  eventsCount: (value) => typeof value === 'number',
-  coursesCount: (value) => typeof value === 'number',
-};
-
-/** The checks above resolved to stored-column order once, so a cache read doesn't rebuild the list. */
-const DIRECTORY_COLUMN_CHECKS = DIRECTORY_ROW_KEYS.map((key) => DIRECTORY_ROW_VALIDATORS[key] ?? null);
+function isValidDirectoryCell(key: keyof OrgAllEmployeeRow, value: unknown): boolean {
+  switch (key) {
+    case 'personKey':
+    case 'name':
+      return isStoredString(value);
+    case 'email':
+    case 'lfUsername':
+      return value === null || isStoredString(value);
+    case 'sources':
+    case 'engagedFoundationIds':
+      return isStringArray(value);
+    case 'seatsCount':
+    case 'boardSeatsCount':
+    case 'committeeSeatsCount':
+    case 'commitsCount':
+    case 'eventsCount':
+    case 'coursesCount':
+      return typeof value === 'number';
+    default:
+      return true;
+  }
+}
 
 /**
  * Validates the stored rows positionally, without rebuilding the row objects the decoder is about
  * to build anyway.
  *
- * The exact, ordered key list is itself part of the contract: it is what asserts the merge-only
+ * The exact, ordered column list is itself part of the contract: it is what asserts the merge-only
  * fields (`emails`, `mergedFrom`) are absent — the pre-compaction guard had to test for each of
  * them by name — and it rejects an entry written against a different column set outright.
  */
 function isDirectoryRowTable(table: ColumnarTable): boolean {
-  if (table.k.length !== DIRECTORY_ROW_KEYS.length || DIRECTORY_ROW_KEYS.some((key, index) => table.k[index] !== key)) {
-    return false;
-  }
-  return table.r.every((row) => row.length === DIRECTORY_COLUMN_CHECKS.length && DIRECTORY_COLUMN_CHECKS.every((check, index) => !check || check(row[index])));
+  return (
+    hasExactColumns(table, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS) &&
+    table.r.every((row) => ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS.every((key, index) => isValidDirectoryCell(key, row[index])))
+  );
 }
 
 /**
@@ -195,7 +180,7 @@ function isCompactDirectoryEntry(value: unknown): boolean {
 function toCompactDirectory(response: OrgAllEmployeesResponse): CompactOrgPeopleDirectoryEntry {
   return {
     accountId: response.accountId,
-    r: toColumnar(response.rows, DIRECTORY_ROW_KEYS),
+    r: toColumnar(response.rows, ORG_PEOPLE_DIRECTORY_CACHE_ROW_KEYS),
     stats: response.stats,
     foundations: response.foundations,
   };

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isBoardCategory, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import { isBoardCategory, ORG_SEATS_CACHE_COMMITTEE_KEYS, ORG_SEATS_CACHE_SEAT_KEYS, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
   BoardSeat,
   CommitteeSeat,
@@ -17,7 +17,7 @@ import type {
   ReassignCommitteeSeatRequest,
   SeatCommittee,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { resolveSeatAvatar } from '../helpers/avatar.helper';
@@ -37,33 +37,6 @@ import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
  * this bound are omitted from the suggestions (manual entry still works).
  */
 const PICKER_MAX_SEAT_PAGES = 4;
-
-const SEAT_COMMITTEE_KEYS = [
-  'committee_uid',
-  'committee_name',
-  'committee_category',
-  'project_uid',
-  'project_slug',
-] as const satisfies readonly (keyof SeatCommittee)[];
-
-const COMPACT_SEAT_KEYS = [
-  'c',
-  'uid',
-  'first_name',
-  'last_name',
-  'email',
-  'job_title',
-  'role_name',
-  'voting_status',
-  'appointed_by',
-  'is_org_editable',
-  'reason',
-  // Kept deliberately: `avatar` looks unread by a naive search, but `resolveSeatAvatar` prefers it
-  // and only derives a URL from `username` when it is absent — dropping it would silently downgrade
-  // every real avatar to the fallback.
-  'avatar',
-  'username',
-] as const satisfies readonly (keyof CompactSeatRow)[];
 
 /** Board & Committee tab service (spec 026, live data): proxies live committee-service seats (user token → Heimdall `b2b_org#auditor`), splits Board vs other by `committee_category` (FR-003); voting history deferred (D12, empty list); no mock fixture — committee-service owns the data. */
 export class OrgLensBoardCommitteeService {
@@ -439,9 +412,9 @@ export class OrgLensBoardCommitteeService {
 /**
  * Projects a drained roster onto the stored cache shape (GH-1906).
  *
- * Three sources of repetition go away: the per-seat field names (stored once in each columnar
- * table), the committee identity seats of one committee usually share, and `organization_id`,
- * which the org-scoped upstream filter makes identical on every row.
+ * Two sources of repetition go away: the per-seat field names (stored once in each columnar table)
+ * and the committee context — committee, project and organization — that the seats of one
+ * committee usually share.
  */
 function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOrgSeatsEntry {
   const keys = seats.map(seatCommitteeKey);
@@ -473,52 +446,51 @@ function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOr
     };
   });
   return {
-    o: seats[0]?.organization_id ?? '',
     c: toColumnar(
       committees.values.map((item) => item.seat),
-      SEAT_COMMITTEE_KEYS
+      ORG_SEATS_CACHE_COMMITTEE_KEYS
     ),
-    s: toColumnar(rows, COMPACT_SEAT_KEYS),
+    s: toColumnar(rows, ORG_SEATS_CACHE_SEAT_KEYS),
   };
 }
 
 /**
- * Dictionary identity of a seat's committee fields — ALL five, so two members of one committee
- * that disagree (see `CompactOrgSeatsEntry.c`) get separate entries instead of one being rewritten
- * to the other's values.
+ * Dictionary identity of a seat's committee context — EVERY field the dictionary stores, so two
+ * seats of one committee that disagree (see `CompactOrgSeatsEntry.c`) get separate entries instead
+ * of one being rewritten to the other's values.
  *
  * An absent field maps to `''` and a present one to its `JSON.stringify` form, so absent, `null`
  * (`'null'`) and the empty string (`'""'`) stay three different keys. The `\u0001` separator is
  * unambiguous because `JSON.stringify` escapes every control character inside a string.
  */
 function seatCommitteeKey(seat: CommitteeServiceOrgSeat): string {
-  return SEAT_COMMITTEE_KEYS.map((key) => (seat[key] === undefined ? '' : JSON.stringify(seat[key]))).join('\u0001');
+  return ORG_SEATS_CACHE_COMMITTEE_KEYS.map((key) => (seat[key] === undefined ? '' : JSON.stringify(seat[key]))).join('\u0001');
 }
 
-/** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee fields and the hoisted `organization_id`. */
+/** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee context. */
 function fromCompactOrgSeats(entry: CompactOrgSeatsEntry): CommitteeServiceOrgSeat[] {
   const committees = fromColumnar<SeatCommittee>(entry.c);
-  return fromColumnar<CompactSeatRow>(entry.s).map(({ c, ...seat }) => ({ ...seat, ...committees[c], organization_id: entry.o }));
+  return fromColumnar<CompactSeatRow>(entry.s).map(({ c, ...seat }) => ({ ...seat, ...committees[c] }));
 }
 
 /**
- * Rejects anything that is not a well-formed compact seats entry — which includes every
- * pre-compaction (`org-seats:v1`) value, a plain array with no `o` — so it degrades to a miss
- * rather than decoding into seats with no committee.
+ * Rejects anything that is not a well-formed compact seats entry — including every pre-compaction
+ * (`org-seats:v1`) value, a plain seat array — so it degrades to a miss rather than decoding.
  *
- * The committee index is checked per row rather than left to the decoder: an out-of-range index is
- * the one corruption that would silently produce a seat missing its committee identity instead of
- * failing, and the check costs one integer comparison against a value the JSON parse already built.
+ * Both tables must carry exactly the writer's column lists with every row at full width
+ * ({@link hasExactColumns}); a duplicated `c` column or a short committee row would otherwise
+ * decode into a seat silently missing its committee identity. Each seat's committee index is then
+ * checked against the dictionary, since an out-of-range index is the other way to reach that
+ * result, and costs one integer comparison against a value the JSON parse already built.
  */
 function isCompactOrgSeatsEntry(value: unknown): boolean {
   const entry = value as Partial<CompactOrgSeatsEntry> | null;
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
-  if (typeof entry.o !== 'string' || !isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
-
-  const column = entry.s.k.indexOf('c');
-  if (column < 0) return false;
+  if (!isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
+  if (!hasExactColumns(entry.c, ORG_SEATS_CACHE_COMMITTEE_KEYS) || !hasExactColumns(entry.s, ORG_SEATS_CACHE_SEAT_KEYS)) return false;
 
   const committees = entry.c.r.length;
+  const column = ORG_SEATS_CACHE_SEAT_KEYS.indexOf('c');
   return entry.s.r.every((row) => {
     const index = row[column];
     return typeof index === 'number' && Number.isInteger(index) && index >= 0 && index < committees;
