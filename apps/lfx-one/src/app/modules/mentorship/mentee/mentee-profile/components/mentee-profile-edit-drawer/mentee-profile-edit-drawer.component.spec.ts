@@ -174,6 +174,19 @@ describe('MenteeProfileEditDrawerComponent', () => {
     expect(comp['aboutMeLength']()).toBeLessThanOrEqual(MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
   });
 
+  it.each([
+    ['<strong>c</strong>', 'tag'],
+    ['&amp;', 'entity'],
+  ])('drops a %s the raw-cap cut splits instead of seeding it as literal text (%s)', (token) => {
+    // Markup-heavy but within the 3000 plain-text cap: the cut lands two characters into `token`.
+    const head = `<p>${'<strong>a</strong>'.repeat(900)}`;
+    const filler = 'b'.repeat(MENTORSHIP_RICH_TEXT_RAW_MAX - head.length - 2);
+    drawer.open({ ...PROFILE, aboutMe: `${head}${filler}${token}</p>` });
+    fixture.detectChanges();
+
+    expect(comp['form'].controls.introduction.value).toBe(`${'a'.repeat(900)}${filler}`);
+  });
+
   it('emits valueChanges when seeding so skills pickers and resume receive the profile', () => {
     const emitted: unknown[] = [];
     const sub = comp['form'].valueChanges.subscribe((value) => emitted.push(value));

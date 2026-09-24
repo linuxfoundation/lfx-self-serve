@@ -149,11 +149,8 @@ export class MenteeProfileEditDrawerComponent {
     // Register and the drawer share the 3000 code-point cap. Convert block boundaries
     // to newlines, then cap, *before* patching so the control, counter, and baselines
     // share one value. patchValue must emit so skills pickers and the resume section
-    // (which snapshot `valueChanges`) pick up the seeded skills and filename. The stored
-    // value comes from the API, so slice it to the raw cap before `htmlClipboardToText`,
-    // whose tag strip is quadratic on adversarial input (lfx-self-serve-ops#37).
-    const aboutMe = (profile.aboutMe ?? '').slice(0, MENTORSHIP_RICH_TEXT_RAW_MAX);
-    const introduction = capCodePointEdit('', htmlClipboardToText(aboutMe), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
+    // (which snapshot `valueChanges`) pick up the seeded skills and filename.
+    const introduction = capCodePointEdit('', htmlClipboardToText(this.boundStoredAboutMe(profile.aboutMe ?? '')), MENTORSHIP_MENTEE_PROFILE_ABOUT_MAX);
     this.lastValidIntroduction = introduction;
     this.seededIntroduction = introduction;
     this.saveAttempted.set(false);
@@ -167,6 +164,21 @@ export class MenteeProfileEditDrawerComponent {
     this.aboutMeLength.set(codePointLength(introduction));
     this.form.markAsPristine();
     this.form.markAsUntouched();
+  }
+
+  /**
+   * The stored `aboutMe` comes from the API, so it is cut to the raw cap before
+   * `htmlClipboardToText`, whose tag strip is quadratic on adversarial input
+   * (lfx-self-serve-ops#37). A cut can land inside a tag or an entity, which the converter
+   * would keep as literal text, so a trailing partial one is dropped. The editor escapes a
+   * typed `<` as `&lt;`, so a raw `<` after the last `>` can only be an unfinished tag.
+   */
+  private boundStoredAboutMe(html: string): string {
+    if (html.length <= MENTORSHIP_RICH_TEXT_RAW_MAX) return html;
+    const sliced = html.slice(0, MENTORSHIP_RICH_TEXT_RAW_MAX);
+    const lastOpen = sliced.lastIndexOf('<');
+    const tagSafe = lastOpen > sliced.lastIndexOf('>') ? sliced.slice(0, lastOpen) : sliced;
+    return tagSafe.replace(/&#?\w*$/, '');
   }
 
   private skillPickerError(control: 'skillsHave' | 'skillsWant', message: string): string | undefined {
