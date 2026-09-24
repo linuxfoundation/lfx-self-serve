@@ -3286,7 +3286,7 @@ describe('OrgClaService.getActivityLog — the upstream call', () => {
     expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/nextKey=cursor-xyz/), expect.any(Object));
   });
 
-  it('never forwards `returnAllEvents` — the flag is a producer admin escape that would cross the (company, CLA Group) boundary', async () => {
+  it('never forwards returnAllEvents — the flag only raises the page limit on the same partition', async () => {
     stageActivityLog();
 
     await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });

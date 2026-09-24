@@ -1359,12 +1359,13 @@ export class OrgClaService {
    * `IsUserAuthorizedForOrganization(ALLOW_ADMIN_SCOPE)` accepts an org-scoped caller for this
    * endpoint. `canEdit` is deliberately absent from the envelope — the log has no per-row write.
    *
-   * `returnAllEvents` is never sent on the wire: the flag is a producer-side admin escape that
-   * makes the response cross the `(company, CLA Group)` boundary this feature deliberately hides.
-   * If a future admin surface needs that, it belongs on a separate route.
+   * `returnAllEvents` is never sent. The flag only raises the page limit to 10000 on the same
+   * `company_sfid_cla_group_id` partition; it does not widen which group is read. Leaving it
+   * off keeps the page bound this route already clamps.
    *
    * The producer's paging cursor (`NextKey`) is opaque; forward it verbatim from the client.
-   * Search is client-side on the fetched pages — the producer has no server-side term filter here.
+   * Search stays on the client, over actor and EventSummary. The producer's `searchTerm`
+   * matches EventData, the detailed audit sentence this tab does not show.
    */
   public async getActivityLog(req: Request, orgUid: string, signatureId: string, query: ActivityLogQuery): Promise<OrgClaActivityLogPage | null> {
     const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_activity_log');
@@ -1759,9 +1760,8 @@ export class OrgClaService {
    * — filled from the project SFID for a project-scoped CLA Group, or the foundation SFID for a
    * foundation-level one — is the correct path segment here.
    *
-   * `returnAllEvents` is NEVER forwarded from the client, even if the client somehow sent it. The
-   * flag is a producer-side admin escape that would return events crossing the `(company, CLA
-   * Group)` boundary, and this route deliberately does not expose that surface.
+   * `returnAllEvents` is never forwarded. On this route it only lifts the query limit to 10000
+   * rows of the same company-and-CLA-Group partition.
    *
    * `redactResponseBody: true` because a non-OK body from the producer can echo request
    * attributes including a company id, and a routine 4xx here (a stale CCLA id, a temporarily

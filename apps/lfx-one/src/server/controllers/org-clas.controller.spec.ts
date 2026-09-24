@@ -1432,8 +1432,9 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
 /**
  * Activity Log read (#1987). The route guard is asserted in the router spec; this layer's job is
  * to translate query parameters correctly, clamp the page size before it reaches the producer,
- * answer 404 for a signature this organization does not hold, and NOT forward the producer's
- * `returnAllEvents` admin escape even if the client tried to send it.
+ * answer 404 for a signature this organization does not hold, and NOT forward
+ * `returnAllEvents` even if the client tried to send it. That flag only raises the page
+ * limit on the same partition.
  */
 function activityReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
   return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
@@ -1491,10 +1492,9 @@ describe('OrgClasController.getActivityLog', () => {
     expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
   });
 
-  // The producer's `returnAllEvents` flag would cross the (company, CLA Group) boundary this
-  // route deliberately hides. Even if a client sent it as a query string, the controller must not
-  // hand it to the service — the service does not read it either, so this is one of two layers
-  // pinning that the flag stops at the BFF.
+  // `returnAllEvents` only raises the page limit on the same partition. Even if a client
+  // sent it, the controller must not hand it to the service — the service does not read it
+  // either, so this is one of two layers pinning that the flag stops at the BFF.
   it('never forwards a returnAllEvents flag to the service, even if the caller tried', async () => {
     getActivityLog.mockResolvedValue(activityPage());
 

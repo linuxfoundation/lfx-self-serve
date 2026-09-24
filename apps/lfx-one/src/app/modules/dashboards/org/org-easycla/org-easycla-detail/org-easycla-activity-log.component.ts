@@ -40,11 +40,10 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
  * surface: the read is a broader grant than the write tabs on this page (auditors and program
  * leads without a manager role still see it), and the middleware chain reflects that.
  *
- * Search is client-side over the rows fetched so far. Load-more requests the producer's next
- * page via the opaque `nextKey` cursor and appends it to the visible set. The producer has no
- * server-side term filter for this endpoint, so pushing search to the server would produce a
- * spuriously empty page for a term whose matches are on pages the client has not fetched yet
- * — client-side filtering is honest about what it can and cannot see.
+ * Search is client-side over the rows fetched so far, matching the actor and EventSummary.
+ * The producer accepts `searchTerm`, but that filter matches EventData, the detailed audit
+ * sentence this tab does not render. Load-more requests the next page via the opaque
+ * `nextKey` cursor and appends it.
  *
  * Summary strings are rendered as plain text with no substring parsing. Historical rows may
  * carry a project name behind the literal label "with project SFID" (a corrected producer-side

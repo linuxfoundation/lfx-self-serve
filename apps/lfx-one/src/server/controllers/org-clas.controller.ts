@@ -653,9 +653,8 @@ export class OrgClasController {
       const nextKeyRaw = (getStringQueryParam(req, 'nextKey') ?? '').trim();
       const nextKey = nextKeyRaw.length > 0 ? nextKeyRaw : undefined;
 
-      // NOTE: `returnAllEvents` is a producer-side admin escape that would cross the
-      // `(company, CLA Group)` boundary this route deliberately hides. We do not forward it here,
-      // and the service does not read it either — the flag stops at the BFF.
+      // `returnAllEvents` only raises the producer's page limit on the same partition.
+      // It is not read or forwarded; the page size this route already clamps is the bound.
 
       const page = await this.orgClaService.getActivityLog(req, orgUid, signatureId, { pageSize, nextKey });
 

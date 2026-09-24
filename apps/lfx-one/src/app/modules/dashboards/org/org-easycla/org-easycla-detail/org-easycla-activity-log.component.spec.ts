@@ -202,9 +202,8 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(byTestId(fixture, 'org-easycla-activity-log-load-more')).toBeNull();
   });
 
-  // Search is client-side over the rows already fetched — the producer has no server-side term
-  // filter on this endpoint, so pushing it to the wire would produce a spuriously empty page for
-  // a term whose matches are on later pages the client has not fetched yet.
+  // Search stays on the loaded rows. The producer's searchTerm matches EventData, not the
+  // EventSummary and actor this tab shows.
   it('filters the rendered rows client-side by actor and summary; a keystroke does not fire a fetch', async () => {
     getActivityLog.mockReturnValueOnce(
       of(
