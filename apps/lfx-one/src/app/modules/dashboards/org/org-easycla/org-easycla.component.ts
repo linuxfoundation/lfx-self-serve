@@ -29,7 +29,6 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 
@@ -51,7 +50,6 @@ export class OrgEasyclaComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
@@ -137,9 +135,7 @@ export class OrgEasyclaComponent {
    * satisfy `hasOrgSelectorAccess` with an empty account list. Without it those users would see a
    * settled answer about their CLAs before any company was selected.
    */
-  protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || (this.orgNavigation.loaded() && this.emptyState.settled()));
 
   // ── Data ──────────────────────────────────────────────────────────────────
   private readonly searchTerm: Signal<string> = this.initSearchTerm();

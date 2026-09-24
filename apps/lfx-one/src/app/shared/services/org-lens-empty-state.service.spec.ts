@@ -21,6 +21,10 @@ interface Harness {
   loaded: WritableSignal<boolean>;
   personaLoaded: WritableSignal<boolean>;
   isStaff: WritableSignal<boolean>;
+  isContractor: WritableSignal<boolean>;
+  /** Answers of the read gate (`OrgRoleGrantsService.readCheck`), one Subject per call. */
+  readCheck: Mock<(uid: string) => Observable<boolean>>;
+  readAnswers: Subject<boolean>[];
   lookupOutcome: WritableSignal<OrgLensLookupOutcome>;
   staffCheck: WritableSignal<OrgLensStaffCheck>;
   writerSet: WritableSignal<Set<string>>;
@@ -46,6 +50,13 @@ function setup(): Harness {
   const loaded = signal(true);
   const personaLoaded = signal(true);
   const isStaff = signal(false);
+  const isContractor = signal(false);
+  const readAnswers: Subject<boolean>[] = [];
+  const readCheck: Mock<(uid: string) => Observable<boolean>> = vi.fn(() => {
+    const answer = new Subject<boolean>();
+    readAnswers.push(answer);
+    return answer.asObservable();
+  });
   const lookupOutcome = signal<OrgLensLookupOutcome>('ok');
   const staffCheck = signal<OrgLensStaffCheck>('ok');
   const writerSet = signal(new Set<string>());
@@ -77,6 +88,8 @@ function setup(): Harness {
           loaded,
           loading: grantsLoading,
           isStaff,
+          isContractor,
+          readCheck,
           lookupOutcome,
           staffCheck,
           writerSet,
@@ -100,6 +113,9 @@ function setup(): Harness {
     loaded,
     personaLoaded,
     isStaff,
+    isContractor,
+    readCheck,
+    readAnswers,
     lookupOutcome,
     staffCheck,
     writerSet,
@@ -391,5 +407,112 @@ describe('OrgLensEmptyStateService.classifyLookup', () => {
 
     expect(h.service.classifyLookup(false)).toBe('staff-check-failed');
     expect(h.service.classifyLookup(true)).toBe('staff-check-failed');
+  });
+});
+
+// #2961 — an LF contractor the server refuses. The rule keys on the read gate's answer for the selected
+// organization, never on the roster, so FGA-only readers (key-contact auditors) keep their page.
+describe('OrgLensEmptyStateService.pageState — contractor-no-grant (#2961)', () => {
+  let h: Harness;
+
+  beforeEach(() => {
+    h = setup();
+    h.isContractor.set(true);
+  });
+
+  it('tells a contractor with nothing selected and nothing held why, instead of the employee no-organization copy', () => {
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+
+    h.isContractor.set(false);
+    expect(h.service.pageState()).toBe('no-organization');
+  });
+
+  it('asks the read gate about a persona-seeded organization and shows the state only once it refuses', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    expect(h.readCheck).toHaveBeenCalledWith(OTHER);
+    // Unanswered: a skeleton, never the zero-metric overview.
+    expect(h.service.settled()).toBe(false);
+
+    h.readAnswers[0].next(false);
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+  });
+
+  it('renders the page when the read gate admits the organization (for example a key-contact auditor)', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    h.readAnswers[0].next(true);
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  // The probe answer counts only for the organization it was asked about: switching A → B before A
+  // answers must wait for B, and a late answer for A must decide nothing.
+  it('never lets an answer for one organization decide another', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+    h.selectedAccount.set(account(HELD + '-b'));
+    TestBed.tick();
+
+    expect(h.readCheck).toHaveBeenLastCalledWith(HELD + '-b');
+    expect(h.service.settled()).toBe(false);
+
+    h.readAnswers[0].next(false);
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+
+    h.readAnswers[1].next(true);
+    expect(h.service.settled()).toBe(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  // Between a selection change and the probe restarting, the probe still holds the previous answer.
+  it('does not apply the previous organization\u2019s refusal to a newly selected one', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+    h.readAnswers[0].next(false);
+    expect(h.service.pageState()).toBe('contractor-no-grant');
+
+    // No tick: the new organization is selected but its read check has not started yet.
+    h.selectedAccount.set(account(HELD + '-b'));
+    expect(h.service.settled()).toBe(false);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  // An FGA-only reader (key-contact auditor) can reach an organization through a deep link with no roster
+  // row and no persona seed; the gate's admission must not fall through to the employee no-organization copy.
+  it('keeps the page for an admitted contractor who holds nothing in the roster', () => {
+    h.hasOrgSelectorAccess.set(false);
+    h.selectedAccount.set(account(OTHER));
+    TestBed.tick();
+
+    h.readAnswers[0].next(true);
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('never probes an organization the contractor holds through an explicit grant', () => {
+    h.hasOrgSelectorAccess.set(true);
+    h.writerSet.set(new Set([HELD]));
+    h.selectedAccount.set(account(HELD));
+    TestBed.tick();
+
+    expect(h.readCheck).not.toHaveBeenCalled();
+    expect(h.service.pageState()).toBeNull();
+  });
+
+  it('keeps the outage states ahead of it', () => {
+    h.lookupOutcome.set('failed');
+    expect(h.service.pageState()).toBe('could-not-load');
+
+    h.lookupOutcome.set('ok');
+    h.staffCheck.set('failed');
+    expect(h.service.pageState()).toBe('staff-check-failed');
   });
 });

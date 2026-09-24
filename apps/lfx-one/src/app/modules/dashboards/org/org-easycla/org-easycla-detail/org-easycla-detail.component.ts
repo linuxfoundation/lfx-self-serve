@@ -84,7 +84,6 @@ import { OrgLensNavigationService } from '@services/org-lens-navigation.service'
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
@@ -147,7 +146,6 @@ export class OrgEasyclaDetailComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
@@ -284,9 +282,7 @@ export class OrgEasyclaDetailComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly orgContextLoaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded: Signal<boolean> = computed(() => this.hasPageState() || (this.orgNavigation.loaded() && this.emptyState.settled()));
 
   /** The CLA Group this page is about. The authoritative half of the address (#2364). */
   private readonly claGroupId: Signal<string> = toSignal(

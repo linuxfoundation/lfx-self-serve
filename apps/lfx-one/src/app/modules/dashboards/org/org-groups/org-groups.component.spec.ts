@@ -82,7 +82,10 @@ async function render(options: RenderOptions = {}): Promise<Rendered> {
       { provide: OrgNavigationService, useValue: { loaded: signal(orgNavigationLoaded) } },
       { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
       { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
-      { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+      {
+        provide: OrgLensEmptyStateService,
+        useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(true), retrying: signal(false), retry: vi.fn() },
+      },
       { provide: OrgLensGroupsService, useValue: { getGroups } },
       // The seat-holders drawer (GH-1780) is unconditionally mounted, so its injected
       // CommitteeMembersService needs a stub too — otherwise DI resolves the real service, which
@@ -944,7 +947,10 @@ describe('OrgGroupsComponent stat strip', () => {
         { provide: OrgNavigationService, useValue: { loaded: signal(orgLoaded) } },
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(orgLoaded), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(orgLoaded) } },
-        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensEmptyStateService,
+          useValue: { pageState: signal(null), hasPageState: signal(false), settled: signal(orgLoaded), retrying: signal(false), retry: vi.fn() },
+        },
         { provide: OrgLensGroupsService, useValue: { getGroups: vi.fn(getGroups) } },
         { provide: CommitteeMembersService, useValue: { getCommitteeMembers: () => NEVER } },
         { provide: PersonDetailDrawerService, useValue: personDrawerStub() },

@@ -21,6 +21,21 @@ export class OrgLensAccessController {
     this.service = new OrgLensAccessService();
   }
 
+  // GET /api/orgs/:orgUid/lens/read-check
+  /**
+   * #2961 — `GET /api/orgs/:orgUid/lens/read-check`. Answers "may this caller read this organization?"
+   * with the server's own gate: `requireOrgLensAccess` has already run on the `/lens` prefix, so reaching
+   * here means admitted (204), and a refusal never gets here (403 `FORBIDDEN`). That includes FGA-only
+   * readers (key-contact auditors) that no roster lists, which is why the page asks this rather than
+   * inferring access from its own lists.
+   */
+  public readCheck(req: Request, res: Response): void {
+    const orgUid = req.params['orgUid'];
+    const startTime = logger.startOperation(req, 'check_org_lens_read', { org_uid: orgUid });
+    logger.success(req, 'check_org_lens_read', startTime, { org_uid: orgUid });
+    res.status(204).end();
+  }
+
   // GET /api/orgs/:orgUid/lens/access/users
   public async getUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const orgUid = req.params['orgUid'];

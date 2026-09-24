@@ -9,6 +9,7 @@ export type OrgLensEmptyStateName =
   | 'not-found-staff'
   | 'could-not-load'
   | 'staff-check-failed'
+  | 'contractor-no-grant'
   | 'section-empty'
   | 'section-could-not-load'
   | 'section-no-access'

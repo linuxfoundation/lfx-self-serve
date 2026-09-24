@@ -321,10 +321,20 @@ export class OrgNavigationService {
       // the pending selection, and an empty result for it would otherwise sign the caller out. A
       // search that matched nothing is reported by the list's own empty state instead. Narrow enough
       // that a genuine upstream failure still reports.
-      if (this.orgRoleGrantsService.isStaff() && !page.upstreamFailed) {
-        return;
-      }
-      this.handleEmptyOrgResponse(page);
+      //
+      // #2961: the same holds for an LF contractor. The page explains their empty list
+      // (`contractor-no-grant`); the toast would repeat it as employee copy, and clearing the selection
+      // would drop the persona-seeded organization the page asks the read gate about.
+      //
+      // Decided once the role grants have answered: a persona seed can start this list before they do,
+      // and reading `isStaff`/`isContractor` early would toast and clear the selection for exactly the
+      // callers these exemptions exist for.
+      this.whenGrantsSettled(() => {
+        if ((this.orgRoleGrantsService.isStaff() || this.orgRoleGrantsService.isContractor()) && !page.upstreamFailed) {
+          return;
+        }
+        this.handleEmptyOrgResponse(page);
+      });
       return;
     }
 

@@ -157,10 +157,14 @@ describe('OrgLensEmptyStateComponent', () => {
 
   // FR-002: the reason opens with what Organization Lens is on the two states a first-time visitor
   // can reach — and nowhere else.
-  it('opens the reason with the product sentence only on no-organization and no-access', () => {
+  // The states a caller can reach before ever seeing Org Lens open with what it is (FR-002); #2961 adds
+  // the contractor who has no grant.
+  it('opens the reason with the product sentence only on the first-visit states', () => {
+    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant'];
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
-    const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => name !== 'no-organization' && name !== 'no-access');
+    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
     expect(others).toHaveLength(8);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });

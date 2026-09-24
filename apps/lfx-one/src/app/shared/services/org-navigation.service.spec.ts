@@ -42,6 +42,8 @@ describe('OrgNavigationService default selection', () => {
   let setAccount: ReturnType<typeof vi.fn>;
   let setIndexedSlug: ReturnType<typeof vi.fn>;
   let pinSelection: ReturnType<typeof vi.fn>;
+  // #2961 — set per test; an LF contractor's empty list is explained by the page, not the toast.
+  const isContractor = signal(false);
   let clearAccount: ReturnType<typeof vi.fn>;
   let writerSet: WritableSignal<Set<string>>;
   let auditorSet: WritableSignal<Set<string>>;
@@ -62,6 +64,7 @@ describe('OrgNavigationService default selection', () => {
     setIndexedSlug = vi.fn((slug: string | null) => selectedAccount.update((a) => ({ ...a, slug })));
     pinSelection = vi.fn();
     clearAccount = vi.fn(() => selectedAccount.set(placeholder));
+    isContractor.set(false);
     writerSet = signal(new Set<string>());
     auditorSet = signal(new Set<string>());
     inheritedWriterSet = signal(new Set<string>());
@@ -77,11 +80,12 @@ describe('OrgNavigationService default selection', () => {
         provideHttpClientTesting(),
         provideRouter([]),
         MessageService,
-        { provide: LensService, useValue: {} },
+        { provide: LensService, useValue: { setLens: vi.fn() } },
         {
           provide: OrgRoleGrantsService,
           useValue: {
             isStaff: signal(false),
+            isContractor,
             degraded: signal(false),
             writerSet,
             auditorSet,
@@ -351,6 +355,47 @@ describe('OrgNavigationService default selection', () => {
 
       expect(clearAccount).toHaveBeenCalledTimes(1);
       expect(setAccount).not.toHaveBeenCalled();
+    });
+
+    // #2961: the page renders contractor-no-grant from the selection; the toast would repeat it as
+    // employee copy, and clearing the selection would drop the organization the page checks.
+    // A persona seed can start the list before the role grants answer; the empty-list decision waits for
+    // them, so a contractor is never toasted and cleared on an early page.
+    it('decides an empty list that lands before the grants only once they answer', () => {
+      grantsLoaded.set(false);
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      bootstrapWith([]);
+      expect(add).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+
+      isContractor.set(true);
+      grantsLoaded.set(true);
+      TestBed.tick();
+
+      expect(add).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
+    });
+
+    it('still reports an empty list for a non-contractor once the grants answer', () => {
+      grantsLoaded.set(false);
+      bootstrapWith([]);
+      expect(clearAccount).not.toHaveBeenCalled();
+
+      grantsLoaded.set(true);
+      TestBed.tick();
+
+      expect(clearAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves a contractor\u2019s empty list to the page: no toast, selection kept', () => {
+      isContractor.set(true);
+      const add = vi.spyOn(TestBed.inject(MessageService), 'add');
+
+      bootstrapWith([]);
+
+      expect(add).not.toHaveBeenCalled();
+      expect(clearAccount).not.toHaveBeenCalled();
     });
 
     it('keeps it, re-pinned, when it is still listed', () => {
