@@ -92,13 +92,21 @@
                     [tooltip]="row.notAuthorizedTooltip"
                     data-testid="org-easycla-acknowledgment-state-not-authorized" />
                   <div class="mt-1 max-w-xs text-xs text-gray-500" data-testid="org-easycla-acknowledgment-not-authorized-detail">
-                    {{ notAuthorizedCopy.detail }}&nbsp;<button
-                      type="button"
-                      class="text-blue-600 hover:underline"
-                      (click)="approvalListRequested.emit()"
-                      data-testid="org-easycla-acknowledgment-add-to-approval-list">
-                      {{ notAuthorizedCopy.approvalListLink }}</button
-                    >{{ notAuthorizedCopy.detailSuffix }}
+                    {{ notAuthorizedCopy.detail }}
+                    @if (canAddToApprovalList()) {
+                      &nbsp;<button
+                        type="button"
+                        class="text-blue-600 hover:underline"
+                        (click)="approvalListRequested.emit()"
+                        data-testid="org-easycla-acknowledgment-add-to-approval-list">
+                        {{ notAuthorizedCopy.approvalListLink }}
+                      </button>
+                      @if (canInvalidate()) {
+                        <span>{{ notAuthorizedCopy.detailSuffix }}</span>
+                      }
+                    } @else if (canInvalidate()) {
+                      &nbsp;<span>{{ notAuthorizedCopy.invalidateOnly }}</span>
+                    }
                   </div>
                 } @else if (row.invalidated) {
                   <lfx-tag

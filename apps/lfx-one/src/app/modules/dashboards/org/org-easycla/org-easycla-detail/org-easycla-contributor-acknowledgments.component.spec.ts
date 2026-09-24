@@ -438,6 +438,41 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
 
       expect(requested).toBe(1);
     });
+
+    it('offers only the add-to-list remedy to a reader who can edit the list but not invalidate', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      checkPermission.mockImplementation((_orgUid: string, action: string) => of(action !== 'ecla-invalidate'));
+      const fixture = await render();
+
+      const detail = textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ');
+      expect(detail).toContain('Add the user to the Approval list');
+      expect(detail).not.toContain('Invalidate to remove for good');
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeTruthy();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
+
+    it('offers only the invalidate remedy to a reader who can invalidate but not edit the list', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      checkPermission.mockImplementation((_orgUid: string, action: string) => of(action !== 'approval-list-update'));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria. Invalidate to remove for good.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+    });
+
+    it('offers no remedy links to a read-only reader who can neither invalidate nor edit the list', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(of(page([notAuthorized()])));
+      checkPermission.mockReturnValue(of(false));
+      const fixture = await render();
+
+      expect(textIn(byTestId(fixture, 'org-easycla-acknowledgment-not-authorized-detail')).replace(/\s+/g, ' ')).toBe(
+        'No longer matches Approval List criteria.'
+      );
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-add-to-approval-list')).toBeNull();
+      expect(fixture.nativeElement.querySelector('[data-testid="org-easycla-acknowledgment-invalidate"] button')).toBeNull();
+    });
   });
 
   describe('the tab badge count', () => {

@@ -235,6 +235,10 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
   private readonly invalidateGrant = signal<boolean | null>(null);
   private readonly removeFromListGrant = signal<boolean | null>(null);
   protected readonly canInvalidate = computed(() => this.invalidateGrant() === true);
+  // Gates the Not Authorized "Add the user to the Approval list" remedy on the same
+  // `approval-list-update` grant the tab itself needs, so a read-only reader isn't offered a
+  // dead-end link into a list they can't edit. Fails closed while the grant is still checking.
+  protected readonly canAddToApprovalList = computed(() => this.removeFromListGrant() === true);
 
   protected readonly hasNextPage = computed(() => !!this.loadedList()?.nextKey);
   protected readonly showEmptyState = computed(

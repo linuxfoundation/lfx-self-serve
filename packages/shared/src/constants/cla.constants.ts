@@ -730,6 +730,9 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
   detail: 'No longer matches Approval List criteria.',
   approvalListLink: 'Add the user to the Approval list',
   detailSuffix: ', or Invalidate to remove for good.',
+  // Standalone remedy for a reader who can invalidate but not edit the approval list, so the
+  // Add-to-list link is hidden and detailSuffix's leading ", or" would be orphaned.
+  invalidateOnly: 'Invalidate to remove for good.',
 } as const;
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
