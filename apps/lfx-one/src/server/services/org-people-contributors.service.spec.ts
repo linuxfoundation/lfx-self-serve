@@ -1,0 +1,185 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { execute, cacheValues } = vi.hoisted(() => ({
+  execute: vi.fn(),
+  cacheValues: new Map<string, string>(),
+}));
+
+// The real `@lfx-one/shared/utils` barrel transitively pulls Angular-only code that can't load in
+// this server-only vitest environment. Spread the submodules this path actually uses — the real
+// implementations, so the cache round trip below exercises the true encode/decode, not stubs.
+vi.mock('@lfx-one/shared/utils', async () => ({
+  ...(await import('../../../../../packages/shared/src/utils/compact-cache.utils')),
+  ...(await import('../../../../../packages/shared/src/utils/org-selector.utils')),
+}));
+vi.mock('./snowflake.service', () => ({
+  SnowflakeService: { getInstance: () => ({ execute }) },
+}));
+// A minimal in-memory Valkey so a write really is serialized and a read really is parsed back —
+// the only way a warm-vs-cold divergence can show up at all.
+vi.mock('ioredis', () => ({
+  default: class {
+    public status = 'ready';
+    public on(): this {
+      return this;
+    }
+    public async get(key: string): Promise<string | null> {
+      return cacheValues.get(key) ?? null;
+    }
+    public async set(key: string, value: string): Promise<void> {
+      cacheValues.set(key, value);
+    }
+    public async quit(): Promise<void> {
+      /* No connection in this fixture. */
+    }
+  },
+}));
+vi.mock('../utils/shutdown', () => ({ addShutdownHook: vi.fn() }));
+vi.mock('./logger.service', () => ({
+  logger: { info: vi.fn(), debug: vi.fn(), warning: vi.fn() },
+}));
+
+import { OrgPeopleContributorsService } from './org-people-contributors.service';
+import { buildOrgCacheKey, ValkeyService } from './valkey.service';
+
+const ACCOUNT = '0014100000Te2ovAAB';
+
+let service: OrgPeopleContributorsService;
+
+/** One person across two projects plus a second person on one of them — enough for the project dictionary to matter. */
+function mockWarehouse(): void {
+  execute.mockResolvedValue({
+    rows: [
+      {
+        PERSON_KEY: 'person-one',
+        PROJECT_ID: 'project-one',
+        LFID: 'lfid-one',
+        LF_USERNAME: 'ada',
+        CDP_MEMBER_ID: 'cdp-1',
+        DISPLAY_NAME: 'Ada Lovelace',
+        TITLE: 'Engineer',
+        PROJECT_NAME: 'Kubernetes',
+        PROJECT_SLUG: 'k8s',
+        FOUNDATION_ID: 'foundation-one',
+        FOUNDATION_NAME: 'CNCF',
+        FOUNDATION_SLUG: 'cncf',
+        COMMITS: 40,
+        CODE_ACTIVITIES: 120,
+        LAST_ACTIVE_DATE: '2026-04-12',
+        IS_DECLARED_MAINTAINER_FOR_PROJECT: true,
+        IS_DECLARED_MAINTAINER_FOR_ORG: true,
+      },
+      {
+        PERSON_KEY: 'person-one',
+        PROJECT_ID: 'project-two',
+        LFID: 'lfid-one',
+        LF_USERNAME: 'ada',
+        CDP_MEMBER_ID: 'cdp-1',
+        DISPLAY_NAME: 'Ada Lovelace',
+        TITLE: 'Engineer',
+        PROJECT_NAME: null,
+        PROJECT_SLUG: null,
+        FOUNDATION_ID: null,
+        FOUNDATION_NAME: null,
+        FOUNDATION_SLUG: null,
+        COMMITS: null,
+        CODE_ACTIVITIES: null,
+        LAST_ACTIVE_DATE: null,
+        IS_DECLARED_MAINTAINER_FOR_PROJECT: null,
+        IS_DECLARED_MAINTAINER_FOR_ORG: null,
+      },
+      {
+        PERSON_KEY: 'person-two',
+        PROJECT_ID: 'project-one',
+        LFID: null,
+        LF_USERNAME: null,
+        CDP_MEMBER_ID: 'cdp-2',
+        DISPLAY_NAME: null,
+        TITLE: null,
+        PROJECT_NAME: 'Kubernetes',
+        PROJECT_SLUG: 'k8s',
+        FOUNDATION_ID: 'foundation-one',
+        FOUNDATION_NAME: 'CNCF',
+        FOUNDATION_SLUG: 'cncf',
+        COMMITS: 3,
+        CODE_ACTIVITIES: 9,
+        LAST_ACTIVE_DATE: '2026-01-05',
+        IS_DECLARED_MAINTAINER_FOR_PROJECT: false,
+        IS_DECLARED_MAINTAINER_FOR_ORG: false,
+      },
+    ],
+  });
+}
+
+beforeEach(() => {
+  vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+  execute.mockReset();
+  cacheValues.clear();
+  ValkeyService.resetInstance();
+  mockWarehouse();
+  service = new OrgPeopleContributorsService();
+});
+
+afterEach(() => {
+  ValkeyService.resetInstance();
+  vi.unstubAllEnvs();
+});
+
+describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
+  it('serves a cache hit that is byte-identical to the miss that populated it', async () => {
+    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const warehouseReads = execute.mock.calls.length;
+
+    const fromHit = await service.getContributors(ACCOUNT, 'all');
+
+    // `toStrictEqual` distinguishes null from undefined from an absent key; the serialized
+    // comparison additionally pins key order, which `buildResponse`'s object literals fix and a
+    // decode must not perturb.
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+  });
+
+  it('rebuilds the project-level columns the rows no longer carry, including the documented id fallbacks', async () => {
+    // A decode that dropped a dictionary column would silently relabel every project row with its
+    // id, and quietly empty the foundation filter.
+    const { projects, projectOptions, foundationOptions } = await service.getContributors(ACCOUNT, 'all');
+
+    expect(projects[0]).toEqual({
+      personKey: 'person-one',
+      projectId: 'project-one',
+      projectName: 'Kubernetes',
+      projectSlug: 'k8s',
+      foundationId: 'foundation-one',
+      foundationName: 'CNCF',
+      foundationSlug: 'cncf',
+      role: 'Maintainer',
+      commits: 40,
+      lastActiveTs: '2026-04-12',
+    });
+    expect(projects[1]?.projectName).toBe('project-two');
+    expect(projectOptions.map((option) => option.projectId)).toEqual(['project-one', 'project-two']);
+    expect(foundationOptions).toEqual([{ foundationId: 'foundation-one', foundationName: 'CNCF' }]);
+  });
+
+  it('keys each time range separately so one window cannot serve another', async () => {
+    await service.getContributors(ACCOUNT, 'all');
+    await service.getContributors(ACCOUNT, '30d');
+
+    expect([...cacheValues.keys()]).toEqual([buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:all'), buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:30d')]);
+  });
+
+  it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
+    // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
+    // the guard — not just the key bump — has to reject it.
+    const legacy = [{ PERSON_KEY: 'stale', PROJECT_ID: 'stale-project' }];
+    cacheValues.set(buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:all')!, JSON.stringify(legacy));
+
+    const response = await service.getContributors(ACCOUNT, 'all');
+
+    expect(response.contributors.map((row) => row.personKey)).toEqual(['person-one', 'person-two']);
+  });
+});

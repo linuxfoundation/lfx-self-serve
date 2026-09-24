@@ -3,6 +3,7 @@
 
 import { EMPTY_ORG_CONTRIBUTORS_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
 import type {
+  CompactOrgContributorRowsCache,
   ContributorPersonProjectRow,
   OrgContributorFoundationOption,
   OrgContributorProjectOption,
@@ -12,11 +13,11 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { isObjectRowArray } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { withOrgCompactCache } from './valkey.service';
 
 /** Contributors tab data access — single bundled GET, time-window aggregated server-side per Item 2 A1 lock. */
 export class OrgPeopleContributorsService {
@@ -32,12 +33,15 @@ export class OrgPeopleContributorsService {
       return { ...EMPTY_ORG_CONTRIBUTORS_RESPONSE, timeRange };
     }
 
-    const rows = await withOrgCache(
+    // `people-contributors:v2:{timeRange}`: the stored value is now the compact projection below
+    // (GH-1906) — a project/foundation dictionary plus columnar person-grain rows — where it used
+    // to be the bare row array, so a `people-contributors:{timeRange}` entry must miss.
+    const rows = await withOrgCompactCache(
       accountId,
-      `people-contributors:${timeRange}`,
+      `people-contributors:v2:${timeRange}`,
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchPersonProjectRows(accountId, timeRange),
-      isObjectRowArray
+      { encode: encodeContributorRows, decode: decodeContributorRows, accept: isCompactContributorRows }
     );
     return buildResponse(accountId, timeRange, rows);
   }
@@ -209,4 +213,64 @@ function computeStats(contributors: OrgContributorRow[], projects: number, found
     projects,
     foundations,
   };
+}
+
+/**
+ * Compacts the aggregate rows for Valkey storage (GH-1906).
+ *
+ * The grain is (person, project), so a person who contributes to twenty projects carries their
+ * identity twenty times and, worse, each of those rows repeats the project's and foundation's id,
+ * name and slug. Storing those six project-level columns once per distinct project and referencing
+ * them by index — on top of dropping the 17 repeated uppercase column names via columnar storage —
+ * is what brings the 'all' window back under the write cap.
+ */
+function encodeContributorRows(rows: ContributorPersonProjectRow[]): CompactOrgContributorRowsCache {
+  // Keyed on the whole tuple, not on PROJECT_ID: the project-level columns are `MAX()` aggregates
+  // per (person, project), so two rows for one project could in principle disagree, and collapsing
+  // them onto the first one seen would make the decoded rows differ from the uncached ones.
+  const keyOf = (row: ContributorPersonProjectRow): string =>
+    JSON.stringify([row.PROJECT_ID, row.PROJECT_NAME, row.PROJECT_SLUG, row.FOUNDATION_ID, row.FOUNDATION_NAME, row.FOUNDATION_SLUG]);
+  const projects = dedupeByKey(rows, keyOf);
+
+  return {
+    projects: toColumnar(projects.values, ['PROJECT_ID', 'PROJECT_NAME', 'PROJECT_SLUG', 'FOUNDATION_ID', 'FOUNDATION_NAME', 'FOUNDATION_SLUG']),
+    rows: toColumnar(rows, [
+      'PERSON_KEY',
+      'LFID',
+      'LF_USERNAME',
+      'CDP_MEMBER_ID',
+      'DISPLAY_NAME',
+      'TITLE',
+      'COMMITS',
+      'CODE_ACTIVITIES',
+      'LAST_ACTIVE_DATE',
+      'IS_DECLARED_MAINTAINER_FOR_PROJECT',
+      'IS_DECLARED_MAINTAINER_FOR_ORG',
+    ]),
+    // Every row was part of the set `projects` was built from, so the lookup always resolves.
+    rowProjects: rows.map((row) => projects.indexOf.get(keyOf(row))!),
+  };
+}
+
+/** Rebuilds the aggregate rows {@link encodeContributorRows} stored, so `buildResponse` sees exactly what a cache miss would hand it. */
+function decodeContributorRows(value: CompactOrgContributorRowsCache): ContributorPersonProjectRow[] {
+  const projects = fromColumnar<ContributorPersonProjectRow>(value.projects);
+  const rows = fromColumnar<ContributorPersonProjectRow>(value.rows);
+  rows.forEach((row, index) => Object.assign(row, projects[value.rowProjects[index]]));
+  return rows;
+}
+
+function isCompactContributorRows(value: unknown): boolean {
+  const cache = value as CompactOrgContributorRowsCache | null;
+  if (!cache || typeof cache !== 'object' || !isColumnarTable(cache.projects) || !isColumnarTable(cache.rows)) {
+    return false;
+  }
+  // Every reference must resolve, so the decode can rebuild each row in full rather than silently
+  // emitting one with no project at all — a truncated entry is a miss, not a partial hit.
+  const projectCount = cache.projects.r.length;
+  return (
+    Array.isArray(cache.rowProjects) &&
+    cache.rowProjects.length === cache.rows.r.length &&
+    cache.rowProjects.every((index) => Number.isInteger(index) && index >= 0 && index < projectCount)
+  );
 }
