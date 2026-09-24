@@ -3206,6 +3206,29 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
   });
 
+  it('keeps the value being written when a stale row happens to match it, across leaving and coming back', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValueOnce(of({ autoCreateEcla: true })).mockReturnValueOnce(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: false }));
+    const toggle = first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void };
+    toggle.onAutoEclaToggle(true);
+    first.detectChanges();
+    toggle.onAutoEclaToggle(false);
+    first.detectChanges();
+    first.destroy();
+
+    // The list now carries the first write.
+    getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ autoCreateEcla: true })] }));
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { autoEclaPending: () => boolean; autoEclaValue: () => boolean };
+
+    expect(component.autoEclaPending()).toBe(true);
+    expect(component.autoEclaValue()).toBe(false);
+  });
+
   it('trusts a list fetched after the write settled over the remembered value', async () => {
     const first = await render(row({ autoCreateEcla: false }));
     (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);

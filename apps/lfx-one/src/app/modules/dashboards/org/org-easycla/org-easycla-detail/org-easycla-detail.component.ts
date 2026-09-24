@@ -1194,11 +1194,15 @@ export class OrgEasyclaDetailComponent {
     return this.claGroup()?.autoCreateEcla === true;
   }
 
-  /** The agreement on screen when its list row already carries the remembered value, else null. */
+  /**
+   * The agreement on screen when its list row already carries the remembered value, else null.
+   * Null while its write is running: a stale row can match the value being written by chance, and
+   * dropping it then would let a page opened mid-write show a list fetched before the write.
+   */
   private initAutoEclaSettledRow(): { orgUid: string; signatureId: string; value: boolean } | null {
     const group = this.claGroup();
     const orgUid = this.selectedOrgUid();
-    if (!group?.id || !orgUid) return null;
+    if (!group?.id || !orgUid || this.autoEclaWrites.running(orgUid, group.id)) return null;
     const remembered = this.autoEclaWrites.remembered(orgUid, group.id);
     if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return null;
     return { orgUid, signatureId: group.id, value: remembered };
