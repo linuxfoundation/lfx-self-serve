@@ -7,11 +7,11 @@
 # Test fixtures must use synthetic data: invented organizations and account ids from
 # apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts, and reserved domains
 # (acme-motors.example, user@example.com). Three checks run on each added line:
-#   1. org name   — a known real organization name (denylist below, case-insensitive).
-#   2. account id — a known real Salesforce-style account id (hashed denylist below, exact match).
-#   3. domain     — an email address, or a quoted value assigned to any field or constant whose name
-#                   ends in "domain" (primaryDomain, emailDomain, SYNTHETIC_ORG_DOMAIN, ...), whose
-#                   domain is not reserved.
+#   1. org name   — a known real organization name (hashed denylist below).
+#   2. account id — a known real Salesforce-style account id (hashed denylist below).
+#   3. domain     — an email address, or a quoted value assigned to `website` or to any field or
+#                   constant whose name ends in "domain" (primaryDomain, SYNTHETIC_ORG_DOMAIN, ...),
+#                   whose domain is not reserved.
 #
 # Scanned files: every file under apps/lfx-one/e2e/ (specs, helpers, mock data) plus any
 # *.spec.ts, *.fixture.ts or *.ndjson file elsewhere.
@@ -28,25 +28,28 @@
 #
 # Exits 0 if no added line trips a check.
 # Exits 1 and prints the offending file:line matches, grouped by check, otherwise.
-# Exits 2 if the check cannot run (a failed git diff or scan), so it never passes by default.
+# Exits 2 if the check cannot run (a failed git diff, scan or hash pass), so it never passes by default.
 
 # A failed git diff anywhere in a pipeline must fail the check, not read as "nothing changed".
 set -o pipefail
 
 base_ref="${1:-}"
 
-# Intentionally real organization names — these ARE the blocklist, sourced from incidents. Do not
-# "scrub" them. Add one whenever an incident surfaces a real organization in test data. Matched
-# case-insensitively on word boundaries; a space in an entry also matches a hyphen, an underscore
-# or nothing, so an entry "Acme Motors" would catch "Acme Motors, Inc.", "acme-motors", "ACME_MOTORS" and "acmemotors.com".
-denylisted_org_names=(
-  'Red Hat'
-  'Toyota'
+# The denylists below ARE the blocklist, sourced from incidents. Do not "scrub" them. Both hold only
+# SHA-256 hashes, so this public file names no organization and pairs no id with one.
+#
+# Organization names: lowercase the name, keep only letters and digits, and drop a legal suffix
+# (inc, llc, ...), then hash it — "Acme Motors, Inc." becomes "acmemotors":
+#   printf '%s' 'acmemotors' | shasum -a 256
+# Every run of one to three consecutive words in an added line is joined the same way and compared,
+# so an entry for "acmemotors" catches "Acme Motors, Inc.", "acme-motors", "ACME_MOTORS" and
+# "acmemotors.com" alike.
+denylisted_org_name_sha256=(
+  7d3b5c83009fadf734c06eeecd7fbe256c69f71c8ba0429e4d7ad5f54b2e4097
+  337b8d2c1e132acd75171f1acf0e73b20bc9541720d5003813f59ef0ad51f86f
 )
 
-# SHA-256 of known real account ids — these ARE the blocklist, sourced from incidents. Do not
-# "scrub" them. Stored as hashes so this public file doesn't pair an id with an organization. Each
-# id is listed in both its 18- and 15-character forms, since fixtures may carry either. To add one:
+# Account ids, each in both its 18- and 15-character forms, since fixtures may carry either:
 #   printf '%s' '<id>' | shasum -a 256
 # Fixtures must take ids from apps/lfx-one/e2e/fixtures/mock-data/synthetic-org.mock.ts (invented
 # ids of the same shape). The id SHAPE itself ("001" + 15 alphanumerics) cannot be blocked: the app
@@ -55,33 +58,6 @@ denylisted_account_id_sha256=(
   c30821a431a63e0b446f294147f7e2421afac1f2a2a904eccf6f4d4478f6422d
   6baf1c8cd5e7798d33bd14e608c4d90d2eec126b2d35d319657bfcaa36c607ae
 )
-
-# Lowercase each name, escape every POSIX ERE metacharacter so an entry always matches literally,
-# let a space match [ _-] or nothing, then join as alternatives.
-org_name_pattern=$(printf '%s\n' "${denylisted_org_names[@]}" | tr '[:upper:]' '[:lower:]' | sed -e 's/[][\.^$*+?(){}|]/\\&/g' -e 's/ /[ _-]?/g' | paste -sd '|' -)
-
-sha256_hex() {
-  if command -v sha256sum >/dev/null 2>&1; then
-    printf '%s' "$1" | sha256sum | cut -d' ' -f1
-  else
-    printf '%s' "$1" | shasum -a 256 | cut -d' ' -f1
-  fi
-}
-
-# True when a candidate token (an id-shaped string of 15+ characters) starts with a denylisted id in
-# its 18- or 15-character form.
-denylisted_account_id() {
-  local form hash known
-  for form in "${1:0:18}" "${1:0:15}"; do
-    hash=$(sha256_hex "${form}")
-    for known in "${denylisted_account_id_sha256[@]}"; do
-      if [ "${hash}" = "${known}" ]; then
-        return 0
-      fi
-    done
-  done
-  return 1
-}
 
 # -M detects renames (--diff-filter=ACMR still needs R explicit alongside it so a rename-with-edits,
 # which git may classify as R rather than M, isn't skipped from the file list). Deliberately NOT
@@ -105,11 +81,11 @@ if [ -z "${changed_files}" ]; then
   exit 0
 fi
 
-# Reads one file's -U0 diff and prints "<check> <file>:<line>: <text>" for each added line that trips
-# a check, where <line> is the line number in the new file. Portable across BSD awk, gawk and mawk
-# (POSIX ERE only, no \b or interval expressions). Reserved domains are the TLDs .example, .test,
-# .invalid and .localhost, and example.com/.org/.net, subdomains included. Website fields are not
-# checked: they usually hold public project or service sites, not organization data.
+# Reads one file's -U0 diff and, for each added line, prints "<kind> ... <file>:<line>: <text>",
+# where <line> is the line number in the new file: a "domain" hit, plus the "name-candidate" and
+# "id-candidate" tokens the hash pass below checks. Portable across BSD awk, gawk and mawk (POSIX
+# ERE only, no \b or interval expressions). Reserved domains are the TLDs .example, .test, .invalid
+# and .localhost, and example.com/.org/.net, subdomains included.
 read -r -d '' scan_program <<'AWK'
 function reserved(host) {
   return host ~ /(^|\.)(example|test|invalid|localhost)$/ || host ~ /(^|\.)example\.(com|org|net)$/
@@ -127,7 +103,7 @@ function has_real_email(s,    domain, before) {
   return 0
 }
 function has_real_domain_field(s,    value) {
-  while (match(s, /(^|[^a-z0-9_])[a-z0-9_]*domain["'`]?([ \t]*:[ \t]*string)?[ \t]*[:=][ \t]*["'`][^"'`]*["'`]/)) {
+  while (match(s, /(^|[^a-z0-9_])([a-z0-9_]*domain|website)["'`]?([ \t]*:[ \t]*string)?[ \t]*[:=][ \t]*["'`][^"'`]*["'`]/)) {
     value = substr(s, RSTART, RLENGTH)
     s = substr(s, RSTART + RLENGTH)
     # Strip through the assignment's last ":" or "=" before the opening quote, so a type
@@ -141,6 +117,17 @@ function has_real_domain_field(s,    value) {
   }
   return 0
 }
+function print_name_candidates(s, where,    words, count, i, k, joined) {
+  gsub(/[^a-z0-9]+/, " ", s)
+  count = split(s, words, " ")
+  for (i = 1; i <= count; i++) {
+    joined = ""
+    for (k = 0; k < 3 && i + k <= count; k++) {
+      joined = joined words[i + k]
+      print "name-candidate " joined " " where
+    }
+  }
+}
 function print_id_candidates(s, where,    before, token) {
   while (match(s, /001[A-Za-z0-9]+/)) {
     before = RSTART > 1 ? substr(s, RSTART - 1, 1) : ""
@@ -151,7 +138,6 @@ function print_id_candidates(s, where,    before, token) {
 }
 BEGIN {
   file = ENVIRON["SCAN_FILE"]
-  if (ENVIRON["ORG_NAME_PATTERN"] != "") name_re = "(^|[^a-z0-9])(" ENVIRON["ORG_NAME_PATTERN"] ")($|[^a-z0-9])"
 }
 /^@@ / {
   start = $0
@@ -167,50 +153,62 @@ in_hunk && /^\+/ {
   shown = text
   sub(/^[ \t]+/, "", shown)
   where = file ":" line ": " shown
-  if (name_re != "" && lower ~ name_re) print "org-name " where
+  print_name_candidates(lower, where)
   print_id_candidates(text, where)
   if (has_real_email(lower) || has_real_domain_field(lower)) print "domain " where
   line++
 }
 AWK
 
-violations=""
+# Hashes every candidate in one pass and keeps only denylisted ones; other lines pass through.
+# Digest::SHA ships with Perl itself (it backs `shasum`), so no extra dependency is needed.
+read -r -d '' hash_program <<'PERL'
+use strict;
+use warnings;
+use Digest::SHA qw(sha256_hex);
+my %names = map { $_ => 1 } split ' ', ($ENV{ORG_NAME_HASHES} // '');
+my %ids = map { $_ => 1 } split ' ', ($ENV{ACCOUNT_ID_HASHES} // '');
+while (my $entry = <STDIN>) {
+  chomp $entry;
+  next if $entry eq '';
+  if ($entry =~ /^name-candidate (\S+) (.*)$/) {
+    print "org-name $2\n" if $names{ sha256_hex($1) };
+  } elsif ($entry =~ /^id-candidate (\S+) (.*)$/) {
+    my ($token, $where) = ($1, $2);
+    for my $form (substr($token, 0, 18), substr($token, 0, 15)) {
+      if ($ids{ sha256_hex($form) }) {
+        print "account-id $where\n";
+        last;
+      }
+    }
+  } else {
+    print "$entry\n";
+  }
+}
+PERL
+
+candidates=""
 
 while IFS= read -r file; do
   [ -n "${file}" ] || continue
-  # A scan that fails (a malformed pattern, say) must fail the check, never pass it silently.
-  if ! matches=$(
-    git diff "${diff_args[@]}" -U0 -- "${file}" |
-      SCAN_FILE="${file}" ORG_NAME_PATTERN="${org_name_pattern}" awk "${scan_program}"
-  ); then
+  # A scan that fails must fail the check, never pass it silently.
+  if ! matches=$(git diff "${diff_args[@]}" -U0 -- "${file}" | SCAN_FILE="${file}" awk "${scan_program}"); then
     echo "❌ Fixture data check could not scan ${file}." >&2
     exit 2
   fi
   if [ -n "${matches}" ]; then
-    violations="${violations}${matches}
+    candidates="${candidates}${matches}
 "
   fi
 done <<< "${changed_files}"
 
-# The awk pass prints id-shaped tokens as candidates; keep only those whose hash is denylisted.
-resolved=""
-while IFS= read -r entry; do
-  case "${entry}" in
-    '') ;;
-    'id-candidate '*)
-      rest=${entry#id-candidate }
-      if denylisted_account_id "${rest%% *}"; then
-        resolved="${resolved}account-id ${rest#* }
-"
-      fi
-      ;;
-    *)
-      resolved="${resolved}${entry}
-"
-      ;;
-  esac
-done <<< "${violations}"
-violations="${resolved}"
+if ! violations=$(
+  printf '%s' "${candidates}" |
+    ORG_NAME_HASHES="${denylisted_org_name_sha256[*]}" ACCOUNT_ID_HASHES="${denylisted_account_id_sha256[*]}" perl -e "${hash_program}"
+); then
+  echo "❌ Fixture data check could not hash its candidates (perl with Digest::SHA is required)." >&2
+  exit 2
+fi
 
 if [ -z "${violations}" ]; then
   exit 0
@@ -218,7 +216,7 @@ fi
 
 print_group() {
   local hits
-  hits=$(printf '%s' "${violations}" | sed -n "s/^$1 /  /p" | awk '!seen[$0]++')
+  hits=$(printf '%s\n' "${violations}" | sed -n "s/^$1 /  /p" | awk '!seen[$0]++')
   if [ -n "${hits}" ]; then
     echo ""
     echo "$2"
