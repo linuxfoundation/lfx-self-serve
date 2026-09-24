@@ -1932,6 +1932,18 @@ describe('OrgClaService.updateEclaAutoCreate — the upstream call', () => {
     );
   });
 
+  // The request boundary accepts hyphenated and unhyphenated spellings in either case, so the list
+  // lookup must too, or a valid spelling of an existing agreement answers 404.
+  it.each([
+    ['unhyphenated', CLA_GROUP_ID.replaceAll('-', '')],
+    ['upper-case', CLA_GROUP_ID.toUpperCase()],
+  ])('finds the agreement from an %s signature id', async (_label, signatureId) => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: CLA_GROUP_ID }))).mockResolvedValueOnce(null);
+
+    expect(await new OrgClaService().updateEclaAutoCreate(req(), ORG_UID, signatureId, true)).toEqual({ outcome: 'updated', autoCreateEcla: true });
+    expect(gatewayFetch).toHaveBeenCalledTimes(2);
+  });
+
   it('sends the target state on the snake_case field the producer reads', async () => {
     gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
 

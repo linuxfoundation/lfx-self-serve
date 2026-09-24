@@ -3090,7 +3090,7 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     component.onAutoEclaToggle(false);
     fixture.detectChanges();
 
-    // Only the first click reached the network — the second is refused by autoEclaSaving.
+    // Only the first click reached the network — the second is refused while the first is running.
     expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
     expect(setAutoCreateEcla).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', true);
 
@@ -3173,6 +3173,30 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     await fixture.whenStable();
 
     expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('refuses a second write after leaving and coming back while the first is still running', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const first = await render(row({ autoCreateEcla: false }));
+    (first.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    first.destroy();
+
+    const returned = TestBed.createComponent(OrgEasyclaDetailComponent);
+    returned.detectChanges();
+    await returned.whenStable();
+    returned.detectChanges();
+    const component = returned.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+
+    expect(component.autoEclaPending()).toBe(true);
+    component.onAutoEclaToggle(true);
+    expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+
+    answer.next({ autoCreateEcla: true });
+    answer.complete();
+    returned.detectChanges();
+
+    expect(component.autoEclaPending()).toBe(false);
   });
 
   it('ignores an older response once a write for another organization is in flight', async () => {

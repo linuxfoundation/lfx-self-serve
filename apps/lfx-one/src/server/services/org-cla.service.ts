@@ -1472,7 +1472,7 @@ export class OrgClaService {
 
   private async resolveClaGroupContext(req: Request, orgUid: string, signatureId: string, operation: string): Promise<ApprovalContext | null> {
     const entries = await this.fetchUpstreamClaGroups(req, orgUid);
-    const entry = entries.find((candidate) => candidate.signatureID === signatureId);
+    const entry = entries.find((candidate) => isSameClaGroup(candidate.signatureID, signatureId) || candidate.signatureID === signatureId);
     if (!entry) {
       logger.warning(req, operation, 'signature is not on this organization CLA list', { org_uid: orgUid, signature_id: signatureId });
       return null;

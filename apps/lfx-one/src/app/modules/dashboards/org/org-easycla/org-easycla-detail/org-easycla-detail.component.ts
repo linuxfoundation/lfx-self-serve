@@ -85,6 +85,7 @@ import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { PersonaService } from '@services/persona.service';
+import { OrgClaAutoEclaWritesService } from '@shared/services/org-cla-auto-ecla-writes.service';
 import { OrgClaReturnService } from '@shared/services/org-cla-return.service';
 import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
@@ -148,6 +149,7 @@ export class OrgEasyclaDetailComponent {
   private readonly orgNavigation = inject(OrgNavigationService);
   private readonly claService = inject(OrgLensClaService);
   private readonly claReturn = inject(OrgClaReturnService);
+  private readonly autoEclaWrites = inject(OrgClaAutoEclaWritesService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -159,8 +161,6 @@ export class OrgEasyclaDetailComponent {
   private readonly injector = inject(Injector);
 
   private autoEclaDetached = false;
-  /** In-flight Auto ECLA writes, one per organization and agreement. A write for A stays here while B runs. */
-  private readonly autoEclaInFlight = new Map<string, { orgUid: string; signatureId: string }>();
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -264,16 +264,12 @@ export class OrgEasyclaDetailComponent {
    *   window rather than shown enabled from an unchecked grant. `false` hides the toggle
    *   entirely, matching the design's choice to hide rather than disable a control the viewer
    *   cannot use, until the read-only banner (#1989) exists to explain a disabled state.
-   * - `autoEclaSaving`: a write is in flight. The toggle stays visible but is refused for its
-   *   duration, so a rapid double-click cannot open two writes in parallel or roll the second
-   *   back onto the first.
    * - `autoEclaOverrides`: the value last asked for or confirmed, keyed on organization and
    *   signature. Another agreement's flip cannot show through. A confirmed value stays until
    *   the list row itself carries it, including across a project change that does not refetch
    *   the list.
    */
   private readonly autoEclaAllowed = signal<boolean | null>(null);
-  private readonly autoEclaSaving = signal(false);
   private readonly autoEclaOverrides = signal<Readonly<Record<string, boolean>>>({});
 
   protected readonly companyName = computed(() => this.accountContext.selectedAccount()?.accountName ?? '');
@@ -502,7 +498,12 @@ export class OrgEasyclaDetailComponent {
    */
   protected readonly autoEclaValue = computed(() => this.initAutoEclaValue());
 
-  protected readonly autoEclaPending = computed(() => this.autoEclaSaving());
+  /**
+   * A write is still running for the agreement on screen. The toggle stays visible but is refused
+   * for its duration, so a rapid double-click, or leaving and coming back, cannot open a second
+   * write for the same agreement. Another agreement's write does not disable this one.
+   */
+  protected readonly autoEclaPending = computed(() => this.initAutoEclaPending());
 
   private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
 
@@ -602,7 +603,6 @@ export class OrgEasyclaDetailComponent {
     // would open a session for the agreement the viewer left rather than the one on screen.
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
-      this.syncAutoEclaSaving();
     });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
@@ -610,7 +610,6 @@ export class OrgEasyclaDetailComponent {
     toObservable(computed(() => ({ group: this.claGroup(), orgUid: this.selectedOrgUid(), overrides: this.autoEclaOverrides() })))
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe(({ group, orgUid, overrides }) => {
-        this.syncAutoEclaSaving();
         if (!group?.id || !orgUid) return;
         const key = this.autoEclaKey({ orgUid, signatureId: group.id });
         const remembered = overrides[key];
@@ -824,17 +823,15 @@ export class OrgEasyclaDetailComponent {
    * `serverAuthoredMessage`. The toast summary names the value that failed to save
    * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
-   * Each organization and agreement keeps its own in-flight write, so starting one on the next
-   * agreement does not drop the first. A late answer updates that agreement's remembered value.
-   * The toast is shown only while this page is still that agreement. Leaving clears the pending
-   * flag so the next agreement's toggle is not stuck disabled. Coming back does not start a
-   * second write for an agreement whose first write is still running. A remembered value stays
-   * until the list row carries it, including after a project change that does not refetch the list.
+   * The running write is tracked per organization and agreement above this page, so it survives
+   * leaving and coming back. A late answer updates that agreement's remembered value. The toast is
+   * shown only while this page is still that agreement. A remembered value stays until the list
+   * row carries it, including after a project change that does not refetch the list.
    *
-   * Refused while a write is already in flight, which leaves the toggle unchanged.
+   * Refused while a write is already running for this agreement, which leaves the toggle unchanged.
    */
   protected onAutoEclaToggle(next: boolean): void {
-    if (this.autoEclaSaving()) return;
+    if (this.autoEclaPending()) return;
 
     const group = this.claGroup();
     const orgUid = this.selectedOrgUid();
@@ -842,55 +839,35 @@ export class OrgEasyclaDetailComponent {
 
     const signatureId = group.id;
     const target = { orgUid, signatureId };
-    const key = this.autoEclaKey(target);
-    if (this.autoEclaInFlight.has(key)) {
-      this.autoEclaSaving.set(true);
-      return;
-    }
-
     const previous = this.autoEclaValue();
     if (previous === next) return;
 
-    this.autoEclaInFlight.set(key, target);
     this.rememberAutoEcla(target, next);
-    this.autoEclaSaving.set(true);
 
-    this.claService
-      .setAutoCreateEcla(orgUid, signatureId, next)
-      .pipe(
-        finalize(() => {
-          if (this.autoEclaDetached) return;
-          if (this.autoEclaInFlight.get(key) !== target) return;
-          this.autoEclaInFlight.delete(key);
-          this.syncAutoEclaSaving();
-        })
-      )
-      .subscribe({
-        next: (response) => {
-          if (this.autoEclaInFlight.get(key) !== target) return;
-          // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
-          // on the ordinary path and disagreement here means the server refused the ask silently
-          // (which it does not, but if it did, the toggle should tell the truth). A 200 without the
-          // echo still means the ask was written, so it must not read as "off".
-          const written = typeof response?.autoCreateEcla === 'boolean' ? response.autoCreateEcla : next;
-          this.rememberAutoEcla(target, written);
-          if (!this.autoEclaStillHere(target)) return;
-          this.messageService.add({
-            severity: 'success',
-            summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
-          });
-        },
-        error: (error: HttpErrorResponse) => {
-          if (this.autoEclaInFlight.get(key) !== target) return;
-          this.rememberAutoEcla(target, previous);
-          if (!this.autoEclaStillHere(target)) return;
-          this.messageService.add({
-            severity: 'error',
-            summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
-            detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
-          });
-        },
-      });
+    this.autoEclaWrites.track(orgUid, signatureId, this.claService.setAutoCreateEcla(orgUid, signatureId, next)).subscribe({
+      next: (response) => {
+        // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
+        // on the ordinary path and disagreement here means the server refused the ask silently
+        // (which it does not, but if it did, the toggle should tell the truth). A 200 without the
+        // echo still means the ask was written, so it must not read as "off".
+        const written = typeof response?.autoCreateEcla === 'boolean' ? response.autoCreateEcla : next;
+        this.rememberAutoEcla(target, written);
+        if (!this.autoEclaStillHere(target)) return;
+        this.messageService.add({
+          severity: 'success',
+          summary: written ? 'Auto ECLA turned on.' : 'Auto ECLA turned off.',
+        });
+      },
+      error: (error: HttpErrorResponse) => {
+        this.rememberAutoEcla(target, previous);
+        if (!this.autoEclaStillHere(target)) return;
+        this.messageService.add({
+          severity: 'error',
+          summary: next ? "Couldn't turn Auto ECLA on" : "Couldn't turn Auto ECLA off",
+          detail: serverAuthoredMessage(error, 'Please try again in a moment.'),
+        });
+      },
+    });
   }
 
   private autoEclaKey(target: { orgUid: string; signatureId: string }): string {
@@ -905,19 +882,6 @@ export class OrgEasyclaDetailComponent {
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
     return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
-  }
-
-  /**
-   * The pending flag follows the agreement on screen. Another agreement's write keeps running
-   * and does not disable this one. Coming back to an agreement that still has a write disables
-   * its toggle again.
-   */
-  private syncAutoEclaSaving(): void {
-    if (this.autoEclaDetached) return;
-    const orgUid = this.selectedOrgUid();
-    const signatureId = this.claGroup()?.id;
-    const pending = !!orgUid && !!signatureId && this.autoEclaInFlight.has(this.autoEclaKey({ orgUid, signatureId }));
-    this.autoEclaSaving.set(pending);
   }
 
   /**
@@ -1244,6 +1208,12 @@ export class OrgEasyclaDetailComponent {
       if (remembered !== undefined) return remembered;
     }
     return this.claGroup()?.autoCreateEcla === true;
+  }
+
+  private initAutoEclaPending(): boolean {
+    const orgUid = this.selectedOrgUid();
+    const signatureId = this.claGroup()?.id;
+    return !!orgUid && !!signatureId && this.autoEclaWrites.running(orgUid, signatureId);
   }
 
   private initAutoEclaProjectSfid(): string {
