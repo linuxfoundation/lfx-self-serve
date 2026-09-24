@@ -62,11 +62,20 @@ join | rsvp | register | invitation-required | guest-join | tools | no-access | 
 ```
 
 > Issue #1768's body lists six of these (`join|rsvp|register|invitation-required|tools|none`). That
-> list predates E0-02, which resolves the viewer-state model and adds `guest-join`, `no-access` and
-> `rsvp-unavailable` as distinct kinds. The nine above are correct; the issue body is stale. Three of
-> the additions are the silent-failure states the epic exists to fix — an outsider on a restricted
-> meeting, an invited user on a pre-2024 meeting who cannot register, and an anonymous visitor — so
-> dropping them would drop the states most worth asserting on.
+> list predates E0-02, which resolves the viewer-state model and adds three distinct kinds. The nine
+> above are correct; the issue body is stale. What each addition names, as `resolveActionSlot`
+> decides it:
+>
+> - `guest-join` — an anonymous visitor inside the join window of a public, unrestricted meeting.
+> - `no-access` — an ended meeting whose artifacts the viewer cannot see (no `full_access`, not an
+>   organizer). V1 renders an empty page here.
+> - `rsvp-unavailable` — a registrant before a pre-2024 meeting, where invite responses were never
+>   collected. V1 renders an empty rail here.
+>
+> The signed-in outsider on a restricted or private meeting is **not** one of the additions: it
+> resolves to `invitation-required`, which was already in the original six. V1 fails that state
+> silently too, but the fix there is rendering the existing kind, not a new one. Assert each state
+> against the kind above, not against the silent-failure list in `spec.md`.
 
 The attribute is always present and always carries one of the nine values; `none` is a rendered
 kind, not an absent attribute. A test asserting "no action is offered" asserts
@@ -105,6 +114,16 @@ the row's contents.
 Attendance and invitation are two independent axes and get two attributes; a single fused value
 would force every test to know the whole cross-product.
 
+```text
+data-attendance:  accepted | declined | maybe | pending
+data-invitation:  direct | committee
+```
+
+`data-attendance` mirrors `RegistrantAttendanceStatus` (`packages/shared/src/utils/rsvp-calculator.util.ts`),
+computed by `getRegistrantAttendanceStatus` with `{ inviteResponsesEnabled }` passed. `data-invitation`
+mirrors `MeetingRegistrant.type`: whether the person was invited directly or came in with a
+committee. It is on every row, whatever the RSVP gate says.
+
 `data-attendance` is present **only when `Meeting.is_invite_responses_enabled` is true.** RSVP has a
 hard gate: meetings created before the January 2024 invite-responses release have no RSVP data at
 all, and when the gate is closed every piece of RSVP UI disappears — controls, summary strip, roster
@@ -128,12 +147,16 @@ must not render.
 ### `tools-summary-btn[data-approval]`
 
 ```text
-approved | pending
+approved | pending | not-required
 ```
 
 V1 already renders this state as an `Approved` or `Pending` badge on the summary control
 (`meeting-join.component.html:547-549`), driven by `isPastMeetingSummaryVisible` /
 `isPastMeetingSummaryAwaitingApproval` in `packages/shared/src/utils/past-meeting-summary.utils.ts`.
+V1 shows no badge in the third case, a summary with `requires_approval: false` that was never
+approved because it never needed to be. V2 names that case `not-required` rather than dropping the
+attribute, for the same reason `none` is a rendered action kind: an absent attribute would be
+indistinguishable from a control that failed to render.
 Per Rule 1 it belongs in a `data-*` attribute, so E5-04 can assert the awaiting-approval case
 without matching on badge copy.
 
@@ -144,7 +167,8 @@ names here; adding one would imply an affordance the epic is not building.
 
 ## V1 testids
 
-V1's template carries 38 distinct testids. **None of them is consumed by a spec that visits
+V1's template carries 56 distinct testids — 38 static `data-testid` values and 18 bound through
+`[attr.data-testid]`. **None of them is consumed by a spec that visits
 `/meetings/:id`** — verified by exact-match search for `getByTestId('<name>')` across
 `apps/lfx-one/e2e/`. They are not a contract. They stay because V1 stays, and they retire with it.
 
