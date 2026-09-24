@@ -3391,7 +3391,6 @@ describe('OrgClaService.getActivityLog — the row mapper', () => {
       when: '2026-01-15T09:20:00Z',
       actor: 'Ada Porter',
       summary: 'aporter signed a corporate CLA for Nimbus Foundation CLA',
-      category: 'signing',
     });
   });
 
@@ -3440,7 +3439,7 @@ describe('OrgClaService.getActivityLog — the row mapper', () => {
     expect(page?.list[0]?.id).toBe('keeper');
   });
 
-  it('maps known event types onto their category — a row still renders even when the type is unknown', async () => {
+  it('keeps a row of every event type, including one the producer added after this tab shipped', async () => {
     stageActivityLog(
       eventPage({
         Events: [
@@ -3456,7 +3455,7 @@ describe('OrgClaService.getActivityLog — the row mapper', () => {
 
     const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
 
-    expect(page?.list.map((r) => r.category)).toEqual(['signing', 'manager', 'approval-list', 'acknowledgment', 'other', 'other']);
+    expect(page?.list.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
   });
 });
 

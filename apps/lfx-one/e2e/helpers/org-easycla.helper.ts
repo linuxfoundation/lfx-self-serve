@@ -579,7 +579,6 @@ export function activityLogEntry(overrides: Partial<OrgClaActivityLogEntry> = {}
     when: '2026-03-11T09:20:00Z',
     actor: 'Ada Porter',
     summary: 'Ada Porter signed a corporate CLA',
-    category: 'signing',
     ...overrides,
   };
 }

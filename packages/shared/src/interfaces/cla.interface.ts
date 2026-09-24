@@ -1206,15 +1206,6 @@ export interface OrgClaInvalidateAcknowledgmentResult {
 }
 
 /**
- * Category label for an activity log row, derived from the producer's `EventType` (#1987).
- *
- * A display label, NOT a filter. Every row appears on the tab regardless of category; the tab
- * does not filter the stream on this field. Unknown or unmapped producer event types fall to
- * `'other'`.
- */
-export type OrgClaActivityLogCategory = 'signing' | 'manager' | 'approval-list' | 'acknowledgment' | 'auto-ecla' | 'sanctions' | 'other';
-
-/**
  * One activity log entry for the Organization Lens EasyCLA detail page (#1987).
  *
  * Scoped to a single `(company, CLA Group)` pair. The producer already writes one event per
@@ -1245,7 +1236,6 @@ export interface OrgClaActivityLogEntry {
    * comment above.
    */
   summary: string;
-  category: OrgClaActivityLogCategory;
 }
 
 /**

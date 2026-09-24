@@ -24,7 +24,6 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
   OrgClaApprovalEntry,
-  OrgClaActivityLogCategory,
   OrgClaActivityLogEntry,
   OrgClaActivityLogPage,
   OrgClaApprovalList,
@@ -1930,52 +1929,6 @@ export interface ActivityLogQuery {
 }
 
 /**
- * Producer `EventType` wire value → activity log category (#1987).
- *
- * A display label, not a filter. Keys are the strings the producer stores on the event
- * (`cla-backend-go/events/event_types.go`), not the Go identifier names. A type absent from
- * this table falls to `'other'`, and the row still appears. Adding a mapping is copy-only —
- * no route or middleware touches this map.
- *
- * The table stays flat by design. A nested classification would tempt the tab to filter on it,
- * and the tab does not filter — the whole event stream renders.
- */
-const ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE: Readonly<Record<string, OrgClaActivityLogCategory>> = {
-  // Signing outcomes
-  'corporate.signature.signed': 'signing',
-  'individual.signature.signed': 'signing',
-  'employee.signature.signed': 'signing',
-  'signature.invalidated': 'signing',
-  // Manager roster
-  'cla_manager.added': 'manager',
-  'cla_manager.deleted': 'manager',
-  'cla_manager.access_request_created': 'manager',
-  'cla_manager.access_request_approved': 'manager',
-  'cla_manager.access_request_denied': 'manager',
-  'cla_manager.access_request_deleted': 'manager',
-  'company_acl.user_added': 'manager',
-  'company_acl.request_added': 'manager',
-  'company_acl.request_approved': 'manager',
-  'company_acl.request_denied': 'manager',
-  'contributor.assign_designee': 'manager',
-  // Approval list edits. Email, domain, and username changes share one wire value.
-  'cla_manager.approval_list_updated': 'approval-list',
-  'approval_list.github_organization_added': 'approval-list',
-  'approval_list.github_organization_deleted': 'approval-list',
-  'ccla_approval_list_request.created': 'approval-list',
-  'ccla_approval_list_request.approved': 'approval-list',
-  'ccla_approval_list_request.rejected': 'approval-list',
-  // Contributor acknowledgments (ECLAs)
-  'employee.signature.created': 'acknowledgment',
-  // Auto-ECLA switch
-  'signature.auto_create_ecla.updated': 'auto-ecla',
-  'project.service.cla.enabled': 'auto-ecla',
-  'project.service.cla.disabled': 'auto-ecla',
-  // Sanctions holds
-  'company.sanctioned': 'sanctions',
-};
-
-/**
  * Maps one producer event onto the shared `OrgClaActivityLogEntry` shape (#1987).
  *
  * Returns `null` for a row without a stable event id — an entry without an id collides with
@@ -1991,7 +1944,8 @@ const ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE: Readonly<Record<string, OrgClaActivit
  * `actor` prefers `UserName` (a display name) and falls back to `LfUsername` (an LF login) —
  * neither is guaranteed to be present, so a producer row with neither leaves `actor` as `null`
  * and the render site substitutes an em-dash. `when` passes the producer's timestamp through
- * verbatim; the client renders it in the viewer's locale. `category` is a display label only.
+ * verbatim; the client renders it in the viewer's locale. Every event type maps the same way, so a
+ * type the producer adds later still renders.
  */
 function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivityLogEntry | null {
   const id = row?.EventID?.trim() ?? '';
@@ -2005,17 +1959,12 @@ function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivit
   const summary = nonEmpty(row?.EventSummary) ?? '';
   const actor = nonEmpty(row?.UserName) ?? nonEmpty(row?.LfUsername) ?? null;
   const when = nonEmpty(row?.EventTime) ?? '';
-  const eventType = row?.EventType?.trim() ?? '';
-  const category = Object.prototype.hasOwnProperty.call(ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE, eventType)
-    ? ACTIVITY_LOG_CATEGORY_BY_EVENT_TYPE[eventType]
-    : 'other';
 
   return {
     id,
     when,
     actor,
     summary,
-    category,
   };
 }
 

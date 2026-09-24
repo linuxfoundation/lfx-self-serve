@@ -41,7 +41,6 @@ describe('OrgEasyclaActivityLogComponent', () => {
       when: '2026-01-15T09:20:00Z',
       actor: 'Ada Porter',
       summary: 'aporter signed a corporate CLA',
-      category: 'signing',
       ...overrides,
     };
   }
@@ -146,15 +145,15 @@ describe('OrgEasyclaActivityLogComponent', () => {
     expect(textIn(byTestId(fixture, 'org-easycla-activity-log-actor'))).toBe('—');
   });
 
-  it('renders every event regardless of category — nothing filters the tab', async () => {
+  it('renders every event the producer sent — nothing filters the tab', async () => {
     getActivityLog.mockReturnValueOnce(
       of(
         page([
-          entry({ id: 'e1', category: 'signing' }),
-          entry({ id: 'e2', category: 'manager' }),
-          entry({ id: 'e3', category: 'approval-list' }),
-          entry({ id: 'e4', category: 'acknowledgment' }),
-          entry({ id: 'e5', category: 'other' }),
+          entry({ id: 'e1', summary: 'aporter signed a corporate CLA' }),
+          entry({ id: 'e2', summary: 'aporter added a CLA Manager' }),
+          entry({ id: 'e3', summary: 'aporter added an approval domain' }),
+          entry({ id: 'e4', summary: 'a contributor acknowledged the CCLA' }),
+          entry({ id: 'e5', summary: 'an event type the tab has never seen' }),
         ])
       )
     );
