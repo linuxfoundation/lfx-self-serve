@@ -51,7 +51,7 @@
     "build:production": "tsc",
     "build:staging": "tsc",
     "watch": "tsc --watch",
-    "check-types": "tsc --noEmit",
+    "check-types": "tsc --noEmit -p tsconfig.spec.json",
     "test": "vitest run"
   },
   "devDependencies": {

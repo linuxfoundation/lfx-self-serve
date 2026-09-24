@@ -467,12 +467,14 @@ export const CCLA_SIGN_COPY = {
  * Keep this the single list: the BFF rejects anything else rather than interpolating a guessed
  * string, and the client posts these literals rather than assembling ACS permissions itself.
  */
-export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete', 'auto-ecla-update'] as const;
+export const ORG_CLA_PERMISSION_ACTIONS = ['sign', 'approval-list-update', 'cla-manager-delete', 'ecla-invalidate', 'auto-ecla-update'] as const;
 
 export const ACS_CLA_SIGN_RESOURCE = 'self_serve_request_corporate_signature';
 export const ACS_CLA_SIGN_ACTION = 'create';
 export const ACS_CLA_APPROVAL_LIST_RESOURCE = 'signature_approval_list';
 export const ACS_CLA_APPROVAL_LIST_ACTION = 'update';
+export const ACS_CLA_ECLA_INVALIDATE_RESOURCE = 'ecla_invalidate';
+export const ACS_CLA_ECLA_INVALIDATE_ACTION = 'update';
 export const ACS_CLA_MANAGER_DELETE_RESOURCE = 'cla_manager_delete';
 export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
 /**
@@ -521,20 +523,18 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
- * agreement is signed, taken verbatim from the M3 prototype's locked panels.
+ * Why the Approval List, Contributor Acknowledgments, and Activity Log tabs hold nothing until
+ * the agreement is signed, taken from the M3 prototype's locked panels. CLA Managers uses its
+ * own unsigned copy.
  *
- * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
- * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
- * entries are what that manager maintains, and acknowledgments are what contributors then place
- * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
- * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
- * and saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Each of these is a list that comes into existence with the signature: approval entries are
+ * what the manager maintains, acknowledgments are what contributors place against those rules,
+ * and the activity log is the record of that signing and of the changes after it. On an
+ * unsigned agreement there is nothing to list, so the panel says so rather than rendering blank.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
- * panels render — which is why they are copy rather than an empty section. This is the same gap
- * the empty Overview had.
+ * panels render — which is why they are copy rather than an empty section.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
   approval: {
@@ -544,6 +544,10 @@ export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: s
   acknowledgments: {
     title: 'No contributor acknowledgments yet',
     subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
+  },
+  activity: {
+    title: 'The activity log becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first. Changes to signing, CLA Managers, and the approval list will appear here.',
   },
 };
 
@@ -672,20 +676,16 @@ export const ORG_CLA_MANAGER_NAME_MAX = 30;
 // Contributor Acknowledgments (#1986)
 // ---------------------------------------------------------------------------
 
-/**
- * The heading the Contributor Acknowledgments tab carries.
- *
- * Matches the label the corporate CLA console uses for the same list, so a CLA manager migrating
- * between the two surfaces reads the same words.
- */
-export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments';
+/** The heading and subtitle over the Contributor Acknowledgments table, as the M3 prototype words them. */
+export const ORG_CLA_ACKNOWLEDGMENTS_HEADING = 'Contributor Acknowledgments from My Organization';
+export const ORG_CLA_ACKNOWLEDGMENTS_SUBTITLE = "Employees who've acknowledged they're covered by this CLA.";
 
 /**
  * Cap on the acknowledgment page size the BFF forwards to the producer.
  *
- * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the CLA
- * manager fetch more with the Load-more control. A page above 100 is clamped silently to protect
- * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop.
+ * The producer sets no upper bound on `pageSize`; the BFF caps it at 100 so a single request can't
+ * ask for an unbounded scan. The tab requests 50 by default and lets the CLA manager fetch more
+ * with the Load-more control. A request for zero rows is clamped to 1 to prevent a runaway zero-loop.
  */
 export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_DEFAULT = 50;
 export const ORG_CLA_ACKNOWLEDGMENTS_PAGE_SIZE_MAX = 100;
@@ -709,74 +709,75 @@ export const ORG_CLA_ACKNOWLEDGMENTS_EMPTY_COPY = {
 export const ORG_CLA_ACKNOWLEDGMENTS_COLUMN_HEADERS = {
   name: 'Name',
   identity: 'LF Login/GitHub or GitLab ID',
-  cclaVersion: 'CCLA Version',
   signedOn: 'Acknowledged On',
   state: 'Status',
   actions: '',
 } as const;
 
 /**
- * Two visible acknowledgment states.
- *
- * The M3 prototype's third amber "Not Authorized" state is deliberately out of scope for #1986;
- * its design is unresolved. Do not add a third entry here without a locked contract decision.
+ * The three acknowledgment states the M3 prototype shows. `acknowledged` is an approved
+ * acknowledgment, which the prototype labels Authorized. `notAuthorized` is an acknowledgment whose
+ * approval-list criteria were removed; `invalidated` is one a CLA manager or admin revoked.
  */
 export const ORG_CLA_ACKNOWLEDGMENT_STATE_LABELS = {
-  acknowledged: 'Acknowledged',
+  acknowledged: 'Authorized',
+  notAuthorized: 'Not Authorized',
   invalidated: 'Invalidated',
+} as const;
+
+/** The explanation a Not Authorized row carries, worded as the M3 prototype words it. */
+export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
+  tooltip: (criteria?: string): string =>
+    `Not Authorized is not the same as Invalidate. This person's approval criteria${criteria ? ` (${criteria})` : ''} were removed from the Approval List — no one purposefully revoked their access. If they should still be covered, add their criteria back to the Approval List. Use Invalidate only to deliberately revoke this acknowledgment.`,
+  detail: 'No longer matches Approval List criteria.',
+  approvalListLink: 'Add the user to the Approval list',
+  detailSuffix: ', or Invalidate to remove for good.',
+  // Standalone remedy for a reader who can invalidate but not edit the approval list, so the
+  // Add-to-list link is hidden and detailSuffix's leading ", or" would be orphaned.
+  invalidateOnly: 'Invalidate to remove for good.',
 } as const;
 
 /** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 
 /**
- * Reasons a CLA manager can pick when invalidating an acknowledgment.
+ * The reason enum values the producer accepts on an invalidate.
  *
- * The producer accepts these four enum values; the free-text note is separate. The tuple order
- * is the UI order the picker presents them in.
+ * The acknowledgments tab no longer offers a reason picker, so these constrain the BFF request
+ * only; the free-text note is separate.
  */
 export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
 
 /**
- * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ * Maximum length of the free-text note the BFF will forward, matching the producer's own
+ * `maxLength: 2048`.
  *
  * Counted in code points, not UTF-16 units: go-swagger validates `maxLength` with
- * `utf8.RuneCountInString`. The dialog uses `maxCodePointsValidator` and carries no native
- * `maxlength`, which would stop a non-BMP note at half this cap.
+ * `utf8.RuneCountInString`. The acknowledgments tab no longer sends a note field, so this caps
+ * the BFF request only rather than any dialog input.
  */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 
 /**
- * Labels for the invalidation-reason picker (#1986, #2807).
+ * Confirmation-dialog copy for a row invalidate, as the M3 prototype words it.
  *
- * The four values match the producer's enum. Copy is the CLA manager's wording, not the
- * producer's slug — a manager clicking "Signed in error" understands the outcome; the producer
- * receives `signed-in-error`.
- */
-export const ORG_CLA_INVALIDATION_REASON_LABELS = {
-  'signed-in-error': 'Signed in error',
-  'should-be-corporate': 'Should be corporate',
-  compliance: 'Compliance concern',
-  other: 'Other',
-} as const;
-
-/**
- * Confirmation-dialog copy for a row invalidate.
- *
- * The warning names the outcome directly: the producer marks the acknowledgment invalidated and
- * revokes the contributor's coverage under this CLA. That is what the CLA manager is confirming;
- * hiding it behind "will no longer be recognized" would leave the click reversible-looking when
- * it is not.
+ * It names the contributor and says what invalidating does not stop: a contributor who still
+ * matches the approval list can acknowledge again, or be re-added by Auto ECLA.
  */
 export const ORG_CLA_INVALIDATE_DIALOG_COPY = {
-  header: 'Invalidate this acknowledgment?',
-  warning:
-    'This contributor will lose coverage under this CLA. Their acknowledgment is marked invalidated on the record, and they will need to re-acknowledge before their next contribution can be accepted.',
-  reasonLabel: 'Reason',
-  reasonPlaceholder: 'Choose a reason',
-  noteLabel: 'Note (optional)',
-  notePlaceholder: 'Add context for the audit trail.',
-  noteTooLong: `The note may be at most ${ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH} characters.`,
+  title: (contributor: string): string => `Invalidate acknowledgment for ${contributor}?`,
+  marksPrefix: 'This marks',
+  marksSuffix:
+    " as no longer covered by this CCLA. It's assumed they've already lost access to any email domain, GitHub org, or GitLab group this CCLA's approval list checks against.",
+  reacknowledge: (contributor: string): string =>
+    `If ${contributor} still matches this CLA's approval list criteria, they can acknowledge (or be re-added automatically via Auto ECLA) again`,
+  removeCriteria: " — remove the matching criteria below if that shouldn't be possible.",
+  matchedBy: (count: number): string => ` was approved by ${count > 1 ? 'entries' : 'an entry'} added specifically for them.`,
+  alsoRemove: (contributor: string, count: number): string =>
+    `Also remove ${count > 1 ? 'these entries' : 'this entry'} from the Approval List so ${contributor} can't acknowledge this CCLA again later.`,
+  noMatch:
+    "No individual approval-list entry matches this contributor. If they still match a broader entry (e.g. an email domain or GitHub org), they'll remain able to re-acknowledge this CCLA.",
+  checking: 'Checking the Approval List…',
   cancel: 'Cancel',
   confirm: 'Invalidate acknowledgment',
 } as const;
@@ -794,7 +795,12 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   successDetail: (contributor: string): string => `${contributor} is no longer covered by this CLA.`,
   failureSummary: 'Invalidate failed',
   failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
+  removalFailedSummary: 'Approval List not updated',
+  removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entries couldn't be removed. Remove them from the Approval List tab.",
 } as const;
+
+/** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */
+export const ORG_CLA_INVALIDATE_NOT_APPROVED_MESSAGE = "This acknowledgment is no longer approved, so it can't be invalidated yet.";
 
 /** Label and accessible name for the per-row Invalidate control. */
 export const ORG_CLA_INVALIDATE_ACTION_COPY = {
@@ -803,3 +809,69 @@ export const ORG_CLA_INVALIDATE_ACTION_COPY = {
   /** Shown instead of the control when the producer sent a row with no per-ack id to address. */
   unavailableTooltip: 'This acknowledgment has no record id, so it cannot be invalidated here.',
 } as const;
+
+// ---------------------------------------------------------------------------
+// Activity Log (#1987, #2857)
+// ---------------------------------------------------------------------------
+
+/** The heading the Activity Log tab carries, matching the M3 prototype. */
+export const ORG_CLA_ACTIVITY_LOG_HEADING = 'Activity log';
+
+/**
+ * Sub-header under the tab title.
+ *
+ * Taken verbatim from the M3 prototype. Reads as an explanation of what the log covers, not a
+ * definitive list — new event types added by the producer appear alongside these categories.
+ */
+export const ORG_CLA_ACTIVITY_LOG_SUBHEADER = "Every change to this CLA's signing status, CLA Managers, and approval list.";
+
+/**
+ * Cap on the activity log page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the
+ * viewer fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop. Same
+ * limits the sibling acknowledgments tab uses.
+ */
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN = 1;
+
+/** Column headers for the Activity Log table. */
+export const ORG_CLA_ACTIVITY_LOG_COLUMN_HEADERS = {
+  action: 'Action',
+  actor: 'By',
+  when: 'When',
+} as const;
+
+/** Placeholder for the search input above the table. */
+export const ORG_CLA_ACTIVITY_LOG_SEARCH_PLACEHOLDER = 'Search activity…';
+
+/**
+ * Empty-state copy shown when the tab's first page is empty AND the producer sent no next-page
+ * cursor. Matches the M3 prototype. Distinct from the filter-empty state below — the log is
+ * genuinely empty on this path.
+ */
+export const ORG_CLA_ACTIVITY_LOG_EMPTY_COPY = {
+  title: 'No activity yet',
+  subtitle: 'Changes to this CLA will appear here as they happen.',
+} as const;
+
+/**
+ * In-place state shown when the fetched set is non-empty but the client-side search filter
+ * matches zero rows. Deliberately different from the tab-level empty state — the log is not
+ * empty; the filter matched nothing.
+ */
+export const ORG_CLA_ACTIVITY_LOG_FILTER_EMPTY_COPY = {
+  title: 'No matching activity',
+  subtitle: 'Clear the search to see every event on this CLA.',
+} as const;
+
+/** Label and busy state for the Load-more control that follows the producer's cursor. */
+export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
+  label: 'Load more',
+  busyLabel: 'Loading…',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';

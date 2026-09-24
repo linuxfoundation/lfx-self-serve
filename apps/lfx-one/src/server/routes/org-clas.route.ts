@@ -59,6 +59,13 @@ router.get('/:orgUid/lens/cla-groups/:signatureId/acknowledgments', requireOrgLe
   orgClasController.getContributorAcknowledgments(req, res, next)
 );
 
+// Activity log (#1987). Read is an org-lens grant only. Deliberately WIDER than the CLA-manager
+// posture the write tabs use: an org-lens caller who is not a CLA manager on this CCLA still
+// reads the log (auditors, program leads). The producer's own `IsUserAuthorizedForOrganization`
+// on this endpoint accepts an org-scoped caller for the same reason. The impersonated token is
+// forwarded upstream so a support engineer sees what the target sees.
+router.get('/:orgUid/lens/cla-groups/:signatureId/activity', requireOrgLensAccess, (req, res, next) => orgClasController.getActivityLog(req, res, next));
+
 // The first write on this router (#1985), so it is the first to need `blockDuringImpersonation`.
 // The reads above forward the impersonated identity to upstream deliberately; a write must not.
 // Changing an approval list revokes acknowledgements and emails the affected contributors, and

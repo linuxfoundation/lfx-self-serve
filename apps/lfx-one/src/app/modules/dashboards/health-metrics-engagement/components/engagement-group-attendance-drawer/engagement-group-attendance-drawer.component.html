@@ -40,9 +40,11 @@
           <div class="flex flex-col gap-1" [attr.data-testid]="'engagement-group-drawer-period-' + period.range">
             <div class="flex items-center justify-between gap-4 text-[13px]">
               <span class="text-gray-700">{{ period.label }}</span>
-              <span class="text-gray-500">{{ period.attendedCount }} of {{ period.invitedCount }} invited · {{ period.meetingsHeld }} meetings</span>
+              <span class="text-gray-500"
+                >{{ period.attendedCount ?? '—' }} of {{ period.invitedCount ?? '—' }} invited · {{ period.meetingsHeld ?? '—' }} meetings</span
+              >
             </div>
-            <lfx-engagement-attendance-bar [attendancePct]="period.attendancePct" [meetingsHeld]="period.meetingsHeld" />
+            <lfx-engagement-attendance-bar [attendancePct]="period.attendancePct" [meetingsHeld]="period.meetingsHeld ?? 0" />
           </div>
         }
       </div>

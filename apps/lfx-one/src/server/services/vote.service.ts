@@ -17,7 +17,7 @@ import {
   Vote,
   VoteResultsResponse,
 } from '@lfx-one/shared/interfaces';
-import { computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
+import { compareVotesByRecency, computeIsFoundation, sortCommentResponsesByRecency } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -123,6 +123,18 @@ export class VoteService {
    */
   private static readonly createVoteRequestTimeoutMs = 16000;
 
+  /**
+   * Upstream page size for the getVotes drain (GH-1558): the query-service's documented maximum
+   * (lfx-v2-query-service design/types.go), so real vote volumes (dev's largest project: 77 votes,
+   * verified 2026-09-23) drain in a single round trip and the helper's page_token loop stays cold.
+   */
+  private static readonly voteListUpstreamPageSize = 1000;
+
+  /**
+   * Page size for the BFF's internal offset pagination when the client omits `page_size` (GH-1558).
+   */
+  private static readonly voteListDefaultPageSize = 50;
+
   private microserviceProxy: MicroserviceProxyService;
   private projectService: ProjectService;
 
@@ -132,12 +144,92 @@ export class VoteService {
   }
 
   /**
-   * Fetches a single page of votes using cursor-based pagination — callers paginate via the returned page_token.
-   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
+   * Fetches one page of the canonically ordered vote list (GH-1558). The query-service's default
+   * `name_asc` ordering is the alphabetical ordering the issue reports and it has no created_at
+   * sort, so the BFF drains the full filtered upstream set, sorts with `compareVotesByRecency`
+   * (active first, `creation_time` desc, `uid` tiebreak), and slices the requested page itself.
+   * Client `page_size`/`page_token`/`order` never go upstream: `page_token` is the BFF's own opaque
+   * `offset:<n>` cursor (clients already treat the token as opaque) and `order` is the legacy param
+   * the query-service ignores. `filters`/`filters_or`/`parent`/`tags`/`name` still narrow the
+   * drained set upstream, so the sorted set is exactly the filtered set and ordering holds across
+   * pagination and filters. Recently-opened interplay (GH-2730/GH-1558 review): a vote opened inside
+   * the index-lag window still reads `disabled` in the drained set, so the status tier places it after
+   * the active block and the client's `mergeRecentlyOpenedVotes` rebadge can't reposition it (or
+   * surface it on page 1 when more than a page of active votes exists). Accepted: tier-2's
+   * `creation_time`-desc puts a just-created vote first within its tier, the carrier TTL (30 s) bounds
+   * the window, and reconciling client carrier state pre-sort would bleed optimistic UI state into
+   * this endpoint's contract. `includeProject` (default true) enriches the returned slice with
+   * `project_name`, `project_slug`, `is_foundation` and `parent_project_uid`; opt out when the
+   * caller discards them.
    */
   public async getVotes(req: Request, query: Record<string, unknown> = {}, options: { includeProject?: boolean } = {}): Promise<PaginatedResponse<Vote>> {
     const { includeProject = true } = options;
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
+      query_params: Object.keys(query),
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { page_size: rawPageSize, page_token: rawPageToken, order: _order, ...upstreamParams } = query;
+
+    // Unscoped calls drain the entire vote index and re-sort per request (GH-1558 review) — every
+    // first-party caller narrows, so log the unscoped path to make a stray caller visible before it
+    // shows up in a latency graph. DEBUG, not WARN: the param set is caller-controlled.
+    if (Object.keys(upstreamParams).length === 0) {
+      logger.debug(req, 'get_votes', 'Unscoped vote list request drains the full vote index');
+    }
+
+    // failOnPartial (GH-1558): the offset slices assume the drained set is the whole filtered set —
+    // a later page failing must surface as an error, not a 200 with votes silently missing.
+    const drained = await fetchAllQueryResources<IndexedVote>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<IndexedVote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          ...upstreamParams,
+          type: 'vote',
+          page_size: VoteService.voteListUpstreamPageSize,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    const sorted = drained.map((vote) => this.normalizeIndexedVote(req, vote)).sort(compareVotesByRecency);
+
+    const pageSize = this.parseVoteListPageSize(rawPageSize);
+    const offset = this.parseVoteListOffset(rawPageToken);
+    const page = sorted.slice(offset, offset + pageSize);
+    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
+    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
+    // Runs on the returned slice only, not the full drained set.
+    const votes = includeProject ? await this.enrichWithProjectMetadata(req, page) : page;
+
+    const nextOffset = offset + pageSize;
+    const pageToken = nextOffset < sorted.length ? `offset:${nextOffset}` : undefined;
+
+    logger.debug(req, 'get_votes', 'Completed vote fetch', {
+      drained_count: sorted.length,
+      final_count: votes.length,
+      has_more_pages: !!pageToken,
+    });
+
+    return { data: votes, page_token: pageToken };
+  }
+
+  /**
+   * Fetches a single upstream cursor page of votes, forwarding the caller's params verbatim — the
+   * pre-GH-1558 `getVotes` behavior, kept for internal consumers only (not mounted on any route).
+   * Committee-activity's vote leg needs the query-service's `sort=updated_desc` truncation order and
+   * the real upstream `page_token` for its `date_to`-windowed saturation walk; the canonical
+   * drain+sort in `getVotes` would silently change which rows its `fetchSize` truncation keeps.
+   * `includeProject` (default true) enriches rows with `project_name`, `project_slug`,
+   * `is_foundation` and `parent_project_uid`; opt out when the caller discards them.
+   */
+  public async getVotesUpstreamPage(
+    req: Request,
+    query: Record<string, unknown> = {},
+    options: { includeProject?: boolean } = {}
+  ): Promise<PaginatedResponse<Vote>> {
+    const { includeProject = true } = options;
+    logger.debug(req, 'get_votes_upstream_page', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
@@ -155,11 +247,9 @@ export class VoteService {
     );
 
     const normalized = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
-    // Enrich list rows with canonical project fields — the vote index (VoteData) carries only
-    // project_uid/name, so without this, consumers deriving per-row edit links get no slug/tier.
     const votes = includeProject ? await this.enrichWithProjectMetadata(req, normalized) : normalized;
 
-    logger.debug(req, 'get_votes', 'Completed vote fetch', {
+    logger.debug(req, 'get_votes_upstream_page', 'Completed vote fetch', {
       final_count: votes.length,
       has_more_pages: !!page_token,
     });
@@ -499,17 +589,9 @@ export class VoteService {
       })
     );
 
-    // Sort: active votes first, then by end_time descending
-    const sorted = votes
-      .filter((v): v is Vote => v !== null)
-      .sort((a, b) => {
-        const aActive = a.status === 'active' ? 0 : 1;
-        const bActive = b.status === 'active' ? 0 : 1;
-        if (aActive !== bActive) {
-          return aActive - bActive;
-        }
-        return new Date(b.end_time).getTime() - new Date(a.end_time).getTime();
-      });
+    // Canonical vote list ordering (GH-1558): active first, then creation_time desc — the same
+    // comparator the project/committee list reads apply, so Me lens agrees with every other surface.
+    const sorted = votes.filter((v): v is Vote => v !== null).sort(compareVotesByRecency);
 
     return this.enrichWithProjectMetadata(req, sorted);
   }
@@ -704,5 +786,32 @@ export class VoteService {
       throw ServiceValidationError.forField('uid', 'Invalid vote UID', { operation: 'encode_vote_uid', service: 'vote_service' });
     }
     return encodeURIComponent(uid);
+  }
+
+  /** Client-requested page size for getVotes' internal slicing — first value wins; missing/invalid → the default; capped at the upstream max so a client can't pull an unbounded slice in one response. */
+  private parseVoteListPageSize(raw: unknown): number {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    const parsed = Number.parseInt(typeof value === 'string' ? value : '', 10);
+    return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, VoteService.voteListUpstreamPageSize) : VoteService.voteListDefaultPageSize;
+  }
+
+  /** Decodes getVotes' opaque `offset:<n>` page token — an omitted token starts at the first page; an explicit-but-malformed one (garbage, foreign cursor) is a 400, never a silent fallback for a bad explicit value (committee-activity's `decodePageToken` rule): silently restarting at page 1 would hand a page-2 caller page 1's rows labeled as page 2. */
+  private parseVoteListOffset(raw: unknown): number {
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    if (value === undefined) {
+      return 0;
+    }
+    const match = typeof value === 'string' ? /^offset:(\d+)$/.exec(value) : null;
+    if (!match) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    // \d+ also passes 309+-digit tokens whose parseInt overflows float64 to Infinity (and
+    // 16+-digit ones to unsafe integers) — slice() would answer those with an empty terminal
+    // page instead of the malformed-token 400 this decoder promises.
+    const offset = Number.parseInt(match[1], 10);
+    if (!Number.isSafeInteger(offset)) {
+      throw ServiceValidationError.forField('page_token', 'page_token is malformed', { operation: 'get_votes', service: 'vote_service' });
+    }
+    return offset;
   }
 }

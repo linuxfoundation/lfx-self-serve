@@ -123,7 +123,9 @@ yarn workspace @lfx-one/shared build
 yarn workspace @lfx-one/shared check-types
 ```
 
-TypeScript targets ES2022 with strict mode and `moduleResolution: "bundler"`; see `packages/shared/tsconfig.json` for the canonical config.
+TypeScript targets ES2022 with strict mode and `moduleResolution: "bundler"`; see `packages/shared/tsconfig.json` for the canonical emit config.
+
+`check-types` runs `tsc --noEmit -p tsconfig.spec.json`, which extends the emit config and drops the `**/*.spec.ts` exclusion so spec files are type-checked against the interfaces they claim to satisfy. The emit build (`yarn build` → plain `tsc`) still uses `tsconfig.json` and keeps `dist/` free of spec output. Without this spec pass, adding a required field to a shared interface would silently desync every fixture typed against it — the fixture's transpile-only Vitest run would still pass, and the drift would surface as a runtime assertion (or a stray `undefined`) instead of a compile error. See `packages/shared/tsconfig.spec.json` for the config and `docs/reviews/shared-and-sql-checklist.md` § 5a for the fixture-builder convention this pass enforces.
 
 ## Dependencies
 

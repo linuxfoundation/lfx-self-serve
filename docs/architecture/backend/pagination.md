@@ -63,20 +63,28 @@ export interface PaginatedResponse<T> {
 Services that expose pagination to the frontend return `PaginatedResponse<T>`:
 
 ```typescript
-public async getVotes(
+public async getVotesUpstreamPage(
   req: Request,
-  query: Record<string, any> = {}
+  query: Record<string, unknown> = {}
 ): Promise<PaginatedResponse<Vote>> {
   const { resources, page_token } = await this.microserviceProxy.proxyRequest<
-    QueryServiceResponse<Vote>
+    QueryServiceResponse<IndexedVote>
   >(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', { ...query, type: 'vote' });
 
-  const votes = resources.map((resource) => resource.data);
+  const votes = resources.map((resource) => this.normalizeIndexedVote(req, resource.data));
   return { data: votes, page_token };
 }
 ```
 
-The `page_token` from the query service passes through to the frontend unchanged.
+The `page_token` from the query service passes through unchanged.
+
+> **Exception (GH-1558):** the route-mounted `VoteService.getVotes` (`GET /api/votes`) is _not_ a
+> passthrough. The query service has no `created_at` sort, so `getVotes` drains the full filtered
+> set with `fetchAllQueryResources`, sorts it with the shared `compareVotesByRecency` (active votes
+> first, then `creation_time` descending), and slices the requested page itself — emitting its own
+> opaque `offset:<n>` page_token. The single-page passthrough above (`getVotesUpstreamPage`) survives
+> only for internal consumers that need the raw upstream cursor, like committee-activity's
+> saturation walk.
 
 ## Backend: Complete Fetch (All Pages)
 
@@ -127,7 +135,7 @@ public getVotesByProjectPaginated(
     }
   }
 
-  return this.getVotes(params);
+  return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params });
 }
 ```
 

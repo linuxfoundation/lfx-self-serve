@@ -603,16 +603,15 @@ export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
 };
 
 /**
- * Zero-filled default for the Health Metrics Overview "Foundation" rail — used as the frontend's
- * initial/HTTP-error value and, server-side, as `getFoundationProfileSummary`'s degraded response
- * when `HEALTH_OVERVIEW_PROFILE` is missing or has no matching row. No `size` field, per that
- * table having no backing column for it.
+ * Unavailable default for the Health Metrics Overview "Foundation" rail — the frontend's initial and
+ * HTTP-error value, and the server's response when `HEALTH_OVERVIEW_PROFILE` is missing or has no row.
  */
 export const HEALTH_METRICS_OVERVIEW_FOUNDATION_SUMMARY_DEFAULT: HealthMetricsOverviewFoundationSummary = {
-  projects: 0,
-  tiers: 'N/A',
-  board: 'N/A',
-  nextRenewals: 'N/A',
+  dataAvailable: false,
+  projects: '—',
+  tiers: '—',
+  board: '—',
+  nextRenewals: '—',
 };
 
 export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {

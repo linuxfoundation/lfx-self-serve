@@ -738,7 +738,10 @@ export class CommitteeActivityService {
     // /query/resources round trip would be thrown away.
     // page_token — see the saturation comment in getCommitteeActivity for why this is preferred
     // over comparing `votes.length` to `fetchSize`.
-    const { data: votes, page_token: pageToken } = await this.voteService.getVotes(req, query, { includeProject: false });
+    // getVotesUpstreamPage, not getVotes (GH-1558): this leg needs the query-service's
+    // sort=updated_desc truncation order and the real upstream cursor for its date_to window walk —
+    // getVotes' canonical drain+sort would reorder which rows the fetchSize truncation keeps.
+    const { data: votes, page_token: pageToken } = await this.voteService.getVotesUpstreamPage(req, query, { includeProject: false });
     return { events: votes.map((vote) => this.mapVoteToEvent(vote, committeeUid)), saturated: !!pageToken };
   }
 

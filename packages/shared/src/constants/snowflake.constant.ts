@@ -84,6 +84,21 @@ export const SNOWFLAKE_CONFIG = {
 } as const;
 
 /**
+ * Response text for a failed Snowflake query.
+ * @description The SDK error text names warehouse schemas, tables and columns, so it is kept in the
+ * server logs and never sent to the browser.
+ */
+export const SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE = 'Data is temporarily unavailable. Please try again later.';
+
+/**
+ * Deepest page an offset-paginated Snowflake read may reach.
+ * @description Snowflake cannot bind `LIMIT`/`OFFSET`, so they are interpolated as literals and must be
+ * bounded before they reach the SQL text: Snowflake rejects an out-of-range row count as a compilation
+ * error. With page sizes ≤ 100 this keeps `OFFSET` at or below 10,000,000, far inside the accepted range.
+ */
+export const MAX_SNOWFLAKE_PAGINATION_PAGE = 100_000;
+
+/**
  * Row cap for the pending-surveys query in `getPendingActionSurveys`.
  * @description When the Me-lens path calls this without a `PROJECT_SLUG` predicate, Snowflake
  * would otherwise filter only by `EMAIL`, widening the micro-partition scan for users enrolled

@@ -24,6 +24,8 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
   OrgClaApprovalEntry,
+  OrgClaActivityLogEntry,
+  OrgClaActivityLogPage,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgment,
@@ -57,6 +59,8 @@ import type {
   EasyClaCorporateSignatureList,
   EasyClaEclaInvalidateResult,
   EasyClaEclaInvalidationInput,
+  EasyClaEvent,
+  EasyClaEventList,
   EasyClaSearchList,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
@@ -1294,25 +1298,40 @@ export class OrgClaService {
 
     // PUT, not POST: the producer declares this operation as `put` on
     // `/v4/cla-group/{claGroupID}/ecla/{signatureID}/invalidate`.
-    const upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
-      req,
-      `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
-      {
-        method: 'PUT',
-        body,
-        operation: 'org_cla_invalidate_acknowledgment',
-        service: SERVICE,
-        errorMessage: 'Failed to invalidate the acknowledgment',
-        errorCode: 'UPSTREAM_ERROR',
-        // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
-        // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
-        // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
-        // would be the one writing identities out.
-        redactResponseBody: true,
-        // No `bearerToken` override: the route blocks this path during impersonation, so there is
-        // no impersonated identity to forward. A write must run as the acting user.
+    let upstream: EasyClaEclaInvalidateResult | null;
+    try {
+      upstream = await gatewayFetch<EasyClaEclaInvalidateResult>(
+        req,
+        `${claServiceBaseUrl(SERVICE)}/v4/cla-group/${encodeURIComponent(context.claGroupId)}/ecla/${encodeURIComponent(acknowledgmentSignatureId)}/invalidate`,
+        {
+          method: 'PUT',
+          body,
+          operation: 'org_cla_invalidate_acknowledgment',
+          service: SERVICE,
+          errorMessage: 'Failed to invalidate the acknowledgment',
+          errorCode: 'UPSTREAM_ERROR',
+          // The success body echoes the EasyCLA user id of the contributor who was invalidated, and
+          // a non-OK body names the authenticated caller. Neither belongs in application logs, and a
+          // 403 here is an ordinary outcome rather than an exceptional one — so the routine case
+          // would be the one writing identities out.
+          redactResponseBody: true,
+          // No `bearerToken` override: the route blocks this path during impersonation, so there is
+          // no impersonated identity to forward. A write must run as the acting user.
+        }
+      );
+    } catch (error) {
+      // The producer refuses any acknowledgment that is not approved with 409 — a Not Authorized
+      // row, or one invalidated since the list was read.
+      if (error instanceof MicroserviceError && error.statusCode === 409) {
+        logger.warning(req, 'org_cla_invalidate_acknowledgment', 'acknowledgment is not approved, so the producer refused the invalidate', {
+          org_uid: orgUid,
+          signature_id: signatureId,
+          acknowledgment_signature_id: acknowledgmentSignatureId,
+        });
+        return { outcome: 'not-approved' };
       }
-    );
+      throw error;
+    }
 
     if (!upstream || typeof upstream !== 'object') {
       throw new MicroserviceError('Failed to invalidate the acknowledgment: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
@@ -1338,6 +1357,74 @@ export class OrgClaService {
     return {
       outcome: 'invalidated',
       result: { signatureId: echoed || acknowledgmentSignatureId },
+    };
+  }
+
+  /**
+   * Reads the activity log for one CCLA on this organization (#1987, #2857).
+   *
+   * The producer already writes one event per audited action against a `(company, CLA Group)`
+   * pair, partitioned on `company_sfid_cla_group_id`, so the scope check that matters is `is this
+   * signature actually on this organization for this CLA Group?` — and that is exactly what
+   * `resolveClaGroupContext` answers, the same helper the sibling read-tabs use.
+   *
+   * Authorization posture is broader than the write tabs: an org-lens caller who is NOT a CLA
+   * manager on this CCLA still reads the log (auditors, program leads). The producer's own
+   * `IsUserAuthorizedForOrganization(ALLOW_ADMIN_SCOPE)` accepts an org-scoped caller for this
+   * endpoint. `canEdit` is deliberately absent from the envelope — the log has no per-row write.
+   *
+   * `returnAllEvents` is never sent. The flag only raises the page limit to 10000 on the same
+   * `company_sfid_cla_group_id` partition; it does not widen which group is read. Leaving it
+   * off keeps the page bound this route already clamps.
+   *
+   * The producer's paging cursor (`NextKey`) is opaque; forward it verbatim from the client.
+   * Search stays on the client, over actor and EventSummary. The producer's `searchTerm`
+   * matches EventData, the detailed audit sentence this tab does not show.
+   */
+  public async getActivityLog(req: Request, orgUid: string, signatureId: string, query: ActivityLogQuery): Promise<OrgClaActivityLogPage | null> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_activity_log');
+    if (!context) return null;
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_get_activity_log', 'agreement is not signed, so it holds no activity', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { signatureId, list: [], resultCount: 0, nextKey: null };
+    }
+
+    if (!context.projectSfid) {
+      throw new MicroserviceError('Failed to fetch the activity log: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_get_activity_log',
+        service: SERVICE,
+      });
+    }
+
+    const page = await this.fetchActivityLogPage(req, context, query, 'org_cla_get_activity_log');
+    const upstreamRows = Array.isArray(page.Events) ? page.Events : [];
+    const mapped: OrgClaActivityLogEntry[] = [];
+    let dropped = 0;
+    for (const row of upstreamRows) {
+      const entry = toActivityLogEntry(row);
+      if (entry) mapped.push(entry);
+      else dropped += 1;
+    }
+    if (dropped > 0) {
+      // A producer row without a stable event id collides with sibling id-less rows on `@for`
+      // tracking in the browser. Dropping is the safe choice — the row has no address anyway, so
+      // no downstream action (link, resolve, deep-link) can reach it.
+      logger.warning(req, 'org_cla_get_activity_log', 'skipped producer rows without an event id', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        skipped_count: dropped,
+      });
+    }
+
+    return {
+      signatureId,
+      list: mapped,
+      resultCount: mapped.length,
+      nextKey: page.NextKey && page.NextKey.trim().length > 0 ? page.NextKey : null,
     };
   }
 
@@ -1520,7 +1607,8 @@ export class OrgClaService {
     }
 
     return {
-      signatureId,
+      // The row's own spelling: downstream reads match upstream records on it exactly.
+      signatureId: entry.signatureID,
       claGroupId,
       companyId,
       companySfid: orgUid,
@@ -1664,11 +1752,74 @@ export class OrgClaService {
       });
     }
 
-    // A missing, null, or non-array list is a malformed body, not an empty page. Truthiness would
-    // let those through, and the mapper would render them as "no acknowledgments yet". An empty
-    // array is the real empty page and passes this check. Same rule as the organization-list read.
+    // The producer serializes an empty page as `list: null`, not `[]`: its v2 handler copies the
+    // result with `copier.Copy`, which turns an empty slice into nil. So `null` is the empty page
+    // only when the producer's own row count for the page agrees. A missing or non-array list, or
+    // `null` beside a non-zero count, is still malformed — rendering those as "no acknowledgments
+    // yet" would hide a real failure.
+    if (upstream.list === null && upstream.resultCount === 0) {
+      return { ...upstream, list: [] };
+    }
     if (!Array.isArray(upstream.list)) {
       throw new MicroserviceError('Failed to fetch the contributor acknowledgments: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return upstream;
+  }
+
+  /**
+   * Fetches one page of the producer's per-(company, CLA Group) event stream (#1987).
+   *
+   * The producer's route is `GET /v4/company/{companyID}/project/{projectSFID}/events`. Its handler
+   * looks up the CLA Group id from `projectSFID` (via `GetClaGroupIDForProject`, which also
+   * accepts a foundation SFID), then queries DynamoDB by the composite partition
+   * `company_sfid_cla_group_id`. So the same `projectSfid` used by the sibling approval-list read
+   * — filled from the project SFID for a project-scoped CLA Group, or the foundation SFID for a
+   * foundation-level one — is the correct path segment here.
+   *
+   * `returnAllEvents` is never forwarded. On this route it only lifts the query limit to 10000
+   * rows of the same company-and-CLA-Group partition.
+   *
+   * `redactResponseBody: true` because a non-OK body from the producer can echo request
+   * attributes including a company id, and a routine 4xx here (a stale CCLA id, a temporarily
+   * expired grant) is the case, not the exception. Same rule as the sibling acknowledgments read.
+   *
+   * Impersonated read: forwards the impersonated bearer so a support engineer sees what the
+   * target sees, matching the sibling approval-list read.
+   */
+  private async fetchActivityLogPage(req: Request, context: ApprovalContext, query: ActivityLogQuery, operation: string): Promise<EasyClaEventList> {
+    const params = new URLSearchParams();
+    params.set('pageSize', String(query.pageSize));
+    if (query.nextKey) params.set('nextKey', query.nextKey);
+
+    const url =
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(context.companyId)}` +
+      `/project/${encodeURIComponent(context.projectSfid)}/events?${params.toString()}`;
+
+    const upstream = await gatewayFetch<EasyClaEventList>(req, url, {
+      operation,
+      service: SERVICE,
+      errorMessage: 'Failed to fetch the activity log',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+    });
+
+    if (!upstream) {
+      throw new MicroserviceError('Failed to fetch the activity log: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    // A missing, null, or non-array event set is a malformed body, not an empty page. Truthiness
+    // would let those through, and the mapper would render them as "no activity yet". An empty
+    // array is the real empty page and passes this check.
+    if (!Array.isArray(upstream.Events)) {
+      throw new MicroserviceError('Failed to fetch the activity log: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,
         service: SERVICE,
       });
@@ -1745,7 +1896,7 @@ const CONTRIBUTOR_ACK_VERIFY_MAX_PAGES = 100;
 /**
  * Result of a per-acknowledgment invalidate (#1986, #2807).
  *
- * Mirrors `OrgClaApprovalUpdateOutcome`: three ordinary refusals map to three distinct HTTP
+ * Mirrors `OrgClaApprovalUpdateOutcome`: four ordinary refusals map to four distinct HTTP
  * answers and only `invalidated` carries a receipt. Impersonation is refused by middleware before
  * this union is reachable.
  */
@@ -1753,7 +1904,8 @@ export type OrgClaInvalidateAcknowledgmentOutcome =
   | { outcome: 'invalidated'; result: OrgClaInvalidateAcknowledgmentResult }
   | { outcome: 'not-found' }
   | { outcome: 'not-signed' }
-  | { outcome: 'forbidden' };
+  | { outcome: 'forbidden' }
+  | { outcome: 'not-approved' };
 
 /**
  * Result of an approval-list write.
@@ -1791,6 +1943,52 @@ export interface ContributorAcknowledgmentQuery {
   nextKey?: string;
 }
 
+/** Query parameters accepted on the activity log read. Every field is already validated. */
+export interface ActivityLogQuery {
+  pageSize: number;
+  nextKey?: string;
+}
+
+/**
+ * Maps one producer event onto the shared `OrgClaActivityLogEntry` shape (#1987).
+ *
+ * Returns `null` for a row without a stable event id — an entry without an id collides with
+ * sibling id-less entries on `@for` tracking in the browser and has no address downstream can
+ * reach. A dropped row is logged at the caller.
+ *
+ * `summary` is the producer's `EventSummary` only. A missing summary stays empty and the client
+ * renders an em-dash. `EventData` is the detailed audit sentence and is not copied onto the row.
+ * A present `EventSummary` is opaque display copy: rendered as plain text, never parsed, never
+ * re-linked. Some historical summaries carry a project name behind the literal label "with
+ * project SFID"; the tab leaves that sentence unchanged.
+ *
+ * `actor` prefers `UserName` (a display name) and falls back to `LfUsername` (an LF login) —
+ * neither is guaranteed to be present, so a producer row with neither leaves `actor` as `null`
+ * and the render site substitutes an em-dash. `when` passes the producer's timestamp through
+ * verbatim; the client renders it in the viewer's locale. Every event type maps the same way, so a
+ * type the producer adds later still renders.
+ */
+function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivityLogEntry | null {
+  const id = row?.EventID?.trim() ?? '';
+  if (!id) return null;
+
+  const nonEmpty = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim() ?? '';
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  const summary = nonEmpty(row?.EventSummary) ?? '';
+  const actor = nonEmpty(row?.UserName) ?? nonEmpty(row?.LfUsername) ?? null;
+  const when = nonEmpty(row?.EventTime) ?? '';
+
+  return {
+    id,
+    when,
+    actor,
+    summary,
+  };
+}
+
 /**
  * Maps one producer row onto the shared `OrgClaContributorAcknowledgment` shape.
  *
@@ -1804,15 +2002,14 @@ export interface ContributorAcknowledgmentQuery {
  * mapper carries them forward as `githubUsername` / `gitlabUsername` for that reason.
  *
  * `approved` defaults to `true` when the producer omits it — the field was added later and older
- * rows predate it. `name` is the DocuSign signing name: the producer stores that on
- * `userDocusignName` and puts the profile name (or, when that is empty, the username) on `name`,
- * so a row that has both can disagree. Prefer the DocuSign field and keep `name` as the fallback
- * for rows recorded before that field existed. `signedOn` prefers `userDocusignDateSigned` (a
- * signing timestamp) and falls back to `timestamp` (the signature's creation time). It does not
- * use `signatureModified`: an invalidation refreshes that field, so it would show the
- * invalidation instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed
- * string; a value already prefixed with `v`/`V` is returned unchanged, an empty version stays
- * empty so the row renders an em-dash.
+ * rows predate it. `name` is the producer's `name`, never `userDocusignName`: an acknowledgment is
+ * not signed through DocuSign, so that field is not an identity for it. `signedOn` is
+ * `userDocusignDateSigned` despite its name: the producer fills it with the DocuSign date when one
+ * exists and with the creation time otherwise, which for an acknowledgment is when the employee
+ * acknowledged. `timestamp` (the creation time) is the fallback when that is blank. It does not use
+ * `signatureModified`: an invalidation refreshes that field, so it would show the invalidation
+ * instant under Acknowledged On. `cclaVersion` normalizes to a `v`-prefixed string; a value already
+ * prefixed with `v`/`V` is returned unchanged, and an empty version stays empty.
  */
 function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefined | null): OrgClaContributorAcknowledgment | null {
   const signatureId = row?.signatureID?.trim() ?? '';
@@ -1829,13 +2026,14 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
     githubUsername: nonEmpty(row?.github_id),
     gitlabUsername: nonEmpty(row?.gitlab_id),
     email: nonEmpty(row?.email),
-    name: nonEmpty(row?.userDocusignName) ?? nonEmpty(row?.name),
+    name: nonEmpty(row?.name),
     cclaVersion: normalizeCclaVersion(row?.signature_version),
     signedOn: nonEmpty(row?.userDocusignDateSigned) ?? nonEmpty(row?.timestamp),
     approved: row?.signatureApproved !== false,
     invalidatedAt: nonEmpty(row?.invalidatedAt),
     invalidatedBy: nonEmpty(row?.invalidatedBy),
     invalidationReason: nonEmpty(row?.invalidationReason),
+    ...approvalListRemoval(row),
   };
 }
 
@@ -1843,13 +2041,45 @@ function toContributorAcknowledgment(row: EasyClaCorporateContributor | undefine
  * Normalizes a producer `signature_version` to a `v`-prefixed string.
  *
  * A value already prefixed with `v`/`V` is returned unchanged (so `v1` stays `v1` — never `vv1`);
- * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty so the row's render
- * site can substitute an em-dash.
+ * a bare `2.1` becomes `v2.1`; an empty or whitespace-only value stays empty.
  */
 function normalizeCclaVersion(value: string | undefined): string {
   const trimmed = value?.trim() ?? '';
   if (!trimmed) return '';
   return /^v/i.test(trimmed) ? trimmed : `v${trimmed}`;
+}
+
+const APPROVAL_LIST_REMOVAL_REASON = /^approved list removal(?:\s*\((.*)\))?$/i;
+const LEGACY_INVALIDATION_NOTE = 'signature invalidated (approved set to false)';
+const LEGACY_APPROVAL_LIST_REMOVAL_NOTE = /^signature invalidated \(approved set to false\) by (?:(?! due to ).)* due to (.{1,100}?)\s+removal\b/i;
+
+/**
+ * Whether an unapproved acknowledgment lost its approval-list criteria rather than being
+ * invalidated on purpose, and which criteria.
+ *
+ * The producer marks an approval-list removal with the reason `approved list removal (<criteria>)`.
+ * Records from before that reason existed carry only the note
+ * `Signature invalidated (approved set to false) by <user> due to <criteria>  removal`; notes
+ * accumulate, so only the latest invalidation entry is read. An approved row is never a removal.
+ */
+function approvalListRemoval(
+  row: EasyClaCorporateContributor | undefined | null
+): Pick<OrgClaContributorAcknowledgment, 'removedFromApprovalList' | 'removedCriteria'> {
+  if (row?.signatureApproved !== false) return { removedFromApprovalList: false };
+
+  const reason = row.invalidationReason?.trim() ?? '';
+  if (reason) {
+    const match = APPROVAL_LIST_REMOVAL_REASON.exec(reason);
+    if (!match) return { removedFromApprovalList: false };
+    const criteria = match[1]?.trim();
+    return { removedFromApprovalList: true, ...(criteria ? { removedCriteria: criteria } : {}) };
+  }
+
+  const note = row.note ?? '';
+  const latest = note.slice(Math.max(0, note.toLowerCase().lastIndexOf(LEGACY_INVALIDATION_NOTE)));
+  const legacy = LEGACY_APPROVAL_LIST_REMOVAL_NOTE.exec(latest);
+  if (!legacy) return { removedFromApprovalList: false };
+  return { removedFromApprovalList: true, removedCriteria: legacy[1].trim() };
 }
 
 /** The upstream ids one approval-list call is addressed by, resolved from the organization's list. */

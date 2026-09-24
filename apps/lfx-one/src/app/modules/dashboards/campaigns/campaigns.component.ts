@@ -48,7 +48,15 @@ import type {
   EventTemplateTerms,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { canonicalHttpUrl, escapeHtml, hasVisibleHtmlText, normalizeSponsors, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils';
+import {
+  canonicalHttpUrl,
+  escapeHtml,
+  hasVisibleHtmlText,
+  normalizeSponsors,
+  sanitizeDisplayText,
+  stripDiacritics,
+  stripResourceLoadingHtml,
+} from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -3909,7 +3917,7 @@ export class CampaignsComponent {
     // Folding is applied ONLY when testing membership. The terms themselves stay accented,
     // because the boundary matcher is built from the same alphabet and an accented term has to
     // match an accented template name.
-    const fold = (token: string): string => token.normalize('NFD').replace(/\p{M}+/gu, '');
+    const fold = stripDiacritics;
     // Two sets, deliberately: `cityTokens` keeps the ORIGINAL spelling because it becomes the
     // ranking terms, which are matched against template names and must stay accented.
     // `cityFolded` exists only to answer "is this decisive candidate the city?".

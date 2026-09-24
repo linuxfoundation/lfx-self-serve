@@ -427,7 +427,7 @@ describe('isCanonicalGoogleAdsResourceId', () => {
     [{}, 'an object'],
     [['1'], 'an array'],
     [true, 'a boolean'],
-  ])('refuses %s (%s) without throwing', (value) => {
+  ])('refuses %s (%s) without throwing', (value, _label) => {
     expect(() => isCanonicalGoogleAdsResourceId(value as never)).not.toThrow();
     expect(isCanonicalGoogleAdsResourceId(value as never)).toBe(false);
   });
