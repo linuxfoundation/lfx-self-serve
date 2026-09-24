@@ -5,7 +5,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_DORMANCY_DAYS,
   HEALTH_METRICS_ENGAGEMENT_LOW_ATTENDANCE_THRESHOLD,
   HEALTH_METRICS_ENGAGEMENT_MIN_MEETINGS_FOR_RATE,
-  HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX,
   HEALTH_METRICS_ENGAGEMENT_SECTIONS,
 } from '../constants/health-metrics-engagement.constants';
 
@@ -29,16 +28,6 @@ import type {
   HealthMetricsEngagementSubNavCounts,
   HealthMetricsEngagementSubNavItem,
 } from '../interfaces/health-metrics-engagement.interface';
-
-/** DOM id for a section; the URL fragment stays the bare key. */
-export function buildHealthMetricsEngagementSectionId(key: HealthMetricsEngagementSectionKey): string {
-  return `${HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX}${key}`;
-}
-
-/** True when `fragment` names one of the six sections — the deep-link allowlist. */
-export function isHealthMetricsEngagementSectionKey(fragment: string | null | undefined): fragment is HealthMetricsEngagementSectionKey {
-  return HEALTH_METRICS_ENGAGEMENT_SECTIONS.some((section) => section.key === fragment);
-}
 
 /**
  * Attendance display rule. `null` means no invited population at all (em dash, never `0%`), and a
