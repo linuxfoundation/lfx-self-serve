@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar } from './compact-cache.utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from './compact-cache.utils';
 
 interface Row {
   id: string;
@@ -150,5 +150,28 @@ describe('dedupeByKey', () => {
     );
 
     expect(values).toEqual([{ id: 'p1', name: 'first' }]);
+  });
+});
+
+describe('tupleKey', () => {
+  // Every dictionary key in the compacted caches is built from this, so an ambiguity here silently
+  // replaces one record with another — the exact defect a uid-only key would have caused.
+  it('distinguishes absent from null from empty string', () => {
+    expect(new Set([tupleKey([undefined]), tupleKey([null]), tupleKey([''])]).size).toBe(3);
+  });
+
+  // Any single-character separator is legal inside a display name or a URL, so a delimiter join
+  // maps these two distinct people onto one key.
+  it('distinguishes tuples that a delimiter join would collapse', () => {
+    expect(tupleKey(['p', 'a\u0000b', 'c'])).not.toBe(tupleKey(['p', 'a', 'b\u0000c']));
+  });
+
+  // The separator must be unreachable from inside a part: JSON escapes every control character.
+  it('distinguishes a value containing the separator from a tuple boundary', () => {
+    expect(tupleKey(['a\u0001b'])).not.toBe(tupleKey(['a', 'b']));
+  });
+
+  it('gives equal tuples the same key, so rows that genuinely agree still collapse', () => {
+    expect(tupleKey(['p', null, 1])).toBe(tupleKey(['p', null, 1]));
   });
 });

@@ -28,7 +28,7 @@ import type {
   OrgPersonCompanyEmailsResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, hasExactColumns, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, isFilterSafeIdentifier, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHash } from 'crypto';
 
 import { Request } from 'express';
@@ -674,23 +674,33 @@ function decodeAllEmployeesRaw(value: CompactOrgAllEmployeesRawCache): {
 
 function isCompactAllEmployeesRaw(value: unknown): boolean {
   const cache = value as Partial<CompactOrgAllEmployeesRawCache> | null;
-  return (
-    !!cache &&
-    typeof cache === 'object' &&
-    (cache.accountId === null || typeof cache.accountId === 'string') &&
-    isColumnarTable(cache.rowsRaw) &&
-    isColumnarTable(cache.statsRaw) &&
-    isColumnarTable(cache.foundationRaw) &&
+  if (
+    !cache ||
+    typeof cache !== 'object' ||
+    (cache.accountId !== null && typeof cache.accountId !== 'string') ||
+    !isColumnarTable(cache.rowsRaw) ||
+    !isColumnarTable(cache.statsRaw) ||
+    !isColumnarTable(cache.foundationRaw) ||
     // Exact columns, not `includes`: a duplicated, extra, reordered or short-rowed entry decodes
     // "successfully" into rows missing data the writer always emits, which is worse than a miss.
-    // This also subsumes the rule the pre-compaction guard enforced per row — an entry written
-    // before LF_USERNAME was selected is rejected rather than replayed, because a replayed row maps
-    // to a null username and silently returns the people directory to email-only matching for the
-    // rest of the TTL.
-    hasExactColumns(cache.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS) &&
-    hasExactColumns(cache.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS) &&
-    hasExactColumns(cache.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS)
-  );
+    // This is a SHAPE check only — the per-cell value checks below are separate and necessary.
+    !hasExactColumns(cache.rowsRaw, ORG_PEOPLE_ALL_ROW_COLUMNS) ||
+    !hasExactColumns(cache.statsRaw, ORG_PEOPLE_ALL_STATS_COLUMNS) ||
+    !hasExactColumns(cache.foundationRaw, ORG_PEOPLE_FOUNDATION_OPTION_COLUMNS)
+  ) {
+    return false;
+  }
+  // Exact columns prove the SHAPE; this proves the VALUE, and both are needed. The pre-compaction
+  // guard asserted per row that LF_USERNAME is present and either null or a string; a column-name
+  // check alone would let a current-shape entry holding a number or an object there through, and
+  // `mapEmployeeRow` would then call `.trim()` on it — turning a cache HIT into a 500 rather than a
+  // miss. Absence is rejected for the same reason it was before: a row mapped to a null username
+  // silently returns the people directory to email-only matching for the rest of the TTL.
+  const usernameIndex = ORG_PEOPLE_ALL_ROW_COLUMNS.indexOf('LF_USERNAME');
+  return cache.rowsRaw.r.every((row) => {
+    const username = row[usernameIndex];
+    return username === null || (typeof username === 'string' && !isColumnarAbsent(username));
+  });
 }
 
 function isEmployeeActivityRaw(value: unknown): boolean {

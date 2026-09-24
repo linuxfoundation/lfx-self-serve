@@ -4,85 +4,34 @@
 import type { ColumnarTable } from './compact-cache.interface';
 import type { HealthScore, InfluenceBand, InfluenceTrendDirection, OrgLensProjectMetricsState } from './org-lens-projects.interface';
 
-// Server-internal Snowflake row shapes for the Org Lens roster reads (not on the wire) — kept here,
-// like the trainee and event-attendee row shapes, so the rule against local interfaces in
-// `apps/lfx-one/` holds and so `org-cache-compact.constants.ts` can bind its column lists to them.
-
-/** Per-(account, person) row from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL`. */
-export interface OrgPeopleAllRow {
-  ACCOUNT_ID: string;
-  PERSON_KEY: string;
-  LFID: string | null;
-  LF_USERNAME: string | null;
-  CDP_MEMBER_ID: string | null;
-  NAME: string | null;
-  TITLE: string | null;
-  EMAIL: string | null;
-  PHOTO: string | null;
-  SEATS_COUNT: number;
-  BOARD_SEATS_COUNT: number;
-  COMMITTEE_SEATS_COUNT: number;
-  COMMITS_COUNT: number;
-  EVENTS_COUNT: number;
-  COURSES_COUNT: number;
-}
-
-/** Roster row including the raw `ENGAGED_FOUNDATION_IDS` column (a Snowflake ARRAY may arrive as a JSON string or a parsed array). */
-export type OrgPeopleAllRowRaw = OrgPeopleAllRow & { ENGAGED_FOUNDATION_IDS: string | string[] | null };
-
-/** One-row aggregate from `PLATINUM_LFX_ONE.ORG_PEOPLE_ALL_STATS`. */
-export interface OrgPeopleAllStatsRow {
-  ACCOUNT_ID: string;
-  ACTIVE_IN_OSS: number;
-  IN_GOVERNANCE: number;
-  CODE_CONTRIBUTORS: number;
-  EVENT_ATTENDEES: number;
-  TRAINEES: number;
-}
-
-/** Distinct `(FOUNDATION_ID, FOUNDATION_NAME)` pair powering the All Foundations dropdown. */
-export interface OrgPeopleFoundationOptionRow {
-  FOUNDATION_ID: string;
-  FOUNDATION_NAME: string;
-}
-
-/**
- * Stored (Valkey) shapes for the per-org, 1-hour Org Lens caches (GH-1906). None of these is a wire
- * shape: each service rebuilds the exact response it returns today from the compact value on read,
- * so the browser contract is untouched.
- *
- * Two mechanisms recur, and both are worth stating once here rather than in five places:
- *
- * 1. **Columnar rows.** Warehouse rows are uniform, so `ColumnarTable` carries the field names once
- *    instead of on every row. On these payloads the repeated uppercase key names were roughly half
- *    the serialized bytes.
- *
- * 2. **Dictionary + parallel index.** Where a sub-object repeats across rows (an attendee's event,
- *    a trainee's course, a contributor's project, a project's people), the distinct values are
- *    stored once in a `ColumnarTable` and every row references one by position in a sibling
- *    `number[]`. The index is deliberately kept *out* of the row table rather than tucked in as an
- *    extra column: that keeps the row decode purely `k`-driven (`fromColumnar`), and it lets a
- *    shape guard prove every index is in range before decode, so rebuilding is total rather than
- *    best-effort.
- *
- * Every dictionary here is keyed on the *whole* tuple of the fields it dedupes, never on the
- * natural id alone. Deduping on `EVENT_ID` (say) would silently collapse two rows that share an id
- * but disagree on a name or a date onto the first one seen, which would make the rebuilt response
- * differ from the uncached one — the single invariant this whole compaction must not break. Keying
- * on the tuple costs nothing in practice (rows that agree still collapse) and makes the round trip
- * exact by construction.
- */
-
-/**
- * Translates between the value a caller works with (`T`) and the value Valkey holds (`S`), for
- * `ValkeyService.withCompactCache`. `accept` is the shape guard applied to `S` on the way back: a
- * legacy, truncated or foreign entry must be rejected as a miss, never handed to `decode`.
- */
-export interface CacheCodec<T, S> {
-  encode: (value: T) => S;
-  decode: (stored: S) => T;
-  accept: (value: unknown) => boolean;
-}
+// Stored (Valkey) shapes for the per-org, 1-hour Org Lens caches (GH-1906). None of these is a wire
+// shape: each service rebuilds the exact response it returns today from the compact value on read,
+// so the browser contract is untouched. A plain comment, not JSDoc: it describes the file, and a
+// JSDoc block here would attach itself to whichever declaration happens to come next.
+//
+// Two mechanisms recur, and both are worth stating once here rather than in five places:
+//
+// 1. Columnar rows. Warehouse rows are uniform, so `ColumnarTable` carries the field names once
+//    instead of on every row. On these payloads the repeated uppercase key names were roughly half
+//    the serialized bytes.
+//
+// 2. Dictionary + parallel index. Where a sub-object repeats across rows (an attendee's event, a
+//    trainee's course, a contributor's project, a project's people), the distinct values are stored
+//    once in a `ColumnarTable` and every row references one by position in a sibling `number[]`.
+//    The index is deliberately kept *out* of the row table rather than tucked in as an extra
+//    column: that keeps the row decode purely `k`-driven (`fromColumnar`), and it lets a shape
+//    guard prove every index is in range before decode, so rebuilding is total, not best-effort.
+//
+// Every dictionary here is keyed, via `tupleKey`, on the WHOLE tuple of the fields it deduplicates,
+// never on the natural id alone. Deduping on `EVENT_ID` (say) would silently collapse two rows that
+// share an id but disagree on a name or a date onto the first one seen, which would make the
+// rebuilt response differ from the uncached one — the single invariant this whole compaction must
+// not break. Keying on the tuple costs nothing in practice (rows that agree still collapse) and
+// makes the round trip exact by construction.
+//
+// The server-internal warehouse row shapes these caches store live in the files that own them —
+// `org-people.internal.interface.ts` for the roster, and the trainee, event-attendee and
+// contributor interface files for theirs.
 
 /** Cached form of `OrgLensProjectsResponse`. */
 export interface CompactOrgLensProjectsCache {
@@ -91,8 +40,8 @@ export interface CompactOrgLensProjectsCache {
   dataUpdatedAt: string;
   /**
    * Every distinct `{id, name, avatarUrl}` in the whole response, once. This is the reason the
-   * payload fits: the largest org's top-50 view carried ~36k person entries covering only ~1.8k
-   * distinct people, because each person is repeated in every project they touch.
+   * payload fits: a person is repeated in every project they touch, so the reference count runs an
+   * order of magnitude above the number of distinct people.
    */
   people: ColumnarTable;
   /** One row per project, with `foundation`/`trend`/`changeDriver` flattened and the three people arrays removed. */

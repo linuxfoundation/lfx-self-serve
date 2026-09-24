@@ -202,6 +202,63 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect([...cacheValues.keys()]).toEqual([buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:all'), buildOrgCacheKey(ACCOUNT, 'people-contributors:v2:30d')]);
   });
 
+  it.each([
+    [
+      'an index past the end of the dictionary',
+      (stored: CompactOrgContributorRowsCache) => (stored.rowProjects = stored.rowProjects.map(() => stored.projects.r.length)),
+    ],
+    ['a negative index', (stored: CompactOrgContributorRowsCache) => (stored.rowProjects = stored.rowProjects.map(() => -1))],
+    ['a non-integer index', (stored: CompactOrgContributorRowsCache) => (stored.rowProjects = stored.rowProjects.map(() => 1.5))],
+    ['an index array shorter than the rows', (stored: CompactOrgContributorRowsCache) => (stored.rowProjects = stored.rowProjects.slice(0, -1))],
+  ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
+    // The decode resolves each reference without a fallback, so an unresolvable one would emit a
+    // row with no dictionary fields at all. The guard has to reject the entry instead.
+    await service.getContributors(ACCOUNT, 'all');
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
+    corrupt(stored);
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  it('round-trips an empty result unchanged', async () => {
+    // The empty envelope has to survive its own guard: rejecting it would make an org with no rows
+    // refetch on every request forever.
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+
+    const fromHit = await service.getContributors(ACCOUNT, 'all');
+
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(cacheValues.size).toBe(1);
+  });
+
+  it.each([
+    ['absent', '\u0000'],
+    ['a number', 42],
+    ['an object', {}],
+  ])('treats a stored entry whose required CDP_MEMBER_ID cell is %s as a miss', async (_label, corrupt) => {
+    // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
+    // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
+    await service.getContributors(ACCOUNT, 'all');
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgContributorRowsCache;
+    const index = stored.rows.k.indexOf('CDP_MEMBER_ID');
+    stored.rows.r = stored.rows.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.

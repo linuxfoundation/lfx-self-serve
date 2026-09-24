@@ -204,6 +204,63 @@ describe('OrgPeopleEventAttendeesService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
+  it.each([
+    [
+      'an index past the end of the dictionary',
+      (stored: CompactOrgEventAttendeesRawCache) => (stored.detailEvents = stored.detailEvents.map(() => stored.events.r.length)),
+    ],
+    ['a negative index', (stored: CompactOrgEventAttendeesRawCache) => (stored.detailEvents = stored.detailEvents.map(() => -1))],
+    ['a non-integer index', (stored: CompactOrgEventAttendeesRawCache) => (stored.detailEvents = stored.detailEvents.map(() => 1.5))],
+    ['an index array shorter than the rows', (stored: CompactOrgEventAttendeesRawCache) => (stored.detailEvents = stored.detailEvents.slice(0, -1))],
+  ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
+    // The decode resolves each reference without a fallback, so an unresolvable one would emit a
+    // row with no dictionary fields at all. The guard has to reject the entry instead.
+    await service.getEventAttendees(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgEventAttendeesRawCache;
+    corrupt(stored);
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getEventAttendees(ACCOUNT);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  it('round-trips an empty result unchanged', async () => {
+    // The empty envelope has to survive its own guard: rejecting it would make an org with no rows
+    // refetch on every request forever.
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    const fromMiss = await service.getEventAttendees(ACCOUNT);
+
+    const fromHit = await service.getEventAttendees(ACCOUNT);
+
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(cacheValues.size).toBe(1);
+  });
+
+  it.each([
+    ['absent', '\u0000'],
+    ['a number', 42],
+    ['an object', {}],
+  ])('treats a stored entry whose required PERSON_KEY cell is %s as a miss', async (_label, corrupt) => {
+    // Exact columns prove the shape, not the value. A required cell that never arrived, or arrived
+    // as the wrong type, decodes into a row the mapper then reads — so it has to be a miss.
+    await service.getEventAttendees(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgEventAttendeesRawCache;
+    const index = stored.details.k.indexOf('PERSON_KEY');
+    stored.details.r = stored.details.r.map((row) => row.map((cell, position) => (position === index ? corrupt : cell)));
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getEventAttendees(ACCOUNT);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
     // The shape guard, not just the key bump, has to reject this: reading `k`/`r` off plain row
     // arrays would serve an empty tab for the whole TTL.

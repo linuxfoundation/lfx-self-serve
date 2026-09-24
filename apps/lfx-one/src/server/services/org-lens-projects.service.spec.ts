@@ -424,6 +424,59 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
+  it('keeps two people whose fields differ only in where a NUL falls', async () => {
+    // Any single-character separator is a legal character inside a display name or an avatar URL,
+    // so joining the triple with one is ambiguous: these two people join to the same string and a
+    // delimiter-keyed dictionary would store one and hand it back for both.
+    execute.mockImplementation(async (sql: string) => {
+      if (sql.includes('ORG_LENS_PROJECT_PEOPLE')) {
+        return {
+          rows: [person('k8s', 'p-1', 'maintainer', 'a\u0000b', 'c'), person('k8s', 'p-1', 'maintainer', 'a', 'b\u0000c')],
+        };
+      }
+      if (sql.includes('ORG_LENS_PROJECTS')) {
+        return { rows: [projectsRow()] };
+      }
+      return { rows: [] };
+    });
+    const fromMiss = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    const fromHit = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(storedValue().people.r).toHaveLength(2);
+    expect(fromHit.projects[0]?.maintainers).toEqual([
+      { id: 'p-1', name: 'a\u0000b', avatarUrl: 'c' },
+      { id: 'p-1', name: 'a', avatarUrl: 'b\u0000c' },
+    ]);
+    expect(fromHit).toStrictEqual(fromMiss);
+  });
+
+  it.each([
+    ['a non-string slug', 'slug', 42],
+    ['an unknown metricsState', 'metricsState', 'partial'],
+    ['a non-numeric healthOverallScore', 'healthOverallScore', '88'],
+    ['an unrecognized health band', 'health', 'golden'],
+    ['a non-numeric healthMaxScore', 'healthMaxScore', 'many'],
+  ])('treats a stored entry with %s as a miss', async (_label, column, corruptValue) => {
+    // Exact columns prove the shape, not the values. Without the per-value checks the pre-change
+    // guard made, a corrupt entry decodes into a project the browser then renders — a blank badge,
+    // a broken popup denominator, or a slug that is not a string at all.
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    const [key] = [...cacheValues.keys()];
+    const stored = storedValue();
+    stored.projects.r = stored.projects.r.map((row) => {
+      const corrupted = [...row];
+      corrupted[stored.projects.k.indexOf(column)] = corruptValue;
+      return corrupted;
+    });
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
   it('rejects a stored entry whose columns drifted from what the writer emits', async () => {
     // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into
     // projects missing data, so the guard has to reject the entry up front rather than render a
@@ -438,6 +491,53 @@ describe('OrgLensProjectsService.getProjects compact cache (GH-1906)', () => {
     await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
 
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  it.each([
+    ['an index past the end of the people dictionary', (stored: CompactOrgLensProjectsCache) => (stored.maintainers = [[stored.people.r.length]])],
+    ['a negative index', (stored: CompactOrgLensProjectsCache) => (stored.maintainers = [[-1]])],
+    ['a non-integer index', (stored: CompactOrgLensProjectsCache) => (stored.maintainers = [[1.5]])],
+    ['an index list shorter than the projects', (stored: CompactOrgLensProjectsCache) => (stored.maintainers = [])],
+  ])('treats a stored entry with %s as a miss', async (_label, corrupt) => {
+    // The decode resolves each reference without a fallback, so an unresolvable one would emit a
+    // project whose maintainers are `undefined`. The guard has to reject the entry instead.
+    execute.mockReset();
+    execute.mockImplementation(async (sql: string) => (sql.includes('ORG_LENS_PROJECTS') ? { rows: [projectsRow()] } : { rows: [] }));
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+    const [key] = [...cacheValues.keys()];
+    const stored = storedValue();
+    corrupt(stored);
+    cacheValues.set(key, JSON.stringify(stored));
+    const warehouseReads = execute.mock.calls.length;
+
+    await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
+  });
+
+  it('round-trips an org with no projects unchanged', async () => {
+    // The empty envelope has to survive its own guard: rejecting it would make an org with no
+    // onboarded projects refetch on every request forever.
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    const fromMiss = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    const fromHit = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(cacheValues.size).toBe(1);
+  });
+
+  it('fetches directly, reading and writing nothing, when Valkey is disabled', async () => {
+    // `withCompactCache` must bypass entirely rather than encode into a client that is not there.
+    vi.stubEnv('VALKEY_URL', '');
+    ValkeyService.resetInstance();
+
+    const response = await service.getProjects(ACCOUNT_ID, ORG_NAME, null);
+
+    expect(response.projects.map((project) => project.slug)).toEqual(['k8s', 'etcd']);
+    expect(cacheValues.size).toBe(0);
   });
 
   it('treats a pre-compaction cached response as a miss rather than decoding it', async () => {

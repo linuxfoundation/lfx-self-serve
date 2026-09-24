@@ -370,6 +370,16 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     expect(setMock).not.toHaveBeenCalled();
   });
 
+  it('treats a value already over the cap in the store as a miss, without parsing it', async () => {
+    // The write path caps our own writes, but another client — or a value stored before a cap was
+    // lowered — can leave an oversized entry behind. Planting it directly proves the READ-side cap
+    // in `parseCachedJson`, which the write-side test cannot reach.
+    getMock.mockResolvedValue(JSON.stringify({ padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) }));
+
+    await expect(ValkeyService.getInstance().getJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!)).resolves.toBeNull();
+    expect(warningPayload()).toMatchObject({ cache_subresource: 'projects', max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES });
+  });
+
   it('applies a configured cap to every cache measured to need one, and to no other', async () => {
     // Guards the table itself, not the mechanism: each entry exists because that cache's largest
     // measured value does not fit under the 1 MiB default, so a value just over the default must be

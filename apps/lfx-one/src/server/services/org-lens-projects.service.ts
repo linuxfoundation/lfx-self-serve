@@ -17,7 +17,16 @@ import {
   ORG_LENS_PROJECT_ROW_COLUMNS,
   VALKEY_CACHE,
 } from '@lfx-one/shared/constants';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, normalizeHealthScoreCategoryV2, toColumnar } from '@lfx-one/shared/utils';
+import {
+  dedupeByKey,
+  fromColumnar,
+  hasExactColumns,
+  isColumnarAbsent,
+  isColumnarTable,
+  normalizeHealthScoreCategoryV2,
+  toColumnar,
+  tupleKey,
+} from '@lfx-one/shared/utils';
 import type {
   CompactOrgLensProjectRow,
   CompactOrgLensProjectsCache,
@@ -1017,13 +1026,18 @@ function encodeProjectsResponse(response: OrgLensProjectsResponse): CompactOrgLe
   // Keyed on the whole triple rather than on `id`: two entries sharing an id but disagreeing on
   // name or avatar must not collapse onto the first one seen, or the decoded response would differ
   // from the uncached one. Rows that genuinely agree still collapse, so nothing is lost.
-  const keyOf = (person: OrgLensProjectPerson): string => `${person.id}\u0000${person.name}\u0000${person.avatarUrl}`;
-  const people = dedupeByKey(
-    response.projects.flatMap((project) => [...project.maintainers, ...project.contributors, ...project.participants]),
-    keyOf
-  );
+  //
+  // `JSON.stringify` of the tuple rather than a delimiter join, matching the other dictionaries
+  // here: any single-character separator is itself a legal character inside a display name or a
+  // URL, so a join is ambiguous — `['p', 'a\u0000b', 'c']` and `['p', 'a', 'b\u0000c']` join to the
+  // same string and would silently replace one person with the other.
+  const everyPerson = response.projects.flatMap((project) => [...project.maintainers, ...project.contributors, ...project.participants]);
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<OrgLensProjectPerson, string>(everyPerson.map((person) => [person, tupleKey([person.id, person.name, person.avatarUrl])]));
+  const people = dedupeByKey(everyPerson, (person) => keys.get(person)!);
   // Every person here came from the array `people` was built from, so the lookup always resolves.
-  const indicesOf = (persons: readonly OrgLensProjectPerson[]): number[] => persons.map((person) => people.indexOf.get(keyOf(person))!);
+  const indicesOf = (persons: readonly OrgLensProjectPerson[]): number[] => persons.map((person) => people.indexOf.get(keys.get(person)!)!);
 
   const rows: CompactOrgLensProjectRow[] = response.projects.map((project) => ({
     slug: project.slug,
@@ -1144,16 +1158,46 @@ function isCompactProjectsCache(value: unknown): boolean {
   }
   // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
   // "successfully" into projects missing data the writer always emits, which is worse than a miss —
-  // the page renders with holes in it for the rest of the TTL instead of refetching. This also
-  // subsumes what the pre-compaction guard checked per project (a `metricsState` or
-  // `healthOverallScore` that predates the v2 breakdown), since those are column names now.
+  // the page renders with holes in it for the rest of the TTL instead of refetching.
   if (!hasExactColumns(cache.people, ORG_LENS_PROJECT_PEOPLE_COLUMNS) || !hasExactColumns(cache.projects, ORG_LENS_PROJECT_ROW_COLUMNS)) {
     return false;
   }
-  // The band still has to be one the UI knows: an unrecognized label would render as a blank badge
-  // rather than the explicit "unavailable" treatment.
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed. This is the same
+  // set of per-project checks the pre-compaction guard made, applied to the stored cells instead of
+  // to decoded objects — a corrupt entry has to miss rather than decode into a malformed response
+  // the browser then renders. `hasExactColumns` has already proved `k` matches the declared list
+  // position for position, so the cells can be read positionally from that list.
+  const slugIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('slug');
+  const nameIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('name');
   const healthIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('health');
-  if (!cache.projects.r.every((row) => Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, String(row[healthIndex])))) {
+  const metricsStateIndex = ORG_LENS_PROJECT_ROW_COLUMNS.indexOf('metricsState');
+  // Every health field is `number | null`; the pre-compaction guard only asserted it for
+  // `healthOverallScore`, but the rest feed the popup's scores and denominators just as directly.
+  const healthScoreIndexes = (
+    ['healthOverallScore', 'healthMaxScore', 'healthCoveredCategoryCount', 'healthMaintainer', 'healthSecurity', 'healthDevelopment'] as const
+  ).map((column) => ORG_LENS_PROJECT_ROW_COLUMNS.indexOf(column));
+  const isStoredString = (cell: unknown): boolean => typeof cell === 'string' && !isColumnarAbsent(cell);
+  const isStoredNumberOrNull = (cell: unknown): boolean => cell === null || typeof cell === 'number';
+  const projectValuesValid = cache.projects.r.every((row) => {
+    const metricsState = row[metricsStateIndex];
+    return (
+      isStoredString(row[slugIndex]) &&
+      isStoredString(row[nameIndex]) &&
+      // Reject entries missing the discriminator (e.g. pre-close-out cache rows) so they refetch as
+      // current-shape payloads instead of serving a mixed schema from Valkey.
+      (metricsState === 'full' || metricsState === 'health-only' || metricsState === 'unavailable') &&
+      // An unrecognized band would render as a blank badge rather than the explicit "unavailable"
+      // treatment, so it has to be one the UI knows.
+      Object.prototype.hasOwnProperty.call(HEALTH_SCORE_LABELS, String(row[healthIndex])) &&
+      healthScoreIndexes.every((index) => isStoredNumberOrNull(row[index]))
+    );
+  });
+  if (!projectValuesValid) {
+    return false;
+  }
+  // The people dictionary is validated the same way: every decoded person reaches the browser.
+  const peopleValuesValid = cache.people.r.every((row) => row.every((cell) => isStoredString(cell)));
+  if (!peopleValuesValid) {
     return false;
   }
   // Every reference must resolve, so the decode above can rebuild without a fallback for a

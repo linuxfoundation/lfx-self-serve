@@ -527,6 +527,24 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     expect(stored.rowsRaw.k).not.toContain('ACCOUNT_ID');
   });
 
+  it('treats a stored roster whose LF_USERNAME is not a string as a miss, not a 500', async () => {
+    // Exact columns prove the shape, not the value. A current-shape entry holding a number there
+    // reaches `mapEmployeeRow`, which calls `.trim()` on it — so without this check a cache HIT
+    // becomes a 500 rather than a miss.
+    mockRoster();
+    await service.getAllEmployeesInternal(ACCOUNT);
+    const [key] = [...cacheValues.keys()];
+    const stored = JSON.parse(cacheValues.get(key)!) as CompactOrgAllEmployeesRawCache;
+    const usernameIndex = stored.rowsRaw.k.indexOf('LF_USERNAME');
+    stored.rowsRaw.r = stored.rowsRaw.r.map((row) => row.map((cell, index) => (index === usernameIndex ? 42 : cell)));
+    cacheValues.set(key, JSON.stringify(stored));
+    mockRoster();
+
+    const response = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
+  });
+
   it('rejects a stored roster whose columns drifted from what the writer emits', async () => {
     // `fromColumnar` decodes a duplicated, reordered or short-rowed table "successfully" into rows
     // missing data, so the guard has to reject the entry up front rather than serve a roster with
@@ -542,6 +560,20 @@ describe('OrgLensPeopleService roster compact cache (GH-1906)', () => {
     const response = await service.getAllEmployeesInternal(ACCOUNT);
 
     expect(response.rows.map((row) => row.lfUsername)).toEqual(['rosteruser', null]);
+  });
+
+  it('round-trips an empty roster unchanged', async () => {
+    // The empty envelope has to survive its own guard — `accountId` is null with no rows to hoist
+    // it from — or an org with no roster would refetch on every request forever.
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: [] });
+    const fromMiss = await service.getAllEmployeesInternal(ACCOUNT);
+
+    const fromHit = await service.getAllEmployeesInternal(ACCOUNT);
+
+    expect(fromHit).toStrictEqual(fromMiss);
+    expect(JSON.stringify(fromHit)).toBe(JSON.stringify(fromMiss));
+    expect(cacheValues.size).toBe(1);
   });
 
   it('treats a pre-compaction cached roster as a miss rather than decoding it', async () => {

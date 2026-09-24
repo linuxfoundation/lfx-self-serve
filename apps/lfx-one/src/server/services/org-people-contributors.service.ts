@@ -13,7 +13,7 @@ import type {
   OrgContributorStatsBaseline,
   OrgContributorTimeRange,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -228,15 +228,18 @@ function encodeContributorRows(rows: ContributorPersonProjectRow[]): CompactOrgC
   // Keyed on the whole tuple, not on PROJECT_ID: the project-level columns are `MAX()` aggregates
   // per (person, project), so two rows for one project could in principle disagree, and collapsing
   // them onto the first one seen would make the decoded rows differ from the uncached ones.
-  const keyOf = (row: ContributorPersonProjectRow): string =>
-    JSON.stringify([row.PROJECT_ID, row.PROJECT_NAME, row.PROJECT_SLUG, row.FOUNDATION_ID, row.FOUNDATION_NAME, row.FOUNDATION_SLUG]);
-  const projects = dedupeByKey(rows, keyOf);
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<ContributorPersonProjectRow, string>(
+    rows.map((row) => [row, tupleKey([row.PROJECT_ID, row.PROJECT_NAME, row.PROJECT_SLUG, row.FOUNDATION_ID, row.FOUNDATION_NAME, row.FOUNDATION_SLUG])])
+  );
+  const projects = dedupeByKey(rows, (row) => keys.get(row)!);
 
   return {
     projects: toColumnar(projects.values, ORG_CONTRIBUTOR_PROJECT_COLUMNS),
     rows: toColumnar(rows, ORG_CONTRIBUTOR_ROW_COLUMNS),
     // Every row was part of the set `projects` was built from, so the lookup always resolves.
-    rowProjects: rows.map((row) => projects.indexOf.get(keyOf(row))!),
+    rowProjects: rows.map((row) => projects.indexOf.get(keys.get(row)!)!),
   };
 }
 
@@ -259,6 +262,18 @@ function isCompactContributorRows(value: unknown): boolean {
   if (!hasExactColumns(cache.projects, ORG_CONTRIBUTOR_PROJECT_COLUMNS) || !hasExactColumns(cache.rows, ORG_CONTRIBUTOR_ROW_COLUMNS)) {
     return false;
   }
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
+  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
+  // into a row the mapper then reads, so it has to be a miss.
+  const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
+  const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
+  const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
+  if (
+    !cache.rows.r.every((row) => isStoredString(row[personKeyIndex]) && isStoredString(row[memberIdIndex])) ||
+    !cache.projects.r.every((row) => isStoredString(row[projectIdIndex]))
+  ) {
+    return false;
+  }
   // Every reference must resolve, so the decode can rebuild each row in full rather than silently
   // emitting one with no project at all — a truncated entry is a miss, not a partial hit.
   const projectCount = cache.projects.r.length;
@@ -267,4 +282,9 @@ function isCompactContributorRows(value: unknown): boolean {
     cache.rowProjects.length === cache.rows.r.length &&
     cache.rowProjects.every((index) => Number.isInteger(index) && index >= 0 && index < projectCount)
   );
+}
+
+/** A required stored cell: present (not the absence marker) and a string. */
+function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
 }

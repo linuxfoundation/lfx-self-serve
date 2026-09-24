@@ -22,7 +22,7 @@ import type {
   OrgPeopleAllEventAttendeeRow,
   OrgPeopleEventRow,
 } from '@lfx-one/shared/interfaces';
-import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarTable, normalizeToUrl, toColumnar } from '@lfx-one/shared/utils';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, normalizeToUrl, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { toIsoDate } from '../helpers/date-format.helper';
 import { SnowflakeService } from './snowflake.service';
@@ -202,27 +202,33 @@ function encodeEventAttendeesRaw(raw: {
   // Keyed on the whole event tuple, not on EVENT_ID: two rows sharing an id but disagreeing on any
   // event column must not collapse onto the first one seen, or the rebuilt rows would differ from
   // the uncached ones. Rows that agree — the overwhelming majority — still collapse.
-  const keyOf = (row: OrgPeopleEventRow): string =>
-    JSON.stringify([
-      row.EVENT_ID,
-      row.EVENT_NAME,
-      row.EVENT_LOCATION,
-      row.EVENT_CITY,
-      row.EVENT_COUNTRY,
-      row.EVENT_URL,
-      row.EVENT_START_DATE,
-      row.EVENT_END_DATE,
-      row.FOUNDATION_ID,
-      row.FOUNDATION_NAME,
-    ]);
-  const events = dedupeByKey(raw.detailRows, keyOf);
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<OrgPeopleEventRow, string>(
+    raw.detailRows.map((row) => [
+      row,
+      tupleKey([
+        row.EVENT_ID,
+        row.EVENT_NAME,
+        row.EVENT_LOCATION,
+        row.EVENT_CITY,
+        row.EVENT_COUNTRY,
+        row.EVENT_URL,
+        row.EVENT_START_DATE,
+        row.EVENT_END_DATE,
+        row.FOUNDATION_ID,
+        row.FOUNDATION_NAME,
+      ]),
+    ])
+  );
+  const events = dedupeByKey(raw.detailRows, (row) => keys.get(row)!);
 
   return {
     attendeeRows: toColumnar(raw.attendeeRows, ORG_EVENT_ATTENDEE_ROW_COLUMNS),
     events: toColumnar(events.values, ORG_EVENT_DICTIONARY_COLUMNS),
     details: toColumnar(raw.detailRows, ORG_EVENT_DETAIL_COLUMNS),
     // Every detail row was part of the set `events` was built from, so the lookup always resolves.
-    detailEvents: raw.detailRows.map((row) => events.indexOf.get(keyOf(row))!),
+    detailEvents: raw.detailRows.map((row) => events.indexOf.get(keys.get(row)!)!),
     foundationRows: toColumnar(raw.foundationRows, ORG_EVENT_FOUNDATION_OPTION_COLUMNS),
     eventRows: toColumnar(raw.eventRows, ORG_EVENT_OPTION_COLUMNS),
   };
@@ -267,6 +273,19 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
   ) {
     return false;
   }
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
+  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
+  // into a row the mapper then reads, so it has to be a miss.
+  const personKeyIndex = ORG_EVENT_DETAIL_COLUMNS.indexOf('PERSON_KEY');
+  const eventIdIndex = ORG_EVENT_DICTIONARY_COLUMNS.indexOf('EVENT_ID');
+  const attendeeKeyIndex = ORG_EVENT_ATTENDEE_ROW_COLUMNS.indexOf('PERSON_KEY');
+  if (
+    !cache.details.r.every((row) => isStoredString(row[personKeyIndex])) ||
+    !cache.events.r.every((row) => isStoredString(row[eventIdIndex])) ||
+    !cache.attendeeRows.r.every((row) => isStoredString(row[attendeeKeyIndex]))
+  ) {
+    return false;
+  }
   // Every reference must resolve, so the decode can rebuild each detail row in full rather than
   // silently emitting one missing its whole event — a truncated entry is a miss, not a partial hit.
   const eventCount = cache.events.r.length;
@@ -275,4 +294,9 @@ function isCompactEventAttendeesRaw(value: unknown): boolean {
     cache.detailEvents.length === cache.details.r.length &&
     cache.detailEvents.every((index) => Number.isInteger(index) && index >= 0 && index < eventCount)
   );
+}
+
+/** A required stored cell: present (not the absence marker) and a string. */
+function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
 }
