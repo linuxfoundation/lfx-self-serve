@@ -60,10 +60,7 @@
             <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'org-easycla-acknowledgment-row-' + row.ack.signatureId">
               <td class="px-3 py-2">
                 <div class="flex items-center gap-2.5">
-                  <lfx-person-avatar
-                    [name]="row.ack.name"
-                    [identity]="row.ack.email ?? row.ack.lfLogin ?? row.ack.githubUsername ?? row.ack.gitlabUsername"
-                    size="sm" />
+                  <lfx-person-avatar [name]="row.ack.name" [identity]="row.avatarIdentity" size="sm" />
                   <span class="font-semibold text-gray-900" data-testid="org-easycla-acknowledgment-name">{{ row.name }}</span>
                 </div>
               </td>
@@ -95,8 +92,7 @@
                     [tooltip]="row.notAuthorizedTooltip"
                     data-testid="org-easycla-acknowledgment-state-not-authorized" />
                   <div class="mt-1 max-w-xs text-xs text-gray-500" data-testid="org-easycla-acknowledgment-not-authorized-detail">
-                    {{ notAuthorizedCopy.detail }}
-                    <button
+                    {{ notAuthorizedCopy.detail }}&nbsp;<button
                       type="button"
                       class="text-blue-600 hover:underline"
                       (click)="approvalListRequested.emit()"

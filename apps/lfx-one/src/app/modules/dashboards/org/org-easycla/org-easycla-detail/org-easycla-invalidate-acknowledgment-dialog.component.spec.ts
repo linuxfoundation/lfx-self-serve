@@ -58,6 +58,10 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
     return fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-confirm"] button');
   }
 
+  function alsoRemoveInput(fixture: ComponentFixture<unknown>): HTMLInputElement | null {
+    return fixture.nativeElement.querySelector('[data-testid="org-easycla-invalidate-dialog-also-remove"] input[type="checkbox"]');
+  }
+
   beforeEach(() => {
     vi.resetAllMocks();
   });
@@ -112,7 +116,7 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
       )
     ).toEqual(['Email ada@example.org', 'GitHub username ada-l']);
     expect(box?.textContent).toContain("Also remove these entries from the Approval List so Ada Lovelace can't acknowledge this CCLA again later.");
-    expect((byTestId(fixture, 'org-easycla-invalidate-dialog-also-remove') as HTMLInputElement).checked).toBe(true);
+    expect(alsoRemoveInput(fixture)?.checked).toBe(true);
 
     confirmButton(fixture)?.click();
 
@@ -121,10 +125,10 @@ describe('OrgEasyclaInvalidateAcknowledgmentDialogComponent', () => {
 
   it('keeps the entries when the manager unticks the box', async () => {
     const fixture = await render(dialogData([ENTRIES[0]]));
-    const checkbox = byTestId(fixture, 'org-easycla-invalidate-dialog-also-remove') as HTMLInputElement;
+    const checkbox = alsoRemoveInput(fixture);
 
     expect(byTestId(fixture, 'org-easycla-invalidate-dialog-matches')?.textContent).toContain('was approved by an entry added specifically for them.');
-    checkbox.click();
+    checkbox?.click();
     fixture.detectChanges();
     confirmButton(fixture)?.click();
 

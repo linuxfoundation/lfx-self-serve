@@ -56,6 +56,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { AccountContextService } from '@services/account-context.service';
 import { OrgLensClaService } from '@services/org-lens-cla.service';
 import { serverAuthoredMessage } from '@shared/utils/http-error.utils';
+import { nameDynamicDialog } from '@shared/utils/name-dynamic-dialog';
 
 import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
 
@@ -335,10 +336,11 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     // `open` is typed nullable because it declines under SSR, where there is no document to attach
     // to. The control that calls this is browser-side, so there is nothing to subscribe to then.
     if (!dialogRef) return;
+    nameDynamicDialog(this.dialogService, dialogRef, OrgEasyclaInvalidateAcknowledgmentDialogComponent.headingId);
     this.invalidateDialog = dialogRef;
     this.claService
       .getApprovalList(orgUid, claSignatureId)
-      .pipe(take(1), takeUntilDestroyed(this.destroyRef))
+      .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (list) => {
           canRemoveEntries.set(list.canEdit);
@@ -559,6 +561,7 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     return {
       ack,
       name,
+      avatarIdentity: ack.email ?? ack.lfLogin ?? ack.githubUsername ?? ack.gitlabUsername ?? null,
       identity,
       signedOnLabel: ack.signedOn ? formatClaSignedOnInstant(ack.signedOn) : ORG_CLA_ACKNOWLEDGMENTS_EM_DASH,
       notAuthorized,

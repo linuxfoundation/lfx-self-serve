@@ -6,11 +6,11 @@
     <i class="fa-light fa-triangle-exclamation"></i>
   </span>
 
-  <h2 class="m-0 text-base font-semibold text-gray-900" data-testid="org-easycla-invalidate-dialog-title">{{ copy.title(contributor) }}</h2>
+  <h2 [id]="headingId" class="m-0 text-base font-semibold text-gray-900" data-testid="org-easycla-invalidate-dialog-title">{{ title }}</h2>
 
   <p class="m-0 text-sm text-gray-700" data-testid="org-easycla-invalidate-dialog-body">
     {{ copy.marksPrefix }} <strong>{{ contributor }}</strong
-    >{{ copy.marksSuffix }} <strong>{{ copy.reacknowledge(contributor) }}</strong
+    >{{ copy.marksSuffix }} <strong>{{ reacknowledge }}</strong
     >{{ copy.removeCriteria }}
   </p>
 
@@ -20,7 +20,7 @@
     <div class="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" data-testid="org-easycla-invalidate-dialog-matches">
       <p class="m-0">
         <strong>{{ contributor }}</strong
-        >{{ copy.matchedBy(matchRows().length) }}
+        >{{ matchedBy() }}
       </p>
       <ul class="my-2 ml-5 list-disc p-0">
         @for (entry of matchRows(); track entry.kind + entry.value) {
@@ -30,15 +30,13 @@
         }
       </ul>
       @if (canRemoveEntries()) {
-        <label class="flex items-start gap-2">
-          <input
-            type="checkbox"
-            class="mt-0.5"
-            [checked]="alsoRemove()"
-            (change)="onAlsoRemoveChange($event)"
-            data-testid="org-easycla-invalidate-dialog-also-remove" />
-          <span>{{ copy.alsoRemove(contributor, matchRows().length) }}</span>
-        </label>
+        <lfx-checkbox
+          [form]="removalForm"
+          control="alsoRemove"
+          inputId="org-easycla-invalidate-dialog-also-remove-input"
+          [label]="alsoRemoveLabel()"
+          labelClass="text-sm text-amber-900"
+          data-testid="org-easycla-invalidate-dialog-also-remove" />
       }
     </div>
   } @else if (matchingEntries() !== null) {

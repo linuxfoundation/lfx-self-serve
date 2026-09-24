@@ -1064,11 +1064,7 @@ export class OrgEasyclaDetailComponent {
   }
 
   private initFetchedAcknowledgmentCount(): Signal<{ signatureId: string; count: number } | null> {
-    const target = computed(() => {
-      const group = this.claGroup();
-      const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
-      return group?.signed && orgUid ? { orgUid, signatureId: group.id } : null;
-    });
+    const target = computed(() => this.initAcknowledgmentCountTarget());
     return toSignal(
       toObservable(target).pipe(
         distinctUntilChanged((a, b) => a?.orgUid === b?.orgUid && a?.signatureId === b?.signatureId),
@@ -1086,6 +1082,12 @@ export class OrgEasyclaDetailComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initAcknowledgmentCountTarget(): { orgUid: string; signatureId: string } | null {
+    const group = this.claGroup();
+    const orgUid = this.accountContext.selectedAccount()?.uid ?? '';
+    return group?.signed && orgUid ? { orgUid, signatureId: group.id } : null;
   }
 
   private initAcknowledgmentsBadge(): string {

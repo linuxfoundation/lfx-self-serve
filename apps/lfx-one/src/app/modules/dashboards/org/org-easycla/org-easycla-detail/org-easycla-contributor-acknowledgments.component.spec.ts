@@ -16,6 +16,7 @@ import { of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { OrgEasyclaContributorAcknowledgmentsComponent } from './org-easycla-contributor-acknowledgments.component';
+import { OrgEasyclaInvalidateAcknowledgmentDialogComponent } from './org-easycla-invalidate-acknowledgment-dialog.component';
 
 describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   const SELECTED_ACCOUNT = { uid: '0014100000AcmeOrgAAA', accountName: 'Acme' };
@@ -29,6 +30,7 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
   /** Emits what the confirmation closed with: a request on confirm, `null` on dismiss. */
   let dialogClosed: Subject<unknown>;
   const openDialog = vi.fn();
+  const setDialogPt = vi.fn();
 
   function claGroup(overrides: Partial<OrgClaGroup> = {}): OrgClaGroup {
     return {
@@ -81,7 +83,14 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       // `DialogService` is provided by the component itself, so it has to be replaced at the
       // component level — a root provider would be shadowed by the component's own.
       .overrideComponent(OrgEasyclaContributorAcknowledgmentsComponent, {
-        set: { providers: [{ provide: DialogService, useValue: { open: openDialog } }] },
+        set: {
+          providers: [
+            {
+              provide: DialogService,
+              useValue: { open: openDialog, dialogComponentRefMap: { get: () => ({ setInput: setDialogPt, changeDetectorRef: { detectChanges: vi.fn() } }) } },
+            },
+          ],
+        },
       })
       .compileComponents();
 
@@ -637,6 +646,9 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       click(fixture, 'org-easycla-acknowledgment-invalidate');
       const data = openDialog.mock.calls[0][1].data;
 
+      expect(setDialogPt).toHaveBeenCalledWith('pt', {
+        pcDialog: { root: { 'aria-labelledby': OrgEasyclaInvalidateAcknowledgmentDialogComponent.headingId } },
+      });
       expect(getApprovalList).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1');
       expect(data.matchingEntries()).toEqual([
         { kind: 'email', value: 'ada@example.org' },

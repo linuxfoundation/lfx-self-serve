@@ -1135,6 +1135,7 @@ export interface OrgClaContributorAcknowledgmentList {
 export interface OrgClaAcknowledgmentRow {
   ack: OrgClaContributorAcknowledgment;
   name: string;
+  avatarIdentity: string | null;
   identity: {
     /** LF Login shown before the GitHub link when the row carries both, as `LF Login/GitHub`. */
     lfLogin: string | null;
