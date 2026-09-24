@@ -911,9 +911,7 @@ describe('MeetingService.getAuthorizedMeetingRsvps', () => {
 
   it('returns RSVPs for a meeting organizer', async () => {
     accessCheckSvc.checkSingleAccessStrict.mockResolvedValue(true);
-    proxyRequest
-      .mockResolvedValueOnce({ resources: [rsvpRecord('r1')] })
-      .mockResolvedValueOnce({ resources: [registrantRecord('r1')] });
+    proxyRequest.mockResolvedValueOnce({ resources: [rsvpRecord('r1')] }).mockResolvedValueOnce({ resources: [registrantRecord('r1')] });
 
     const result = await service.getAuthorizedMeetingRsvps(req, MEETING_UID);
 

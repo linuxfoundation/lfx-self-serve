@@ -430,8 +430,7 @@ describe('MeetingController.getMyMeetingRegistrants', () => {
 describe('MeetingController.getMeetingRsvps — delegation', () => {
   let controller: MeetingController;
 
-  const buildReq = (uid = MEETING_UID) =>
-    ({ params: { uid }, headers: {}, bearerToken: 'user-token' }) as any;
+  const buildReq = (uid = MEETING_UID) => ({ params: { uid }, headers: {}, bearerToken: 'user-token' }) as any;
 
   beforeEach(() => {
     vi.clearAllMocks();
