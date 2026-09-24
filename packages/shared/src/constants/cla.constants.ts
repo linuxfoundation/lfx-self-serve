@@ -523,20 +523,18 @@ export const ORG_CLA_HEADING_STATUS: Record<OrgClaGroup['status'], string> = {
 };
 
 /**
- * Why the CLA Managers, Approval List, and Contributor Acknowledgments tabs hold nothing until the
- * agreement is signed, taken verbatim from the M3 prototype's locked panels.
+ * Why the Approval List, Contributor Acknowledgments, and Activity Log tabs hold nothing until
+ * the agreement is signed, taken from the M3 prototype's locked panels. CLA Managers uses its
+ * own unsigned copy.
  *
- * Only these three tabs. All three describe a role, a rule set, or an activity stream that comes
- * into existence *with* the signature — the signatory becomes the initial CLA Manager, approval
- * entries are what that manager maintains, and acknowledgments are what contributors then place
- * against the resulting rules — so on an unsigned agreement there is nothing to list rather than
- * a list that failed to load. The remaining tabs are unbuilt for every agreement, signed or not,
- * and saying "once this CLA is signed" on them would promise content signing does not produce.
+ * Each of these is a list that comes into existence with the signature: approval entries are
+ * what the manager maintains, acknowledgments are what contributors place against those rules,
+ * and the activity log is the record of that signing and of the changes after it. On an
+ * unsigned agreement there is nothing to list, so the panel says so rather than rendering blank.
  *
  * Reached only through the pre-signing preview, since upstream's list draws every row from a
  * signature its query has already filtered to signed. That makes the preview the sole place these
- * panels render — which is why they are copy rather than an empty section. This is the same gap
- * the empty Overview had.
+ * panels render — which is why they are copy rather than an empty section.
  */
 export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: string; subtitle: string }>> = {
   approval: {
@@ -546,6 +544,10 @@ export const ORG_CLA_LOCKED_TAB_COPY: Partial<Record<OrgClaDetailTab, { title: s
   acknowledgments: {
     title: 'No contributor acknowledgments yet',
     subtitle: 'Once this CLA is signed, contributors who match the approval list will appear here.',
+  },
+  activity: {
+    title: 'The activity log becomes available once this CLA is signed',
+    subtitle: 'Sign this CLA first. Changes to signing, CLA Managers, and the approval list will appear here.',
   },
 };
 
@@ -807,3 +809,69 @@ export const ORG_CLA_INVALIDATE_ACTION_COPY = {
   /** Shown instead of the control when the producer sent a row with no per-ack id to address. */
   unavailableTooltip: 'This acknowledgment has no record id, so it cannot be invalidated here.',
 } as const;
+
+// ---------------------------------------------------------------------------
+// Activity Log (#1987, #2857)
+// ---------------------------------------------------------------------------
+
+/** The heading the Activity Log tab carries, matching the M3 prototype. */
+export const ORG_CLA_ACTIVITY_LOG_HEADING = 'Activity log';
+
+/**
+ * Sub-header under the tab title.
+ *
+ * Taken verbatim from the M3 prototype. Reads as an explanation of what the log covers, not a
+ * definitive list — new event types added by the producer appear alongside these categories.
+ */
+export const ORG_CLA_ACTIVITY_LOG_SUBHEADER = "Every change to this CLA's signing status, CLA Managers, and approval list.";
+
+/**
+ * Cap on the activity log page size the BFF forwards to the producer.
+ *
+ * The producer accepts up to 100 rows per page. The tab requests 50 by default and lets the
+ * viewer fetch more with the Load-more control. A page above 100 is clamped silently to protect
+ * the producer; a request for zero rows is clamped to 1 to prevent a runaway zero-loop. Same
+ * limits the sibling acknowledgments tab uses.
+ */
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_DEFAULT = 50;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MAX = 100;
+export const ORG_CLA_ACTIVITY_LOG_PAGE_SIZE_MIN = 1;
+
+/** Column headers for the Activity Log table. */
+export const ORG_CLA_ACTIVITY_LOG_COLUMN_HEADERS = {
+  action: 'Action',
+  actor: 'By',
+  when: 'When',
+} as const;
+
+/** Placeholder for the search input above the table. */
+export const ORG_CLA_ACTIVITY_LOG_SEARCH_PLACEHOLDER = 'Search activity…';
+
+/**
+ * Empty-state copy shown when the tab's first page is empty AND the producer sent no next-page
+ * cursor. Matches the M3 prototype. Distinct from the filter-empty state below — the log is
+ * genuinely empty on this path.
+ */
+export const ORG_CLA_ACTIVITY_LOG_EMPTY_COPY = {
+  title: 'No activity yet',
+  subtitle: 'Changes to this CLA will appear here as they happen.',
+} as const;
+
+/**
+ * In-place state shown when the fetched set is non-empty but the client-side search filter
+ * matches zero rows. Deliberately different from the tab-level empty state — the log is not
+ * empty; the filter matched nothing.
+ */
+export const ORG_CLA_ACTIVITY_LOG_FILTER_EMPTY_COPY = {
+  title: 'No matching activity',
+  subtitle: 'Clear the search to see every event on this CLA.',
+} as const;
+
+/** Label and busy state for the Load-more control that follows the producer's cursor. */
+export const ORG_CLA_ACTIVITY_LOG_LOAD_MORE_COPY = {
+  label: 'Load more',
+  busyLabel: 'Loading…',
+} as const;
+
+/** Placeholder for a row whose field is empty. Never omit the row; render this instead. */
+export const ORG_CLA_ACTIVITY_LOG_EM_DASH = '—';

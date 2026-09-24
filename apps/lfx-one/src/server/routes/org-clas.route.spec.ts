@@ -21,6 +21,7 @@ const {
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  getActivityLog,
   updateEclaAutoCreate,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
@@ -36,6 +37,7 @@ const {
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  getActivityLog: vi.fn(),
   updateEclaAutoCreate: vi.fn(),
 }));
 
@@ -54,6 +56,7 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public getActivityLog = getActivityLog;
     public updateEclaAutoCreate = updateEclaAutoCreate;
   },
 }));
@@ -171,6 +174,9 @@ beforeEach(() => {
   });
   invalidateAcknowledgment.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ signatureId: 'ack-signature-uuid-1' });
+  });
+  getActivityLog.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null });
   });
   updateEclaAutoCreate.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ autoCreateEcla: true });
@@ -435,6 +441,41 @@ describe('org-clas router — acknowledgments read', () => {
 
     expect(res.status).toBe(200);
     expect(getContributorAcknowledgments).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Activity log read route (#1987).
+ *
+ * Read-only. The middleware chain is deliberately `requireOrgLensAccess` only — no
+ * `blockDuringImpersonation`, no CLA-manager check — because the log is a broader grant than the
+ * write tabs on this router: an org-lens caller who is not a CLA manager on this CCLA still
+ * reads it (auditors, program leads). Widening the read to force a manager check would refuse
+ * legitimate viewers; narrowing the read to block impersonation would prevent a support engineer
+ * from seeing what the target sees.
+ */
+describe('org-clas router — activity log read', () => {
+  it('refuses the read for an org the caller holds no grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(403);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('admits the read for an org the caller holds a grant on', async () => {
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(200);
+    expect(getActivityLog).toHaveBeenCalled();
+  });
+
+  it('stays available while impersonating, because it reads nothing that a write would', async () => {
+    isImpersonating.mockReturnValue(true);
+
+    const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/cla-groups/signature-uuid-1/activity`);
+
+    expect(res.status).toBe(200);
+    expect(getActivityLog).toHaveBeenCalled();
   });
 });
 

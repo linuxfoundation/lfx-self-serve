@@ -24,6 +24,8 @@ import type {
   ClaGroupSearchResponse,
   OrgClaApprovalCriteriaKind,
   OrgClaApprovalEntry,
+  OrgClaActivityLogEntry,
+  OrgClaActivityLogPage,
   OrgClaApprovalList,
   OrgClaApprovalListUpdate,
   OrgClaContributorAcknowledgment,
@@ -57,6 +59,8 @@ import type {
   EasyClaCorporateSignatureList,
   EasyClaEclaInvalidateResult,
   EasyClaEclaInvalidationInput,
+  EasyClaEvent,
+  EasyClaEventList,
   EasyClaSearchList,
   EasyClaSelfServeCorporateSignatureInput,
   EasyClaSelfServeCorporateSignatureOutput,
@@ -1356,6 +1360,74 @@ export class OrgClaService {
     };
   }
 
+  /**
+   * Reads the activity log for one CCLA on this organization (#1987, #2857).
+   *
+   * The producer already writes one event per audited action against a `(company, CLA Group)`
+   * pair, partitioned on `company_sfid_cla_group_id`, so the scope check that matters is `is this
+   * signature actually on this organization for this CLA Group?` — and that is exactly what
+   * `resolveClaGroupContext` answers, the same helper the sibling read-tabs use.
+   *
+   * Authorization posture is broader than the write tabs: an org-lens caller who is NOT a CLA
+   * manager on this CCLA still reads the log (auditors, program leads). The producer's own
+   * `IsUserAuthorizedForOrganization(ALLOW_ADMIN_SCOPE)` accepts an org-scoped caller for this
+   * endpoint. `canEdit` is deliberately absent from the envelope — the log has no per-row write.
+   *
+   * `returnAllEvents` is never sent. The flag only raises the page limit to 10000 on the same
+   * `company_sfid_cla_group_id` partition; it does not widen which group is read. Leaving it
+   * off keeps the page bound this route already clamps.
+   *
+   * The producer's paging cursor (`NextKey`) is opaque; forward it verbatim from the client.
+   * Search stays on the client, over actor and EventSummary. The producer's `searchTerm`
+   * matches EventData, the detailed audit sentence this tab does not show.
+   */
+  public async getActivityLog(req: Request, orgUid: string, signatureId: string, query: ActivityLogQuery): Promise<OrgClaActivityLogPage | null> {
+    const context = await this.resolveClaGroupContext(req, orgUid, signatureId, 'org_cla_get_activity_log');
+    if (!context) return null;
+
+    if (!context.signed) {
+      logger.warning(req, 'org_cla_get_activity_log', 'agreement is not signed, so it holds no activity', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+      });
+      return { signatureId, list: [], resultCount: 0, nextKey: null };
+    }
+
+    if (!context.projectSfid) {
+      throw new MicroserviceError('Failed to fetch the activity log: upstream row is missing the ids it is addressed by', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation: 'org_cla_get_activity_log',
+        service: SERVICE,
+      });
+    }
+
+    const page = await this.fetchActivityLogPage(req, context, query, 'org_cla_get_activity_log');
+    const upstreamRows = Array.isArray(page.Events) ? page.Events : [];
+    const mapped: OrgClaActivityLogEntry[] = [];
+    let dropped = 0;
+    for (const row of upstreamRows) {
+      const entry = toActivityLogEntry(row);
+      if (entry) mapped.push(entry);
+      else dropped += 1;
+    }
+    if (dropped > 0) {
+      // A producer row without a stable event id collides with sibling id-less rows on `@for`
+      // tracking in the browser. Dropping is the safe choice — the row has no address anyway, so
+      // no downstream action (link, resolve, deep-link) can reach it.
+      logger.warning(req, 'org_cla_get_activity_log', 'skipped producer rows without an event id', {
+        org_uid: orgUid,
+        signature_id: signatureId,
+        skipped_count: dropped,
+      });
+    }
+
+    return {
+      signatureId,
+      list: mapped,
+      resultCount: mapped.length,
+      nextKey: page.NextKey && page.NextKey.trim().length > 0 ? page.NextKey : null,
+    };
+  }
+
   /** Toast copy when the write succeeded but the roster re-read has not caught up yet. */
   private managerFromAddRequest(request: OrgClaManagerAddRequest): OrgClaManager {
     const name = [request.firstName.trim(), request.lastName.trim()].filter(Boolean).join(' ');
@@ -1699,6 +1771,64 @@ export class OrgClaService {
   }
 
   /**
+   * Fetches one page of the producer's per-(company, CLA Group) event stream (#1987).
+   *
+   * The producer's route is `GET /v4/company/{companyID}/project/{projectSFID}/events`. Its handler
+   * looks up the CLA Group id from `projectSFID` (via `GetClaGroupIDForProject`, which also
+   * accepts a foundation SFID), then queries DynamoDB by the composite partition
+   * `company_sfid_cla_group_id`. So the same `projectSfid` used by the sibling approval-list read
+   * — filled from the project SFID for a project-scoped CLA Group, or the foundation SFID for a
+   * foundation-level one — is the correct path segment here.
+   *
+   * `returnAllEvents` is never forwarded. On this route it only lifts the query limit to 10000
+   * rows of the same company-and-CLA-Group partition.
+   *
+   * `redactResponseBody: true` because a non-OK body from the producer can echo request
+   * attributes including a company id, and a routine 4xx here (a stale CCLA id, a temporarily
+   * expired grant) is the case, not the exception. Same rule as the sibling acknowledgments read.
+   *
+   * Impersonated read: forwards the impersonated bearer so a support engineer sees what the
+   * target sees, matching the sibling approval-list read.
+   */
+  private async fetchActivityLogPage(req: Request, context: ApprovalContext, query: ActivityLogQuery, operation: string): Promise<EasyClaEventList> {
+    const params = new URLSearchParams();
+    params.set('pageSize', String(query.pageSize));
+    if (query.nextKey) params.set('nextKey', query.nextKey);
+
+    const url =
+      `${claServiceBaseUrl(SERVICE)}/v4/company/${encodeURIComponent(context.companyId)}` +
+      `/project/${encodeURIComponent(context.projectSfid)}/events?${params.toString()}`;
+
+    const upstream = await gatewayFetch<EasyClaEventList>(req, url, {
+      operation,
+      service: SERVICE,
+      errorMessage: 'Failed to fetch the activity log',
+      errorCode: 'UPSTREAM_ERROR',
+      redactResponseBody: true,
+      bearerToken: isImpersonating(req) ? req.bearerToken : undefined,
+    });
+
+    if (!upstream) {
+      throw new MicroserviceError('Failed to fetch the activity log: upstream returned no body', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    // A missing, null, or non-array event set is a malformed body, not an empty page. Truthiness
+    // would let those through, and the mapper would render them as "no activity yet". An empty
+    // array is the real empty page and passes this check.
+    if (!Array.isArray(upstream.Events)) {
+      throw new MicroserviceError('Failed to fetch the activity log: malformed response from upstream', 502, 'UPSTREAM_INVALID_RESPONSE', {
+        operation,
+        service: SERVICE,
+      });
+    }
+
+    return upstream;
+  }
+
+  /**
    * Whether this acknowledgment id is on the resolved company's roster for this CLA Group.
    *
    * The grain is **company × CLA Group** — not the CCLA named on `:signatureId` — and that is
@@ -1811,6 +1941,52 @@ export interface ContributorAcknowledgmentQuery {
   search: string;
   pageSize: number;
   nextKey?: string;
+}
+
+/** Query parameters accepted on the activity log read. Every field is already validated. */
+export interface ActivityLogQuery {
+  pageSize: number;
+  nextKey?: string;
+}
+
+/**
+ * Maps one producer event onto the shared `OrgClaActivityLogEntry` shape (#1987).
+ *
+ * Returns `null` for a row without a stable event id — an entry without an id collides with
+ * sibling id-less entries on `@for` tracking in the browser and has no address downstream can
+ * reach. A dropped row is logged at the caller.
+ *
+ * `summary` is the producer's `EventSummary` only. A missing summary stays empty and the client
+ * renders an em-dash. `EventData` is the detailed audit sentence and is not copied onto the row.
+ * A present `EventSummary` is opaque display copy: rendered as plain text, never parsed, never
+ * re-linked. Some historical summaries carry a project name behind the literal label "with
+ * project SFID"; the tab leaves that sentence unchanged.
+ *
+ * `actor` prefers `UserName` (a display name) and falls back to `LfUsername` (an LF login) —
+ * neither is guaranteed to be present, so a producer row with neither leaves `actor` as `null`
+ * and the render site substitutes an em-dash. `when` passes the producer's timestamp through
+ * verbatim; the client renders it in the viewer's locale. Every event type maps the same way, so a
+ * type the producer adds later still renders.
+ */
+function toActivityLogEntry(row: EasyClaEvent | undefined | null): OrgClaActivityLogEntry | null {
+  const id = row?.EventID?.trim() ?? '';
+  if (!id) return null;
+
+  const nonEmpty = (value: string | undefined): string | undefined => {
+    const trimmed = value?.trim() ?? '';
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+
+  const summary = nonEmpty(row?.EventSummary) ?? '';
+  const actor = nonEmpty(row?.UserName) ?? nonEmpty(row?.LfUsername) ?? null;
+  const when = nonEmpty(row?.EventTime) ?? '';
+
+  return {
+    id,
+    when,
+    actor,
+    summary,
+  };
 }
 
 /**

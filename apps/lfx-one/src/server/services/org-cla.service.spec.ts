@@ -19,6 +19,8 @@ import type {
   EasyClaCorporateContributor,
   EasyClaCorporateContributorList,
   EasyClaCorporateSignature,
+  EasyClaEvent,
+  EasyClaEventList,
 } from '../types/cla.types';
 import { orgClaPairProjectSfid } from '../../../../../packages/shared/src/utils/org-cla-permissions';
 
@@ -3316,6 +3318,269 @@ describe('OrgClaService.invalidateAcknowledgment — the receipt', () => {
     stageInvalidate(undefined, undefined, 'ok');
 
     await expect(new OrgClaService().invalidateAcknowledgment(req(), ORG_UID, 'signature-uuid-1', 'ecla-sig-1', {})).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+});
+
+/**
+ * Activity Log (#1987).
+ *
+ * The read's gates in service-layer order: the agreement must be on this organization's list
+ * (`resolveClaGroupContext` — same helper the sibling reads use), it must be signed (otherwise
+ * the log is empty), and then one producer page is fetched by `(companyID, projectSFID)`.
+ *
+ * Route-level guards (`requireOrgLensAccess` only — no `blockDuringImpersonation`, no CLA-manager
+ * check) are asserted in `org-clas.route.spec.ts`.
+ */
+function eventRow(overrides: Partial<EasyClaEvent> = {}): EasyClaEvent {
+  return {
+    EventID: 'event-uuid-1',
+    EventType: 'corporate.signature.signed',
+    UserName: 'Ada Porter',
+    LfUsername: 'aporter',
+    EventTime: '2026-01-15T09:20:00Z',
+    EventTimeEpoch: 1737024000,
+    EventSummary: 'aporter signed a corporate CLA for Nimbus Foundation CLA',
+    EventCLAGroupID: 'cla-group-uuid-1',
+    EventCompanyID: 'company-uuid-1',
+    EventCompanySFID: ORG_UID,
+    ...overrides,
+  };
+}
+
+function eventPage(overrides: Partial<EasyClaEventList> = {}): EasyClaEventList {
+  return {
+    NextKey: '',
+    ResultCount: 1,
+    Events: [eventRow()],
+    ...overrides,
+  };
+}
+
+/**
+ * Stages the two upstream calls one activity log read makes: the organization's list (used to
+ * resolve `(claGroupId, companyId, projectSfid)`) and then the events page.
+ */
+function stageActivityLog(page: EasyClaEventList = eventPage(), entries: EasyClaCompanyClaGroup[] = [upstreamEntry()]): void {
+  gatewayFetch.mockResolvedValueOnce(upstreamList(...entries)).mockResolvedValueOnce(page);
+}
+
+describe('OrgClaService.getActivityLog — the upstream call', () => {
+  it('addresses the producer by the internal company id and the resolved project SFID', async () => {
+    stageActivityLog();
+
+    await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain('/v4/company/company-uuid-1/project/a09410000182dD3AAI/events');
+  });
+
+  it('falls back to the foundation SFID when the agreement covers no project (a foundation-level CLA Group)', async () => {
+    // `resolveClaGroupContext`'s `projectSfid` is filled from the pair's project SFID for a
+    // project-scoped group, or the foundation SFID for a foundation-level one. The producer's
+    // `GetClaGroupIDForProject` accepts either.
+    stageActivityLog(undefined, [upstreamEntry({ projects: [] })]);
+
+    await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).toContain('/v4/company/company-uuid-1/project/a09410000182dD2AAI/events');
+  });
+
+  it('refuses a signed agreement with neither a project nor a foundation id, without calling the events endpoint', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ projects: [], foundationSFID: '   ' })));
+
+    await expect(new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 })).rejects.toMatchObject({
+      code: 'UPSTREAM_INVALID_RESPONSE',
+      statusCode: 502,
+    });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('carries the page size and next-key cursor to the producer as query parameters', async () => {
+    stageActivityLog();
+
+    await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 25, nextKey: 'cursor-xyz' });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/pageSize=25/), expect.any(Object));
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.stringMatching(/nextKey=cursor-xyz/), expect.any(Object));
+  });
+
+  it('never forwards returnAllEvents — the flag only raises the page limit on the same partition', async () => {
+    stageActivityLog();
+
+    await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    const url = gatewayFetch.mock.calls.at(-1)?.[1] as string;
+    expect(url).not.toContain('returnAllEvents');
+    expect(url).not.toContain('all=');
+  });
+
+  it('redacts the response body so actor names and timestamps cannot reach the logs', async () => {
+    stageActivityLog();
+
+    await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ redactResponseBody: true }));
+  });
+
+  it("sends the target user's token upstream while impersonating", async () => {
+    isImpersonating.mockReturnValue(true);
+    stageActivityLog();
+
+    await new OrgClaService().getActivityLog(req({ bearerToken: 'target-user-token' }), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(gatewayFetch).toHaveBeenLastCalledWith(expect.anything(), expect.any(String), expect.objectContaining({ bearerToken: 'target-user-token' }));
+  });
+});
+
+describe('OrgClaService.getActivityLog — the answer shape', () => {
+  it('returns null for a signature this organization does not hold', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signatureID: 'someone-elses-signature' })));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page).toBeNull();
+    // Only the org list was called; the events endpoint was not reached for a signature that
+    // does not belong to this org.
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns an empty page for an unsigned agreement, without calling the producer for one', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry({ signed: false })));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page).toEqual({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null });
+    expect(gatewayFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not surface `canEdit` on the envelope — the read is a broader grant than the write tabs', async () => {
+    stageActivityLog();
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    // Explicitly asserted rather than left to `toEqual` above, because the sibling acknowledgment
+    // envelope DOES carry `canEdit` and re-copying that pattern from muscle memory is exactly
+    // what this test is here to catch.
+    expect(page).not.toHaveProperty('canEdit');
+  });
+
+  it('normalizes an empty nextKey to null so the client stops paging on it', async () => {
+    stageActivityLog(eventPage({ NextKey: '' }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.nextKey).toBeNull();
+  });
+
+  it('keeps a non-empty nextKey verbatim so the client can request the next page', async () => {
+    stageActivityLog(eventPage({ NextKey: 'cursor-page-2' }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.nextKey).toBe('cursor-page-2');
+  });
+});
+
+describe('OrgClaService.getActivityLog — the row mapper', () => {
+  it('projects the producer event onto the shared entry, preserving summary and actor', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow()] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list).toHaveLength(1);
+    expect(page?.list[0]).toEqual({
+      id: 'event-uuid-1',
+      when: '2026-01-15T09:20:00Z',
+      actor: 'Ada Porter',
+      summary: 'aporter signed a corporate CLA for Nimbus Foundation CLA',
+    });
+  });
+
+  it('falls back to LfUsername when the producer sent no UserName', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow({ UserName: '   ', LfUsername: 'aporter' })] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list[0]?.actor).toBe('aporter');
+  });
+
+  it('leaves actor null when the producer sent neither UserName nor LfUsername — the render site substitutes an em-dash', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow({ UserName: '', LfUsername: '' })] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list[0]?.actor).toBeNull();
+  });
+
+  it('leaves summary empty when EventSummary is missing — EventData is not copied onto the row', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow({ EventSummary: '   ', EventData: 'legacy audit sentence with a request id' })] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list[0]?.summary).toBe('');
+  });
+
+  // The historical "with project SFID" bug (easycla#5199) rendered a project name in a slot the
+  // sentence labels as a SFID. The tab must render the summary as opaque text — never parse it —
+  // so this row simply survives untouched.
+  it('passes historical "with project SFID <name>" summaries through unchanged', async () => {
+    const legacySummary = 'aporter signed a CCLA with project SFID Cascade';
+    stageActivityLog(eventPage({ Events: [eventRow({ EventSummary: legacySummary })] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list[0]?.summary).toBe(legacySummary);
+  });
+
+  it('drops a row without an EventID — an id-less row cannot be addressed and would collide on @for tracking', async () => {
+    stageActivityLog(eventPage({ Events: [eventRow({ EventID: '' }), eventRow({ EventID: 'keeper' })] }));
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list).toHaveLength(1);
+    expect(page?.list[0]?.id).toBe('keeper');
+  });
+
+  it('keeps a row of every event type, including one the producer added after this tab shipped', async () => {
+    stageActivityLog(
+      eventPage({
+        Events: [
+          eventRow({ EventID: 'a', EventType: 'corporate.signature.signed' }),
+          eventRow({ EventID: 'b', EventType: 'cla_manager.added' }),
+          eventRow({ EventID: 'c', EventType: 'cla_manager.approval_list_updated' }),
+          eventRow({ EventID: 'd', EventType: 'employee.signature.created' }),
+          eventRow({ EventID: 'e', EventType: 'SomeBrandNewEventType' }),
+          eventRow({ EventID: 'f', EventType: 'CCLASigned' }),
+        ],
+      })
+    );
+
+    const page = await new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 });
+
+    expect(page?.list.map((r) => r.id)).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  });
+});
+
+describe('OrgClaService.getActivityLog — malformed producer bodies', () => {
+  it('raises a 502 when the producer returns no body', async () => {
+    gatewayFetch.mockResolvedValueOnce(upstreamList(upstreamEntry())).mockResolvedValueOnce(null);
+
+    await expect(new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 })).rejects.toMatchObject({
+      statusCode: 502,
+      code: 'UPSTREAM_INVALID_RESPONSE',
+    });
+  });
+
+  it('raises a 502 when the producer omits the Events array — a missing set is malformed, not empty', async () => {
+    // Truthiness would render as "no activity yet"; this pins that the mapper refuses the shape
+    // instead. Same rule as the sibling acknowledgments and organization-list reads.
+    stageActivityLog({ NextKey: '', ResultCount: 0 } as EasyClaEventList);
+
+    await expect(new OrgClaService().getActivityLog(req(), ORG_UID, 'signature-uuid-1', { pageSize: 50 })).rejects.toMatchObject({
       statusCode: 502,
       code: 'UPSTREAM_INVALID_RESPONSE',
     });

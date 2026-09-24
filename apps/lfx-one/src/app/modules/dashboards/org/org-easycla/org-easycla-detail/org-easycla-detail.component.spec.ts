@@ -83,6 +83,8 @@ describe('OrgEasyclaDetailComponent', () => {
   const getManagers = vi.fn();
   const addManager = vi.fn();
   const removeManager = vi.fn();
+  const invalidateAcknowledgment = vi.fn();
+  const getActivityLog = vi.fn();
   const setAutoCreateEcla = vi.fn();
   const addMessage = vi.fn();
   const openDialog = vi.fn();
@@ -144,6 +146,8 @@ describe('OrgEasyclaDetailComponent', () => {
             getManagers,
             addManager,
             removeManager,
+            invalidateAcknowledgment,
+            getActivityLog,
             setAutoCreateEcla,
           },
         },
@@ -227,6 +231,9 @@ describe('OrgEasyclaDetailComponent', () => {
     updateApprovalList.mockReturnValue(of({ signatureId: 'signature-uuid-1', entries: [], canEdit: true }));
     checkPermission.mockReset();
     checkPermission.mockReturnValue(of(true));
+    invalidateAcknowledgment.mockReset();
+    getActivityLog.mockReset();
+    getActivityLog.mockReturnValue(of({ signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null }));
     setAutoCreateEcla.mockReset();
     setAutoCreateEcla.mockReturnValue(of({ autoCreateEcla: true }));
     addMessage.mockReset();
@@ -1547,17 +1554,14 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.acknowledgments?.title);
     });
 
-    // Unbuilt for every agreement, signed or not — so "once this CLA is signed" would promise
-    // content signing does not produce.
-    it.each([['activity']] as const)('leaves the %s tab bare, since signing does not fill it', async (tab) => {
+    it('explains that the activity tab is waiting on the signature', async () => {
       getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(notStarted)] }));
 
       const fixture = await render();
-      byTestId(fixture, `org-easycla-detail-tab-${tab}`)?.click();
+      byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
       fixture.detectChanges();
 
-      expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).not.toBeNull();
-      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')).toBeNull();
+      expect(byTestId(fixture, 'org-easycla-detail-tab-locked')?.textContent).toContain(ORG_CLA_LOCKED_TAB_COPY.activity?.title);
     });
 
     /**
@@ -1653,13 +1657,16 @@ describe('OrgEasyclaDetailComponent', () => {
     expect(byTestId(fixture, 'org-easycla-detail-acknowledgments')).toBeNull();
   });
 
-  it('still leaves the tabs this feature does not build empty', async () => {
+  it('renders the Activity Log panel on a signed agreement when the Activity Log tab is selected', async () => {
     const fixture = await render();
 
     byTestId(fixture, 'org-easycla-detail-tab-activity')?.click();
     fixture.detectChanges();
 
-    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeTruthy();
+    // The Activity Log tab body wires the OrgEasyclaActivityLogComponent (#1987), so the panel
+    // renders instead of falling to the bare-tab empty state that used to occupy this branch.
+    expect(byTestId(fixture, 'org-easycla-detail-activity')).toBeTruthy();
+    expect(byTestId(fixture, 'org-easycla-detail-tab-empty')).toBeNull();
   });
 
   it('fetches no roster on first paint', async () => {

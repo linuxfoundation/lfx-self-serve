@@ -363,6 +363,14 @@
           (approvalListRequested)="focusTab('approval')"
           (approvalListChanged)="onPanelApprovalCountChanged($event)" />
       </section>
+    } @else if (activeTab() === 'activity' && claGroup()?.signed) {
+      <section
+        role="tabpanel"
+        id="org-easycla-detail-tab-panel-activity"
+        aria-labelledby="org-easycla-detail-tab-trigger-activity"
+        data-testid="org-easycla-detail-activity">
+        <lfx-org-easycla-activity-log [claGroup]="claGroup()!" />
+      </section>
     } @else {
       <section
         role="tabpanel"
@@ -371,13 +379,12 @@
         class="py-8"
         data-testid="org-easycla-detail-tab-empty">
         <!--
-          The CLA Managers, Approval List, and Contributor Acknowledgments tabs on an unsigned
-          agreement, where signing is what creates the content: the signatory becomes the initial
-          CLA Manager, approval entries are what that manager maintains, and acknowledgments are
-          what contributors place against the resulting rules. Left bare, the panel reads as a
-          page that failed to load rather than as a state — the same gap the empty Overview had.
-          One lock icon for all three, because "locked until signed" is what each panel is actually
-          saying.
+          The CLA Managers, Approval List, Contributor Acknowledgments, and Activity Log tabs on an
+          unsigned agreement, where signing is what creates the content: the signatory becomes the
+          initial CLA Manager, approval entries are what that manager maintains, acknowledgments are
+          what contributors place against the resulting rules, and the activity log is the record of
+          those changes. Left bare, the panel reads as a page that failed to load rather than as a
+          state — the same gap the empty Overview had.
         -->
         @if (lockedTab(); as locked) {
           <lfx-empty-state data-testid="org-easycla-detail-tab-locked" icon="fa-light fa-lock" [title]="locked.title" [subtitle]="locked.subtitle" />

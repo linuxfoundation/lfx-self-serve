@@ -1237,6 +1237,72 @@ export interface OrgClaInvalidateAcknowledgmentResult {
 }
 
 /**
+ * One activity log entry for the Organization Lens EasyCLA detail page (#1987).
+ *
+ * Scoped to a single `(company, CLA Group)` pair. The producer already writes one event per
+ * audited action against that pair, so the row is a lean projection of the producer's own event
+ * with no PII beyond what the tab exists to render.
+ *
+ * `summary` is opaque display copy. The tab renders it as **plain text** and MUST NOT parse it
+ * for identifiers, MUST NOT render it as HTML, and MUST NOT link off any substring of it. Some
+ * historical rows carry a project name behind the literal label "with project SFID" (a producer-
+ * side rendering bug that was later corrected and left historical rows in place); tolerating
+ * that shape here is exactly the reason the field is opaque.
+ */
+export interface OrgClaActivityLogEntry {
+  /** Stable producer event id. */
+  id: string;
+  /**
+   * Event time as the producer sent it (RFC3339 in current environments, or the producer's own
+   * string format). The client renders it in the viewer's locale — no server-side re-format.
+   */
+  when: string;
+  /**
+   * Actor display, or `null` when the producer sent neither `UserName` nor `LfUsername`. A null
+   * value renders as an em-dash in the By column; the row still appears.
+   */
+  actor: string | null;
+  /**
+   * Producer's human-readable summary of the event. Opaque display copy — see the interface
+   * comment above.
+   */
+  summary: string;
+}
+
+/**
+ * The paginated activity log for one CCLA (#1987, #2857).
+ *
+ * `signatureId` is the CCLA signature id from the route parameter (the agreement this log
+ * belongs to). `nextKey` is the producer's opaque cursor: forward it verbatim on the next call
+ * to fetch the next page, or `null` when no next page is available.
+ *
+ * The response envelope carries no `canEdit`: reading the log is a broader grant than the CCLA
+ * manager write posture, so there is no per-caller write flag to surface. Write controls live on
+ * other tabs.
+ */
+export interface OrgClaActivityLogPage {
+  signatureId: string;
+  list: OrgClaActivityLogEntry[];
+  resultCount: number;
+  /** Producer's opaque cursor for the next page, or `null` when there is no next page. */
+  nextKey: string | null;
+}
+
+/**
+ * View-model row projection for the Activity Log table (#1987).
+ *
+ * `searchText` is a precomputed haystack of actor and summary joined with a NUL byte, so a
+ * client-side filter term cannot false-positive by spanning the two fields.
+ */
+export interface OrgClaActivityLogRow {
+  entry: OrgClaActivityLogEntry;
+  actor: string;
+  summary: string;
+  whenLabel: string;
+  searchText: string;
+}
+
+/**
  * Typed ACS actions the Organization Lens EasyCLA page can ask about (#1980).
  *
  * The browser posts one of these, never a raw ACS string. The server interpolates the permission

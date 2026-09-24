@@ -122,6 +122,48 @@ describe('OrgLensClaService acknowledgment client', () => {
   });
 });
 
+describe('OrgLensClaService activity log client', () => {
+  const ORG = '0014100000Te2ovAAB';
+  const SIGNATURE = 'signature-uuid-1';
+  const activityBase = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/${encodeURIComponent(SIGNATURE)}/activity`;
+
+  let service: OrgLensClaService;
+  let http: { get: ReturnType<typeof vi.fn> };
+
+  beforeEach(() => {
+    http = { get: vi.fn() };
+    TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+    service = TestBed.inject(OrgLensClaService);
+  });
+
+  afterEach(() => {
+    TestBed.resetTestingModule();
+  });
+
+  it('getActivityLog GETs the encoded activity path with no query params by default', async () => {
+    const emptyPage = { signatureId: SIGNATURE, list: [], resultCount: 0, nextKey: null };
+    http.get.mockReturnValue(of(emptyPage));
+
+    await expect(firstValueFrom(service.getActivityLog(ORG, SIGNATURE))).resolves.toEqual(emptyPage);
+    const [url, opts] = http.get.mock.calls[0];
+    expect(url).toBe(activityBase);
+    expect((opts?.params as { keys(): string[] } | undefined)?.keys() ?? []).toEqual([]);
+  });
+
+  it('getActivityLog forwards pageSize and nextKey as query params when supplied', async () => {
+    const emptyPage = { signatureId: SIGNATURE, list: [], resultCount: 0, nextKey: null };
+    http.get.mockReturnValue(of(emptyPage));
+
+    await firstValueFrom(service.getActivityLog(ORG, SIGNATURE, { pageSize: 25, nextKey: 'cursor-page-2' }));
+
+    const [url, opts] = http.get.mock.calls[0];
+    expect(url).toBe(activityBase);
+    const params = opts?.params as { get(name: string): string | null };
+    expect(params.get('pageSize')).toBe('25');
+    expect(params.get('nextKey')).toBe('cursor-page-2');
+  });
+});
+
 describe('OrgLensClaService.setAutoCreateEcla', () => {
   const ORG = '0014100000Te2ovAAB';
   const SIGNATURE = 'signature-uuid-1';

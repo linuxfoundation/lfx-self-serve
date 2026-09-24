@@ -21,6 +21,7 @@ const {
   removeManager,
   getContributorAcknowledgments,
   invalidateAcknowledgment,
+  getActivityLog,
 } = vi.hoisted(() => ({
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
@@ -36,6 +37,7 @@ const {
   removeManager: vi.fn(),
   getContributorAcknowledgments: vi.fn(),
   invalidateAcknowledgment: vi.fn(),
+  getActivityLog: vi.fn(),
 }));
 
 vi.mock('../utils/auth-helper', () => ({ getUsernameFromAuth }));
@@ -54,6 +56,7 @@ vi.mock('../services/org-cla.service', () => ({
     public removeManager = removeManager;
     public getContributorAcknowledgments = getContributorAcknowledgments;
     public invalidateAcknowledgment = invalidateAcknowledgment;
+    public getActivityLog = getActivityLog;
   },
 }));
 vi.mock('../services/org-cla-permissions.service', () => ({
@@ -1433,5 +1436,104 @@ describe('OrgClasController.invalidateAcknowledgment', () => {
 
     expect(JSON.stringify(metadata)).not.toContain('left the company in March');
     expect(metadata).toContainEqual(expect.objectContaining({ reason: 'other' }));
+  });
+});
+
+/**
+ * Activity Log read (#1987). The route guard is asserted in the router spec; this layer's job is
+ * to translate query parameters correctly, clamp the page size before it reaches the producer,
+ * answer 404 for a signature this organization does not hold, and NOT forward
+ * `returnAllEvents` even if the client tried to send it. That flag only raises the page
+ * limit on the same partition.
+ */
+function activityReq(query: Record<string, string> = {}, params: Record<string, string> = {}) {
+  return { params: { orgUid: ORG_UID, signatureId: 'signature-uuid-1', ...params }, query, body: undefined } as any;
+}
+
+function activityPage(overrides: Record<string, unknown> = {}) {
+  return { signatureId: 'signature-uuid-1', list: [], resultCount: 0, nextKey: null, ...overrides };
+}
+
+describe('OrgClasController.getActivityLog', () => {
+  it('returns 401 when there is no authenticated user', async () => {
+    getUsernameFromAuth.mockResolvedValue(null);
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(AuthenticationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('rejects a blank signature id before reaching the service', async () => {
+    const res = buildRes();
+    const next = vi.fn();
+
+    await new OrgClasController().getActivityLog(activityReq({}, { signatureId: '  ' }), res, next);
+
+    expect(next.mock.calls[0][0]).toBeInstanceOf(ServiceValidationError);
+    expect(getActivityLog).not.toHaveBeenCalled();
+  });
+
+  it('forwards a non-empty nextKey to the service, and drops an empty one', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: 'cursor-xyz' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: 'cursor-xyz' }));
+
+    await new OrgClasController().getActivityLog(activityReq({ nextKey: '   ' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ nextKey: undefined }));
+  });
+
+  it('clamps pageSize to the producer-safe range', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    // Above the ceiling — a request the producer would reject with 400 becomes a silent 100.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '5000' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 100 }));
+
+    // Zero would runaway-loop upstream — clamped to 1.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: '0' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 1 }));
+
+    // A non-numeric hint is treated as "give me the default", not a 400.
+    await new OrgClasController().getActivityLog(activityReq({ pageSize: 'many' }), buildRes(), vi.fn());
+    expect(getActivityLog).toHaveBeenLastCalledWith(expect.anything(), ORG_UID, 'signature-uuid-1', expect.objectContaining({ pageSize: 50 }));
+  });
+
+  // `returnAllEvents` only raises the page limit on the same partition. Even if a client
+  // sent it, the controller must not hand it to the service — the service does not read it
+  // either, so this is one of two layers pinning that the flag stops at the BFF.
+  it('never forwards a returnAllEvents flag to the service, even if the caller tried', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+
+    await new OrgClasController().getActivityLog(activityReq({ returnAllEvents: 'true' }), buildRes(), vi.fn());
+
+    const lastCallOptions = getActivityLog.mock.calls.at(-1)?.[3] as Record<string, unknown>;
+    expect(lastCallOptions).not.toHaveProperty('returnAllEvents');
+    expect(JSON.stringify(lastCallOptions ?? {})).not.toContain('returnAllEvents');
+  });
+
+  it('answers 404 when the signature is not on the organization list', async () => {
+    getActivityLog.mockResolvedValue(null);
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    // A 404 is heuristically cacheable, so the header is set ahead of the branch or a stored copy
+    // outlives the condition.
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
+  });
+
+  // The body carries actor names and timestamps, so a shared cache must not hold it.
+  it('marks the response no-store', async () => {
+    getActivityLog.mockResolvedValue(activityPage());
+    const res = buildRes();
+
+    await new OrgClasController().getActivityLog(activityReq(), res, vi.fn());
+
+    expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
   });
 });
