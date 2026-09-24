@@ -863,6 +863,50 @@ describe('OrgEasyclaContributorAcknowledgmentsComponent', () => {
       expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
     });
 
+    it('does not carry a Not Authorized row\u2019s approval-removal date or reason into its invalidation', async () => {
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 2, nextKey: 'cursor-2', canEdit: true }))
+      );
+      const fixture = await render();
+      getContributorAcknowledgments.mockReturnValueOnce(
+        of(
+          page(
+            [
+              ack({
+                signatureId: 'ecla-2',
+                name: 'Grace Hopper',
+                approved: false,
+                removedFromApprovalList: true,
+                removedCriteria: 'Email Criteria',
+                // The approval-list removal left these stamps behind; they are not this invalidation's.
+                invalidatedAt: '2026-03-11T09:20:00Z',
+                invalidatedBy: 'former-manager',
+                invalidationReason: 'approved list removal (Email Criteria)',
+              }),
+            ],
+            { totalCount: 2, nextKey: null, canEdit: true }
+          )
+        )
+      );
+      click(fixture, 'org-easycla-acknowledgments-load-more');
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      invalidateAcknowledgment.mockReturnValueOnce(of({ signatureId: 'ecla-2' }));
+      // The refresh that would supply the true stamps fails, so the optimistic row must stand alone.
+      getContributorAcknowledgments.mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 502 })));
+      const buttons = fixture.nativeElement.querySelectorAll('[data-testid="org-easycla-acknowledgment-invalidate"] button');
+      (buttons[1] as HTMLButtonElement).click();
+      fixture.detectChanges();
+      dialogClosed.next({});
+      await fixture.whenStable();
+      fixture.detectChanges();
+
+      // Invalidated, but with no stale date carried over from the approval-list removal.
+      expect(byTestId(fixture, 'org-easycla-acknowledgment-state-invalidated')).toBeTruthy();
+      expect(allByTestId(fixture, 'org-easycla-acknowledgment-invalidated-on')).toEqual([]);
+    });
+
     it('drops a Load-more response that arrives after the invalidate refresh starts', async () => {
       getContributorAcknowledgments.mockReturnValueOnce(
         of(page([ack({ signatureId: 'ecla-1', name: 'Ada Lovelace' })], { totalCount: 3, nextKey: 'cursor-2', canEdit: true }))

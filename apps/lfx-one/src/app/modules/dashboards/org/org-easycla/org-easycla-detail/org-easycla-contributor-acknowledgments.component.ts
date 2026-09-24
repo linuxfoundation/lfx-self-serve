@@ -495,7 +495,19 @@ export class OrgEasyclaContributorAcknowledgmentsComponent {
     this.page.set({
       ...list,
       list: list.list.map((ack) =>
-        ack.signatureId === signatureId ? { ...ack, approved: false, removedFromApprovalList: false, removedCriteria: undefined } : ack
+        ack.signatureId === signatureId
+          ? {
+              ...ack,
+              approved: false,
+              removedFromApprovalList: false,
+              removedCriteria: undefined,
+              // Drop any approval-list-removal stamps a Not Authorized row carried, so they are not
+              // shown as this invalidation's date/reason. The producer's refresh supplies the real ones.
+              invalidatedAt: undefined,
+              invalidatedBy: undefined,
+              invalidationReason: undefined,
+            }
+          : ack
       ),
     });
   }

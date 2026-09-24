@@ -777,7 +777,7 @@ export const ORG_CLA_INVALIDATE_RECEIPT_COPY = {
   failureSummary: 'Invalidate failed',
   failureDetail: "We couldn't invalidate this acknowledgment. Try again in a moment.",
   removalFailedSummary: 'Approval List not updated',
-  removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entry couldn't be removed. Remove it from the Approval List tab.",
+  removalFailedDetail: "The acknowledgment was invalidated, but its approval-list entries couldn't be removed. Remove them from the Approval List tab.",
 } as const;
 
 /** Why the CLA service refused an invalidate: it only invalidates an approved acknowledgment. */
