@@ -698,6 +698,20 @@ export class OrgEasyclaDetailComponent {
     this.activeTab.set(tab);
   }
 
+  /**
+   * Switch to a tab and move focus to its trigger — the click-driven counterpart to the
+   * arrow-key path in onTabKeydown. The Not Authorized "Add the user to the Approval list"
+   * control lives on a panel this call destroys, so without moving focus a keyboard or
+   * screen-reader user is stranded on a removed node. The trigger buttons are always in the
+   * tablist, so focusing one synchronously after selectTab is safe.
+   */
+  protected focusTab(tab: OrgClaDetailTab): void {
+    this.selectTab(tab);
+    if (isPlatformBrowser(this.platformId)) {
+      document.getElementById(`org-easycla-detail-tab-trigger-${tab}`)?.focus();
+    }
+  }
+
   protected onManagerCountChanged(count: number): void {
     const signatureId = this.claGroup()?.id;
     if (!signatureId) return;
@@ -716,10 +730,7 @@ export class OrgEasyclaDetailComponent {
     if (next === null) return;
 
     event.preventDefault();
-    this.selectTab(ids[next]);
-    if (isPlatformBrowser(this.platformId)) {
-      document.getElementById(`org-easycla-detail-tab-trigger-${ids[next]}`)?.focus();
-    }
+    this.focusTab(ids[next]);
   }
 
   protected openCoverage(): void {

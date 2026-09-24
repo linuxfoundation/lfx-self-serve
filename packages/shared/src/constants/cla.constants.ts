@@ -736,18 +736,20 @@ export const ORG_CLA_ACKNOWLEDGMENT_NOT_AUTHORIZED_COPY = {
 export const ORG_CLA_ACKNOWLEDGMENTS_EM_DASH = '—';
 
 /**
- * Reasons a CLA manager can pick when invalidating an acknowledgment.
+ * The reason enum values the producer accepts on an invalidate.
  *
- * The producer accepts these four enum values; the free-text note is separate.
+ * The acknowledgments tab no longer offers a reason picker, so these constrain the BFF request
+ * only; the free-text note is separate.
  */
 export const ORG_CLA_INVALIDATION_REASONS = ['signed-in-error', 'should-be-corporate', 'compliance', 'other'] as const;
 
 /**
- * Maximum length of the free-text note, matching the producer's own `maxLength: 2048`.
+ * Maximum length of the free-text note the BFF will forward, matching the producer's own
+ * `maxLength: 2048`.
  *
  * Counted in code points, not UTF-16 units: go-swagger validates `maxLength` with
- * `utf8.RuneCountInString`. The dialog uses `maxCodePointsValidator` and carries no native
- * `maxlength`, which would stop a non-BMP note at half this cap.
+ * `utf8.RuneCountInString`. The acknowledgments tab no longer sends a note field, so this caps
+ * the BFF request only rather than any dialog input.
  */
 export const ORG_CLA_INVALIDATION_NOTE_MAX_LENGTH = 2048;
 

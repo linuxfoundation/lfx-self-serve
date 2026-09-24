@@ -1765,7 +1765,7 @@ const CONTRIBUTOR_ACK_VERIFY_MAX_PAGES = 100;
 /**
  * Result of a per-acknowledgment invalidate (#1986, #2807).
  *
- * Mirrors `OrgClaApprovalUpdateOutcome`: three ordinary refusals map to three distinct HTTP
+ * Mirrors `OrgClaApprovalUpdateOutcome`: four ordinary refusals map to four distinct HTTP
  * answers and only `invalidated` carries a receipt. Impersonation is refused by middleware before
  * this union is reachable.
  */

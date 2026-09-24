@@ -2888,6 +2888,17 @@ describe('OrgClaService.getContributorAcknowledgments — Not Authorized', () =>
     expect(row?.removedFromApprovalList).toBe(false);
   });
 
+  it('keeps a manager invalidation reason Invalidated even when a later removal note is present', async () => {
+    const row = await mapped({
+      signatureApproved: false,
+      invalidationReason: 'left the company',
+      note: 'Signature invalidated (approved set to false) by cla-manager due to Email Criteria  removal',
+    });
+
+    expect(row?.removedFromApprovalList).toBe(false);
+    expect(row?.removedCriteria).toBeUndefined();
+  });
+
   it('never marks an approved row Not Authorized', async () => {
     const row = await mapped({ signatureApproved: true, invalidationReason: 'approved list removal (Email Domain Criteria)' });
 

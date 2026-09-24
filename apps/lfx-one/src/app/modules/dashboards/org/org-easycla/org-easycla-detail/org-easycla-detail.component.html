@@ -360,7 +360,7 @@
         <lfx-org-easycla-contributor-acknowledgments
           [claGroup]="claGroup()!"
           (countChanged)="onAcknowledgmentCountChanged($event)"
-          (approvalListRequested)="selectTab('approval')"
+          (approvalListRequested)="focusTab('approval')"
           (approvalListChanged)="onPanelApprovalCountChanged($event)" />
       </section>
     } @else {
