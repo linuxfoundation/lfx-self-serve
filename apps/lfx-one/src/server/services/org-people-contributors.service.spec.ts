@@ -259,6 +259,21 @@ describe('OrgPeopleContributorsService compact cache (GH-1906)', () => {
     expect(execute.mock.calls.length).toBeGreaterThan(warehouseReads);
   });
 
+  it('caches a row whose CDP_MEMBER_ID aggregate came back null instead of missing forever', async () => {
+    // `MIN(cdp_member_id)` over an all-NULL group returns NULL, and the uncached path passes it
+    // straight through. A guard stricter than that would turn this org into a permanent miss.
+    const { rows } = (await execute()) as { rows: Record<string, unknown>[] };
+    execute.mockReset();
+    execute.mockResolvedValue({ rows: rows.map((row, index) => (index === 0 ? { ...row, CDP_MEMBER_ID: null } : row)) });
+    const fromMiss = await service.getContributors(ACCOUNT, 'all');
+    const warehouseReads = execute.mock.calls.length;
+
+    const fromHit = await service.getContributors(ACCOUNT, 'all');
+
+    expect(execute).toHaveBeenCalledTimes(warehouseReads);
+    expect(fromHit).toStrictEqual(fromMiss);
+  });
+
   it('treats a pre-compaction cached entry as a miss rather than decoding it', async () => {
     // `v1` stored the bare row array. Reading `projects`/`rows` off an array yields undefined, so
     // the guard — not just the key bump — has to reject it.

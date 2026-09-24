@@ -1027,10 +1027,9 @@ function encodeProjectsResponse(response: OrgLensProjectsResponse): CompactOrgLe
   // name or avatar must not collapse onto the first one seen, or the decoded response would differ
   // from the uncached one. Rows that genuinely agree still collapse, so nothing is lost.
   //
-  // `JSON.stringify` of the tuple rather than a delimiter join, matching the other dictionaries
-  // here: any single-character separator is itself a legal character inside a display name or a
-  // URL, so a join is ambiguous — `['p', 'a\u0000b', 'c']` and `['p', 'a', 'b\u0000c']` join to the
-  // same string and would silently replace one person with the other.
+  // The key encoding itself is `tupleKey`'s, shared with every other dictionary here; see its doc
+  // for why it is collision-free (per-value `JSON.stringify` joined with a separator that can never
+  // appear inside a part) and absence-aware.
   const everyPerson = response.projects.flatMap((project) => [...project.maintainers, ...project.contributors, ...project.participants]);
   // Keyed once per row and reused for both the dictionary and the index array: the key is the
   // expensive part of the encode, and computing it twice per row bought nothing.

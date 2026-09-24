@@ -268,8 +268,12 @@ function isCompactContributorRows(value: unknown): boolean {
   const personKeyIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('PERSON_KEY');
   const memberIdIndex = ORG_CONTRIBUTOR_ROW_COLUMNS.indexOf('CDP_MEMBER_ID');
   const projectIdIndex = ORG_CONTRIBUTOR_PROJECT_COLUMNS.indexOf('PROJECT_ID');
+  // `CDP_MEMBER_ID` may be null, not just a string: the query fills it with `MIN(cdp_member_id)`, and
+  // an aggregate over an all-NULL group returns NULL. Prod held no such group when this was written,
+  // but the cache must never be stricter than the uncached path — which passes a NULL straight
+  // through — or one such row would make that org's entry a permanent miss.
   if (
-    !cache.rows.r.every((row) => isStoredString(row[personKeyIndex]) && isStoredString(row[memberIdIndex])) ||
+    !cache.rows.r.every((row) => isStoredString(row[personKeyIndex]) && (row[memberIdIndex] === null || isStoredString(row[memberIdIndex]))) ||
     !cache.projects.r.every((row) => isStoredString(row[projectIdIndex]))
   ) {
     return false;
