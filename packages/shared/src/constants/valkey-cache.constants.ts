@@ -24,10 +24,12 @@ export const VALKEY_CACHE = {
   /**
    * Domain + schema-version segment for the per-org Org Lens Groups aggregate (GH-1809), shared
    * across callers rather than per-user. What is stored is the *aggregate the page renders* —
-   * committee name, category, foundation, count — not the seat roster it derives from. For larger
-   * orgs the roster exceeds `MAX_VALUE_BYTES`, so its writes are refused for size and it is never
-   * retained; the aggregate stays well under the ceiling. Storing the aggregate is what makes this
-   * page cacheable. The value carries no PII, and it is served only to callers holding a resolved
+   * committee name, category, foundation, count — not the seat roster it derives from. The roster
+   * is large (before GH-1906's compaction it exceeded `MAX_VALUE_BYTES` for larger orgs and was
+   * never retained), it is permission-filtered and so can only be cached per caller, and its
+   * per-caller entry lives 30 seconds. The aggregate is small, carries no per-caller filtering, and
+   * is kept for 15 minutes with explicit invalidation on seat reassignment, which is what makes this
+   * page cacheable across callers. The value carries no PII, and it is served only to callers holding a resolved
    * per-org grant — see `assertOrgLensRead`'s returned qualification.
    */
   ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v1',

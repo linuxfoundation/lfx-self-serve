@@ -8,12 +8,14 @@ import type {
   CommitteeServiceOrgSeat,
   CommitteeServiceOrgSeatPage,
   CompactOrgSeatsEntry,
+  CompactSeatRow,
   KeyContactEmployee,
   OrgMembershipKeyContactPerson,
   OrgMembershipReassignSeatResponse,
   OrgMembershipSeatsResponse,
   OrgMembershipVotingHistoryResponse,
   ReassignCommitteeSeatRequest,
+  SeatCommittee,
 } from '@lfx-one/shared/interfaces';
 import { dedupeByKey, fromColumnar, isColumnarTable, isFilterSafeIdentifier, toColumnar } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -35,12 +37,6 @@ import { invalidateOrgGroupsCache, withPerUserCache } from './valkey.service';
  * this bound are omitted from the suggestions (manual entry still works).
  */
 const PICKER_MAX_SEAT_PAGES = 4;
-
-/** The committee identity every seat of the same committee repeats; deduped into a dictionary for the cache (GH-1906). */
-type SeatCommittee = Pick<CommitteeServiceOrgSeat, 'committee_uid' | 'committee_name' | 'committee_category' | 'project_uid' | 'project_slug'>;
-
-/** What is left of a seat once the committee dictionary and the org-wide `organization_id` are factored out, plus `c` — the seat's index into that dictionary. */
-type CompactSeatRow = Omit<CommitteeServiceOrgSeat, keyof SeatCommittee | 'organization_id'> & { c: number };
 
 const SEAT_COMMITTEE_KEYS = [
   'committee_uid',
@@ -207,25 +203,30 @@ export class OrgLensBoardCommitteeService {
    * `getSeats` paths bypass this cache so a truncated/differently-scoped result is never served as
    * the full roster.
    *
-   * On a miss the drain is additionally coalesced in-process (GH-1906): on a large org it takes
-   * longer than the 30-second entry it produces is allowed to live, so N concurrent tabs would
-   * otherwise each run the whole thing. What is coalesced — and stored — is the COMPACT envelope,
-   * so joined callers share one immutable value and each rebuilds its own seat array, exactly as
-   * two independent cache hits would.
+   * The whole read-through is coalesced in-process (GH-1906): on a large org the drain takes longer
+   * than the 30-second entry it produces is allowed to live, so N concurrent tabs would otherwise
+   * each run it. Coalescing around `withPerUserCache` — not just its fetcher — means one burst does
+   * one cache read, one drain, one serialization and one write, instead of every joined caller
+   * re-serializing and re-writing the same ~1 MB value on the connection the session store shares.
+   * A consequence for monitoring: an oversize warning now counts a burst, not a caller.
+   *
+   * What is shared is the COMPACT envelope; each caller rebuilds its own seat objects from it.
    */
   public async fetchAllOrgSeats(req: Request, orgUid: string): Promise<CommitteeServiceOrgSeat[]> {
     const username = getEffectiveUsername(req) ?? '';
-    const entry = await withPerUserCache<CompactOrgSeatsEntry>(
-      VALKEY_CACHE.ORG_SEATS_NAMESPACE,
-      username,
-      orgUid,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      // Same effective principal (impersonation honoured) + org the cache key is built from, and
-      // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
-      // bucket per blank principal would hand the first caller's permission-filtered roster to
-      // every other caller that happened to arrive without a resolvable identity.
-      () => coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid))),
-      isCompactOrgSeatsEntry
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that happened to arrive without a resolvable identity.
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_SEATS_NAMESPACE, username, orgUid, () =>
+      withPerUserCache<CompactOrgSeatsEntry>(
+        VALKEY_CACHE.ORG_SEATS_NAMESPACE,
+        username,
+        orgUid,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => toCompactOrgSeats(await this.fetchOrgSeats(req, orgUid)),
+        isCompactOrgSeatsEntry
+      )
     );
     return fromCompactOrgSeats(entry);
   }
@@ -439,32 +440,59 @@ export class OrgLensBoardCommitteeService {
  * Projects a drained roster onto the stored cache shape (GH-1906).
  *
  * Three sources of repetition go away: the per-seat field names (stored once in each columnar
- * table), the committee identity every seat of the same committee carries, and `organization_id`,
+ * table), the committee identity seats of one committee usually share, and `organization_id`,
  * which the org-scoped upstream filter makes identical on every row.
  */
 function toCompactOrgSeats(seats: readonly CommitteeServiceOrgSeat[]): CompactOrgSeatsEntry {
-  const committees = dedupeByKey(seats, (seat) => seat.committee_uid);
-  const rows = seats.map<CompactSeatRow>((seat) => ({
-    // Always present: the dictionary was built from this very list.
-    c: committees.indexOf.get(seat.committee_uid)!,
-    uid: seat.uid,
-    first_name: seat.first_name,
-    last_name: seat.last_name,
-    email: seat.email,
-    job_title: seat.job_title,
-    role_name: seat.role_name,
-    voting_status: seat.voting_status,
-    appointed_by: seat.appointed_by,
-    is_org_editable: seat.is_org_editable,
-    reason: seat.reason,
-    avatar: seat.avatar,
-    username: seat.username,
-  }));
+  const keys = seats.map(seatCommitteeKey);
+  const committees = dedupeByKey(
+    seats.map((seat, index) => ({ seat, key: keys[index] })),
+    (item) => item.key
+  );
+  const rows = seats.map<CompactSeatRow>((seat, index) => {
+    const committee = committees.indexOf.get(keys[index]);
+    if (committee === undefined) {
+      // Unreachable by construction — the dictionary was built from these exact keys. Failing loud
+      // beats a silent default, which would attach the seat to the wrong committee.
+      throw new Error('seat committee missing from its own compaction dictionary');
+    }
+    return {
+      c: committee,
+      uid: seat.uid,
+      first_name: seat.first_name,
+      last_name: seat.last_name,
+      email: seat.email,
+      job_title: seat.job_title,
+      role_name: seat.role_name,
+      voting_status: seat.voting_status,
+      appointed_by: seat.appointed_by,
+      is_org_editable: seat.is_org_editable,
+      reason: seat.reason,
+      avatar: seat.avatar,
+      username: seat.username,
+    };
+  });
   return {
     o: seats[0]?.organization_id ?? '',
-    c: toColumnar(committees.values, SEAT_COMMITTEE_KEYS),
+    c: toColumnar(
+      committees.values.map((item) => item.seat),
+      SEAT_COMMITTEE_KEYS
+    ),
     s: toColumnar(rows, COMPACT_SEAT_KEYS),
   };
+}
+
+/**
+ * Dictionary identity of a seat's committee fields — ALL five, so two members of one committee
+ * that disagree (see `CompactOrgSeatsEntry.c`) get separate entries instead of one being rewritten
+ * to the other's values.
+ *
+ * An absent field maps to `''` and a present one to its `JSON.stringify` form, so absent, `null`
+ * (`'null'`) and the empty string (`'""'`) stay three different keys. The `\u0001` separator is
+ * unambiguous because `JSON.stringify` escapes every control character inside a string.
+ */
+function seatCommitteeKey(seat: CommitteeServiceOrgSeat): string {
+  return SEAT_COMMITTEE_KEYS.map((key) => (seat[key] === undefined ? '' : JSON.stringify(seat[key]))).join('\u0001');
 }
 
 /** Rebuilds the drained roster from {@link toCompactOrgSeats}: every seat regains its committee fields and the hoisted `organization_id`. */
@@ -483,7 +511,7 @@ function fromCompactOrgSeats(entry: CompactOrgSeatsEntry): CommitteeServiceOrgSe
  * failing, and the check costs one integer comparison against a value the JSON parse already built.
  */
 function isCompactOrgSeatsEntry(value: unknown): boolean {
-  const entry = value as CompactOrgSeatsEntry | null;
+  const entry = value as Partial<CompactOrgSeatsEntry> | null;
   if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
   if (typeof entry.o !== 'string' || !isColumnarTable(entry.c) || !isColumnarTable(entry.s)) return false;
 

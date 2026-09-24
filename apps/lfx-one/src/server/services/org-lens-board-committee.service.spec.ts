@@ -29,10 +29,11 @@ vi.mock('../utils/auth-helper', () => ({ getEffectiveUsername }));
 // guard deciding whether a stored entry is a hit. That is what makes a "cache hit" here the real
 // thing — encoded, serialized, guarded and decoded — instead of the fetcher's own object handed
 // straight back, which would test nothing about the stored shape.
-const cache = vi.hoisted(() => ({ entry: null as string | null, accept: null as ((value: unknown) => boolean) | null }));
+const cache = vi.hoisted(() => ({ entry: null as string | null, accept: null as ((value: unknown) => boolean) | null, readThroughs: 0 }));
 vi.mock('./valkey.service', () => ({
   invalidateOrgGroupsCache: vi.fn(),
   withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+    cache.readThroughs += 1;
     cache.accept = accept ?? null;
     if (cache.entry !== null) {
       const stored = JSON.parse(cache.entry);
@@ -129,6 +130,7 @@ beforeEach(() => {
   resetSingleFlightForTests();
   cache.entry = null;
   cache.accept = null;
+  cache.readThroughs = 0;
   getEffectiveUsername.mockReturnValue('tester');
 });
 
@@ -145,13 +147,36 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — cache round trip (GH
     const hit = await service.fetchAllOrgSeats(req, ORG);
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
-    expect(hit).toEqual(miss);
+    // Against the DRAINED roster, not hit-vs-miss: the miss path returns the decoded envelope too, so
+    // comparing the two only proves the encoder is self-consistent, not that it is faithful.
+    expect(miss).toStrictEqual(drained);
+    expect(hit).toStrictEqual(drained);
     expect(hit[0].avatar).toBe('https://avatars.lfx-partner.example/dclarke.png');
     expect(hit[0].organization_id).toBe(ORG);
     expect(hit[0].committee_name).toBe('WG Identity & Trust');
   });
 
-  // `toEqual` treats a missing key and an explicit null as equal, so field PRESENCE is asserted
+  // committee-service copies committee/project fields onto each member record, so members of one
+  // committee can disagree — a pre-backfill member with no `project_uid`, or one a failed re-sync left
+  // in another category. The dictionary must not collapse them: with the stale member FIRST, a
+  // uid-keyed dictionary stamped its values onto the whole committee, dropping every member's
+  // foundation and moving seats between the Board and Committee tabs.
+  it('keeps each seat’s own committee fields when members of one committee disagree', async () => {
+    const stale = seat({ uid: 'seat-0' });
+    delete stale.project_uid;
+    delete stale.project_slug;
+    const drained = [stale, seat(), seat({ uid: 'seat-4', committee_category: 'Board' })];
+    proxyRequest.mockResolvedValue(page(drained));
+    const service = new OrgLensBoardCommitteeService();
+
+    const miss = await service.fetchAllOrgSeats(req, ORG);
+    const hit = await service.fetchAllOrgSeats(req, ORG);
+
+    expect(miss).toStrictEqual(drained);
+    expect(hit).toStrictEqual(drained);
+  });
+
+  // `toEqual` ignores keys whose value is `undefined`, so field PRESENCE is asserted
   // directly: a seat that arrived without `job_title`/`avatar` must come back without them, not
   // carrying nulls the uncached response never had.
   it('reproduces which fields were absent, not just their values', async () => {
@@ -206,6 +231,9 @@ describe('OrgLensBoardCommitteeService.fetchAllOrgSeats — coalescing (GH-1906)
     const [first, second] = await both;
 
     expect(proxyRequest).toHaveBeenCalledTimes(1);
+    // One burst is one read-through: a single cache read and a single serialized write, not one per
+    // joined caller on the connection the session store shares.
+    expect(cache.readThroughs).toBe(1);
     expect(first).toEqual(second);
     // Each caller rebuilds its own array from the shared stored envelope, so no consumer can
     // mutate another's roster.

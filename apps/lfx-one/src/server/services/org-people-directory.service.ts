@@ -18,7 +18,7 @@ import type {
   OrgAllEmployeesResponse,
   OrgPersonSource,
 } from '@lfx-one/shared/interfaces';
-import { fromColumnar, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
+import { fromColumnar, isColumnarAbsent, isColumnarTable, splitDisplayName, toColumnar } from '@lfx-one/shared/utils';
 import { createHmac } from 'crypto';
 import { Request } from 'express';
 
@@ -41,14 +41,13 @@ function isStringArray(value: unknown): boolean {
 }
 
 /**
- * A stored column holds a real string when it is a string that is not one of the compact
- * encoder's absence sentinels. Those are `\u0000`-prefixed and a NUL cannot occur in this data, so
- * the prefix test needs no knowledge of the exact sentinel — it only has to stop "the field was
- * absent" from passing as "the field is a string", which is what the pre-compaction guard rejected
- * when `JSON.stringify` dropped an undefined-valued key.
+ * A stored column holds a real string when it is a string that is not the compact encoder's
+ * absence marker. This is what stops "the field was absent" from passing as "the field is a
+ * string" — the check the pre-compaction guard got for free when `JSON.stringify` dropped an
+ * undefined-valued key.
  */
 function isStoredString(value: unknown): boolean {
-  return typeof value === 'string' && !value.startsWith('\u0000');
+  return typeof value === 'string' && !isColumnarAbsent(value);
 }
 
 /** Stored column list for a cached directory row, in the interface's own field order. */
@@ -181,7 +180,7 @@ function isAllEmployeeStats(value: unknown): boolean {
  */
 function isCompactDirectoryEntry(value: unknown): boolean {
   if (!isObject(value)) return false;
-  const entry = value as unknown as CompactOrgPeopleDirectoryEntry;
+  const entry = value as Partial<CompactOrgPeopleDirectoryEntry>;
   return (
     typeof entry.accountId === 'string' &&
     isColumnarTable(entry.r) &&
@@ -236,28 +235,35 @@ export class OrgPeopleDirectoryService {
    * caller's access view), so keying by caller + org stops one caller's roster from being replayed
    * to another within the TTL.
    *
-   * On a miss the merge is additionally coalesced in-process (GH-1906) — it fans out to four
-   * upstreams and on a large org takes longer than the 30-second entry it produces is allowed to
-   * live, so N concurrent tabs would otherwise each run all four. The coalesced (and stored) value
-   * is the COMPACT envelope, so joined callers share one immutable value and each rebuilds its own
-   * response, exactly as two independent cache hits would.
+   * The whole read-through is coalesced in-process (GH-1906): the merge fans out to four upstreams
+   * and on a large org takes longer than the 30-second entry it produces is allowed to live, so N
+   * concurrent tabs would otherwise each run all four. Coalescing around `withPerUserCache` — not
+   * just its fetcher — means one burst does one cache read, one merge, one serialization and one
+   * write, rather than every joined caller re-serializing and re-writing a multi-MB value on the
+   * connection the session store shares. For monitoring: an oversize warning now counts a burst,
+   * not a caller, so fewer warnings alone does not mean the value started to fit.
+   *
+   * Joined callers share the COMPACT envelope. Each gets freshly built row objects, but `stats`,
+   * `foundations` and each row's array fields (`sources`, `engagedFoundationIds`) are shared by
+   * reference between them, since they come from one parsed entry. That is safe only because the
+   * response is read-only downstream — it is serialized to the client or searched by
+   * `OrgLensPeopleService`, never mutated. A consumer that needs to mutate it must copy first.
    */
   public async getLive(req: Request, accountId: string): Promise<OrgAllEmployeesResponse> {
     const username = getEffectiveUsername(req) ?? '';
-    const entry = await withPerUserCache<CompactOrgPeopleDirectoryEntry>(
-      VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
-      username,
-      accountId,
-      VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
-      // Same effective principal (impersonation honoured) + org the cache key is built from, and
-      // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
-      // bucket per blank principal would hand the first caller's permission-filtered roster to
-      // every other caller that arrived without a resolvable identity.
-      () =>
-        coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, async () =>
-          toCompactDirectory(await this.computeLive(req, accountId))
-        ),
-      isCompactDirectoryEntry
+    // Same effective principal (impersonation honoured) + org the cache key is built from, and
+    // fail-closed on the same terms: an unsafe/blank username is never coalesced, because one
+    // bucket per blank principal would hand the first caller's permission-filtered roster to every
+    // other caller that arrived without a resolvable identity.
+    const entry = await coalescePerUserOrgFetch(VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE, username, accountId, () =>
+      withPerUserCache<CompactOrgPeopleDirectoryEntry>(
+        VALKEY_CACHE.ORG_PEOPLE_DIRECTORY_NAMESPACE,
+        username,
+        accountId,
+        VALKEY_CACHE.ORG_LENS_PERUSER_TTL_SECONDS,
+        async () => toCompactDirectory(await this.computeLive(req, accountId)),
+        isCompactDirectoryEntry
+      )
     );
     return fromCompactDirectory(entry);
   }

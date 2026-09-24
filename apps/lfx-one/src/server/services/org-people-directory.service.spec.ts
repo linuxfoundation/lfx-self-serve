@@ -10,6 +10,7 @@ import type {
   OrgAllEmployeesResponse,
   KeyContactEmployee,
 } from '@lfx-one/shared/interfaces';
+import type * as CompactCacheUtils from '@lfx-one/shared/utils/compact-cache.utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mirrors access-check.service.spec.ts: the `@lfx-one/shared/*` alias isn't wired into this app's
@@ -21,7 +22,14 @@ const { getAllEmployeesInternal, fetchAllOrgSeats, getKeyContactEmployees, getAc
   getKeyContactEmployees: vi.fn(),
   getAccessPrincipals: vi.fn(),
   getEffectiveUsername: vi.fn(() => 'tester' as string | null),
-  cache: { serveHits: false, entry: null as string | null, accept: null as ((value: unknown) => boolean) | null },
+  cache: {
+    serveHits: false,
+    entry: null as string | null,
+    accept: null as ((value: unknown) => boolean) | null,
+    readThroughs: 0,
+    /** JSON of the rows handed to the encoder — the uncached response exactly as the wire would carry it. */
+    encodedRows: null as string | null,
+  },
 }));
 
 vi.mock('./org-lens-people.service', () => ({
@@ -53,6 +61,7 @@ vi.mock('./org-lens-access.service', () => ({
 // once expecting a fresh computation each time.
 vi.mock('./valkey.service', () => ({
   withPerUserCache: async (_ns: string, _user: string, _org: string, _ttl: number, fetcher: () => Promise<unknown>, accept?: (value: unknown) => boolean) => {
+    cache.readThroughs += 1;
     cache.accept = accept ?? null;
     if (cache.serveHits && cache.entry !== null) {
       const stored = JSON.parse(cache.entry);
@@ -86,16 +95,28 @@ vi.mock('@lfx-one/shared/constants', () => ({
 // The compact-cache helpers and the filter-safety predicates are re-exported from their REAL
 // modules: the round-trip tests below are only meaningful against the actual encoder, and the
 // coalescing's fail-closed rule against the actual allowlists.
-vi.mock('@lfx-one/shared/utils', async () => ({
-  ...(await vi.importActual<object>('@lfx-one/shared/utils/compact-cache.utils')),
-  ...(await vi.importActual<object>('@lfx-one/shared/utils/org-selector.utils')),
-  splitDisplayName: (name: string | null): [string | null, string | null] => {
-    const trimmed = (name ?? '').trim();
-    if (!trimmed || trimmed.includes('@')) return [null, null];
-    const parts = trimmed.split(/\s+/);
-    return parts.length === 1 ? [parts[0], null] : [parts[0], parts.slice(1).join(' ')];
-  },
-}));
+vi.mock('@lfx-one/shared/utils', async () => {
+  const compact = await vi.importActual<typeof CompactCacheUtils>('@lfx-one/shared/utils/compact-cache.utils');
+  return {
+    ...compact,
+    ...(await vi.importActual<object>('@lfx-one/shared/utils/org-selector.utils')),
+    // The real encoder, observed: what goes IN is the independent truth the round-trip test compares
+    // the decoded response against. Comparing a hit with a miss alone cannot catch an unfaithful
+    // codec, because the miss path returns the decoded envelope too.
+    toColumnar: (rows: readonly Record<string, unknown>[], keys: readonly string[]) => {
+      cache.encodedRows = JSON.stringify(rows);
+      return compact.toColumnar(rows, keys);
+    },
+    splitDisplayName: (name: string | null): [string | null, string | null] => {
+      const trimmed = (name ?? '').trim();
+      if (!trimmed || trimmed.includes('@')) return [null, null];
+      const parts = trimmed.split(/\s+/);
+      return parts.length === 1 ? [parts[0], null] : [parts[0], parts.slice(1).join(' ')];
+    },
+  };
+});
+
+import { toColumnar } from '@lfx-one/shared/utils';
 
 import { resetSingleFlightForTests } from '../utils/single-flight';
 import { OrgPeopleDirectoryService, resolveMergeKey } from './org-people-directory.service';
@@ -176,6 +197,8 @@ beforeEach(() => {
   cache.serveHits = false;
   cache.entry = null;
   cache.accept = null;
+  cache.readThroughs = 0;
+  cache.encodedRows = null;
   getEffectiveUsername.mockReturnValue('tester');
   getAllEmployeesInternal.mockResolvedValue(baseResponse([]));
   fetchAllOrgSeats.mockResolvedValue([]);
@@ -740,21 +763,27 @@ describe('OrgPeopleDirectoryService.getLive — merge-only fields never reach th
 });
 
 describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-1906)', () => {
-  // The invariant the compaction rests on: a warm cache must return byte-for-byte what the cold
-  // one did. `toEqual` is not enough — it treats a missing key and an explicit null as equal, which
-  // is exactly the difference an encoder can introduce for an optional field like `accessBadge`.
-  it('serves a cache hit identical to the uncached response, including which fields were absent', async () => {
+  // The invariant the compaction rests on: a warm cache must send exactly what the cold one would
+  // have. Both are compared against the rows the encoder was handed, NOT against each other — the
+  // miss path returns the decoded envelope too, so hit-vs-miss would only prove self-consistency.
+  // Compared as JSON because that is the contract: a pre-compaction row carries
+  // `accessBadge: undefined`, which the wire drops, so `toStrictEqual` would flag a difference no
+  // client can observe. Key order is uniform because every row passes through `toWireRow`.
+  it('serves exactly the uncached wire rows on a miss and on a hit, including which fields were absent', async () => {
     getAllEmployeesInternal.mockResolvedValue(baseResponse([storedRow()]));
     fetchAllOrgSeats.mockResolvedValue([seat()]);
     getAccessPrincipals.mockResolvedValue([accessUser({ email: 'rvega@lfx-partner.example', username: 'rvega', name: 'Rowan Vega' })]);
     cache.serveHits = true;
 
     const miss = await run();
+    const wire = cache.encodedRows;
     const hit = await run();
 
     expect(miss.rows.length).toBeGreaterThan(1);
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(hit)).toBe(JSON.stringify(miss));
+    expect(wire).not.toBeNull();
+    expect(JSON.stringify(miss.rows)).toBe(wire);
+    expect(JSON.stringify(hit.rows)).toBe(wire);
     // One row carries a badge and the rest never had the key at all — both must survive.
     expect(hit.rows.some((row) => row.accessBadge === 'admin')).toBe(true);
     expect(hit.rows.some((row) => !('accessBadge' in row))).toBe(true);
@@ -797,8 +826,9 @@ describe('OrgPeopleDirectoryService.getLive — compact cache round trip (GH-190
     corrupt.r.r[0][nameColumn] = 42;
     expect(cache.accept!(corrupt)).toBe(false);
 
+    // The real encoder's own absence marker, not a hard-coded copy of its private encoding.
     const absent = JSON.parse(cache.entry!);
-    absent.r.r[0][nameColumn] = '\u0000absent';
+    absent.r.r[0][nameColumn] = toColumnar([{ name: undefined }], ['name']).r[0][0];
     expect(cache.accept!(absent)).toBe(false);
   });
 });
@@ -819,6 +849,9 @@ describe('OrgPeopleDirectoryService.getLive — coalescing (GH-1906)', () => {
     const [first, second] = await both;
 
     expect(getAllEmployeesInternal).toHaveBeenCalledTimes(1);
+    // One burst is one read-through: a single cache read and a single serialized write, not one per
+    // joined caller on the connection the session store shares.
+    expect(cache.readThroughs).toBe(1);
     expect(first).toEqual(second);
     // Each caller rebuilds its own response from the shared stored envelope.
     expect(first).not.toBe(second);

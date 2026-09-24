@@ -2,7 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import type { ColumnarTable } from './compact-cache.interface';
+import type { CommitteeServiceOrgSeat } from './org-memberships.interface';
 import type { OrgAllEmployeeFoundationOption, OrgAllEmployeeStats } from './org-people.interface';
+
+/**
+ * The committee-level fields every seat carries, stored once per distinct combination in
+ * {@link CompactOrgSeatsEntry.c} (GH-1906).
+ */
+export type SeatCommittee = Pick<CommitteeServiceOrgSeat, 'committee_uid' | 'committee_name' | 'committee_category' | 'project_uid' | 'project_slug'>;
+
+/**
+ * One stored seat row: a seat minus its {@link SeatCommittee} fields and the org-wide
+ * `organization_id`, plus `c` — the seat's index into {@link CompactOrgSeatsEntry.c}.
+ */
+export type CompactSeatRow = Omit<CommitteeServiceOrgSeat, keyof SeatCommittee | 'organization_id'> & { c: number };
 
 /**
  * Stored form of the per-caller org seats cache (GH-1906, namespace `org-seats:v2`).
@@ -20,7 +33,15 @@ export interface CompactOrgSeatsEntry {
    * value by construction.
    */
   o: string;
-  /** Distinct committees — uid, name, category, and project uid/slug — referenced by index from each seat row. */
+  /**
+   * Distinct {@link SeatCommittee} field combinations, referenced by index from each seat row.
+   *
+   * Keyed on ALL five fields, not on `committee_uid` alone: committee-service copies these onto
+   * each member record when it is written rather than joining them from the committee, so members
+   * of one committee can disagree (a pre-backfill member with an empty `project_uid`, or a member a
+   * failed re-sync left behind). A uid-only key would stamp one member's values onto the whole
+   * committee — moving seats between the Board and Committee tabs, or dropping their foundation.
+   */
   c: ColumnarTable;
   /** Per-seat fields, columnar. One column, `c`, holds the seat's index into the committee table. */
   s: ColumnarTable;
