@@ -179,7 +179,7 @@ describe('resolveActionSlot', () => {
   // The full matrix, one row per (time, viewer, privacy) tuple and one expected kind per
   // (fullAccess, inviteResponsesEnabled) pair, in the column order of ACCESS_RSVP_COLUMNS. Every
   // cell is written out rather than derived, so changing any single decision in the resolver fails
-  // exactly the rows it touches. This table is the runtime half of the state matrix #1766 defers.
+  // exactly the rows it touches. It is the runtime half of specs/010-meeting-details-redesign/state-matrix.md.
   const ACCESS_RSVP_COLUMNS: { fullAccess: boolean; inviteResponsesEnabled: boolean }[] = [
     { fullAccess: true, inviteResponsesEnabled: true },
     { fullAccess: true, inviteResponsesEnabled: false },
@@ -194,7 +194,7 @@ describe('resolveActionSlot', () => {
     ['before', 'visitor', PRIVATE_RESTRICTED, ['none', 'none', 'none', 'none']],
     ['before', 'outsider', PUBLIC_OPEN, ['register', 'register', 'register', 'register']],
     ['before', 'outsider', PUBLIC_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
-    ['before', 'outsider', PRIVATE_OPEN, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['before', 'outsider', PRIVATE_OPEN, ['none', 'none', 'none', 'none']],
     ['before', 'outsider', PRIVATE_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
     ['before', 'registrant', PUBLIC_OPEN, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
     ['before', 'registrant', PUBLIC_RESTRICTED, ['rsvp', 'rsvp-unavailable', 'rsvp', 'rsvp-unavailable']],
@@ -205,12 +205,12 @@ describe('resolveActionSlot', () => {
     ['before', 'organizer', PRIVATE_OPEN, ['rsvp', 'none', 'rsvp', 'none']],
     ['before', 'organizer', PRIVATE_RESTRICTED, ['rsvp', 'none', 'rsvp', 'none']],
     ['live', 'visitor', PUBLIC_OPEN, ['guest-join', 'guest-join', 'guest-join', 'guest-join']],
-    ['live', 'visitor', PUBLIC_RESTRICTED, ['none', 'none', 'none', 'none']],
-    ['live', 'visitor', PRIVATE_OPEN, ['none', 'none', 'none', 'none']],
-    ['live', 'visitor', PRIVATE_RESTRICTED, ['none', 'none', 'none', 'none']],
-    ['live', 'outsider', PUBLIC_OPEN, ['register', 'register', 'register', 'register']],
+    ['live', 'visitor', PUBLIC_RESTRICTED, ['guest-join', 'guest-join', 'guest-join', 'guest-join']],
+    ['live', 'visitor', PRIVATE_OPEN, ['guest-join', 'guest-join', 'guest-join', 'guest-join']],
+    ['live', 'visitor', PRIVATE_RESTRICTED, ['guest-join', 'guest-join', 'guest-join', 'guest-join']],
+    ['live', 'outsider', PUBLIC_OPEN, ['join', 'join', 'join', 'join']],
     ['live', 'outsider', PUBLIC_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
-    ['live', 'outsider', PRIVATE_OPEN, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
+    ['live', 'outsider', PRIVATE_OPEN, ['join', 'join', 'join', 'join']],
     ['live', 'outsider', PRIVATE_RESTRICTED, ['invitation-required', 'invitation-required', 'invitation-required', 'invitation-required']],
     ['live', 'registrant', PUBLIC_OPEN, ['join', 'join', 'join', 'join']],
     ['live', 'registrant', PUBLIC_RESTRICTED, ['join', 'join', 'join', 'join']],
@@ -288,15 +288,25 @@ describe('resolveActionSlot', () => {
       expected: 'invitation-required',
     },
     {
-      name: 'signed-in outsider on a private meeting is told an invitation is required',
+      name: 'signed-in outsider on a private unrestricted meeting needs no invitation and waits for the window',
       input: { timeState: 'before', viewerRole: 'outsider', privacy: PRIVATE_OPEN },
+      expected: 'none',
+    },
+    {
+      name: 'signed-in outsider on a private restricted meeting is told an invitation is required',
+      input: { timeState: 'before', viewerRole: 'outsider', privacy: PRIVATE_RESTRICTED },
       expected: 'invitation-required',
     },
     { name: 'signed-in outsider on an open meeting can self-register', input: { timeState: 'before', viewerRole: 'outsider' }, expected: 'register' },
     {
-      name: 'signed-in outsider still gets register, not join, once an open meeting is live',
+      name: 'signed-in outsider joins a live open meeting directly, as V1 allows, without registering first',
       input: { timeState: 'live', viewerRole: 'outsider' },
-      expected: 'register',
+      expected: 'join',
+    },
+    {
+      name: 'signed-in outsider holding the link joins a live private unrestricted meeting',
+      input: { timeState: 'live', viewerRole: 'outsider', privacy: PRIVATE_OPEN },
+      expected: 'join',
     },
     {
       name: 'signed-in outsider on a live restricted meeting still gets the invitation explanation',
@@ -311,9 +321,14 @@ describe('resolveActionSlot', () => {
     },
     { name: 'visitor inside an open meeting join window gets the guest form', input: { timeState: 'live', viewerRole: 'visitor' }, expected: 'guest-join' },
     {
-      name: 'visitor on a restricted meeting gets nothing, because an invitation prompt is unactionable anonymously',
+      name: 'anonymous invitee on a live restricted meeting gets the guest form; the server matches their email',
       input: { timeState: 'live', viewerRole: 'visitor', privacy: PUBLIC_RESTRICTED },
-      expected: 'none',
+      expected: 'guest-join',
+    },
+    {
+      name: 'visitor holding the link gets the guest form on a live private unrestricted meeting',
+      input: { timeState: 'live', viewerRole: 'visitor', privacy: PRIVATE_OPEN },
+      expected: 'guest-join',
     },
     { name: 'registrant inside the join window joins', input: { timeState: 'live', viewerRole: 'registrant' }, expected: 'join' },
     {

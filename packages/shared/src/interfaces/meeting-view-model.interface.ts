@@ -32,12 +32,15 @@ export type MeetingViewerRole = 'visitor' | 'outsider' | 'registrant' | 'organiz
  * combination of inputs maps to a named kind — `none` is a decision ("nothing to offer this
  * viewer"), not a fall-through.
  *
- * - `join` — the join window is open and the viewer is on the meeting.
+ * - `join` — the join window is open and the viewer is on the meeting, or is a signed-in viewer on
+ *   an unrestricted meeting (reaching the page already required the link).
  * - `rsvp` — pre-meeting RSVP controls (only ever returned when RSVP tracking is on).
  * - `register` — self-registration, available on public unrestricted meetings.
  * - `invitation-required` — signed-in outsider on a restricted meeting. V1 renders an empty rail
- *   here; saying so is much of the point of this redesign.
- * - `guest-join` — anonymous visitor inside the join window of a public unrestricted meeting.
+ *   before the window and a join error inside it; saying so is much of the point of this redesign.
+ * - `guest-join` — anonymous visitor inside the join window, whatever the privacy. On a restricted
+ *   meeting the server matches the submitted email against the registrants; this is how an invitee
+ *   without an LFX session joins from their invite link.
  * - `tools` — post-meeting artifacts (recording, transcript, summary).
  * - `no-access` — the meeting has ended and the viewer cannot see its artifacts.
  * - `rsvp-unavailable` — registrant on a pre-2024 meeting, where `is_invite_responses_enabled` is
@@ -48,9 +51,9 @@ export type ActionSlotKind = 'join' | 'rsvp' | 'register' | 'invitation-required
 
 /**
  * The meeting's privacy, resolved once into the label and icon the header renders plus the raw
- * fields any further branching needs. `openToPublic` is the predicate that actually gates
- * self-registration and guest join — public *and* unrestricted, which is narrower than either
- * field alone.
+ * fields any further branching needs. `openToPublic` — public *and* unrestricted — gates
+ * self-registration only. Joining keys on `restricted` alone, because reaching a non-open page
+ * already required the meeting password.
  */
 export interface MeetingPrivacyState {
   /** `fa-light` class from `getMeetingPrivacyIcon`. */

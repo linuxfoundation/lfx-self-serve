@@ -111,6 +111,9 @@ export function resolvePrivacy(visibility: MeetingVisibility | null | undefined,
  * Two of the returns exist purely to name what V1 renders as an empty rail:
  * `invitation-required` for a signed-in outsider on a restricted meeting, and `rsvp-unavailable`
  * for a registrant on a pre-2024 meeting that never had invite responses.
+ *
+ * The full cell-by-cell table, with what V1 renders for each, is
+ * `specs/010-meeting-details-redesign/state-matrix.md`.
  */
 export function resolveActionSlot(input: ActionSlotInput): ActionSlotKind {
   if (input.timeState === 'ended') {
@@ -182,9 +185,18 @@ function hasArtifactAccess(viewerRole: MeetingViewerRole, fullAccess: boolean): 
 }
 
 /**
- * Inside the join window. People on the meeting join; an anonymous visitor on a public
- * unrestricted meeting gets the guest form; everyone else gets the same answer they would have got
- * before the meeting started, because joining is not what they are missing.
+ * Inside the join window.
+ *
+ * Joining keys on `restricted`, not on `openToPublic`. Reaching a non-open page already required the
+ * meeting password (the BFF 400s otherwise), so a loaded page means the viewer holds the link, and
+ * an unrestricted meeting lets anyone with the link join. Only registration needs public *and*
+ * unrestricted.
+ *
+ * Every anonymous visitor gets the guest form, whatever the privacy. On a restricted meeting the
+ * join-url endpoint matches the submitted email against the registrants, so the server enforces the
+ * restriction — and that form is how an invitee without an LFX session joins from their invite
+ * link. A signed-in outsider joins an unrestricted meeting directly, as V1 lets them, and is told an
+ * invitation is required on a restricted one. (State matrix D-1 to D-3.)
  */
 function resolveLiveActionSlot(input: ActionSlotInput): ActionSlotKind {
   if (input.viewerRole === 'organizer' || input.viewerRole === 'registrant') {
@@ -192,10 +204,10 @@ function resolveLiveActionSlot(input: ActionSlotInput): ActionSlotKind {
   }
 
   if (input.viewerRole === 'visitor') {
-    return input.privacy.openToPublic ? 'guest-join' : 'none';
+    return 'guest-join';
   }
 
-  return input.privacy.openToPublic ? 'register' : 'invitation-required';
+  return input.privacy.restricted ? 'invitation-required' : 'join';
 }
 
 /**
@@ -220,5 +232,12 @@ function resolveUpcomingActionSlot(input: ActionSlotInput): ActionSlotKind {
     return input.privacy.openToPublic ? 'register' : 'none';
   }
 
-  return input.privacy.openToPublic ? 'register' : 'invitation-required';
+  if (input.privacy.openToPublic) {
+    return 'register';
+  }
+
+  // A private but unrestricted meeting: the outsider holds the link and will be able to join when
+  // the window opens, and the time banner already says when. They cannot register (the BFF only
+  // registers for public meetings), and they need no invitation, so there is nothing to offer yet.
+  return input.privacy.restricted ? 'invitation-required' : 'none';
 }
