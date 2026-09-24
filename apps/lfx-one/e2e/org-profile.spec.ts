@@ -18,7 +18,14 @@
 import type { CascadingRoleGrant } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
-import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME, SYNTHETIC_ORG_SLUG } from './fixtures/mock-data/synthetic-org.mock';
+import {
+  SYNTHETIC_ORG_ACCOUNT_ID,
+  SYNTHETIC_ORG_DOMAIN,
+  SYNTHETIC_ORG_NAME,
+  SYNTHETIC_ORG_SLUG,
+  SYNTHETIC_SECOND_ORG_ACCOUNT_ID,
+  SYNTHETIC_SECOND_ORG_LEGAL_NAME,
+} from './fixtures/mock-data/synthetic-org.mock';
 
 const PROFILE_URL = '/org/profile';
 const DATA_LOAD_TIMEOUT = 30_000;
@@ -318,7 +325,7 @@ test.describe('Org Profile — spec 022 inherited-auditor (US4)', () => {
     // The selected org inherits auditor from a direct-granted parent (FGA: writer does NOT cascade).
     await stubOrgProfileContext(page, {
       writers: [], // direct-writer set is empty for the *selected* uid
-      cascadingAuditors: [{ uid: MOCK_UID, parentUid: '0012M00002qnukOQAQ', parentName: 'IBM Corporation' }],
+      cascadingAuditors: [{ uid: MOCK_UID, parentUid: SYNTHETIC_SECOND_ORG_ACCOUNT_ID, parentName: SYNTHETIC_SECOND_ORG_LEGAL_NAME }],
     });
     await stubCanonicalAndAddresses(page);
 
