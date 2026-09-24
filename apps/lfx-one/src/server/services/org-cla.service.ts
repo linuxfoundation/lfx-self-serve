@@ -956,7 +956,7 @@ export class OrgClaService {
    * approval-list write, because a support engineer flipping this flag against an ordinary
    * customer's CCLA would attribute a legally-recorded change to the person being impersonated.
    *
-   * A 403 refusal from the producer is the sanctions path (spec 054 FR-006). The refusal
+   * A 403 refusal from the producer is the sanctions path. The refusal
    * sentence upstream sends belongs on screen — the CLA manager needs the reason and the
    * support route — and does not belong in an application log. The `withProducerRefusalMessage`
    * plus `withoutUpstreamBody` composition is the same one the corporate hand-off uses, and it

@@ -2,19 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser, Location } from '@angular/common';
-import {
-  afterNextRender,
-  ChangeDetectionStrategy,
-  Component,
-  computed,
-  DestroyRef,
-  effect,
-  inject,
-  Injector,
-  PLATFORM_ID,
-  signal,
-  Signal,
-} from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, DestroyRef, inject, Injector, PLATFORM_ID, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -163,15 +151,16 @@ export class OrgEasyclaDetailComponent {
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
-  private autoEclaDetached = false;
-  /** In-flight Auto ECLA writes, one per organization and agreement. A write for A stays here while B runs. */
-  private readonly autoEclaInFlight = new Map<string, { orgUid: string; signatureId: string }>();
   private readonly platformId = inject(PLATFORM_ID);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
   // The signed-row wait is started from an adoption callback, which is outside the construction-time
   // injection context `toObservable` would otherwise take implicitly.
   private readonly injector = inject(Injector);
+
+  private autoEclaDetached = false;
+  /** In-flight Auto ECLA writes, one per organization and agreement. A write for A stays here while B runs. */
+  private readonly autoEclaInFlight = new Map<string, { orgUid: string; signatureId: string }>();
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -511,22 +500,13 @@ export class OrgEasyclaDetailComponent {
    * a confirmed write survives a trip to another project. Falls back to `false` when the row
    * carries no value, matching the producer's own default when the column is unset.
    */
-  protected readonly autoEclaValue = computed(() => {
-    const orgUid = this.selectedOrgUid();
-    const signatureId = this.claGroup()?.id;
-    if (orgUid && signatureId) {
-      const remembered = this.autoEclaOverrides()[this.autoEclaKey({ orgUid, signatureId })];
-      if (remembered !== undefined) return remembered;
-    }
-    return this.claGroup()?.autoCreateEcla === true;
-  });
+  protected readonly autoEclaValue = computed(() => this.initAutoEclaValue());
 
   protected readonly autoEclaPending = computed(() => this.autoEclaSaving());
 
-  private readonly autoEclaProjectSfid = computed(() => {
-    const group = this.claGroup();
-    return group ? (orgClaPairProjectSfid(group) ?? '') : '';
-  });
+  private readonly autoEclaProjectSfid = computed(() => this.initAutoEclaProjectSfid());
+
+  private readonly autoEclaPermissionPair = computed(() => this.initAutoEclaPermissionPair());
 
   protected readonly notStartedCopy = ORG_CLA_NOT_STARTED_COPY;
 
@@ -627,20 +607,21 @@ export class OrgEasyclaDetailComponent {
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
     // change, because that change does not refetch the list.
-    effect(() => {
-      const group = this.claGroup();
-      const orgUid = this.selectedOrgUid();
-      if (!group?.id || !orgUid) return;
-      const key = this.autoEclaKey({ orgUid, signatureId: group.id });
-      const remembered = this.autoEclaOverrides()[key];
-      if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return;
-      this.autoEclaOverrides.update((current) => {
-        if (current[key] !== remembered) return current;
-        const next = { ...current };
-        delete next[key];
-        return next;
+    toObservable(computed(() => ({ group: this.claGroup(), orgUid: this.selectedOrgUid(), overrides: this.autoEclaOverrides() })))
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(({ group, orgUid, overrides }) => {
+        this.syncAutoEclaSaving();
+        if (!group?.id || !orgUid) return;
+        const key = this.autoEclaKey({ orgUid, signatureId: group.id });
+        const remembered = overrides[key];
+        if (remembered === undefined || (group.autoCreateEcla === true) !== remembered) return;
+        this.autoEclaOverrides.update((current) => {
+          if (current[key] !== remembered) return current;
+          const next = { ...current };
+          delete next[key];
+          return next;
+        });
       });
-    });
 
     // The choice was made under the organization the viewer has since left, and Start would open a
     // session against the one they arrived at; nothing here can be re-derived for it either, since
@@ -672,19 +653,11 @@ export class OrgEasyclaDetailComponent {
 
     // Auto ECLA ACS check (#1988). Keyed on (organization, project SFID) exactly like the peer
     // managers panel — the pair the grant is written on, not the signature id, because ACS scopes
-    // the grant to `project|organization` and one CLA Group covers one pair. Withheld while the
-    // group is unsigned (nothing to toggle) or while the pair is unresolvable (a data problem
-    // upstream that the toggle would silently open a 403 into). `null` resets the allowed signal
-    // so a stale answer cannot outlive the row it was fetched for.
-    toObservable(
-      computed(() => {
-        const group = this.claGroup();
-        if (!group?.signed || this.showingPreview()) return '';
-        const orgUid = this.selectedOrgUid();
-        const projectSfid = this.autoEclaProjectSfid();
-        return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
-      })
-    )
+    // the grant to `project|organization`. The project is the pinned pair project, else the first
+    // covered project, else the foundation. Withheld while the group is unsigned (nothing to toggle) or while the pair
+    // is unresolvable (a data problem upstream that the toggle would silently open a 403 into).
+    // `null` resets the allowed signal so a stale answer cannot outlive the row it was fetched for.
+    toObservable(this.autoEclaPermissionPair)
       .pipe(
         distinctUntilChanged(),
         tap(() => {
@@ -844,12 +817,12 @@ export class OrgEasyclaDetailComponent {
    *
    * Optimistic: the override is set to `next` before the PUT lands, so the toggle answers the
    * click without a round trip. On success the override stays (the state was written), the
-   * saving flag is cleared, and a success toast names the value written. On failure the override is dropped — reverting to the row's own
-   * value, which the producer did not change — and the producer's own sentence is shown as an
-   * error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
+   * saving flag is cleared, and a success toast names the value written. On failure the override
+   * is restored to the value shown before the click, which the producer did not change, and the
+   * producer's own sentence is shown as an error toast. A 403 body carries the sanctions or ACL refusal upstream wrote. The BFF puts
    * that sentence on `error`, not `message`, so the toast reads both through
-   * `serverAuthoredMessage`. The fallback copy names the value nobody would want under an Auto
-   * ECLA line ("Could not turn Auto ECLA off"). The request is not cancelled when the manager
+   * `serverAuthoredMessage`. The toast summary names the value that failed to save
+   * ("Couldn't turn Auto ECLA off"). The request is not cancelled when the manager
    * leaves the page: unsubscribing would abort a write the producer may already be recording.
    * Each organization and agreement keeps its own in-flight write, so starting one on the next
    * agreement does not drop the first. A late answer updates that agreement's remembered value.
@@ -858,9 +831,7 @@ export class OrgEasyclaDetailComponent {
    * second write for an agreement whose first write is still running. A remembered value stays
    * until the list row carries it, including after a project change that does not refetch the list.
    *
-   * Refused while a write is already in flight, or against a group with no pair project SFID
-   * (the ACS grant would not match the URL the producer receives, so the write would 403 into a
-   * generic refusal); either case leaves the toggle unchanged.
+   * Refused while a write is already in flight, which leaves the toggle unchanged.
    */
   protected onAutoEclaToggle(next: boolean): void {
     if (this.autoEclaSaving()) return;
@@ -899,8 +870,9 @@ export class OrgEasyclaDetailComponent {
           if (this.autoEclaInFlight.get(key) !== target) return;
           // Reconcile with what the producer actually wrote — the BFF echoes it, so the two agree
           // on the ordinary path and disagreement here means the server refused the ask silently
-          // (which it does not, but if it did, the toggle should tell the truth).
-          const written = response?.autoCreateEcla === true;
+          // (which it does not, but if it did, the toggle should tell the truth). A 200 without the
+          // echo still means the ask was written, so it must not read as "off".
+          const written = typeof response?.autoCreateEcla === 'boolean' ? response.autoCreateEcla : next;
           this.rememberAutoEcla(target, written);
           if (!this.autoEclaStillHere(target)) return;
           this.messageService.add({
@@ -1262,6 +1234,29 @@ export class OrgEasyclaDetailComponent {
 
   private initTabs(): OrgClaDetailTabView[] {
     return ORG_CLA_DETAIL_TABS.map((tab) => ({ ...tab, badge: this.tabBadge(tab.id) }));
+  }
+
+  private initAutoEclaValue(): boolean {
+    const orgUid = this.selectedOrgUid();
+    const signatureId = this.claGroup()?.id;
+    if (orgUid && signatureId) {
+      const remembered = this.autoEclaOverrides()[this.autoEclaKey({ orgUid, signatureId })];
+      if (remembered !== undefined) return remembered;
+    }
+    return this.claGroup()?.autoCreateEcla === true;
+  }
+
+  private initAutoEclaProjectSfid(): string {
+    const group = this.claGroup();
+    return group ? (orgClaPairProjectSfid(group) ?? '') : '';
+  }
+
+  private initAutoEclaPermissionPair(): string {
+    const group = this.claGroup();
+    if (!group?.signed || this.showingPreview()) return '';
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.autoEclaProjectSfid();
+    return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
   }
 
   /**

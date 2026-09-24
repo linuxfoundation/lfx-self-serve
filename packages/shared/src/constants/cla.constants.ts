@@ -480,10 +480,10 @@ export const ACS_CLA_MANAGER_DELETE_ACTION = 'remove';
  *
  * Confirmed on the dev catalog (2026-09-23): resource `ecla_auto_create`, action `update`, on
  * `PUT /cla-service/v4/signatures/company/{companyID}/clagroup/{claGroupID}/ecla-auto-create`.
- * Enable and disable share that one grant. The definition file registers the resource as
- * project. The live dev row is object type community and has been since the resource was
- * created in November 2022. This check still asks on `project|organization`, the grain the CLA
- * manager grant is stored on and the grain the definition declares.
+ * Enable and disable share that one grant. The definition file registers the resource under
+ * the project category. The live dev row is object type community and has been since the
+ * resource was created in November 2022. This check asks on `project|organization`, the grain
+ * the CLA manager grant is stored on.
  */
 export const ACS_CLA_AUTO_ECLA_RESOURCE = 'ecla_auto_create';
 export const ACS_CLA_AUTO_ECLA_ACTION = 'update';

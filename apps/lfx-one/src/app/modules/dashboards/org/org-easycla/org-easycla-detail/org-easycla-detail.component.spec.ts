@@ -2979,6 +2979,9 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
 
     const label = fixture.nativeElement.querySelector('label[for="org-easycla-detail-auto-ecla-toggle"]') as HTMLLabelElement;
     expect(label.textContent?.trim()).toBe('Auto ECLA');
+    const targets = fixture.nativeElement.querySelectorAll('#org-easycla-detail-auto-ecla-toggle');
+    expect(targets.length).toBe(1);
+    expect((targets[0] as HTMLElement).tagName).toBe('INPUT');
     const link = byTestId(fixture, 'org-easycla-detail-auto-ecla-learn-more') as HTMLAnchorElement;
     expect(link.getAttribute('href')).toBe('/docs');
     expect(link.textContent?.trim()).toBe('Learn more about Auto ECLA →');
@@ -3007,6 +3010,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
     fixture.detectChanges();
 
+    expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
+  });
+
+  it('keeps the requested value when a successful write comes back without the echo', async () => {
+    setAutoCreateEcla.mockReturnValue(of(null));
+    const fixture = await render(row({ autoCreateEcla: false }));
+
+    (fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void }).onAutoEclaToggle(true);
+    fixture.detectChanges();
+
+    expect((fixture.componentInstance as unknown as { autoEclaValue: () => boolean }).autoEclaValue()).toBe(true);
     expect(addMessage).toHaveBeenCalledWith({ severity: 'success', summary: 'Auto ECLA turned on.' });
   });
 
@@ -3131,6 +3145,33 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
     component.onAutoEclaToggle(false);
 
     expect(setAutoCreateEcla).toHaveBeenCalledTimes(1);
+    expect(component.autoEclaPending()).toBe(true);
+  });
+
+  it('disables the toggle again when the agreement with a running write arrives after the organization switch', async () => {
+    const answer = new Subject<{ autoCreateEcla: boolean }>();
+    setAutoCreateEcla.mockReturnValue(answer.asObservable());
+    const fixture = await render(row({ autoCreateEcla: false }));
+    const component = fixture.componentInstance as unknown as { onAutoEclaToggle: (v: boolean) => void; autoEclaPending: () => boolean };
+
+    component.onAutoEclaToggle(true);
+    getClaGroups.mockReturnValue(of({ orgUid: '0014100000OtherOrgAA', claGroups: [] }));
+    selectedAccount.set({ uid: '0014100000OtherOrgAA', accountName: 'Other' });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.autoEclaPending()).toBe(false);
+
+    const returning = new Subject<{ orgUid: string; claGroups: OrgClaGroup[] }>();
+    getClaGroups.mockReturnValue(returning.asObservable());
+    selectedAccount.set(SELECTED_ACCOUNT);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(component.autoEclaPending()).toBe(false);
+
+    returning.next({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [row({ autoCreateEcla: false })] });
+    fixture.detectChanges();
+    await fixture.whenStable();
+
     expect(component.autoEclaPending()).toBe(true);
   });
 

@@ -97,8 +97,8 @@ describe('buildOrgClaAcsPermission', () => {
     );
   });
 
-  it('interpolates the Auto ECLA update string against the corporate signature — enable and disable share one grant', () => {
-    // Pair grain matches the peer `approval-list-update` action — same table, same verb, same
+  it('interpolates the Auto ECLA update string against the project/organization pair — enable and disable share one grant', () => {
+    // Pair grain matches the peer `approval-list-update` action — same verb, same
     // `project|organization` object type. Enable and disable are one grant, so this is the only
     // action the Auto ECLA toggle ever asks for.
     expect(buildOrgClaAcsPermission({ action: 'auto-ecla-update', projectOrFoundationSfid: PROJECT, companySfid: COMPANY })).toBe(

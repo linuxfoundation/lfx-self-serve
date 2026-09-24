@@ -289,7 +289,8 @@
         @if (showAutoEclaToggle()) {
           <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
             <lfx-toggle
-              id="org-easycla-detail-auto-ecla-toggle"
+              [id]="'org-easycla-detail-auto-ecla-toggle'"
+              data-testid="org-easycla-detail-auto-ecla-toggle"
               [checked]="autoEclaValue()"
               (checkedChange)="onAutoEclaToggle($event)"
               [disabled]="autoEclaPending()"
