@@ -66,6 +66,7 @@ export * from './org-meetings-insights.utils';
 export * from './cla-view.utils';
 export * from './cla-identifier.utils';
 export * from './cla-manager-actions.utils';
+export * from './org-cla-designee.utils';
 export * from './org-cla-manager.utils';
 export * from './org-cla-approval.utils';
 export * from './org-cla-permissions';

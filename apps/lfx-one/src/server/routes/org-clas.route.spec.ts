@@ -23,7 +23,11 @@ const {
   invalidateAcknowledgment,
   getActivityLog,
   updateEclaAutoCreate,
+  assignDesignee,
+  nominateDesignee,
 } = vi.hoisted(() => ({
+  assignDesignee: vi.fn(),
+  nominateDesignee: vi.fn(),
   listClaGroups: vi.fn(),
   getPdfUrl: vi.fn(),
   getCclaPreview: vi.fn(),
@@ -58,6 +62,8 @@ vi.mock('../controllers/org-clas.controller', () => ({
     public invalidateAcknowledgment = invalidateAcknowledgment;
     public getActivityLog = getActivityLog;
     public updateEclaAutoCreate = updateEclaAutoCreate;
+    public assignDesignee = assignDesignee;
+    public nominateDesignee = nominateDesignee;
   },
 }));
 
@@ -180,6 +186,12 @@ beforeEach(() => {
   });
   updateEclaAutoCreate.mockImplementation((_req: express.Request, res: express.Response) => {
     res.json({ autoCreateEcla: true });
+  });
+  assignDesignee.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ assigned: true });
+  });
+  nominateDesignee.mockImplementation((_req: express.Request, res: express.Response) => {
+    res.json({ outcome: 'assigned', email: 'contributor@example.org' });
   });
   getAccessAwareOrgs.mockResolvedValue({ resolved: new Map([[GRANTED, { roleSource: 'direct-writer' }]]), upstreamFailed: false });
   checkSingleAccessStrict.mockResolvedValue(false);
@@ -702,6 +714,49 @@ describe('org-clas router — CLA managers', () => {
       isImpersonating.mockReturnValue(true);
 
       const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method });
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+    });
+  });
+});
+
+describe('org-clas router — CLA manager designee (#2780)', () => {
+  const DESIGNEE = 'lens/cla-groups/designee';
+  const NOMINATIONS = 'lens/cla-groups/designee/nominations';
+
+  describe.each([
+    ['assign', DESIGNEE, () => assignDesignee],
+    ['nominate', NOMINATIONS, () => nominateDesignee],
+  ] as const)('%s', (_name, path, handler) => {
+    it('refuses an org the caller holds no grant on', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method: 'POST' });
+
+      expect(res.status).toBe(403);
+      expect(handler()).not.toHaveBeenCalled();
+    });
+
+    it('admits a granted org', async () => {
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method: 'POST' });
+
+      expect(res.status).toBe(200);
+      expect(handler()).toHaveBeenCalled();
+    });
+
+    it('blocks the write while impersonating before it reaches the controller', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${GRANTED}/${path}`, { method: 'POST' });
+
+      expect(res.status).toBe(403);
+      expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
+      expect(handler()).not.toHaveBeenCalled();
+    });
+
+    it('names impersonation, not a missing grant, on an org the caller cannot see', async () => {
+      isImpersonating.mockReturnValue(true);
+
+      const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/${path}`, { method: 'POST' });
 
       expect(res.status).toBe(403);
       expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
