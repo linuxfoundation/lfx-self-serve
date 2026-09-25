@@ -1160,7 +1160,7 @@ export class CampaignsComponent {
   });
 
   /**
-   * Variant B's preheader as it will ACTUALLY be sent: trimmed, and '' when B has none.
+   * Variant B's preheader as it will ACTUALLY be sent: sanitized, and '' when B has none.
    *
    * One computed rather than a trim in the template and another in `onStageEmailSend`. Those two
    * drifted immediately -- a whitespace-only value was omitted on the wire (so upstream kept A's)
@@ -1237,8 +1237,8 @@ export class CampaignsComponent {
    * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
    * runtime, so there is no `<img>` in the template source to find.
    *
-   * Staging builds on this value via `abTestBodyHtmlBForSend`, which appends a refused CTA's
-   * label. The B panel binds THAT, not this, so the preview and the draft cannot disagree.
+   * Staging uses this same normalized value (via `abTestBodyHtmlBForSend`, which adds nothing to
+   * it -- B has no call to action of its own), so the preview and the draft cannot disagree.
    */
   protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
 
@@ -1282,11 +1282,12 @@ export class CampaignsComponent {
    * body entirely. That is data loss, not a cosmetic gap.
    *
    * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
+   *
+   * Judged on the SANITIZED body, not the raw one: a tracking-pixel-only payload is non-empty as
+   * raw HTML and empty after `stripResourceLoadingHtml`, so the raw value staged hero/button/
+   * sponsor modules against a body that ships as nothing. Variant B already gated on its
+   * stripped value; this is the A-side twin of that.
    */
-  // The SANITIZED body, not the raw one: a tracking-pixel-only payload is non-empty as raw HTML
-  // and empty after `stripResourceLoadingHtml`, so judging the raw value staged hero/button/
-  // sponsor modules against a body that ships as nothing. Variant B already gated on its
-  // stripped value; this is the A-side twin of that.
   protected readonly emailBodyIsStageable = computed<boolean>(() => hasVisibleHtmlText(this.emailBodyHtmlPreview()));
 
   /**
@@ -1417,15 +1418,15 @@ export class CampaignsComponent {
   protected readonly emailBodyHtmlForSend = computed<string>(() => withUnlinkedCta(this.emailBodyHtmlPreview(), this.emailCtaUnlinkedLabel()));
 
   /**
-   * Variant B's body with the same refused-CTA fold-back A gets.
+   * Variant B's body as it will be STAGED.
    *
-   * B is generated through the SAME `/email-copy` endpoint, so a refused destination strips the
-   * button's label out of B's body exactly as it does A's -- and without this, nothing put it
-   * back, so the call to action vanished from the B draft alone. One definition
-   * (`withUnlinkedCta`) serves both, because two copies of this rule is how A and B drifted in
-   * the first place.
+   * No CTA fold-back, unlike variant A, and the asymmetry is deliberate: B has no call to action
+   * of its own. `onGenerateAbTestCopy` keeps only `subject`, `body` and `preheader` from B's
+   * generation and discards `cta`/`ctaUrl`, and the controller's A/B payload carries only
+   * `subjectB`, `bodyHtmlB` and `previewTextB` -- no button fields -- so B shares A's button
+   * widget upstream. Folding A's label into B's body would render the call to action twice.
    */
-  protected readonly abTestBodyHtmlBForSend = computed<string>(() => withUnlinkedCta(this.abTestBodyHtmlBPreview(), this.emailCtaUnlinkedLabel()));
+  protected readonly abTestBodyHtmlBForSend = computed<string>(() => this.abTestBodyHtmlBPreview());
 
   /**
    * The hero image's HOST, for a preview that describes the image without fetching it.

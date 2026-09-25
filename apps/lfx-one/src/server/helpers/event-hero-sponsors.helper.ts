@@ -34,7 +34,14 @@ function resolveUrl(candidate: string, baseUrl: string): string | null {
   }
 }
 
-/** One open tag and where it starts, so a caller can read the text around it. */
+/**
+ * One open tag and where it starts, so a caller can read the text around it.
+ *
+ * A local `type`, not a shared interface: it never crosses a module boundary -- `openTags` is
+ * module-private and both consumers are in this file. Sibling helpers here (`url-validation.ts`,
+ * `member-v1-mapping.helper.ts`) declare their own local shapes the same way; the shared
+ * `interfaces/` package is for types that travel.
+ */
 interface OpenTag {
   tag: string;
   index: number;

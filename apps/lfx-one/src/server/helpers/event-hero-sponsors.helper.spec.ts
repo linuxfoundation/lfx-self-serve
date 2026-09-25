@@ -309,7 +309,10 @@ describe('extractHeroAndSponsors — runs linearly on adversarial HTML', () => {
   it('extracts a sponsor: name from alt, logo canonicalized', () => {
     // The end-to-end case this file lacked -- the hero-image cases above never assert that a
     // sponsor comes back at all, only that one is not mistaken for the hero.
-    const html = '<div class="sponsors"><img src="https://cdn.example.com/acme.png" alt="Acme Corp" /></div>';
+    // A src that REQUIRES canonicalization: userinfo to strip, a default port to drop, and a
+    // relative path to resolve against the base. The previous fixture was already canonical, so
+    // it asserted nothing about that step.
+    const html = '<div class="sponsors"><img src="https://user:pw@cdn.example.com:443/logos/../acme.png" alt="Acme Corp" /></div>';
 
     const [sponsor] = extractHeroAndSponsors(html, BASE_URL).sponsors;
 

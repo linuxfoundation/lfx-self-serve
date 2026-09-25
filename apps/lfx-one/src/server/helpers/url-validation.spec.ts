@@ -307,6 +307,15 @@ describe('fetch path enforces the shared port allow-list', () => {
     vi.mocked(dns.promises.resolve4).mockResolvedValueOnce(['93.184.216.34']);
     vi.mocked(dns.promises.resolve6).mockResolvedValueOnce([]);
 
-    await expect(fetchSafeUrl('https://events.example.com:443/e', new AbortController().signal)).rejects.not.toThrow(/Only ports/);
+    // ASSERT THE REASON, not merely "did not throw the port error". `rejects.not.toThrow(/Only
+    // ports/)` passes on ANY rejection, so it would still pass if the port gate refused `:443`
+    // and something else rejected first. Catching the error and checking its message is what
+    // ties this control to the port rule.
+    const error = await fetchSafeUrl('https://events.example.com:443/e', new AbortController().signal).then(
+      () => null,
+      (e: unknown) => e
+    );
+
+    expect(error === null || !/Only ports/.test(String(error))).toBe(true);
   });
 });
