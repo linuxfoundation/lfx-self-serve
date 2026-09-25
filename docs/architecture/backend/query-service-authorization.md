@@ -61,15 +61,21 @@ access_check_object  = "v1_meeting:<meeting_uid>"
 access_check_relation = "viewer"
 ```
 
-The FGA model (`lfx-v2-fga-sync/bin/authorization_model.fga`) defines `meeting#viewer` as:
+The authoritative deployed FGA model (`lfx-v2-helm/charts/lfx-platform/files/model.fga`) defines
+`v1_meeting#viewer` as:
 
 ```text
-meeting#viewer = [user:*, committee#member] or participant or organizer or auditor from project
+define viewer: [user:*] or participant or organizer or auditor
 ```
 
-`user:*` is only granted `viewer` on **public** meetings. For a private meeting, only explicit
-committee members, participants, organizers, and project auditors pass the check. A caller with no
-relation to the meeting receives 0 registrant records from query-service — the filtering happens
+where `organizer` is derived from `meeting_coordinator from project or writer from committee or writer from project`,
+and `auditor` is derived from `organizer or auditor from project`.
+
+`user:*` is only granted `viewer` on **public** meetings. For a private meeting, a caller must be a
+participant, an organizer (which includes project writers, committee writers, and meeting coordinators),
+or a project auditor. Note that committee *membership* alone does not grant viewer access — access
+flows through `writer from committee` (i.e. being a committee writer, not just a member). A caller
+with no applicable relation receives 0 registrant records from query-service — the filtering happens
 server-side before the response leaves the platform.
 
 **For public meetings: Yes, by design.** The meeting is public, which means the organizer has chosen
@@ -90,14 +96,18 @@ before the BFF ever sees them.
 The BFF adds explicit `checkSingleAccessStrict` calls **only** when:
 
 - The endpoint writes data (creates/updates a resource) — no FGA filtering applies to mutations.
-- The endpoint calls an ITX/upstream API that does **not** go through query-service (e.g. the
-  raw registrant list via `fail_on_partial=true`, which hits the ITX meeting API directly).
-- The upstream API does not carry per-user filtering of its own and we want to gate access
-  before the expensive ITX call.
+- The endpoint calls an upstream API (ITX, NATS request/reply) that does **not** go through
+  query-service and does not perform per-user filtering of its own.
 
-The `fail_on_partial=true` registrant paths (`getAuthorizedCompleteRegistrants`,
-`getAuthorizedRegistrantsForImport`) are already gated — those hit ITX directly. The default
-listing path goes through query-service and relies on its built-in FGA filtering.
+**Note on `fail_on_partial` registrant paths.** `getAuthorizedCompleteRegistrants` and
+`getAuthorizedRegistrantsForImport` both call `getMeetingRegistrants`, which always reads from
+`/query/resources` — there is no ITX bypass. The `failOnPartial` flag only controls whether the
+page walk aborts on an upstream error (returning a 5xx) rather than returning a partial list.
+Those methods carry BFF-side auth checks because they are **complete-roster workflows** — full
+export or committee import — where returning a partial result without warning would silently
+misrepresent the data. The checks are stricter business-logic gates, not compensations for a
+missing query-service filter. The default listing path also goes through query-service and relies
+on its built-in FGA filtering.
 
 ---
 
@@ -124,7 +134,7 @@ When reviewing this codebase:
 - `lfx-v2-meeting-service/internal/infrastructure/eventing/nats_publisher.go` — where
   `access_check_object` and `access_check_relation` are stamped onto indexed meeting registrant
   documents.
-- `lfx-v2-fga-sync/bin/authorization_model.fga` — the full FGA model including `meeting#viewer`
-  definition.
+- `lfx-v2-helm/charts/lfx-platform/files/model.fga` — the authoritative deployed FGA model,
+  including the `v1_meeting#viewer` definition.
 - `lfx-v2-query-service/internal/service/resource_search.go` — query-service FGA filtering
   implementation.
