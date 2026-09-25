@@ -678,7 +678,7 @@ export const ORG_CLA_MANAGER_NAME_MAX = 30;
 
 export const ORG_CLA_DESIGNEE_REFUSALS = ['already-signed', 'no-lf-login', 'sanctioned', 'not-authorized', 'unknown'] as const;
 
-export const ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES = ['assigned', 'lf-login-requested'] as const;
+export const ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES = ['assigned', 'lf-login-required'] as const;
 
 /**
  * The CLA service's `fullName` constraint on a CLA manager request: 2–60 characters of ASCII

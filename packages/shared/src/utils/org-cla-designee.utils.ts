@@ -8,7 +8,7 @@ import { isOrgClaManagerAddEmail, orgClaRefusalCodeFrom, orgClaRefusalTextFrom }
 /**
  * The CLA service answers every designee refusal except sanctions with HTTP 400, so the reason is
  * only in its sentence. `lfx user not found` is the designee path's no-account refusal; `user has
- * no lf login` is the manager-request path's, sent after it has already emailed the person.
+ * no lf login` is the manager-request path's.
  */
 const REFUSAL_PATTERNS: readonly (readonly [OrgClaDesigneeRefusal, readonly string[]])[] = [
   ['already-signed', ['project already signed']],
@@ -16,7 +16,7 @@ const REFUSAL_PATTERNS: readonly (readonly [OrgClaDesigneeRefusal, readonly stri
   ['sanctioned', ['company_sanctioned']],
 ];
 
-const LF_LOGIN_REQUESTED_FRAGMENT = 'user has no lf login';
+const LF_LOGIN_REQUIRED_FRAGMENT = 'user has no lf login';
 
 export function classifyOrgClaDesigneeRefusal(status: number, body: unknown): OrgClaDesigneeRefusal {
   if (orgClaRefusalCodeFrom(body) === 'company_sanctioned') return 'sanctioned';
@@ -35,10 +35,10 @@ export function classifyOrgClaDesigneeRefusal(status: number, body: unknown): Or
 
 /**
  * True when a manager request was refused only because the named person has no LF Login. The CLA
- * service has already emailed them to create one by then, so the caller reports it as sent.
+ * service sends this refusal whether or not it emailed them, so it is no proof an invitation went out.
  */
-export function isOrgClaDesigneeLfLoginRequested(status: number, body: unknown): boolean {
-  return status === 400 && orgClaRefusalTextFrom(body).includes(LF_LOGIN_REQUESTED_FRAGMENT);
+export function isOrgClaDesigneeLfLoginRequired(status: number, body: unknown): boolean {
+  return status === 400 && orgClaRefusalTextFrom(body).includes(LF_LOGIN_REQUIRED_FRAGMENT);
 }
 
 export function isOrgClaDesigneeFullName(value: string): boolean {

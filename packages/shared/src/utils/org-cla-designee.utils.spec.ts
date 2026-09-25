@@ -8,7 +8,7 @@ import {
   classifyOrgClaDesigneeRefusal,
   hasOrgClaDesigneeNominationErrors,
   isOrgClaDesigneeFullName,
-  isOrgClaDesigneeLfLoginRequested,
+  isOrgClaDesigneeLfLoginRequired,
   validateOrgClaDesigneeNomination,
 } from './org-cla-designee.utils';
 
@@ -43,17 +43,17 @@ describe('classifyOrgClaDesigneeRefusal', () => {
   });
 });
 
-describe('isOrgClaDesigneeLfLoginRequested', () => {
-  it('is true only for the manager-request 400 that already emailed the person', () => {
-    expect(isOrgClaDesigneeLfLoginRequested(400, JSON.stringify({ Code: '400', Message: 'user has no LF Login' }))).toBe(true);
+describe('isOrgClaDesigneeLfLoginRequired', () => {
+  it('is true only for the manager-request 400 naming a missing LF Login', () => {
+    expect(isOrgClaDesigneeLfLoginRequired(400, JSON.stringify({ Code: '400', Message: 'user has no LF Login' }))).toBe(true);
   });
 
   it('is false for the designee path, whose no-account refusal sends no email', () => {
-    expect(isOrgClaDesigneeLfLoginRequested(400, producerBadRequest('lfx user not found'))).toBe(false);
+    expect(isOrgClaDesigneeLfLoginRequired(400, producerBadRequest('lfx user not found'))).toBe(false);
   });
 
   it('is false on a status other than 400', () => {
-    expect(isOrgClaDesigneeLfLoginRequested(404, JSON.stringify({ Message: 'user has no LF Login' }))).toBe(false);
+    expect(isOrgClaDesigneeLfLoginRequired(404, JSON.stringify({ Message: 'user has no LF Login' }))).toBe(false);
   });
 });
 

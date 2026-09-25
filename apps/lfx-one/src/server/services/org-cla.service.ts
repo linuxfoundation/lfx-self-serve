@@ -14,7 +14,7 @@ import {
 import {
   classifyOrgClaDesigneeRefusal,
   classifyOrgClaManagerRefusal,
-  isOrgClaDesigneeLfLoginRequested,
+  isOrgClaDesigneeLfLoginRequired,
   isSameClaGroup,
   legacyOrgEasyclaReturnPath,
   orgClaPairProjectSfid,
@@ -1252,8 +1252,8 @@ export class OrgClaService {
    *
    * `contactAdmin: false` is fixed: Organization Lens does not offer Corporate Console's "contact
    * the company admin" branch. Two refusals are successes to the caller. A 409 means the named
-   * person already holds the role. A 400 for a missing LF Login arrives after the CLA service has
-   * emailed them to create one, and they become designee once they do.
+   * person already holds the role. A 400 for a missing LF Login means they need one before they can
+   * become designee; the CLA service sends the same refusal whether or not it emailed them.
    */
   public async nominateDesignee(req: Request, orgUid: string, request: OrgClaDesigneeNominationRequest): Promise<OrgClaDesigneeNominationResponse> {
     const operation = 'org_cla_nominate_designee';
@@ -1277,9 +1277,9 @@ export class OrgClaService {
       if (error instanceof MicroserviceError && error.statusCode === 409) {
         return { outcome: 'assigned', email: request.email };
       }
-      if (error instanceof MicroserviceError && isOrgClaDesigneeLfLoginRequested(error.statusCode, error.errorBody)) {
-        logger.debug(req, operation, 'named person has no lf login; the cla service emailed them', { org_uid: orgUid, project_sfid: request.projectSfid });
-        return { outcome: 'lf-login-requested', email: request.email };
+      if (error instanceof MicroserviceError && isOrgClaDesigneeLfLoginRequired(error.statusCode, error.errorBody)) {
+        logger.debug(req, operation, 'named person has no lf login', { org_uid: orgUid, project_sfid: request.projectSfid });
+        return { outcome: 'lf-login-required', email: request.email };
       }
       throw asDesigneeRefusal(error, operation, 'Failed to request a CLA manager designee');
     }
@@ -1630,7 +1630,7 @@ export class OrgClaService {
       throw asDesigneeRefusal(error, operation, 'Failed to resolve the organization in EasyCLA');
     }
 
-    const companyId = company?.companyID?.trim() ?? '';
+    const companyId = upstreamTrimmedString(company?.companyID);
     if (!companyId) {
       throw new MicroserviceError('Failed to resolve the organization in EasyCLA: upstream returned no company id', 502, 'UPSTREAM_INVALID_RESPONSE', {
         operation,

@@ -1393,8 +1393,8 @@ export interface OrgClaDesigneeNominationRequest {
 }
 
 /**
- * `lf-login-requested` is a success: the CLA service emailed the named person to create an LF
- * Login, and they become designee once they have one.
+ * `lf-login-required` is a success: the named person needs an LF Login before they can become
+ * designee. The CLA service does not say whether it emailed them, so nothing may claim it did.
  */
 export type OrgClaDesigneeNominationOutcome = (typeof ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES)[number];
 

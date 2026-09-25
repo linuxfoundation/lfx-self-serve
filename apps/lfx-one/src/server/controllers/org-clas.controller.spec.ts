@@ -1610,7 +1610,7 @@ describe('OrgClasController — CLA manager designee (#2780)', () => {
 
   describe('nominateDesignee', () => {
     it('forwards the trimmed name and address and keeps the address out of the log', async () => {
-      nominateDesignee.mockResolvedValue({ outcome: 'lf-login-requested', email: 'contributor@example.org' });
+      nominateDesignee.mockResolvedValue({ outcome: 'lf-login-required', email: 'contributor@example.org' });
       const res = buildRes();
 
       await new OrgClasController().nominateDesignee(
@@ -1625,11 +1625,11 @@ describe('OrgClasController — CLA manager designee (#2780)', () => {
         email: 'contributor@example.org',
       });
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
-      expect(res.json).toHaveBeenCalledWith({ outcome: 'lf-login-requested', email: 'contributor@example.org' });
+      expect(res.json).toHaveBeenCalledWith({ outcome: 'lf-login-required', email: 'contributor@example.org' });
       expect(loggerMock.success).toHaveBeenCalledWith(expect.anything(), 'nominate_org_cla_designee', expect.anything(), {
         org_uid: ORG_UID,
         project_sfid: PROJECT_SFID,
-        outcome: 'lf-login-requested',
+        outcome: 'lf-login-required',
       });
     });
 

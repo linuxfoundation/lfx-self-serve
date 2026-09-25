@@ -60,7 +60,7 @@ vi.mock('@lfx-one/shared/utils', async () => {
     sortOrgClaApprovalEntries: approval.sortOrgClaApprovalEntries,
     classifyOrgClaManagerRefusal: managers.classifyOrgClaManagerRefusal,
     classifyOrgClaDesigneeRefusal: designee.classifyOrgClaDesigneeRefusal,
-    isOrgClaDesigneeLfLoginRequested: designee.isOrgClaDesigneeLfLoginRequested,
+    isOrgClaDesigneeLfLoginRequired: designee.isOrgClaDesigneeLfLoginRequired,
     orgClaPairProjectSfid: permissions.orgClaPairProjectSfid,
     // The return-address builders ship as written: the spec asserts the minted shapes.
     orgEasyclaReturnPath: orgLensUrl.orgEasyclaReturnPath,
@@ -3631,8 +3631,11 @@ describe('OrgClaService — CLA manager designee (#2780)', () => {
       );
     });
 
-    it('refuses to write when the lookup names no company', async () => {
-      gatewayFetch.mockResolvedValueOnce({});
+    it.each([
+      ['names no company', {}],
+      ['returns a malformed company id', { companyID: 42 }],
+    ])('refuses to write when the lookup %s', async (_label, company) => {
+      gatewayFetch.mockResolvedValueOnce(company);
 
       const error = await refusalOf(new OrgClaService().assignDesignee(req(), ORG_UID, PROJECT_SFID, 'contributor@example.org'));
 
@@ -3754,13 +3757,13 @@ describe('OrgClaService — CLA manager designee (#2780)', () => {
       });
     });
 
-    it('reports a missing LF Login as the invitation the CLA service already sent', async () => {
+    it('reports a missing LF Login without claiming an invitation was sent', async () => {
       companyThen(() => {
         throw upstreamRefusal(400, 'user has no LF Login');
       });
 
       await expect(new OrgClaService().nominateDesignee(req(), ORG_UID, NOMINATION)).resolves.toEqual({
-        outcome: 'lf-login-requested',
+        outcome: 'lf-login-required',
         email: 'contributor@example.org',
       });
     });
