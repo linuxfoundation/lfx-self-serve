@@ -10,12 +10,16 @@ import { catchError, combineLatest, debounceTime, distinctUntilChanged, filter, 
 import { TooltipModule } from 'primeng/tooltip';
 import { SelectModule } from 'primeng/select';
 import { InputTextModule } from 'primeng/inputtext';
+import { SkeletonModule } from 'primeng/skeleton';
 import { AccountContextService } from '@services/account-context.service';
+import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensMembershipsService } from '@services/org-lens-memberships.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
+import { OrgRoleGrantsService } from '@services/org-role-grants.service';
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { OrgLensEmptyStateComponent } from '@components/org-lens-empty-state/org-lens-empty-state.component';
 import { OpenIntercomDirective } from '@shared/directives/open-intercom.directive';
 import type {
   OrgActiveMembershipsResponse,
@@ -37,14 +41,33 @@ type ActiveMembershipLinkedRow = ActiveMembershipRow & { membershipLink: string[
 @Component({
   selector: 'lfx-org-memberships',
   standalone: true,
-  imports: [FormsModule, RouterLink, TableComponent, TooltipModule, SelectModule, InputTextModule, CardComponent, EmptyStateComponent, OpenIntercomDirective],
+  imports: [
+    FormsModule,
+    RouterLink,
+    TableComponent,
+    TooltipModule,
+    SelectModule,
+    InputTextModule,
+    SkeletonModule,
+    CardComponent,
+    EmptyStateComponent,
+    OrgLensEmptyStateComponent,
+    OpenIntercomDirective,
+  ],
   templateUrl: './org-memberships.component.html',
 })
 export class OrgMembershipsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
   private readonly membershipsService = inject(OrgLensMembershipsService);
+  private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
   private readonly destroyRef = inject(DestroyRef);
+  protected readonly emptyState = inject(OrgLensEmptyStateService);
+
+  // Page-level state (e.g. `contractor-no-grant`, `could-not-load`) replacing the page, or null when it renders.
+  protected readonly pageState = this.emptyState.pageState;
+  protected readonly skeletonRows: readonly number[] = [0, 1, 2, 3, 4];
+  protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
   protected readonly activeTab = signal<OrgMembershipTab>('active');
   protected readonly retryTrigger = signal(0);
@@ -115,7 +138,7 @@ export class OrgMembershipsComponent {
   protected readonly summary = computed(() => this.activeData()?.summary);
   protected readonly memberships: Signal<ActiveMembershipLinkedRow[]> = computed(() => this.initMemberships());
 
-  protected readonly pageState: Signal<OrgMembershipsPageState> = computed(() => this.initPageState());
+  protected readonly activeState: Signal<OrgMembershipsPageState> = computed(() => this.initActiveState());
 
   private readonly expiredLoading = signal(false);
   private readonly expiredError = signal(false);
@@ -192,7 +215,7 @@ export class OrgMembershipsComponent {
     return [{ label: 'All Membership Levels', value: '' }, ...this.allTiers().map((t) => ({ label: t, value: t }))];
   }
 
-  private initPageState(): OrgMembershipsPageState {
+  private initActiveState(): OrgMembershipsPageState {
     if (this.fetchLoading()) return 'loading';
     if (this.fetchError()) return 'error';
     const data = this.activeData();

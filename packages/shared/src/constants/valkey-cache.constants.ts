@@ -18,16 +18,18 @@ export const VALKEY_CACHE = {
   /** Domain + schema-version segment for the per-committee Snowflake-backed engagement cache (shared across callers). `v2`: the cached row shape changed from an email-keyed, single-window row to a uid-keyed row carrying all three windows — bumped so no entry written under the old shape can be read back as the new one. */
   COMMITTEE_ENGAGEMENT_NAMESPACE: 'committee-engagement-sf:v2',
 
-  /** Domain + schema-version segment for the per-user org seats cache. */
-  ORG_SEATS_NAMESPACE: 'org-seats:v1',
+  /** Domain + schema-version segment for the per-user org seats cache. `v2` (GH-1906): the stored value is the compact `CompactOrgSeatsEntry` envelope — committees deduped into a dictionary, `organization_id` hoisted, the rest columnar — not a plain seat array, so no `v1` entry can be decoded under the new shape. */
+  ORG_SEATS_NAMESPACE: 'org-seats:v2',
 
   /**
    * Domain + schema-version segment for the per-org Org Lens Groups aggregate (GH-1809), shared
    * across callers rather than per-user. What is stored is the *aggregate the page renders* —
-   * committee name, category, foundation, count — not the seat roster it derives from. For larger
-   * orgs the roster exceeds `MAX_VALUE_BYTES`, so its writes are refused for size and it is never
-   * retained; the aggregate stays well under the ceiling. Storing the aggregate is what makes this
-   * page cacheable. The value carries no PII, and it is served only to callers holding a resolved
+   * committee name, category, foundation, count — not the seat roster it derives from. The roster
+   * is large (before GH-1906's compaction it exceeded `MAX_VALUE_BYTES` for larger orgs and was
+   * never retained), it is permission-filtered and so can only be cached per caller, and its
+   * per-caller entry lives 30 seconds. The aggregate is small, carries no per-caller filtering, and
+   * is kept for 15 minutes with explicit invalidation on seat reassignment, which is what makes this
+   * page cacheable across callers. The value carries no PII, and it is served only to callers holding a resolved
    * per-org grant — see `assertOrgLensRead`'s returned qualification.
    */
   ORG_LENS_GROUPS_NAMESPACE: 'org-lens-groups:v1',
@@ -40,10 +42,11 @@ export const VALKEY_CACHE = {
 
   /**
    * Domain + schema-version segment for the per-user org People directory cache. `v2`: merge-only
-   * fields are stripped before the write and the validator asserts their absence — stale `v1`
-   * entries must never be served as the new shape.
+   * fields are stripped before the write and the validator asserts their absence. `v3` (GH-1906):
+   * `rows` are stored columnar (`CompactOrgPeopleDirectoryEntry`) rather than as wire objects —
+   * stale `v1`/`v2` entries must never be served as the new shape.
    */
-  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v2',
+  ORG_PEOPLE_DIRECTORY_NAMESPACE: 'org-people-dir:v3',
 
   /** Domain + schema-version segment for the express-openid-connect session store (server-side session data keyed by opaque session id). */
   SESSION_NAMESPACE: 'session:v1',
@@ -183,6 +186,43 @@ export const VALKEY_CACHE = {
   /** Cap for the post-`fn()` release attempt made after an `acquireLock` that already came back `unavailable` (LFXV2 #2241) — that call just spent up to `LOCK_OP_TIMEOUT_MS` finding the backend unresponsive, so the release doesn't get another full budget on top of it. The release is best-effort either way (the lock's own `PX` TTL is the real backstop), so a short cap here only trims tail latency on an already-degraded request; it never affects correctness. */
   DEGRADED_LOCK_RELEASE_TIMEOUT_MS: 250,
 
-  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. */
+  /** Skip caching values larger than this (bytes of the serialized JSON) to avoid storing oversized entries. Stays the default for every sub-resource absent from `MAX_VALUE_BYTES_BY_SUBRESOURCE`. */
   MAX_VALUE_BYTES: 1_048_576,
+
+  /**
+   * Per-sub-resource overrides of `MAX_VALUE_BYTES` (GH-1906), keyed by
+   * `{namespace}:{subResourceLabel}[:{subResourceVersion}]` — e.g. `org-lens-sf:v1:people-all:v2`.
+   * The trailing per-request discriminators a sub-resource may carry (a time range, a param
+   * signature, a person key) are deliberately *not* part of the lookup key: one cap covers every
+   * variant of a cache, and no identifier can reach this table. See `ValkeyService.maxBytesFor`,
+   * which resolves the key and is used by BOTH the write (`setJson`) and read (`parseCachedJson`)
+   * size checks — a cap raised on only one of them would write entries that every read rejects.
+   *
+   * An entry here is a deliberate, measured exception, not a knob: raising a cap means a single
+   * Valkey value of that size is worth the memory and the parse cost on every read. Every entry
+   * MUST cite the measured compact size it was sized from and the date it was measured, so a later
+   * reader can tell a still-justified cap from one whose payload has since shrunk (or grown).
+   *
+   * Sized at the measured compact maximum × ~1.25, rounded up to a whole MiB, so an org growing a
+   * quarter again doesn't silently fall out of the cache. `Readonly` on purpose: these are release
+   * decisions, not a runtime knob, and a test that reached in to overwrite one would be changing
+   * production behaviour for every later test in the run.
+   */
+  MAX_VALUE_BYTES_BY_SUBRESOURCE: {
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,050,250
+    // bytes for the largest org measured (down from 4,446,040 pre-compaction).
+    // This roster compacts least of the five (×2.2) because its rows are mostly long values —
+    // names, addresses, photo URLs, foundation-id arrays — rather than repeated column names.
+    'org-lens-sf:v1:people-all:v2': 3 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 1,171,283
+    // bytes for the largest org measured (down from 5,482,730 pre-compaction). The per-(person,
+    // event) grain is irreducible — the tab's stat cards and filters recompute client-side over
+    // every detail row — so the remaining excess is real data, not repetition.
+    'org-lens-sf:v1:people-event-attendees:v2': 2 * 1_048_576,
+    // Measured 2026-09-24 against prod ANALYTICS.PLATINUM_LFX_ONE: largest compact value 2,443,884
+    // bytes for the largest org measured (down from 6,440,061 pre-compaction). Same irreducible
+    // per-(person, course-or-cert) grain; `COURSE_OR_CERT_ID` and `ACTIVITY_TS` are distinct on
+    // every row, so there is nothing left to deduplicate.
+    'org-lens-sf:v1:people-trainees:v2': 3 * 1_048_576,
+  } as Readonly<Record<string, number>>,
 } as const;

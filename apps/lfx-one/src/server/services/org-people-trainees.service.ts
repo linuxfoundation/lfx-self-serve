@@ -1,8 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { EMPTY_ORG_TRAINEES_RESPONSE, VALKEY_CACHE } from '@lfx-one/shared/constants';
+import {
+  EMPTY_ORG_TRAINEES_RESPONSE,
+  ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS,
+  ORG_TRAINEE_COURSE_OPTION_COLUMNS,
+  ORG_TRAINEE_DETAIL_COLUMNS,
+  ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS,
+  ORG_TRAINEE_ROW_COLUMNS,
+  VALKEY_CACHE,
+} from '@lfx-one/shared/constants';
 import type {
+  CompactOrgTraineesRawCache,
   OrgPeopleAllTraineeRow,
   OrgPeopleTrainingRow,
   OrgTraineeCourseOption,
@@ -13,9 +22,10 @@ import type {
   TraineeCourseOptionRow,
   TraineeFoundationOptionRow,
 } from '@lfx-one/shared/interfaces';
+import { dedupeByKey, fromColumnar, hasExactColumns, isColumnarAbsent, isColumnarTable, toColumnar, tupleKey } from '@lfx-one/shared/utils';
 
 import { SnowflakeService } from './snowflake.service';
-import { withOrgCache } from './valkey.service';
+import { withOrgCompactCache } from './valkey.service';
 
 /** Trainees tab data access — single bundled GET that backs the filter trio, four stat cards, main row, and lazy expanded section client-side. */
 export class OrgPeopleTraineesService {
@@ -31,12 +41,15 @@ export class OrgPeopleTraineesService {
       return { ...EMPTY_ORG_TRAINEES_RESPONSE };
     }
 
-    const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCache(
+    // `people-trainees:v2`: the stored value is now the compact projection below (GH-1906), with the
+    // course- and foundation-level columns lifted out of the per-(person, course) detail rows — a
+    // `v1` entry is a different shape entirely and must miss.
+    const { traineeRows, detailRows, foundationRows, courseRows } = await withOrgCompactCache(
       accountId,
-      'people-trainees',
+      'people-trainees:v2',
       VALKEY_CACHE.ORG_LENS_SNOWFLAKE_TTL_SECONDS,
       () => this.fetchTraineesRaw(accountId),
-      isTraineesRaw
+      { encode: encodeTraineesRaw, decode: decodeTraineesRaw, accept: isCompactTraineesRaw }
     );
 
     const trainees: OrgTraineeRow[] = traineeRows.map((row) => ({
@@ -58,7 +71,7 @@ export class OrgPeopleTraineesService {
           personKey: row.PERSON_KEY,
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
           courseOrCertId: row.COURSE_OR_CERT_ID,
-          // COURSE_ID is 100% populated for both enrolled and certified rows (verified Red Hat 2026-06-01),
+          // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
           // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
           courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
           courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
@@ -166,9 +179,114 @@ export class OrgPeopleTraineesService {
   }
 }
 
-function isTraineesRaw(value: unknown): boolean {
-  const v = value as { traineeRows?: unknown; detailRows?: unknown; foundationRows?: unknown; courseRows?: unknown } | null;
-  return !!v && Array.isArray(v.traineeRows) && Array.isArray(v.detailRows) && Array.isArray(v.foundationRows) && Array.isArray(v.courseRows);
+/**
+ * Compacts the four raw reads for Valkey storage (GH-1906).
+ *
+ * Same shape of waste as the event-attendees payload: `detailRows` is grained per (person,
+ * course-or-cert), so every row for a course repeats that course's `COURSE_ID`, `COURSE_NAME`,
+ * `FOUNDATION_ID` and `FOUNDATION_NAME`. Those four are stored once per distinct course; what stays
+ * per row is `PERSON_KEY`, `STATUS`, `COURSE_OR_CERT_ID` (the enrollment/certification instance,
+ * genuinely per row) and `ACTIVITY_TS`.
+ */
+function encodeTraineesRaw(raw: {
+  traineeRows: OrgPeopleAllTraineeRow[];
+  detailRows: OrgPeopleTrainingRow[];
+  foundationRows: TraineeFoundationOptionRow[];
+  courseRows: TraineeCourseOptionRow[];
+}): CompactOrgTraineesRawCache {
+  // Keyed on the whole tuple, not on COURSE_ID: two rows sharing a course id but disagreeing on a
+  // name or foundation must not collapse onto the first one seen, or the rebuilt rows would differ
+  // from the uncached ones. COURSE_ID is also nullable, and the tuple key handles that for free.
+  // Keyed once per row and reused for both the dictionary and the index array: the key is the
+  // expensive part of the encode, and computing it twice per row bought nothing.
+  const keys = new Map<OrgPeopleTrainingRow, string>(
+    raw.detailRows.map((row) => [row, tupleKey([row.COURSE_ID, row.COURSE_NAME, row.FOUNDATION_ID, row.FOUNDATION_NAME])])
+  );
+  const courses = dedupeByKey(raw.detailRows, (row) => keys.get(row)!);
+
+  return {
+    traineeRows: toColumnar(raw.traineeRows, ORG_TRAINEE_ROW_COLUMNS),
+    courses: toColumnar(courses.values, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS),
+    details: toColumnar(raw.detailRows, ORG_TRAINEE_DETAIL_COLUMNS),
+    // Every detail row was part of the set `courses` was built from, so the lookup always resolves.
+    detailCourses: raw.detailRows.map((row) => courses.indexOf.get(keys.get(row)!)!),
+    foundationRows: toColumnar(raw.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS),
+    courseRows: toColumnar(raw.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS),
+  };
+}
+
+/** Rebuilds the raw rows {@link encodeTraineesRaw} stored, so the mapping above sees exactly what a cache miss would hand it. */
+function decodeTraineesRaw(value: CompactOrgTraineesRawCache): {
+  traineeRows: OrgPeopleAllTraineeRow[];
+  detailRows: OrgPeopleTrainingRow[];
+  foundationRows: TraineeFoundationOptionRow[];
+  courseRows: TraineeCourseOptionRow[];
+} {
+  const courses = fromColumnar<OrgPeopleTrainingRow>(value.courses);
+  const detailRows = fromColumnar<OrgPeopleTrainingRow>(value.details);
+  detailRows.forEach((row, index) => Object.assign(row, courses[value.detailCourses[index]]));
+  return {
+    traineeRows: fromColumnar<OrgPeopleAllTraineeRow>(value.traineeRows),
+    detailRows,
+    foundationRows: fromColumnar<TraineeFoundationOptionRow>(value.foundationRows),
+    courseRows: fromColumnar<TraineeCourseOptionRow>(value.courseRows),
+  };
+}
+
+function isCompactTraineesRaw(value: unknown): boolean {
+  const cache = value as Partial<CompactOrgTraineesRawCache> | null;
+  if (
+    !cache ||
+    typeof cache !== 'object' ||
+    !isColumnarTable(cache.traineeRows) ||
+    !isColumnarTable(cache.courses) ||
+    !isColumnarTable(cache.details) ||
+    !isColumnarTable(cache.foundationRows) ||
+    !isColumnarTable(cache.courseRows) ||
+    // Exact columns, not a subset: a duplicated, extra, reordered or short-rowed entry decodes
+    // "successfully" into rows missing data the writer always emits, which is worse than a miss —
+    // the tab renders with holes in it for the rest of the TTL instead of refetching.
+    !hasExactColumns(cache.traineeRows, ORG_TRAINEE_ROW_COLUMNS) ||
+    !hasExactColumns(cache.courses, ORG_TRAINEE_COURSE_DICTIONARY_COLUMNS) ||
+    !hasExactColumns(cache.details, ORG_TRAINEE_DETAIL_COLUMNS) ||
+    !hasExactColumns(cache.foundationRows, ORG_TRAINEE_FOUNDATION_OPTION_COLUMNS) ||
+    !hasExactColumns(cache.courseRows, ORG_TRAINEE_COURSE_OPTION_COLUMNS)
+  ) {
+    return false;
+  }
+  // Exact columns prove the SHAPE; these prove the VALUES, and both are needed — the column check
+  // does NOT subsume them. A current-shape entry whose required cell is absent or mistyped decodes
+  // into a row the mapper then reads, so it has to be a miss.
+  // A guard must never be STRICTER than the uncached path: the mapper passes a null column straight
+  // through, so demanding a string would turn one null row into a permanent miss for that org.
+  // Absence and wrong types are still rejected — those the mapper cannot survive.
+  const personKeyIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('PERSON_KEY');
+  const courseOrCertIndex = ORG_TRAINEE_DETAIL_COLUMNS.indexOf('COURSE_OR_CERT_ID');
+  const traineeKeyIndex = ORG_TRAINEE_ROW_COLUMNS.indexOf('PERSON_KEY');
+  if (
+    !cache.details.r.every((row) => isStoredNullableString(row[personKeyIndex]) && isStoredNullableString(row[courseOrCertIndex])) ||
+    !cache.traineeRows.r.every((row) => isStoredNullableString(row[traineeKeyIndex]))
+  ) {
+    return false;
+  }
+  // Every reference must resolve, so the decode can rebuild each detail row in full rather than
+  // silently emitting one missing its whole course — a truncated entry is a miss, not a partial hit.
+  const courseCount = cache.courses.r.length;
+  return (
+    Array.isArray(cache.detailCourses) &&
+    cache.detailCourses.length === cache.details.r.length &&
+    cache.detailCourses.every((index) => Number.isInteger(index) && index >= 0 && index < courseCount)
+  );
+}
+
+/** A required stored cell: present (not the absence marker) and a string. */
+function isStoredString(cell: unknown): boolean {
+  return typeof cell === 'string' && !isColumnarAbsent(cell);
+}
+
+/** As {@link isStoredString}, but `null` is a legal warehouse value the uncached mapper already handles. */
+function isStoredNullableString(cell: unknown): boolean {
+  return cell === null || isStoredString(cell);
 }
 
 /** Normalize Snowflake `Date | string | null` to a full ISO string, or null when missing / unparseable; preserves time-of-day so client-side time-window predicates and tiebreaker chains stay precise. */

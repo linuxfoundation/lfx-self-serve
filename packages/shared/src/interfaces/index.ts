@@ -7,6 +7,12 @@ export * from './project.interface';
 // Committee interfaces
 export * from './committee.interface';
 
+// Compact Valkey cache storage shapes (GH-1906)
+export * from './compact-cache.interface';
+
+// Compact Valkey storage shapes for the per-org Org Lens caches (GH-1906)
+export * from './org-cache-compact.interface';
+
 // Member interfaces
 export * from './member.interface';
 
@@ -189,6 +195,12 @@ export * from './health-metrics.interface';
 // Health Metrics Engagement page (LFXV2-3366) interfaces
 export * from './health-metrics-engagement.interface';
 
+// Health Metrics Events page interfaces
+export * from './health-metrics-events.interface';
+
+// Health Metrics Level 2 tab shell interfaces
+export * from './health-metrics-l2.interface';
+
 // Health Metrics Overview page (LFXV2-3365) interfaces
 export * from './health-metrics-overview.interface';
 
@@ -245,6 +257,9 @@ export * from './org-key-contacts.internal.interface';
 // Org People interfaces
 export * from './org-people.interface';
 export * from './org-people.internal.interface';
+
+// Org Lens per-caller cache stored shapes (GH-1906)
+export * from './org-lens-cache.interface';
 
 // Org Lens Access tab (spec 025)
 export * from './org-lens-access.interface';

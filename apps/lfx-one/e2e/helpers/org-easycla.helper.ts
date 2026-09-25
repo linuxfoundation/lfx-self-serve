@@ -25,14 +25,15 @@ import type {
 } from '@lfx-one/shared/interfaces';
 import { expect, Locator, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from '../fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './org-roi.helper';
 
 /** The leftover address the e2e enters through (every release routes it); the org-addressed form is asserted on the way out. */
 export const EASYCLA_URL = ORG_EASYCLA_PATH;
 export const PAGE_LOAD_TIMEOUT = 30_000;
 
-export const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
-export const MOCK_ACCOUNT_NAME = 'Acme Motors';
+export const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
+export const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 /** The route the page reads its list from — the one thing each spec stubs differently. */
 export const CLA_GROUPS_ROUTE = '**/api/orgs/*/lens/cla-groups';
@@ -119,7 +120,7 @@ export async function stubAccountContext(page: Page): Promise<void> {
   });
 
   await fulfillJson(page, '**/api/nav/org-items*', {
-    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true }],
+    items: [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: MOCK_ACCOUNT_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true }],
     next_page_token: null,
     upstream_failed: false,
     total: 1,
@@ -205,6 +206,10 @@ export async function gotoEasyclaList(page: Page, stubList: (page: Page) => Prom
  * @param stubList - Installs the CLA Group list response this case needs.
  * @param signatureId - Narrows the group to one agreement; omit unless the case is about that choice.
  * @param permissionAllowed - ACS pair-check stub. Defaults true so mutation cases stay writable unless the case is about a deny.
+ *
+ * A signed Overview reads the activity log for its Recent activity block, so an empty page is
+ * stubbed first. `stubList` runs after it and can install its own `stubActivityLog`, which wins
+ * because Playwright tries the most recently registered route first.
  */
 export async function gotoEasyclaDetail(
   page: Page,
@@ -216,6 +221,7 @@ export async function gotoEasyclaDetail(
   await stubFeatureFlags(page, { [ORG_LENS_CLA_M3_ENABLED_FLAG]: true });
   await stubAccountContext(page);
   await stubPermissionChecks(page, permissionAllowed);
+  await stubActivityLog(page);
   await stubList(page);
 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -613,6 +619,15 @@ export async function gotoActivityLog(page: Page, options: { initial?: OrgClaAct
     await stubActivityLog(p, options);
   });
   await openActivityLogTab(page);
+}
+
+/** Lands on the signed Overview with the Recent activity block's first page stubbed. */
+export async function gotoRecentActivity(page: Page, initial?: OrgClaActivityLogPage): Promise<void> {
+  await gotoEasyclaDetail(page, STUB_CLA_GROUP_ID, async (p) => {
+    await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([claGroup()]));
+    await stubActivityLog(p, { initial });
+  });
+  await expect(page.getByTestId('org-easycla-detail-overview')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
 }
 
 export async function openActivityLogTab(page: Page): Promise<void> {

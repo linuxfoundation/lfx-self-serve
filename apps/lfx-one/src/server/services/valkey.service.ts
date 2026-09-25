@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
-import { CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
+import { CacheCodec, CachePort, GetDelResult, LockAcquireResult } from '@lfx-one/shared/interfaces';
 import { isFilterSafeIdentifier, isFilterSafeUsername } from '@lfx-one/shared/utils';
 import { createHash, randomUUID } from 'crypto';
 import Redis from 'ioredis';
@@ -16,6 +16,9 @@ export class ValkeyService implements CachePort {
 
   /** Compare-and-delete: only removes `KEYS[1]` when its current value still equals `ARGV[1]`. See `releaseLock`. */
   private static readonly lockReleaseScript = 'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+
+  /** The only namespaces whose segment after the principal is a code-defined label rather than data — see `resolveSubResource`. */
+  private static readonly subResourcedNamespaces: readonly string[] = [VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE, VALKEY_CACHE.COMMITTEE_ENGAGEMENT_NAMESPACE];
 
   private readonly client: Redis | null = null;
   private shutdownHookRegistered = false;
@@ -120,18 +123,23 @@ export class ValkeyService implements CachePort {
     try {
       const serialized = JSON.stringify(value);
       const writeSize = Buffer.byteLength(serialized, 'utf8');
-      if (writeSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+      const maxBytes = ValkeyService.maxBytesFor(key);
+      if (writeSize > maxBytes) {
         // Same enrichment as the read-path oversize warning: `cache_namespace` gives log queries a
         // typed field to group by (rather than substring-matching the redacted `cache_key`, which
         // works in the default deployment but breaks when `VALKEY_KEY_NAMESPACE` is `vN`-shaped),
-        // and `size_bytes` is the actually-new attribution — the existing warning didn't distinguish
-        // a payload just over the 1 MB cap from one 10× over it, and that gap is exactly what
-        // determines whether the fix is a slimmer projection or a different caching strategy.
+        // `cache_subresource` names *which* cached item was too big (the redacted key hides it, so
+        // attribution otherwise needs an APM trace), and `size_bytes` is the actually-new
+        // attribution — the existing warning didn't distinguish a payload just over the 1 MB cap
+        // from one 10× over it, and that gap is exactly what determines whether the fix is a
+        // slimmer projection or a different caching strategy. `max_bytes` is the *resolved* cap
+        // (see `maxBytesFor`), not the global default, so the log states the limit actually applied.
         logger.warning(undefined, 'valkey_set', 'Skipping cache write — value exceeds max size', {
           cache_key: ValkeyService.redactKey(key),
           cache_namespace: ValkeyService.extractNamespace(key),
+          cache_subresource: ValkeyService.extractSubresource(key),
           size_bytes: writeSize,
-          max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+          max_bytes: maxBytes,
         });
         return false;
       }
@@ -247,6 +255,54 @@ export class ValkeyService implements CachePort {
     return result;
   }
 
+  /**
+   * Read-through cache for a value whose STORED form differs from the form the caller uses — the
+   * Org Lens payloads (GH-1906), which are held column-oriented and deduplicated and rebuilt on
+   * read.
+   *
+   * Deliberately asymmetric: a miss returns the freshly fetched value itself, never the result of
+   * encoding and immediately decoding it. That keeps the codec cost on the path it buys something
+   * on (a hit) rather than adding an avoidable pass over tens of thousands of rows to the path that
+   * is already slow, and it means a test comparing a hit against the miss that populated it is
+   * comparing two genuinely different computations instead of the same one twice.
+   *
+   * `storable` mirrors `withCache`'s: a value that is well-formed but incomplete — a Projects
+   * response whose optional no-activity hydration failed, say — is served to this caller and then
+   * not written, so one upstream blip can't pin a degraded page in the cache for the whole TTL.
+   */
+  public async withCompactCache<T, S>(
+    key: string | null,
+    ttlSeconds: number,
+    fetcher: () => Promise<T>,
+    codec: CacheCodec<T, S>,
+    storable?: (value: T) => boolean
+  ): Promise<T> {
+    // Fail-closed (no principal-bound key) or disabled cache → direct fetch, no read/write.
+    if (key === null || !this.client) {
+      logger.debug(undefined, 'cache_bypass', 'Cache bypassed (no key or disabled) — fetching directly', {
+        cache_key: key ? ValkeyService.redactKey(key) : undefined,
+      });
+      return fetcher();
+    }
+
+    const hit = await this.getJson<S>(key, codec.accept);
+    if (hit !== null) {
+      logger.debug(undefined, 'cache_hit', 'Cache hit', { cache_key: ValkeyService.redactKey(key) });
+      return codec.decode(hit);
+    }
+
+    logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
+    const result = await fetcher();
+    if (storable && !storable(result)) {
+      logger.debug(undefined, 'cache_skip_write', 'Result not eligible for caching — serving without storing', {
+        cache_key: ValkeyService.redactKey(key),
+      });
+      return result;
+    }
+    await this.setJson(key, codec.encode(result), ttlSeconds);
+    return result;
+  }
+
   /** Closes the connection (best-effort). Registered as a shutdown hook. */
   public async shutdown(): Promise<void> {
     if (!this.client) return;
@@ -264,20 +320,25 @@ export class ValkeyService implements CachePort {
     // value. Parsing a very large JSON string blocks the event loop, so reject oversized reads as a miss
     // before parsing.
     const readSize = Buffer.byteLength(raw, 'utf8');
-    if (readSize > VALKEY_CACHE.MAX_VALUE_BYTES) {
+    const maxBytes = ValkeyService.maxBytesFor(key);
+    if (readSize > maxBytes) {
       // `cache_namespace` is the code-defined `{domain}:v{N}` label as a typed field so CloudWatch
       // queries can group and filter oversize events by cache family without substring-matching
       // the redacted `cache_key` (which already carries the same segment in the default
       // deployment, but only until a caller sets `VALKEY_KEY_NAMESPACE` to a `vN`-shaped value —
-      // `redactKey`'s header calls that edge case out; `extractNamespace` closes it). `size_bytes`
-      // is genuinely net-new attribution: the existing warning couldn't distinguish a payload just
-      // over the 1 MB cap from one 10× over it, and that's exactly what tells us whether a caller
-      // needs a slimmer projection or a fundamentally different caching strategy.
+      // `redactKey`'s header calls that edge case out; `extractNamespace` closes it).
+      // `cache_subresource` narrows that to the individual cached item, which the redacted key
+      // hides entirely. `size_bytes` is genuinely net-new attribution: the existing warning
+      // couldn't distinguish a payload just over the 1 MB cap from one 10× over it, and that's
+      // exactly what tells us whether a caller needs a slimmer projection or a fundamentally
+      // different caching strategy. `max_bytes` is the resolved per-sub-resource cap (the same one
+      // `setJson` enforces), not the global default.
       logger.warning(undefined, op, 'Cached value exceeds max size — treating as miss', {
         cache_key: ValkeyService.redactKey(key),
         cache_namespace: ValkeyService.extractNamespace(key),
+        cache_subresource: ValkeyService.extractSubresource(key),
         size_bytes: readSize,
-        max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+        max_bytes: maxBytes,
       });
       return null;
     }
@@ -350,6 +411,77 @@ export class ValkeyService implements CachePort {
     const versionIdx = parts.findIndex((p, i) => i >= 2 && /^v\d+$/.test(p));
     if (versionIdx === -1 || versionIdx + 1 >= parts.length) return null;
     return `${parts[versionIdx - 1]}:${parts[versionIdx]}`;
+  }
+
+  /**
+   * Resolves the sub-resource portion of a key — the segments *after* the principal — but only for
+   * the namespaces whose keys actually carry one, i.e. those built by `buildOrgCacheKey` /
+   * `buildCommitteeCacheKey`, whose callers pass a code-defined sub-resource label. Returns `null`
+   * for every other namespace.
+   *
+   * That gate is a leak guard, not a tidiness rule. The segment after the principal is only a
+   * caller-chosen label in these two namespaces; elsewhere it is data. `org-seats:v1`, for
+   * instance, puts an org uid there (`buildPerUserOrgKey`), and `social-listening-sf:v2` puts a
+   * query digest — returning either as `cache_subresource` would put an identifier into a log
+   * field whose whole point is that it is safe to log. Adding a namespace to
+   * `subResourcedNamespaces` therefore means asserting its post-principal segment is code-defined.
+   */
+  private static resolveSubResource(key: string): { namespace: string; segments: string[] } | null {
+    const parts = key.split(':');
+    // Same anchor as `extractNamespace` — see its header for why the search starts at index 2.
+    const versionIdx = parts.findIndex((p, i) => i >= 2 && /^v\d+$/.test(p));
+    if (versionIdx === -1) return null;
+    const namespace = `${parts[versionIdx - 1]}:${parts[versionIdx]}`;
+    if (!ValkeyService.subResourcedNamespaces.includes(namespace)) return null;
+    // `versionIdx + 1` is the principal; the sub-resource starts one past it.
+    const segments = parts.slice(versionIdx + 2);
+    return segments.length ? { namespace, segments } : null;
+  }
+
+  /**
+   * Names *which* cached item an oversize (or otherwise attributed) event belongs to — e.g.
+   * `people-all`, `projects`, `people-detail` — for structured logging. The redacted `cache_key`
+   * masks everything from the principal onward, so without this an oversize event can only be
+   * attributed to a whole cache family (`org-lens-sf:v1`), and pinning it to one of that family's
+   * dozen sub-resources needs an APM trace.
+   *
+   * Returns only the FIRST segment of the sub-resource. Several labels append a per-request
+   * discriminator (`people-detail:{personKey}`, `people-username:{digest}:emails`,
+   * `people-contributors:v2:{timeRange}`, `projects:v7:{paramSignature}`), and those tails are
+   * request data. Taking the head keeps the returned value inside the fixed set of labels the
+   * callers hard-code, so it is impossible for this to return a person key, username, or org uid —
+   * which, combined with the namespace gate in `resolveSubResource`, is what makes it loggable.
+   *
+   * Returns `null` when the namespace isn't sub-resourced or the key has no segment after the
+   * principal. Like `extractNamespace`, the call sites pass that null straight through so the field
+   * is always present in the log payload (CloudWatch column consistency).
+   */
+  private static extractSubresource(key: string): string | null {
+    const resolved = ValkeyService.resolveSubResource(key);
+    return resolved ? resolved.segments[0] : null;
+  }
+
+  /**
+   * The size cap that applies to one key: a `VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE` override
+   * when the key's cache has one, else the global `MAX_VALUE_BYTES` default.
+   *
+   * Used by BOTH `setJson` and `parseCachedJson`, which is the whole point of routing the cap
+   * through one resolver: the 1 MiB limit is enforced on the write *and* the read, so a cap raised
+   * in only one of them would write entries that every subsequent read rejects as oversized — a
+   * cache that silently never hits.
+   *
+   * The lookup key is `{namespace}:{label}[:{version}]`: the sub-resource's own `vN` schema segment
+   * is included (so `people-all:v2` can be capped independently of a future `people-all:v3`), and
+   * everything after it — the time range, param signature, or person key — is dropped, so one cap
+   * covers every variant of a cache and no identifier is ever used as a table key.
+   */
+  private static maxBytesFor(key: string): number {
+    const resolved = ValkeyService.resolveSubResource(key);
+    if (!resolved) return VALKEY_CACHE.MAX_VALUE_BYTES;
+    const [label, next] = resolved.segments;
+    const versioned = next && /^v\d+$/.test(next);
+    const capKey = versioned ? `${resolved.namespace}:${label}:${next}` : `${resolved.namespace}:${label}`;
+    return VALKEY_CACHE.MAX_VALUE_BYTES_BY_SUBRESOURCE[capKey] ?? VALKEY_CACHE.MAX_VALUE_BYTES;
   }
 
   /**
@@ -586,6 +718,18 @@ export function withOrgCache<T>(
   storable?: (value: T) => boolean
 ): Promise<T> {
   return valkeyService.withCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, accept, storable);
+}
+
+/** Read-through helper for a per-org Snowflake-backed cache whose stored form differs from the caller's (GH-1906); a null key (unsafe account id) fetches directly. */
+export function withOrgCompactCache<T, S>(
+  accountId: string,
+  subResource: string,
+  ttlSeconds: number,
+  fetcher: () => Promise<T>,
+  codec: CacheCodec<T, S>,
+  storable?: (value: T) => boolean
+): Promise<T> {
+  return valkeyService.withCompactCache(buildOrgCacheKey(accountId, subResource), ttlSeconds, fetcher, codec, storable);
 }
 
 /** Read-through helper for the per-org Groups-aggregate namespace; a null key (unsafe org uid) fetches directly. */

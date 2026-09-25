@@ -7,6 +7,8 @@ import { ORG_ROLE_GRANTS_REFRESH_PARAM } from '@lfx-one/shared/constants';
 import { CascadingRoleGrant, OrgLensLookupOutcome, OrgLensStaffCheck, RoleGrantsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, tap } from 'rxjs';
 
+import { classifySectionError } from '../utils/org-lens-empty-state.utils';
+
 // Re-export the shared persona type so existing consumers can keep importing from this service module.
 export type { OrgRolePersona } from '@lfx-one/shared/interfaces';
 
@@ -34,6 +36,8 @@ export class OrgRoleGrantsService {
   // Caller-level, not per-org: LF-team membership (global auditor population) carries read access to every org, so it is
   // deliberately not folded into the sets above. Defaults false and resets to false on error.
   private readonly isStaffInternal: WritableSignal<boolean> = signal<boolean>(false);
+  // #2961 — an LF contractor (not LF team). Explains an empty Org Lens only; it grants nothing and never widens the switcher.
+  private readonly isContractorInternal: WritableSignal<boolean> = signal<boolean>(false);
   // LFXV2-3029 — the server resolved fewer orgs than the caller may actually hold (roll-up
   // expansion or authoritative classification was incomplete). Without it an empty/short list is
   // indistinguishable from "you have no organizations", so an outage reads as a revocation.
@@ -65,6 +69,7 @@ export class OrgRoleGrantsService {
   public readonly loadedAtMs: Signal<number | null> = this.loadedAtMsInternal.asReadonly();
   /** Caller is a member of an LF team (`lf-staff`; `auditor` on every org). Drives switcher visibility and the catalogue-search affordance. */
   public readonly isStaff: Signal<boolean> = this.isStaffInternal.asReadonly();
+  public readonly isContractor: Signal<boolean> = this.isContractorInternal.asReadonly();
   /** The resolved grant sets are a lower bound, not the caller's full set. True on a degraded server lookup and on a transport failure, so an empty-state caller can say the lookup broke instead of asserting the caller has no organizations. */
   public readonly degraded: Signal<boolean> = this.degradedInternal.asReadonly();
   /** Spec 053 — `failed`: nothing in the sets is trustworthy; `partial`: the sets are a lower bound; `ok`: complete. Derived from `degraded` when the server predates the field. */
@@ -97,6 +102,8 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set((response.cascadingAuditors ?? []).map((entry: CascadingRoleGrant) => entry.uid)));
         this.parentNameByUidInternal.set(this.buildParentNameMap(response));
         this.isStaffInternal.set(response.isStaff === true);
+        // Absent on an older server ⇒ false, so a rolling deploy never shows the contractor state by mistake.
+        this.isContractorInternal.set(response.isContractor === true);
         this.degradedInternal.set(response.degraded === true);
         // Absent on a pre-053 server: derive from the coarse flag so old+new deploy mixes stay safe.
         this.lookupOutcomeInternal.set(response.lookupOutcome ?? (response.degraded === true ? 'partial' : 'ok'));
@@ -117,6 +124,7 @@ export class OrgRoleGrantsService {
         this.inheritedAuditorSetInternal.set(new Set());
         this.parentNameByUidInternal.set(new Map());
         this.isStaffInternal.set(false);
+        this.isContractorInternal.set(false);
         // The grants are unknown, not empty — same distinction the server's `degraded` draws.
         this.degradedInternal.set(true);
         this.lookupOutcomeInternal.set('failed');
@@ -127,6 +135,26 @@ export class OrgRoleGrantsService {
         return of(undefined);
       }),
       map(() => undefined)
+    );
+  }
+
+  /**
+   * #2961 — asks the server's Org Lens read gate whether the caller may read `orgUid`: `true` when admitted
+   * (204), `false` only for the gate's refusal (403 `FORBIDDEN`). Any other failure — the gate could not
+   * verify (503), a network error — answers `true`: an outage is not a refusal, so it must not render
+   * `contractor-no-grant`; the page's own sections report it.
+   */
+  public readCheck(orgUid: string): Observable<boolean> {
+    return this.http.get(`/api/orgs/${encodeURIComponent(orgUid)}/lens/read-check`, { observe: 'response' }).pipe(
+      map(() => true),
+      catchError((error: unknown) => {
+        if (classifySectionError(error) === 'denied') {
+          return of(false);
+        }
+        // Not a refusal: keep the page (its sections report the outage), but leave a trace.
+        console.warn('[org-lens] read-check did not answer; treating the organization as readable', error);
+        return of(true);
+      })
     );
   }
 

@@ -178,8 +178,8 @@ describe('claReturnUrl', () => {
   });
 
   it('names the organization on the address, so the page does not have to guess it', () => {
-    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toBe(
-      'https://app.lfx.dev/org/easycla?org=0014100000Te0OKAAZ'
+    expect(claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toBe(
+      'https://app.lfx.dev/org/easycla?org=0014100000AcmeAAAA'
     );
   });
 
@@ -187,8 +187,8 @@ describe('claReturnUrl', () => {
   // stores the value and later redirects to it verbatim, so a value that could close the query and
   // append its own path would turn the hand-off into an open redirect a second way.
   it.each([
-    ['0014100000Te0OKAAZ#@evil.example.com', 'evil.example.com'],
-    ['0014100000Te0OKAAZ&next=https://evil.example.com', 'evil.example.com'],
+    ['0014100000AcmeAAAA#@evil.example.com', 'evil.example.com'],
+    ['0014100000AcmeAAAA&next=https://evil.example.com', 'evil.example.com'],
     ['../../evil', 'evil'],
   ])('encodes %p so it cannot break out of the query string', (value, smuggled) => {
     const url = claReturnUrl(reqWithHost('app.lfx.dev'), '/org/easycla', { org: value });
@@ -200,7 +200,7 @@ describe('claReturnUrl', () => {
   });
 
   it('still refuses an untrusted host when a query is supplied', () => {
-    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000Te0OKAAZ' })).toThrow(MicroserviceError);
+    expect(() => claReturnUrl(reqWithHost('evil.example.com'), '/org/easycla', { org: '0014100000AcmeAAAA' })).toThrow(MicroserviceError);
   });
 });
 

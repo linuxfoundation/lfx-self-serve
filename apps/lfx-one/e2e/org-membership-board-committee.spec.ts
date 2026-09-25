@@ -264,9 +264,18 @@ test.describe('Avatars on seats', () => {
   // Guards the Tailwind purge regression: avatarColorClass() builds the palette class at runtime from
   // AVATAR_COLORS (in @lfx-one/shared, outside the app's content scan), so every palette entry must be
   // safelisted or it compiles to nothing → a transparent badge with white initials (invisible). One
-  // email per palette bucket; each badge's computed background must be a real, opaque color.
+  // email per palette bucket; each badge's computed background must be a real, opaque color. The local
+  // parts are picked against this literal domain so entry i hashes to AVATAR_COLORS[i].
   test('every initials-badge palette color compiles to a non-transparent background', async ({ page }) => {
-    const paletteEmails = ['p2@redhat.com', 'p0@redhat.com', 'p5@redhat.com', 'p3@redhat.com', 'p1@redhat.com', 'p6@redhat.com', 'p4@redhat.com'];
+    const paletteEmails = [
+      'p4@acme-motors.example',
+      'p2@acme-motors.example',
+      'p0@acme-motors.example',
+      'p5@acme-motors.example',
+      'p3@acme-motors.example',
+      'p1@acme-motors.example',
+      'p6@acme-motors.example',
+    ];
     const board = paletteEmails.map((email, i) => ({
       ...BOARD_SEATS[0],
       seatId: `palette-${i}`,

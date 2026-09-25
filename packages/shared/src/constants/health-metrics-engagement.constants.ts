@@ -12,15 +12,16 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
+import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
- * Health Metrics tab bar. Overview and Engagement are routable today; the remaining four render
- * disabled so the bar does not reshuffle as LFXV2-3367..3370 land.
+ * Health Metrics tab bar. Overview, Engagement and Events are routable today; the remaining three
+ * render disabled so the bar does not reshuffle as their tabs land.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
-  { key: 'events', label: 'Events', route: null },
+  { key: 'events', label: 'Events', route: 'events' },
   { key: 'members', label: 'Members', route: null },
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },
@@ -133,11 +134,8 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX = 'sec-eng-';
 /** Absolute router path the Health Metrics tab bar resolves its tab links against. */
 export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 
-/**
- * The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes, oldest → current.
- * `COMPLETED_YEAR_4` has no column on the view, so it is deliberately absent.
- */
-export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
+/** The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes — the shared Level 2 set. */
+export const HEALTH_METRICS_ENGAGEMENT_RANGES = HEALTH_METRICS_L2_RANGES;
 
 /**
  * The four labels `ENGAGEMENT_GROUP_ATTENDANCE.GROUP_TYPE_LABEL` actually emits. The view buckets
@@ -183,19 +181,6 @@ export const HEALTH_METRICS_ENGAGEMENT_ATTENDANCE_FILL_CLASS: Record<HealthMetri
   ok: 'bg-blue-500',
 };
 
-/** Bottom gutter under the scrolling pane — the gate shell's own `p-6`, so the page itself stays put. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_BOTTOM_GUTTER_PX = 24;
-
-/** Floor for the measured pane height, so a short viewport still scrolls rather than collapsing. */
-export const HEALTH_METRICS_ENGAGEMENT_PANES_MIN_HEIGHT_PX = 320;
-
-/**
- * How long a deep link's section key stays armed for its post-data re-scroll, re-armed per read.
- * Sized at roughly double the server's ~15s worst-case budget for one read, leaving room for
- * hydration and the network on top, so a slow-but-healthy read still lands its scroll.
- */
-export const HEALTH_METRICS_ENGAGEMENT_PENDING_SECTION_TTL_MS = 30_000;
-
 /**
  * Sections whose read can still change the pane's height, so a deep link is released only once
  * every one of them has settled. A section from the follow-up PRs on #2802 joins this list only once its
@@ -208,9 +193,6 @@ export const HEALTH_METRICS_ENGAGEMENT_DATA_SECTIONS = [
   'reps',
   'nonmem',
 ] as const satisfies readonly HealthMetricsEngagementSectionKey[];
-
-/** Keys that scroll the document. A keystroke outside this set is not the reader leaving a deep link. */
-export const HEALTH_METRICS_ENGAGEMENT_SCROLL_KEYS: readonly string[] = [' ', 'PageUp', 'PageDown', 'Home', 'End', 'ArrowUp', 'ArrowDown'];
 
 /** The design's `PARTMODE` segment: which measure drives the participation hero and bar column. */
 export const HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_MODES = [

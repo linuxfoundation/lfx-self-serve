@@ -24,11 +24,13 @@
 import type { OrgAccessListResponse } from '@lfx-one/shared/interfaces';
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const ACCESS_URL = '/org/people?tab=access';
 const DATA_LOAD_TIMEOUT = 30_000;
 
 const MOCK_UID = '4c46585f-878c-8285-b2e9-2dbfc38ddd9b';
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 const BASE_LIST: OrgAccessListResponse = {
   orgUid: MOCK_UID,
@@ -100,7 +102,7 @@ async function stubOrgContext(page: Page): Promise<void> {
         personas: ['contributor'],
         personaProjects: {},
         projects: [],
-        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat LLC', membershipTier: '', uid: MOCK_UID }],
+        organizations: [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_NAME, membershipTier: '', uid: MOCK_UID }],
         isRootWriter: false,
       }),
     })

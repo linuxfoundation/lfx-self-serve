@@ -79,7 +79,7 @@ export class OrgRoiCategoryDonutComponent {
   });
 
   /**
-   * Categories under the display threshold collapse into one labelled remainder, so a $1,190
+   * Categories under the display threshold collapse into one labelled remainder, so a tiny
    * education line does not render as an invisible sliver with an unreachable legend entry.
    */
   protected readonly slices: Signal<OrgLensRoiCategorySlice[]> = computed(() => {

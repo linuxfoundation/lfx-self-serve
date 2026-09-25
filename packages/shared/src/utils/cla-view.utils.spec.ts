@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ALREADY_SIGNED_CLA_LABEL } from '../constants/cla.constants';
 import { PROFILE_TABS } from '../constants/profile.constants';
@@ -30,6 +30,7 @@ import {
   signedAsLine,
   splitAgreementsByKind,
   toClaGroupOptionView,
+  toOrgClaActivityLogDisplayRow,
 } from './cla-view.utils';
 
 function agreement(overrides: Partial<MyClaAgreement> = {}): MyClaAgreement {
@@ -255,6 +256,39 @@ describe('formatClaSignedOnInstant', () => {
     expect(formatClaSignedOnInstant('   ')).toBe('—');
     expect(formatClaSignedOnInstant('not-a-date')).toBe('—');
     expect(formatClaSignedOnInstant('2026-02-31T10:00:00Z')).toBe('—');
+  });
+});
+
+describe('toOrgClaActivityLogDisplayRow', () => {
+  const entry = { id: 'event-1', when: '2022-09-10T19:36:18Z', actor: '  Alice Example ', summary: ' Enabled Auto ECLA ' };
+
+  it('trims the actor and summary and reads the time to the second', () => {
+    expect(toOrgClaActivityLogDisplayRow(entry, 'UTC')).toEqual({
+      entry,
+      actor: 'Alice Example',
+      summary: 'Enabled Auto ECLA',
+      whenLabel: 'Sep 10, 2022, 7:36:18 PM',
+    });
+  });
+
+  it('em-dashes an absent actor, summary, or time rather than dropping the row', () => {
+    const row = toOrgClaActivityLogDisplayRow({ id: 'event-2', when: '', actor: null, summary: '   ' });
+    expect(row).toMatchObject({ actor: '—', summary: '—', whenLabel: '—' });
+  });
+
+  it('leaves timeZone unset on the production no-argument path', () => {
+    const toLocaleTimeString = vi.spyOn(Date.prototype, 'toLocaleTimeString');
+    try {
+      toOrgClaActivityLogDisplayRow(entry);
+      expect(toLocaleTimeString).toHaveBeenCalled();
+      expect((toLocaleTimeString.mock.lastCall?.[1] as Intl.DateTimeFormatOptions | undefined)?.timeZone).toBeUndefined();
+    } finally {
+      toLocaleTimeString.mockRestore();
+    }
+  });
+
+  it('keeps markup in a summary as literal text', () => {
+    expect(toOrgClaActivityLogDisplayRow({ ...entry, summary: 'Added <b>Bob Example</b>' }).summary).toBe('Added <b>Bob Example</b>');
   });
 });
 

@@ -43,7 +43,7 @@ export class OrgOverviewComponent {
    * `settled` covers the role-grants and persona loads). Prevents an FOEC race: before this, the
    * skeleton — never a state, never the legacy invite-status prompt.
    */
-  protected readonly loaded: Signal<boolean> = computed(() => this.orgNavigationService.loaded() && this.emptyState.settled());
+  protected readonly loaded: Signal<boolean> = computed(() => this.emptyState.pageReady());
 
   /** True ONLY after both dependencies have completed their initial load and the user genuinely has no selectable org. Drives the empty-state render. */
   protected readonly isEmpty: Signal<boolean> = computed(

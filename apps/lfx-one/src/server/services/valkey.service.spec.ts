@@ -5,10 +5,11 @@ import crypto from 'crypto';
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { setMock, evalMock, getdelMock } = vi.hoisted(() => ({
+const { setMock, evalMock, getdelMock, getMock } = vi.hoisted(() => ({
   setMock: vi.fn(),
   evalMock: vi.fn(),
   getdelMock: vi.fn(),
+  getMock: vi.fn(),
 }));
 
 // `@lfx-one/shared/constants` is left unmocked — the barrel it resolves to (via the
@@ -30,6 +31,7 @@ vi.mock('ioredis', () => ({
     public status = 'ready';
     public set = setMock;
     public eval = evalMock;
+    public get = getMock;
     public getdel = getdelMock;
     public on(): this {
       return this;
@@ -51,7 +53,9 @@ vi.mock('./logger.service', () => ({
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
-import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, ValkeyService } from './valkey.service';
+import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
+
+import { logger } from './logger.service';
 
 describe('ValkeyService — acquireLock / releaseLock (LFXV2 #2241)', () => {
   beforeEach(() => {
@@ -279,5 +283,114 @@ describe('buildMeetingInviteLockCacheKey (LFXV2 #2241)', () => {
 
   it('fails closed (returns null) for an unsafe username', () => {
     expect(buildMeetingInviteLockCacheKey('alice:bob')).toBeNull();
+  });
+});
+
+describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1906)', () => {
+  const ACCOUNT_ID = '0014100000Te2ovAAB';
+  const ORG_UID = 'a092M00001abcdEQAQ';
+  const oversized = { padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) };
+  // `projects:v7` deliberately has no entry in `MAX_VALUE_BYTES_BY_SUBRESOURCE`, so the tests below
+  // assert default-cap behaviour without depending on which caches currently need an exception —
+  // the table is expected to change as payloads do.
+  const UNCAPPED_LABEL = 'projects:v7';
+  const UNCAPPED_SUB_RESOURCE = `${UNCAPPED_LABEL}:Acme%20Corp|__top__`;
+
+  const warningPayload = (): Record<string, unknown> => {
+    const call = vi.mocked(logger.warning).mock.calls.at(-1);
+    return (call?.[3] ?? {}) as Record<string, unknown>;
+  };
+
+  beforeEach(() => {
+    // Pin the deployment namespace so a developer/CI environment exporting VALKEY_KEY_NAMESPACE
+    // can't shift the segment positions these assertions depend on (see `cacheKeyNamespace`).
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+    vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+    setMock.mockReset();
+    getMock.mockReset();
+    vi.mocked(logger.warning).mockClear();
+    ValkeyService.resetInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('names the sub-resource an oversize write belongs to, so the event is attributable without an APM trace', async () => {
+    await ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, oversized, 60);
+
+    expect(warningPayload()).toMatchObject({
+      cache_namespace: VALKEY_CACHE.ORG_LENS_SNOWFLAKE_NAMESPACE,
+      cache_subresource: 'projects',
+      max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES,
+    });
+  });
+
+  it('reports only the label of a sub-resource that carries a person key, never the key itself', async () => {
+    const personKey = 'person-9f3c2a';
+
+    await ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, `people-detail:${personKey}`)!, oversized, 60);
+
+    const payload = warningPayload();
+    expect(payload['cache_subresource']).toBe('people-detail');
+    expect(JSON.stringify(payload)).not.toContain(personKey);
+  });
+
+  it('reports no sub-resource for a namespace whose post-principal segment is an identifier rather than a label', async () => {
+    // `org-seats:v1` puts the org uid where the Org Lens namespaces put a code-defined label.
+    // Reporting it would put an identifier into a field whose whole point is that it is safe to log.
+    await ValkeyService.getInstance().setJson(buildPerUserOrgKey(VALKEY_CACHE.ORG_SEATS_NAMESPACE, 'alice', ORG_UID)!, oversized, 60);
+
+    const payload = warningPayload();
+    expect(payload['cache_subresource']).toBeNull();
+    expect(JSON.stringify(payload)).not.toContain(ORG_UID);
+  });
+
+  it('writes AND reads back a value over the global cap but under a configured per-sub-resource cap', async () => {
+    // The cap is enforced on both the write and the read. Raising it in only one place yields a
+    // cache that stores entries every subsequent read then rejects as oversized — a silent
+    // permanent miss, which is exactly the class of bug this work exists to remove. Driven through
+    // a REAL table entry rather than one installed here: `MAX_VALUE_BYTES_BY_SUBRESOURCE` is a
+    // release decision, not a runtime knob, and a test that overwrote it would be changing
+    // production behaviour for every later test in the run.
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-all:v2')!;
+    const serialized = JSON.stringify(oversized);
+    expect(Buffer.byteLength(serialized, 'utf8')).toBeGreaterThan(VALKEY_CACHE.MAX_VALUE_BYTES);
+    setMock.mockResolvedValue('OK');
+    getMock.mockResolvedValue(serialized);
+
+    await expect(ValkeyService.getInstance().setJson(key, oversized, 60)).resolves.toBe(true);
+    await expect(ValkeyService.getInstance().getJson(key)).resolves.toEqual(oversized);
+  });
+
+  it('still applies the global cap to a sub-resource with no configured cap', async () => {
+    setMock.mockResolvedValue('OK');
+
+    await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!, oversized, 60)).resolves.toBe(false);
+    expect(setMock).not.toHaveBeenCalled();
+  });
+
+  it('treats a value already over the cap in the store as a miss, without parsing it', async () => {
+    // The write path caps our own writes, but another client — or a value stored before a cap was
+    // lowered — can leave an oversized entry behind. Planting it directly proves the READ-side cap
+    // in `parseCachedJson`, which the write-side test cannot reach.
+    getMock.mockResolvedValue(JSON.stringify({ padding: 'x'.repeat(VALKEY_CACHE.MAX_VALUE_BYTES) }));
+
+    await expect(ValkeyService.getInstance().getJson(buildOrgCacheKey(ACCOUNT_ID, UNCAPPED_SUB_RESOURCE)!)).resolves.toBeNull();
+    expect(warningPayload()).toMatchObject({ cache_subresource: 'projects', max_bytes: VALKEY_CACHE.MAX_VALUE_BYTES });
+  });
+
+  it('applies a configured cap to every cache measured to need one, and to no other', async () => {
+    // Guards the table itself, not the mechanism: each entry exists because that cache's largest
+    // measured value does not fit under the 1 MiB default, so a value just over the default must be
+    // storable for exactly these sub-resources and refused for their siblings.
+    setMock.mockResolvedValue('OK');
+
+    for (const subResource of ['people-all:v2', 'people-event-attendees:v2', 'people-trainees:v2']) {
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(true);
+    }
+    for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
+      await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
+    }
   });
 });

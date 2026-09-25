@@ -25,7 +25,6 @@ import {
 } from '../interfaces/health-metrics-engagement.interface';
 import {
   buildHealthMetricsEngagementGroupTrend,
-  buildHealthMetricsEngagementSectionId,
   buildHealthMetricsEngagementSubNavItems,
   filterHealthMetricsEngagementOrgRows,
   filterHealthMetricsEngagementRepRows,
@@ -35,7 +34,6 @@ import {
   formatHealthMetricsEngagementPctDelta,
   formatHealthMetricsEngagementPpDelta,
   formatHealthMetricsEngagementRatio,
-  isHealthMetricsEngagementSectionKey,
   resolveHealthMetricsEngagementAttendanceTone,
   resolveHealthMetricsEngagementDeltaDirection,
   selectHealthMetricsEngagementGroupPeriod,
@@ -58,27 +56,6 @@ function counts(overrides: Partial<HealthMetricsEngagementSubNavCounts> = {}): H
     ...overrides,
   };
 }
-
-describe('buildHealthMetricsEngagementSectionId', () => {
-  it('prefixes the key so the DOM id never collides with the bare URL fragment', () => {
-    expect(buildHealthMetricsEngagementSectionId('committees')).toBe('sec-eng-committees');
-  });
-});
-
-describe('isHealthMetricsEngagementSectionKey', () => {
-  it('accepts every shipped section key', () => {
-    for (const section of HEALTH_METRICS_ENGAGEMENT_SECTIONS) {
-      expect(isHealthMetricsEngagementSectionKey(section.key)).toBe(true);
-    }
-  });
-
-  it('rejects anything else, including the prefixed DOM id and an absent fragment', () => {
-    expect(isHealthMetricsEngagementSectionKey('sec-eng-committees')).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey('groups')).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey(null)).toBe(false);
-    expect(isHealthMetricsEngagementSectionKey(undefined)).toBe(false);
-  });
-});
 
 describe('formatHealthMetricsEngagementAttendance', () => {
   it('renders an em dash when there was no invited population, never 0%', () => {

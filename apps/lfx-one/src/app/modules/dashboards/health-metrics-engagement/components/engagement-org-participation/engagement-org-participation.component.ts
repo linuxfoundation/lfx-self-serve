@@ -68,7 +68,7 @@ export class EngagementOrgParticipationComponent {
   public readonly countsChange = output<HealthMetricsEngagementOrgCounts | null>();
   /** Fires once a read settles — this section's height changes, which moves every anchor below it. */
   public readonly settled = output<void>();
-  /** Fires as a read starts, so the container knows this section's height is about to move again. */
+  /** Fires as a read starts, so the L2 shell knows this section's height is about to move again. */
   public readonly reading = output<void>();
 
   protected readonly filterOptions: FilterPillOption[] = HEALTH_METRICS_ENGAGEMENT_ORG_FILTERS.map((filter) => ({
@@ -207,7 +207,7 @@ export class EngagementOrgParticipationComponent {
               // No foundation means no read happened, so there is no measured count to report.
               this.countsChange.emit(query.foundationSlug && !this.loadFailed() ? response.counts : null);
               // Held until a foundation has been seen: settling an unread section releases the
-              // container's pending deep link before any real read can re-arm it.
+              // L2 shell's pending deep link before any real read can re-arm it.
               if (foundationSeen) this.settled.emit();
             })
           )

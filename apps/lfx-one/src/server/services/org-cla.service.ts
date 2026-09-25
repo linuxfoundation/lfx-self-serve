@@ -323,7 +323,6 @@ function pickProjectSfid(entry: EasyClaCompanyClaGroup): string {
 
 /**
  * Manager writes require a project SFID; an empty id would compose `…/project//…`.
- * Reads prefer the project list and use the CLA-group list when project SFID is missing or upstream 403.
  */
 function requireProjectSfid(target: ManagerTarget, operation: string): string {
   if (!target.projectSfid) {
@@ -1062,15 +1061,17 @@ export class OrgClaService {
           { ...managerListFetchOptions, operation: 'org_cla_list_managers' }
         );
       } catch (error) {
-        if (!(error instanceof MicroserviceError) || error.statusCode !== 403) {
+        if (!(error instanceof MicroserviceError) || (error.statusCode !== 403 && error.statusCode !== 404)) {
           throw error;
         }
 
-        logger.warning(req, 'org_cla_list_managers', 'project-scoped manager list refused; falling back to CLA-group list', {
+        const fallbackReason = error.statusCode === 403 ? 'refused' : 'project not found';
+        logger.warning(req, 'org_cla_list_managers', `project-scoped manager list ${fallbackReason}; falling back to CLA-group list`, {
           org_uid: orgUid,
           signature_id: signatureId,
           company_id: target.companyId,
           project_sfid: projectSfid,
+          upstream_status: error.statusCode,
         });
 
         upstream = await fetchClaGroupManagerList();
