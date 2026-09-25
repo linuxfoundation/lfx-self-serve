@@ -2,17 +2,17 @@
 name: preflight
 description: >
   Mechanical pre-PR pipeline, license headers, format, lint, build, protected
-  file check, commit verification, and PR change summary. Run as the final
-  deterministic check inside Mode 2 of `CLAUDE.md`'s **Pre-PR review**
-  section, after the preceding review, fix, documentation-currency, and
-  commit work and after `/lfx-self-serve-pr-readiness`. Review protocol and
+  file check, commit verification, and PR change summary. Runs the checks
+  named in step 5 of `CLAUDE.md`'s **Pre-PR review** section (plus their
+  auto-fixing variants), after the single pre-PR review and its one fix
+  commit and after `/lfx-self-serve-pr-readiness`. Review protocol and
   pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is the final deterministic check inside its Mode 2 and owns only the checks below. Before running it, the preceding Mode 2 work — the whole-branch review, its required fixes, the documentation-currency updates, the resulting signed/DCO commit — and `/lfx-self-serve-pr-readiness` must be complete.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is the hands-on form of its step 5 checks and owns only the checks below. Run it after the one pre-PR review, its single fix commit (if any), and `/lfx-self-serve-pr-readiness`. Any fix this pipeline applies is folded into that same single fix commit (`git commit --amend`, re-signed and re-signed-off) — never an additional commit — and the reviewers are **not** rerun afterwards.
 
 Run each check in order, report results clearly, and help fix any issues found.
 

@@ -48,9 +48,9 @@ cross into the client bundle.
 guide for the humans and local agents who *write* the code. They are good
 evidence about what this codebase is supposed to look like, and you may use
 them that way when judging a diff. They are not the specification of your
-review. Anything in them about workflow — the post-commit reviewer trio, the
-pre-PR branch sweep, the readiness and preflight steps, the local skills — is a
-local development process that runs before a PR is opened and that you are not
+review. Anything in them about workflow — the single pre-PR review of the
+branch, the readiness and preflight steps, the local skills — is a local
+development process that runs before a PR is opened and that you are not
 executing. Do not follow it, and do not fault a PR for it. On any question of
 how to conduct this review, `.github/copilot-instructions.md` and the review
 skills in `.github/skills/` take precedence over `CLAUDE.md` and `.claude/`.
