@@ -2389,6 +2389,35 @@ describe('CampaignsComponent — email delivery channel', () => {
       expect(bHasLabel).toBe(aHasLabel);
     });
 
+    it('does not fold the refused CTA twice when the server already folded it into B', () => {
+      // `emailCtaUnlinkedLabel` gates on variant A's `copy.ctaUrl`, but the fold-back applies to
+      // BOTH bodies -- and B comes from its OWN `generateEmailCopy` call. So B's button can be
+      // url-LESS (campaign-service folds the label into `body`, `!section.url`) while A's was
+      // supplied-and-refused (label non-empty). Appending unconditionally rendered it TWICE.
+      //
+      // The server writes `<div><strong>{escaped}</strong></div>` and `emailCtaUnlinkedLabel`
+      // already sanitizes, so the already-folded fragment is byte-identical to the one appended.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        // Supplied and refused: not the brief's registrationUrl.
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      // Exactly what campaign-service.service.ts emits for a destination-less button.
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p><div><strong>Register Now</strong></div>');
+      fixture.detectChanges();
+
+      // The precondition: the fold-back IS armed, so this is not passing by doing nothing.
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+
+      const bOut = internals().abTestBodyHtmlBForSend();
+      expect(bOut.split('Register Now').length - 1).toBe(1);
+    });
+
     it('does not stage modules against a body that sanitizes to nothing', () => {
       // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
       // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/
@@ -5391,9 +5420,10 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Sanitizing only the preview is WORSE than sanitizing neither: the pixel vanishes from the
     // one view that could catch it while still shipping in the sent email.
     //
-    // The name says PREVIEW only, deliberately. Asserting that a staging alias equals the
-    // preview would be a tautology whenever the alias is defined as the preview; staging reads
-    // `abTestBodyHtmlBPreview` directly, so there is no such alias to assert against.
+    // The name says PREVIEW only, deliberately. Staging reads `abTestBodyHtmlBForSend`, which
+    // WRAPS this value rather than aliasing it, so asserting the two equal would be a tautology
+    // only where the refused-CTA fold-back adds nothing. The fold-back itself is pinned by
+    // 'folds a refused CTA into BOTH variants, or neither'.
     //
     // The staged value is covered where it can actually fail: the controller test
     // 'sanitizes both HTML bodies and every display field at the request boundary' asserts the
