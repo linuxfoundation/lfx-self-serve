@@ -6,7 +6,7 @@ import { Component, computed, ElementRef, HostListener, inject, OnDestroy } from
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DomSanitizer, Meta, SafeHtml, Title } from '@angular/platform-browser';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { DOCS_CANONICAL_ORIGIN } from '@lfx-one/shared/constants';
+import { DOCS_ANCHOR_SCROLL_OFFSET_PX, DOCS_CANONICAL_ORIGIN } from '@lfx-one/shared/constants';
 import type { DocsArticle, DocsSiblingLink } from '@lfx-one/shared/interfaces';
 import { isDocsPath } from '@lfx-one/shared/utils';
 import { map } from 'rxjs/operators';
@@ -111,9 +111,9 @@ export class DocsArticleComponent implements OnDestroy {
   });
 
   public constructor() {
-    // Router anchor scrolls use getBoundingClientRect math that ignores CSS scroll-margin; offset
-    // them by the same 128px the prose-lfx `scroll-margin-top` applies to the native fragment jump.
-    this.viewportScroller.setOffset([0, 128]);
+    // Router anchor scrolls use getBoundingClientRect math that ignores CSS scroll-margin; the shared
+    // offset applies the same clearance the prose-lfx `scroll-margin-top` gives the native fragment jump.
+    this.viewportScroller.setOffset([0, DOCS_ANCHOR_SCROLL_OFFSET_PX]);
     // SEO sync — re-applies head tags whenever `article()` changes. We
     // deliberately use `toObservable` + `takeUntilDestroyed` rather than
     // `effect()` because the frontend convention checklist reserves `effect()`

@@ -18,6 +18,13 @@ export const DOCS_ROUTE_PREFIX = '/docs';
 export const DOCS_CANONICAL_ORIGIN = 'https://app.lfx.dev';
 
 /**
+ * Vertical clearance (px) shared by `DocsArticleComponent`'s `ViewportScroller` offset and the
+ * prose-lfx `scroll-margin-top`, so router and native `#fragment` jumps both land the heading
+ * below the sticky docs topbar (63px desktop / 105px mobile).
+ */
+export const DOCS_ANCHOR_SCROLL_OFFSET_PX = 128;
+
+/**
  * Canonical display order for top-level docs topics on the landing page,
  * breadcrumbs, and any taxonomy-driven UI.
  *
