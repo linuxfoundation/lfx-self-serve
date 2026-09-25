@@ -222,7 +222,7 @@ US4 is largely a property emerging from US1 (the route table at T020/T021 and th
 - [x] T061 Run `yarn build` end-to-end and confirm the generated `dist/lfx-one/browser/assets/docs/search-index.json` and `apps/lfx-one/dist-docs/sitemap.xml` are present and valid against their schemas.
 - [ ] T062 Run [quickstart.md](./quickstart.md) end-to-end on a clean checkout — add a fixture article, build, hit it in incognito, run the validation scripts — and update `quickstart.md` if any step has drifted.
 - [ ] T063 Invoke the `/preflight` skill (license headers, format, lint, build, protected-file check) per `CLAUDE.md` work-cycle policy.
-- [ ] T064 Run the single pre-PR review of the whole branch per `CLAUDE.md` § **Pre-PR review** (two reviewers in parallel: `/lfx-skills:lfx-general-code-review` + `/lfx-self-serve-learnings-review`, pinned to `merge-base origin/main HEAD`..`HEAD`). Address Critical and reasonable Important findings in the single fix commit before opening the PR.
+- [ ] T064 Run the single pre-PR review round of the whole branch per `CLAUDE.md` § **Pre-PR review** (load `/lfx-skills:lfx-pre-pr-review` and follow it). Land accepted findings in the single fix commit before opening the PR.
 - [ ] T065 Run the `/lfx-self-serve-pr-readiness` skill against `main` and clear every CRITICAL finding before opening the PR.
 
 ---

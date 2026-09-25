@@ -20,11 +20,9 @@ This project has guided skills for common workflows, plus one repo-owned Self Se
 
 ## Reviewer Children (skill-loading subagents)
 
-`CLAUDE.md`'s **Pre-PR review** section is the single owner of the local review lifecycle: when the one review runs, how the range is pinned, which reviewers are launched, and how findings are fixed. Do not restate or improvise that protocol here.
+The local review lifecycle lives in `/lfx-skills:lfx-pre-pr-review`; `CLAUDE.md`'s **Pre-PR review** section points at it and carries this repo's two values (the KB review skill, `/lfx-self-serve-learnings-review`, and the preflight command). Do not restate or improvise that protocol here.
 
-That one review launches two children: one loading `/lfx-skills:lfx-general-code-review` (general quality plus this repo's written conventions, rules and checklists) and one loading `/lfx-self-serve-learnings-review` (the empirical knowledge base in `docs/reviews/knowledge-base/`).
-
-**Guidance requirement:** when a pre-PR review intent matches, follow `CLAUDE.md`'s **Pre-PR review** section exactly — one review of the whole branch, never after individual commits. Once a PR is open, follow `CLAUDE.md`'s **Post-PR review** section instead of launching any local reviewer.
+**Guidance requirement:** when a pre-PR review intent matches, follow `CLAUDE.md`'s **Pre-PR review** section exactly. Once a PR is open, follow `CLAUDE.md`'s **Post-PR review** section instead of launching any local reviewer.
 
 ## Trigger Phrases
 
@@ -51,7 +49,7 @@ That one review launches two children: one loading `/lfx-skills:lfx-general-code
 - "What would CodeRabbit flag?", "What would Copilot say?"
 - Any "is this ready" question where no PR number is given
 
-Follow `CLAUDE.md`'s **Pre-PR review** section exactly. It owns the required reviewers, range pinning, the single fix commit, and PR-boundary behavior. If the user asks to review a single commit mid-branch, explain that this repo reviews the whole branch once, before the PR.
+Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to review a single commit mid-branch, explain that this repo reviews the whole branch once, before the PR.
 
 **`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus (run once, before opening the PR). Match any of these intents:
 
