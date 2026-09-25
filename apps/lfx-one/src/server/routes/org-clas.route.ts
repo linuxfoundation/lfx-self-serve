@@ -51,8 +51,7 @@ router.post('/:orgUid/lens/cla-groups/permissions/checks', requireOrgLensAccess,
 // Initial CLA Manager designee (#2780), for an agreement the organization has not signed. Both
 // writes assign an ACS role and the nomination emails the named person, so an impersonated write
 // would grant a role and send mail in the target's name; the impersonation block runs ahead of
-// the grant check for the same reason as the manager writes below. Declared ahead of
-// `:signatureId` so `designee` is not captured as a signature id.
+// the grant check for the same reason as the manager writes below.
 router.post('/:orgUid/lens/cla-groups/designee', blockDuringImpersonation, requireOrgLensAccess, (req, res, next) =>
   orgClasController.assignDesignee(req, res, next)
 );

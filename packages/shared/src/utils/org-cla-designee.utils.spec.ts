@@ -3,6 +3,7 @@
 
 import { describe, expect, it } from 'vitest';
 
+import { ORG_CLA_DESIGNEE_NAME_PATTERN } from '../constants/cla.constants';
 import {
   classifyOrgClaDesigneeRefusal,
   hasOrgClaDesigneeNominationErrors,
@@ -64,6 +65,10 @@ describe('isOrgClaDesigneeFullName', () => {
   it.each(['J', 'A'.repeat(61), 'Pat  Contributor', ' Pat', 'Pat ', 'Zoë Contributor', "O'Contributor", 'Pat-Contributor'])('refuses %s', (name) => {
     expect(isOrgClaDesigneeFullName(name)).toBe(false);
   });
+
+  it('refuses a long input that fails at the end without backtracking', () => {
+    expect(ORG_CLA_DESIGNEE_NAME_PATTERN.test(`${'a '.repeat(5000)}!`)).toBe(false);
+  });
 });
 
 describe('validateOrgClaDesigneeNomination', () => {
@@ -95,7 +100,7 @@ describe('validateOrgClaDesigneeNomination', () => {
   });
 
   it('answers a non-string field as missing instead of throwing', () => {
-    expect(validateOrgClaDesigneeNomination({ fullName: 42 as unknown as string, email: ['x'] as unknown as string })).toEqual({
+    expect(validateOrgClaDesigneeNomination({ fullName: 42, email: ['x'] })).toEqual({
       fullName: 'Name is required.',
       email: 'Email address is required.',
     });

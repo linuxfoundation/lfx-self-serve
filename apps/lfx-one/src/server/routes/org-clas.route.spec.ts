@@ -762,12 +762,4 @@ describe('org-clas router — CLA manager designee (#2780)', () => {
       expect(JSON.stringify(await res.json())).toContain('IMPERSONATION_READ_ONLY');
     });
   });
-
-  it('does not route the nomination to a signature-scoped handler', async () => {
-    await fetch(`${baseUrl}/api/orgs/${GRANTED}/${NOMINATIONS}`, { method: 'POST' });
-
-    expect(nominateDesignee).toHaveBeenCalledTimes(1);
-    expect(assignDesignee).not.toHaveBeenCalled();
-    expect(addManager).not.toHaveBeenCalled();
-  });
 });

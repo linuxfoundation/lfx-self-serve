@@ -1626,9 +1626,11 @@ describe('OrgClasController — CLA manager designee (#2780)', () => {
       });
       expect(res.setHeader).toHaveBeenCalledWith('Cache-Control', 'no-store');
       expect(res.json).toHaveBeenCalledWith({ outcome: 'lf-login-requested', email: 'contributor@example.org' });
-      const [, operation, , metadata] = loggerMock.success.mock.calls[0] as unknown as [unknown, string, unknown, Record<string, unknown>];
-      expect(operation).toBe('nominate_org_cla_designee');
-      expect(metadata).toEqual({ org_uid: ORG_UID, project_sfid: PROJECT_SFID, outcome: 'lf-login-requested' });
+      expect(loggerMock.success).toHaveBeenCalledWith(expect.anything(), 'nominate_org_cla_designee', expect.anything(), {
+        org_uid: ORG_UID,
+        project_sfid: PROJECT_SFID,
+        outcome: 'lf-login-requested',
+      });
     });
 
     it('names each invalid field before calling the service', async () => {

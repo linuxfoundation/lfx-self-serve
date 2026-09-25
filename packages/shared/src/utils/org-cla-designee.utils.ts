@@ -49,7 +49,7 @@ function trimmed(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-export function validateOrgClaDesigneeNomination(request: Partial<OrgClaDesigneeNominationRequest>): OrgClaDesigneeNominationValidation {
+export function validateOrgClaDesigneeNomination(request: Partial<Record<keyof OrgClaDesigneeNominationRequest, unknown>>): OrgClaDesigneeNominationValidation {
   const result: OrgClaDesigneeNominationValidation = {};
 
   const fullName = trimmed(request.fullName);
