@@ -41,8 +41,8 @@ function eventRow(overrides: Record<string, unknown> = {}) {
     REGISTRATIONS_NOW: 410,
     PRIOR_YEAR_SAME_POINT: 380,
     GOAL: 1000,
-    // The model counts days left like `days_to_event`, negative before the event.
-    DAYS_LEFT: -40,
+    // The model counts days left from yesterday, negative before the event.
+    DAYS_LEFT: -41,
     IS_NEW_EVENT: false,
     ...overrides,
   };
@@ -85,6 +85,7 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP + 1}`);
     expect(sql).toContain('QUALIFY ROW_NUMBER() OVER (PARTITION BY event_id');
     expect(sql).not.toContain('GROUP BY');
+    expect(sql).toContain('BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id)');
   });
 
   it('maps a row to the event headline', async () => {
@@ -105,6 +106,14 @@ describe('HealthMetricsEventsService.getRegistrationForecast', () => {
         isNewEvent: false,
       },
     ]);
+  });
+
+  it('counts days left from today, reading 0 on the event day and null when unmeasured', async () => {
+    execute.mockResolvedValue({ rows: [eventRow({ EVENT_ID: 'today', DAYS_LEFT: -1 }), eventRow({ EVENT_ID: 'unknown', DAYS_LEFT: null })] });
+
+    const { events } = await new HealthMetricsEventsService().getRegistrationForecast(req, { foundationSlug: 'acme' });
+
+    expect(events.map((event) => event.daysLeft)).toEqual([0, null]);
   });
 
   it('keeps nulls as unmeasured and drops an event with no id', async () => {

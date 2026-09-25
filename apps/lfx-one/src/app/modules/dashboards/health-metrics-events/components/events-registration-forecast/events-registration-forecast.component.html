@@ -6,7 +6,10 @@
     <lfx-empty-state
       icon="fa-light fa-calendar-check"
       [title]="closedTitle()"
-      subtitle="There is nothing left to forecast for a period that has already ended. See how events actually finished on the Past events tab."
+      subtitle="There is nothing left to forecast for a period that has already ended. See how events actually finished under Past events."
+      ctaLabel="View past events"
+      ctaIcon="fa-light fa-arrow-down"
+      (ctaClick)="onViewPastEvents()"
       data-testid="events-registration-forecast-closed" />
   } @else if (loadFailed()) {
     <lfx-empty-state
@@ -72,15 +75,22 @@
               event over-performing. Worth re-setting before it is reported as success.
             }
             @case ('goal-suspect') {
-              Forecast of <b>{{ forecastLabel() }}</b> is under a tenth of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
-              event falling short. Worth checking before it is reported as a miss.
+              @if (goalSuspectAbove()) {
+                Forecast of <b>{{ forecastLabel() }}</b> is over ten times the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
+                event over-performing. Worth checking before it is reported as success.
+              } @else {
+                Forecast of <b>{{ forecastLabel() }}</b> is under a tenth of the goal of {{ goalLabel() }} &mdash; the goal looks mis-entered rather than the
+                event falling short. Worth checking before it is reported as a miss.
+              }
             }
             @case ('on-track') {
               On track to clear the goal by about <b>{{ gapLabel() }}</b> registrations. No action needed beyond keeping promotion running.
             }
             @case ('short') {
-              Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal. There are {{ daysLeftLabel() }} days left to close the gap
-              &mdash; after that the opportunity is gone.
+              Projected to finish about <b>{{ gapLabel() }}</b> short of the {{ goalLabel() }} goal.
+              @if (v.daysLeft !== null) {
+                There are {{ daysLeftLabel() }} days left to close the gap &mdash; after that the opportunity is gone.
+              }
             }
           }
         </p>
@@ -96,7 +106,10 @@
               data-testid="events-registration-forecast-format-toggle" />
           }
           <span class="text-xs text-gray-500" data-testid="events-registration-forecast-today">
-            today &middot; {{ daysLeftLabel() }} days left
+            today
+            @if (selectedEvent()?.daysLeft !== null) {
+              &middot; {{ daysLeftLabel() }} days left
+            }
             @if (selectedEvent()?.isNewEvent) {
               &middot; No last-year curve &mdash; first edition
             }

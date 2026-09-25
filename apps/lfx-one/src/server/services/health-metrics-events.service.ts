@@ -70,7 +70,7 @@ export class HealthMetricsEventsService {
    */
   public async getRegistrationForecast(req: Request, query: HealthMetricsEventsForecastQuery): Promise<HealthMetricsEventsForecast> {
     // The start-date filter keeps an event whose day has passed out even before the model drops it.
-    // First edition is flagged per format, so an event is new when any of its formats is.
+    // First edition is flagged per format, so an event is new only when all of its formats are.
     const sql = `
       SELECT
         event_id,
@@ -83,7 +83,7 @@ export class HealthMetricsEventsService {
         event_registrations_prior_year_same_point AS prior_year_same_point,
         event_registrations_goal AS goal,
         days_left,
-        BOOLOR_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
+        BOOLAND_AGG(is_new_event) OVER (PARTITION BY event_id) AS is_new_event
       FROM ${REGISTRATION_FORECAST_VIEW}
       WHERE foundation_slug = ?
         AND is_all_projects = TRUE
@@ -207,10 +207,10 @@ function joinForecastToToday(series: HealthMetricsEventsForecastCurveSeries): vo
   today.forecastHigh = today.actual;
 }
 
-/** The model counts days left on the `days_to_event` axis, negative before the event; the UI shows the count. */
+/** The model counts days left from yesterday, negative before the event; the UI shows the count from today. */
 function toDaysLeft(value: unknown): number | null {
   const daysLeft = toNullableNumber(value);
-  return daysLeft === null ? null : Math.abs(daysLeft);
+  return daysLeft === null ? null : Math.max(0, Math.abs(daysLeft) - 1);
 }
 
 function toNullableNumber(value: unknown): number | null {

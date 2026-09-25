@@ -80,10 +80,19 @@ describe('resolveHealthMetricsEventsForecastVerdict', () => {
   it('calls a goal 3× under the forecast stale rather than a success', () => {
     expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 150 }))).toMatchObject({ kind: 'stale', tone: 'watch' });
     expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 170 }))).toMatchObject({ kind: 'on-track' });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ forecastAvg: 300, goal: 100 }))).toMatchObject({ kind: 'stale', ratio: 3 });
   });
 
-  it('flags a goal ten times the forecast as suspect instead of a miss', () => {
+  it('flags a goal ten times off the forecast, either way, as suspect, matching the withheld chip', () => {
     expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 5000 }))).toMatchObject({ kind: 'goal-suspect', tone: 'watch' });
+    expect(resolveHealthMetricsEventsForecastVerdict(event({ goal: 50 }))).toMatchObject({ kind: 'goal-suspect', ratio: 10 });
+  });
+
+  it('agrees with the chip on a forecast a fraction under goal', () => {
+    const nearGoal = event({ forecastAvg: 449.6, forecastHigh: 500, goal: 450 });
+
+    expect(resolveHealthMetricsEventsForecastStatus(nearGoal)).toBe('at-risk');
+    expect(resolveHealthMetricsEventsForecastVerdict(nearGoal)).toMatchObject({ kind: 'short', gap: 0 });
   });
 
   it('has nothing to pace against without a goal or a forecast', () => {
@@ -123,6 +132,14 @@ describe('forecast table helpers', () => {
     ]);
 
     expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'suspect']);
+  });
+
+  it('sorts an unmeasured registration count last rather than as zero, and draws it no progress', () => {
+    const unmeasured = event({ eventId: 'unmeasured', eventName: 'A unmeasured', registrationsNow: null });
+    const sorted = sortHealthMetricsEventsForecastRows([unmeasured, event({ eventId: 'behind', registrationsNow: 50 })]);
+
+    expect(sorted.map((e) => e.eventId)).toEqual(['behind', 'unmeasured']);
+    expect(buildHealthMetricsEventsForecastRowViews([unmeasured])[0]).toMatchObject({ progressPct: null, progressClass: 'bg-gray-200' });
   });
 
   it('resolves labels and caps the progress bar at 100%', () => {

@@ -133,4 +133,5 @@ export const HEALTH_METRICS_EVENTS_FORECAST_EVENT_CAP = 200;
 /** Read-failed / no-foundation value: no events, which the section must not caption as measured. */
 export const HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED: HealthMetricsEventsForecast = { events: [] };
 
+/** Read-failed / no-event value for the curve: no formats, which the chart renders as no curve. */
 export const HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED: HealthMetricsEventsForecastCurve = { eventId: '', formats: [] };

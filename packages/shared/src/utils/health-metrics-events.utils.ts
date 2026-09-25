@@ -53,14 +53,16 @@ export function resolveHealthMetricsEventsForecastVerdict(event: HealthMetricsEv
   if (event.goal === null || event.goal <= 0) return { ...base, kind: 'no-goal', tone: 'none' };
   if (event.forecastAvg === null) return { ...base, kind: 'no-data', tone: 'none' };
 
+  // Mis-entered goes first, so a 10× gap reads the same as the chip, which withholds it.
   const ratio = event.forecastAvg / event.goal;
-  if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'watch', ratio };
   if (isHealthMetricsEventsForecastGoalSuspect(event)) return { ...base, kind: 'goal-suspect', tone: 'watch', ratio };
+  if (ratio >= HEALTH_METRICS_EVENTS_FORECAST_STALE_GOAL_RATIO) return { ...base, kind: 'stale', tone: 'watch', ratio };
 
-  const gap = Math.round(event.forecastAvg - event.goal);
-  if (gap >= 0) return { ...base, kind: 'on-track', tone: 'ok', gap };
+  // Branch on the raw values, as the chip does, and round only the gap shown.
+  const gap = Math.round(Math.abs(event.forecastAvg - event.goal));
+  if (event.forecastAvg >= event.goal) return { ...base, kind: 'on-track', tone: 'ok', gap };
 
-  return { ...base, kind: 'short', tone: 'act', gap: -gap };
+  return { ...base, kind: 'short', tone: 'act', gap };
 }
 
 /** Sub-nav note: events projected under goal, leaving out the ones whose goal looks mis-entered. */
@@ -78,21 +80,20 @@ export function filterHealthMetricsEventsForecastable(events: HealthMetricsEvent
   return events.filter((event) => event.forecastAvg !== null);
 }
 
-/** Worst pacing first by registrations against goal; events with no usable goal go last. */
+/** Worst pacing first by registrations against goal; events with no usable goal or count go last. */
 export function sortHealthMetricsEventsForecastRows(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastEvent[] {
   const pace = (event: HealthMetricsEventsForecastEvent): number =>
-    event.goal === null || event.goal <= 0 || isHealthMetricsEventsForecastGoalSuspect(event)
-      ? Number.POSITIVE_INFINITY
-      : (event.registrationsNow ?? 0) / event.goal;
+    isHealthMetricsEventsForecastGoalSuspect(event) ? Number.POSITIVE_INFINITY : (resolveProgressRatio(event) ?? Number.POSITIVE_INFINITY);
 
-  return [...events].sort((a, b) => pace(a) - pace(b) || a.eventName.localeCompare(b.eventName));
+  return [...events].sort((a, b) => pace(a) - pace(b) || a.eventName.localeCompare(b.eventName, 'en-US'));
 }
 
 /** The table's rows with every label resolved, so the template formats nothing per render. */
 export function buildHealthMetricsEventsForecastRowViews(events: HealthMetricsEventsForecastEvent[]): HealthMetricsEventsForecastRowView[] {
   return sortHealthMetricsEventsForecastRows(events).map((event) => {
     const status = resolveHealthMetricsEventsForecastStatus(event);
-    const pct = event.goal !== null && event.goal > 0 ? Math.round(((event.registrationsNow ?? 0) / event.goal) * 100) : null;
+    const ratio = resolveProgressRatio(event);
+    const pct = ratio === null ? null : Math.round(ratio * 100);
 
     return {
       event,
@@ -128,6 +129,13 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
   }
 
   return best?.format ?? null;
+}
+
+/** Registrations now against goal; null when either is unmeasured, since null is not zero. */
+function resolveProgressRatio(event: HealthMetricsEventsForecastEvent): number | null {
+  if (event.goal === null || event.goal <= 0 || event.registrationsNow === null) return null;
+
+  return event.registrationsNow / event.goal;
 }
 
 function resolveProgressClass(pct: number | null): string {

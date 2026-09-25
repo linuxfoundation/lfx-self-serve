@@ -92,11 +92,15 @@ export class EventsRegistrationForecastComponent {
 
   protected readonly forecastable = computed(() => filterHealthMetricsEventsForecastable(this.response().events));
   protected readonly eventOptions = computed<FilterPillOption[]>(() =>
-    this.forecastable().map((event) => ({
-      id: event.eventId,
-      label: `${truncateHealthMetricsEventsPillName(event.eventName)} · ${event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—'}`,
-      fullLabel: event.eventName,
-    }))
+    this.forecastable().map((event) => {
+      // The date is in the accessible name too, so same-named editions stay distinct to a screen reader.
+      const dateLabel = event.eventStartDate ? formatIsoDateLabel(event.eventStartDate) : '—';
+      return {
+        id: event.eventId,
+        label: `${truncateHealthMetricsEventsPillName(event.eventName)} · ${dateLabel}`,
+        fullLabel: `${event.eventName} · ${dateLabel}`,
+      };
+    })
   );
   /** A deep link to an event that is no longer upcoming falls back to the soonest one. */
   protected readonly selectedEvent = computed<HealthMetricsEventsForecastEvent | null>(() => {
@@ -147,6 +151,8 @@ export class EventsRegistrationForecastComponent {
   protected readonly daysLeftLabel = computed(() => formatHealthMetricsEventsCount(this.selectedEvent()?.daysLeft ?? null));
   protected readonly gapLabel = computed(() => formatHealthMetricsEventsCount(this.verdict()?.gap ?? null));
   protected readonly ratioLabel = computed(() => (this.verdict()?.ratio ?? 0).toFixed(1));
+  /** A mis-entered goal can sit far above the forecast or far below it; the copy names which. */
+  protected readonly goalSuspectAbove = computed(() => (this.verdict()?.ratio ?? 0) >= 1);
   protected readonly verdictClass = computed(() => {
     switch (this.verdict()?.tone) {
       case 'ok':
@@ -219,6 +225,11 @@ export class EventsRegistrationForecastComponent {
 
   protected onFormatChange(format: string): void {
     this.format.set(format);
+  }
+
+  /** The L2 shell scrolls to a section from the URL fragment, so the link only sets it. */
+  protected onViewPastEvents(): void {
+    void this.router.navigate([], { relativeTo: this.route, fragment: 'past', queryParamsHandling: 'preserve' });
   }
 
   private initResponse(): Signal<HealthMetricsEventsForecast> {

@@ -177,6 +177,16 @@ describe('EventsRegistrationForecastComponent', () => {
     expect(getEventsRegistrationForecast).toHaveBeenCalledTimes(1);
     expect(notes.at(-1)).toBe('');
     expect(lifecycle.at(-1)).toBe('settled');
+
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
+    fixture.componentInstance['onViewPastEvents']();
+    expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ fragment: 'past', queryParamsHandling: 'preserve' }));
+  });
+
+  it('names each event pill with its date, so same-named editions stay distinct', async () => {
+    await render({ events: [event()] });
+
+    expect(fixture.componentInstance['eventOptions']()[0].fullLabel).toMatch(/^Open Source Summit · \S/);
   });
 
   it('opens the event a deep link names, and writes a picked event back to the URL', async () => {
@@ -204,7 +214,8 @@ describe('EventsRegistrationForecastComponent', () => {
     [{ goal: 450 }, 'on-track', 'clear the goal by about 50'],
     [{ goal: 620 }, 'short', 'about 120 short of the 620 goal. There are 40 days left'],
     [{ goal: 150 }, 'stale', '3.3× the goal of 150'],
-    [{ goal: 5000 }, 'goal-suspect', 'goal looks mis-entered'],
+    [{ goal: 5000 }, 'goal-suspect', 'under a tenth of the goal'],
+    [{ goal: 40 }, 'goal-suspect', 'over ten times the goal'],
     [{ goal: null }, 'no-goal', 'No registration goal is set'],
   ])('writes the %o verdict as %s', async (overrides, kind, copy) => {
     await render({ events: [event(overrides)] });
@@ -212,6 +223,13 @@ describe('EventsRegistrationForecastComponent', () => {
 
     expect(verdict?.getAttribute('data-kind')).toBe(kind);
     expect(verdict?.textContent?.replace(/\s+/g, ' ')).toContain(copy);
+  });
+
+  it('leaves the days-left sentence out of a short verdict when days left is unmeasured', async () => {
+    await render({ events: [event({ goal: 620, daysLeft: null })] });
+
+    expect(query('events-registration-forecast-verdict')?.textContent).not.toContain('days left');
+    expect(query('events-registration-forecast-today')?.textContent).not.toContain('days left');
   });
 
   it('offers a format toggle only when both formats exist, opening on the one with more registrations', async () => {

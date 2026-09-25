@@ -43,10 +43,13 @@ export interface HealthMetricsEventsForecastEvent {
   priorYearSamePoint: number | null;
   /** `null` when no goal is set. */
   goal: number | null;
+  /** Whole days from today to the event, `0` on the event day. */
   daysLeft: number | null;
+  /** True only when every format is a first edition. */
   isNewEvent: boolean;
 }
 
+/** `GET /api/analytics/events-registration-forecast` — every upcoming event's headline. */
 export interface HealthMetricsEventsForecast {
   events: HealthMetricsEventsForecastEvent[];
 }
@@ -67,6 +70,7 @@ export interface HealthMetricsEventsForecastCurveSeries {
   points: HealthMetricsEventsForecastCurvePoint[];
 }
 
+/** `GET /api/analytics/events-registration-forecast-curve` — one event's curve, one series per format. */
 export interface HealthMetricsEventsForecastCurve {
   eventId: string;
   formats: HealthMetricsEventsForecastCurveSeries[];
