@@ -7,6 +7,7 @@ import { signal, WritableSignal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { HealthMetricsOverviewComponent } from './health-metrics-overview.component';
@@ -28,6 +29,7 @@ describe('HealthMetricsOverviewComponent', () => {
         provideRouter([]),
         // Normally provided by HealthMetricsGateComponent, which owns the sticky header and tab bar.
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         {
           provide: ProjectContextService,
           useValue: { selectedFoundation: foundationSignal, selectedFoundationSfid: signal(foundationSfid) },

@@ -1,9 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute } from '@angular/router';
 import { HEALTH_METRICS_EVENTS_SECTIONS } from '@lfx-one/shared/constants';
+import { UserService } from '@services/user.service';
 import { BehaviorSubject } from 'rxjs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -21,6 +23,7 @@ describe('HealthMetricsEventsComponent', () => {
       imports: [HealthMetricsEventsComponent],
       providers: [
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: ActivatedRoute, useValue: { fragment: new BehaviorSubject<string | null>(initialFragment).asObservable() } },
       ],
     }).compileComponents();
