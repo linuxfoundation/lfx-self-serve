@@ -26,12 +26,12 @@ The card is visible to board members, executive directors, LF Staff, users with 
 
 The **Health Metrics** page (`/foundation/health-metrics`) is available to executive directors and LF Staff from **Metrics → Health Metrics** in the left navigation. Use the year filter at the top of the page to switch between **year to date (YTD)** and completed calendar years. The page includes:
 
-- **Participating Organizations** — organizations contributing to the foundation's projects
+- **Participating Organizations** — active and new member organizations by engagement level
 - **Net Promoter Score** — member satisfaction from NPS surveys
-- **Membership Churn Per Tier** — membership renewals and losses by tier
+- **Membership Churn Per Tier** — churn rate, members lost, and value lost by membership tier
 - **Outstanding Balance** — unpaid membership invoices
-- **Events** — event attendance and speaker participation
-- **Training & Certification** — certified employees and training enrollments
+- **Events** — total, upcoming, and past events, plus sponsorship progress toward goal
+- **Training & Certification** — training enrollment and revenue by program type
 - **Code Contribution** — total and new contributors, plus all-time committer, maintainer, and reviewer counts
 - **Board Meeting Participation** — board meeting attendance
 
