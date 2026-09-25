@@ -365,7 +365,7 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     expect(periods.map((candidate) => candidate.range)).toEqual(HEALTH_METRICS_L2_RANGES);
   });
 
-  it('reads a foundation with no rollup row as having held no event', async () => {
+  it('reads a foundation with no rollup row and nothing upcoming as having held no event', async () => {
     execute.mockResolvedValue({ rows: [] });
 
     const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
@@ -379,10 +379,46 @@ describe('HealthMetricsEventsService.getAtAGlance', () => {
     const none = { UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 0, EVENTS_COUNT_YTD: 0, EVENTS_COUNT_LAST_COMPLETED_YEAR: 0, EVENTS_COUNT_PREV_COMPLETED_YEAR: 0 };
     execute
       .mockResolvedValueOnce({ rows: [glanceRow(none)] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [glanceRow({ ...none, EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null })] });
     const service = new HealthMetricsEventsService();
 
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(false);
     expect((await service.getAtAGlance(req, { foundationSlug: 'acme' })).hasEvents).toBe(true);
+    expect(execute).toHaveBeenCalledTimes(3);
+  });
+
+  it.each([
+    ['no rollup row', { rows: [] }],
+    [
+      'an all-zero rollup row',
+      {
+        rows: [
+          glanceRow({
+            UPCOMING_EVENTS_COUNT_CURRENT_YEAR: 0,
+            EVENTS_COUNT_YTD: 0,
+            EVENTS_COUNT_LAST_COMPLETED_YEAR: 0,
+            EVENTS_COUNT_PREV_COMPLETED_YEAR: 0,
+            EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: 0,
+          }),
+        ],
+      },
+    ],
+  ])('keeps the tab for %s when the forecast holds an event past this year', async (_case, rollup) => {
+    execute.mockResolvedValueOnce(rollup).mockResolvedValueOnce({ rows: [{ HAS_EVENT: 1 }] });
+
+    const glance = await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    const [sql, binds] = execute.mock.calls[1];
+    expect(glance.hasEvents).toBe(true);
+    expect(binds).toEqual(['acme']);
+    expect(sql).toContain('MARKETING_EVENT_REGISTRATION_FORECAST');
+    expect(sql).toContain('event_start_date >= CURRENT_DATE()');
+  });
+
+  it('skips the upcoming check for a foundation whose rollup already shows events', async () => {
+    await new HealthMetricsEventsService().getAtAGlance(req, { foundationSlug: 'acme' });
+
+    expect(execute).toHaveBeenCalledTimes(1);
   });
 });

@@ -271,10 +271,11 @@ export class HealthMetricsEventsService {
     });
 
     const row = result.rows[0];
-    // A read that succeeds with no row is a foundation that has held no event, a measured zero.
+    // No row is a foundation that has held no event, a measured zero; a next-year event can still exist.
     if (!row) {
       logger.debug(req, 'get_events_at_a_glance', 'No at-a-glance row for the foundation', { foundation_slug: query.foundationSlug });
-      return { periods: HEALTH_METRICS_L2_RANGES.map(buildZeroAtAGlancePeriod), upcomingEvents: 0, hasEvents: false };
+      const hasEvents = await this.hasUpcomingEvent(req, query);
+      return { periods: HEALTH_METRICS_L2_RANGES.map(buildZeroAtAGlancePeriod), upcomingEvents: 0, hasEvents };
     }
 
     const periods = HEALTH_METRICS_L2_RANGES.map((range) => mapAtAGlancePeriod(row, range));
@@ -282,7 +283,29 @@ export class HealthMetricsEventsService {
     // An unmeasured count could hide an event, so only measured zeros everywhere read as none held.
     const eventCounts = [upcomingEvents, ...periods.map((period) => period.events)];
 
-    return { periods, upcomingEvents, hasEvents: eventCounts.some((value) => value !== 0) };
+    const hasEvents = eventCounts.some((value) => value !== 0) || (await this.hasUpcomingEvent(req, query));
+
+    return { periods, upcomingEvents, hasEvents };
+  }
+
+  /** Whether the forecast holds any event still to come, past the rollup's current-year cutoff. */
+  private async hasUpcomingEvent(req: Request, query: HealthMetricsEventsAtAGlanceQuery): Promise<boolean> {
+    const sql = `
+      SELECT 1 AS has_event
+      FROM ${REGISTRATION_FORECAST_VIEW}
+      WHERE foundation_slug = ?
+        AND is_all_projects = TRUE
+        AND event_start_date >= CURRENT_DATE()
+      LIMIT 1
+    `;
+
+    const result = await executeSnowflakeViewRead<{ HAS_EVENT: number }>(this.snowflakeService, req, sql, [query.foundationSlug], {
+      view: REGISTRATION_FORECAST_VIEW,
+      operation: 'get_events_at_a_glance',
+      clientMessage: 'Events at a glance is unavailable right now.',
+    });
+
+    return result.rows.length > 0;
   }
 }
 
