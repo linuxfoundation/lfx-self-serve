@@ -11,6 +11,9 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, Navigation, provideRouter, Router } from '@angular/router';
 import {
   CCLA_SIGN_COPY,
+  ORG_CLA_DESIGNEE_REFUSAL_COPY,
+  ORG_CLA_DESIGNEE_START_COPY,
+  ORG_CLA_IDENTIFY_MANAGER_COPY,
   ORG_CLA_LOCKED_TAB_COPY,
   ORG_CLA_MANAGERS_COPY,
   ORG_CLA_NOT_STARTED_COPY,
@@ -29,10 +32,12 @@ import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import type { Confirmation } from 'primeng/api';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, of, Subject, throwError } from 'rxjs';
+import { BehaviorSubject, catchError, of, Subject, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, MockInstance, vi } from 'vitest';
 
 import { OrgEasyclaCoverageDialogComponent } from '../org-easycla-coverage-dialog/org-easycla-coverage-dialog.component';
+import { OrgEasyclaIdentifyManagerDialogComponent } from '../org-easycla-identify-manager-dialog/org-easycla-identify-manager-dialog.component';
+import { OrgEasyclaManagerQuestionDialogComponent } from '../org-easycla-manager-question-dialog/org-easycla-manager-question-dialog.component';
 import { OrgEasyclaAttestationComponent } from '../org-easycla-sign/org-easycla-attestation.component';
 import { OrgEasyclaSendByEmailComponent } from '../org-easycla-sign/org-easycla-send-by-email.component';
 import { OrgEasyclaSignHandoffComponent } from '../org-easycla-sign/org-easycla-sign-handoff.component';
@@ -493,12 +498,14 @@ describe('OrgEasyclaDetailComponent', () => {
       const fixture = await render();
       const start = byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button');
       expect(start?.disabled).toBe(false);
+      const checksBeforeStart = checkPermission.mock.calls.length;
 
       start?.click();
 
       expect(openDialog).toHaveBeenCalledTimes(1);
       expect(openDialog.mock.calls[0][0]).toBe(OrgEasyclaAttestationComponent);
-      expect(checkPermission).not.toHaveBeenCalled();
+      // The click itself asks ACS nothing; the only Sign check is the one the overview ran on render.
+      expect(checkPermission).toHaveBeenCalledTimes(checksBeforeStart);
     });
 
     it('opens the send-by-email dialog from Identify someone else, without attestation', async () => {
@@ -523,6 +530,269 @@ describe('OrgEasyclaDetailComponent', () => {
           }),
         })
       );
+    });
+
+    describe('the CLA manager question (#2780)', () => {
+      const PROJECT_SFID = 'a09410000182dD2AAI';
+      const signable = { ...notStarted, projects: [{ projectName: 'Cascade', projectSfid: PROJECT_SFID }] };
+
+      /** A dialog ref whose close value is `value`, torn down straight away. */
+      function closingWith(value: unknown) {
+        return { onClose: of(value), onDestroy: of(undefined), close: vi.fn() };
+      }
+
+      async function renderSignable(): Promise<ComponentFixture<OrgEasyclaDetailComponent>> {
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable)] }));
+        return render();
+      }
+
+      function clickStart(fixture: ComponentFixture<OrgEasyclaDetailComponent>): void {
+        byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.click();
+        fixture.detectChanges();
+      }
+
+      function openedComponents(): unknown[] {
+        return openDialog.mock.calls.map((call) => call[0]);
+      }
+
+      function claServiceWith(overrides: Record<string, unknown>): void {
+        Object.assign(TestBed.inject(OrgLensClaService), overrides);
+      }
+
+      async function moveToGroup(fixture: ComponentFixture<OrgEasyclaDetailComponent>, claGroupId: string): Promise<void> {
+        paramMap.next(convertToParamMap({ claGroupId }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
+      beforeEach(() => {
+        checkPermission.mockReturnValue(of(false));
+      });
+
+      it('runs the Sign check for this pair on render and shows the three-step explainer when it is denied', async () => {
+        const fixture = await renderSignable();
+
+        expect(checkPermission).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'sign', PROJECT_SFID);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).toBeNull();
+        expect(fixture.nativeElement.textContent).toContain(ORG_CLA_NOT_STARTED_COPY.steps[0].body);
+      });
+
+      it('asks the question before any attestation when the viewer cannot sign yet', async () => {
+        openDialog.mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+        expect(openDialog.mock.calls[0][1]).toEqual(expect.objectContaining({ header: 'Are you authorized to be a CLA Manager for your organization?' }));
+      });
+
+      it('releases Start when the question is dismissed, assigning nothing', async () => {
+        const assignDesignee = vi.fn();
+        openDialog.mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee });
+
+        clickStart(fixture);
+
+        expect(assignDesignee).not.toHaveBeenCalled();
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
+      it('assigns the viewer on Yes, then opens attestation', async () => {
+        const assignDesignee = vi.fn(() => of({ assigned: true }));
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee });
+
+        clickStart(fixture);
+
+        expect(assignDesignee).toHaveBeenCalledExactlyOnceWith(SELECTED_ACCOUNT.uid, PROJECT_SFID);
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent, OrgEasyclaAttestationComponent]);
+      });
+
+      it('does not ask again after a Yes in this session, and reads the designee copy', async () => {
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => of({ assigned: true })) });
+
+        clickStart(fixture);
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent, OrgEasyclaAttestationComponent, OrgEasyclaAttestationComponent]);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')?.textContent).toContain(ORG_CLA_DESIGNEE_START_COPY.identified);
+      });
+
+      it('keeps the viewer on the overview with the reason when Yes is refused', async () => {
+        const refusal = new HttpErrorResponse({ status: 409, error: { upstreamCode: 'already-signed' } });
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => throwError(() => refusal)) });
+
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+        expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ severity: 'error', detail: ORG_CLA_DESIGNEE_REFUSAL_COPY['already-signed'] }));
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
+      it('falls back to the generic refusal for a code it does not know', async () => {
+        const refusal = new HttpErrorResponse({ status: 502, error: { upstreamCode: 'toString' } });
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => throwError(() => refusal)) });
+
+        clickStart(fixture);
+
+        expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ detail: ORG_CLA_DESIGNEE_REFUSAL_COPY.unknown }));
+      });
+
+      it('routes Identify someone else through the question, and Yes continues into the signatory step', async () => {
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => of({ assigned: true })) });
+
+        identifySomeoneElse(fixture)?.click();
+        fixture.detectChanges();
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent, OrgEasyclaSendByEmailComponent]);
+      });
+
+      it('opens Identify CLA Manager on No and nominates the named person, not the viewer', async () => {
+        const assignDesignee = vi.fn();
+        const nominateDesignee = vi.fn(() => of({ outcome: 'assigned', email: 'contributor@example.org' }));
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee, nominateDesignee });
+
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent, OrgEasyclaIdentifyManagerDialogComponent]);
+        expect(nominateDesignee).toHaveBeenCalledExactlyOnceWith(SELECTED_ACCOUNT.uid, {
+          projectSfid: PROJECT_SFID,
+          fullName: 'Pat Contributor',
+          email: 'contributor@example.org',
+        });
+        expect(assignDesignee).not.toHaveBeenCalled();
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')?.textContent).toContain(
+          ORG_CLA_IDENTIFY_MANAGER_COPY.assigned('contributor@example.org')
+        );
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+      });
+
+      it('reports a person without an LF Login as needing one, not as a failure', async () => {
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'lf-login-required', email: 'contributor@example.org' })) });
+
+        clickStart(fixture);
+
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')?.textContent).toContain(
+          ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequired('contributor@example.org')
+        );
+        expect(addMessage).not.toHaveBeenCalledWith(expect.objectContaining({ severity: 'error' }));
+      });
+
+      it('clears the nomination notice when the page moves to another CLA group', async () => {
+        const other = {
+          ...notStarted,
+          id: 'signature-uuid-elsewhere',
+          claGroupId: ELSEWHERE_GROUP_ID,
+          claGroupName: 'Elsewhere CLA',
+          projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+        };
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+        const fixture = await render();
+        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'assigned', email: 'contributor@example.org' })) });
+        clickStart(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).not.toBeNull();
+
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Elsewhere CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+
+        await moveToGroup(fixture, GROUP_ID);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).not.toContain('Elsewhere CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+      });
+
+      it('lets a Yes finish after the page is destroyed, and opens nothing when it answers', async () => {
+        const response = new Subject<{ assigned: true }>();
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => response) });
+        clickStart(fixture);
+
+        fixture.destroy();
+
+        expect(response.observed).toBe(true);
+        response.next({ assigned: true });
+        response.complete();
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+      });
+
+      it('lets a nomination finish after the page moves to another CLA group, releasing Start there without a notice', async () => {
+        const response = new Subject<{ outcome: 'assigned'; email: string }>();
+        const other = {
+          ...notStarted,
+          id: 'signature-uuid-elsewhere',
+          claGroupId: ELSEWHERE_GROUP_ID,
+          claGroupName: 'Elsewhere CLA',
+          projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+        };
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+        const fixture = await render();
+        claServiceWith({ nominateDesignee: vi.fn(() => response) });
+        clickStart(fixture);
+
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
+
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+        expect(response.observed).toBe(true);
+        response.next({ outcome: 'assigned', email: 'contributor@example.org' });
+        response.complete();
+        fixture.detectChanges();
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+      });
+
+      it('skips the question and shows the designee copy when the viewer can already sign', async () => {
+        checkPermission.mockReturnValue(of(true));
+        openDialog.mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+
+        expect(byTestId(fixture, 'org-easycla-detail-designee-identified')).not.toBeNull();
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaAttestationComponent]);
+      });
+
+      it('asks the question when the Sign check fails, and never refuses Start on it', async () => {
+        checkPermission.mockReturnValue(throwError(() => new Error('timeout')).pipe(catchError(() => of(false))));
+        openDialog.mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
+        clickStart(fixture);
+
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+      });
     });
 
     it('closes the send-by-email dialog on an organization switch, since no mail has been sent yet', async () => {

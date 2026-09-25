@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
+import type { OrgClaDesigneeRefusal, OrgClaDetailTab, OrgClaGroup, OrgClaManagerRefusal, OrgClaStatusDisplay } from '../interfaces/cla.interface';
 
 /** Long enough to not query on every keystroke, short enough that the CLA-group list feels live. */
 export const CLA_GROUP_SEARCH_DEBOUNCE_MS = 250;
@@ -688,6 +688,53 @@ export const ORG_CLA_DESIGNEE_NOMINATION_OUTCOMES = ['assigned', 'lf-login-requi
 export const ORG_CLA_DESIGNEE_NAME_PATTERN = /^[a-zA-Z0-9_]+( [a-zA-Z0-9_]+)*$/;
 export const ORG_CLA_DESIGNEE_NAME_MIN = 2;
 export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
+
+/**
+ * Corporate Console's question before Start, asked as the dialog's title; its "No Signed CLA Found"
+ * title is dropped because the overview already says so. Contact Company Admin is not offered.
+ */
+export const ORG_CLA_MANAGER_QUESTION_COPY = {
+  question: 'Are you authorized to be a CLA Manager for your organization?',
+  message: 'A CLA Manager is the person who manages the list of approved contributors to this project for your company.',
+  note: 'If not sure please select "No"',
+  noLabel: 'No',
+  yesLabel: 'Yes',
+} as const;
+
+/** The unsigned overview for a viewer already identified as the initial CLA Manager (Corporate Console, verbatim). */
+export const ORG_CLA_DESIGNEE_START_COPY = {
+  identified: 'Someone has identified you as the initial CLA Manager from your company for this project.',
+  role: 'The CLA Manager is the person who manages the list of approved contributors.',
+  stepsHeading: 'To proceed, click below to start the process:',
+  steps: [
+    {
+      label: 'Step 1:',
+      body: 'You will be able to either sign the CLA, or send it to someone else for signature if you are not authorized by your company to sign it.',
+    },
+    { label: 'Step 2:', body: 'Then, you will be able to start approving contributors and adding other CLA Managers.' },
+  ],
+} as const;
+
+export const ORG_CLA_IDENTIFY_MANAGER_COPY = {
+  title: 'Identify CLA Manager',
+  message: 'Please enter the name and email address of the person from your company who will be the CLA Manager for this project',
+  nameLabel: 'Name',
+  emailLabel: 'Email address',
+  submitLabel: 'Submit Request',
+  cancelLabel: 'Cancel',
+  /** `email` is the address the viewer entered. Neither outcome confirms an email was sent. */
+  assigned: (email: string): string => `${email} is the initial CLA Manager designee.`,
+  lfLoginRequired: (email: string): string => `${email} needs an LF Login before they can become the initial CLA Manager designee.`,
+} as const;
+
+/** Why a designee assignment or nomination did not go through, keyed by the BFF's upstream code. */
+export const ORG_CLA_DESIGNEE_REFUSAL_COPY: Record<OrgClaDesigneeRefusal, string> = {
+  'already-signed': 'This CLA has already been signed for your organization. Reload the page to see it.',
+  'no-lf-login': 'Your account has no LF Login the CLA service recognizes, so you cannot be made CLA Manager. Contact support.',
+  sanctioned: 'Your organization cannot sign this CLA at this time. Contact support for more information.',
+  'not-authorized': 'You are not allowed to request a CLA Manager for this organization.',
+  unknown: 'We could not complete the request. Try again, or contact support if it keeps failing.',
+};
 
 // ---------------------------------------------------------------------------
 // Contributor Acknowledgments (#1986)

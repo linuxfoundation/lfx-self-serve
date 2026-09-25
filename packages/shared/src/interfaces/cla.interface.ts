@@ -1420,3 +1420,14 @@ export interface OrgClaDesigneeNominationValidation {
 }
 
 export type OrgClaDesigneeRefusal = (typeof ORG_CLA_DESIGNEE_REFUSALS)[number];
+
+/** What the viewer answered. Dismissing the dialog closes with `undefined`, which answers neither. */
+export type OrgClaManagerAnswer = 'yes' | 'no';
+
+/** The step the viewer chose on the unsigned overview: sign it themselves, or mail it to a signatory. */
+export type OrgClaDesigneeNextStep = 'attest' | 'mail';
+
+export type OrgClaIdentifyManagerField = keyof OrgClaDesigneeNominationValidation;
+
+/** What the dialog closes with. The detail page adds the signing project and sends it. */
+export type OrgClaIdentifyManagerResult = Omit<OrgClaDesigneeNominationRequest, 'projectSfid'>;

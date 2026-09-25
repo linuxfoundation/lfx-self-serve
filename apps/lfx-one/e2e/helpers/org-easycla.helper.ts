@@ -159,7 +159,9 @@ export async function stubAccountContext(page: Page): Promise<void> {
 /**
  * ACS pair-check hop for attestation Continue and approval-list mutations. Existing org-easycla e2e
  * stubs this allowed; a denied stub refuses Review and Sign and hides Add/Edit/Remove. Sign CLA
- * itself stays offered. Picker Continue and Start do not POST this hop.
+ * itself stays offered. Picker Continue and Start do not POST this hop. A denied stub also puts
+ * the CLA manager question (#2780) in front of Start on an unsigned overview; allowed skips it
+ * and shows the designee copy.
  */
 export async function stubPermissionChecks(page: Page, allowed = true): Promise<void> {
   await page.route(PERMISSIONS_CHECKS_ROUTE, (route) => {

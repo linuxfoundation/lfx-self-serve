@@ -215,20 +215,41 @@
               @if (notStartedLead()) {
                 <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
               }
-              <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
-              <!--
-              An ordered list, not three paragraphs as the prototype draws them. The steps are a
-              sequence and are numbered in their own text, so the markup that says so is what lets
-              assistive technology announce the position and count. The prototype's numbering is
-              kept in the visible text rather than generated, so the wording stays verbatim.
-            -->
-              <ol class="flex list-none flex-col gap-2 p-0">
-                @for (step of notStartedCopy.steps; track step.label) {
-                  <li class="text-sm text-gray-700">
-                    <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
-                  </li>
-                }
-              </ol>
+              @if (alreadyDesignee()) {
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-designee-identified">{{ designeeStartCopy.identified }}</p>
+                <p class="text-sm text-gray-700">{{ designeeStartCopy.role }}</p>
+                <p class="font-semibold text-sm text-gray-900">{{ designeeStartCopy.stepsHeading }}</p>
+                <ol class="flex list-none flex-col gap-2 p-0" data-testid="org-easycla-detail-designee-steps">
+                  @for (step of designeeStartCopy.steps; track step.label) {
+                    <li class="text-sm text-gray-700">
+                      <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                    </li>
+                  }
+                </ol>
+              } @else {
+                <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
+                <!--
+                  An ordered list, not three paragraphs as the prototype draws them. The steps are a
+                  sequence and are numbered in their own text, so the markup that says so is what lets
+                  assistive technology announce the position and count. The prototype's numbering is
+                  kept in the visible text rather than generated, so the wording stays verbatim.
+                -->
+                <ol class="flex list-none flex-col gap-2 p-0">
+                  @for (step of notStartedCopy.steps; track step.label) {
+                    <li class="text-sm text-gray-700">
+                      <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                    </li>
+                  }
+                </ol>
+              }
+              @if (designeeNotice(); as notice) {
+                <p
+                  role="status"
+                  class="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900"
+                  data-testid="org-easycla-detail-designee-notice">
+                  {{ notice }}
+                </p>
+              }
               <!--
               Review copy of the current corporate template, watermarked not for execution.
               A link, not the signed-document button: that control is for an agreement that
