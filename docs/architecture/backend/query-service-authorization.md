@@ -65,15 +65,18 @@ The authoritative deployed FGA model (`lfx-v2-helm/charts/lfx-platform/files/mod
 `v1_meeting#viewer` as:
 
 ```text
-define viewer: [user:*] or participant or organizer or auditor
+define viewer:    [user:*] or participant or organizer or auditor
+define organizer: meeting_coordinator from project or writer from committee or writer_guard from project
+define auditor:   organizer or auditor_guard from project
 ```
 
-where `organizer` is derived from `meeting_coordinator from project or writer from committee or writer from project`,
-and `auditor` is derived from `organizer or auditor from project`.
+where `writer_guard = writer or global_writer` and `auditor_guard = auditor or global_auditor`
+(defined on the `project` type). These guard relations extend the bare `writer`/`auditor` grants
+to also include global LF staff roles.
 
 `user:*` is only granted `viewer` on **public** meetings. For a private meeting, a caller must be a
-participant, an organizer (which includes project writers, committee writers, and meeting coordinators),
-or a project auditor. Note that committee _membership_ alone does not grant viewer access — access
+participant, an organizer (project `writer_guard`, committee writer, or meeting coordinator), or a
+project `auditor_guard`. Note that committee _membership_ alone does not grant viewer access — access
 flows through `writer from committee` (i.e. being a committee writer, not just a member). A caller
 with no applicable relation receives 0 registrant records from query-service — the filtering happens
 server-side before the response leaves the platform.
