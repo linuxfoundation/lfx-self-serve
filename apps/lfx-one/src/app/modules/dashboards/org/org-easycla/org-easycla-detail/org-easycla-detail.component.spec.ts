@@ -585,7 +585,7 @@ describe('OrgEasyclaDetailComponent', () => {
         clickStart(fixture);
 
         expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
-        expect(openDialog.mock.calls[0][1]).toEqual(expect.objectContaining({ header: 'No Signed CLA Found' }));
+        expect(openDialog.mock.calls[0][1]).toEqual(expect.objectContaining({ header: 'Are you authorized to be a CLA Manager for your organization?' }));
       });
 
       it('releases Start when the question is dismissed, assigning nothing', async () => {

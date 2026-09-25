@@ -10,8 +10,9 @@ import { ButtonComponent } from '@components/button/button.component';
 
 export function orgClaManagerQuestionDialogConfig(): DynamicDialogConfig {
   return {
-    header: ORG_CLA_MANAGER_QUESTION_COPY.title,
+    header: ORG_CLA_MANAGER_QUESTION_COPY.question,
     modal: true,
+    closable: true,
     width: '32rem',
     style: { maxWidth: '90vw' },
   };

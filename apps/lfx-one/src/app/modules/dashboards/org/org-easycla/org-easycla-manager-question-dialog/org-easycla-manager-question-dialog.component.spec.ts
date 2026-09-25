@@ -35,14 +35,18 @@ describe('OrgEasyclaManagerQuestionDialogComponent', () => {
     closeDialog.mockReset();
   });
 
-  it("asks Corporate Console's question with its message and note", async () => {
+  it("asks Corporate Console's question as the title, with its message and note below", async () => {
     const fixture = await render();
     const text = (fixture.nativeElement as HTMLElement).textContent ?? '';
 
-    expect(text).toContain('Are you authorized to be a CLA Manager for your organization?');
+    expect(orgClaManagerQuestionDialogConfig().header).toBe('Are you authorized to be a CLA Manager for your organization?');
+    expect(text).not.toContain('Are you authorized');
     expect(text).toContain(ORG_CLA_MANAGER_QUESTION_COPY.message);
     expect(text).toContain('If not sure please select "No"');
-    expect(orgClaManagerQuestionDialogConfig().header).toBe('No Signed CLA Found');
+  });
+
+  it('can be closed without answering', () => {
+    expect(orgClaManagerQuestionDialogConfig().closable).toBe(true);
   });
 
   it('closes with yes on Yes', async () => {

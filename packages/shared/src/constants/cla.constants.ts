@@ -689,9 +689,11 @@ export const ORG_CLA_DESIGNEE_NAME_PATTERN = /^[a-zA-Z0-9_]+( [a-zA-Z0-9_]+)*$/;
 export const ORG_CLA_DESIGNEE_NAME_MIN = 2;
 export const ORG_CLA_DESIGNEE_NAME_MAX = 60;
 
-/** Corporate Console's question before Start, verbatim. Contact Company Admin is not offered. */
+/**
+ * Corporate Console's question before Start, asked as the dialog's title; its "No Signed CLA Found"
+ * title is dropped because the overview already says so. Contact Company Admin is not offered.
+ */
 export const ORG_CLA_MANAGER_QUESTION_COPY = {
-  title: 'No Signed CLA Found',
   question: 'Are you authorized to be a CLA Manager for your organization?',
   message: 'A CLA Manager is the person who manages the list of approved contributors to this project for your company.',
   note: 'If not sure please select "No"',
