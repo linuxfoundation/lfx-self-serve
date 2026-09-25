@@ -5,7 +5,7 @@
   <!-- Page Header -->
   <header class="flex flex-col gap-2" data-testid="org-projects-header">
     <h1 class="font-display font-light text-2xl" data-testid="org-projects-title">
-      @if (companyName()) {
+      @if (contentVisible() && companyName()) {
         Projects &mdash; {{ companyName() }}
       } @else {
         Projects

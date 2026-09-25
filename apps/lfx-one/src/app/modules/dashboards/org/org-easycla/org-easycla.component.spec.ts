@@ -36,7 +36,15 @@ describe('OrgEasyclaComponent', () => {
   const correlationId = signal<string | null>(null);
   // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
   const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
-  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retrying: signal(false), retry: vi.fn() };
+  const emptyStateService = {
+    pageState,
+    hasPageState: computed(() => pageState() !== null),
+    settled: computed(() => grantsLoaded() && personaLoaded()),
+    // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
+    pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),
+    retrying: signal(false),
+    retry: vi.fn(),
+  };
 
   const getClaGroups = vi.fn();
   const checkPermission = vi.fn();
@@ -138,6 +146,24 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('EasyCLA');
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
+    });
+
+    // #2961: the title names the company only once the content renders.
+    it('keeps the bare title while the page waits for the org list', async () => {
+      navLoaded.set(false);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
+    });
+
+    it('keeps the bare title beside a page-level state', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      expect(fixture.nativeElement.querySelector('[data-state="no-organization"]')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
     });
 
     it('offers the Sign CLA control once an organization is selected', async () => {
@@ -492,7 +518,7 @@ describe('OrgEasyclaComponent', () => {
         byTestId(fixture, 'org-easycla-sign-cla')?.querySelector('button')?.click();
         expect(harness.opened).toHaveLength(1);
 
-        selectedAccount.set({ uid: '0014100000Te2QjAAJ', accountName: 'Meridian Systems' });
+        selectedAccount.set({ uid: '0014100000BetaAAAA', accountName: 'Meridian Systems' });
         fixture.detectChanges();
         await fixture.whenStable();
 
@@ -1069,8 +1095,8 @@ describe('OrgEasyclaComponent', () => {
    * any more, so the cases below are about adoption alone.
    */
   describe('when EasyCLA returns the signatory with an organization named on the address', () => {
-    const MICROSOFT = { uid: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation', accountId: 'acct-microsoft' };
-    const CONTAINERSHIP = { uid: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.', accountId: 'acct-containership' };
+    const ACME_MOTORS = { uid: '0014100000AcmeAAAA', accountName: 'Acme Motors, Inc.', accountId: 'acct-acme' };
+    const BETA_COASTAL = { uid: '0014100000BetaAAAA', accountName: 'Beta Coastal, Inc.', accountId: 'acct-beta' };
 
     function toCatalogueItem(account: Partial<Account>): OrgItem {
       return {
@@ -1083,7 +1109,7 @@ describe('OrgEasyclaComponent', () => {
 
     async function renderReturnedFrom(
       namedOrg: string | null,
-      catalogue: Partial<Account>[] = [CONTAINERSHIP, MICROSOFT],
+      catalogue: Partial<Account>[] = [BETA_COASTAL, ACME_MOTORS],
       opts: { holdPin?: boolean; orgSegment?: string } = {}
     ) {
       const setAccount = vi.fn();
@@ -1092,8 +1118,8 @@ describe('OrgEasyclaComponent', () => {
       const resetAndReload = vi.fn();
       const navigate = vi.fn();
 
-      selectedAccount.set(CONTAINERSHIP);
-      getClaGroups.mockReturnValue(of({ orgUid: CONTAINERSHIP.uid, claGroups: [] }));
+      selectedAccount.set(BETA_COASTAL);
+      getClaGroups.mockReturnValue(of({ orgUid: BETA_COASTAL.uid, claGroups: [] }));
 
       TestBed.resetTestingModule();
       await TestBed.configureTestingModule({
@@ -1151,19 +1177,19 @@ describe('OrgEasyclaComponent', () => {
     }
 
     it('selects the organization the signature was made for, not the first in the list', async () => {
-      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(MICROSOFT.uid);
+      const { setAccount, refreshCanonicalRecord } = await renderReturnedFrom(ACME_MOTORS.uid);
 
       // `setAccount` also rewrites the cookie, so the selection that went missing is repaired.
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
-      expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
+      expect(refreshCanonicalRecord).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
     });
 
     // Spec 050 phase 2: under `/org/{segment}/easycla` the path names the organization and the path
     // guard is its authority. A `?org=` there — carried over by a switch, or crafted — is not
     // adopted, but it is taken off the address so a reload or a copied link stops presenting it.
     it('ignores ?org= on the organization-addressed mount and strips it from the address', async () => {
-      const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, MICROSOFT], {
-        orgSegment: 'containership-inc',
+      const { setAccount, refreshCanonicalRecord, navigate } = await renderReturnedFrom(ACME_MOTORS.uid, [BETA_COASTAL, ACME_MOTORS], {
+        orgSegment: 'beta-coastal-inc',
       });
 
       expect(setAccount).not.toHaveBeenCalled();
@@ -1175,9 +1201,9 @@ describe('OrgEasyclaComponent', () => {
     });
 
     it('selects from the catalogue when the persona-seeded account list is empty', async () => {
-      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [MICROSOFT]);
+      const { setAccount, resetAndReload } = await renderReturnedFrom(ACME_MOTORS.uid, [ACME_MOTORS]);
 
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
       expect(resetAndReload).not.toHaveBeenCalled();
     });
 
@@ -1193,24 +1219,24 @@ describe('OrgEasyclaComponent', () => {
      * repair.
      */
     it('selects the organization after its record has been enriched and no longer carries a uid', async () => {
-      const enriched = { accountId: MICROSOFT.uid, accountName: MICROSOFT.accountName };
+      const enriched = { accountId: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName };
 
-      const { setAccount, resetAndReload } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP, enriched]);
+      const { setAccount, resetAndReload } = await renderReturnedFrom(ACME_MOTORS.uid, [BETA_COASTAL, enriched]);
 
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: MICROSOFT.accountName, uid: MICROSOFT.uid }));
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ accountName: ACME_MOTORS.accountName, uid: ACME_MOTORS.uid }));
       expect(resetAndReload).not.toHaveBeenCalled();
     });
 
     it('reloads the catalogue pinned to the named organization before selecting it', async () => {
-      const { setAccount, resetAndReload, items } = await renderReturnedFrom(MICROSOFT.uid, [CONTAINERSHIP], { holdPin: true });
+      const { setAccount, resetAndReload, items } = await renderReturnedFrom(ACME_MOTORS.uid, [BETA_COASTAL], { holdPin: true });
 
-      expect(resetAndReload).toHaveBeenCalledWith(MICROSOFT.uid);
+      expect(resetAndReload).toHaveBeenCalledWith(ACME_MOTORS.uid);
       expect(setAccount).not.toHaveBeenCalled();
 
-      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
+      items.set([toCatalogueItem(BETA_COASTAL), toCatalogueItem(ACME_MOTORS)]);
       await TestBed.inject(ApplicationRef).whenStable();
 
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
     });
 
     it('asks the catalogue for an organization it does not yet list, but does not select it when the page comes back without it', async () => {
@@ -1236,7 +1262,7 @@ describe('OrgEasyclaComponent', () => {
     });
 
     it('strips the parameter once adopted, so a reload or a copied link cannot pin a stale organization', async () => {
-      const { navigate } = await renderReturnedFrom(MICROSOFT.uid);
+      const { navigate } = await renderReturnedFrom(ACME_MOTORS.uid);
 
       expect(navigate).toHaveBeenCalledWith([], expect.objectContaining({ queryParams: { org: null, signed: null }, replaceUrl: true }));
     });
@@ -1262,21 +1288,21 @@ describe('OrgEasyclaComponent', () => {
     // with would throw away a legitimate hand-off.
     it('waits for the authorized list rather than discarding the hand-off against an empty one', async () => {
       navLoaded.set(false);
-      const { setAccount, items } = await renderReturnedFrom(MICROSOFT.uid, []);
+      const { setAccount, items } = await renderReturnedFrom(ACME_MOTORS.uid, []);
 
       expect(setAccount).not.toHaveBeenCalled();
 
-      items.set([toCatalogueItem(CONTAINERSHIP), toCatalogueItem(MICROSOFT)]);
+      items.set([toCatalogueItem(BETA_COASTAL), toCatalogueItem(ACME_MOTORS)]);
       navLoaded.set(true);
       await TestBed.inject(ApplicationRef).whenStable();
 
-      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: MICROSOFT.uid, accountName: MICROSOFT.accountName }));
+      expect(setAccount).toHaveBeenCalledWith(expect.objectContaining({ uid: ACME_MOTORS.uid, accountName: ACME_MOTORS.accountName }));
     });
 
     // The mirror of the wait above: once the organization list has genuinely settled without it,
     // there is nothing left to wait for and the page stops trying.
     it('gives up once the organization context has settled without that organization', async () => {
-      const { setAccount, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+      const { setAccount, navigate } = await renderReturnedFrom(ACME_MOTORS.uid, []);
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(navigate).toHaveBeenCalled();
@@ -1285,7 +1311,7 @@ describe('OrgEasyclaComponent', () => {
     it('strips the parameter when the viewer has no Org Lens access, without waiting for a catalogue that never loads', async () => {
       hasOrgSelectorAccess.set(false);
       navLoaded.set(false);
-      const { setAccount, resetAndReload, navigate } = await renderReturnedFrom(MICROSOFT.uid, []);
+      const { setAccount, resetAndReload, navigate } = await renderReturnedFrom(ACME_MOTORS.uid, []);
 
       expect(setAccount).not.toHaveBeenCalled();
       expect(resetAndReload).not.toHaveBeenCalled();

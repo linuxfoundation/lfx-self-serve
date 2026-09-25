@@ -61,6 +61,24 @@ describe('OrgLensEmptyStateComponent', () => {
     }
   });
 
+  // #2533 Tokens row: the call to action is an accent text link, not a filled button. Pinned for every
+  // registry state so a one-line edit dropping [text] cannot pass silently.
+  it('renders every call to action as a text link', () => {
+    for (const [state, copy] of Object.entries(ORG_LENS_EMPTY_STATE_COPY) as [
+      OrgLensEmptyStateName,
+      (typeof ORG_LENS_EMPTY_STATE_COPY)[OrgLensEmptyStateName],
+    ][]) {
+      if (!copy.primary || copy.primary.action === 'org-list') {
+        continue;
+      }
+      const fixture = render(state, { filterActive: true });
+      const suffix = copy.primary.action ? CONTROL_BY_KIND[copy.primary.action] : 'primary';
+      const control = byTestId(fixture, suffix)?.querySelector('a, button');
+      expect(control?.classList, `${state} renders its call to action as a text link`).toContain('p-button-text');
+      fixture.destroy();
+    }
+  });
+
   it('renders the held-organization list as the wrong-organization primary and emits the pick', () => {
     const fixture = render('wrong-organization', { orgList: ORG_LIST });
     const picked: string[] = [];
@@ -157,10 +175,14 @@ describe('OrgLensEmptyStateComponent', () => {
 
   // FR-002: the reason opens with what Organization Lens is on the two states a first-time visitor
   // can reach — and nowhere else.
-  it('opens the reason with the product sentence only on no-organization and no-access', () => {
+  // The states a caller can reach before ever seeing Org Lens open with what it is (FR-002); #2961 adds
+  // the contractor who has no grant.
+  it('opens the reason with the product sentence only on the first-visit states', () => {
+    const firstVisit: OrgLensEmptyStateName[] = ['no-organization', 'no-access', 'contractor-no-grant'];
     expect(byTestId(render('no-organization'), 'description')?.textContent).toContain('Organization Lens shows how a company shows up in open source');
     expect(byTestId(render('no-access'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
-    const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => name !== 'no-organization' && name !== 'no-access');
+    expect(byTestId(render('contractor-no-grant'), 'description')?.textContent).toContain("Organization Lens shows a company's open source footprint");
+    const others = (Object.keys(ORG_LENS_EMPTY_STATE_COPY) as OrgLensEmptyStateName[]).filter((name) => !firstVisit.includes(name));
     expect(others).toHaveLength(8);
     for (const name of others) {
       const fixture = render(name, { orgList: ORG_LIST, filterActive: true });

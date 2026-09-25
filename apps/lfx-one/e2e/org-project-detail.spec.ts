@@ -22,6 +22,7 @@
  */
 
 import { expect, Page, test } from '@playwright/test';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 import { skipWhenAuthMissing } from './helpers/auth.helper';
 
 test.beforeEach(() => skipWhenAuthMissing());
@@ -40,7 +41,8 @@ test.describe('Org Project Detail — testid resolution', () => {
   });
 
   test('renders breadcrumb, hero and tab strip', async ({ page }) => {
-    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible();
+    // The breadcrumb renders with the page content, after the page-level access verdict settles (#2961).
+    await expect(page.getByTestId('project-detail-breadcrumb')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-hero')).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
     await expect(page.getByTestId('project-detail-name')).toHaveText('Kubernetes');
     await expect(page.getByTestId('project-detail-first-commit')).toBeVisible();
@@ -448,7 +450,7 @@ test.describe('Org Project Detail — not found', () => {
 });
 
 test.describe('Org Project Detail — hero health popup', () => {
-  const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
+  const TEST_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
   // Partial v2 score with a consistent same-row shape: maintainer 30/40 + development 22/25 = 52,
   // security uncovered, so the max is 65 (40 + 25).
@@ -487,7 +489,7 @@ test.describe('Org Project Detail — hero health popup', () => {
           organizations: [
             {
               accountId: TEST_ACCOUNT_ID,
-              accountName: 'Acme Motors',
+              accountName: SYNTHETIC_ORG_NAME,
               membershipTier: '',
               uid: TEST_ACCOUNT_ID,
             },
@@ -509,7 +511,7 @@ test.describe('Org Project Detail — hero health popup', () => {
         contentType: 'application/json',
         body: JSON.stringify({
           items: [
-            { uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: 'Acme Motors', logoUrl: null, primaryDomain: 'acme-motors.example', isMember: true },
+            { uid: TEST_ACCOUNT_ID, accountId: TEST_ACCOUNT_ID, name: SYNTHETIC_ORG_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true },
           ],
           next_page_token: null,
           upstream_failed: false,

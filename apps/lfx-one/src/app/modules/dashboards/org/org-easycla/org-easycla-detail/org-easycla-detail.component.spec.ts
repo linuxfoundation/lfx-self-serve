@@ -66,7 +66,14 @@ describe('OrgEasyclaDetailComponent', () => {
   const correlationId = signal<string | null>(null);
   // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
   const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
-  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retry: vi.fn() };
+  const emptyStateService = {
+    pageState,
+    hasPageState: computed(() => pageState() !== null),
+    settled: computed(() => grantsLoaded() && personaLoaded()),
+    // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
+    pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),
+    retry: vi.fn(),
+  };
   // Both halves of the address (#2364): the CLA Group in the path, and the signature that narrows
   // it in the query. Separate subjects because they change independently — a card click sets both,
   // and moving between two signing entities' agreements changes only the query.
@@ -2097,8 +2104,8 @@ describe('OrgEasyclaDetailComponent', () => {
    * These cases are the ones the list page used to own, re-expressed against the group address.
    */
   describe('when EasyCLA returns the signatory after a corporate signing', () => {
-    const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
-    const ELSEWHERE = { uid: '0014100000Te2QjAAJ', accountId: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' };
+    const NAMED = { uid: '0014100000AcmeAAAA', accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors, Inc.' };
+    const ELSEWHERE = { uid: '0014100000BetaAAAA', accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal, Inc.' };
 
     /** The shape the catalogue and the account context agree on, as far as these cases need it. */
     interface Held {
@@ -2871,7 +2878,17 @@ describe('OrgEasyclaDetailComponent — the approval tab', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensEmptyStateService,
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(true),
+            pageReady: signal(true),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
+        },
         {
           provide: OrgLensClaService,
           useValue: {
@@ -3045,7 +3062,17 @@ describe('OrgEasyclaDetailComponent — the Auto ECLA toggle', () => {
         { provide: OrgRoleGrantsService, useValue: { loaded: signal(true), correlationId: signal(null) } },
         { provide: PersonaService, useValue: { personaLoaded: signal(true) } },
         { provide: OrgNavigationService, useValue: { loaded: signal(true) } },
-        { provide: OrgLensEmptyStateService, useValue: { pageState: signal(null), hasPageState: signal(false), retrying: signal(false), retry: vi.fn() } },
+        {
+          provide: OrgLensEmptyStateService,
+          useValue: {
+            pageState: signal(null),
+            hasPageState: signal(false),
+            settled: signal(true),
+            pageReady: signal(true),
+            retrying: signal(false),
+            retry: vi.fn(),
+          },
+        },
         {
           provide: OrgLensClaService,
           useValue: {

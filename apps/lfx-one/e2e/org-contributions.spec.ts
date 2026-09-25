@@ -20,12 +20,13 @@
 import type { OrgAllEmployeeDetail, OrgContributionsResponse } from '@lfx-one/shared/interfaces';
 import { ORG_LENS_PRIVATE_RELEASE_FLAG } from '@lfx-one/shared/constants/feature-flags.constants';
 import { expect, Page, test } from '@playwright/test';
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
 import { stubFeatureFlags } from './helpers/org-roi.helper';
 
 const CONTRIBUTIONS_URL = '/org/contributions';
 const DATA_LOAD_TIMEOUT = 30_000;
 
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 const MOCK_PERSON_KEY = 'cdp:emp-ana';
 
@@ -132,6 +133,28 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
 }
 
 async function stubOrgContext(page: Page): Promise<void> {
+  // #2961: Org pages wait for the role grants before rendering; stub them so the page does not wait on the
+  // live dev lookup. The seeded organization is held, so no contractor read check is owed.
+  await page.route('**/api/orgs/me/role-grants*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        writers: [MOCK_ACCOUNT_ID],
+        auditors: [],
+        cascadingWriters: [],
+        cascadingAuditors: [],
+        isStaff: false,
+        isContractor: false,
+        degraded: false,
+        lookupOutcome: 'ok',
+        staffCheck: 'ok',
+        username: 'e2e-org-page',
+        loaded_at: new Date().toISOString(),
+      }),
+    })
+  );
+
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
       status: 200,
@@ -143,7 +166,7 @@ async function stubOrgContext(page: Page): Promise<void> {
         organizations: [
           {
             accountId: MOCK_ACCOUNT_ID,
-            accountName: 'Red Hat LLC',
+            accountName: SYNTHETIC_ORG_NAME,
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -160,7 +183,7 @@ async function stubOrgContext(page: Page): Promise<void> {
       body: JSON.stringify([
         {
           accountId: MOCK_ACCOUNT_ID,
-          accountName: 'Red Hat LLC',
+          accountName: SYNTHETIC_ORG_NAME,
           logoUrl: null,
           cdevOrgId: null,
           cdevOrgName: null,

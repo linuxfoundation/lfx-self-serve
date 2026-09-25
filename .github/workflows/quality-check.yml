@@ -27,7 +27,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check fixture emails for real customer/vendor PII
+      - name: Check fixture data for real organization names, ids, domains and emails
         run: |
           # Pick the correct pre-change commit per event: for pull_request/merge_group this is the
           # target base, NOT the current branch tip — on a push/merge_group run, "main" already

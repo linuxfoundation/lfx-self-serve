@@ -70,11 +70,9 @@ import { TableComponent } from '@components/table/table.component';
 import { OrgHealthPopupComponent } from '../components/org-health-popup/org-health-popup.component';
 import { AccountContextService } from '@shared/services/account-context.service';
 import { OrgLensEmptyStateService } from '@shared/services/org-lens-empty-state.service';
-import { OrgNavigationService } from '@shared/services/org-navigation.service';
 import { OrgLensNavigationService } from '@shared/services/org-lens-navigation.service';
 import { OrgLensProjectsService } from '@shared/services/org-lens-projects.service';
 import { OrgRoleGrantsService } from '@shared/services/org-role-grants.service';
-import { PersonaService } from '@shared/services/persona.service';
 
 /** Table row plus its detail-page router commands, so the template binds a value instead of calling a method. */
 type OrgProjectsLinkedRow = OrgProjectsTableRow & { projectLink: string[] };
@@ -109,10 +107,8 @@ export class OrgProjectsComponent {
   private readonly router = inject(Router);
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
-  private readonly orgNavigation = inject(OrgNavigationService);
   private readonly projectsService = inject(OrgLensProjectsService);
   private readonly orgRoleGrants = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
   private readonly messageService = inject(MessageService);
   protected readonly emptyState = inject(OrgLensEmptyStateService);
 
@@ -194,9 +190,9 @@ export class OrgProjectsComponent {
   protected readonly pageState = this.emptyState.pageState;
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrants.correlationId;
-  protected readonly orgContextLoaded = computed(
-    () => this.hasPageState() || (this.orgNavigation.loaded() && this.orgRoleGrants.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly orgContextLoaded = computed(() => this.hasPageState() || this.emptyState.pageReady());
+  // The header names the organization only once the content renders, never beside a page-level state (#2961).
+  protected readonly contentVisible = computed(() => this.emptyState.pageReady() && !this.hasPageState());
 
   protected readonly sortField = computed<OrgProjectsSortField>(() => this.initSortField());
   protected readonly sortDir = computed<SortDirection>(() => (this.queryParamMap().get('dir') === 'asc' ? 'asc' : DEFAULT_ORG_PROJECTS_SORT_DIR));

@@ -71,7 +71,7 @@ export class OrgPeopleTraineesService {
           personKey: row.PERSON_KEY,
           status: row.STATUS === 'Certified' ? 'Certified' : 'Enrolled',
           courseOrCertId: row.COURSE_OR_CERT_ID,
-          // COURSE_ID is 100% populated for both enrolled and certified rows (verified Red Hat 2026-06-01),
+          // COURSE_ID is 100% populated for both enrolled and certified rows (verified on a large covered organization 2026-06-01),
           // but fall back to COURSE_OR_CERT_ID so the client-side `(personKey, courseId)` grouping is never keyed on '' / undefined.
           courseId: row.COURSE_ID ?? row.COURSE_OR_CERT_ID,
           courseName: row.COURSE_NAME ?? row.COURSE_ID ?? row.COURSE_OR_CERT_ID,

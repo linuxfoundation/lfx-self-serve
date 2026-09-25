@@ -3,6 +3,7 @@
 
 import {
   ACCESS_CHECK_BATCH_SIZE,
+  LF_CONTRACTOR_TEAM_ID,
   LF_TEAM_IDS,
   ORG_ACCESS_AWARE_CACHE_TTL_MS,
   ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS,
@@ -122,7 +123,11 @@ export class OrgRoleGrantsService {
    * vs `partial` (roll-up incomplete).
    */
   public async getRoleGrants(req: Request, username: string, bypassCache = false): Promise<RoleGrantsResponse> {
-    const { resolved, loadedAt, isStaff, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(req, username, bypassCache);
+    const { resolved, loadedAt, isStaff, isContractor, degraded, upstreamFailed, staffCheck, correlationId } = await this.getAccessAwareOrgs(
+      req,
+      username,
+      bypassCache
+    );
     const response = this.toRoleGrantsResponse(resolved, username, loadedAt, isStaff, degraded || upstreamFailed);
     if (upstreamFailed) {
       response.lookupOutcome = 'failed';
@@ -132,6 +137,7 @@ export class OrgRoleGrantsService {
       response.lookupOutcome = 'ok';
     }
     response.staffCheck = staffCheck;
+    response.isContractor = isContractor;
     if (staffCheck === 'failed' && correlationId) {
       response.correlationId = correlationId;
     }
@@ -186,6 +192,8 @@ export class OrgRoleGrantsService {
       // Entries written before `isStaff` existed fail here and are recomputed, rather than
       // deserializing to `undefined` and silently denying an LF-team caller for the rest of the TTL.
       typeof entry.isStaff === 'boolean' &&
+      // #2961: same for `isContractor` — an entry without it would hide the contractor state until it expired.
+      typeof entry.isContractor === 'boolean' &&
       // Same reasoning for `degraded`: an entry without it was written by the direct/downward-only
       // resolver, so defaulting it to `false` would label an incomplete legacy result a complete
       // connected-component classification. Rejecting it recomputes instead.
@@ -194,7 +202,8 @@ export class OrgRoleGrantsService {
       // `undefined` and hiding the staff-check state. A `failed` entry is a hit only with the
       // correlation id it was logged under — without it the page would render `Reference: —` — and
       // only fail-closed: a check that did not complete can never have granted the LF-team affordance.
-      (entry.staffCheck === 'ok' || (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false))
+      (entry.staffCheck === 'ok' ||
+        (entry.staffCheck === 'failed' && typeof entry.correlationId === 'string' && entry.isStaff === false && entry.isContractor === false))
     );
   }
 
@@ -247,6 +256,7 @@ export class OrgRoleGrantsService {
       loadedAt: result.loadedAt,
       username: result.username,
       isStaff: result.isStaff,
+      isContractor: result.isContractor,
       degraded: result.degraded,
       staffCheck: result.staffCheck,
       ...(result.staffCheck === 'failed' && result.correlationId ? { correlationId: result.correlationId } : {}),
@@ -262,6 +272,7 @@ export class OrgRoleGrantsService {
       loadedAt: entry.loadedAt,
       username: entry.username,
       isStaff: entry.isStaff,
+      isContractor: entry.isContractor,
       degraded: entry.degraded,
       staffCheck: entry.staffCheck,
       correlationId: entry.correlationId,
@@ -281,6 +292,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff: false,
+      isContractor: false,
       degraded: false,
       staffCheck: 'ok',
     };
@@ -342,7 +354,7 @@ export class OrgRoleGrantsService {
       settingsResponse = { ...settingsResponse, resources: settingsResponse.resources!.slice(0, ORG_ROLE_GRANTS_HARD_CAP) };
     }
 
-    const { isStaff, staffCheck } = await teamPromise;
+    const { isStaff, isContractor, staffCheck } = await teamPromise;
 
     const { directWriters, directAuditors } = this.partitionDirectGrants(settingsResponse, username);
     if (directWriters.size === 0 && directAuditors.size === 0) {
@@ -357,6 +369,7 @@ export class OrgRoleGrantsService {
         loadedAt,
         username,
         isStaff,
+        isContractor,
         degraded: directRosterTruncated,
         staffCheck,
         correlationId,
@@ -370,7 +383,7 @@ export class OrgRoleGrantsService {
       directOrgDocs = await this.fetchOrgDetailsByUids(req, Array.from(directUids));
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'Upstream b2b_org details fetch failed', { err: error, correlation_id: correlationId });
-      return { ...empty, upstreamFailed: true, isStaff, staffCheck, correlationId };
+      return { ...empty, upstreamFailed: true, isStaff, isContractor, staffCheck, correlationId };
     }
 
     // A direct grant whose b2b_org doc never landed cannot be walked, so its whole connected
@@ -414,6 +427,7 @@ export class OrgRoleGrantsService {
       loadedAt,
       username,
       isStaff,
+      isContractor,
       degraded: classificationDegraded || walk.truncated || walkFailed || directDocsIncomplete || directRosterTruncated,
       staffCheck,
       correlationId,
@@ -423,7 +437,8 @@ export class OrgRoleGrantsService {
   /**
    * Asks the platform authorizer whether the caller belongs to any LF team in `LF_TEAM_IDS`
    * (`lf-staff`), the population that carries `auditor` on every `b2b_org` (member-service
-   * `docs/fga-contract.md`). One batched `checkAccessStrict` over that list.
+   * `docs/fga-contract.md`). One batched `checkAccessStrict` over that list plus `LF_CONTRACTOR_TEAM_ID` (#2961), which rides the
+   * same batch only to set `isContractor`: it explains an empty Org Lens and grants nothing.
    *
    * This is the Org Lens *affordance* signal (`RoleGrantsResponse.isStaff`: switcher + catalogue
    * search); it is not a read gate — `assertOrgLensRead` asks the authorizer for
@@ -433,25 +448,31 @@ export class OrgRoleGrantsService {
    *
    * No permission semantics live here: the relation is defined in the FGA model and this only reads the
    * authorizer's answer, which is why it does not conflict with the gateway-enforced-authorization
-   * principle. Fails closed on `isStaff` (`false`), but reports the failure as `staffCheck: 'failed'`
+   * principle. Fails closed on `isStaff` and `isContractor` (both `false`), but reports the failure as `staffCheck: 'failed'`
    * (spec 053 FR-011) so the page can say "we could not confirm your staff access" instead of the
    * employee no-access copy. `checkAccessStrict` is used so an authorizer outage surfaces as a throw
    * rather than a silent all-false that would read as "not staff".
    */
-  private async resolveIsStaff(req: Request, username: string, correlationId: string): Promise<{ isStaff: boolean; staffCheck: OrgLensStaffCheck }> {
+  private async resolveIsStaff(
+    req: Request,
+    username: string,
+    correlationId: string
+  ): Promise<{ isStaff: boolean; isContractor: boolean; staffCheck: OrgLensStaffCheck }> {
     try {
+      // #2961: the contractor team rides the same batch; it only explains an empty Org Lens and grants nothing.
       const membership = await this.accessCheck.checkAccessStrict(
         req,
-        LF_TEAM_IDS.map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
+        [...LF_TEAM_IDS, LF_CONTRACTOR_TEAM_ID].map((id): AccessCheckRequest => ({ resource: 'team', id, access: 'member' }))
       );
-      return { isStaff: LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true), staffCheck: 'ok' };
+      const isStaff = LF_TEAM_IDS.some((id) => membership.get(`${id}#member`) === true);
+      return { isStaff, isContractor: !isStaff && membership.get(`${LF_CONTRACTOR_TEAM_ID}#member`) === true, staffCheck: 'ok' };
     } catch (error) {
       logger.warning(req, 'get_org_role_grants', 'LF team membership check failed; treating caller as non-team', {
         username_length: username.length,
         err: error,
         correlation_id: correlationId,
       });
-      return { isStaff: false, staffCheck: 'failed' };
+      return { isStaff: false, isContractor: false, staffCheck: 'failed' };
     }
   }
 
@@ -463,7 +484,7 @@ export class OrgRoleGrantsService {
     const directAuditors = new Set<string>();
 
     for (const resource of response?.resources ?? []) {
-      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000Te2QjAAJ`).
+      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000AcmeAAAA`).
       // We key on the bare account id (SFID) so it matches the b2b_org details lookup downstream.
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;

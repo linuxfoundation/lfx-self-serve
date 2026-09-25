@@ -9,10 +9,20 @@ export type OrgLensEmptyStateName =
   | 'not-found-staff'
   | 'could-not-load'
   | 'staff-check-failed'
+  | 'contractor-no-grant'
   | 'section-empty'
   | 'section-could-not-load'
   | 'section-no-access'
   | 'section-could-not-verify';
+
+/** #2961 — the Org Lens read gate's answer for the organization a contractor has selected; `admitted` is `undefined` until it lands. */
+export interface OrgLensContractorProbe {
+  uid: string;
+  admitted: boolean | undefined;
+}
+
+/** #2961 — the server's verdict for an LF contractor: refused (render `contractor-no-grant`) or admitted (render the page). */
+export type OrgLensContractorVerdict = 'refused' | 'admitted';
 
 /** FR-016 rules 2–4 — the states an outage in the caller's own lookup renders ahead of any access-themed one. */
 export type OrgLensLookupBlocker = Extract<OrgLensEmptyStateName, 'could-not-load' | 'staff-check-failed'>;

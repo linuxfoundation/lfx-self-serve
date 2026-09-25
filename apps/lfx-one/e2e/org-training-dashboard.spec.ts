@@ -3,9 +3,11 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const ORG_TRAINING_URL = '/org/training';
 const DATA_LOAD_TIMEOUT = 30_000;
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 test.setTimeout(120_000);
 
@@ -32,6 +34,28 @@ async function seedSelectedOrgCookie(page: Page): Promise<void> {
 }
 
 async function stubOrgTrainingRoutes(page: Page): Promise<void> {
+  // #2961: Org pages wait for the role grants before rendering; stub them so the page does not wait on the
+  // live dev lookup. The seeded organization is held, so no contractor read check is owed.
+  await page.route('**/api/orgs/me/role-grants*', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        writers: [MOCK_ACCOUNT_ID],
+        auditors: [],
+        cascadingWriters: [],
+        cascadingAuditors: [],
+        isStaff: false,
+        isContractor: false,
+        degraded: false,
+        lookupOutcome: 'ok',
+        staffCheck: 'ok',
+        username: 'e2e-org-page',
+        loaded_at: new Date().toISOString(),
+      }),
+    })
+  );
+
   await page.route('**/api/user/personas*', (route) =>
     route.fulfill({
       status: 200,
@@ -43,7 +67,7 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
         organizations: [
           {
             accountId: MOCK_ACCOUNT_ID,
-            accountName: 'Red Hat LLC',
+            accountName: SYNTHETIC_ORG_NAME,
             membershipTier: '',
             uid: MOCK_ACCOUNT_ID,
           },
@@ -60,7 +84,7 @@ async function stubOrgTrainingRoutes(page: Page): Promise<void> {
       body: JSON.stringify([
         {
           accountId: MOCK_ACCOUNT_ID,
-          accountName: 'Red Hat LLC',
+          accountName: SYNTHETIC_ORG_NAME,
           membershipTier: 'Gold',
         },
       ]),

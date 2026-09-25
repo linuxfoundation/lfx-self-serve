@@ -9,7 +9,7 @@ fi
 # Check for real customer/vendor PII in staged test fixtures
 ./check-fixture-emails.sh
 if [ $? -ne 0 ]; then
-  echo "❌ Fixture PII check failed. Replace real emails with synthetic test data."
+  echo "❌ Fixture data check failed. Replace real organization names, account ids, domains and emails with synthetic test data."
   exit 1
 fi
 

@@ -70,7 +70,7 @@ import type { Request } from 'express';
 import { OrgLensProjectsService } from './org-lens-projects.service';
 import { buildOrgCacheKey, ValkeyService } from './valkey.service';
 
-const ACCOUNT_ID = '0014100000Te2QjAAJ';
+const ACCOUNT_ID = '0014100000AcmeAAAA';
 const ORG_NAME = 'Acme Corp';
 
 beforeEach(() => {

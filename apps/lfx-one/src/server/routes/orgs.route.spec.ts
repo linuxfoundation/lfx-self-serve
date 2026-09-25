@@ -66,7 +66,7 @@ vi.mock('../services/logger.service', () => ({
 const orgsRouter = (await import('./orgs.route')).default;
 
 const GRANTED = '0014100000Te2ovAAB';
-const UNGRANTED = '0014100000Te2QjAAJ';
+const UNGRANTED = '0014100000BetaAAAA';
 
 let server: Server;
 let baseUrl: string;
@@ -101,10 +101,26 @@ describe('orgs router — Org Lens read gate', () => {
     ['events (:accountId)', `/lens/events`],
     ['memberships', `/lens/memberships/active`],
     ['contributions', `/lens/contributions/summary`],
+    ['the read-check probe (#2961)', `/lens/read-check`],
   ])('refuses %s for an org the caller holds no grant on', async (_label, path) => {
     const res = await fetch(`${baseUrl}/api/orgs/${UNGRANTED}${path}`);
 
     expect(res.status).toBe(403);
+  });
+
+  // #2961: the page reads this probe as the server's verdict — 403 when refused, 204 when admitted (by
+  // the roster, or by the authorizer alone, e.g. a key contact that no roster lists). The FORBIDDEN code
+  // on the body is the gate helper's own contract, covered by its spec.
+  it('answers the read-check probe with 403 when refused and 204 when admitted', async () => {
+    expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(403);
+
+    const admitted = await fetch(`${baseUrl}/api/orgs/${GRANTED}/lens/read-check`);
+    expect(admitted.status).toBe(204);
+    // A per-user verdict must never be reused from a cache after the grant changes.
+    expect(admitted.headers.get('cache-control')).toBe('no-store');
+
+    checkSingleAccessStrict.mockResolvedValue(true);
+    expect((await fetch(`${baseUrl}/api/orgs/${UNGRANTED}/lens/read-check`)).status).toBe(204);
   });
 
   it('admits a granted org past the gate', async () => {

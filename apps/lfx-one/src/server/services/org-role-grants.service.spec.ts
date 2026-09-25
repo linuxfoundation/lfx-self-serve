@@ -22,6 +22,7 @@ vi.mock('@lfx-one/shared/constants', async () => {
     // `runClassificationWaves` reads them, and the real `AccessCheckService` is mocked out.
     ACCESS_CHECK_BATCH_SIZE: 2,
     LF_TEAM_IDS: personaConstants.LF_TEAM_IDS,
+    LF_CONTRACTOR_TEAM_ID: personaConstants.LF_CONTRACTOR_TEAM_ID,
     ORG_ACCESS_AWARE_CACHE_TTL_MS: 30_000,
     ORG_ACCESS_AWARE_FAILED_STAFF_CHECK_CACHE_TTL_MS: 5_000,
     ORG_CANDIDATE_CLASSIFY_CONCURRENCY: 2,
@@ -68,8 +69,11 @@ const { OrgRoleGrantsService } = await import('./org-role-grants.service');
 const req = {} as Request;
 const USERNAME = 'staffer';
 
-/** The one batched membership question `resolveIsStaff` asks, in `LF_TEAM_IDS` order. */
-const TEAM_REQUESTS = [{ resource: 'team', id: 'lf-staff', access: 'member' }];
+/** The one batched membership question `resolveIsStaff` asks: `LF_TEAM_IDS`, then the contractor team (#2961). */
+const TEAM_REQUESTS = [
+  { resource: 'team', id: 'lf-staff', access: 'member' },
+  { resource: 'team', id: 'lf-contractor', access: 'member' },
+];
 
 /** Authorizer answer for that batch, keyed the way `checkAccessStrict` keys its result map. */
 function teamMembership(staff: boolean, contractor = false): Map<string, boolean> {
@@ -151,6 +155,20 @@ describe('OrgRoleGrantsService — LF team determination', () => {
     expect(response.isStaff).toBe(false);
   });
 
+  // #2961: the contractor signal only explains an empty Org Lens. It is true for a contractor, and false
+  // for anyone who is also LF staff (staff read every org, so the contractor state must never show).
+  it('reports isContractor for a contractor-only caller, and not for staff who are also contractors', async () => {
+    setTeamAnswer(teamMembership(false, true));
+    expect((await new OrgRoleGrantsService().getRoleGrants(req, USERNAME)).isContractor).toBe(true);
+
+    vi.clearAllMocks();
+    getJson.mockResolvedValue(null);
+    setTeamAnswer(teamMembership(true, true));
+    const staff = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
+    expect(staff.isStaff).toBe(true);
+    expect(staff.isContractor).toBe(false);
+  });
+
   // FR-010 (spec 044): team membership is read-only. The write gate (`OrgLensAccessService.
   // assertCanManage`) decides through `hasEditorAccess`, which reads writer grants only — an
   // LF-team caller with no writer grant on the org is not an editor, whatever `isStaff` says.
@@ -176,6 +194,7 @@ describe('OrgRoleGrantsService — LF team determination', () => {
     const response = await new OrgRoleGrantsService().getRoleGrants(req, USERNAME);
 
     expect(response.isStaff).toBe(false);
+    expect(response.isContractor).toBe(false);
     expect(response.staffCheck).toBe('failed');
     expect(response.correlationId).toMatch(/^[0-9a-f-]{36}$/);
     expect(setJson).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({ staffCheck: 'failed', correlationId: response.correlationId }), 5);
@@ -189,6 +208,7 @@ describe('OrgRoleGrantsService — LF team determination', () => {
       loadedAt: 'now',
       username: USERNAME,
       isStaff: false,
+      isContractor: false,
       degraded: false,
       staffCheck: 'failed',
       correlationId: 'cached-reference',
@@ -898,7 +918,28 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     const legacyEntry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME };
 
     expect(guard(legacyEntry)).toBe(false);
-    expect(guard({ ...legacyEntry, isStaff: false, degraded: false, staffCheck: 'ok' })).toBe(true);
+    expect(guard({ ...legacyEntry, isStaff: false, isContractor: false, degraded: false, staffCheck: 'ok' })).toBe(true);
+  });
+
+  // #2961: an entry written before `isContractor` existed must be recomputed, not served as `undefined`,
+  // or a contractor would keep the employee copy for the rest of the TTL.
+  it('rejects an entry with no isContractor, so a pre-#2961 entry is recomputed', async () => {
+    await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
+
+    const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
+    const entry = {
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: USERNAME,
+      isStaff: false,
+      degraded: false,
+      staffCheck: 'ok',
+    };
+
+    expect(guard(entry)).toBe(false);
+    expect(guard({ ...entry, isContractor: false })).toBe(true);
   });
 
   // A `v1`-era entry came from the direct/downward-only resolver, so treating its absent
@@ -909,7 +950,7 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
     const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
-    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false };
+    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false, isContractor: false };
 
     expect(guard(entry)).toBe(false);
     expect(guard({ ...entry, degraded: true, staffCheck: 'ok' })).toBe(true);
@@ -921,7 +962,16 @@ describe('OrgRoleGrantsService — isStaff cache round trip', () => {
     await new OrgRoleGrantsService().getAccessAwareOrgs(req, USERNAME);
 
     const guard = getJson.mock.calls[0][1] as (value: unknown) => boolean;
-    const entry = { resolved: [], orgDocByUid: [], upstreamFailed: false, loadedAt: 'now', username: USERNAME, isStaff: false, degraded: false };
+    const entry = {
+      resolved: [],
+      orgDocByUid: [],
+      upstreamFailed: false,
+      loadedAt: 'now',
+      username: USERNAME,
+      isStaff: false,
+      isContractor: false,
+      degraded: false,
+    };
 
     expect(guard(entry)).toBe(false);
     expect(guard({ ...entry, staffCheck: 'ok' })).toBe(true);
