@@ -323,11 +323,13 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    *
    * To avoid that, the pane is first grown to fill the viewport on its own — `fillHeight` below — which
    * forces the document to be at least viewport-tall and removes any flex-grow slack. Only then is the
-   * gap between the document and the viewport (`document.documentElement.scrollHeight - innerHeight`)
-   * read as the real chrome below the row: with the pane already reaching the viewport bottom, nothing
-   * but that chrome can push the document past it. Both writes go straight onto the element rather than
-   * through a bound signal — a single declarative binding can't express two sequential writes with a
-   * layout read in between.
+   * gap between the document and the viewport read as the real chrome below the row: with the pane
+   * already reaching the viewport bottom, nothing but that chrome can push the document past it. That
+   * gap is read via `offsetHeight`, not `scrollHeight` — `scrollHeight` also counts overflow from any
+   * out-of-flow descendant anywhere in the document (an open `appendTo: 'body'` dropdown or tooltip),
+   * so a re-measure while one is open could shrink the pane. Both writes go straight onto the element
+   * rather than through a bound signal — a single declarative binding can't express two sequential
+   * writes with a layout read in between.
    */
   private measurePanesHeight(): void {
     const pane = this.panes()?.nativeElement;
@@ -338,7 +340,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     const fillHeight = Math.max(Math.round(window.innerHeight - paneDocumentTop), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
     pane.style.setProperty('--l2-panes-height', `${fillHeight}px`);
 
-    const below = Math.max(document.documentElement.scrollHeight - window.innerHeight, 0);
+    const below = Math.max(document.documentElement.offsetHeight - window.innerHeight, 0);
     const available = Math.max(Math.round(window.innerHeight - paneDocumentTop - below), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX);
     pane.style.setProperty('--l2-panes-height', `${available}px`);
   }

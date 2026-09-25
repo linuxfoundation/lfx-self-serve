@@ -220,6 +220,17 @@ describe('HealthMetricsL2ShellComponent', () => {
     });
   }
 
+  /**
+   * Stubs both document-height properties to the same value: `offsetHeight` (what
+   * `measurePanesHeight()` reads for the chrome below the pane) and `scrollHeight` (what
+   * `areaScrolls()` reads to decide whether the page itself needs to scroll). A real document's two
+   * properties would move together for these tests' purposes, so both are kept in sync here.
+   */
+  function stubDocumentHeight(px: number): void {
+    Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: px });
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: px });
+  }
+
   beforeEach(async () => {
     FakeIntersectionObserver.instances = [];
     FakeResizeObserver.instances = [];
@@ -228,7 +239,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
     // skip the end sentinel entirely. `measurePanesHeight()` also reads this (see its own doc
     // comment), so the pane-height tests below get 50px of "chrome below" for free from this default.
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 50 });
+    stubDocumentHeight(window.innerHeight + 50);
     // Not implemented in jsdom, and the deep-link path calls it on a real section element.
     Element.prototype.scrollIntoView = vi.fn();
 
@@ -239,6 +250,7 @@ describe('HealthMetricsL2ShellComponent', () => {
     vi.unstubAllGlobals();
     // The getElementById spies below would otherwise survive into the next TestBed render.
     vi.restoreAllMocks();
+    delete (document.documentElement as unknown as { offsetHeight?: number }).offsetHeight;
     delete (document.documentElement as unknown as { scrollHeight?: number }).scrollHeight;
     Element.prototype.scrollIntoView = originalScrollIntoView;
   });
@@ -286,10 +298,10 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('clamps the pane to the minimum height when the chrome below it exceeds the viewport', async () => {
-    // Same rect stub as the test above, so the clamp is driven by the oversized scrollHeight below
+    // Same rect stub as the test above, so the clamp is driven by the oversized offsetHeight below
     // rather than by jsdom's default zero rects (which would clamp regardless of that value).
     stubPaneTop();
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 10 });
+    stubDocumentHeight(window.innerHeight * 10);
     await resetup();
 
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
@@ -327,7 +339,7 @@ describe('HealthMetricsL2ShellComponent', () => {
 
     // Simulates the footer settling asynchronously, after the pane's first measurement. Still well
     // past the innerHeight+1 threshold areaScrolls() checks, so the spy's root doesn't change either.
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 90 });
+    stubDocumentHeight(window.innerHeight + 90);
     FakeResizeObserver.instances[0].trigger();
     // The debounced subscriber runs on a real timer; 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -340,14 +352,14 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   it('rebuilds the scroll spy when a document resize makes the area newly scrollable', async () => {
     // Starts with nothing to scroll, so areaScrolls() is false and only the heading observer exists.
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+    stubDocumentHeight(0);
     stubPaneTop();
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
     const spyBefore = spyObserver();
 
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
+    stubDocumentHeight(window.innerHeight * 3);
     FakeResizeObserver.instances[0].trigger();
     // 200ms clears the 150ms debounceTime with margin.
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -455,7 +467,7 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('skips the end sentinel when there is nothing to scroll', async () => {
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+    stubDocumentHeight(0);
     await resetup();
 
     // Otherwise the sentinel intersects from first paint and pins the rail to the last section.
@@ -477,12 +489,12 @@ describe('HealthMetricsL2ShellComponent', () => {
 
   it('observes the end sentinel once a settled section makes the area scroll', async () => {
     // Short placeholder sections can leave the first pass with nothing to scroll.
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 });
+    stubDocumentHeight(0);
     await resetup();
 
     expect(FakeIntersectionObserver.instances).toHaveLength(1);
 
-    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight * 3 });
+    stubDocumentHeight(window.innerHeight * 3);
     child('beta').settled.emit();
     await flush();
 
