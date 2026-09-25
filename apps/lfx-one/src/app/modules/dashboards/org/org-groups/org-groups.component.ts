@@ -32,9 +32,7 @@ import { AccountContextService } from '@services/account-context.service';
 import { OrgLensEmptyStateService } from '@services/org-lens-empty-state.service';
 import { OrgLensGroupsService } from '@services/org-lens-groups.service';
 import { OrgLensNavigationService } from '@services/org-lens-navigation.service';
-import { OrgNavigationService } from '@services/org-navigation.service';
 import { OrgRoleGrantsService } from '@services/org-role-grants.service';
-import { PersonaService } from '@services/persona.service';
 
 import { GroupSeatHoldersDrawerComponent } from './components/group-seat-holders-drawer/group-seat-holders-drawer.component';
 
@@ -62,9 +60,7 @@ type OrgLensGroupRow = OrgLensGroupVm & { membershipLink: string[] | null };
 export class OrgGroupsComponent {
   private readonly accountContext = inject(AccountContextService);
   private readonly orgLens = inject(OrgLensNavigationService);
-  private readonly orgNavigationService = inject(OrgNavigationService);
   private readonly orgRoleGrantsService = inject(OrgRoleGrantsService);
-  private readonly personaService = inject(PersonaService);
   private readonly groupsService = inject(OrgLensGroupsService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -122,9 +118,9 @@ export class OrgGroupsComponent {
   protected readonly hasPageState = this.emptyState.hasPageState;
   protected readonly correlationId = this.orgRoleGrantsService.correlationId;
 
-  protected readonly loaded: Signal<boolean> = computed(
-    () => this.hasPageState() || (this.orgNavigationService.loaded() && this.orgRoleGrantsService.loaded() && this.personaService.personaLoaded())
-  );
+  protected readonly loaded: Signal<boolean> = computed(() => this.hasPageState() || this.emptyState.pageReady());
+  // The header names the organization only once the content renders, never beside a page-level state (#2961).
+  protected readonly contentVisible = computed(() => this.emptyState.pageReady() && !this.hasPageState());
 
   // Committee-service B2B endpoints are scoped by org uid, not the Snowflake accountId — mirrors
   // org-people/committee-members. Gate and fetch key both use uid.

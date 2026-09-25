@@ -50,6 +50,7 @@ type RoleGrantsOverrides = Partial<{
   writers: string[];
   auditors: string[];
   isStaff: boolean;
+  isContractor: boolean;
   degraded: boolean;
   lookupOutcome: 'ok' | 'partial' | 'failed';
   staffCheck: 'ok' | 'failed';
@@ -517,6 +518,101 @@ test.describe('Org Lens empty states (spec 053)', () => {
       await expect(listbox).toContainText(ORG_A_NAME);
       // The removed affordance: no LF-team catalogue search input.
       await expect(page.getByTestId('org-search-input')).toHaveCount(0);
+    });
+  });
+
+  // #2961 — an LF contractor with no grant. The page keys on the server's answer (the read gate for a
+  // selected organization, the resolver for an address), never on the roster, and always gives the
+  // contractor reason rather than employee copy, a zero-metric overview or a retryable failure.
+  test.describe('page level — LF contractor without a grant (#2961)', () => {
+    const CONTRACTOR_HEADLINE = ORG_LENS_EMPTY_STATE_COPY['contractor-no-grant'].headline;
+
+    /** The read gate's answer for the selected organization; registered last so it wins over the lens stub. */
+    async function stubReadCheck(page: Page, status: 204 | 403): Promise<void> {
+      await page.route('**/api/orgs/*/lens/read-check*', (route) =>
+        status === 204
+          ? route.fulfill({ status: 204, body: '' })
+          : route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ code: 'FORBIDDEN', message: 'stubbed' }) })
+      );
+    }
+
+    test('C4: with nothing selected and nothing held, a contractor sees contractor-no-grant, not no-organization', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isContractor: true }) });
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(state.title).toHaveText(CONTRACTOR_HEADLINE);
+      await expect(state.contactSupport).toBeVisible();
+      await expect(page.locator('body')).not.toContainText('Add an affiliation');
+    });
+
+    test('C1: a persona-seeded organization the read gate refuses renders contractor-no-grant, never a zero-metric overview', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+      });
+      await stubReadCheck(page, 403);
+
+      await gotoOverview(page);
+
+      const state = overviewState(page);
+      await expect(state.root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(state.root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(page.getByTestId('org-overview-title')).toHaveCount(0);
+      await expect(page.locator('body')).not.toContainText('You do not have access to any organizations');
+      // The copy depends only on the caller. (The header switcher still shows their own persona org.)
+      await expect(state.root).not.toContainText(ORG_A_NAME);
+    });
+
+    test('C3: a deep link the resolver refuses renders contractor-no-grant on the dead end, with the organization unnamed', async ({ page }) => {
+      await stubOrgIdentity(page, { roleGrants: roleGrantsBody({ isContractor: true }) });
+
+      await page.goto(`/org/${UNHELD_SLUG}/overview`, { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      await expect(page).toHaveURL(/\/org\/not-found(\?|#|$)/, { timeout: SETTLE_TIMEOUT });
+      const root = page.getByTestId('org-not-found-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(page.locator('body')).not.toContainText('your OSPO');
+      await expect(page.locator('body')).not.toContainText(UNHELD_NAME);
+    });
+
+    // Every Org page renders the shared page state, not only Overview (#2977 review): People stands in
+    // for the pages that used to show their own load errors to a refused contractor.
+    test('C1-people: the People page renders contractor-no-grant for a refused persona-seeded organization', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+      });
+      await stubReadCheck(page, 403);
+
+      await page.goto('/org/people', { waitUntil: 'domcontentloaded' });
+      skipWhenAuthMissing(page);
+
+      const root = page.getByTestId('org-people-no-access-state');
+      await expect(root).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(root).toHaveAttribute('data-state', 'contractor-no-grant');
+      await expect(root).not.toContainText(ORG_A_NAME);
+    });
+
+    // The negative case: the read gate also admits FGA-only readers (key-contact auditors) that no
+    // roster lists. A roster-based rule would lock them out; this one keeps their page.
+    test('C-admit: a persona-seeded organization the read gate admits renders the page', async ({ page }) => {
+      await stubOrgIdentity(page, {
+        roleGrants: roleGrantsBody({ isContractor: true }),
+        personaOrgs: [personaOrg(ORG_A_UID, ORG_A_NAME)],
+        resolvable: [HELD_ORG],
+      });
+      await stubReadCheck(page, 204);
+
+      await gotoOverview(page);
+
+      await expect(page.getByTestId('org-overview-title')).toBeVisible({ timeout: SETTLE_TIMEOUT });
+      await expect(overviewState(page).root).toHaveCount(0);
     });
   });
 

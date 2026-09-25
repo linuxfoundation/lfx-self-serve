@@ -36,7 +36,15 @@ describe('OrgEasyclaComponent', () => {
   const correlationId = signal<string | null>(null);
   // The page-level classifier, reduced to the one branch these scenarios drive: settled and holding nothing.
   const pageState = computed(() => (grantsLoaded() && personaLoaded() && !hasOrgSelectorAccess() ? 'no-organization' : null));
-  const emptyStateService = { pageState, hasPageState: computed(() => pageState() !== null), retrying: signal(false), retry: vi.fn() };
+  const emptyStateService = {
+    pageState,
+    hasPageState: computed(() => pageState() !== null),
+    settled: computed(() => grantsLoaded() && personaLoaded()),
+    // Mirrors OrgLensEmptyStateService.pageReady: settled, plus the org list when the caller has one.
+    pageReady: computed(() => grantsLoaded() && personaLoaded() && (!hasOrgSelectorAccess() || navLoaded())),
+    retrying: signal(false),
+    retry: vi.fn(),
+  };
 
   const getClaGroups = vi.fn();
   const checkPermission = vi.fn();
@@ -138,6 +146,24 @@ describe('OrgEasyclaComponent', () => {
 
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).toContain('EasyCLA');
       expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('—');
+    });
+
+    // #2961: the title names the company only once the content renders.
+    it('keeps the bare title while the page waits for the org list', async () => {
+      navLoaded.set(false);
+
+      const fixture = await render();
+
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
+    });
+
+    it('keeps the bare title beside a page-level state', async () => {
+      hasOrgSelectorAccess.set(false);
+
+      const fixture = await render();
+
+      expect(fixture.nativeElement.querySelector('[data-state="no-organization"]')).not.toBeNull();
+      expect(byTestId(fixture, 'org-easycla-title')?.textContent).not.toContain('Vertex Robotics');
     });
 
     it('offers the Sign CLA control once an organization is selected', async () => {

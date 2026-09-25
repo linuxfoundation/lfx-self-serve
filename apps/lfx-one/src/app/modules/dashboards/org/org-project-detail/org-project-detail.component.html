@@ -2,7 +2,18 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6" data-testid="project-detail-page">
-  @if (!hasCompany()) {
+  @if (pageState(); as state) {
+    <lfx-org-lens-empty-state
+      [state]="state"
+      [testId]="'org-project-detail-no-access'"
+      [values]="{ correlationId: correlationId() }"
+      [retrying]="emptyState.retrying()"
+      (retry)="emptyState.retry()" />
+  } @else if (!emptyState.settled()) {
+    <!-- Pre-settled state: the hero skeleton, so neither the no-company empty state nor any block
+         flashes before the page-level classifier has answered. -->
+    <ng-container [ngTemplateOutlet]="heroLoading"></ng-container>
+  } @else if (!hasCompany()) {
     <lfx-empty-state icon="fa-light fa-building" title="Select an organization to view project details." data-testid="project-detail-no-company-empty-state" />
   } @else if (heroState().status === 'notFound') {
     <!-- B1 is the sole page-level gate: a 404 hero is the whole-page not-found. -->
@@ -31,11 +42,7 @@
 
     <!-- B1 Hero -->
     @if (heroState().status === 'loading') {
-      <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6" data-testid="project-detail-hero-loading">
-        <p-skeleton height="1.5rem" width="16rem" />
-        <p-skeleton height="2.5rem" width="60%" />
-        <p-skeleton height="1.25rem" width="80%" />
-      </div>
+      <ng-container [ngTemplateOutlet]="heroLoading"></ng-container>
     } @else if (hero(); as h) {
       <section
         class="flex flex-col gap-6 rounded-lg border border-gray-200 bg-white p-6 md:flex-row md:items-start md:justify-between"
@@ -599,6 +606,14 @@
     }
   }
 </div>
+
+<ng-template #heroLoading>
+  <div class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-6" data-testid="project-detail-hero-loading">
+    <p-skeleton height="1.5rem" width="16rem" />
+    <p-skeleton height="2.5rem" width="60%" />
+    <p-skeleton height="1.25rem" width="80%" />
+  </div>
+</ng-template>
 
 <!-- Our Influence metric card: optional scope label, small title, trendline, prominent stat + short label. -->
 <ng-template #influenceCard let-card>
