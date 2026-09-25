@@ -55,13 +55,13 @@ export class HealthMetricsEventsComponent {
   protected readonly forecastNote = signal<string>('');
   // `null` until Past events reports, so the badge never shows a count the section has not read.
   protected readonly pastCount = signal<number | null>(null);
+  // Owned here rather than by the section, since the same read decides whether the tab has any events.
+  protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
 
   protected readonly subNavItems = computed<HealthMetricsEventsSubNavItem[]>(() =>
     buildHealthMetricsEventsSubNavItems({ forecast: this.forecastNote() }, { past: this.pastCount() })
   );
 
-  // Owned here rather than by the section, since the same read decides whether the tab has any events.
-  protected readonly glanceStatus = signal<HealthMetricsEventsAtAGlanceStatus>('loading');
   protected readonly glance: Signal<HealthMetricsEventsAtAGlance> = this.initGlance();
   // Only a landed read can say there are none; a pending or failed one keeps the shell.
   protected readonly noEvents = computed(() => this.glanceStatus() === 'ready' && !this.glance().hasEvents);

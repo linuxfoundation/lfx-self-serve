@@ -2,10 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { isPlatformBrowser } from '@angular/common';
-import { Component, computed, effect, inject, input, output, PLATFORM_ID, type Signal, untracked } from '@angular/core';
+import { Component, computed, inject, input, output, PLATFORM_ID, type Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { buildHealthMetricsEventsAtAGlanceView } from '@lfx-one/shared/utils';
 import { Skeleton } from 'primeng/skeleton';
+import { combineLatest } from 'rxjs';
 
 import { HealthMetricsChromeService } from '../../../health-metrics-gate/health-metrics-chrome.service';
 
@@ -38,11 +40,10 @@ export class EventsAtAGlanceComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      effect(() => {
-        const status = this.status();
-        this.chrome.selectedRange();
-        untracked(() => (status === 'loading' ? this.reading.emit() : this.settled.emit()));
-      });
+      // A period change re-projects the loaded read, so it re-settles like a landed read.
+      combineLatest([toObservable(this.status), toObservable(this.chrome.selectedRange)])
+        .pipe(takeUntilDestroyed())
+        .subscribe(([status]) => (status === 'loading' ? this.reading.emit() : this.settled.emit()));
     }
   }
 }
