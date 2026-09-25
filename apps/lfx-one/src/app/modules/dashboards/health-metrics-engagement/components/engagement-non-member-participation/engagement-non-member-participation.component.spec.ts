@@ -7,6 +7,7 @@ import { provideRouter } from '@angular/router';
 import { HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_UNMEASURED } from '@lfx-one/shared/constants';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -52,6 +53,7 @@ describe('EngagementNonMemberParticipationComponent', () => {
       providers: [
         provideRouter([]),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementNonMemberParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
       ],

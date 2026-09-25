@@ -7,6 +7,7 @@ import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { of, throwError } from 'rxjs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -107,6 +108,7 @@ describe('EngagementMeetingParticipationComponent', () => {
         provideRouter([]),
         provideNoopAnimations(),
         HealthMetricsChromeService,
+        { provide: UserService, useValue: { impersonating: signal(false) } },
         { provide: AnalyticsService, useValue: { getEngagementMeetingParticipation } },
         { provide: ProjectContextService, useValue: { selectedFoundation } },
         // The mode pill reads its initial value off the URL, and writes it back.
