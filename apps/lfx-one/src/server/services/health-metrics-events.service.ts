@@ -178,7 +178,7 @@ export class HealthMetricsEventsService {
     // Suffixes come from a constant map, never from the request, so interpolating them is safe.
     const suffixes = HEALTH_METRICS_L2_RANGES.map((range) => HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]);
     const periodColumns = suffixes
-      .map((suffix) => `is_in_period_${suffix}, scope_past_events_count_${suffix}, scope_registrations_count_${suffix}, scope_events_goal_met_count_${suffix}`)
+      .map((suffix) => `is_in_period_${suffix}, scope_past_events_count_${suffix}, scope_registrations_count_${suffix}`)
       .join(',\n        ');
     const inAnyPeriod = suffixes.map((suffix) => `is_in_period_${suffix}`).join(' OR ');
 
@@ -210,7 +210,7 @@ export class HealthMetricsEventsService {
 
     // A read that succeeds with no rows is a measured zero in every period, not an unmeasured one.
     if (result.rows.length === 0) {
-      return { periods: HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0, goalMetCount: 0 })), events: [] };
+      return { periods: HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0 })), events: [] };
     }
 
     if (result.rows.length > HEALTH_METRICS_EVENTS_PAST_EVENT_CAP) {
@@ -253,7 +253,6 @@ function mapPastPeriod(row: PastEventRow, range: HealthMetricsL2Range): HealthMe
     range,
     eventCount: toNullableNumber(row[periodColumn('SCOPE_PAST_EVENTS_COUNT', range)]),
     registrations: toNullableNumber(row[periodColumn('SCOPE_REGISTRATIONS_COUNT', range)]),
-    goalMetCount: toNullableNumber(row[periodColumn('SCOPE_EVENTS_GOAL_MET_COUNT', range)]),
   };
 }
 

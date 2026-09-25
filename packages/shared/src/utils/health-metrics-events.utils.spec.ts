@@ -214,14 +214,23 @@ describe('resolveHealthMetricsEventsPastStatus', () => {
   it('falls back to final registrations when the outcome is not flagged', () => {
     expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 120, goalMet: null }))).toBe('hit');
     expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 80, goalMet: null, paceStatus: 'needs_action' }))).toBe('missed');
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 80, goalMet: null, paceStatus: 'needs_attention' }))).toBe('near-miss');
+  });
+
+  it('reads final registrations landing exactly on the goal as a hit', () => {
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: 100, goalMet: null }))).toBe('hit');
+  });
+
+  it('reads an unflagged outcome with no final registrations as unmeasured, never a miss', () => {
+    expect(resolveHealthMetricsEventsPastStatus(pastEvent({ goal: 100, registrations: null, goalMet: null }))).toBe('unmeasured');
   });
 });
 
 describe('buildHealthMetricsEventsPastView', () => {
   const past: HealthMetricsEventsPast = {
     periods: [
-      { range: 'YTD', eventCount: 2, registrations: 1500, goalMetCount: 1 },
-      { range: 'COMPLETED_YEAR', eventCount: 1, registrations: 300, goalMetCount: 0 },
+      { range: 'YTD', eventCount: 2, registrations: 1500 },
+      { range: 'COMPLETED_YEAR', eventCount: 1, registrations: 300 },
     ],
     events: [
       pastEvent({ eventId: 'hit', goalMet: true, registrations: 1200, paceStatus: 'healthy' }),
@@ -229,7 +238,7 @@ describe('buildHealthMetricsEventsPastView', () => {
     ],
   };
 
-  it("takes the period's header from the view and lists only its events, in server order", () => {
+  it("takes the period's count and registrations from the view and lists only its events, in server order", () => {
     const view = buildHealthMetricsEventsPastView(past, 'YTD');
 
     expect(view).toMatchObject({ eventCount: 2, registrations: 1500, goalMetCount: 1, goalSetCount: 1 });
@@ -244,10 +253,28 @@ describe('buildHealthMetricsEventsPastView', () => {
     expect(buildHealthMetricsEventsPastView(past, 'COMPLETED_YEAR_4')).toEqual({
       eventCount: null,
       registrations: null,
-      goalMetCount: null,
+      goalMetCount: 0,
       goalSetCount: 0,
       rows: [],
     });
+  });
+
+  it('tallies "X of Y" off the chips, counting a fallback hit and leaving an unmeasured outcome out', () => {
+    const view = buildHealthMetricsEventsPastView(
+      {
+        periods: [{ range: 'YTD', eventCount: 3, registrations: 1200 }],
+        events: [
+          pastEvent({ eventId: 'fallback-hit', goal: 100, registrations: 100, goalMet: null }),
+          pastEvent({ eventId: 'unmeasured', goal: 100, registrations: null, goalMet: null }),
+          pastEvent({ eventId: 'miss' }),
+        ],
+      },
+      'YTD'
+    );
+
+    expect(view.rows.map((row) => row.status)).toEqual(['hit', 'unmeasured', 'near-miss']);
+    expect(view).toMatchObject({ goalMetCount: 1, goalSetCount: 2 });
+    expect(view.rows[1]).toMatchObject({ statusLabel: 'Not measured', registrationsLabel: '—', progressPct: null });
   });
 
   it('resolves row labels, capping the bar and drawing none without a goal', () => {

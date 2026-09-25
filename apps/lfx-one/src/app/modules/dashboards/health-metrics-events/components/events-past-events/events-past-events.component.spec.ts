@@ -34,9 +34,9 @@ function pastEvent(overrides: Partial<HealthMetricsEventsPastEvent> = {}): Healt
 function past(overrides: Partial<HealthMetricsEventsPast> = {}): HealthMetricsEventsPast {
   return {
     periods: [
-      { range: 'YTD', eventCount: 2, registrations: 1500, goalMetCount: 1 },
-      { range: 'COMPLETED_YEAR', eventCount: 1, registrations: 300, goalMetCount: 0 },
-      { range: 'COMPLETED_YEAR_2', eventCount: 0, registrations: 0, goalMetCount: 0 },
+      { range: 'YTD', eventCount: 2, registrations: 1500 },
+      { range: 'COMPLETED_YEAR', eventCount: 1, registrations: 300 },
+      { range: 'COMPLETED_YEAR_2', eventCount: 0, registrations: 0 },
     ],
     events: [
       pastEvent(),
@@ -146,6 +146,26 @@ describe('EventsPastEventsComponent', () => {
     expect(text('events-past-events-goal-met-value')).toBe('no goals set');
   });
 
+  it('re-settles on a period change between two completed years, so the shell re-measures', async () => {
+    await render();
+    const chrome = TestBed.inject(HealthMetricsChromeService);
+
+    chrome.selectedRange.set('COMPLETED_YEAR');
+    await settle();
+    chrome.selectedRange.set('COMPLETED_YEAR_2');
+    await settle();
+
+    expect(getEventsPast).toHaveBeenCalledTimes(1);
+    expect(lifecycle).toEqual(['reading', 'settled', 'settled', 'settled']);
+  });
+
+  it('marks a within-reach miss as just missed', async () => {
+    await render(past({ events: [pastEvent({ registrations: 900, goalMet: false, paceStatus: 'needs_attention' })] }));
+
+    expect(text('events-past-events-status-past-1')).toBe('Just missed');
+    expect(text('events-past-events-goal-met-value')).toBe('0 of 1');
+  });
+
   it('shows the empty state for a period with no closed events', async () => {
     await render();
 
@@ -153,7 +173,19 @@ describe('EventsPastEventsComponent', () => {
     await settle();
 
     expect(query('events-past-events-empty')).not.toBeNull();
+    expect(query('events-past-events-unmeasured')).toBeNull();
     expect(counts.at(-1)).toBe(0);
+  });
+
+  it('shows the unavailable state, not a measured zero, for a period the view has not measured', async () => {
+    await render();
+
+    TestBed.inject(HealthMetricsChromeService).selectedRange.set('COMPLETED_YEAR_3');
+    await settle();
+
+    expect(query('events-past-events-unmeasured')).not.toBeNull();
+    expect(query('events-past-events-empty')).toBeNull();
+    expect(counts.at(-1)).toBeNull();
   });
 
   it('shows the error state and keeps the badge unmeasured when the read fails', async () => {

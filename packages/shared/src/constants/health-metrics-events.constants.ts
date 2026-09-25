@@ -137,19 +137,22 @@ export const HEALTH_METRICS_EVENTS_FORECAST_UNMEASURED: HealthMetricsEventsForec
 /** Read-failed / no-event value for the curve: no formats, which the chart renders as no curve. */
 export const HEALTH_METRICS_EVENTS_FORECAST_CURVE_UNMEASURED: HealthMetricsEventsForecastCurve = { eventId: '', formats: [] };
 
-/** Outcome chips for a closed event. A missed goal splits on the model's pace band at close. */
+/** Outcome chips for a closed event. A missed goal splits on the model's pace band at close; `unmeasured` has no outcome read. */
 export const HEALTH_METRICS_EVENTS_PAST_STATUSES = {
   hit: { label: 'Hit goal', badgeClass: 'bg-emerald-50 text-emerald-700', progressClass: 'bg-emerald-500' },
   'near-miss': { label: 'Just missed', badgeClass: 'bg-amber-50 text-amber-700', progressClass: 'bg-amber-500' },
   missed: { label: 'Missed goal', badgeClass: 'bg-red-50 text-red-700', progressClass: 'bg-red-400' },
   'no-goal': { label: 'No goal set', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
+  unmeasured: { label: 'Not measured', badgeClass: 'bg-gray-100 text-gray-600', progressClass: 'bg-gray-200' },
 } as const;
 
 /** The model's pace band for an event that finished within reach of its goal. */
 export const HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE = 'needs_attention';
 
-/** Closed events read per foundation across the four periods; one past it flags a truncated read.
- * Header figures come from the view, so only the table would lose rows; the largest foundation reads under 100. */
+/**
+ * Closed events read per foundation across the four periods; one past it flags a truncated read.
+ * The largest foundation reads under 100, so a truncated read would only drop the oldest rows.
+ */
 export const HEALTH_METRICS_EVENTS_PAST_EVENT_CAP = 500;
 
 /** Read-failed / no-foundation value: no periods and no events, which the section must not caption as measured. */

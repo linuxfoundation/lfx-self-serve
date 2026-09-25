@@ -80,19 +80,15 @@ function pastRow(overrides: Record<string, unknown> = {}) {
     IS_IN_PERIOD_YTD: true,
     SCOPE_PAST_EVENTS_COUNT_YTD: 4,
     SCOPE_REGISTRATIONS_COUNT_YTD: 2400,
-    SCOPE_EVENTS_GOAL_MET_COUNT_YTD: 1,
     IS_IN_PERIOD_LAST_COMPLETED_YEAR: false,
     SCOPE_PAST_EVENTS_COUNT_LAST_COMPLETED_YEAR: 7,
     SCOPE_REGISTRATIONS_COUNT_LAST_COMPLETED_YEAR: 5100,
-    SCOPE_EVENTS_GOAL_MET_COUNT_LAST_COMPLETED_YEAR: 3,
     IS_IN_PERIOD_PREV_COMPLETED_YEAR: false,
     SCOPE_PAST_EVENTS_COUNT_PREV_COMPLETED_YEAR: 0,
     SCOPE_REGISTRATIONS_COUNT_PREV_COMPLETED_YEAR: 0,
-    SCOPE_EVENTS_GOAL_MET_COUNT_PREV_COMPLETED_YEAR: 0,
     IS_IN_PERIOD_3RD_LAST_COMPLETED_YEAR: false,
     SCOPE_PAST_EVENTS_COUNT_3RD_LAST_COMPLETED_YEAR: null,
     SCOPE_REGISTRATIONS_COUNT_3RD_LAST_COMPLETED_YEAR: null,
-    SCOPE_EVENTS_GOAL_MET_COUNT_3RD_LAST_COMPLETED_YEAR: null,
     ...overrides,
   };
 }
@@ -233,7 +229,7 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     expect(sql).toContain('MARKETING_EVENT_PAST_EVENTS');
     expect(sql).toContain('is_all_projects = TRUE');
     expect(sql).toContain('is_in_period_3rd_last_completed_year OR is_in_period_prev_completed_year OR is_in_period_last_completed_year OR is_in_period_ytd');
-    expect(sql).toContain('scope_events_goal_met_count_3rd_last_completed_year');
+    expect(sql).toContain('scope_registrations_count_3rd_last_completed_year');
     expect(sql).toContain('ORDER BY event_start_date DESC');
     expect(sql).toContain(`LIMIT ${HEALTH_METRICS_EVENTS_PAST_EVENT_CAP + 1}`);
   });
@@ -260,10 +256,10 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     const { periods } = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     expect(periods).toEqual([
-      { range: 'COMPLETED_YEAR_3', eventCount: null, registrations: null, goalMetCount: null },
-      { range: 'COMPLETED_YEAR_2', eventCount: 0, registrations: 0, goalMetCount: 0 },
-      { range: 'COMPLETED_YEAR', eventCount: 7, registrations: 5100, goalMetCount: 3 },
-      { range: 'YTD', eventCount: 4, registrations: 2400, goalMetCount: 1 },
+      { range: 'COMPLETED_YEAR_3', eventCount: null, registrations: null },
+      { range: 'COMPLETED_YEAR_2', eventCount: 0, registrations: 0 },
+      { range: 'COMPLETED_YEAR', eventCount: 7, registrations: 5100 },
+      { range: 'YTD', eventCount: 4, registrations: 2400 },
     ]);
   });
 
@@ -284,7 +280,7 @@ describe('HealthMetricsEventsService.getPastEvents', () => {
     const past = await new HealthMetricsEventsService().getPastEvents(req, { foundationSlug: 'acme' });
 
     expect(past.events).toEqual([]);
-    expect(past.periods).toEqual(HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0, goalMetCount: 0 })));
+    expect(past.periods).toEqual(HEALTH_METRICS_L2_RANGES.map((range) => ({ range, eventCount: 0, registrations: 0 })));
   });
 
   it('warns and truncates when the read hits the cap', async () => {

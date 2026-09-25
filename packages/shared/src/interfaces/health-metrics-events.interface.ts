@@ -139,7 +139,6 @@ export interface HealthMetricsEventsPastPeriod {
   range: HealthMetricsL2Range;
   eventCount: number | null;
   registrations: number | null;
-  goalMetCount: number | null;
 }
 
 /** `GET /api/analytics/events-past` — every closed event in the four periods, plus each period's header. */
@@ -169,8 +168,9 @@ export interface HealthMetricsEventsPastRowView {
 export interface HealthMetricsEventsPastView {
   eventCount: number | null;
   registrations: number | null;
-  goalMetCount: number | null;
-  /** Listed events with a goal set — the "of Y" in "Hit goal: X of Y". */
+  /** Listed events whose chip reads "Hit goal" — the X in "Hit goal: X of Y". */
+  goalMetCount: number;
+  /** Listed events with a goal set and a measured outcome — the Y, so X and Y share the chips' rule. */
   goalSetCount: number;
   rows: HealthMetricsEventsPastRowView[];
 }

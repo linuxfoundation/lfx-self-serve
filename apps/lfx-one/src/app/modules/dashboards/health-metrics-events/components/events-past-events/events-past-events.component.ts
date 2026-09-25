@@ -62,10 +62,10 @@ export class EventsPastEventsComponent {
 
   public constructor() {
     if (isPlatformBrowser(this.platformId)) {
-      // The badge is per period, so a pill change re-reports it off the loaded response.
+      // The badge and the list are per period, so a pill change re-reports both off the loaded response.
       toObservable(this.chrome.selectedRange)
         .pipe(skip(1), takeUntilDestroyed())
-        .subscribe(() => this.emitCount());
+        .subscribe(() => this.onRangeChange());
     }
   }
 
@@ -114,11 +114,12 @@ export class EventsPastEventsComponent {
     );
   }
 
-  /** Re-reports the badge off the already-loaded response; a failed or unread scope stays `null`. */
-  private emitCount(): void {
-    // A read in flight still holds the previous foundation's payload, so its count would be stale.
+  /** Re-reports the badge and re-settles the re-projected list; a failed or unread scope stays `null`. */
+  private onRangeChange(): void {
+    // A read in flight still holds the previous foundation's payload, and its own settle is still to come.
     if (this.loadFailed() || this.loading()) return;
 
     this.countChange.emit(this.view().eventCount);
+    this.settled.emit();
   }
 }

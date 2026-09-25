@@ -153,24 +153,28 @@ export function pickHealthMetricsEventsForecastFormat(formats: HealthMetricsEven
 /** A closed event's outcome. A miss the model banded as needing attention finished within reach. */
 export function resolveHealthMetricsEventsPastStatus(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastStatus {
   if (event.goal === null) return 'no-goal';
-  // An unflagged outcome falls back to final registrations against the goal.
-  const met = event.goalMet ?? (event.registrations !== null && event.registrations >= event.goal);
+  // An unflagged outcome falls back to final registrations against the goal; with neither, it is unmeasured.
+  let met = event.goalMet;
+  if (met === null) {
+    if (event.registrations === null) return 'unmeasured';
+    met = event.registrations >= event.goal;
+  }
   if (met) return 'hit';
 
   return event.paceStatus === HEALTH_METRICS_EVENTS_PAST_NEAR_MISS_PACE ? 'near-miss' : 'missed';
 }
 
-/** One period's section: the view's own header figures and the events that closed in it, in server order. */
+/** One period's section: the view's count and registrations, with the goal tally read off the same rows as the chips. */
 export function buildHealthMetricsEventsPastView(past: HealthMetricsEventsPast, range: HealthMetricsRange): HealthMetricsEventsPastView {
   const period = past.periods.find((candidate) => candidate.range === range);
-  const events = past.events.filter((event) => event.ranges.some((candidate) => candidate === range));
+  const rows = past.events.filter((event) => event.ranges.some((candidate) => candidate === range)).map(buildPastRowView);
 
   return {
     eventCount: period?.eventCount ?? null,
     registrations: period?.registrations ?? null,
-    goalMetCount: period?.goalMetCount ?? null,
-    goalSetCount: events.filter((event) => event.goal !== null).length,
-    rows: events.map(buildPastRowView),
+    goalMetCount: rows.filter((row) => row.status === 'hit').length,
+    goalSetCount: rows.filter((row) => row.status !== 'no-goal' && row.status !== 'unmeasured').length,
+    rows,
   };
 }
 
@@ -188,7 +192,6 @@ export function formatHealthMetricsEventsRevenue(value: number | null): string {
 
 function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEventsPastRowView {
   const status = resolveHealthMetricsEventsPastStatus(event);
-  const hasFill = event.goal !== null && event.goal > 0 && event.registrations !== null;
 
   return {
     event,
@@ -199,9 +202,16 @@ function buildPastRowView(event: HealthMetricsEventsPastEvent): HealthMetricsEve
     registrationsLabel: formatHealthMetricsEventsCount(event.registrations),
     goalLabel: formatHealthMetricsEventsCount(event.goal),
     revenueLabel: formatHealthMetricsEventsRevenue(event.revenueUsd),
-    progressPct: hasFill ? Math.min(100, Math.round(((event.registrations as number) / (event.goal as number)) * 100)) : null,
+    progressPct: resolvePastProgressPct(event),
     progressClass: HEALTH_METRICS_EVENTS_PAST_STATUSES[status].progressClass,
   };
+}
+
+/** Final registrations against goal, capped at 100; null when either is unmeasured, since null is not zero. */
+function resolvePastProgressPct(event: HealthMetricsEventsPastEvent): number | null {
+  if (event.goal === null || event.goal <= 0 || event.registrations === null) return null;
+
+  return Math.min(100, Math.round((event.registrations / event.goal) * 100));
 }
 
 /** Registrations now against goal; null when either is unmeasured, since null is not zero. */

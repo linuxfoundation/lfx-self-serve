@@ -11,6 +11,12 @@
       data-testid="events-past-events-error" />
   } @else if (loading()) {
     <p-skeleton height="20rem" borderRadius="0.5rem" data-testid="events-past-events-loading" aria-hidden="true" />
+  } @else if (view().rows.length === 0 && view().eventCount === null) {
+    <lfx-empty-state
+      icon="fa-light fa-circle-question"
+      title="Past events unavailable for this period"
+      subtitle="Results for the selected period have not been measured yet. Pick another period to see how earlier events finished."
+      data-testid="events-past-events-unmeasured" />
   } @else if (view().rows.length === 0) {
     <lfx-empty-state
       icon="fa-light fa-calendar-xmark"
