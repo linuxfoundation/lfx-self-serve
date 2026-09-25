@@ -3,18 +3,17 @@ name: preflight
 description: >
   Mechanical pre-PR pipeline for lfx-self-serve: working tree status, license
   headers, fixture-PII and company-address guards, format, lint, type-check,
-  E2E collection, unit tests, build, markdown lint, protected-file check,
-  commit verification, and PR change summary — the same checks CI runs. It is
-  the second half of the `Preflight` value in `CLAUDE.md`'s **Pre-PR review**
-  section, run after `/lfx-self-serve-pr-readiness`. Supports `--report-only`
-  when no file mutations are wanted. Review protocol and pattern/convention
-  auditing are not owned by this skill.
+  E2E collection, unit tests, build, protected-file check, commit
+  verification, and PR change summary. Named in the `Preflight` value of
+  `CLAUDE.md`'s **Pre-PR review** section as `/preflight --report-only`;
+  `--report-only` reports without mutating files. Review protocol and
+  pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. This skill owns only the checks below; where it sits in the pre-PR sequence is defined by `CLAUDE.md`'s **Pre-PR review** section, whose `Preflight` value invokes it after `/lfx-self-serve-pr-readiness`. The checks mirror `.github/workflows/quality-check.yml`, `license-header-check.yml` and `markdown-lint.yml`, so a clean local run predicts a green CI.
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. This skill owns only the checks below; where it runs is defined by `CLAUDE.md` § **Pre-PR review** (its `Preflight` value names `/preflight --report-only`).
 
 Run each check in order, report results clearly, and help fix any issues found.
 
@@ -60,7 +59,7 @@ If any files are missing headers, add them (report only in `--report-only`).
 
 ## Check 2: Fixture PII and Company-Address Guards
 
-The same two guards CI's `quality-check.yml` runs before installing dependencies:
+The repo's two guard scripts:
 
 ```bash
 ./check-fixture-emails.sh "$(git merge-base origin/main HEAD)"   # real customer/vendor emails added to fixtures
@@ -154,17 +153,7 @@ The build must succeed. If it fails:
 - Verify shared package exports are correct
 - Check for circular dependencies
 
-## Check 9: Markdown Lint
-
-CI's `markdown-lint.yml` runs `markdownlint-cli2` over `**/*.md` with the repo's `.markdownlint.json`. Run the same locally on the Markdown files the branch touches:
-
-```bash
-git diff --name-only origin/main...HEAD -- '*.md' | xargs -r npx --yes markdownlint-cli2
-```
-
-Fix every hit in a touched file. Hits in files the branch does not touch are pre-existing and out of scope for this PR.
-
-## Check 10: Protected Files Check
+## Check 9: Protected Files Check
 
 The canonical protected-file list is the `.claude/hooks/guard-protected-files.sh` hook — it owns every protected path and the reason text. Extract the list from the hook rather than maintaining a duplicate:
 
@@ -182,7 +171,7 @@ Any warning the hook prints to stderr identifies a protected file in the diff. F
 
 (The same `/lfx-self-serve-pr-readiness` skill already parses this hook the same way — keep them in sync by editing the hook, not by adding new inline lists.)
 
-## Check 11: Commit Verification
+## Check 10: Commit Verification
 
 Before the final report, verify all changes are properly committed:
 
@@ -196,7 +185,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 - **`--signoff` on all commits?** — Every commit must have `Signed-off-by:` (check in the full body output above).
 - **Ticket referenced?** — Commit messages should include `#XXX` (GitHub Issue) or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`).
 
-## Check 12: Change Summary
+## Check 11: Change Summary
 
 Generate a summary of all changes for the PR description:
 
@@ -228,7 +217,6 @@ PREFLIGHT RESULTS
 ✓ E2E collection      — Consistent
 ✓ Unit tests          — Passed
 ✓ Build               — Succeeded
-✓ Markdown lint       — No hits in touched files
 ✓ Protected files     — None modified
 ✓ Commits             — Conventions followed, signed off
 ─────────────────────────────────
@@ -249,7 +237,6 @@ PREFLIGHT RESULTS
 ✓ E2E collection      — Consistent
 ✗ Unit tests          — 1 failing (see above)
 ✗ Build               — Failed (see above)
-✓ Markdown lint       — No hits in touched files
 ✓ Protected files     — None modified
 ✓ Commits             — Conventions followed, signed off
 ─────────────────────────────────

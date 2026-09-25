@@ -20,7 +20,7 @@ This project has guided skills for common workflows, plus one repo-owned Self Se
 
 ## Reviewer Children (skill-loading subagents)
 
-The local review lifecycle lives in `/lfx-skills:lfx-pre-pr-review`; `CLAUDE.md`'s **Pre-PR review** section points at it and carries this repo's two values (the KB review skill, `/lfx-self-serve-learnings-review`, and the preflight value: `/lfx-self-serve-pr-readiness origin/main`, then `/preflight --report-only`). Do not restate or improvise that protocol here.
+The pre-PR sequence lives in `CLAUDE.md` § **Pre-PR review** (the review round via `/lfx-skills:lfx-pre-pr-review`, then the repo's `Preflight` value, then the PR). Do not restate or improvise it here.
 
 **Guidance requirement:** when a pre-PR review intent matches, follow `CLAUDE.md`'s **Pre-PR review** section exactly. Once a PR is open, follow `CLAUDE.md`'s **Post-PR review** section instead of launching any local reviewer.
 
@@ -51,14 +51,14 @@ The local review lifecycle lives in `/lfx-skills:lfx-pre-pr-review`; `CLAUDE.md`
 
 Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to review a single commit mid-branch, explain that this repo reviews the whole branch once, before the PR.
 
-**`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus; the first half of the **Pre-PR review** `Preflight` value. Match any of these intents:
+**`/lfx-self-serve-pr-readiness`** — pre-PR, shape focus; named first in the **Pre-PR review** `Preflight` value. Match any of these intents:
 
 - "PR readiness", "Is this ready to open as a PR?"
 - "Check PR shape", "Validate my commits", "Are my commits signed?"
 - "Did I forget the GitHub Issue reference?", "Is my branch named right?"
 - "Diff size OK?", "Is my branch rebased?"
 
-**`/preflight`** — mechanical checks; the second half of the **Pre-PR review** `Preflight` value, after pr-readiness. Match any of these intents:
+**`/preflight`** — mechanical checks; named in the **Pre-PR review** `Preflight` value as `/preflight --report-only`, after pr-readiness. Match any of these intents:
 
 - "Run checks", "Lint and build", "Pre-PR validation"
 - "Format check", "License check"

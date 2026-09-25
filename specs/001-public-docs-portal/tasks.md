@@ -221,9 +221,9 @@ US4 is largely a property emerging from US1 (the route table at T020/T021 and th
 - [x] T060 Run `yarn lint:check && yarn format:check && yarn check-types` from the repo root; fix any drift introduced by US1–US6 implementation.
 - [x] T061 Run `yarn build` end-to-end and confirm the generated `dist/lfx-one/browser/assets/docs/search-index.json` and `apps/lfx-one/dist-docs/sitemap.xml` are present and valid against their schemas.
 - [ ] T062 Run [quickstart.md](./quickstart.md) end-to-end on a clean checkout — add a fixture article, build, hit it in incognito, run the validation scripts — and update `quickstart.md` if any step has drifted.
-- [ ] T063 Run the pre-PR review round of the whole branch and its single fix commit per `CLAUDE.md` § **Pre-PR review**.
-- [ ] T064 Run `/lfx-self-serve-pr-readiness origin/main` (first half of that section's `Preflight` value) and clear every CRITICAL finding.
-- [ ] T065 Run `/preflight --report-only` (second half of the `Preflight` value) and fix any failure before opening the PR.
+- [ ] T063 Run the pre-PR review round of the whole branch per `CLAUDE.md` § **Pre-PR review** (its fix commit, if the round found anything).
+- [ ] T064 Run `/lfx-self-serve-pr-readiness origin/main` (that section's `Preflight` value, step 2) and clear every CRITICAL finding.
+- [ ] T065 Run `/preflight --report-only` (same `Preflight` value) and fix any failure in its own commit(s).
 
 ---
 

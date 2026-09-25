@@ -6,9 +6,9 @@ description: >
   conventional-commit format, rebase status, DCO + GPG signing per
   commit, total diff size, and protected files touched) against the
   target base branch. Does NOT
-  audit code. It is the first half of the `Preflight` value in `CLAUDE.md`'s
-  **Pre-PR review** section: run it against the clean, committed tree, then
-  `/preflight`.
+  audit code. Named first in the `Preflight` value of `CLAUDE.md`'s **Pre-PR
+  review** section, before `/preflight --report-only`; run it against a
+  clean, committed tree.
 context: fork
 allowed-tools: Bash, Read, Glob, Grep
 ---
@@ -17,7 +17,7 @@ allowed-tools: Bash, Read, Glob, Grep
 
 You are checking whether **local commits are shaped correctly to open as a PR** — branch name, GitHub Issue references in commit messages, conventional-commit format, rebase status, DCO + GPG signing on every commit, total diff size.
 
-This skill does NOT audit code. Where it sits in the pre-PR sequence is defined by `CLAUDE.md`'s **Pre-PR review** section, whose `Preflight` value invokes it first, then `/preflight`. Its only precondition is a clean, committed tree; it does not require `/preflight` or any other check to have run.
+This skill does NOT audit code. Where it runs is defined by `CLAUDE.md` § **Pre-PR review** (its `Preflight` value names this skill first, then `/preflight --report-only`). Its only precondition is a clean, committed tree; it does not require `/preflight` or any other check to have run.
 
 The PR-shape checklist lives in `references/pr-shape.md` and is walked directly in this body.
 
@@ -129,6 +129,6 @@ Every finding must quote an item in `references/pr-shape.md`. Drop hallucinated 
 
 ## Companion skills & subagents
 
-- `CLAUDE.md`'s **Pre-PR review** section — owns the local review lifecycle (via `/lfx-skills:lfx-pre-pr-review`) and the `Preflight` value that sequences this check.
-- `/preflight` — mechanical checks (license, guards, format, lint, types, tests, build, markdown lint, protected files). Runs after this check, never before it.
+- `CLAUDE.md` § **Pre-PR review** — owns the pre-PR sequence and the `Preflight` value that names this check.
+- `/preflight --report-only` — mechanical checks (license, guards, format, lint, types, tests, build, protected files). Runs after this check, never before it.
 - `/lfx-review-pr` — post-PR reviewer. Not part of pre-PR.
