@@ -166,97 +166,98 @@
     </div>
 
     @if (activeTab() === 'overview') {
-      <section
+      <div
         role="tabpanel"
         id="org-easycla-detail-tab-panel-overview"
         aria-labelledby="org-easycla-detail-tab-trigger-overview"
-        class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+        class="flex flex-col gap-6"
         data-testid="org-easycla-detail-overview">
-        <div class="flex flex-col gap-1">
-          <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-detail-ccla-title">{{ cclaHeading() }}</h2>
-          @if (coverageHint()) {
-            <p class="text-sm text-gray-500" data-testid="org-easycla-detail-ccla-hint">{{ coverageHint() }}</p>
-          }
-        </div>
-        <!--
+        <section class="flex flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="org-easycla-detail-overview-card">
+          <div class="flex flex-col gap-1">
+            <h2 class="font-medium text-lg text-gray-900" data-testid="org-easycla-detail-ccla-title">{{ cclaHeading() }}</h2>
+            @if (coverageHint()) {
+              <p class="text-sm text-gray-500" data-testid="org-easycla-detail-ccla-hint">{{ coverageHint() }}</p>
+            }
+          </div>
+          <!--
           `lfx-message severity="success"` rather than a hand-rolled tinted box. Signed-ness is
           already expressed semantically on this page — the status pill above reads its severity from
           ORG_CLA_STATUS_DISPLAY — so a raw success colour here would be the one place the page states
           in hex what it states as a token everywhere else, and would drift the moment the theme's
           success colour moves. The projected content carries no colour of its own for the same reason.
         -->
-        @if (signedOnLabel()) {
-          <lfx-message severity="success" icon="fa-light fa-circle-check" data-testid="org-easycla-detail-signed-on">
-            <ng-template #content>
-              @if (signedByName()) {
-                <span
-                  >Signed by <strong class="font-semibold">{{ signedByName() }}</strong> on <strong class="font-semibold">{{ signedOnLabel() }}</strong
-                  >.</span
-                >
-              } @else {
-                <span
-                  >Signed on <strong class="font-semibold">{{ signedOnLabel() }}</strong
-                  >.</span
-                >
-              }
-            </ng-template>
-          </lfx-message>
-        }
-        <!--
+          @if (signedOnLabel()) {
+            <lfx-message severity="success" icon="fa-light fa-circle-check" data-testid="org-easycla-detail-signed-on">
+              <ng-template #content>
+                @if (signedByName()) {
+                  <span
+                    >Signed by <strong class="font-semibold">{{ signedByName() }}</strong> on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                    >.</span
+                  >
+                } @else {
+                  <span
+                    >Signed on <strong class="font-semibold">{{ signedOnLabel() }}</strong
+                    >.</span
+                  >
+                }
+              </ng-template>
+            </lfx-message>
+          }
+          <!--
           The body for an agreement the organization has not signed, which on this page means the
           pre-signing preview: the organization's list draws every row from a signature upstream
           has already filtered to signed, so it never reaches here. Without this the tab rendered
           its heading and then stopped, which reads as a page that failed to load rather than as a
           state.
         -->
-        @if (notStarted()) {
-          <div class="flex flex-col gap-3" data-testid="org-easycla-detail-not-started">
-            @if (notStartedLead()) {
-              <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
-            }
-            <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
-            <!--
+          @if (notStarted()) {
+            <div class="flex flex-col gap-3" data-testid="org-easycla-detail-not-started">
+              @if (notStartedLead()) {
+                <p class="text-sm text-gray-700" data-testid="org-easycla-detail-not-started-lead">{{ notStartedLead() }}</p>
+              }
+              <p class="font-semibold text-sm text-gray-900">{{ notStartedCopy.stepsHeading }}</p>
+              <!--
               An ordered list, not three paragraphs as the prototype draws them. The steps are a
               sequence and are numbered in their own text, so the markup that says so is what lets
               assistive technology announce the position and count. The prototype's numbering is
               kept in the visible text rather than generated, so the wording stays verbatim.
             -->
-            <ol class="flex list-none flex-col gap-2 p-0">
-              @for (step of notStartedCopy.steps; track step.label) {
-                <li class="text-sm text-gray-700">
-                  <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
-                </li>
-              }
-            </ol>
-            <!--
+              <ol class="flex list-none flex-col gap-2 p-0">
+                @for (step of notStartedCopy.steps; track step.label) {
+                  <li class="text-sm text-gray-700">
+                    <span class="font-semibold text-gray-900">{{ step.label }}</span> {{ step.body }}
+                  </li>
+                }
+              </ol>
+              <!--
               Review copy of the current corporate template, watermarked not for execution.
               A link, not the signed-document button: that control is for an agreement that
               already exists, and this page is the one that does not.
             -->
-            <button
-              type="button"
-              class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
-              [disabled]="reviewCopyDownloading()"
-              [attr.aria-busy]="reviewCopyDownloading()"
-              (click)="onReviewCopyDownload()"
-              data-testid="org-easycla-detail-review-copy">
-              <i class="fa-light fa-download" aria-hidden="true"></i>
-              {{ notStartedCopy.downloadLabel }}
-            </button>
-            <!--
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 self-start text-sm font-medium text-blue-600 hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50"
+                [disabled]="reviewCopyDownloading()"
+                [attr.aria-busy]="reviewCopyDownloading()"
+                (click)="onReviewCopyDownload()"
+                data-testid="org-easycla-detail-review-copy">
+                <i class="fa-light fa-download" aria-hidden="true"></i>
+                {{ notStartedCopy.downloadLabel }}
+              </button>
+              <!--
               Skips the picker: this page already named the CLA Group. The reason a start is
               refused lives in the accessible name, not a tooltip — the tooltip host is not
               focusable while the button is disabled, so it never opens on focus.
             -->
-            <div class="flex flex-wrap items-center gap-3">
-              <lfx-button
-                [label]="notStartedCopy.startLabel"
-                icon="fa-light fa-file-signature"
-                [disabled]="startDisabled()"
-                [ariaLabel]="startAriaLabel()"
-                (onClick)="startClaProcess()"
-                data-testid="org-easycla-detail-start-cla" />
-              <!--
+              <div class="flex flex-wrap items-center gap-3">
+                <lfx-button
+                  [label]="notStartedCopy.startLabel"
+                  icon="fa-light fa-file-signature"
+                  [disabled]="startDisabled()"
+                  [ariaLabel]="startAriaLabel()"
+                  (onClick)="startClaProcess()"
+                  data-testid="org-easycla-detail-start-cla" />
+                <!--
                 The same refusal reason as Start, but this control keeps its own visible name.
                 Reusing startAriaLabel() would announce "Start the CLA process" for a link that
                 still reads Identify someone else.
@@ -266,19 +267,19 @@
                 accessible name carries. requireSignableContext() refuses the activation instead
                 (same pattern as org-meetings-time-range).
               -->
-              <button
-                type="button"
-                class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
-                [attr.aria-disabled]="startDisabled() ? true : null"
-                [attr.aria-label]="identifySomeoneElseAriaLabel()"
-                (click)="identifySomeoneElse()"
-                data-testid="org-easycla-detail-identify-someone-else">
-                {{ notStartedCopy.identifySomeoneElseLabel }}
-              </button>
+                <button
+                  type="button"
+                  class="text-sm font-medium text-blue-600 hover:underline aria-disabled:cursor-not-allowed aria-disabled:no-underline aria-disabled:opacity-50 aria-disabled:hover:no-underline"
+                  [attr.aria-disabled]="startDisabled() ? true : null"
+                  [attr.aria-label]="identifySomeoneElseAriaLabel()"
+                  (click)="identifySomeoneElse()"
+                  data-testid="org-easycla-detail-identify-someone-else">
+                  {{ notStartedCopy.identifySomeoneElseLabel }}
+                </button>
+              </div>
             </div>
-          </div>
-        }
-        <!--
+          }
+          <!--
           Auto ECLA toggle (#1988). Hidden entirely when ACS denies the write — the disabled-with-
           banner pattern needs #1989 to explain itself, and the design prefers withholding a
           control the viewer cannot use over showing one that only fails. Hidden on the pre-sign
@@ -286,57 +287,58 @@
           for a preview row. The control is intentionally coarse: one switch, no pending copy —
           the optimistic flip and a toast for the written value or the refusal are the whole of the feedback.
         -->
-        @if (showAutoEclaToggle()) {
-          <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
-            <lfx-toggle
-              [id]="'org-easycla-detail-auto-ecla-toggle'"
-              data-testid="org-easycla-detail-auto-ecla-toggle"
-              [checked]="autoEclaValue()"
-              (checkedChange)="onAutoEclaToggle($event)"
-              [disabled]="autoEclaPending()"
-              ariaLabel="Auto ECLA"
-              dataTest="org-easycla-detail-auto-ecla-toggle" />
-            <div class="flex flex-col gap-1">
-              <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>
-              <p class="text-xs text-gray-600" data-testid="org-easycla-detail-auto-ecla-hint">
-                @if (autoEclaValue()) {
-                  On — employees matching the approval list are covered automatically.
-                } @else {
-                  Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered.
-                }
-              </p>
-              <a
-                href="/docs"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="text-xs text-blue-600 hover:underline"
-                data-testid="org-easycla-detail-auto-ecla-learn-more"
-                >Learn more about Auto ECLA →</a
-              >
+          @if (showAutoEclaToggle()) {
+            <div class="flex items-start gap-3 rounded-md border border-gray-200 bg-gray-50 p-3" data-testid="org-easycla-detail-auto-ecla">
+              <lfx-toggle
+                [id]="'org-easycla-detail-auto-ecla-toggle'"
+                data-testid="org-easycla-detail-auto-ecla-toggle"
+                [checked]="autoEclaValue()"
+                (checkedChange)="onAutoEclaToggle($event)"
+                [disabled]="autoEclaPending()"
+                ariaLabel="Auto ECLA"
+                dataTest="org-easycla-detail-auto-ecla-toggle" />
+              <div class="flex flex-col gap-1">
+                <label for="org-easycla-detail-auto-ecla-toggle" class="font-medium text-sm text-gray-900 cursor-pointer">Auto ECLA</label>
+                <p class="text-xs text-gray-600" data-testid="org-easycla-detail-auto-ecla-hint">
+                  @if (autoEclaValue()) {
+                    On — employees matching the approval list are covered automatically.
+                  } @else {
+                    Off — employees matching the approval list still need to individually acknowledge this CLA before they're covered.
+                  }
+                </p>
+                <a
+                  href="/docs"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="text-xs text-blue-600 hover:underline"
+                  data-testid="org-easycla-detail-auto-ecla-learn-more"
+                  >Learn more about Auto ECLA →</a
+                >
+              </div>
             </div>
-          </div>
-        }
-        @if (canDownload()) {
-          <!--
+          }
+          @if (canDownload()) {
+            <!--
             `severity="secondary"` with `outlined`, the pairing the survey-preview and profile
             dialogs use for a bordered action. `outlined` alone takes the primary colour, which
             rendered this blue — reading as the page's main call to action when the agreement, not
             its PDF, is the subject.
           -->
-          <lfx-button
-            label="Download signed CCLA PDF"
-            icon="fa-light fa-download"
-            severity="secondary"
-            [outlined]="true"
-            [loading]="downloading()"
-            [ariaLabel]="downloading() ? 'Preparing the signed CCLA PDF for download' : 'Download signed CCLA PDF'"
-            (onClick)="onDownload()"
-            data-testid="org-easycla-detail-download" />
-        }
+            <lfx-button
+              label="Download signed CCLA PDF"
+              icon="fa-light fa-download"
+              severity="secondary"
+              [outlined]="true"
+              [loading]="downloading()"
+              [ariaLabel]="downloading() ? 'Preparing the signed CCLA PDF for download' : 'Download signed CCLA PDF'"
+              (onClick)="onDownload()"
+              data-testid="org-easycla-detail-download" />
+          }
+        </section>
         @if (group.signed) {
           <lfx-org-easycla-recent-activity [claGroup]="group" (viewFullActivityLog)="focusTab('activity')" />
         }
-      </section>
+      </div>
     } @else if (activeTab() === 'managers' && claGroup(); as group) {
       <div role="tabpanel" [id]="'org-easycla-detail-tab-panel-managers'" [attr.aria-labelledby]="'org-easycla-detail-tab-trigger-managers'">
         <lfx-org-easycla-managers

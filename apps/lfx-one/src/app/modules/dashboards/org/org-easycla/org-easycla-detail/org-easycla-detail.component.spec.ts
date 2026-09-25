@@ -2005,6 +2005,7 @@ describe('OrgEasyclaDetailComponent', () => {
       expect(getActivityLog).toHaveBeenCalledWith(SELECTED_ACCOUNT.uid, 'signature-uuid-1', { pageSize: 3 });
       const block = byTestId(fixture, 'org-easycla-recent-activity');
       expect(byTestId(fixture, 'org-easycla-detail-overview')?.contains(block)).toBe(true);
+      expect(byTestId(fixture, 'org-easycla-detail-overview-card')?.contains(block)).toBe(false);
       expect(block?.textContent).toContain('Alice Example enabled Auto ECLA');
     });
 
