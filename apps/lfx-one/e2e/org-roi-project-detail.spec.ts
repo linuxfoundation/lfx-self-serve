@@ -148,8 +148,9 @@ test.describe('Org Lens ROI project detail — investment by year', () => {
     await expect(page.getByTestId('org-roi-project-detail-annual-chart')).toHaveAttribute('role', 'img');
 
     const table = page.getByTestId('org-roi-project-detail-annual-table');
-    await expect(table).toContainText(formatCurrency(30_000_000));
-    await expect(table).toContainText(formatCurrency(1_200_000_000));
+    const [oldestYear] = mockProjectAnnual(DETAIL_PROJECT.slug).rows;
+    await expect(table).toContainText(formatCurrency(oldestYear.expenditure));
+    await expect(table).toContainText(formatCurrency(oldestYear.totalReturn));
     // Only the year still in progress is marked partial; an earlier final year is complete.
     await expect(table).toContainText(`${CURRENT_YEAR} (partial year)`);
     await expect(table).not.toContainText(`${CURRENT_YEAR - 1} (partial year)`);

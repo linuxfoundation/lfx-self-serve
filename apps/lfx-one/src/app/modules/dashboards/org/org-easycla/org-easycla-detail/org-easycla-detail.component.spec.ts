@@ -2104,8 +2104,8 @@ describe('OrgEasyclaDetailComponent', () => {
    * These cases are the ones the list page used to own, re-expressed against the group address.
    */
   describe('when EasyCLA returns the signatory after a corporate signing', () => {
-    const NAMED = { uid: '0014100000Te0OKAAZ', accountId: '0014100000Te0OKAAZ', accountName: 'Microsoft Corporation' };
-    const ELSEWHERE = { uid: '0014100000Te2QjAAJ', accountId: '0014100000Te2QjAAJ', accountName: 'ContainerShip, Inc.' };
+    const NAMED = { uid: '0014100000AcmeAAAA', accountId: '0014100000AcmeAAAA', accountName: 'Acme Motors, Inc.' };
+    const ELSEWHERE = { uid: '0014100000BetaAAAA', accountId: '0014100000BetaAAAA', accountName: 'Beta Coastal, Inc.' };
 
     /** The shape the catalogue and the account context agree on, as far as these cases need it. */
     interface Held {

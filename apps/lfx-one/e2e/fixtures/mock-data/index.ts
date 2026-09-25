@@ -10,3 +10,4 @@ export * from './projects.mock';
 export * from './formation.mock';
 export * from './formation-item.mock';
 export * from './formation-people.mock';
+export * from './synthetic-org.mock';

@@ -484,7 +484,7 @@ export class OrgRoleGrantsService {
     const directAuditors = new Set<string>();
 
     for (const resource of response?.resources ?? []) {
-      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000Te2QjAAJ`).
+      // query-service returns `resource.id` as `<type>:<sfid>` (e.g. `b2b_org_settings:0014100000AcmeAAAA`).
       // We key on the bare account id (SFID) so it matches the b2b_org details lookup downstream.
       const orgUid = this.extractUid(resource.id);
       if (!orgUid) continue;

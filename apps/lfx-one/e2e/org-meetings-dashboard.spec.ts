@@ -3,8 +3,10 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_LEGAL_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const ORG_MEETINGS_URL = '/org/meetings';
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 
 test.setTimeout(120_000);
 
@@ -109,13 +111,13 @@ async function stubOrgLensContext(page: Page, options: { hasAccess?: boolean; sp
       personas: ['contributor'],
       personaProjects: {},
       projects: [],
-      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
+      organizations: hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: '', uid: MOCK_ACCOUNT_ID }] : [],
       isRootWriter: false,
     })
   );
 
   await page.route('**/api/analytics/org-lens-account-context*', (route) =>
-    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: 'Red Hat, Inc.', membershipTier: 'Gold' }] : [])
+    fulfillJson(route, hasAccess ? [{ accountId: MOCK_ACCOUNT_ID, accountName: SYNTHETIC_ORG_LEGAL_NAME, membershipTier: 'Gold' }] : [])
   );
 
   await page.route('**/api/orgs/me/role-grants', (route) =>
@@ -132,7 +134,16 @@ async function stubOrgLensContext(page: Page, options: { hasAccess?: boolean; sp
   await page.route('**/api/nav/org-items*', (route) =>
     fulfillJson(route, {
       items: hasAccess
-        ? [{ uid: MOCK_ACCOUNT_ID, accountId: MOCK_ACCOUNT_ID, name: 'Red Hat, Inc.', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        ? [
+            {
+              uid: MOCK_ACCOUNT_ID,
+              accountId: MOCK_ACCOUNT_ID,
+              name: SYNTHETIC_ORG_LEGAL_NAME,
+              logoUrl: null,
+              primaryDomain: SYNTHETIC_ORG_DOMAIN,
+              isMember: true,
+            },
+          ]
         : [],
       next_page_token: null,
       upstream_failed: false,

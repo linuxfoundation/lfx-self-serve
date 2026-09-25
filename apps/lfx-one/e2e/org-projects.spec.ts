@@ -3,9 +3,11 @@
 
 import { expect, Page, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_DOMAIN, SYNTHETIC_ORG_NAME, SYNTHETIC_ORG_SLUG } from './fixtures/mock-data/synthetic-org.mock';
+
 const ORG_PROJECTS_URL = '/org/projects';
 const DATA_LOAD_TIMEOUT = 30_000;
-const TEST_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const TEST_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const TEST_ORG_UID = TEST_ACCOUNT_ID;
 const DEFAULT_WORKSPACE = { id: 'all-activities', name: 'All Projects with Activities', projectSlugs: ['kubernetes'] };
 const CUSTOM_EMPTY_WORKSPACE = { id: 'focus', name: 'Focus Workspace', projectSlugs: [] };
@@ -116,8 +118,8 @@ function ecosystemOnlyProject(slug: string, name: string) {
 
 function projectsResponse(projects = [project('kubernetes', 'Kubernetes')]) {
   return {
-    orgSlug: 'red-hat-llc',
-    orgName: 'Red Hat LLC',
+    orgSlug: SYNTHETIC_ORG_SLUG,
+    orgName: SYNTHETIC_ORG_NAME,
     dataUpdatedAt: new Date().toISOString(),
     projects,
   };
@@ -144,7 +146,7 @@ async function stubOrgContext(
           ? [
               {
                 accountId: TEST_ACCOUNT_ID,
-                accountName: 'Red Hat LLC',
+                accountName: SYNTHETIC_ORG_NAME,
                 membershipTier: '',
                 uid: TEST_ORG_UID,
               },
@@ -167,7 +169,7 @@ async function stubOrgContext(
   await page.route('**/api/nav/org-items*', (route) =>
     fulfillJson(route, {
       items: hasAccess
-        ? [{ uid: TEST_ORG_UID, accountId: TEST_ACCOUNT_ID, name: 'Red Hat LLC', logoUrl: null, primaryDomain: 'redhat.com', isMember: true }]
+        ? [{ uid: TEST_ORG_UID, accountId: TEST_ACCOUNT_ID, name: SYNTHETIC_ORG_NAME, logoUrl: null, primaryDomain: SYNTHETIC_ORG_DOMAIN, isMember: true }]
         : [],
       next_page_token: null,
       upstream_failed: false,

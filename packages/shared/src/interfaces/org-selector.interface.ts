@@ -14,7 +14,7 @@ export interface OrgItem {
   name: string;
   /** Logo URL; null when no logo configured. */
   logoUrl: string | null;
-  /** Optional primary web domain (e.g. "redhat.com"). */
+  /** Optional primary web domain (e.g. "acme-motors.example"). */
   primaryDomain?: string | null;
   /** LF member-org flag when the indexed doc exposes it. */
   isMember?: boolean;

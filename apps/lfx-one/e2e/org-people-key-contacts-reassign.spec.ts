@@ -5,13 +5,15 @@
 
 import { expect, Page, Route, test } from '@playwright/test';
 
+import { SYNTHETIC_ORG_ACCOUNT_ID, SYNTHETIC_ORG_NAME } from './fixtures/mock-data/synthetic-org.mock';
+
 const PEOPLE_KEY_CONTACTS_URL = '/org/people?tab=contacts';
 const DATA_LOAD_TIMEOUT = 30_000;
 const TOAST_TIMEOUT = 10_000;
 
-const MOCK_ACCOUNT_ID = '0014100000Te2QjAAJ';
+const MOCK_ACCOUNT_ID = SYNTHETIC_ORG_ACCOUNT_ID;
 const MOCK_UID = MOCK_ACCOUNT_ID;
-const MOCK_ACCOUNT_NAME = 'Acme Industries';
+const MOCK_ACCOUNT_NAME = SYNTHETIC_ORG_NAME;
 
 // Three roles across two foundations — gives concrete numbers for the subtitle and Save Changes label.
 const MOCK_PERSON_EMAIL = 'ada.tester@example.com';
