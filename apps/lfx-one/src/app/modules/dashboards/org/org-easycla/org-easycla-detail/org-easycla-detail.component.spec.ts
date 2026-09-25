@@ -559,6 +559,13 @@ describe('OrgEasyclaDetailComponent', () => {
         Object.assign(TestBed.inject(OrgLensClaService), overrides);
       }
 
+      async function moveToGroup(fixture: ComponentFixture<OrgEasyclaDetailComponent>, claGroupId: string): Promise<void> {
+        paramMap.next(convertToParamMap({ claGroupId }));
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+      }
+
       beforeEach(() => {
         checkPermission.mockReturnValue(of(false));
       });
@@ -711,12 +718,68 @@ describe('OrgEasyclaDetailComponent', () => {
         clickStart(fixture);
         expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).not.toBeNull();
 
-        paramMap.next(convertToParamMap({ claGroupId: ELSEWHERE_GROUP_ID }));
-        fixture.detectChanges();
-        await fixture.whenStable();
-        fixture.detectChanges();
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
 
         expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Elsewhere CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+
+        await moveToGroup(fixture, GROUP_ID);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).not.toContain('Elsewhere CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+      });
+
+      it('clears the nomination notice on a CLA group that shares the same signing pair', async () => {
+        const samePair = { ...signable, id: 'signature-uuid-same-pair', claGroupId: ELSEWHERE_GROUP_ID, claGroupName: 'Same Pair CLA' };
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(samePair)] }));
+        const fixture = await render();
+        claServiceWith({ nominateDesignee: vi.fn(() => of({ outcome: 'assigned', email: 'contributor@example.org' })) });
+        clickStart(fixture);
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).not.toBeNull();
+
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
+
+        expect(byTestId(fixture, 'org-easycla-detail-title')?.textContent).toContain('Same Pair CLA');
+        expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
+      });
+
+      it('lets a Yes finish after the page is destroyed, and opens nothing when it answers', async () => {
+        const response = new Subject<{ assigned: true }>();
+        openDialog.mockReturnValueOnce(closingWith('yes')).mockReturnValue(closingWith(undefined));
+        const fixture = await renderSignable();
+        claServiceWith({ assignDesignee: vi.fn(() => response) });
+        clickStart(fixture);
+
+        fixture.destroy();
+
+        expect(response.observed).toBe(true);
+        response.next({ assigned: true });
+        response.complete();
+        expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
+      });
+
+      it('lets a nomination finish after the page moves to another CLA group, without a notice there', async () => {
+        const response = new Subject<{ outcome: 'assigned'; email: string }>();
+        const other = { ...notStarted, id: 'signature-uuid-elsewhere', claGroupId: ELSEWHERE_GROUP_ID, claGroupName: 'Elsewhere CLA' };
+        openDialog
+          .mockReturnValueOnce(closingWith('no'))
+          .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
+          .mockReturnValue(closingWith(undefined));
+        getClaGroups.mockReturnValue(of({ orgUid: SELECTED_ACCOUNT.uid, claGroups: [claGroup(signable), claGroup(other)] }));
+        const fixture = await render();
+        claServiceWith({ nominateDesignee: vi.fn(() => response) });
+        clickStart(fixture);
+
+        await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
+
+        expect(response.observed).toBe(true);
+        response.next({ outcome: 'assigned', email: 'contributor@example.org' });
+        response.complete();
+        fixture.detectChanges();
         expect(byTestId(fixture, 'org-easycla-detail-designee-notice')).toBeNull();
       });
 

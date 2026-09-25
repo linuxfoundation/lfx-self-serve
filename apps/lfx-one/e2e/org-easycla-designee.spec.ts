@@ -59,7 +59,15 @@ test.describe('Org Lens EasyCLA — CLA manager question', () => {
   test('a refused Yes keeps the viewer on the overview with Start still offered', async ({ page }) => {
     await openQuestion(page, (p) =>
       p.route(ASSIGN_ROUTE, (route) =>
-        route.fulfill({ status: 409, contentType: 'application/json', body: JSON.stringify({ upstreamCode: 'already-signed' }) })
+        route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            error: 'Failed to assign the CLA manager designee: refused (already-signed)',
+            code: 'UPSTREAM_ERROR',
+            upstreamCode: 'already-signed',
+          }),
+        })
       )
     );
 

@@ -201,7 +201,7 @@ describe('OrgLensClaService.setAutoCreateEcla', () => {
 describe('OrgLensClaService designee client (#2780)', () => {
   const ORG = '0014100000Te2ovAAB';
   const PROJECT = 'a09410000182dD3AAI';
-  const designeeBase = `/api/orgs/${ORG}/lens/cla-groups/designee`;
+  const designeeBase = `/api/orgs/${encodeURIComponent(ORG)}/lens/cla-groups/designee`;
 
   let service: OrgLensClaService;
   let http: { post: ReturnType<typeof vi.fn> };
@@ -229,5 +229,13 @@ describe('OrgLensClaService designee client (#2780)', () => {
 
     await expect(firstValueFrom(service.nominateDesignee(ORG, request))).resolves.toEqual({ outcome: 'assigned', email: request.email });
     expect(http.post).toHaveBeenCalledWith(`${designeeBase}/nominations`, request);
+  });
+
+  it('encodes the organization segment of the designee URL', async () => {
+    http.post.mockReturnValue(of({ assigned: true }));
+
+    await firstValueFrom(service.assignDesignee('org/with?slash', PROJECT));
+
+    expect(http.post).toHaveBeenCalledWith('/api/orgs/org%2Fwith%3Fslash/lens/cla-groups/designee', { projectSfid: PROJECT });
   });
 });

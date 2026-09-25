@@ -183,7 +183,7 @@ export class OrgEasyclaDetailComponent {
   // injection context `toObservable` would otherwise take implicitly.
   private readonly injector = inject(Injector);
 
-  private autoEclaDetached = false;
+  private detached = false;
 
   protected readonly activeTab = signal<OrgClaDetailTab>('overview');
   protected readonly downloading = signal(false);
@@ -564,38 +564,24 @@ export class OrgEasyclaDetailComponent {
 
   protected readonly designeeStartCopy = ORG_CLA_DESIGNEE_START_COPY;
 
-  /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
-  private readonly designeePair = computed(() => {
-    const orgUid = this.selectedOrgUid();
-    const projectSfid = this.signingChoice()?.projectSfid;
-    return this.notStarted() && orgUid && projectSfid ? `${orgUid}::${projectSfid}` : null;
-  });
-
   /** The Sign pair check's answer, tagged with the pair it was asked for so a stale one cannot apply. */
   private readonly signCheck = signal<{ pair: string; allowed: boolean } | null>(null);
 
   /** Pairs the viewer said Yes for in this session, so the question is not asked twice. */
   private readonly assignedPairs = signal<readonly string[]>([]);
 
+  /** The outcome of naming someone else, cleared when the organization or agreement changes. */
+  protected readonly designeeNotice = signal<string | null>(null);
+
+  /** `orgUid::projectSfid`, the pair ACS scopes the Sign grant and the designee role to; null off an unsigned agreement. */
+  private readonly designeePair = computed(() => this.initDesigneePair());
+
   /**
    * The viewer may already sign this pair — as a designee, or as a signatory — so Start skips the
    * question and the overview reads Corporate Console's designee copy. Denied, failed, and not yet
    * answered are all false: the question is asked, and Start is never refused on this check.
    */
-  protected readonly alreadyDesignee = computed(() => {
-    const pair = this.designeePair();
-    if (!pair) return false;
-    const check = this.signCheck();
-    return this.assignedPairs().includes(pair) || (check?.pair === pair && check.allowed);
-  });
-
-  private readonly designeeNoticeState = signal<{ pair: string; text: string } | null>(null);
-
-  /** The outcome of naming someone else, shown only while the page is still on that pair. */
-  protected readonly designeeNotice = computed(() => {
-    const notice = this.designeeNoticeState();
-    return notice && notice.pair === this.designeePair() ? notice.text : null;
-  });
+  protected readonly alreadyDesignee = computed(() => this.initAlreadyDesignee());
 
   /**
    * The preview mode restores from history / cookie change, so the selected organization can arrive
@@ -666,7 +652,7 @@ export class OrgEasyclaDetailComponent {
 
   public constructor() {
     this.destroyRef.onDestroy(() => {
-      this.autoEclaDetached = true;
+      this.detached = true;
     });
 
     // Either arm of the context, because neither destroys this component: an organization switch
@@ -675,6 +661,7 @@ export class OrgEasyclaDetailComponent {
     // would open a session for the agreement the viewer left rather than the one on screen.
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
+      this.designeeNotice.set(null);
     });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
@@ -971,7 +958,7 @@ export class OrgEasyclaDetailComponent {
 
   /** True while the page is still the organization and agreement this write was started for. */
   private autoEclaStillHere(target: { orgUid: string; signatureId: string }): boolean {
-    return !this.autoEclaDetached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
+    return !this.detached && this.selectedOrgUid() === target.orgUid && this.claGroup()?.id === target.signatureId;
   }
 
   /**
@@ -1036,31 +1023,21 @@ export class OrgEasyclaDetailComponent {
 
   /**
    * Yes: make the viewer the designee, then continue. A refusal leaves them on the overview with
-   * the reason, and no attestation opens. An assignment the page has moved away from is dropped.
+   * the reason, and no attestation opens.
    */
   private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
-    let answered = false;
-    this.claService
-      .assignDesignee(orgUid, chosen.projectSfid)
-      .pipe(
-        takeUntil(this.contextChanged$),
-        finalize(() => {
-          if (!answered) this.signingOpen.set(false);
-        }),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
-        next: () => {
-          answered = true;
-          this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
-          if (this.signingContextHeld(orgUid, chosen)) this.openChosenStep(orgUid, chosen, next);
-        },
-        error: (error: unknown) => {
-          answered = true;
-          this.signingOpen.set(false);
-          this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
-        },
-      });
+    this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
+      next: () => {
+        this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
+        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.openChosenStep(orgUid, chosen, next);
+      },
+      error: (error: unknown) => {
+        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
+      },
+    });
   }
 
   private openIdentifyManager(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -1079,26 +1056,22 @@ export class OrgEasyclaDetailComponent {
    * so the flow ends here and Start is released.
    */
   private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
-    const pair = `${orgUid}::${chosen.projectSfid}`;
-    this.claService
-      .nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email })
-      .pipe(
-        takeUntil(this.contextChanged$),
-        finalize(() => this.signingOpen.set(false)),
-        takeUntilDestroyed(this.destroyRef)
-      )
-      .subscribe({
-        next: (response) => {
-          const text =
-            response.outcome === 'lf-login-requested'
-              ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequested(response.email)
-              : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email);
-          this.designeeNoticeState.set({ pair, text });
-        },
-        error: (error: unknown) => {
-          this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
-        },
-      });
+    this.claService.nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email }).subscribe({
+      next: (response) => {
+        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.designeeNotice.set(
+          response.outcome === 'lf-login-requested'
+            ? ORG_CLA_IDENTIFY_MANAGER_COPY.lfLoginRequested(response.email)
+            : ORG_CLA_IDENTIFY_MANAGER_COPY.assigned(response.email)
+        );
+      },
+      error: (error: unknown) => {
+        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        this.signingOpen.set(false);
+        this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
+      },
+    });
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {
@@ -1439,6 +1412,19 @@ export class OrgEasyclaDetailComponent {
     const orgUid = this.selectedOrgUid();
     const projectSfid = this.autoEclaProjectSfid();
     return orgUid && projectSfid ? `${orgUid}::${projectSfid}` : '';
+  }
+
+  private initDesigneePair(): string | null {
+    const orgUid = this.selectedOrgUid();
+    const projectSfid = this.signingChoice()?.projectSfid;
+    return this.notStarted() && orgUid && projectSfid ? `${orgUid}::${projectSfid}` : null;
+  }
+
+  private initAlreadyDesignee(): boolean {
+    const pair = this.designeePair();
+    if (!pair) return false;
+    const check = this.signCheck();
+    return this.assignedPairs().includes(pair) || (check?.pair === pair && check.allowed);
   }
 
   /**
