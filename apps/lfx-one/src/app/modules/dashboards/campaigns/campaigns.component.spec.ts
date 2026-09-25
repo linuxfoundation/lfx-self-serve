@@ -1889,6 +1889,8 @@ describe('CampaignsComponent — email delivery channel', () => {
     abTestBodyHtmlB: Signal<string>;
     abTestBodyHtmlBPreview: Signal<string>;
     abTestPreheaderBForSend: Signal<string>;
+    abTestBodyHtmlBForSend: Signal<string>;
+    emailBodyHtmlForSend: Signal<string>;
     abTestPreheaderBPreview: Signal<string>;
     emailPreheaderPreview: Signal<string>;
     abTestForm: {
@@ -2355,6 +2357,101 @@ describe('CampaignsComponent — email delivery channel', () => {
      * The three predicates this PR moved off bare `.trim()` / raw-body checks. Each mutation
      * below passed the whole suite before these existed, so the change was unpinned.
      */
+    it('folds a refused CTA into BOTH variants, or neither', () => {
+      // This flipped twice under review, because two true premises point opposite ways: B has no
+      // CTA of its own (its generation discards `cta`/`ctaUrl`), but when the destination is
+      // REFUSED no button ships for either variant -- `emailCtaLabel` is '' so `onStageEmailSend`
+      // sends no `buttonText`/`buttonUrl` at all. There is no widget to double-render against,
+      // and folding into A alone makes B silently drop the call to action.
+      //
+      // Asserting the two bodies AGREE pins the invariant rather than either half of it.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        // Supplied and refused: not the brief's registrationUrl.
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p>');
+      fixture.detectChanges();
+
+      // No button ships, so nothing could be duplicated.
+      expect(internals().emailCtaLabel()).toBe('');
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+
+      const aHasLabel = internals().emailBodyHtmlForSend().includes('Register Now');
+      const bHasLabel = internals().abTestBodyHtmlBForSend().includes('Register Now');
+
+      expect(aHasLabel).toBe(true);
+      expect(bHasLabel).toBe(aHasLabel);
+    });
+
+    it('does not fold the refused CTA twice when the server already folded it into B', () => {
+      // `emailCtaUnlinkedLabel` gates on variant A's `copy.ctaUrl`, but the fold-back applies to
+      // BOTH bodies -- and B comes from its OWN `generateEmailCopy` call. So B's button can be
+      // url-LESS (campaign-service folds the label into `body`, `!section.url`) while A's was
+      // supplied-and-refused (label non-empty). Appending unconditionally rendered it TWICE.
+      //
+      // The server writes `<div><strong>{escaped}</strong></div>` and `emailCtaUnlinkedLabel`
+      // already sanitizes, so the already-folded fragment is byte-identical to the one appended.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: 'Register Now',
+        // Supplied and refused: not the brief's registrationUrl.
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      // Exactly what campaign-service.service.ts emits for a destination-less button.
+      internals().abTestForm.controls.bodyHtmlB.setValue('<p>B body</p><div><strong>Register Now</strong></div>');
+      fixture.detectChanges();
+
+      // The precondition: the fold-back IS armed, so this is not passing by doing nothing.
+      expect(internals().emailCtaUnlinkedLabel()).toBe('Register Now');
+
+      const bOut = internals().abTestBodyHtmlBForSend();
+      expect(bOut.split('Register Now').length - 1).toBe(1);
+    });
+
+    it.each([
+      // The PROPERTY, not the one example: any label sanitize-html re-serializes differently
+      // from `escapeHtml`. 'Register Now' round-trips unchanged, which is exactly why the first
+      // version of this guard passed while the bug was still live.
+      //
+      // `marker` is a stable substring of the label that survives BOTH encodings, so the count
+      // measures how many times the call to action appears rather than which encoding won.
+      // `<` is excluded: `sanitizeDisplayText` strips it, so such a label never reaches here.
+      ['an apostrophe', "Don't Miss Out", 'Don&#39;t Miss Out', 'Miss Out'],
+      ['a double quote', 'Say "Hello" Now', 'Say &quot;Hello&quot; Now', 'Now'],
+      ['an ampersand', 'Tom & Jerry', 'Tom &amp; Jerry', 'Jerry'],
+      ['no entities at all', 'Register Now', 'Register Now', 'Register Now'],
+    ])('suppresses the duplicate fold for a label containing %s', (_case, label, serverEncoded, marker) => {
+      // `escapeHtml` ENCODES `'` and `"`; sanitize-html DECODES them on output. Comparing the raw
+      // fragment against the sanitized body therefore missed, and the CTA doubled.
+      selectEmail();
+      internals().emailBriefOutput.set(emailBrief);
+      internals().emailCopy.set({
+        subject: 'S',
+        preheader: 'P',
+        body: '<p>A body</p>',
+        cta: label,
+        ctaUrl: 'https://evil.example/phish',
+      } as unknown as EmailBriefCopy);
+      internals().abTestForm.controls.bodyHtmlB.setValue(`<p>B body</p><div><strong>${serverEncoded}</strong></div>`);
+      fixture.detectChanges();
+
+      // The fold-back is armed, so a pass cannot come from doing nothing.
+      expect(internals().emailCtaUnlinkedLabel()).toBe(label);
+
+      const bOut = internals().abTestBodyHtmlBForSend();
+      expect(bOut.split(marker).length - 1).toBe(1);
+    });
+
     it('does not stage modules against a body that sanitizes to nothing', () => {
       // `emailBodyIsStageable` judges the SANITIZED body. A tracking-pixel-only payload is
       // non-empty as raw HTML and empty once stripped, so the raw check staged hero/button/
@@ -5357,9 +5454,10 @@ describe('CampaignsComponent — email delivery channel', () => {
     // Sanitizing only the preview is WORSE than sanitizing neither: the pixel vanishes from the
     // one view that could catch it while still shipping in the sent email.
     //
-    // The name says PREVIEW only, deliberately. Asserting that a staging alias equals the
-    // preview would be a tautology whenever the alias is defined as the preview; staging reads
-    // `abTestBodyHtmlBPreview` directly, so there is no such alias to assert against.
+    // The name says PREVIEW only, deliberately. Staging reads `abTestBodyHtmlBForSend`, which
+    // WRAPS this value rather than aliasing it, so asserting the two equal would be a tautology
+    // only where the refused-CTA fold-back adds nothing. The fold-back itself is pinned by
+    // 'folds a refused CTA into BOTH variants, or neither'.
     //
     // The staged value is covered where it can actually fail: the controller test
     // 'sanitizes both HTML bodies and every display field at the request boundary' asserts the

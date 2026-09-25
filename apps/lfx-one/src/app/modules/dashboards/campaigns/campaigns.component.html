@@ -650,7 +650,8 @@
                     <!-- `Preview`, not `ForSend`, ONLY here: this panel renders a refused call to action as
                          its own styled element below (`campaigns-email-preview-cta-unlinked`), so binding the
                          send body would show that label TWICE. The other body cards have no such element and
-                         bind `emailBodyHtmlForSend()` so they show exactly what the draft carries. -->
+                         bind their own `...ForSend()` body -- `emailBodyHtmlForSend()` for A,
+                         `abTestBodyHtmlBForSend()` for B -- so they show exactly what the draft carries. -->
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
                       [innerHTML]="emailBodyHtmlPreview()"
@@ -849,7 +850,7 @@
                         }
                         <div
                           class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                          [innerHTML]="abTestBodyHtmlBPreview() || '(no body yet)'"
+                          [innerHTML]="abTestBodyHtmlBForSend() || '(no body yet)'"
                           data-testid="campaigns-email-abtest-preview-b"></div>
                         @if (emailCtaLabel(); as ctaLabel) {
                           <div class="px-4 pb-4">
