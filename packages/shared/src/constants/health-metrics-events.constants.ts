@@ -95,6 +95,3 @@ export const HEALTH_METRICS_EVENTS_DATA_SECTIONS = [] as const satisfies readonl
 
 /** Static note under the sub-nav items; stays plain text until the Members tab exists to link to. */
 export const HEALTH_METRICS_EVENTS_SUB_NAV_CROSS_REFERENCE_NOTE = "An organization's event record also appears in Members";
-
-/** The four periods the events views carry as column suffixes, oldest → current. */
-export const HEALTH_METRICS_EVENTS_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;

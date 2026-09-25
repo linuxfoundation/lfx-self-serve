@@ -1,6 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { HEALTH_METRICS_L2_RANGES } from '../constants/health-metrics-l2.constants';
+
+/** A period the Level 2 views have columns for — `COMPLETED_YEAR_4` is not one of them. */
+export type HealthMetricsL2Range = (typeof HEALTH_METRICS_L2_RANGES)[number];
+
 /** One anchored section of a Health Metrics Level 2 tab; the key doubles as its URL fragment. */
 export interface HealthMetricsL2Section {
   key: string;

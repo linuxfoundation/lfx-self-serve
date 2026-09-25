@@ -13,6 +13,7 @@ import {
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_GROUP_ORDER,
   HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS,
   HEALTH_METRICS_ENGAGEMENT_RANGES,
+  HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
 } from '@lfx-one/shared/constants';
@@ -60,17 +61,6 @@ const REPRESENTATIVES_VIEW = 'ANALYTICS.PLATINUM_LFX_ONE.ENGAGEMENT_REPRESENTATI
 type SupportedEngagementRange = (typeof HEALTH_METRICS_ENGAGEMENT_RANGES)[number];
 
 /**
- * Column suffix per period. The view carries no `COMPLETED_YEAR_4` columns, so that range is
- * rejected at the controller rather than silently resolving to a different year.
- */
-const RANGE_COLUMN_SUFFIX: Record<SupportedEngagementRange, string> = {
-  YTD: 'ytd',
-  COMPLETED_YEAR: 'last_completed_year',
-  COMPLETED_YEAR_2: 'prev_completed_year',
-  COMPLETED_YEAR_3: '3rd_last_completed_year',
-};
-
-/**
  * The period each range is compared against. Every delta is derived from these columns rather than
  * the view's own `*_CHANGE_*` columns: those exist only for YTD, and deriving keeps the delta in
  * the same unit as the value it came from. `COMPLETED_YEAR_3` has no prior period in the view.
@@ -83,7 +73,7 @@ const RANGE_PRIOR_COLUMN_SUFFIX: Partial<Record<SupportedEngagementRange, string
 
 /** True when this service can serve the range — the controller uses it to validate before binding. */
 export function isSupportedEngagementRange(range: string): range is SupportedEngagementRange {
-  return Object.prototype.hasOwnProperty.call(RANGE_COLUMN_SUFFIX, range);
+  return Object.prototype.hasOwnProperty.call(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX, range);
 }
 
 interface GroupAttendanceRow {
@@ -163,7 +153,7 @@ export class HealthMetricsEngagementService {
       return HEALTH_METRICS_ENGAGEMENT_GROUP_ATTENDANCE_UNMEASURED;
     }
 
-    const suffix = RANGE_COLUMN_SUFFIX[query.range];
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[query.range];
 
     const binds: Bind[] = [query.foundationSlug];
 
@@ -184,7 +174,7 @@ export class HealthMetricsEngagementService {
 
     const size = clampInteger(query.size, 1, 100, 25);
     const offset = (clampInteger(query.page, 1, 10_000, 1) - 1) * size;
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => periodSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
     // The totals are a separate aggregate joined onto the page, not a window over it: read as
     // `COUNT(*) OVER()` off the first row they vanish whenever the page is empty, so an out-of-range
@@ -274,7 +264,9 @@ export class HealthMetricsEngagementService {
       return HEALTH_METRICS_ENGAGEMENT_MEETING_PARTICIPATION_UNMEASURED;
     }
 
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => participationSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(
+      ',\n        '
+    );
     const levels = HEALTH_METRICS_ENGAGEMENT_PARTICIPATION_LEVELS;
 
     // The project selector is visual-only today, so every read is the all-projects roll-up row the
@@ -320,10 +312,10 @@ export class HealthMetricsEngagementService {
    * the period pill all resolve client-side, so none of them costs a request.
    */
   public async getOrgParticipation(req: Request, query: HealthMetricsEngagementOrgQuery): Promise<HealthMetricsEngagementOrgParticipation> {
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => orgSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => orgSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
     // A capped read has to keep the ranked head, so the cut runs on the best rank across the
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
-    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
+    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // The caption counts are denormalized onto every row and cover the whole scope, so they are
     // read off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
@@ -374,10 +366,12 @@ export class HealthMetricsEngagementService {
    * project key, so the section is foundation-scoped and the period pill resolves client-side.
    */
   public async getNonMemberParticipation(req: Request, query: HealthMetricsEngagementNonMemberQuery): Promise<HealthMetricsEngagementNonMemberParticipation> {
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => nonMemberSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => nonMemberSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(
+      ',\n        '
+    );
     // A capped read has to keep the ranked head, so the cut runs on the best rank across the
     // periods; the sentinel parks an org the view left unranked behind every ranked one.
-    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
+    const bestSortRank = `LEAST(${HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => `IFNULL(sort_rank_${HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range]}, 2147483647)`).join(', ')})`;
 
     // `scope_orgs_count` is denormalized onto every row and covers the whole scope, so it is read
     // off a row rather than counted here — a `COUNT(*)` would only ever match the row count.
@@ -423,7 +417,7 @@ export class HealthMetricsEngagementService {
    * regrouping, because re-deriving them here would restate metrics dbt already owns.
    */
   public async getRepresentatives(req: Request, query: HealthMetricsEngagementRepQuery): Promise<HealthMetricsEngagementRepresentatives> {
-    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => repSelectList(RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
+    const periodColumns = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => repSelectList(HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range])).join(',\n        ');
 
     // Caption counts are deduped to (person, committee) upstream while these rows are per project,
     // so a rep on one committee under two projects is two rows the caption counts once.
@@ -504,7 +498,7 @@ function mapGroupRow(row: GroupAttendanceRow): HealthMetricsEngagementGroupRow {
 }
 
 function mapGroupPeriod(row: GroupAttendanceRow, range: SupportedEngagementRange): HealthMetricsEngagementGroupPeriod {
-  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+  const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
   const attendance = row[`ATTENDANCE_PCT_${suffix}`];
 
   return {
@@ -549,7 +543,7 @@ function mapOrgRow(row: OrgParticipationRow): HealthMetricsEngagementOrgRow {
 }
 
 function mapOrgPeriod(row: OrgParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementOrgPeriod {
-  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+  const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
 
   return {
     range,
@@ -593,7 +587,7 @@ function mapNonMemberRow(row: NonMemberParticipationRow): HealthMetricsEngagemen
 }
 
 function mapNonMemberPeriod(row: NonMemberParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementNonMemberPeriod {
-  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+  const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
 
   return {
     range,
@@ -634,7 +628,7 @@ function mapParticipationRow(row: MeetingParticipationRow): HealthMetricsEngagem
 }
 
 function mapParticipationPeriod(row: MeetingParticipationRow, range: SupportedEngagementRange): HealthMetricsEngagementParticipationPeriod {
-  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+  const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
   const priorSuffix = RANGE_PRIOR_COLUMN_SUFFIX[range]?.toUpperCase();
   const attendance = toNullableNumber(row[`ATTENDANCE_PCT_${suffix}`]);
   const meetingsHeld = toNullableNumber(row[`MEETINGS_HELD_COUNT_${suffix}`]);
@@ -691,7 +685,7 @@ function mapRepRow(row: RepresentativesRow): HealthMetricsEngagementRepRow {
 }
 
 function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange): HealthMetricsEngagementRepPeriod {
-  const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+  const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
 
   return {
     range,
@@ -708,7 +702,7 @@ function mapRepPeriod(row: RepresentativesRow, range: SupportedEngagementRange):
  */
 function mapRepCounts(row: RepresentativesRow): HealthMetricsEngagementRepPeriodCounts[] | null {
   const counts = HEALTH_METRICS_ENGAGEMENT_RANGES.map((range) => {
-    const suffix = RANGE_COLUMN_SUFFIX[range].toUpperCase();
+    const suffix = HEALTH_METRICS_L2_RANGE_COLUMN_SUFFIX[range].toUpperCase();
 
     return {
       range,

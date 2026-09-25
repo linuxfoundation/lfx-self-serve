@@ -12,6 +12,7 @@ import type {
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementSectionKey,
 } from '../interfaces/health-metrics-engagement.interface';
+import { HEALTH_METRICS_L2_RANGES } from './health-metrics-l2.constants';
 
 /**
  * Health Metrics tab bar. Overview, Engagement and Events are routable today; the remaining three
@@ -133,11 +134,8 @@ export const HEALTH_METRICS_ENGAGEMENT_SECTION_ID_PREFIX = 'sec-eng-';
 /** Absolute router path the Health Metrics tab bar resolves its tab links against. */
 export const HEALTH_METRICS_BASE_PATH = '/foundation/health-metrics';
 
-/**
- * The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes, oldest → current.
- * `COMPLETED_YEAR_4` has no column on the view, so it is deliberately absent.
- */
-export const HEALTH_METRICS_ENGAGEMENT_RANGES = ['COMPLETED_YEAR_3', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR', 'YTD'] as const;
+/** The four periods `ENGAGEMENT_GROUP_ATTENDANCE` carries as column suffixes — the shared Level 2 set. */
+export const HEALTH_METRICS_ENGAGEMENT_RANGES = HEALTH_METRICS_L2_RANGES;
 
 /**
  * The four labels `ENGAGEMENT_GROUP_ATTENDANCE.GROUP_TYPE_LABEL` actually emits. The view buckets
