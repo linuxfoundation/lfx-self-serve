@@ -75,7 +75,7 @@ export class AudienceDemographicsComponent {
           // `extractErrorMessage`, for the reason the sibling campaign loaders now carry:
           // BaseApiError.toResponse serialises operator text as `{ error: string }`, so
           // `.error.message` is undefined here and the operator saw Angular's generic "Http
-          // failure response" instead of the upstream reason. This loader was the one my earlier
+          // failure response" instead of the upstream reason. This loader was the one an earlier
           // sweep of the two tabs missed -- it lives in its own component (Copilot).
           this.error.set(extractErrorMessage(httpErr, 'Failed to load audience data'));
           this.loading.set(false);

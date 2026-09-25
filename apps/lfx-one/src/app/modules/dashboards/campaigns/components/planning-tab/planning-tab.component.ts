@@ -20,6 +20,7 @@ import type {
   CampaignDeliveryType,
   CampaignEmailStage,
   CampaignEventDetails,
+  CampaignEventSponsor,
   CampaignGoal,
   CampaignKeyword,
   CampaignPlatform,
@@ -97,7 +98,7 @@ export class PlanningTabComponent implements OnInit {
    * for both surfaces, and `emailStage` below is what names which send it is asking about.
    *
    * Defaults to `paid-marketing` so the paid container's binding is unchanged and this input is
-   * additive — an omitted binding keeps exactly today's behaviour.
+   * additive — an omitted binding keeps exactly today's behavior.
    */
   public readonly deliveryType = input<CampaignDeliveryType>('paid-marketing');
 
@@ -184,7 +185,7 @@ export class PlanningTabComponent implements OnInit {
    *
    * `frontend-checklist.md` 14.1 makes the `lfx-input-text` wrapper mandatory for changed form
    * controls, and the wrapper takes a FormGroup plus a control name -- `ngModel` is not supported.
-   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behaviour
+   * Raw `<input>` bound to signals worked but recreated the wrapper's label/validation behavior
    * by hand, which is the duplication the rule exists to stop.
    *
    * `countryCode` is here for a reason the others are not: it became editable when the fallback
@@ -234,7 +235,7 @@ export class PlanningTabComponent implements OnInit {
    * share that namespace.
    *
    * Keyed `foundation|event`, and NOT cleared on a foundation switch. Both halves are load-
-   * bearing, and I got each of them wrong once:
+   * bearing, and each was wrong in an earlier revision:
    *
    *   - keyed by EVENT ALONE, a create under portal A withheld Create for that event name under
    *     every other portal, above a false "Created in HubSpot" status. The re-check reads the new
@@ -355,7 +356,7 @@ export class PlanningTabComponent implements OnInit {
    * HubSpot reporting more matches than it returned AND the cases where completeness is simply
    * unknown — an absent `total`, or one that contradicts the rows. All fail CLOSED.
    *
-   * I renamed this to `hsHubSpotTruncated` once, on the belief that `capped` meant truncation on
+   * An earlier revision renamed this to `hsHubSpotTruncated`, on the belief that `capped` meant truncation on
    * the wire. It does not, and the rename made the signal name assert more than the response
    * establishes. Reverted; the status line it feeds must not claim truncation either.
    *
@@ -1395,7 +1396,7 @@ export class PlanningTabComponent implements OnInit {
       dates: (this.emailEditForm.controls.dates.value ?? '').trim(),
       city: (this.emailEditForm.controls.city.value ?? '').trim(),
       // Upper-cased: `countryNameFor` looks the code up case-sensitively after its own
-      // normalisation, and an operator typing "ke" should not silently produce no country.
+      // normalization, and an operator typing "ke" should not silently produce no country.
       countryCode: (this.emailEditForm.controls.countryCode.value ?? '').trim().toUpperCase(),
       audience: (this.emailEditForm.controls.audience.value ?? '').trim(),
       registrationUrl: (this.emailEditForm.controls.registrationUrl.value ?? '').trim(),
@@ -2242,7 +2243,7 @@ export class PlanningTabComponent implements OnInit {
  * `{{ details.dates }}` prints the string "undefined" rather than nothing. It also reached
  * `setValue()` on the edit form, putting "undefined" in an input the user then has to clear.
  *
- * Normalising HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
+ * Normalizing HERE rather than adding `|| '—'` at each interpolation is deliberate: the fallback
  * belongs wherever the value is DISPLAYED, and there are several such places (the email card, the
  * paid card, the read view, the edit form), so a per-site fix is one grep away from missing the
  * next one. One conversion at the boundary makes the declared type true for every reader.
@@ -2256,6 +2257,15 @@ function normalizeEventDetails(data: unknown): CampaignEventDetails {
   const raw = (typeof data === 'object' && data !== null ? data : {}) as Record<string, unknown>;
   const text = (key: string): string => (typeof raw[key] === 'string' ? (raw[key] as string) : '');
   const list = (key: string): string[] => (Array.isArray(raw[key]) ? (raw[key] as unknown[]).filter((v): v is string => typeof v === 'string') : []);
+  const sponsors: CampaignEventSponsor[] = Array.isArray(raw['sponsors'])
+    ? (raw['sponsors'] as unknown[])
+        .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+        .map((entry) => ({
+          name: typeof entry['name'] === 'string' ? entry['name'] : '',
+          logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+        }))
+        .filter((sponsor) => sponsor.logoUrl)
+    : [];
   return {
     name: text('name'),
     dates: text('dates'),
@@ -2267,5 +2277,7 @@ function normalizeEventDetails(data: unknown): CampaignEventDetails {
     speakers: list('speakers'),
     slug: text('slug'),
     formatNotes: text('formatNotes'),
+    heroImageUrl: text('heroImageUrl'),
+    sponsors,
   };
 }

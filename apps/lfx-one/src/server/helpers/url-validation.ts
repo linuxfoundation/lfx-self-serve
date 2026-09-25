@@ -26,6 +26,7 @@
  * @version 2.0.0
  */
 
+import { isPrivateHost, refuseUnfetchablePort } from '@lfx-one/shared/utils/url.utils';
 import { ServiceValidationError } from '../errors';
 
 /**
@@ -251,20 +252,6 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
 // Fetches connect directly to DNS-resolved IPs to prevent DNS rebinding.
 // ---------------------------------------------------------------------------
 
-const PRIVATE_IP_PATTERNS = [
-  /^localhost$/i,
-  /^127\.\d+\.\d+\.\d+$/,
-  /^0\.\d+\.\d+\.\d+$/,
-  /^10\.\d+\.\d+\.\d+$/,
-  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
-  /^192\.168\.\d+\.\d+$/,
-  /^169\.254\.\d+\.\d+$/,
-  /^::1$/,
-  /^::ffff:\d+\.\d+\.\d+\.\d+$/i,
-  /^f[cd][0-9a-f]{2}:/i,
-  /^fe80:/i,
-];
-
 interface SsrfSafeTarget {
   host: string;
   hostname: string;
@@ -285,13 +272,29 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('Only HTTPS URLs are allowed');
   }
 
-  const port = parsed.port ? Number(parsed.port) : 443;
-  if (port !== 80 && port !== 443) {
-    throw new Error('Only ports 80 and 443 are allowed');
+  // The SHARED rule, not a second copy of it: `canonicalHttpUrl` calls the same helper, so the
+  // PORT policy has one definition. They drifted once, with `canonicalHttpUrl` persisting `:8443`
+  // that this function refuses.
+  //
+  // Ports only. This path is https-only (above); `canonicalHttpUrl` still accepts `http:`,
+  // because it also judges urls a RECIPIENT clicks and never fetches.
+  const portRefusal = refuseUnfetchablePort(parsed);
+  if (portRefusal !== '') {
+    throw new Error(portRefusal);
   }
+  // The number the CONNECTION needs, after the policy has approved it. Defaults to 443 because
+  // the scheme is https-only above, and WHATWG leaves `parsed.port` empty for a default port.
+  const port = parsed.port ? Number(parsed.port) : 443;
 
   const hostname = parsed.hostname.toLowerCase();
-  if (PRIVATE_IP_PATTERNS.some((p) => p.test(hostname))) {
+  // The SHARED judge, not a second denylist. A module-local `PRIVATE_IP_PATTERNS` lived here
+  // and had drifted badly from `isPrivateHost`: it missed CGNAT (100.64/10), NAT64
+  // (64:ff9b::/96), 6to4 (2002::/16), multicast, site-local, RFC5737 and RFC2544 -- nine of ten
+  // sampled addresses that isPrivateHost rejects sailed through this, the REAL fetch path.
+  //
+  // Two encodings of one rule always drift, and the one nobody is hardening is the one that
+  // matters. The local list was deleted rather than extended, so there is one place to fix.
+  if (isPrivateHost(hostname)) {
     throw new Error('URLs targeting private/internal hosts are not allowed');
   }
 
@@ -317,8 +320,10 @@ async function resolveAndValidate(url: string): Promise<SsrfSafeTarget> {
     throw new Error('DNS resolution returned no addresses');
   }
   for (const addr of allAddresses) {
-    const checkAddr = addr.replace(/^::ffff:/i, '');
-    if (PRIVATE_IP_PATTERNS.some((p) => p.test(checkAddr))) {
+    // isPrivateHost normalizes the IPv4-mapped form itself, so there is no strip to do here --
+    // and judging a hand-stripped copy alongside it would be a second encoding of the same rule
+    // this file already delegates to the shared judge.
+    if (isPrivateHost(addr)) {
       throw new Error('Blocked host: resolves to private IP');
     }
   }
@@ -348,7 +353,7 @@ export async function validateScrapeUrl(url: string): Promise<string> {
  */
 const MAX_RESPONSE_BYTES = 5 * 1024 * 1024;
 
-export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number }> {
+export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ html: string; ok: boolean; status: number; finalUrl: string }> {
   const https = await import('node:https');
   const combinedSignal = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
 
@@ -402,9 +407,19 @@ export async function fetchSafeUrl(url: string, signal: AbortSignal): Promise<{ 
     redirectCount++;
   }
 
+  // The FINAL url, after every hop. Relative values in the fetched HTML (`og:image`,
+  // sponsor `src`) must resolve against the page that actually served them: if `/old` redirects
+  // to another host or directory and returns `content="hero.jpg"`, resolving against the
+  // ORIGINAL url points at a path that does not exist and the image silently disappears.
+  //
+  // Safe to hand back without re-validating: `target` is the output of `resolveAndValidate` for
+  // whichever hop produced this response, so every url returned here has already passed the
+  // same SSRF checks as the first one.
+  const finalUrl = `https://${target.host}${target.path}`;
+
   if (result.statusCode < 200 || result.statusCode >= 300) {
-    return { html: '', ok: false, status: result.statusCode };
+    return { html: '', ok: false, status: result.statusCode, finalUrl };
   }
 
-  return { html: result.body, ok: true, status: result.statusCode };
+  return { html: result.body, ok: true, status: result.statusCode, finalUrl };
 }

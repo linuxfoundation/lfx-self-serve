@@ -19,7 +19,9 @@ vi.mock('../helpers/url-validation', () => ({
   // straight on to the copy stage. The `{ html, ok, status }` shape is load-bearing — the caller
   // checks `ok` and aborts the whole stream on a falsy value, which would make every assertion
   // below pass for the wrong reason.
-  fetchSafeUrl: vi.fn(async () => ({ html: '<html><body></body></html>', ok: true, status: 200 })),
+  // `finalUrl` included: without it `pageUrl` stayed undefined in every test and both call
+  // sites fell through to `body.url`, so the redirect behavior was unexercised.
+  fetchSafeUrl: vi.fn(async (url: string) => ({ html: '<html><body></body></html>', ok: true, status: 200, finalUrl: url })),
 }));
 
 import { CAMPAIGN_DELIVERY_TYPES } from '@lfx-one/shared/constants';
@@ -139,7 +141,7 @@ describe('CampaignProxyService email delivery type', () => {
    * Matches on `keyword strategist` rather than the full sentence. The prompt named only Google
    * Ads until Microsoft was wired onto the same stage, and rewording it silently unhooked this
    * helper: `includes('Google Ads keyword strategist')` went false for every call, so four tests
-   * asserting the keyword stage RAN began asserting it had not — a rename read as a behaviour
+   * asserting the keyword stage RAN began asserting it had not — a rename read as a behavior
    * change. The shorter substring survives naming the platforms without matching an unrelated
    * prompt, since no other system prompt in this file mentions keywords.
    */
@@ -1518,7 +1520,7 @@ describe('CampaignProxyService HubSpot campaign lookup', () => {
     ['carries a real token through', 'kubecon-na-2026', true],
   ])('%s', (_label, hsToken, expectPresent) => {
     // `body.hsToken || slug` fabricated a plausible event-slug token HubSpot never minted -- the
-    // exact behaviour this cutover removes from the LOOKUP path, reinstated one layer down in
+    // exact behavior this cutover removes from the LOOKUP path, reinstated one layer down in
     // the tracking URL where it is harder to see. A fabricated token is indistinguishable from a
     // real one and attributes traffic to a campaign HubSpot cannot report on; an absent
     // parameter is visibly absent and reads as untagged rather than mis-tagged.

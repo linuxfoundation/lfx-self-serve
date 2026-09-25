@@ -298,7 +298,7 @@
                         innerHTML is the point: the generator returns HTML sections and the operator
                         needs to see the rendered email, not its markup.
 
-                        Safe because NOTHING here bypasses Angular's sanitiser -- there is no
+                        Safe because NOTHING here bypasses Angular's sanitizer -- there is no
                         `bypassSecurityTrustHtml` anywhere in this module, so the default
                         DomSanitizer strips scripts and event handlers on this binding.
 
@@ -307,7 +307,10 @@
                         first-party content. If a `bypassSecurityTrust*` is ever added to this
                         module, this binding must be re-reviewed before it lands.
                       -->
-                      <div class="prose prose-sm max-w-none text-sm text-gray-800" [innerHTML]="copy.body" data-testid="campaigns-email-copy-body"></div>
+                      <div
+                        class="prose prose-sm max-w-none text-sm text-gray-800"
+                        [innerHTML]="emailBodyHtmlForSend()"
+                        data-testid="campaigns-email-copy-body"></div>
                     </div>
                   </div>
                 }
@@ -624,27 +627,250 @@
                   <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
                     <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
                       <p class="text-sm font-semibold text-gray-900">{{ copy.subject }}</p>
-                      <p class="text-xs text-gray-500">{{ copy.preheader }}</p>
+                      <p class="text-xs text-gray-500">{{ emailPreheaderPreview() }}</p>
                     </div>
+                    <!--
+                      Hero image, CTA button, and sponsor logos are NOT part of `copy.body` — they
+                      ride to campaign-service as separate `hubspotConfig` fields
+                      (`heroImageUrl`/`heroLinkUrl`, `buttonText`/`buttonUrl`, `sponsors`) and
+                      HubSpot renders each as its own module. Rendered here explicitly, in the same
+                      hero → body → button → sponsors order `RebuildEmailContent` builds them in, so
+                      the operator sees what the draft will actually contain.
+                    -->
+                    @if (emailHeroImageUrl()) {
+                      <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
+                    }
+                    <!-- `body` is model-generated and reaches `[innerHTML]`. Angular strips
+                         scripts and event handlers but KEEPS a plain `<img src>`, and
+                         campaign-service's /email-copy path applies no sanitizer, so the BFF
+                         adapter removes resource-loading elements before this binding sees them
+                         (`stripResourceLoadingHtml`). Without that, a generated or
+                         prompt-injected image makes the operator's browser fetch an arbitrary
+                         host -- the same vector the hero and sponsor placeholders close. -->
+                    <!-- `Preview`, not `ForSend`, ONLY here: this panel renders a refused call to action as
+                         its own styled element below (`campaigns-email-preview-cta-unlinked`), so binding the
+                         send body would show that label TWICE. The other body cards have no such element and
+                         bind `emailBodyHtmlForSend()` so they show exactly what the draft carries. -->
                     <div
                       class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
-                      [innerHTML]="copy.body"
+                      [innerHTML]="emailBodyHtmlPreview()"
                       data-testid="campaigns-email-preview-body"></div>
+                    @if (emailCtaLabel(); as ctaLabel) {
+                      <div class="px-4 pb-4">
+                        <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white" data-testid="campaigns-email-preview-cta">
+                          {{ ctaLabel }}
+                        </span>
+                      </div>
+                    }
+                    <!-- The generator produced a call to action but its destination was refused.
+                         Shown as plain text, NOT as a button: a button here would promise a link
+                         the staged draft will not carry. Without it the call to action vanishes
+                         from the preview entirely and the operator has no way to know the model
+                         produced one. -->
+                    @if (emailCtaUnlinkedLabel(); as unlinkedLabel) {
+                      <div class="px-4 pb-4">
+                        <span class="text-sm font-semibold text-gray-500" data-testid="campaigns-email-preview-cta-unlinked">
+                          {{ unlinkedLabel }}
+                        </span>
+                      </div>
+                    }
+                    <!-- Both guards are load-bearing: `@if` treats an EMPTY ARRAY as truthy, so the
+                         outer one only binds the alias and the inner one is what stops an empty
+                         sponsors bar rendering. Collapsing them renders a bordered empty strip. -->
+                    @if (emailSponsors(); as sponsors) {
+                      @if (sponsors.length > 0) {
+                        <div
+                          class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4"
+                          data-testid="campaigns-email-preview-sponsors">
+                          @for (sponsor of sponsors; track sponsor.logoUrl) {
+                            <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                            <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
+                          }
+                        </div>
+                      }
+                    }
                   </div>
                   <!--
-                    Stated rather than implied: the body is applied upstream ONLY when the cloned
-                    draft has exactly one rich-text widget. A template with several (header blurb,
-                    body, footer note) is left alone rather than guessed at, because writing the
-                    wrong widget destroys content the operator did not choose to replace. So this
-                    is a request, not a guarantee, and saying so is cheaper than an operator
-                    discovering it on a send.
+                    Rewritten for the full content rebuild (LFXV2-2775). This note used to warn
+                    that a multi-widget template keeps its own body, which was true when only a
+                    single rich-text widget was replaced. `RebuildEmailContent` now replaces the
+                    whole widget tree, so the opposite holds: nothing of the template's own
+                    content survives, and the warning that mattered is the reverse one.
                   -->
                   <p class="text-xs text-gray-500" data-testid="campaigns-email-preview-note">
-                    Staging clones the selected template and applies this subject and body. A template with more than one text block keeps its own body — check
-                    the draft in HubSpot before sending.
+                    Staging clones the selected template and rebuilds its content from what you see here — the template's own body, images and footer are
+                    replaced, not merged. Check the draft in HubSpot before sending.
                   </p>
                 </div>
               }
+
+              <!--
+                A/B test — LFXV2-3201 follow-up. Native HubSpot A/B on the cloned draft
+                (`internal/dispatch/hubspot.go` STEP 3B): best-effort on the upstream side, so
+                leaving it enabled with nothing typed in variant B is refused client-side rather
+                than staged as a broken test.
+
+                Sits after variant A's preview and before staging so the operator finishes
+                variant A first, then opts into a second variant to compare it against.
+              -->
+              <div class="flex flex-col gap-3 border-t border-gray-200 pt-4" data-testid="campaigns-email-abtest">
+                <lfx-checkbox
+                  [form]="abTestForm"
+                  control="enabled"
+                  label="Run an A/B test"
+                  inputId="abtest-enabled"
+                  data-testid="campaigns-email-abtest-toggle" />
+                <p class="text-sm text-gray-500">
+                  HubSpot sends variant A (the template above) against a second variant B you draft here, and picks a winner by opens.
+                </p>
+
+                @if (abTestEnabled()) {
+                  <div class="flex flex-col gap-3 rounded-lg border border-gray-200 bg-white p-4" data-testid="campaigns-email-abtest-config">
+                    <div class="flex items-center gap-3">
+                      <lfx-button
+                        [label]="abTestSubjectB() || abTestBodyHtmlB() ? 'Regenerate variant B' : 'Generate variant B'"
+                        icon="fa-light fa-wand-magic-sparkles"
+                        severity="secondary"
+                        [disabled]="!canGenerateAbTestCopy()"
+                        [loading]="abTestCopyState() === 'generating'"
+                        (onClick)="onGenerateAbTestCopy()"
+                        data-testid="campaigns-email-abtest-generate-btn" />
+                      @if (emailBriefOutput() === null) {
+                        <span class="text-sm text-gray-500">{{ briefRequiredHint }}</span>
+                      }
+                    </div>
+
+                    @if (abTestCopyError(); as message) {
+                      <p class="text-sm text-red-700" role="alert" data-testid="campaigns-email-abtest-copy-error">{{ message }}</p>
+                    }
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-subject-b">Variant B subject</label>
+                      <lfx-input-text
+                        [form]="abTestForm"
+                        control="subjectB"
+                        inputId="abtest-subject-b"
+                        placeholder="Enter or generate a subject for variant B"
+                        dataTest="campaigns-email-abtest-subject-b" />
+                    </div>
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-preheader-b">Variant B preheader</label>
+                      <lfx-input-text
+                        [form]="abTestForm"
+                        control="preheaderB"
+                        inputId="abtest-preheader-b"
+                        placeholder="Leave blank to keep variant A's preheader"
+                        dataTest="campaigns-email-abtest-preheader-b" />
+                    </div>
+
+                    <div class="flex flex-col gap-1">
+                      <label class="text-xs font-medium text-gray-700" for="abtest-body-b">Variant B body</label>
+                      <lfx-textarea
+                        [form]="abTestForm"
+                        control="bodyHtmlB"
+                        inputId="abtest-body-b"
+                        [rows]="6"
+                        placeholder="Enter or generate the HTML body for variant B"
+                        dataTest="campaigns-email-abtest-body-b" />
+                    </div>
+
+                    <!--
+                      Negated from the STAGING predicate, not from "both empty": staging needs
+                      both halves, so a variant with only a subject also sends as single-variant.
+                      Warning only on the both-empty case left that operator with a filled field
+                      and no indication their test would not run.
+                    -->
+                    @if (!abTestIsStageable()) {
+                      <p class="text-xs text-amber-700" data-testid="campaigns-email-abtest-empty-warning">
+                        Variant B needs both a subject and a body — staging now will send a single-variant email without a test.
+                      </p>
+                    }
+                  </div>
+
+                  <!--
+                    Dual-variant preview, before dispatch — the two drafts side by side exactly as
+                    the "Preview" block above shows variant A alone, so the operator compares what
+                    HubSpot will actually test rather than imagining the difference.
+                  -->
+                  @if (abTestIsStageable()) {
+                    <div class="grid grid-cols-1 gap-3 md:grid-cols-2" data-testid="campaigns-email-abtest-preview">
+                      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                          <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant A</span>
+                          <p class="text-sm font-semibold text-gray-900">{{ emailCopy()?.subject || '(template subject)' }}</p>
+                          <!-- Preheader shown on BOTH cards: it is now a per-variant field, and it is
+                               the first thing an inbox renders after the subject. Omitting it hid the
+                               very difference the test measures, since opens are what pick a winner. -->
+                          <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-a">
+                            {{ emailPreheaderPreview() || '(template preheader)' }}
+                          </p>
+                        </div>
+                        <!-- Same hero/button/sponsors note as the single-variant preview above: both
+                             variants share the hero image, CTA button, and sponsor logos -- only
+                             subject/body differ between them -- because HubSpot's native A/B test
+                             swaps subject/body on the clone and leaves its other widgets untouched. -->
+                        @if (emailHeroImageUrl()) {
+                          <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
+                        }
+                        <div
+                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                          [innerHTML]="emailBodyHtmlForSend() || '(template body)'"
+                          data-testid="campaigns-email-abtest-preview-a"></div>
+                        @if (emailCtaLabel(); as ctaLabel) {
+                          <div class="px-4 pb-4">
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                          </div>
+                        }
+                        @if (emailSponsors(); as sponsors) {
+                          @if (sponsors.length > 0) {
+                            <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
+                              @for (sponsor of sponsors; track sponsor.logoUrl) {
+                                <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                                <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
+                              }
+                            </div>
+                          }
+                        }
+                      </div>
+                      <div class="overflow-hidden rounded-lg border border-gray-200 bg-white">
+                        <div class="flex flex-col gap-1 border-b border-gray-200 bg-gray-50 px-4 py-3">
+                          <span class="font-mono text-xs uppercase tracking-wide text-gray-400">Variant B</span>
+                          <p class="text-sm font-semibold text-gray-900">{{ abTestSubjectB() || '(no subject yet)' }}</p>
+                          <!-- Blank B falls back to A's, matching what upstream actually does with an
+                               absent previewTextB -- so the preview states the real outcome rather
+                               than showing an empty line the send would not produce. -->
+                          <p class="text-xs text-gray-500" data-testid="campaigns-email-abtest-preview-preheader-b">
+                            {{ abTestPreheaderBPreview() || '(template preheader)' }}
+                          </p>
+                        </div>
+                        @if (emailHeroImageUrl()) {
+                          <ng-container *ngTemplateOutlet="heroBannerNote"></ng-container>
+                        }
+                        <div
+                          class="prose prose-sm max-w-none px-4 py-4 text-sm text-gray-800"
+                          [innerHTML]="abTestBodyHtmlBPreview() || '(no body yet)'"
+                          data-testid="campaigns-email-abtest-preview-b"></div>
+                        @if (emailCtaLabel(); as ctaLabel) {
+                          <div class="px-4 pb-4">
+                            <span class="inline-block rounded-md bg-blue-600 px-4 py-2 text-sm font-semibold text-white">{{ ctaLabel }}</span>
+                          </div>
+                        }
+                        @if (emailSponsors(); as sponsors) {
+                          @if (sponsors.length > 0) {
+                            <div class="flex flex-wrap items-center justify-center gap-4 border-t border-gray-100 px-4 py-4">
+                              @for (sponsor of sponsors; track sponsor.logoUrl) {
+                                <!-- Named, not loaded: same browser-side fetch as the hero. -->
+                                <span class="rounded border border-gray-200 bg-white px-2 py-1 text-xs text-gray-600">{{ sponsor.name }}</span>
+                              }
+                            </div>
+                          }
+                        }
+                      </div>
+                    </div>
+                  }
+                }
+              </div>
 
               <div class="flex flex-col gap-2 border-t border-gray-200 pt-4" data-testid="campaigns-email-stage">
                 <div class="flex items-center gap-3">
@@ -1057,3 +1283,15 @@
     </div>
   }
 </div>
+
+<!-- The hero banner is NAMED, never loaded: binding the scraped URL into an <img [src]> would
+     make the OPERATOR'S browser fetch it, before campaign-service's dial-time guard runs.
+     Defined once and used from each preview panel, so the three cannot drift apart. -->
+<ng-template #heroBannerNote>
+  <div class="flex items-center gap-2 border-b border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600" data-testid="campaigns-email-preview-hero">
+    <i class="fa-light fa-image text-gray-400" aria-hidden="true"></i>
+    <span
+      >Event banner from <span class="font-medium">{{ emailHeroImageHost() }}</span> will be attached</span
+    >
+  </div>
+</ng-template>

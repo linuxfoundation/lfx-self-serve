@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { CAMPAIGN_EMAIL_STAGES, CAMPAIGN_GOALS, CAMPAIGN_PLATFORMS, COUNTRIES, JOB_LOST_MESSAGE } from '@lfx-one/shared/constants';
+import { encodePathSegment } from '../helpers/url-validation';
+import { escapeHtml, hasVisibleHtmlText, sanitizeDisplayText, stripResourceLoadingHtml } from '@lfx-one/shared/utils/html-utils';
 import type {
   ApiResponse,
   BriefMetrics,
@@ -10,20 +12,28 @@ import type {
   CampaignBriefLoadResult,
   CampaignBriefOutput,
   CampaignBriefPersistResult,
+  CampaignDeliveryType,
+  CampaignEmailStage,
   CampaignEventDetails,
+  CampaignEventSponsor,
   CampaignGoal,
   CampaignIndexDoc,
   CampaignJobStatus,
   CampaignKeyword,
-  CampaignDeliveryType,
-  CampaignEmailStage,
   CampaignListResult,
   CampaignMetricsWindow,
   CampaignPlatform,
   CampaignPlatformResult,
   CampaignProgramType,
+  CampaignServiceAudience,
   CampaignServiceCampaign,
+  CampaignServiceCampaignResolution,
   CampaignServiceCreateResult,
+  CampaignServiceHubSpotCampaign,
+  CampaignServiceHubSpotCampaigns,
+  CampaignServiceKeywordActionInput,
+  CampaignServiceKeywordActions,
+  CampaignServiceKeywords,
   CampaignToggleStatus,
   GenerateEmailCopyResult,
   HubSpotEmailSearchResult,
@@ -35,13 +45,6 @@ import type {
   QueryServiceResponse,
   RedditAdVariant,
   RedditBriefCopy,
-  CampaignServiceAudience,
-  CampaignServiceCampaignResolution,
-  CampaignServiceHubSpotCampaign,
-  CampaignServiceHubSpotCampaigns,
-  CampaignServiceKeywordActionInput,
-  CampaignServiceKeywordActions,
-  CampaignServiceKeywords,
 } from '@lfx-one/shared/interfaces';
 import type { Request } from 'express';
 
@@ -121,12 +124,17 @@ interface CampaignServiceBriefInput {
  * for the same reason as on the input — the service validates none of them, so a value coming
  * back is not evidence of its shape and the adapter has to check rather than trust.
  */
-/** Upstream email-copy shape, snake_case-free but exactly as campaign-service returns it. */
+/**
+ * Upstream email-copy shape, exactly as campaign-service returns it (LFXV2-2775).
+ *
+ * There is no `body`/`cta` on the wire — content lives in `sections`, one entry per
+ * `rich_text`/`button`/`divider` block. `generateEmailCopy` below reconstructs the flat
+ * `EmailBriefCopy.body`/`.cta` the rest of this app expects from these sections.
+ */
 interface CampaignServiceEmailCopy {
   subject: string;
   preheader: string;
-  body: string;
-  cta: string;
+  sections: { type: string; html?: string; text?: string; url?: string }[];
 }
 
 /**
@@ -404,7 +412,7 @@ export class CampaignServiceClient {
    * sleeps and claimed "~2s added", which was wrong: `proxyRequestWithResponse` exposes no timeout
    * parameter, so every read carries the client default (30s, `api-client.service.ts`). Three hung
    * GETs plus the delays is ~92s of a session's save queue blocked before the original failure
-   * even surfaces — and these saves are serialised, so the next Proceed waits behind it.
+   * even surfaces — and these saves are serialized, so the next Proceed waits behind it.
    */
   private readonly reconcileReadAttempts = 3;
   private readonly reconcileReadDelayMs = 1000;
@@ -518,7 +526,7 @@ export class CampaignServiceClient {
    * being replaced returns for an unknown job — and the poller has an arm for it
    * (`campaign.service.ts` renders "Lost connection to the campaign creation process"). A
    * flagged cutover whose two sides disagree on a reachable outcome is not a cutover; it is a
-   * second behaviour hidden behind an environment variable, and the difference would surface
+   * second behavior hidden behind an environment variable, and the difference would surface
    * only for the expired-job case nobody exercises before shipping.
    *
    * ONLY campaign-service's OWN 404, and the distinction matters most during the cutover this
@@ -558,7 +566,7 @@ export class CampaignServiceClient {
       const response = await this.microserviceProxy.proxyRequest<CampaignServiceJobPollResponse>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `/projects/${encodeURIComponent(projectSlug)}/jobs/${encodeURIComponent(jobId)}`,
+        `/projects/${encodePathSegment(projectSlug)}/jobs/${encodePathSegment(jobId)}`,
         'GET'
       );
       return adaptJobPollResponse(response);
@@ -621,7 +629,7 @@ export class CampaignServiceClient {
     knownEtag: string | null = null,
     allowEtagFallback = false
   ): Promise<CampaignBriefPersistResult> {
-    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
     const envelope: CampaignServiceBriefEnvelope = { brief: toBriefInput(brief, eventSlug) };
     // Keyed on the brief's OWN identity, so a save looks for the row it is about to replace rather
     // than for whatever brief this event happens to have. Without the delivery type an email save
@@ -638,10 +646,8 @@ export class CampaignServiceClient {
     //
     // In THIS phase: by having created the brief itself. `CampaignsComponent` records the id a
     // successful save returns, so the second Proceed of a session sends it and takes the ordinary
-    // replace path. An earlier version of this comment said the parameter "is always null in this
-    // phase" — that was true when it was written and my own later change to record the created id
-    // falsified it, which is exactly the kind of claim a comment should not make about the
-    // future.
+    // replace path. Note this parameter is NOT reliably null here: recording the created id
+    // populates it, so any logic must read the value rather than assume its absence.
     //
     // What is still missing is the RELOAD path: a fresh session, a second tab, or a reload cannot
     // learn the id of a brief it did not write, so those callers arrive with null and are refused.
@@ -654,7 +660,7 @@ export class CampaignServiceClient {
     //      because nothing loaded one, the slugs match perfectly, and the save still replaces
     //      a brief whose contents the caller never read.
     //
-    // Route 2 is why normalising the two slug derivations is not the fix: it would close route
+    // Route 2 is why normalizing the two slug derivations is not the fix: it would close route
     // 1 and leave route 2 wide open. Ownership is the property that actually distinguishes
     // "the user is editing the brief they are looking at" from "a fresh session happens to
     // collide on the same event", and `knownBriefId` is how the caller asserts it — it comes
@@ -736,7 +742,7 @@ export class CampaignServiceClient {
     // Which send in an email series to open. Empty addresses the paid brief, which has no series.
     stage = ''
   ): Promise<CampaignBriefLoadResult> {
-    const basePath = `/projects/${encodeURIComponent(projectSlug)}/briefs`;
+    const basePath = `/projects/${encodePathSegment(projectSlug)}/briefs`;
     const found = await this.findBrief(req, basePath, eventSlug, deliveryType, stage);
 
     if (found === null) {
@@ -812,12 +818,12 @@ export class CampaignServiceClient {
    * A 503 is a deployment state, not a bug: the AI model is optional upstream, and a service
    * without one configured refuses rather than inventing copy.
    */
-  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string): Promise<GenerateEmailCopyResult> {
+  public async generateEmailCopy(req: Request, projectSlug: string, briefId: string, stage?: string, variant?: string): Promise<GenerateEmailCopyResult> {
     if (!isServerFeatureEnabled(ServerFeatureFlag.CampaignServiceBriefs)) {
       return { enabled: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/email-copy`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/email-copy`;
     try {
       // Fifth argument is `query`, sixth is `data`. The stage is a QUERY parameter upstream, so
       // it goes in the FIFTH -- putting it sixth would send it as a body, which upstream does not
@@ -826,12 +832,16 @@ export class CampaignServiceClient {
       // It is a query param rather than a body attribute because declaring it in the body made
       // the body REQUIRED upstream, so a caller sending none got a 400 instead of default-stage
       // copy.
+      //
+      // `variant` is also a query param upstream (same reasoning as `stage`), so it joins `stage`
+      // in the same query object rather than the sixth (body) argument.
+      const query = { ...(stage ? { stage } : {}), ...(variant ? { variant } : {}) };
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceEmailCopy>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
         path,
         'POST',
-        stage ? { stage } : undefined,
+        Object.keys(query).length > 0 ? query : undefined,
         undefined
       );
 
@@ -840,9 +850,183 @@ export class CampaignServiceClient {
         return { enabled: true, error: 'The generator returned no email copy.' };
       }
 
+      // Upstream returns `sections` (LFXV2-2775), not `body`/`cta` — fold them back into the flat
+      // shape `EmailBriefCopy` declares. `body` carries only the `rich_text` sections' html: the
+      // `button` section rides along as `cta` (and, at the call site, `buttonText`/`buttonUrl` on
+      // `hubspotConfig`) so it renders as its own native HubSpot button widget, matching the hero
+      // image/sponsors treatment. Baking it into `body` as well as an anchor tag used to render
+      // the CTA twice — once inline in the rich text, once as the native button — in both the
+      // operator preview and the live HubSpot draft.
+      // A response with NO `sections` is the legacy flat shape (`body`/`cta` on the wire). The
+      // type declares sections-only, but a type is an assertion about the wire, not a guarantee
+      // from it -- and the empty-body guard turns "no sections" into a hard error, so a legacy
+      // response would be REFUSED rather than passed through.
+      //
+      // Falling back to the flat fields keeps that path working. They still go through the same
+      // sanitizers as the assembled body, so the legacy shape is not a way around them.
+      const legacy = copy as { body?: unknown; cta?: unknown; ctaUrl?: unknown };
+      const sections = copy.sections ?? [];
+      // Dividers become `<hr />` rather than being dropped. They carry no content of their own
+      // ("divider (no other fields)" in campaign-service's own generator), so the only thing a
+      // filter loses is their POSITION -- and position is exactly what a divider is for. The
+      // body is rendered with innerHTML here and lands in a rich-text widget upstream, so an
+      // `<hr />` survives both.
+      //
+      // This does NOT solve the ordered-sections gap: `bodyHtml` is one flat rich-text field on
+      // the wire (`BodyHTML string` in internal/dispatch/hubspot.go), so a second button and any
+      // button URL are still lost. That needs a contract change on both sides and is tracked
+      // separately.
+      //
+      // A button with NO url keeps its label, as text, in place. The generator omits `url` for
+      // the stages where registration is the wrong destination ("Submit Your Proposal",
+      // "Share Feedback", "See You There") -- and since the UI correctly withholds a native
+      // button with no destination, filtering the section out too made the call to action
+      // vanish from the email entirely. The label is the content; only the link is missing.
+      //
+      // Escaped, because `body` is rendered through `[innerHTML]` and lands in a rich-text
+      // widget: the label is model output and must not become markup.
+      // The destinations the GENERATION vouches for, judged where the value is produced rather
+      // than at one downstream call site.
+      //
+      // campaign-service's api-catalog says of `/email-copy` that the model "is INSTRUCTED that
+      // every href in the generated body must be the brief's url", but that this is "a prompt
+      // instruction, NOT an enforced guarantee ... a caller needing certainty must check the
+      // returned body itself." The button section's own `url` is the destination the generation
+      // declared, so it is what a body anchor may point at.
+      //
+      // An EMPTY list is meaningful, not a missing value: the stages that withhold a button
+      // (CFP Launch, Post-Event, Final Countdown) legitimately have no destination, and they are
+      // the ones a model is most likely to invent an address for. Those bodies keep their words
+      // and lose every link.
+      // The FIRST button only, matching `buttonSection` below (`sections.find`). `bodyHtml` is one
+      // flat field on the wire, so a second button's url is discarded everywhere else -- letting
+      // it vouch for a host here would whitelist a destination the draft never carries, leaving a
+      // clickable unvouched link in the operator preview.
+      //
+      // This vouches for the MODEL'S OWN url, which is all this layer can do: `generateEmailCopy`
+      // receives `briefId`, not the brief, so it has no registration url to compare against. A
+      // model that invents a destination therefore gets its invented host past THIS filter while
+      // losing the legitimate one -- the inverse of what is wanted.
+      //
+      // That is safe only because this body goes straight out of the HTTP response to the client
+      // and is consumed nowhere else (`campaign.controller.ts:586` is the only caller). The
+      // client re-filters it against `emailCtaDestination()`, which DOES compare with the brief,
+      // and the controller re-filters again at the request boundary. If a server-side consumer is
+      // ever added, it must not treat this output as vouched.
+      const firstButtonUrl = sections.find((section) => section.type === 'button')?.url;
+      const generatedDestinations = typeof firstButtonUrl === 'string' && firstButtonUrl !== '' ? [firstButtonUrl] : [];
+
+      const body = sections
+        .filter(
+          (section) =>
+            (section.type === 'rich_text' && section.html) || section.type === 'divider' || (section.type === 'button' && !section.url && section.text)
+        )
+        .map((section) => {
+          if (section.type === 'divider') return '<hr />';
+          // A URL-LESS button renders as TEXT, never as `href="#"` -- the same rule
+          // campaign-service applies in `internal/service/email_wizard_sections.go`, where a
+          // button with no destination is written as a label rather than a link.
+          //
+          // `<div><strong>` and nothing more. No class attribute: `stripResourceLoadingHtml`
+          // allows none, and this body is sanitized twice more downstream (the client preview
+          // and the request boundary), so a class written here could never reach the wire. The
+          // wizard renderer does carry `lfx-block lfx-button`, but that is a separate path that
+          // builds and keeps its own markup; mirroring those names here only produced a string
+          // that looked like a contract and was stripped three lines later.
+          //
+          // `<strong>` is the load-bearing part: it carries the emphasis a call to action needs
+          // in a mail client that drops CSS.
+          //
+          // sanitizeDisplayText BEFORE escapeHtml, and both: they defend against different
+          // things and neither covers the other. escapeHtml encodes `&<>"'` so the text cannot
+          // break out of the markup; it does nothing to a BIDI override or a zero-width
+          // character, which need no markup to render the label as something it is not. This is
+          // the SAME generator-supplied `section.text` that rides on `cta`, so sanitizing only
+          // that field left the identical value unsanitised one branch away.
+          if (section.type === 'button') return `<div><strong>${escapeHtml(sanitizeDisplayText(section.text ?? ''))}</strong></div>`;
+          // Resource-loading elements stripped HERE, where body is assembled.
+          //
+          // Angular's `[innerHTML]` sanitizer removes scripts, event handlers and
+          // `javascript:` urls -- but deliberately KEEPS an ordinary `<img src="https://…">`,
+          // which is safe for XSS and is exactly the browser-side fetch the preview must not
+          // make. This html comes from a model, and campaign-service's `/email-copy` path
+          // applies no sanitizer of its own, so there is nothing upstream to rely on. An
+          // earlier comment in this file claimed an upstream allow-list covered it; that
+          // allow-list exists only on the wizard path, which this is not.
+          return stripResourceLoadingHtml(section.html, generatedDestinations);
+        })
+        .join('');
+      const buttonSection = sections.find((section) => section.type === 'button');
+      // Sanitised for the same reason a sponsor NAME is, and it reaches the same kind of sink:
+      // model-generated display text rendered in a sent email. A BIDI override in a button label
+      // renders as something other than what it contains, and nothing else on the CTA path --
+      // not `emailCtaLabel` in the component, not `rawButtonText.trim()` in the controller --
+      // sanitizes it. Doing it HERE, where the value is produced, covers every consumer rather
+      // than a single call path.
+      const cta = sanitizeDisplayText(buttonSection?.text ?? '');
+      // The generator OMITS `url` when registration is not the right destination for the stage,
+      // so an absent value must stay absent rather than be replaced downstream.
+      const ctaUrl = buttonSection?.url ?? '';
+
+      // REFUSED when sanitization emptied the body, rather than returned as a success with
+      // nothing in it. A generator response consisting only of resource-loading markup -- a
+      // tracking pixel and no copy -- leaves nothing a recipient can read, and an empty body
+      // reads downstream as "blank this field", so a staged draft would lose the body it was
+      // meant to set. An error the operator can retry is the honest answer; a silent blank is not.
+      //
+      // Judged with the SHARED predicate, `hasVisibleHtmlText`. A bespoke check here drifts:
+      // `!== ''` admits an empty paragraph, `.trim() === ''` admits a lone `<br>`, and
+      // `stripHtml(...).trim()` admits a body of only zero-width spaces. The shared predicate
+      // strips markup first and then asks by Unicode category, so there is one definition to
+      // keep right.
+      //
+      // The fallback is chosen ONCE, by SHAPE, not per field.
+      //
+      // Deciding it per field mixed the two response shapes: `cta || legacy.cta` refilled a button
+      // an operator had deliberately left with no destination, and a sections body that is
+      // image-only -- which is supposed to fail the empty-body guard below -- could be refilled
+      // from a leftover flat field and pass. An empty value in a sections response is an ANSWER.
+      // ABSENT sections AND a no-stage request. Both halves are load-bearing, and
+      // `sections.length === 0` expressed neither.
+      //
+      // `copy.sections === undefined` distinguishes ABSENT from PRESENT-BUT-EMPTY, which
+      // `sections.length === 0` cannot: a valid `sections: []` response is an ANSWER, and
+      // treating it as the legacy shape let stale flat `body`/`cta` fields resurrect over it.
+      //
+      // `stage === undefined` is campaign-service's own rule, stated in its api-catalog: "the
+      // legacy repackaging is applied only on this no-stage path -- a stage-aware request whose
+      // model output regresses to the flat shape is REFUSED rather than silently converted."
+      // Accepting a flat response to a stage-aware call returned copy written without the stage
+      // the caller asked for, under a 200. It now falls through to the empty-body error, which
+      // is the controlled refusal the contract describes.
+      const isLegacyShape = copy.sections === undefined && stage === undefined;
+      const legacyText = (value: unknown): string => (typeof value === 'string' ? value : '');
+      // The LEGACY shape's own declared destination, not `generatedDestinations`. That list is
+      // derived from `sections`, and `isLegacyShape` IS `sections.length === 0` -- so passing it
+      // here vouches for nothing by construction and strips every link in a legacy body. The
+      // flat shape carries its destination in `ctaUrl`, which is what this branch must judge
+      // against, exactly as the sections branch judges against its button url.
+      const legacyDestinations = [legacyText(legacy.ctaUrl)].filter((url) => url !== '');
+      const legacyBody = isLegacyShape ? stripResourceLoadingHtml(legacyText(legacy.body), legacyDestinations) : '';
+      const effectiveBody = isLegacyShape ? legacyBody : body;
+      const effectiveCta = isLegacyShape ? sanitizeDisplayText(legacyText(legacy.cta)) : cta;
+      const effectiveCtaUrl = isLegacyShape ? legacyText(legacy.ctaUrl) : ctaUrl;
+      if (!hasVisibleHtmlText(effectiveBody)) {
+        logger.warning(req, 'generate_email_copy', 'Generated body was empty after sanitization', {});
+        return { enabled: true, error: 'The generated email body contained no usable content. Try again.' };
+      }
       return {
         enabled: true,
-        copy: { subject: copy.subject, preheader: copy.preheader, body: copy.body, cta: copy.cta },
+        copy: {
+          // Sanitized for the same reason `cta` is, and they reach the same sink: model-authored
+          // display text rendered in a sent email. A BIDI override in a subject line renders as
+          // something other than what it contains.
+          subject: sanitizeDisplayText(copy.subject ?? ''),
+          preheader: sanitizeDisplayText(copy.preheader ?? ''),
+          body: effectiveBody,
+          cta: effectiveCta,
+          ctaUrl: effectiveCtaUrl,
+        },
       };
     } catch (error) {
       logger.warning(req, 'generate_email_copy', 'Email copy generation failed, returning an error result', { err: error });
@@ -867,10 +1051,10 @@ export class CampaignServiceClient {
       return { enabled: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/audiences/build`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/audiences/build`;
     try {
       // Fifth argument is `query`, sixth is `data` — this call has neither. Passing anything
-      // fifth would serialise it into the query string and send no body.
+      // fifth would serialize it into the query string and send no body.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceAudienceList>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
@@ -976,7 +1160,7 @@ export class CampaignServiceClient {
     // Not a cosmetic omission upstream: `unmarshalPlatformConfig` in campaign-service returns nil
     // for an absent key — "no per-platform config supplied; zero value is fine" — so the
     // dispatcher would proceed with a ZERO-VALUE config and call Google Ads with budget 0 and no
-    // headlines. Nothing upstream refuses it; I read the dispatcher rather than assuming.
+    // headlines. Nothing upstream refuses it -- confirmed against the dispatcher, not assumed.
     //
     // The reachable case is google-ads selected with NEITHER supported campaign type: the
     // builder returns null only when it can name no channel at all. Demand-Gen-only no longer
@@ -1072,10 +1256,10 @@ export class CampaignServiceClient {
       };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns`;
     try {
       // `undefined` for the fifth argument, NOT the envelope: `proxyRequestWithResponse` takes
-      // `query` fifth and `data` sixth. Passing the envelope fifth serialises it into the query
+      // `query` fifth and `data` sixth. Passing the envelope fifth serializes it into the query
       // string and sends NO body, which campaign-service rejects — every create would fail
       // before a job existed. `saveBrief` above has the same shape; keep the two aligned.
       const response = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceJobCreateResponse>(
@@ -1173,9 +1357,9 @@ export class CampaignServiceClient {
     params: { projectSlug: string; briefId: string; campaignId: string; status: CampaignToggleStatus; etag: string }
   ): Promise<CampaignServiceCampaign> {
     const path =
-      `/projects/${encodeURIComponent(params.projectSlug)}` +
-      `/briefs/${encodeURIComponent(params.briefId)}` +
-      `/campaigns/${encodeURIComponent(params.campaignId)}/status`;
+      `/projects/${encodePathSegment(params.projectSlug)}` +
+      `/briefs/${encodePathSegment(params.briefId)}` +
+      `/campaigns/${encodePathSegment(params.campaignId)}/status`;
 
     // The upstream enum is lowercase ('active' | 'paused'); the shared client type is uppercase.
     // Converting here rather than at the caller keeps the wire spelling in the one file that owns
@@ -1220,8 +1404,7 @@ export class CampaignServiceClient {
    * search: the service's own design warns that reading it that way invites optimising the walk
    * away, reintroducing the false absence the cap exists to prevent.
    *
-   * The filtered walk is COMPLETE-OR-ERROR, not unbounded — an earlier version of this comment
-   * said unbounded and was wrong. `SearchEmails` (campaign-service
+   * The filtered walk is COMPLETE-OR-ERROR, not unbounded. `SearchEmails` (campaign-service
    * `internal/platform/hubspot/email.go`) caps at `maxListPages = 200` and, on exhausting it,
    * returns "exceeded 200 pages; refusing to page unbounded" rather than a partial list. So a
    * filtered search either sees every page or fails; it never quietly returns a subset. That is
@@ -1240,7 +1423,7 @@ export class CampaignServiceClient {
       return { enabled: true, emails: [], error: 'A HubSpot template search requires the project it is scoped to.', possiblyTruncated: false };
     }
 
-    const path = `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/emails`;
+    const path = `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/emails`;
     try {
       // Query params go in the FIFTH argument. `proxyRequestWithResponse(req, service, path,
       // method, query, data)` — passing them sixth would send them as a body, which a GET
@@ -1359,7 +1542,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<BriefMetrics>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/metrics`,
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/metrics`,
       'GET',
       window ? { window } : undefined
     );
@@ -1397,7 +1580,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceKeywords>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/keywords`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/keywords`,
       'GET',
       window ? { window } : undefined
     );
@@ -1426,7 +1609,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaigns>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/campaigns`,
       'GET',
       { q: query }
     );
@@ -1459,7 +1642,7 @@ export class CampaignServiceClient {
     const created = await this.microserviceProxy.proxyRequest<CampaignServiceHubSpotCampaign>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/connection-hubspot/campaigns`,
+      `/projects/${encodePathSegment(projectSlug)}/connection-hubspot/campaigns`,
       'POST',
       undefined,
       { name }
@@ -1506,7 +1689,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceCampaignResolution>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/campaign-ref`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/campaign-ref`,
       'GET',
       { platform_campaign_id: platformCampaignID },
       undefined,
@@ -1549,7 +1732,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceKeywordActions>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/briefs/${encodeURIComponent(briefId)}/campaigns/${encodeURIComponent(campaignId)}/keyword-actions`,
+      `/projects/${encodePathSegment(projectSlug)}/briefs/${encodePathSegment(briefId)}/campaigns/${encodePathSegment(campaignId)}/keyword-actions`,
       'POST',
       undefined,
       { actions },
@@ -1576,7 +1759,7 @@ export class CampaignServiceClient {
     return this.microserviceProxy.proxyRequest<CampaignServiceAudience>(
       req,
       'LFX_V2_CAMPAIGN_SERVICE',
-      `/projects/${encodeURIComponent(projectSlug)}/google-ads/audience`,
+      `/projects/${encodePathSegment(projectSlug)}/google-ads/audience`,
       'GET',
       window ? { window } : undefined
     );
@@ -1780,7 +1963,7 @@ export class CampaignServiceClient {
       updated = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `${basePath}/${encodeURIComponent(existing.brief.id)}`,
+        `${basePath}/${encodePathSegment(existing.brief.id)}`,
         'PUT',
         undefined,
         envelope,
@@ -1878,7 +2061,7 @@ export class CampaignServiceClient {
       const approved = await this.microserviceProxy.proxyRequestWithResponse<CampaignServiceBrief>(
         req,
         'LFX_V2_CAMPAIGN_SERVICE',
-        `${basePath}/${encodeURIComponent(briefId)}/approve`,
+        `${basePath}/${encodePathSegment(briefId)}/approve`,
         'POST',
         undefined,
         undefined,
@@ -2008,15 +2191,12 @@ export class CampaignServiceClient {
  * Whether a stored brief is the one this request sent.
  *
  * Compares the WHOLE payload, opaque blobs included. Two rounds of review narrowed this: first
- * only `program_type` and `event_slug`, then `url` and `platforms` as well. Both times I excluded
- * the four `Any` fields on the reasoning that the service round-trips them without interpreting,
- * so key order and whitespace might not survive and a mismatch would reject a row that really is
- * ours — stranding the user, which this reconciliation exists to prevent.
- *
- * That reasoning was wrong, and checkably so: the columns are `JSONB`
- * (`000002_create_brief_campaign_tables.up.sql`), which normalises key order and strips
- * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialised text — is
- * therefore stable across the round trip, and the hazard I kept citing does not exist.
+ * The four `Any` fields are INCLUDED in the comparison. Excluding them on the grounds that the
+ * service round-trips them without interpreting — so key order or whitespace might not survive,
+ * and a mismatch would reject a row that really is ours — does not hold: the columns are `JSONB`
+ * (`000002_create_brief_campaign_tables.up.sql`), which normalizes key order and strips
+ * whitespace on storage. A STRUCTURAL comparison — parsed values, not serialized text — is
+ * therefore stable across the round trip.
  *
  * It matters because the first-class columns alone do not discriminate: two briefs for the same
  * event normally share program, slug, url AND platform selection, differing only in the generated
@@ -2118,7 +2298,7 @@ function readEtag(response: ApiResponse<unknown>): string | null {
  * the user never filled in. Catching it here lets the caller say what actually went wrong.
  *
  * Trimming DETECTS an empty slug; it deliberately does not rewrite the value sent upstream. The
- * slug is the lookup key for every later find, so normalising it here and not in whatever writes
+ * slug is the lookup key for every later find, so normalizing it here and not in whatever writes
  * the next one would make the two disagree.
  */
 export function deriveEventSlug(brief: CampaignBriefOutput): string | null {
@@ -2457,7 +2637,30 @@ function asEventDetails(value: unknown, topLevelSlug: string): CampaignEventDeta
     registrationUrl: asText(details['registrationUrl']),
     speakers: asTextList(details['speakers']),
     formatNotes: asText(details['formatNotes']),
+    // Scraped hero/sponsors are PERSISTED by toUpstreamEventDetails' `...details` spread but were
+    // not read back here, so a reload silently dropped them: the preview and onStageEmailSend then
+    // omitted the hero and logo modules in any session that restored the brief rather than
+    // scraping it fresh. A write path that spreads and a read path that allow-lists diverge by
+    // construction -- every field added to the former has to be added here too.
+    heroImageUrl: asText(details['heroImageUrl']),
+    // Filtered on logoUrl, mirroring planning-tab's own mapping: a sponsor with no logo renders
+    // as an empty image module rather than as nothing.
+    sponsors: asSponsorList(details['sponsors']),
   };
+}
+
+/** Sponsor rows with a usable logo, dropping malformed entries rather than rendering blanks. */
+function asSponsorList(value: unknown): CampaignEventSponsor[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null)
+    .map((entry) => ({
+      name: typeof entry['name'] === 'string' ? entry['name'] : '',
+      logoUrl: typeof entry['logoUrl'] === 'string' ? entry['logoUrl'] : '',
+    }))
+    .filter((sponsor) => sponsor.logoUrl !== '');
 }
 
 /**

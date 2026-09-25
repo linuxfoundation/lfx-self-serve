@@ -1,18 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, isPlatformBrowser } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet, isPlatformBrowser } from '@angular/common';
 import { MetricLowPercentPipe, MetricPercentPipe } from '@app/shared/pipes/format-metric.pipe';
 import { Component, computed, DestroyRef, inject, PLATFORM_ID, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 
 import {
   CAMPAIGN_DELIVERY_TYPES,
+  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_EMAIL_TYPES,
   CAMPAIGN_JOB_POLL_INTERVAL_MS,
   CAMPAIGN_PROGRAM_TYPES,
-  CAMPAIGN_EMAIL_TABS,
   CAMPAIGN_TABS,
   DEFAULT_CAMPAIGN_EMAIL_TYPE_ID,
   EMAIL_BRIEF_REQUIRED_HINT,
@@ -20,35 +20,47 @@ import {
   EVENT_TERM_DISTINCTIVE_LENGTH,
   EVENT_TERM_GENERIC,
   EVENT_TERM_STOPWORDS,
-  EVENT_TERM_YEAR_PATTERN,
   EVENT_TERM_WEIGHT,
+  EVENT_TERM_YEAR_PATTERN,
   HUBSPOT_TEMPLATE_RENDER_LIMIT,
   MARKETING_OPS_FGA_ENABLED_FLAG,
 } from '@lfx-one/shared/constants';
 import type {
   BriefMetrics,
   BriefMetricsRow,
-  CampaignBriefOutput,
   CampaignAudience,
-  CampaignServiceEmailMetrics,
-  CampaignJobOutcome,
+  CampaignBriefOutput,
+  CampaignBriefPersistResult,
+  CampaignBriefPersistenceState,
+  CampaignCreateRequest,
+  CampaignDeliveryType,
   CampaignEmailStage,
+  CampaignEmailTab,
+  CampaignEventSponsor,
+  CampaignImplementationDraft,
+  CampaignIndexDoc,
+  CampaignJobOutcome,
+  CampaignPaidTab,
+  CampaignProgramType,
+  CampaignServiceEmailMetrics,
+  CampaignTabOption,
   EmailBriefCopy,
   EventTemplateTerms,
-  CampaignCreateRequest,
-  CampaignBriefPersistenceState,
-  CampaignImplementationDraft,
-  CampaignBriefPersistResult,
-  CampaignDeliveryType,
-  CampaignIndexDoc,
-  CampaignProgramType,
-  CampaignEmailTab,
-  CampaignPaidTab,
-  CampaignTabOption,
   HubSpotMarketingEmail,
 } from '@lfx-one/shared/interfaces';
-import { stripDiacritics } from '@lfx-one/shared/utils';
+import {
+  canonicalHttpUrl,
+  escapeHtml,
+  hasVisibleHtmlText,
+  normalizeSponsors,
+  sanitizeDisplayText,
+  stripDiacritics,
+  stripResourceLoadingHtml,
+} from '@lfx-one/shared/utils';
 import { ButtonComponent } from '@components/button/button.component';
+import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { CampaignService } from '@services/campaign.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
@@ -64,14 +76,36 @@ import { MonitoringTabComponent } from './components/monitoring-tab/monitoring-t
 import { OptimizationTabComponent } from './components/optimization-tab/optimization-tab.component';
 import { PlanningTabComponent } from './components/planning-tab/planning-tab.component';
 
+/**
+ * `body` plus a call to action whose destination was refused, appended as plain text.
+ *
+ * The server keeps a button's label inline in `body` only when the section carried NO url
+ * (`!section.url`). A url that was SUPPLIED and then refused -- a hallucinated host, a
+ * whitespace string -- takes the label out of `body` there and sends no native button either,
+ * so the call to action vanishes from the staged draft while the preview still shows it.
+ *
+ * Module-private and campaigns-specific by intent, despite the generic signature: the `<div>`
+ * wrapper mirrors how campaign-service renders a destination-less button, so this belongs with
+ * the code that has to agree with that renderer -- not in a shared string utility where the
+ * markup choice would lose its reason.
+ */
+function withUnlinkedCta(body: string, unlinkedLabel: string): string {
+  if (unlinkedLabel === '') return body;
+  return `${body}<div><strong>${escapeHtml(unlinkedLabel)}</strong></div>`;
+}
+
 @Component({
   selector: 'lfx-campaigns',
   imports: [
+    NgTemplateOutlet,
     DecimalPipe,
     MetricPercentPipe,
     MetricLowPercentPipe,
     ReactiveFormsModule,
     ButtonComponent,
+    CheckboxComponent,
+    InputTextComponent,
+    TextareaComponent,
     SelectComponent,
     PlanningTabComponent,
     ImplementationTabComponent,
@@ -112,6 +146,22 @@ export class CampaignsComponent {
     // native control also needed `selected` on each OPTION, because a `[value]` binding applied
     // before the options exist is ignored -- a form control has no such ordering hazard.
     emailType: new FormControl<string>(DEFAULT_CAMPAIGN_EMAIL_TYPE_ID, { nonNullable: true }),
+  });
+
+  // The A/B controls are a reactive form for the same reason emailType above is: the `lfx-*`
+  // wrappers `frontend-checklist.md` 14.1 requires are form-driven, so a raw <input>/<textarea>
+  // cannot use them. Kept as its own group rather than folded into selectorForm because these
+  // three are reset together whenever the test is switched off or the brief is discarded, and a
+  // group reset here must not touch the selectors.
+  protected readonly abTestForm = new FormGroup({
+    enabled: new FormControl<boolean>(false, { nonNullable: true }),
+    subjectB: new FormControl<string>('', { nonNullable: true }),
+    // Variant B carries its OWN preheader. campaign-service accepts `previewTextB`
+    // (internal/dispatch/hubspot.go), and when it is omitted the rebuild preserves the parent's
+    // preview text -- so B silently inherited A's preheader. That biases an A/B test whose
+    // winner is judged on opens, which is the metric a preheader most directly moves.
+    preheaderB: new FormControl<string>('', { nonNullable: true }),
+    bodyHtmlB: new FormControl<string>('', { nonNullable: true }),
   });
 
   /**
@@ -162,7 +212,7 @@ export class CampaignsComponent {
   /**
    * How many saves are enqueued or running. Backs `briefSaveInFlight`.
    *
-   * Saves are serialised on `persistChain`, so more than one can be outstanding: each appends its
+   * Saves are serialized on `persistChain`, so more than one can be outstanding: each appends its
    * own clear, and with two queued the first one's clear lands between A finishing and B starting.
    * Counting is what keeps the signal true across that seam.
    */
@@ -351,7 +401,7 @@ export class CampaignsComponent {
    * write and before `onProceedToImplementation`, so a reset triggered here is undone by both.
    * That works, and it is why NO TEST FAILS when this flag is ignored: the ordering rescues it.
    *
-   * The flag is kept anyway, as defence rather than behaviour. Moving the adopt below either of
+   * The flag is kept anyway, as defence rather than behavior. Moving the adopt below either of
    * those statements — a reasonable-looking edit — would silently strand the restored brief, and
    * the previous comment asserting "the subscription sees no change" was simply false. This makes
    * the intent explicit at the point that decides it instead of leaving it implicit in line
@@ -424,6 +474,16 @@ export class CampaignsComponent {
   private emailStagingGeneration = 0;
 
   /**
+   * Guards a late variant-B copy response against a stage the operator has since changed.
+   *
+   * Same hazard as `emailCopyGeneration`, kept as its own counter because variant B can be
+   * regenerated independently of variant A.
+   */
+  private abTestCopyGeneration = 0;
+  /** Bumped whenever variant B is discarded, so an in-flight stage can tell it was cancelled. */
+  private abTestDiscardGeneration = 0;
+
+  /**
    * The persist a concurrent caller can join instead of starting a second one.
    *
    * `ensureEmailBriefId` caches the id only AFTER its persist resolves, so two email actions
@@ -489,11 +549,11 @@ export class CampaignsComponent {
   private ownershipGeneration = 0;
 
   /**
-   * The tail of this session's save queue — see `persistBrief` for why saves are serialised.
+   * The tail of this session's save queue — see `persistBrief` for why saves are serialized.
    *
    * A plain promise rather than an RxJS operator because the queue must OUTLIVE the component:
    * `concatMap` under `takeUntilDestroyed` would abort a save in flight when the user navigates
-   * away, which is exactly the behaviour `persistBrief` documents it must not have.
+   * away, which is exactly the behavior `persistBrief` documents it must not have.
    */
   private persistChain: Promise<void> = Promise.resolve();
 
@@ -626,7 +686,7 @@ export class CampaignsComponent {
    * on the Implementation entry paths — the create path needs the answer BEFORE any campaign
    * exists, so it cannot wait for the first. `null` therefore means "unanswered or failed", not
    * "never asked". The tab treats it as "withhold the control but preserve the draft", which is
-   * the correct behaviour for an unanswered question;
+   * the correct behavior for an unanswered question;
    * the server-side predicate reports `true` whenever the legacy creator still owns creation, so
    * the common case is not a silently missing control.
    */
@@ -1080,6 +1140,403 @@ export class CampaignsComponent {
   protected readonly canGenerateEmailCopy = computed(() => this.emailBriefOutput() !== null && this.emailCopyState() !== 'generating');
 
   /**
+   * Whether the operator wants a native HubSpot A/B test on this send. Off by default — most
+   * sends are single-variant, and `onStageEmailSend` only puts `abTestEnabled`/`subjectB`/
+   * `bodyHtmlB` on the wire while this is on.
+   */
+  // Derived from `abTestForm`, which is the source of truth now that the controls are
+  // form-driven wrappers. Readers keep the signal API they already used; the form is what the
+  // template binds to, so typing in the field and setting the control both land in one place.
+  protected readonly abTestEnabled = toSignal(this.abTestForm.controls.enabled.valueChanges, {
+    initialValue: this.abTestForm.controls.enabled.value,
+  });
+
+  /** Variant B subject line — generated via `onGenerateAbTestCopy` or entered by hand. */
+  protected readonly abTestSubjectB = toSignal(this.abTestForm.controls.subjectB.valueChanges, {
+    initialValue: this.abTestForm.controls.subjectB.value,
+  });
+
+  /** Variant B's preheader — forwarded as `previewTextB` so B does not inherit A's. */
+  protected readonly abTestPreheaderB = toSignal(this.abTestForm.controls.preheaderB.valueChanges, {
+    initialValue: this.abTestForm.controls.preheaderB.value,
+  });
+
+  /**
+   * Variant B's preheader as it will ACTUALLY be sent: sanitized, and '' when B has none.
+   *
+   * One computed rather than a trim in the template and another in `onStageEmailSend`. Those two
+   * drifted immediately -- a whitespace-only value was omitted on the wire (so upstream kept A's)
+   * while the preview rendered it as blank, contradicting the send. This is the same
+   * duplicate-predicate defect this PR exists to remove, so it gets the same fix: delete the
+   * second place.
+   */
+  protected readonly abTestPreheaderBForSend = computed<string>(() => sanitizeDisplayText(this.abTestPreheaderB() ?? ''));
+
+  /**
+   * What the preview shows for variant A: trimmed, so a whitespace-only value reads as absent.
+   *
+   * A computed rather than a trim in the template, for the same reason B has one: the A card
+   * rendered `emailCopy()?.preheader` raw and so reintroduced on A the exact defect just fixed
+   * on B -- a whitespace-only value showing as a blank line the send would never produce.
+   */
+  protected readonly emailPreheaderPreview = computed<string>(() => (this.emailCopy()?.preheader ?? '').trim());
+
+  /** What the preview shows for B: its own preheader, or A's when it has none -- matching send. */
+  protected readonly abTestPreheaderBPreview = computed<string>(() => this.abTestPreheaderBForSend() || this.emailPreheaderPreview());
+
+  /** Variant B body HTML — generated via `onGenerateAbTestCopy` or entered by hand. */
+  protected readonly abTestBodyHtmlB = toSignal(this.abTestForm.controls.bodyHtmlB.valueChanges, {
+    initialValue: this.abTestForm.controls.bodyHtmlB.value,
+  });
+
+  /**
+   * The destinations a generated body may link to, for BOTH variants.
+   *
+   * An `<a href>` in generated copy is a promise of a destination, and campaign-service does not
+   * enforce its own "every href must be the brief's url" prompt instruction. The generator's own
+   * `ctaUrl` is the destination it declared, so it is what a body anchor may point at.
+   *
+   * An EMPTY list is meaningful: the stages that withhold a CTA destination (CFP Launch,
+   * Post-Event, Final Countdown) vouch for nothing, and are the stages a model is most likely to
+   * invent an address for. The staging payload judges variant B against this same list, so the
+   * preview cannot show a link the draft will drop.
+   */
+  protected readonly generatedDestinations = computed<string[]>(() => {
+    // `emailCtaDestination`, NOT a second reading of `copy.ctaUrl`. That signal already answers
+    // "where may a generated link point": it requires the generator's url to EQUAL the brief's
+    // registration url, because the model is told to copy that url exactly or omit the field, so
+    // anything else is a hallucination. A raw `canonicalHttpUrl(ctaUrl)` only proves the url is
+    // public-looking, which `https://evil.example/phish` also is -- and staging forwards
+    // `emailCtaDestination`, so the weaker list kept links in the preview that the draft drops.
+    // One validator, not two: `emailCtaDestination` is lazily read, so declaration order is fine.
+    const destination = this.emailCtaDestination();
+    return destination === '' ? [] : [destination];
+  });
+
+  /**
+   * Variant A's body with body links judged against the VALIDATED destination.
+   *
+   * `copy.body` arrives from the service already stripped of resource-loading markup and with its
+   * anchors judged against the generator's own button url -- but the service has only `briefId`,
+   * not the brief, so it cannot check that url against the brief's registration url. A model that
+   * invents `button.url = https://evil.example` alongside an anchor to that host therefore gets
+   * both past the service.
+   *
+   * `emailCtaDestination` is where that check lives, and it is client-side. Re-running the same
+   * filter here with the validated list closes the gap and makes A's preview agree with what the
+   * controller stages -- exactly as `abTestBodyHtmlBPreview` does for B.
+   */
+  protected readonly emailBodyHtmlPreview = computed<string>(() => stripResourceLoadingHtml(this.emailCopy()?.body ?? '', this.generatedDestinations()));
+
+  /**
+   * Variant B's body with resource-loading markup removed, for the PREVIEW only.
+   *
+   * `abTestBodyHtmlB` is a live form value, so unlike variant A's `copy.body` it never passes
+   * through the server's sanitizer. Angular's own sanitization strips scripts and handlers but
+   * deliberately KEEPS `<img src="https://…">`, so pasting image or tracking-pixel markup into
+   * the B textarea made the operator's browser issue that request while merely previewing.
+   *
+   * The static-template test cannot catch this: the element arrives through `[innerHTML]` at
+   * runtime, so there is no `<img>` in the template source to find.
+   *
+   * Staging uses this same normalized value (via `abTestBodyHtmlBForSend`, which adds nothing to
+   * it -- B has no call to action of its own), so the preview and the draft cannot disagree.
+   */
+  protected readonly abTestBodyHtmlBPreview = computed<string>(() => stripResourceLoadingHtml(this.abTestBodyHtmlB(), this.generatedDestinations()));
+
+  /** Variant B generation lifecycle, separate from `emailCopyState` so the two can run independently. */
+  protected readonly abTestCopyState = signal<'idle' | 'generating' | 'error'>('idle');
+
+  /** Message for a failed variant B generation — empty while idle or in flight. */
+  protected readonly abTestCopyError = signal<string>('');
+
+  /**
+   * Whether variant B will actually be staged as an A/B test.
+   *
+   * Both halves must be non-empty: upstream reads an empty string as "blank this field", so a
+   * half-filled variant would clear the content it was meant to set, and `onStageEmailSend`
+   * withholds the whole triple in that case. The dual-variant preview reads this too — showing
+   * a B card for a draft that stages as single-variant is the same preview/draft drift as the
+   * CTA one below.
+   */
+  protected readonly abTestIsStageable = computed<boolean>(
+    // TRIMMED, because buildHubSpotConfig trims before applying the same gate: a whitespace-only
+    // subject passes a raw !== '' check here and is then dropped server-side, which is the
+    // preview/draft drift this predicate exists to remove.
+    // The SANITIZED body, because that is what ships. A body consisting only of a tracking pixel
+    // sanitizes to '', so gating on the raw value would call it stageable and then send an empty
+    // variant -- the same preview/draft drift this predicate exists to remove, one layer down.
+    // BOTH halves judged the way the controller judges them. The body half already used the
+    // shared predicate; the subject half used a bare `.trim()`, which keeps a subject of only
+    // zero-width spaces, a soft hyphen or a Hangul filler -- all of which
+    // `sanitizeDisplayText` reduces to '' at the boundary, so the controller drops the whole
+    // A/B triple and stages a single-variant send while the preview shows two variants.
+    () => sanitizeDisplayText(this.abTestSubjectB()) !== '' && hasVisibleHtmlText(this.abTestBodyHtmlBPreview())
+  );
+
+  /**
+   * Whether a rebuild carrying hero/sponsor modules can safely be staged.
+   *
+   * Requires a NON-BLANK body, not merely `copy !== null`: generation requires a subject, not a
+   * body, and the controller trims `bodyHtml` — so a subject-only or whitespace-only body was
+   * dropped server-side while the hero still shipped. campaign-service's `RebuildEmailContent`
+   * then replaces the whole widget tree with a hero and no body, dropping the cloned template's
+   * body entirely. That is data loss, not a cosmetic gap.
+   *
+   * The dual-variant preview reads this too, so it cannot show modules the draft will not get.
+   *
+   * Judged on the SANITIZED body, not the raw one: a tracking-pixel-only payload is non-empty as
+   * raw HTML and empty after `stripResourceLoadingHtml`, so the raw value staged hero/button/
+   * sponsor modules against a body that ships as nothing. Variant B already gated on its
+   * stripped value; this is the A-side twin of that.
+   */
+  protected readonly emailBodyIsStageable = computed<boolean>(() => hasVisibleHtmlText(this.emailBodyHtmlPreview()));
+
+  /**
+   * The hero image URL exactly as it will be staged, or '' when it will not be.
+   *
+   * The preview binds this rather than the raw persisted value. `asEventDetails` accepts any
+   * string off a restored brief, and the shared `canonicalHttpUrl` that the controller also uses
+   * drops non-http(s) and private hosts — so binding the raw value showed a banner the draft
+   * omits AND made the BROWSER fetch it, which the server-side guard cannot prevent. Same
+   * validator as the controller, so the two cannot drift.
+   *
+   * NOT rendered in the preview, and that is deliberate.
+   *
+   * `canonicalHttpUrl` is a literal/name denylist: it does NOT resolve DNS, so a hostname that
+   * resolves to a private address still passes it. campaign-service's dial-time guard covers
+   * its own server-side fetch, but it does not run until the draft is STAGED -- so binding this
+   * value into an `<img [src]>` made the operator's browser fetch an arbitrary host from inside
+   * their network, and `referrerpolicy` suppressed the referrer without stopping the request.
+   *
+   * The preview therefore NAMES the image rather than loading it (see `emailHeroImageHost`).
+   * This value is still what gets STAGED -- campaign-service fetches and re-hosts it behind its
+   * own guard at that point -- so it remains the right thing to send, and the wrong thing to
+   * render.
+   */
+  protected readonly emailHeroImageUrl = computed<string>(() => {
+    if (!this.emailBodyIsStageable()) return '';
+    return canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.heroImageUrl);
+  });
+
+  /** Sponsors whose logo survives the same validation the controller applies, capped alike. */
+  protected readonly emailSponsors = computed<CampaignEventSponsor[]>(() => {
+    if (!this.emailBodyIsStageable()) return [];
+    // The SAME normalizer the controller uses. These two pipelines were duplicated verbatim and
+    // drifted repeatedly -- blank names, the name cap, the sanitizer -- each drift showing the
+    // operator a sponsor the sent draft omits, or the reverse.
+    return normalizeSponsors(this.emailBriefOutput()?.eventDetails?.sponsors);
+  });
+
+  /**
+   * The registration URL in the same canonical form the controller forwards.
+   *
+   * `canonicalHttpUrl` returns `parsed.href` with userinfo stripped, so sending the raw string put
+   * a different value in the preview than the draft receives — `http:example.com/r` previews
+   * verbatim and stages as `http://example.com/r`, and `https://user:pass@host/r` would show the
+   * credentials. Benign for the draft, which the controller fixes on receipt; not benign for the
+   * preview, whose entire job is to match.
+   *
+   * Empty only when the BRIEF has no usable registration URL. It used to be empty whenever the
+   * destination was not stageable; that coupling is gone (see below), and the sentence saying
+   * otherwise outlived it.
+   */
+  protected readonly emailRegistrationUrl = computed<string>(() =>
+    // NOT gated on `emailCtaIsStageable` any more. The two were coupled while that predicate
+    // meant "the brief has a usable registration URL" -- it now means "the GENERATOR supplied a
+    // button destination", which is a different question. Leaving them coupled unlinked the HERO
+    // on exactly the stages where the generator withholds a button url (CFP Launch, Post-Event,
+    // Final Countdown): no "Submit Your Proposal" destination should not also cost the event
+    // image its link to the event page.
+    canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl)
+  );
+
+  /**
+   * The CTA label exactly as it will be staged: trimmed, and empty when it will not be sent.
+   *
+   * Every preview block reads this rather than `copy.cta`, because the wire path trims and the
+   * controller trims again -- so a padded or whitespace-only label rendered a button the draft
+   * either omits or labels differently. Same drift as the two predicates below; one value is the
+   * fix rather than a `.trim()` repeated at each render site.
+   */
+  protected readonly emailCtaLabel = computed<string>(() =>
+    // Requires a stageable BODY too, not just a valid destination: the button is written by the
+    // same full-tree rebuild as the hero, so a button with no body drops the cloned template's
+    // body exactly as a hero would. Same data-loss path, different field.
+    this.emailCtaIsStageable() && this.emailBodyIsStageable() ? sanitizeDisplayText(this.emailCopy()?.cta ?? '') : ''
+  );
+
+  /**
+   * The CTA text to show when the generator produced a label but its destination was REFUSED.
+   *
+   * Without this the call to action disappears entirely, from every surface at once. The server
+   * keeps a button's label inline in `body` only when its url is FALSY (`!section.url`, so a
+   * whitespace-only value counts as supplied), while this component additionally refuses a url
+   * that does not canonicalise or does not match the brief's registration URL -- so a
+   * hallucinated destination is dropped server-side (the url was truthy) and refused
+   * client-side (the url was wrong), and nothing reports it. Two encodings of one question that
+   * disagree on the middle case.
+   *
+   * The check cannot be consolidated server-side: `generateEmailCopy` has only the project slug
+   * and brief id, so comparing against the brief's registrationUrl would mean fetching the
+   * brief on a hot path. It is resolved HERE, where both values are already in hand.
+   *
+   * Deliberately NOT folded into `emailCtaLabel`: that value gates the staged BUTTON, and
+   * showing a label for a destination that was refused would promise a button the draft will
+   * not carry. This is preview-only text, so the operator can see the generator's wording and
+   * that it has no usable destination.
+   */
+  protected readonly emailCtaUnlinkedLabel = computed<string>(() => {
+    if (this.emailCtaIsStageable() || !this.emailBodyIsStageable()) return '';
+    // ONLY when a url was supplied and then REFUSED -- never when it was omitted.
+    //
+    // An omitted `ctaUrl` is the CFP / Feedback / See-You-There case, and the server already
+    // keeps that label inline in `body` (its filter is `!section.url`), so rendering it here too
+    // showed the call to action twice: once in the body, once as the grey label.
+    //
+    // The test MIRRORS the server's `!section.url` exactly, deliberately without a `.trim()`. A
+    // whitespace-only url is TRUTHY, so the server treats it as supplied and drops the label
+    // from `body`; trimming here would call the same value omitted and hide it on this side too,
+    // and the call to action would vanish through the very gap this helper closes. Two encodings
+    // of one question drift the moment they stop being identical -- which is how the vanishing
+    // CTA arose in the first place.
+    if (!this.emailCopy()?.ctaUrl) return '';
+    // `sanitizeDisplayText`, matching `emailCtaLabel`. This is the SAME `copy.cta`, and it is
+    // folded into a body that ships -- so a BIDI override or an invisible-only label would reach
+    // a recipient through this path while the linked path refuses it.
+    return sanitizeDisplayText(this.emailCopy()?.cta ?? '');
+  });
+
+  /**
+   * The body that STAGES, which is the preview's body plus any call to action that lost its link.
+   *
+   * The server keeps a button's label inline in `body` only when the section carried NO url (its
+   * filter is `!section.url`). A url that was supplied and then REFUSED -- a hallucinated host, a
+   * whitespace string -- takes the label out of `body` on the server and sends no native button
+   * here, so the call to action vanished from the staged draft while the preview still showed it
+   * as `emailCtaUnlinkedLabel`. The preview was telling the truth about intent and the draft was
+   * losing the content.
+   *
+   * Appended as plain text, matching how the server renders an unlinked button: the label is the
+   * content, and only the link is missing.
+   */
+  protected readonly emailBodyHtmlForSend = computed<string>(() => withUnlinkedCta(this.emailBodyHtmlPreview(), this.emailCtaUnlinkedLabel()));
+
+  /**
+   * Variant B's body as it will be STAGED.
+   *
+   * No CTA fold-back, unlike variant A, and the asymmetry is deliberate: B has no call to action
+   * of its own. `onGenerateAbTestCopy` keeps only `subject`, `body` and `preheader` from B's
+   * generation and discards `cta`/`ctaUrl`, and the controller's A/B payload carries only
+   * `subjectB`, `bodyHtmlB` and `previewTextB` -- no button fields -- so B shares A's button
+   * widget upstream. Folding A's label into B's body would render the call to action twice.
+   */
+  protected readonly abTestBodyHtmlBForSend = computed<string>(() => this.abTestBodyHtmlBPreview());
+
+  /**
+   * The hero image's HOST, for a preview that describes the image without fetching it.
+   *
+   * The preview used to bind the scraped URL straight into `<img [src]>`, which makes the
+   * OPERATOR'S BROWSER issue the request -- before campaign-service's dial-time guard is
+   * involved, because that guard only runs when the draft is staged. `canonicalHttpUrl` cannot
+   * prevent it: a scraped hostname can resolve to an RFC1918 or loopback address, and
+   * `referrerpolicy` suppresses the referrer without stopping the fetch.
+   *
+   * There is no re-hosted asset to show instead -- campaign-service re-hosts the bytes when the
+   * draft is staged, and the brief carries only the scraped URL at preview time. So the preview
+   * names the image rather than loading it: the operator still sees that a banner will be
+   * attached and where it came from, and no request leaves the browser.
+   */
+  protected readonly emailHeroImageHost = computed<string>(() => {
+    // `new URL('')` throws, so the try/catch covers the empty case too -- an explicit
+    // `url === ''` guard ahead of it was redundant, and the catch is not dead: it is what
+    // handles that input.
+    try {
+      return new URL(this.emailHeroImageUrl()).host;
+    } catch {
+      return '';
+    }
+  });
+
+  /**
+   * Whether a generated CTA will actually reach the staged draft.
+   *
+   * The label alone is not enough: `onStageEmailSend` withholds buttonText/buttonUrl when the
+   * brief has no registrationUrl, because the controller's allow-list drops the pair when the
+   * url is blank. Rendering the button in the preview regardless would make the preview claim
+   * something the draft will not have -- and the preview's whole purpose is to show what gets
+   * staged. Both read this, so they cannot drift apart.
+   */
+  protected readonly emailCtaIsStageable = computed<boolean>(
+    // Reuses the ONE canonicalizer the controller uses, rather than restating scheme+host here:
+    // a non-empty result means the destination survives `canonicalHttpUrl`, which is exactly
+    // what the controller keeps. Three earlier versions of this predicate drifted from it.
+    // The GENERATOR's url, and NO fallback. The generator omits `url` for the stages where
+    // registration is the wrong destination ("Submit Your Proposal", "Share Feedback", "See You
+    // There"), so treating its absence as "use registration" pointed those buttons at the
+    // registration page. Absent means no button.
+    () => this.emailCtaDestination() !== ''
+  );
+
+  /**
+   * Where a staged CTA button will actually point, or '' when no button should be sent.
+   *
+   * The generator's own url wins. It is told to copy the Registration URL exactly or OMIT the
+   * field -- never invent one -- so an absent url is a deliberate "registration is not the right
+   * destination for this stage", not a gap for the UI to fill.
+   */
+  protected readonly emailCtaDestination = computed<string>(() => {
+    const generated = canonicalHttpUrl(this.emailCopy()?.ctaUrl);
+    if (generated === '') return '';
+    // MUST EQUAL the brief's registration URL. The generator is told "a button's url must be
+    // that URL, copied exactly ... never invented", so anything else is a model that did not
+    // follow its instructions -- and accepting it would ship a button pointing somewhere the
+    // brief never contained. Checking only that the URL is public-looking is not enough: a
+    // hallucinated `https://evil.example.com/phish` passes that check.
+    //
+    // Compared with the trailing slash normalized away on the PATHNAME ONLY. `canonicalHttpUrl`
+    // does NOT equalise it -- `.../kubecon-eu-2026` and `.../kubecon-eu-2026/` stay distinct,
+    // A model copying the URL and adding or dropping a slash addresses the SAME page, so
+    // refusing it would silently drop the button for a generation that followed its
+    // instructions.
+    //
+    // Stripping it from the whole serialized URL was the over-correction in the other
+    // direction: it also mutates the query and fragment, so a generated `?token=abc/` compared
+    // EQUAL to the brief's `?token=abc` and a different destination passed. Only the path may
+    // be normalized; `search` and `hash` must match exactly, because a trailing slash there is
+    // part of the value rather than a path separator.
+    const fromBrief = canonicalHttpUrl(this.emailBriefOutput()?.eventDetails?.registrationUrl);
+    const sameTarget = (url: string): string => {
+      try {
+        const parsed = new URL(url);
+        parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+        return parsed.toString();
+      } catch {
+        // Not parseable: compare verbatim rather than guessing.
+        //
+        // REACHED ROUTINELY, not a defensive dead branch: `canonicalHttpUrl` returns '' for a
+        // brief with no usable registrationUrl, and `new URL('')` throws, so every such brief
+        // lands here while the generator has supplied a url.
+        //
+        // Returning the input verbatim is the right answer for that case: '' can then only equal
+        // '', so a generated url never matches an absent brief url and no button is staged --
+        // which is what "the brief has no registration destination" should mean. Falling back to
+        // the old whole-string strip here would reintroduce the query/fragment gap.
+        return url;
+      }
+    };
+    return sameTarget(generated) === sameTarget(fromBrief) ? generated : '';
+  });
+
+  /**
+   * Whether variant B copy can be (re)generated: same brief precondition as variant A, gated on
+   * the toggle being on so a generation cannot start for a test the operator has not opted into.
+   */
+  protected readonly canGenerateAbTestCopy = computed(
+    () => this.abTestEnabled() && this.emailBriefOutput() !== null && this.abTestCopyState() !== 'generating'
+  );
+
+  /**
    * Email staging state — LFXV2-3201's create trigger.
    *
    * Separate from the paid side's `creating`/`campaignRows` because the two report DIFFERENT
@@ -1118,7 +1575,14 @@ export class CampaignsComponent {
       // and `failed`, and a build that ends in `failed` still yields an audience object. Gating
       // on existence alone would re-admit the exact refusal this guard exists to prevent.
       this.emailAudience()?.status === 'built' &&
-      this.emailStaging() !== 'staging'
+      this.emailStaging() !== 'staging' &&
+      // A generation IN FLIGHT, not just a staging one. `onStageEmailSend` reads `emailCopy()`
+      // unconditionally, and a regeneration clears it only when the response lands -- so staging
+      // during one sends the PREVIOUS copy while the operator watches new copy being written.
+      // That draft reads as plausible and is simply the wrong content, which is the failure mode
+      // this panel keeps having to close.
+      this.emailCopyState() !== 'generating' &&
+      this.abTestCopyState() !== 'generating'
   );
 
   /**
@@ -1195,9 +1659,8 @@ export class CampaignsComponent {
    * version of this note said the PR built the route, which would have left later work treating
    * this component as the owner of an endpoint it only calls.
    *
-   * It is still NOT the paid Monitor component. An earlier version of this note reasoned from the
-   * backend capability straight to a frontend guarantee, and that missing step is what made
-   * reusing `MonitoringTabComponent` look safe. It is not — its `PlatformType` is
+   * It is still NOT the paid Monitor component: a backend capability does not imply a frontend
+   * one. `MonitoringTabComponent`'s `PlatformType` is
    * `'google' | 'linkedin' | 'reddit' | 'meta'`, none of which is HubSpot.
    */
   protected readonly emailTabs: readonly CampaignTabOption[] = CAMPAIGN_EMAIL_TABS;
@@ -1266,8 +1729,8 @@ export class CampaignsComponent {
    * Rows carrying an actual measurement.
    *
    * The predicate reaches all the way to `metrics.email`, and that depth is load-bearing: it must
-   * be the SAME predicate the totals are summed over. An earlier version stopped at
-   * `metrics !== undefined`, so a row whose `metrics` existed WITHOUT an `email` object passed
+   * be the SAME predicate the totals are summed over. Stopping at
+   * `metrics !== undefined` is not enough: a row whose `metrics` exists WITHOUT an `email` object passes
    * this filter, was then skipped by the reducer, and was counted on BOTH sides of the
    * partial-coverage comparison — which therefore never fired. The totals silently covered fewer
    * emails than the panel claimed, and where such a row was the only one the reducer's zero seed
@@ -1529,7 +1992,6 @@ export class CampaignsComponent {
         }
 
         // Same shape one tab over, but the claim is narrower than the picker's above, and
-        // narrower again than an earlier version of this comment asserted.
         //
         // `resetEmailBriefDerivedState` has already run in this handler, so the previous
         // foundation's numbers are gone either way -- this is NOT protection against stale
@@ -1589,6 +2051,16 @@ export class CampaignsComponent {
     // copy of that sequence is one edit away from disagreeing with the first.
     this.selectorForm.controls.emailType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
       this.onSelectEmailType(value);
+    });
+
+    // Clearing lives on the control's own stream rather than in a template handler: the
+    // checkbox is form-driven now, so a `setValue(false)` from the reset paths must clear the
+    // draft exactly like an operator un-ticking the box. A (change) handler would only fire
+    // for the click and leave a stale variant B behind after a programmatic reset.
+    this.abTestForm.controls.enabled.valueChanges.pipe(takeUntilDestroyed()).subscribe((enabled) => {
+      if (!enabled) {
+        this.clearAbTestDraft();
+      }
     });
 
     this.selectorForm.controls.deliveryType.valueChanges.pipe(takeUntilDestroyed()).subscribe((value) => {
@@ -1958,6 +2430,27 @@ export class CampaignsComponent {
     // Invalidate any generate still in flight. Clearing the signals is not enough: the older
     // response resolves afterwards and would repopulate the panel with the previous stage's copy.
     this.emailCopyGeneration++;
+    // An in-flight stage must be abandoned too, not just the copy generation. This clears
+    // `emailCopy`, the template id and the brief id, so a stage that is mid-await would send a
+    // payload for the type the operator just abandoned -- and it CLONES a HubSpot draft, which
+    // is not undoable.
+    //
+    // Bumping ALONE leaves the UI stuck: `onStageEmailSend` returns at its `isCurrent()` check
+    // without touching `emailStaging`, so the button spins on 'staging' forever when the new
+    // type maps to the SAME stage (the stage-change branch below, which resets it, never runs).
+    // Invalidating a generation and cleaning up the state it owns are one operation, not two --
+    // the stage-change branch and `resetEmailBriefDerivedState` both do both.
+    this.emailStagingGeneration++;
+    // Cancelled HERE rather than only in the stage-change branch below: a type change mapping to
+    // the SAME stage never reaches that branch. See `cancelStagingPoll` for why the bump alone
+    // is not enough.
+    // Only an IN-FLIGHT poll. Making this unconditional when the helper was consolidated also
+    // wiped a TERMINAL banner: after a successful stage, changing type erased "Draft created"
+    // -- the operator's confirmation that the send they just made exists. A finished stage has
+    // nothing to abandon, so there is nothing to cancel.
+    if (this.emailStaging() === 'staging') {
+      this.cancelStagingPoll();
+    }
 
     // Re-derive, because the type is the tie-break. Several of one event's templates score
     // identically on the event, and the type is what chooses between them -- so a suggestion made
@@ -1976,6 +2469,14 @@ export class CampaignsComponent {
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
 
+    // Variant B is brief-scoped the same way variant A is — a stale draft from the previous
+    // stage must not ride along into a create for the new one.
+    // Variant B is brief-scoped the same way variant A is -- a stale draft from the previous
+    // stage must not ride along into a create for the new one. Same sequence as a toggle-off,
+    // so it calls the same function: six duplicated lines are exactly what drifts, which is the
+    // defect this PR exists to remove.
+    this.clearAbTestDraft();
+
     // LAST, and only when the STAGE actually moved. A stage change changes which brief this tab is
     // working on, because the stage is part of a brief's identity upstream. Moving the picker above
     // the planner re-pointed the PLANNER's lookup; `emailBriefId` is the parent's own cached state
@@ -1990,7 +2491,7 @@ export class CampaignsComponent {
     // clears `selectedEmailTemplateId`/`selectedEmailTemplateRow`, and the template is the
     // operator's own choice: the block above has just re-derived a suggestion for the new type, and
     // wiping it here would undo that and discard a hand-picked template too. Four existing specs
-    // pin exactly that behaviour.
+    // pin exactly that behavior.
     //
     // The generation counters are bumped for the same reason the helper bumps them: clearing a
     // signal cannot reach a request already on the wire, and an audience response landing after
@@ -2012,16 +2513,7 @@ export class CampaignsComponent {
       this.emailAudienceGeneration++;
       this.emailStagingGeneration++;
       this.emailBriefPersistInFlight = null;
-      // CANCEL the poll, do not merely bump past it. `pollStagingJob` never reads
-      // `emailStagingGeneration`, so the counter only guards the awaits BEFORE the poll starts; a
-      // subscription already running keeps writing `done`/`error` and would announce "Draft
-      // created" for the PREVIOUS send under the newly selected stage.
-      // `resetEmailBriefDerivedState` cancels it for exactly this reason, and a stage change is
-      // the same hazard by a different route.
-      this.stagingJobSubscription?.unsubscribe();
-      this.stagingJobSubscription = null;
-      this.emailStaging.set('idle');
-      this.emailStagingMessage.set('');
+      this.cancelStagingPoll();
     }
   }
 
@@ -2034,6 +2526,10 @@ export class CampaignsComponent {
    *
    * Regeneration is just calling this again: upstream composes the prompt from the brief and does
    * NOT persist the result, so a second call is safe and cheap.
+   *
+   * This is variant A of the A/B test: it always requests the `urgency-fomo` variant, so its draft
+   * differs from variant B's ordinary stage-based copy (`onGenerateAbTestCopy`) in structure, not
+   * just wording.
    */
   protected async onGenerateEmailCopy(): Promise<void> {
     const brief = this.emailBriefOutput();
@@ -2067,7 +2563,9 @@ export class CampaignsComponent {
         return;
       }
 
-      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      // Variant A always requests the urgency-fomo draft -- variant B (`onGenerateAbTestCopy`
+      // below) stays on ordinary stage-based copy so the two drafts differ in more than wording.
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage(), 'urgency-fomo'));
       // The stage may have changed while this was in flight. Writing now would put the PREVIOUS
       // stage's copy on screen under the new stage's label — copy that reads plausibly and is
       // simply the wrong kind of email, which `onStageEmailSend` would then clone.
@@ -2100,6 +2598,98 @@ export class CampaignsComponent {
   }
 
   /**
+   * Generate variant B copy for the A/B test.
+   *
+   * Reuses the same `generateEmailCopy` endpoint variant A uses — upstream composes from the
+   * brief and does not persist the result, so calling it again is a second independent draft, not
+   * a fetch of the same one. That draft lands in the variant B signals, not `emailCopy`, so
+   * regenerating B never disturbs A's copy or its own state.
+   */
+  protected async onGenerateAbTestCopy(): Promise<void> {
+    const brief = this.emailBriefOutput();
+    const projectSlug = this.activeFoundationSlug();
+    if (brief === null || projectSlug === '') {
+      return;
+    }
+
+    const generation = ++this.abTestCopyGeneration;
+    const isCurrent = (): boolean => generation === this.abTestCopyGeneration;
+
+    this.abTestCopyState.set('generating');
+    this.abTestCopyError.set('');
+    // Cleared BEFORE the await, matching variant A. Leaving the previous B draft in the form
+    // while a regeneration fails lets `canStageEmail` still see it, so the operator reads an
+    // error and stages the stale copy anyway.
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
+    // The state these controls are in once cleared. The fields stay EDITABLE while generating --
+    // making the operator wait to type would be worse -- so a field they have since typed into
+    // no longer matches this, and the late response must not overwrite it. `isCurrent()` only
+    // tracks toggles and resets; a keystroke is neither.
+    const clearedSubjectB = this.abTestForm.controls.subjectB.value;
+    const clearedPreheaderB = this.abTestForm.controls.preheaderB.value;
+    const clearedBodyHtmlB = this.abTestForm.controls.bodyHtmlB.value;
+
+    try {
+      const briefId = await this.ensureEmailBriefId(brief, projectSlug);
+      if (!isCurrent()) {
+        return;
+      }
+      if (briefId === '') {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set(this.emailSaveFailureMessage('so no variant B copy was generated.'));
+        return;
+      }
+
+      const result = await firstValueFrom(this.campaignService.generateEmailCopy(projectSlug, briefId, this.selectedEmailStage()));
+      if (!isCurrent()) {
+        return;
+      }
+
+      if (!result.enabled) {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set('Email copy generation is not enabled for this deployment yet.');
+        return;
+      }
+
+      if (result.error || !result.copy) {
+        this.abTestCopyState.set('error');
+        this.abTestCopyError.set(result.error ?? 'Variant B copy could not be generated.');
+        return;
+      }
+
+      // Per field, not all-or-nothing: an operator who typed a subject while the body generated
+      // keeps their subject AND gets the generated body.
+      // `?? ''` on EVERY model-supplied field, not just one of the three.
+      // The wire type says `string`, but the value comes from a MODEL: a response that omits the
+      // field satisfies the decoder and lands `undefined` in the control, and the `ForSend`
+      // computeds call `.trim()` on it unguarded -- which throws a TypeError inside a computed
+      // during change detection. Guarding one field and not its two siblings is how the same
+      // defect comes back with a different field name.
+      if (this.abTestForm.controls.subjectB.value === clearedSubjectB) {
+        this.abTestForm.controls.subjectB.setValue(result.copy.subject ?? '');
+      }
+      if (this.abTestForm.controls.bodyHtmlB.value === clearedBodyHtmlB) {
+        this.abTestForm.controls.bodyHtmlB.setValue(result.copy.body ?? '');
+      }
+      // Guarded like the others: this field HAS its own input, so an operator can type into it
+      // mid-generation exactly as they can the subject. (The generator returning a preheader for
+      // B is what stops B inheriting A's.)
+      if (this.abTestForm.controls.preheaderB.value === clearedPreheaderB) {
+        this.abTestForm.controls.preheaderB.setValue(result.copy.preheader ?? '');
+      }
+      this.abTestCopyState.set('idle');
+    } catch {
+      if (!isCurrent()) {
+        return;
+      }
+      this.abTestCopyState.set('error');
+      this.abTestCopyError.set('Could not generate variant B. Try again.');
+    }
+  }
+
+  /**
    * Stage the email send — LFXV2-3201's create trigger.
    *
    * TWO upstream calls, in order, because creation is brief-scoped: the route is
@@ -2124,7 +2714,36 @@ export class CampaignsComponent {
     const brief = this.emailBriefOutput();
     const sourceEmailId = this.selectedEmailTemplateId();
     const projectSlug = this.activeFoundationSlug();
+    // Snapshot the DERIVED values with `copy`, not just `copy` itself. Everything below is built
+    // after an await, and reading `copy.body` from a pre-await snapshot while reading the gates
+    // live lets a generation that completes mid-stage make them disagree -- shipping a hero or
+    // button whose body came from a copy that no longer exists. One moment in time, one config.
     const copy = this.emailCopy();
+    // Snapshotted WITH `copy`, not read live at the payload below. `persistBrief` resolves on a
+    // later tick, and a regeneration can clear `emailCopy` while staging is in flight -- a live
+    // computed would then return '' and stage an empty body over the one the operator approved.
+    const bodyHtmlForSend = this.emailBodyHtmlForSend();
+    // No separate bodyIsStageable snapshot: emailHeroImageUrl, emailSponsors and emailCtaLabel
+    // each already require it, so snapshotting them captures the body condition too. A fifth
+    // variable would only be a second place for the same fact to live.
+    const heroImageUrl = this.emailHeroImageUrl();
+    const sponsors = this.emailSponsors();
+    const ctaLabel = this.emailCtaLabel();
+    const registrationUrl = this.emailRegistrationUrl();
+    const ctaDestination = this.emailCtaDestination();
+    // The A/B fields snapshot here too. They were the one exception, read live after the await
+    // while every sibling came from this block -- so toggling A/B off, or editing variant B,
+    // during the brief-id round trip staged post-await A/B state against pre-await copy and
+    // hero: exactly the config-that-never-coexisted this block exists to prevent.
+    const abTestWasStageable = this.abTestEnabled() && this.abTestIsStageable();
+    const abTestDiscardAtSnapshot = this.abTestDiscardGeneration;
+    const abTestSubjectB = this.abTestSubjectB();
+    const abTestPreheaderB = this.abTestPreheaderBForSend();
+    // The SANITIZED value, the same one the preview renders. Sanitizing only the preview was
+    // worse than sanitizing neither: a tracking pixel pasted into the B textarea vanished from
+    // the operator's preview while still shipping in the sent email, so the one person who could
+    // have spotted it was the only one who could not see it.
+    const abTestBodyHtmlB = this.abTestBodyHtmlBForSend();
 
     // Re-checked rather than trusted from `canStageEmail`: the button is one caller, and a
     // signal can change between the guard and the await below.
@@ -2190,7 +2809,82 @@ export class CampaignsComponent {
         // — but it would also mean every staging call claimed to carry copy it did not have.
         hubspotConfig: {
           sourceEmailId,
-          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: copy.body }),
+          ...(copy === null ? {} : { subject: copy.subject, bodyHtml: bodyHtmlForSend, preheader: copy.preheader }),
+          // The AI-generated CTA rides along as the native HubSpot button widget's text/url, not
+          // embedded inline in `body` — `copy.cta` is the button's label; its destination is the
+          // same registration URL the rest of the brief already points at. Sent only when the AI
+          // actually produced a CTA, mirroring the subject/body/preheader spread above.
+          //
+          // Gated on the DESTINATION too, not just the label, and read from `emailCtaLabel` —
+          // the same value the preview renders. `normalizeEventDetails` defaults an absent
+          // registrationUrl to '', and the controller's allow-list drops buttonText and buttonUrl
+          // together when the url is blank, so a label with no destination silently loses the CTA
+          // the operator just previewed. Re-deriving the trim inline here is the duplication that
+          // signal exists to remove, and it already drifted once.
+          // buttonUrl is the GENERATOR's destination, not the brief's registration URL. The
+          // generator omits its url for stages whose button is not about registering, so
+          // substituting registrationUrl there sent "Submit Your Proposal" to the registration
+          // page. When it omitted one, ctaLabel is '' and no button is sent at all.
+          ...(ctaLabel !== '' ? { buttonText: ctaLabel, buttonUrl: ctaDestination } : {}),
+          // Gated on a non-blank BODY (via `emailHeroImageUrl`, which reads
+          // `emailBodyIsStageable`), not merely on `copy` being non-null -- a present-but-empty
+          // body is the reachable case, and this one is DATA LOSS rather than a cosmetic gap:
+          // `RebuildEmailContent` replaces the whole widget tree, and a rebuild carrying a hero
+          // but no body drops the cloned template's body entirely (see that function's comment
+          // and TestHubSpot_APreheaderOnlyConfigLeavesTheDraftAlone). Staging does not require
+          // generated copy, so a hero-only stage was reachable — and would have quietly emptied
+          // the draft the operator was about to send.
+          //
+          // The scraped hero image and sponsor logos ride along as structured fields, not baked
+          // into `bodyHtml` — `RebuildEmailContent` (`internal/dispatch/hubspot.go`) renders the
+          // hero as its own hosted image module and each sponsor as its own image module in tiered
+          // rows. The hero links to the event's registration page, matching the only link target a
+          // brief carries.
+          // heroLinkUrl is conditional for the same reason, but the hero IMAGE is not: the
+          // controller pairs heroLinkUrl inside the heroImageUrl gate, so an image with no
+          // registration URL still renders -- just unlinked, which is the correct degrade.
+          ...(heroImageUrl
+            ? {
+                heroImageUrl,
+                // The same predicate the CTA uses, for the same reason: the controller validates
+                // heroLinkUrl as absolute http(s), so a raw non-empty check here would send a
+                // link the server then drops.
+                ...(registrationUrl !== '' ? { heroLinkUrl: registrationUrl } : {}),
+              }
+            : {}),
+          ...(sponsors.length > 0 ? { sponsors } : {}),
+          // A/B fields ride along only when the operator opted in AND variant B has content —
+          // `hubspot.go`'s STEP 3B is best-effort but still requires non-empty subject/body to
+          // write onto the variant, so an enabled toggle with nothing typed sends a single-variant
+          // draft rather than an A/B test with an empty B side.
+          // BOTH halves, not either: with `||`, filling only the subject sent `bodyHtmlB: ''`,
+          // and upstream reads an empty string as "blank this field" rather than "leave it
+          // alone" -- so a half-filled variant B cleared the body it was supposed to set. The
+          // comment above already said the Go side requires both non-empty; the gate now agrees.
+          // NARROWING is authoritative, widening is not. The pre-await snapshot exists to stop a
+          // mid-stage edit producing a config that never coexisted -- but for A/B it also
+          // overrode the operator: toggling OFF during the brief-id await left the snapshotted
+          // variant B in the payload, and recipients got a two-variant test that was cancelled
+          // before it was sent. That is externally visible and not undoable after staging.
+          //
+          // So: a variant that was on and is now off is DROPPED (the operator's explicit "stop"
+          // wins), while everything else still comes from the snapshot. Turning A/B ON mid-await
+          // is NOT honoured -- that would stage a half-filled variant assembled from two moments.
+          // Unchanged discard counter, not a live flag re-read. `this.abTestEnabled()` reads
+          // true again after an off->ON cycle during the await, while the controls this
+          // snapshotted were emptied by the toggle-off -- so the flag check shipped a variant
+          // the operator had discarded. The counter cannot be un-bumped.
+          ...(abTestWasStageable && this.abTestDiscardGeneration === abTestDiscardAtSnapshot
+            ? {
+                abTestEnabled: true,
+                subjectB: abTestSubjectB,
+                bodyHtmlB: abTestBodyHtmlB,
+                // Local name, renamed to `previewTextB` by the controller exactly as `preheader`
+                // becomes `previewText`. Omitted when blank: upstream preserves the parent's
+                // preview text for an absent value, so '' would blank B's preheader instead.
+                ...(abTestPreheaderB !== '' ? { preheaderB: abTestPreheaderB } : {}),
+              }
+            : {}),
         },
       };
 
@@ -2470,7 +3164,7 @@ export class CampaignsComponent {
       //
       // A 412 from the recorded ETag is a speed bump, not a wall: the conflict handler promotes
       // the session to explicit overwrite permission, so the user is told someone else got there
-      // first and the next Proceed saves their version over it. That is the chosen behaviour —
+      // first and the next Proceed saves their version over it. That is the chosen behavior —
       // one honest refusal, then the existing proceed-again path.
       // Bumped for THIS key only. A single session counter would make a restore of event A
       // invalidate a queued save of event B, discarding an id B's own predecessor save created
@@ -2560,6 +3254,59 @@ export class CampaignsComponent {
         },
       });
   }
+  /**
+   * Abandon an in-flight staging poll and return the button to idle.
+   *
+   * CANCEL, do not merely bump past it: `pollStagingJob` never reads `emailStagingGeneration`,
+   * so the counter guards only the awaits BEFORE the poll starts. A subscription already running
+   * keeps writing done/error and would announce "Draft created" for the abandoned send.
+   *
+   * Resetting the state is half of it, and the half that was missing: `onStageEmailSend` returns
+   * at its `isCurrent()` check WITHOUT touching `emailStaging`, so a bump on its own leaves the
+   * button spinning until a reload. Invalidating a generation and cleaning up the state it owns
+   * are one operation.
+   */
+  private cancelStagingPoll(): void {
+    this.stagingJobSubscription?.unsubscribe();
+    this.stagingJobSubscription = null;
+    this.emailStaging.set('idle');
+    this.emailStagingMessage.set('');
+  }
+
+  /**
+   * Discards the variant-B draft and invalidates any generation still in flight for it.
+   *
+   * The generation bump is the load-bearing half, not bookkeeping: without it a response that
+   * arrives after the operator has cleared the draft repopulates the fields they just emptied,
+   * and nothing reports it. A monotonic counter rather than a boolean, because a flag cannot
+   * record an off-then-on cycle -- the operator clearing, re-enabling and clearing again within
+   * one in-flight request would leave a live boolean reading "not cancelled".
+   *
+   * Clearing the state and invalidating the generation that owns it are one operation, which is
+   * why they live together here rather than at each call site.
+   */
+  private clearAbTestDraft(): void {
+    // Bump FIRST. An in-flight onGenerateAbTestCopy captured the previous generation, and
+    // without this its `isCurrent()` still passes when the response lands -- writing the draft
+    // the operator just discarded back into the cleared controls. The other reset paths
+    // (2050, 4117) already bump for the same reason.
+    this.abTestCopyGeneration++;
+    // A DISCARD -- the operator abandoning variant B -- as opposed to the pre-await clear in
+    // `onGenerateAbTestCopy`, which is about to REFILL these controls and so must not abort a
+    // stage. `resetEmailBriefDerivedState` is a discard too, but it bumps
+    // `emailStagingGeneration`, which abandons the whole stage rather than just the A/B fields.
+    //
+    // A counter, not a flag: an in-flight stage cannot detect a cancel by re-reading
+    // `abTestEnabled()`, because toggling off and back ON during the await reads true again
+    // while the controls it snapshotted have been emptied. A bump cannot be undone.
+    this.abTestDiscardGeneration++;
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
+    this.abTestCopyState.set('idle');
+    this.abTestCopyError.set('');
+  }
+
   /** Single write path for `knownBriefIds`, so `knownBriefIdsVersion` cannot drift from the map. */
   private rememberBriefId(key: string, value: { id: string; etag: string | null; absence?: 'overwrite' | 'unknown' }): void {
     this.knownBriefIds.set(key, value);
@@ -3162,7 +3909,7 @@ export class CampaignsComponent {
    *
    * Slug and name are tokenized the SAME way -- one `split(/[^\p{L}\p{N}]+/u)` over both, on any
    * non-alphanumeric run -- rather than separators for one and whitespace for the other, which is
-   * what an earlier version of this note claimed. Both are then filtered:
+   * Both are then filtered:
    * stopwords out (they match everything), tokens under three characters out (too weak to
    * identify an event on their own). What survives is the distinctive part of the event's
    * identity -- "kubecon", "nairobi", "pytorch".
@@ -3506,7 +4253,7 @@ export class CampaignsComponent {
   private persistBrief(brief: CampaignBriefOutput): void {
     const generation = ++this.briefPersistenceGeneration;
     // NOT incremented — a save does not discard what the page owns. Captured so the response can
-    // tell "nothing was discarded while I was in flight" from "a sibling save queued behind me".
+    // tell "nothing was discarded during this request" from "a sibling save queued behind it".
     const ownershipAtSend = this.ownershipGeneration;
     // Read now, not when the chain reaches this link: the foundation selected when the user hit
     // Proceed is the one the brief belongs to. A switch while the save is queued bumps the
@@ -3524,7 +4271,7 @@ export class CampaignsComponent {
     // The KEY is captured here — it identifies the brief the user hit Proceed on, and reading it
     // later would key this save by whatever is on screen when the queue reaches it.
     //
-    // The LOOKUP is deliberately not. Saves are serialised, so this one may sit behind another
+    // The LOOKUP is deliberately not. Saves are serialized, so this one may sit behind another
     // save of the same event; resolving ownership now would capture null while the predecessor is
     // still in flight, and the queued request would then find the row that predecessor created
     // and be refused as unowned — telling a user their own brief belongs to someone else. It is
@@ -3912,6 +4659,13 @@ export class CampaignsComponent {
     this.emailCopy.set(null);
     this.emailCopyState.set('idle');
     this.emailCopyError.set('');
+    // Variant B belongs to the same brief as variant A — reset it alongside for the same reason.
+    this.abTestForm.controls.enabled.setValue(false);
+    this.abTestForm.controls.subjectB.setValue('');
+    this.abTestForm.controls.preheaderB.setValue('');
+    this.abTestForm.controls.bodyHtmlB.setValue('');
+    this.abTestCopyState.set('idle');
+    this.abTestCopyError.set('');
     // Invalidate everything already in flight. Clearing the signals cannot reach a request
     // still on the wire: a copy or audience response landing after this reports work for the
     // PREVIOUS brief -- and for the audience that is not merely stale, it re-enables staging,
@@ -3920,20 +4674,16 @@ export class CampaignsComponent {
     this.emailCopyGeneration++;
     this.emailAudienceGeneration++;
     this.emailStagingGeneration++;
+    this.abTestCopyGeneration++;
     // Drop the shared persist too. It is keyed to the brief that started it, so a caller joining
     // it AFTER this reset would receive the PREVIOUS brief's id and address every later write to
     // the wrong row -- the dedup turning into a correctness bug precisely because it succeeded.
     // The in-flight request is left to finish; only the promise other callers can join is cut.
     this.emailBriefPersistInFlight = null;
 
-    // Cancel the poll, do not merely relabel it. Setting the signal back to `idle` leaves the
-    // subscription running, so a job settling after a new brief or a foundation switch still
-    // writes `done` or `error` — announcing a HubSpot draft that belongs to the PREVIOUS brief as
-    // though it were this one's.
-    this.stagingJobSubscription?.unsubscribe();
-    this.stagingJobSubscription = null;
-    this.emailStaging.set('idle');
-    this.emailStagingMessage.set('');
+    // A job settling after a new brief or a foundation switch would otherwise write done/error,
+    // announcing a HubSpot draft that belongs to the PREVIOUS brief as though it were this one's.
+    this.cancelStagingPoll();
     // Cleared with the rest of the brief-derived state. These counters belong to ONE brief's
     // campaigns; leaving them set would render the previous brief's sends under the new one.
     // Back to `null`/`idle` rather than an empty result, so the panel reads "nothing staged yet"
@@ -3966,9 +4716,7 @@ export class CampaignsComponent {
     // discarding a hand-picked template.
     this.emailTemplateSelectionIsSuggested.set(false);
     // The suggestion is derived from THIS brief's event, so its id and the terms it matched on
-    // both belong to the brief and go with it. (An earlier version of this note also mentioned an
-    // override flag that could suppress later suggestions; that flag was removed when provenance
-    // replaced it, and only these two signals are reset here.)
+    // both belong to the brief and go with it. Only these two signals are reset here.
     this.emailTemplateSuggestionId.set('');
     this.emailTemplateSuggestionTerms.set([]);
   }

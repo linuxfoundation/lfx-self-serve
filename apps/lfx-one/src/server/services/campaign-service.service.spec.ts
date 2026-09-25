@@ -266,7 +266,7 @@ describe('deriveEventSlug', () => {
   });
 
   // Trimming DETECTS emptiness; it must not rewrite the value. The slug is the lookup key for
-  // every later find, so normalising here and not wherever the next one is written would make
+  // every later find, so normalizing here and not wherever the next one is written would make
   // the two disagree about which brief belongs to this event.
   it('returns a padded slug unchanged rather than normalising the lookup key', () => {
     expect(deriveEventSlug(briefWithSlug(' kubecon-eu-2026 '))).toBe(' kubecon-eu-2026 ');
@@ -802,7 +802,7 @@ describe('CampaignServiceClient.saveBrief', () => {
     // `proxyRequestWithResponse` takes no timeout parameter, so every read here carries the
     // client's own 30s default. Counting only the sleeps -- as an earlier revision's "~2s"
     // claim did -- understated the worst case by an order of magnitude: three hung GETs plus
-    // delays is ~92s of a serialised save queue blocked before the original failure surfaces.
+    // delays is ~92s of a serialized save queue blocked before the original failure surfaces.
     //
     // A read that overruns the budget must therefore stop the loop rather than be followed by
     // two more. This one takes longer than reconcileReadBudgetMs; exactly one reconciliation
@@ -900,9 +900,9 @@ describe('CampaignServiceClient.saveBrief', () => {
   });
 
   it('adopts a row whose blobs differ only in key order', async () => {
-    // JSONB normalises key order on storage, which is why the comparison is STRUCTURAL rather
-    // than textual — and why my earlier objection to comparing the blobs at all was wrong. A row
-    // that really is ours must still be recognised when the keys come back reordered.
+    // JSONB normalizes key order on storage, so the comparison has to be STRUCTURAL rather than
+    // textual: a row that really is ours must still be recognised when the keys come back
+    // reordered.
     proxyRequestWithResponse
       .mockRejectedValueOnce(NOT_FOUND)
       .mockRejectedValueOnce(new MicroserviceError('gateway', 502, 'BAD_GATEWAY', {}))
@@ -1119,6 +1119,11 @@ describe('fromBriefResponse', () => {
       ...original,
       deliveryType: 'paid-marketing',
       emailStage: undefined,
+      // The reader normalizes the scraped fields even when the brief carried none, so a restored
+      // brief always has them in hand. Asserted rather than relaxed to `objectContaining`: an
+      // exact match is what catches the next field that the write path spreads and the read path
+      // forgets, which is the defect this whole pair exists to prevent.
+      eventDetails: { ...original.eventDetails, heroImageUrl: '', sponsors: [] },
     });
   });
 
@@ -1505,7 +1510,7 @@ describe('CampaignServiceClient.loadBrief', () => {
   // a paid caller keeps restoring its existing briefs untouched, and an email caller sees that no
   // email brief exists yet rather than adopting a paid one it cannot use.
   //
-  // The behaviour is deliberate; the historical justification it once carried was false. Pre-field
+  // The behavior is deliberate; the historical justification it once carried was false. Pre-field
   // EMAIL briefs exist too — the email flow persisted them before the field did — and after the
   // backfill they carry this same paid/empty identity and cannot be told apart. Tracked in
   // linuxfoundation/lfx-self-serve#2214; this expectation is unaffected either way.
@@ -1680,7 +1685,7 @@ describe('CampaignServiceClient.createCampaigns', () => {
 
   it('sends the envelope as the request BODY, not as query parameters', async () => {
     // `proxyRequestWithResponse(req, service, path, method, query, data)`. Passing the envelope
-    // fifth serialises it into the query string and sends no body, which campaign-service
+    // fifth serializes it into the query string and sends no body, which campaign-service
     // rejects — every create would fail before a job existed.
     bothFlagsOn();
     proxyRequestWithResponse.mockResolvedValueOnce({ data: { job_id: 'a3f1c2d4-0000-4000-8000-000000000001' } });
@@ -2361,15 +2366,112 @@ describe('CampaignServiceClient.buildAudience', () => {
 });
 
 describe('CampaignServiceClient.generateEmailCopy', () => {
-  const copy = { subject: 'Join us in Nairobi', preheader: 'Two days of MCP', body: '<p>Hello</p>', cta: 'Register' };
+  // Upstream's real wire shape (LFXV2-2775): `sections`, not `body`/`cta`.
+  const copy = {
+    subject: 'Join us in Nairobi',
+    preheader: 'Two days of MCP',
+    sections: [
+      { type: 'rich_text', html: '<p>Hello</p>' },
+      { type: 'button', text: 'Register', url: 'https://example.com' },
+    ],
+  };
 
   beforeEach(() => {
     proxyRequestWithResponse.mockReset();
     isServerFeatureEnabled.mockReturnValue(true);
   });
 
+  /**
+   * The flat-field fallback exists for the OLDER response shape, which had `body`/`cta`/`ctaUrl`
+   * instead of `sections`. It used to be chosen per field -- `cta || legacy.cta` -- which mixed
+   * the two shapes: an empty value in a sections response is an ANSWER, not a gap, and refilling
+   * it from a leftover flat field overrode the operator.
+   */
+  it('vouches only for the FIRST button, matching what the adapter forwards', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        sections: [
+          { type: 'rich_text', html: '<p><a href="https://events.linuxfoundation.org/x">ok</a> <a href="https://second.example/p">no</a></p>' },
+          { type: 'button', text: 'Register', url: 'https://events.linuxfoundation.org/kubecon' },
+          // A second button's url is discarded by the adapter (`sections.find`), so it must not
+          // whitelist its host -- that would leave a clickable unvouched link in the preview.
+          { type: 'button', text: 'Other', url: 'https://second.example/p' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).toContain('href="https://events.linuxfoundation.org/x"');
+    expect(result.copy?.body).not.toContain('second.example');
+  });
+
+  it('does not refill an empty sections field from a leftover flat field', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'S',
+        preheader: 'P',
+        // A button with no destination: deliberate, and the flat `ctaUrl` beside it is leftover.
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: 'Register', url: '' },
+        ],
+        cta: 'Leftover CTA',
+        ctaUrl: 'https://leftover.example.com',
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.ctaUrl).toBe('');
+    expect(result.copy?.ctaUrl).not.toBe('https://leftover.example.com');
+  });
+
+  it('refuses a flat response to a STAGE-AWARE request', async () => {
+    // campaign-service's api-catalog: "the legacy repackaging is applied only on this no-stage
+    // path -- a stage-aware request whose model output regresses to the flat shape is REFUSED
+    // rather than silently converted." Accepting it returned copy written without the stage the
+    // caller asked for, under a 200. It now falls through to the controlled empty-body error.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', body: '<p>Legacy body</p>', cta: 'Register', ctaUrl: 'https://example.com' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
+
+    expect(result.copy).toBeUndefined();
+    expect(result.error).toContain('no usable content');
+  });
+
+  it('does not treat a PRESENT-but-empty sections array as the legacy shape', async () => {
+    // `sections: []` is an ANSWER, not an absent field. `sections.length === 0` could not tell
+    // the two apart, so stale flat `body`/`cta` fields resurrected over a valid empty response.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', sections: [], body: '<p>Stale body</p>', cta: 'Stale', ctaUrl: 'https://stale.example' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy).toBeUndefined();
+    expect(result.error).toContain('no usable content');
+  });
+
+  it('still uses the flat fields when sections is absent entirely', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 'S', preheader: 'P', body: '<p>Legacy body</p>', cta: 'Register', ctaUrl: 'https://example.com' })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // The control for the case above: narrowing the fallback to the legacy SHAPE must not break
+    // the shape it exists for.
+    expect(result.copy?.body).toContain('Legacy body');
+    expect(result.copy?.ctaUrl).toBe('https://example.com');
+  });
+
   it('sends the stage as a QUERY param, not a body', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event');
 
@@ -2382,8 +2484,31 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(call[5]).toBeUndefined();
   });
 
+  it('sends the variant alongside the stage, both as QUERY params', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', 'Post-Event', 'urgency-fomo');
+
+    // Asserted at THIS boundary because every layer above mocks the client: the controller and
+    // component tests would all pass with `variant` dropped here, and the only symptom upstream
+    // is default copy -- variant A's arm and variant B's arm become identical and the A/B test
+    // compares a draft against itself.
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ stage: 'Post-Event', variant: 'urgency-fomo' });
+    expect(call[5]).toBeUndefined();
+  });
+
+  it('sends the variant with no stage when only a variant is named', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
+
+    await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1', undefined, 'urgency-fomo');
+
+    const call = proxyRequestWithResponse.mock.calls[0];
+    expect(call[4]).toEqual({ variant: 'urgency-fomo' });
+  });
+
   it('sends no stage param at all when the caller names none', async () => {
-    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', body: '<p>b</p>', cta: 'c' }));
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
@@ -2399,13 +2524,267 @@ describe('CampaignServiceClient.generateEmailCopy', () => {
     expect(proxyRequestWithResponse).not.toHaveBeenCalled();
   });
 
-  it('returns the generated copy', async () => {
+  it('returns the generated copy, folding sections back into body/cta', async () => {
     proxyRequestWithResponse.mockResolvedValueOnce(apiResponse(copy));
 
     const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
 
     expect(result.copy?.subject).toBe('Join us in Nairobi');
+    // The button section rides along as `cta`, NOT as an anchor baked into `body` — embedding it
+    // in both rendered the CTA twice, once inline and once as the native button.
     expect(result.copy?.body).toBe('<p>Hello</p>');
+    expect(result.copy?.cta).toBe('Register');
+  });
+
+  it('keeps the button section out of body entirely, so its text can never reach the innerHTML sink', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: '<script>alert(1)</script>', url: 'javascript:alert(1)' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // `body` is the only field rendered through `[innerHTML]`, so the button section must not
+    // reach it. That part is unchanged.
+    expect(result.copy?.body).toBe('<p>Hello</p>');
+
+    // The label IS sanitized now, and the original reasoning here -- "neither sink is an HTML
+    // sink, so carry it unmodified" -- was right about XSS and wrong about the threat that
+    // matters for display text. Angular interpolation and the controller's `buttonText` both
+    // escape markup, so `<script>` could never execute; but a BIDI override needs no markup and
+    // no sink to exploit. It renders the label as something other than what it contains, in a
+    // SENT EMAIL, where escaping does not help.
+    //
+    // So the angle brackets go too -- not because they are dangerous here, but because a button
+    // label is short human text ("Register now") where they have no legitimate use, and keeping
+    // the shared sanitizer whole is worth more than preserving them on one path.
+    expect(result.copy?.cta).toBe('scriptalert(1)/script');
+    expect(result.copy?.cta).not.toContain('<');
+  });
+
+  it('strips a BIDI override from the button label, which escaping cannot defend against', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          { type: 'button', text: 'Register \u202Eeman ruoy\u202C now', url: 'https://x.example/r' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // U+202E alone visually REVERSES everything after it, so a label can render as text it does
+    // not contain. It reaches a sent email, where no downstream escaping applies.
+    expect(result.copy?.cta).not.toContain('\u202E');
+    expect(result.copy?.cta).not.toContain('\u202C');
+    expect(result.copy?.cta).toContain('Register');
+  });
+
+  it('strips a remote image from a rich_text section before it reaches body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [{ type: 'rich_text', html: '<p>Join us</p><img src="https://evil.test/probe.png">' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // `body` is rendered through `[innerHTML]`. Angular keeps a plain `<img src>` -- it is not
+    // an XSS risk -- so the fetch it triggers has to be stopped here, and campaign-service's
+    // /email-copy path applies no sanitizer of its own.
+    expect(result.copy?.body).not.toContain('<img');
+    expect(result.copy?.body).not.toContain('evil.test');
+    expect(result.copy?.body).toContain('Join us');
+  });
+
+  it('sanitizes the subject and preheader, not only the CTA', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 'Save\u202Eyour seat',
+        preheader: 'Join\u202Eus',
+        sections: [{ type: 'rich_text', html: '<p>Body</p>' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Same sink as `cta`: model-authored display text rendered in a sent email. A BIDI override
+    // in a subject line renders as something other than what it contains, and the subject is the
+    // first thing a recipient reads.
+    expect(result.copy?.subject).not.toContain('\u202E');
+    expect(result.copy?.subject).toContain('your seat');
+    expect(result.copy?.preheader).not.toContain('\u202E');
+    expect(result.copy?.preheader).toContain('us');
+  });
+
+  it('refuses a generation whose body is EMPTY after sanitization', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        // Only resource-loading markup and no copy: this strips to ''.
+        sections: [{ type: 'rich_text', html: '<img src="https://evil.test/probe.png">' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // Returning it as a SUCCESS with an empty body is the failure mode: downstream reads '' as
+    // "blank this field", so a staged draft would lose the body it was meant to set. An error
+    // the operator can retry is the honest answer.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
+  it.each([
+    ['wrapped in a paragraph', '<p><img src="https://evil.test/probe.png"></p>'],
+    ['wrapped in a div', '<div><img src="https://evil.test/probe.png"></div>'],
+    ['a lone line break', '<p><br></p>'],
+    ['a non-breaking space', '<p>&nbsp;</p>'],
+    // Invisible Unicode: `stripHtml` removes tags and JS-whitespace, not format characters, so
+    // each of these read as non-empty until the guard asked by Unicode category instead.
+    ['a zero-width space', '<p>\u200B</p>'],
+    ['a soft hyphen', '<p>\u00AD</p>'],
+    ['a word joiner', '<p>\u2060</p>'],
+    ['a BIDI mark', '<p>\u200E</p>'],
+  ])('refuses a body that is visually empty: %s', async (_label, html) => {
+    proxyRequestWithResponse.mockResolvedValueOnce(apiResponse({ subject: 's', preheader: 'p', sections: [{ type: 'rich_text', html }] }));
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A string-length check passes all four: `<p><img ...></p>` sanitizes to `<p></p>`, which is
+    // non-empty as a string and empty to a reader. The guard has to judge rendered TEXT.
+    expect(result.error).toBeTruthy();
+    expect(result.copy).toBeUndefined();
+  });
+
+  it('keeps a LEGACY flat response working instead of refusing it', async () => {
+    // A response with no `sections` is the pre-LFXV2-2775 flat shape. The wire type declares
+    // sections-only, but that is an assertion about the wire rather than a guarantee from it --
+    // and the empty-body guard turns "no sections" into a hard error, so this path would be
+    // REFUSED where it previously passed through.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        body: '<p>Legacy body</p><img src="https://evil.test/probe.png">',
+        cta: 'Register\u202Eevil',
+        ctaUrl: 'https://events.linuxfoundation.org/register/',
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeFalsy();
+    expect(result.copy?.body).toContain('Legacy body');
+    // The fallback is not a way around the sanitizers: the same strip and display-text rules
+    // apply to the flat fields.
+    expect(result.copy?.body).not.toContain('evil.test');
+    expect(result.copy?.cta).not.toContain('\u202E');
+    expect(result.copy?.ctaUrl).toBe('https://events.linuxfoundation.org/register/');
+  });
+
+  it('accepts a body whose only content is inside a wrapper', async () => {
+    // The negative half: judging on text must not refuse real copy that happens to be nested.
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({ subject: 's', preheader: 'p', sections: [{ type: 'rich_text', html: '<ul><li>Item</li></ul>' }] })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.error).toBeFalsy();
+    expect(result.copy?.body).toContain('Item');
+  });
+
+  it('strips a BIDI override from the URL-less button label rendered into body', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Hello</p>' },
+          // No url: the documented CFP / Feedback / See-You-There case, where the label is kept
+          // INLINE in body rather than riding on cta. It is the same generator-supplied text, so
+          // sanitizing only `cta` left this branch open -- escapeHtml encodes markup and does
+          // nothing to a BIDI override.
+          { type: 'button', text: 'Submit \u202Elasoporp ruoy\u202C now' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    expect(result.copy?.body).not.toContain('\u202E');
+    expect(result.copy?.body).not.toContain('\u202C');
+    expect(result.copy?.body).toContain('Submit');
+  });
+
+  it('keeps a URL-less button label in the body, so the CTA does not vanish', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [
+          { type: 'rich_text', html: '<p>Speak with us</p>' },
+          { type: 'button', text: '<b>Submit</b> Your Proposal' },
+        ],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // CFP Launch: the generator omits `url` because registration is the wrong destination, and
+    // the UI correctly withholds a native button with no destination. Filtering the section out
+    // as well made the call to action disappear from the email entirely -- the label IS the
+    // content; only the link is missing.
+    expect(result.copy?.body).toContain('Submit');
+    // `body` is rendered through [innerHTML] and lands in a rich-text widget, so model output
+    // must not become markup. The PROPERTY is asserted rather than the mechanism: this used to
+    // expect `&lt;b&gt;` specifically, which pinned "escapeHtml ran" rather than "no live markup
+    // survives" -- and it broke the moment sanitizeDisplayText began stripping the angle
+    // brackets before escapeHtml saw them, even though the guarantee got STRONGER. The label is
+    // now defended twice: the brackets are removed, and anything left is escaped.
+    expect(result.copy?.body).not.toContain('<b>');
+    expect(result.copy?.body).not.toContain('</b>');
+    // The MARKUP SHAPE is pinned too -- asserting only "no live markup survives" left this
+    // wrapper with no coverage at all. `<div><strong>` is exactly what the wire carries: the
+    // sanitizer allows no class attribute, so emitting one here would be markup that never
+    // arrives.
+    expect(result.copy?.body).toContain('<div><strong>');
+    expect(result.copy?.body).not.toContain('class=');
+    expect(result.copy?.body).toContain('</strong></div>');
+    // Still no destination, so no native button.
+    expect(result.copy?.ctaUrl).toBe('');
+  });
+
+  it('renders a divider as <hr /> rather than dropping it', async () => {
+    proxyRequestWithResponse.mockResolvedValueOnce(
+      apiResponse({
+        subject: 's',
+        preheader: 'p',
+        sections: [{ type: 'rich_text', html: '<p>First</p>' }, { type: 'divider' }, { type: 'rich_text', html: '<p>Second</p>' }],
+      })
+    );
+
+    const result = await new CampaignServiceClient().generateEmailCopy(req, 'tlf', 'b-1');
+
+    // A divider carries no content of its own ("divider (no other fields)" upstream), so the
+    // only thing dropping it loses is its POSITION -- which is the entire point of a divider.
+    // `body` is rendered with innerHTML here and lands in a rich-text widget upstream, so the
+    // `<hr />` survives both.
+    expect(result.copy?.body).toBe('<p>First</p><hr /><p>Second</p>');
+    expect(result.copy?.cta).toBe('');
   });
 
   it('treats a response with no subject as a failure', async () => {
@@ -3371,5 +3750,45 @@ describe('CampaignServiceClient campaign-ref and keyword actions', () => {
 
       expect(proxyRequest).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('fromBriefResponse — scraped hero and sponsors survive a reload', () => {
+  // The write path persists event details with a `...details` spread while the read path
+  // allow-lists fields, so the two diverge by construction: anything added to the brief is saved
+  // and then silently dropped on restore. Hero and sponsors were exactly that — the preview and
+  // onStageEmailSend omitted both modules in any session that restored a brief rather than
+  // scraping it fresh, which is every session after the first.
+  it('reads back heroImageUrl and sponsors', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: {
+          name: 'KubeCon EU 2026',
+          slug: 'kubecon-eu-2026',
+          heroImageUrl: 'https://events.example/hero.png',
+          sponsors: [
+            { name: 'Acme', logoUrl: 'https://events.example/acme.png' },
+            // No logo: an empty image module is worse than no module, so it is dropped —
+            // mirroring planning-tab's own mapping.
+            { name: 'NoLogo', logoUrl: '' },
+          ],
+        },
+      })
+    );
+
+    expect(restored?.eventDetails?.heroImageUrl).toBe('https://events.example/hero.png');
+    expect(restored?.eventDetails?.sponsors).toEqual([{ name: 'Acme', logoUrl: 'https://events.example/acme.png' }]);
+  });
+
+  it('returns an empty sponsor list rather than throwing on a malformed blob', () => {
+    const restored = fromBriefResponse(
+      storedBrief({
+        event_slug: 'kubecon-eu-2026',
+        event_details: { name: 'KubeCon EU 2026', slug: 'kubecon-eu-2026', sponsors: 'not-an-array' },
+      })
+    );
+
+    expect(restored?.eventDetails?.sponsors).toEqual([]);
   });
 });

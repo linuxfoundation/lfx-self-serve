@@ -81,7 +81,12 @@ Conventions:
 - File suffix: `.utils.ts` (or `.util.ts` for older single-purpose files).
 - Keep functions pure — no side effects, no I/O.
 - Security-sensitive utilities (URL validation, file type checking) should block dangerous inputs by default.
-- Keep runtime dependencies minimal. Currently only `date-fns` + `date-fns-tz` are runtime deps.
+- Keep runtime dependencies minimal. Currently `date-fns`, `date-fns-tz` and `sanitize-html`.
+  `sanitize-html` is the exception that proves the rule: HTML sanitization has to PARSE rather
+  than pattern-match, and three hand-rolled scanners preceded it. A pattern matcher cannot see
+  `<image>`, unquoted `background=`, spliced tags or a mismatched close tag, and tightening one
+  against them starts deleting ordinary copy instead. Note it reaches the browser bundle through
+  the `utils` barrel -- tracked in #2845.
 
 ### Validators (`validators/`)
 
@@ -124,7 +129,7 @@ TypeScript targets ES2022 with strict mode and `moduleResolution: "bundler"`; se
 
 ## Dependencies
 
-- **Runtime** (within `packages/shared/`): `date-fns`, `date-fns-tz` — the only runtime deps inside the shared package. Other repo-wide runtime deps live in the root `package.json`.
+- **Runtime** (within `packages/shared/`): `date-fns`, `date-fns-tz`, `sanitize-html` — the only runtime deps inside the shared package. Other repo-wide runtime deps live in the root `package.json`.
 - **Peer**: `@angular/core`, `@angular/forms`, `rxjs`, `@fullcalendar/core`, `chart.js`, `snowflake-sdk` — see `packages/shared/package.json` for the canonical list and version ranges.
 
 Keep runtime deps minimal. Prefer peer dependencies for framework-specific types so consumers control the version.

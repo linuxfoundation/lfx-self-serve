@@ -3304,7 +3304,7 @@ describe('ImplementationTabComponent demand gen capability gate', () => {
   });
 
   /**
-   * The WIRE guard, reached with `canSubmit` passing — the case I previously and wrongly said
+   * The WIRE guard, reached with `canSubmit` passing — the case an earlier revision wrongly called
    * `canSubmit` covered.
    *
    * It does not. `canSubmit` only rejects Google with NEITHER type selected; with Search also
