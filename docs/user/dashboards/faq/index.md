@@ -4,7 +4,7 @@ description: Frequently asked questions about navigating the LFX Self Serve dash
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, faq, lens, persona]
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 intercom_collection: Dashboards
 ---
 
@@ -27,10 +27,6 @@ LFX Self Serve saves your lens selection in a browser cookie that lasts 30 days.
 ## What are the drawers I see when I click on dashboard cards?
 
 Drawers are sliding side panels that show additional detail — such as metrics charts or related items — without navigating away from the dashboard. Close a drawer by selecting the close icon or pressing Escape.
-
-## What does the Organization Dependency card show?
-
-The **Organization Dependency** card on the Foundation overview shows how concentrated the foundation's contributions are — the group of organizations whose contributors performed 51% or more of all contributions, versus all remaining organizations. Select the card to open a drawer with the top-organization count, a contribution-share chart, and a link to detailed metrics in LFX Insights. The card is part of the Foundation lens — it's visible to board members, executive directors, LF Staff, users with a writer role on the foundation, and users with tenant-wide auditor access.
 
 ## How do I get access to the Foundation lens?
 

@@ -4,7 +4,7 @@ description: How to switch lenses and use the LFX Self Serve dashboard effective
 audience: [all]
 product_area: Dashboards
 tags: [dashboard, lens, navigation, persona]
-last_updated: 2026-09-24
+last_updated: 2026-09-25
 intercom_collection: Dashboards
 ---
 
@@ -27,12 +27,6 @@ The **Me** lens (the default view at `/`) shows your personal activity across al
 
 The **Foundation** lens (`/foundation/overview`) is available to board members, executive directors, LF Staff, and users with a writer role on the foundation (including root writers). It shows foundation-level health metrics, project summaries, and governance activity. Under **Metrics** in the left navigation, executive directors and LF Staff additionally see **Health Metrics** (`/foundation/health-metrics`) and [Social Listening](../../social-listening/) (`/foundation/social-listening`).
 
-### Organization Dependency
-
-The Foundation overview includes an **Organization Dependency** card among its health metrics. It shows how concentrated contributions are across organizations: the group of organizations whose contributors performed 51% or more of all contributions, compared with all other organizations.
-
-Select the card to open a drawer with the top-organization count, a chart comparing that group's contribution share against all other organizations, and a link to detailed contribution metrics in LFX Insights.
-
 ## Project lens
 
 The **Project** lens (`/project/overview`) focuses on a single project. Select the project you want to view from the project context picker. The view updates to show that project's committees, meetings, votes, and contributor metrics.
@@ -53,3 +47,4 @@ Many dashboard cards open a **drawer** (a side panel) when you select them. Draw
 
 - [Dashboard overview](../) — lens and persona concepts
 - [Committees](../../committees/) — manage your committees from the dashboard
+- [Foundation Health Metrics](../foundation-health-metrics/) — health cards and the Health Metrics page
