@@ -58,7 +58,7 @@ Follow `CLAUDE.md`'s **Pre-PR review** section exactly. If the user asks to revi
 - "Did I forget the GitHub Issue reference?", "Is my branch named right?"
 - "Diff size OK?", "Is my branch rebased?"
 
-**`/preflight`** — mechanical checks; named in the **Pre-PR review** `Preflight` value as `/preflight --report-only`, after pr-readiness. Match any of these intents:
+**`/preflight`** — mechanical checks; named in the **Pre-PR review** `Preflight` value, after pr-readiness. Match any of these intents:
 
 - "Run checks", "Lint and build", "Pre-PR validation"
 - "Format check", "License check"

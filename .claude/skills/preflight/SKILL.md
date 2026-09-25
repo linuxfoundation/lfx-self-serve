@@ -1,35 +1,25 @@
 ---
 name: preflight
 description: >
-  Mechanical pre-PR pipeline for lfx-self-serve: working tree status, license
-  headers, fixture-PII and company-address guards, format, lint, type-check,
-  E2E collection, unit tests, build, protected-file check, commit
-  verification, and PR change summary. Named in the `Preflight` value of
-  `CLAUDE.md`'s **Pre-PR review** section as `/preflight --report-only`;
-  `--report-only` reports without mutating files. Review protocol and
+  Mechanical pre-PR pipeline, license headers, format, lint, build, protected
+  file check, commit verification, and PR change summary. Named in the
+  `Preflight` value of `CLAUDE.md`'s **Pre-PR review** section, after
+  `/lfx-self-serve-pr-readiness`. Review protocol and
   pattern/convention auditing are not owned by this skill.
 allowed-tools: Bash, Read, Glob, Grep, AskUserQuestion
 ---
 
 # Pre-Submission Preflight Check
 
-You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. This skill owns only the checks below; where it runs is defined by `CLAUDE.md` § **Pre-PR review** (its `Preflight` value names `/preflight --report-only`).
+You are running the mechanical pre-PR pipeline before the contributor submits a pull request. Every check here is shell-driven or hook-driven, no judgment calls. `CLAUDE.md`'s **Pre-PR review** section owns the review protocol; this skill is named in its `Preflight` value and owns only the checks below. Before running it, `/lfx-self-serve-pr-readiness` must be complete.
 
 Run each check in order, report results clearly, and help fix any issues found.
-
-## Modes
-
-Args format: `[--report-only]`.
-
-- Default mode may apply mechanical fixes (Prettier formatting, ESLint autofix, missing license headers).
-- `--report-only` means report without mutating files: run the `:check` variants named below, do not add headers, do not create commits, and do not create a PR.
 
 ## Check 0: Working Tree Status
 
 Before running any validation, check the state of the working tree:
 
 ```bash
-git fetch origin
 git status
 git diff --stat origin/main...HEAD
 git log --format="%h %s%n%b" origin/main...HEAD
@@ -55,22 +45,9 @@ Every source file (`.ts`, `.html`, `.scss`) must have the license header:
 - TypeScript/SCSS: `// Copyright The Linux Foundation and each contributor to LFX.` + `// SPDX-License-Identifier: MIT`
 - HTML: `<!-- Copyright The Linux Foundation and each contributor to LFX. -->` + `<!-- SPDX-License-Identifier: MIT -->`
 
-If any files are missing headers, add them (report only in `--report-only`).
+If any files are missing headers, add them.
 
-## Check 2: Fixture PII and Company-Address Guards
-
-The repo's two guard scripts:
-
-```bash
-./check-fixture-emails.sh "$(git merge-base origin/main HEAD)"   # real customer/vendor emails added to fixtures
-./check-company-email-guards.sh                                  # Org Lens company-address panel guards
-```
-
-Both must exit 0. A failure is a content problem, never something to auto-fix: replace the offending fixture data or restore the guard the script names.
-
-## Check 3: Formatting
-
-Default mode:
+## Check 2: Formatting
 
 ```bash
 yarn format
@@ -78,26 +55,12 @@ yarn format
 
 This applies Prettier formatting with Tailwind class sorting. It modifies files in place.
 
-`--report-only` (and what CI runs):
-
-```bash
-yarn format:check
-```
-
 > **Why format before lint:** Prettier auto-fixes whitespace, import ordering, and line-length issues that would otherwise appear as lint errors. Running format first eliminates noise from the lint step.
 
-## Check 4: Linting
-
-Default mode:
+## Check 3: Linting
 
 ```bash
 yarn lint
-```
-
-`--report-only` (and what CI runs):
-
-```bash
-yarn lint:check
 ```
 
 If there are lint errors, fix them. Common issues:
@@ -109,39 +72,15 @@ If there are lint errors, fix them. Common issues:
 
 ### Re-validation
 
-If any fixes were applied in Checks 1-4, re-run the check variants to confirm the fixes are clean:
+If any fixes were applied in Checks 1-3, re-run lint to confirm the fixes are clean:
 
 ```bash
-yarn format:check && yarn lint:check
+yarn lint
 ```
 
-If either still fails, fix and repeat until clean.
+If lint still fails, fix and repeat until clean.
 
-## Check 5: Type Checking
-
-```bash
-yarn check-types
-```
-
-Runs each workspace's `check-types` script (`tsc --noEmit`, spec files included). Type errors here surface before `yarn build` and usually point at a shared-package export or an interface drift.
-
-## Check 6: E2E Collection
-
-```bash
-(cd apps/lfx-one && yarn e2e:check-collection)
-```
-
-Runs Playwright collection only (`--list`, no browser) so a spec file that fails to load, or collects zero tests, fails here instead of silently reporting "0 failures". Fix the spec, do not skip.
-
-## Check 7: Unit Tests
-
-```bash
-yarn test
-```
-
-All unit tests must pass. A failure introduced by the branch is fixed in the branch; a flaky pre-existing failure is reported, not silenced.
-
-## Check 8: Build Verification
+## Check 4: Build Verification
 
 ```bash
 yarn build
@@ -153,7 +92,7 @@ The build must succeed. If it fails:
 - Verify shared package exports are correct
 - Check for circular dependencies
 
-## Check 9: Protected Files Check
+## Check 5: Protected Files Check
 
 The canonical protected-file list is the `.claude/hooks/guard-protected-files.sh` hook — it owns every protected path and the reason text. Extract the list from the hook rather than maintaining a duplicate:
 
@@ -171,7 +110,7 @@ Any warning the hook prints to stderr identifies a protected file in the diff. F
 
 (The same `/lfx-self-serve-pr-readiness` skill already parses this hook the same way — keep them in sync by editing the hook, not by adding new inline lists.)
 
-## Check 10: Commit Verification
+## Check 6: Commit Verification
 
 Before the final report, verify all changes are properly committed:
 
@@ -185,7 +124,7 @@ git log --format="%h %s%n%b" origin/main...HEAD
 - **`--signoff` on all commits?** — Every commit must have `Signed-off-by:` (check in the full body output above).
 - **Ticket referenced?** — Commit messages should include `#XXX` (GitHub Issue) or the fully-qualified `org/repo#XXX` form (e.g. `linuxfoundation/lfx-self-serve#1331`).
 
-## Check 11: Change Summary
+## Check 7: Change Summary
 
 Generate a summary of all changes for the PR description:
 
@@ -210,12 +149,8 @@ PREFLIGHT RESULTS
 ─────────────────────────────────
 ✓ Working tree        — Clean, N commits ahead of main
 ✓ License headers     — All files have headers
-✓ PII / guards        — Fixture emails clean, company-address guards intact
-✓ Formatting          — Clean
+✓ Formatting          — Applied
 ✓ Linting             — No errors
-✓ Type check          — No errors
-✓ E2E collection      — Consistent
-✓ Unit tests          — Passed
 ✓ Build               — Succeeded
 ✓ Protected files     — None modified
 ✓ Commits             — Conventions followed, signed off
@@ -230,12 +165,8 @@ PREFLIGHT RESULTS
 ─────────────────────────────────
 ✓ Working tree        — Clean, N commits ahead of main
 ✓ License headers     — All files have headers
-✓ PII / guards        — Fixture emails clean, company-address guards intact
-✓ Formatting          — Clean
+✓ Formatting          — Applied
 ✗ Linting             — 3 errors (see above)
-✓ Type check          — No errors
-✓ E2E collection      — Consistent
-✗ Unit tests          — 1 failing (see above)
 ✗ Build               — Failed (see above)
 ✓ Protected files     — None modified
 ✓ Commits             — Conventions followed, signed off

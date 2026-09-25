@@ -254,7 +254,7 @@ Placement decision trees ("where does my component go?", "do I need a new module
 >    tests and checks.
 
 - KB review skill: `/lfx-self-serve-learnings-review`
-- Preflight: `/lfx-self-serve-pr-readiness origin/main`, then `/preflight --report-only`
+- Preflight: `/lfx-self-serve-pr-readiness origin/main`, then `/preflight`
 
 ## Post-PR review
 

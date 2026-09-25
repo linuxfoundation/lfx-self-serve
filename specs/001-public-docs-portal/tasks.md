@@ -223,7 +223,7 @@ US4 is largely a property emerging from US1 (the route table at T020/T021 and th
 - [ ] T062 Run [quickstart.md](./quickstart.md) end-to-end on a clean checkout — add a fixture article, build, hit it in incognito, run the validation scripts — and update `quickstart.md` if any step has drifted.
 - [ ] T063 Run the pre-PR review round of the whole branch per `CLAUDE.md` § **Pre-PR review** (its fix commit, if the round found anything).
 - [ ] T064 Run `/lfx-self-serve-pr-readiness origin/main` (that section's `Preflight` value, step 2) and clear every CRITICAL finding.
-- [ ] T065 Run `/preflight --report-only` (same `Preflight` value) and fix any failure in its own commit(s).
+- [ ] T065 Run `/preflight` (same `Preflight` value) and fix any failure in its own commit(s).
 
 ---
 
