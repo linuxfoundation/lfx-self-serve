@@ -51,6 +51,7 @@ vi.mock('./logger.service', () => ({
 }));
 
 // Imported after the mocks above so the class picks up the mocked `ioredis`.
+import type { CacheCodec } from '@lfx-one/shared/interfaces';
 import { VALKEY_CACHE } from '@lfx-one/shared/constants';
 
 import { buildAuthStateCacheKey, buildMeetingInviteLockCacheKey, buildOrgCacheKey, buildPerUserOrgKey, ValkeyService } from './valkey.service';
@@ -392,5 +393,48 @@ describe('ValkeyService — oversize attribution and per-sub-resource caps (GH-1
     for (const subResource of [UNCAPPED_SUB_RESOURCE, 'people-contributors:v2:all']) {
       await expect(ValkeyService.getInstance().setJson(buildOrgCacheKey(ACCOUNT_ID, subResource)!, oversized, 60)).resolves.toBe(false);
     }
+  });
+});
+
+describe('ValkeyService — withCompactCache decode faults (GH-1906)', () => {
+  const ACCOUNT_ID = '0014100000Te2ovAAB';
+
+  beforeEach(() => {
+    vi.stubEnv('VALKEY_KEY_NAMESPACE', '');
+    vi.stubEnv('VALKEY_URL', 'redis://localhost:6379');
+    setMock.mockReset();
+    getMock.mockReset();
+    vi.mocked(logger.warning).mockClear();
+    ValkeyService.resetInstance();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('degrades an entry that passes the shape guard but fails to decode to a miss, and overwrites it', async () => {
+    // Every current decoder is total over guard-passing input; this pins the fail-soft contract for
+    // the next decoder edit that isn't — one bad entry must not 500 every request until the TTL.
+    const key = buildOrgCacheKey(ACCOUNT_ID, 'people-trainees:v2')!;
+    const fresh = { total: 7 };
+    getMock.mockResolvedValue(JSON.stringify({ stored: 'poisoned' }));
+    setMock.mockResolvedValue('OK');
+    const fetcher = vi.fn().mockResolvedValue(fresh);
+    const codec: CacheCodec<typeof fresh, { stored: number | string }> = {
+      accept: (value) => typeof value === 'object' && value !== null,
+      encode: (value) => ({ stored: value.total }),
+      decode: () => {
+        throw new TypeError('decoder regression');
+      },
+    };
+
+    await expect(ValkeyService.getInstance().withCompactCache(key, 60, fetcher, codec)).resolves.toBe(fresh);
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(setMock).toHaveBeenCalledWith(key, JSON.stringify({ stored: 7 }), 'EX', 60);
+    const [, operation, , payload] = vi.mocked(logger.warning).mock.calls.at(-1)!;
+    expect(operation).toBe('cache_decode');
+    expect(payload).toMatchObject({ cache_subresource: 'people-trainees' });
+    expect(JSON.stringify(payload)).not.toContain(ACCOUNT_ID);
   });
 });

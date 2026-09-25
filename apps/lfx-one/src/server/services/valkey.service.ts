@@ -288,7 +288,20 @@ export class ValkeyService implements CachePort {
     const hit = await this.getJson<S>(key, codec.accept);
     if (hit !== null) {
       logger.debug(undefined, 'cache_hit', 'Cache hit', { cache_key: ValkeyService.redactKey(key) });
-      return codec.decode(hit);
+      try {
+        return codec.decode(hit);
+      } catch (err) {
+        // `accept` proves the stored shape, not that every future decoder edit stays total over it.
+        // A guard-passing entry that still fails to decode degrades to a miss like every other cache
+        // fault in this class, instead of 500ing every request for the key until the TTL evicts it;
+        // the refetch below re-encodes and overwrites the entry, so it also self-heals.
+        logger.warning(undefined, 'cache_decode', 'Cached value failed to decode — treating as miss', {
+          err,
+          cache_key: ValkeyService.redactKey(key),
+          cache_namespace: ValkeyService.extractNamespace(key),
+          cache_subresource: ValkeyService.extractSubresource(key),
+        });
+      }
     }
 
     logger.debug(undefined, 'cache_miss', 'Cache miss — fetching from source', { cache_key: ValkeyService.redactKey(key) });
