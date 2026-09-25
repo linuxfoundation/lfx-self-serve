@@ -254,4 +254,4 @@ Provide a clear summary:
 - Any actions needed from code owners (route registration, routing changes, etc.)
 - How to use the new code (inject services, import components, etc.)
 
-**Next step:** Run `/preflight` to validate everything before submitting a PR.
+**Next step:** the implementation is complete and committed — follow `CLAUDE.md` § **Pre-PR review** exactly (the one review round, then the `Preflight` value, then the PR). Do not run `/preflight` on its own here.
