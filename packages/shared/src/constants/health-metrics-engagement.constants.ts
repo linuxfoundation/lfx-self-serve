@@ -14,13 +14,13 @@ import type {
 } from '../interfaces/health-metrics-engagement.interface';
 
 /**
- * Health Metrics tab bar. Overview and Engagement are routable today; the remaining four render
- * disabled so the bar does not reshuffle as LFXV2-3367..3370 land.
+ * Health Metrics tab bar. Overview, Engagement and Events are routable today; the remaining three
+ * render disabled so the bar does not reshuffle as their tabs land.
  */
 export const HEALTH_METRICS_TABS = [
   { key: 'overview', label: 'Overview', route: '' },
   { key: 'engagement', label: 'Engagement', route: 'engagement' },
-  { key: 'events', label: 'Events', route: null },
+  { key: 'events', label: 'Events', route: 'events' },
   { key: 'members', label: 'Members', route: null },
   { key: 'non-members', label: 'Non-Members', route: null },
   { key: 'training', label: 'Training', route: null },

@@ -192,6 +192,9 @@ export * from './health-metrics.interface';
 // Health Metrics Engagement page (LFXV2-3366) interfaces
 export * from './health-metrics-engagement.interface';
 
+// Health Metrics Events page interfaces
+export * from './health-metrics-events.interface';
+
 // Health Metrics Level 2 tab shell interfaces
 export * from './health-metrics-l2.interface';
 

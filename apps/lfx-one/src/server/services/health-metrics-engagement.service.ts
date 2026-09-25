@@ -15,7 +15,6 @@ import {
   HEALTH_METRICS_ENGAGEMENT_RANGES,
   HEALTH_METRICS_ENGAGEMENT_REPRESENTATIVES_UNMEASURED,
   HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP,
-  SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE,
 } from '@lfx-one/shared/constants';
 import type {
   HealthMetricsEngagementGroupAttendance,
@@ -41,12 +40,9 @@ import type {
   HealthMetricsEngagementRepQuery,
   HealthMetricsEngagementRepresentatives,
   HealthMetricsEngagementRepRow,
-  SnowflakeQueryResult,
 } from '@lfx-one/shared/interfaces';
 
-import { BaseApiError } from '../errors/base.error';
-import { MicroserviceError } from '../errors/microservice.error';
-import { getCodeForStatus } from '../helpers/http-status.helper';
+import { executeSnowflakeViewRead } from '../helpers/snowflake-view-read.helper';
 import { clampInteger } from '../helpers/validation.helper';
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
@@ -101,13 +97,6 @@ interface GroupAttendanceRow {
   DORMANT_GROUPS: number | null;
   IS_PAGE_ROW: boolean | null;
   [periodColumn: string]: unknown;
-}
-
-/** Identifies one read for the shared error path: what was queried, and how it is reported. */
-interface ReadContext {
-  view: string;
-  operation: string;
-  clientMessage: string;
 }
 
 /** Identifies one capped read: where it cuts, and the two log lines it writes. */
@@ -244,7 +233,7 @@ export class HealthMetricsEngagementService {
       ORDER BY page.sort_rank ASC NULLS LAST, page.committee_name ASC NULLS LAST, page.committee_id ASC NULLS LAST, page.project_slug ASC NULLS LAST, page.group_type_label ASC NULLS LAST
     `;
 
-    const result = await this.executeRead<GroupAttendanceRow>(req, sql, binds, {
+    const result = await executeSnowflakeViewRead<GroupAttendanceRow>(this.snowflakeService, req, sql, binds, {
       view: GROUP_ATTENDANCE_VIEW,
       operation: 'get_engagement_group_attendance',
       clientMessage: 'Group attendance is unavailable right now.',
@@ -305,7 +294,7 @@ export class HealthMetricsEngagementService {
         AND meeting_type_level IN (${levels.map(() => '?').join(', ')})
     `;
 
-    const result = await this.executeRead<MeetingParticipationRow>(req, sql, [query.foundationSlug, ...levels], {
+    const result = await executeSnowflakeViewRead<MeetingParticipationRow>(this.snowflakeService, req, sql, [query.foundationSlug, ...levels], {
       view: MEETING_PARTICIPATION_VIEW,
       operation: 'get_engagement_meeting_participation',
       clientMessage: 'Meeting participation is unavailable right now.',
@@ -357,7 +346,7 @@ export class HealthMetricsEngagementService {
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_ORG_ROW_CAP + 1}
     `;
 
-    const result = await this.executeRead<OrgParticipationRow>(req, sql, [query.foundationSlug], {
+    const result = await executeSnowflakeViewRead<OrgParticipationRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: ORG_PARTICIPATION_VIEW,
       operation: 'get_engagement_org_participation',
       clientMessage: 'Organization participation is unavailable right now.',
@@ -405,7 +394,7 @@ export class HealthMetricsEngagementService {
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_NON_MEMBER_ROW_CAP + 1}
     `;
 
-    const result = await this.executeRead<NonMemberParticipationRow>(req, sql, [query.foundationSlug], {
+    const result = await executeSnowflakeViewRead<NonMemberParticipationRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: NON_MEMBER_PARTICIPATION_VIEW,
       operation: 'get_engagement_non_member_participation',
       clientMessage: 'Non-member participation is unavailable right now.',
@@ -452,7 +441,7 @@ export class HealthMetricsEngagementService {
       LIMIT ${HEALTH_METRICS_ENGAGEMENT_REP_ROW_CAP + 1}
     `;
 
-    const result = await this.executeRead<RepresentativesRow>(req, sql, [query.foundationSlug], {
+    const result = await executeSnowflakeViewRead<RepresentativesRow>(this.snowflakeService, req, sql, [query.foundationSlug], {
       view: REPRESENTATIVES_VIEW,
       operation: 'get_engagement_representatives',
       clientMessage: 'Representatives are unavailable right now.',
@@ -495,44 +484,6 @@ export class HealthMetricsEngagementService {
     }
 
     return capped;
-  }
-
-  /**
-   * `expectMissingObject` still rejects. It records a *success* against the shared circuit breaker
-   * instead of a failure, so a missing view or absent GRANT here cannot open the breaker every
-   * other Snowflake dashboard depends on. The 500 reaches `apiErrorHandler` either way.
-   *
-   * The SDK names the fully-qualified view in its message, so a generic sentence is put in
-   * `clientMessage` — the raw text stays on `message`, which is what the log records. The provider
-   * `code` and `service` are dropped for the same reason.
-   */
-  private async executeRead<T>(req: Request, sql: string, binds: Bind[], context: ReadContext): Promise<SnowflakeQueryResult<T>> {
-    const startTime = Date.now();
-    try {
-      return await this.snowflakeService.execute<T>(sql, binds, { expectMissingObject: true });
-    } catch (error) {
-      // The breaker treats this as expected and logs it at `warning`, but the same message covers a
-      // revoked GRANT — an access-control event that has to be alertable on its own.
-      if (SnowflakeService.isMissingObjectError(error)) {
-        // Its own operation key: logging under the controller's would delete that entry from the
-        // request's operation stack, leaving `apiErrorHandler` to invent a path-derived one.
-        logger.error(req, `${context.operation}_missing_object`, startTime, error, {
-          snowflake_expected_missing_object: context.view,
-        });
-      }
-
-      // SnowflakeService's own generic sentence is replaced by this widget's; any other client message
-      // was chosen by the site that threw it and passes through untouched.
-      const hasSiteClientMessage =
-        error instanceof BaseApiError && error.clientMessage !== undefined && error.clientMessage !== SNOWFLAKE_QUERY_ERROR_CLIENT_MESSAGE;
-      if (!(error instanceof BaseApiError) || hasSiteClientMessage) throw error;
-
-      throw new MicroserviceError(error.message, error.statusCode, getCodeForStatus(error.statusCode), {
-        operation: error.operation,
-        clientMessage: context.clientMessage,
-        originalError: error,
-      });
-    }
   }
 }
 

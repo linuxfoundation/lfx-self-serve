@@ -209,6 +209,7 @@ Reach for **child routes** only when each tab is a page in its own right — its
     // because with the feature flag off the gate renders the legacy page and mounts no outlet.
     { path: '', pathMatch: 'full', loadComponent: ... },           // Overview
     { path: 'engagement', title: '...', loadComponent: ... },      // Engagement (Level 2)
+    { path: 'events', title: '...', loadComponent: ... },          // Events (Level 2)
   ],
 }
 ```
