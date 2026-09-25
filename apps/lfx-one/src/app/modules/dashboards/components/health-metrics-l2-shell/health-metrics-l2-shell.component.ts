@@ -131,7 +131,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
     this.resize$.pipe(debounceTime(150), takeUntilDestroyed()).subscribe(() => {
       this.measurePanesHeight();
       // The pane may have just gained or lost its scrollbar, which changes the spy's root.
-      this.setupScrollSpy();
+      this.rebuildScrollSpyIfRootMoved();
     });
   }
 
@@ -320,14 +320,26 @@ export class HealthMetricsL2ShellComponent implements OnInit {
    * has no fixed height, so `offsetHeight` reads its in-flow content height — unlike `scrollHeight`,
    * it ignores overflow from any out-of-flow descendant anywhere in the document (an open `appendTo:
    * 'body'` dropdown, an absolutely-positioned tooltip), so a re-measure while one is open can't shrink
-   * the pane. Written straight onto the element rather than through a bound signal, so a same-value
-   * re-measurement (e.g. after a resize that doesn't change the outcome) isn't skipped as a no-op
-   * update.
+   * the pane.
+   *
+   * The previous height is cleared before measuring, not just overwritten after: the layout's own
+   * `min-h-screen` floors the document at the viewport height whenever the page's content is shorter
+   * than that, and once the pane is already sized to fit, its old height is exactly what keeps the
+   * content that short. Measuring with it still applied would read back that same floor and land on
+   * the current height again instead of the real answer (e.g. after a resize that leaves the viewport
+   * taller than the page still is). Clearing it lets the pane return to its natural content height for
+   * the measurement, so the document is never floored by its own previous output. Both writes go
+   * straight onto the element rather than through a bound signal, so neither is skipped as a no-op
+   * update, and the scroll position is restored after: a pane briefly free of its `overflow-y-auto`
+   * scrollbar has nothing to hold that position against.
    */
   private measurePanesHeight(): void {
     const pane = this.panes()?.nativeElement;
     const row = pane?.parentElement;
     if (!isPlatformBrowser(this.platformId) || !pane || !row) return;
+
+    const scrollTop = pane.scrollTop;
+    pane.style.removeProperty('--l2-panes-height');
 
     // Document-relative, so a page that is already scrolled measures the same as one at the top.
     const paneDocumentTop = pane.getBoundingClientRect().top + window.scrollY;
@@ -336,6 +348,7 @@ export class HealthMetricsL2ShellComponent implements OnInit {
 
     const available = window.innerHeight - paneDocumentTop - below;
     pane.style.setProperty('--l2-panes-height', `${Math.max(Math.round(available), HEALTH_METRICS_L2_PANES_MIN_HEIGHT_PX)}px`);
+    pane.scrollTop = scrollTop;
   }
 
   /**

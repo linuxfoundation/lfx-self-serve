@@ -18,10 +18,12 @@
        the sections scroll inside it and the sub-nav beside it never travels. Below `lg` the height
        variable goes unused and the page scrolls normally. Set imperatively by measurePanesHeight()
        rather than bound, so a same-value re-measurement isn't skipped as a no-op update. `relative`
-       gives this element's own absolutely-positioned descendants (e.g. PrimeNG icon-field search
-       icons) a containing block here instead of the document root — without it they inflate
-       `document.documentElement.scrollHeight` past the viewport even though `overflow-y-auto` clips
-       them visually, which is what actually made the whole page scrollable. -->
+       gives this element's own absolutely-positioned descendants a containing block here instead of
+       the document root — a PrimeNG panel rendered inline rather than via `appendTo: 'body'` (e.g. the
+       table paginator's rows-per-page dropdown) is positioned against the nearest one, and without this
+       it would resolve to the document root and inflate `document.documentElement.scrollHeight` past
+       the viewport even though `overflow-y-auto` clips it visually here, which is what actually made
+       the whole page scrollable. -->
   <div #panes class="relative flex min-w-0 flex-col gap-6 lg:h-[var(--l2-panes-height)] lg:overflow-y-auto lg:pr-2">
     @for (section of sectionViews(); track section.key) {
       @let body = bodyByKey().get(section.key);

@@ -24,6 +24,9 @@ const SECTIONS: HealthMetricsL2Section[] = [
   { key: 'gamma', label: 'Gamma', heading: 'Gamma heading', description: 'Gamma copy', footnote: 'Gamma caution', footnoteCaution: true },
 ];
 const DATA_SECTIONS = ['alpha', 'beta'];
+// Stubbed offset for the pane's own top edge in the pane-height tests below, kept distinct from the
+// row-bottom stub (the viewport height) so the two can't be confused for each other.
+const PANE_TOP_PX = 40;
 const ITEMS: HealthMetricsL2SubNavItem[] = SECTIONS.map((section) => ({ key: section.key, label: section.label, count: null, note: '' }));
 
 // Stands in for a tab's section body: the shell only reacts to what the tab relays from these.
@@ -99,6 +102,31 @@ class FakeIntersectionObserver implements IntersectionObserver {
 
   public fire(target: Element, isIntersecting: boolean): void {
     this.callback([{ target, isIntersecting } as unknown as IntersectionObserverEntry], this);
+  }
+}
+
+// Stands in for the document-resize watcher the shell installs after first paint; jsdom has no real
+// implementation, so this both satisfies `typeof ResizeObserver !== 'undefined'` and lets a test fire
+// the same callback the component would get from a real footer settling.
+class FakeResizeObserver implements ResizeObserver {
+  public static instances: FakeResizeObserver[] = [];
+
+  public constructor(public readonly callback: ResizeObserverCallback) {
+    FakeResizeObserver.instances.push(this);
+  }
+
+  public observe(): void {
+    /* no-op */
+  }
+  public unobserve(): void {
+    /* no-op */
+  }
+  public disconnect(): void {
+    /* no-op */
+  }
+
+  public trigger(): void {
+    this.callback([], this);
   }
 }
 
@@ -181,12 +209,27 @@ describe('HealthMetricsL2ShellComponent', () => {
     fixture.destroy();
     TestBed.resetTestingModule();
     FakeIntersectionObserver.instances = [];
+    FakeResizeObserver.instances = [];
     await setup(initialFragment, platformId, dataSections);
+  }
+
+  /**
+   * Distinct rects for the pane's own top edge and the row's bottom edge — a single shared rect
+   * (the previous stub) would pass even if `measurePanesHeight()` read the wrong element's edge,
+   * since both fields happened to be present on every rect either way.
+   */
+  function stubDistinctPaneRects(): void {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]')?.lastElementChild;
+      return this === panes ? ({ top: PANE_TOP_PX, bottom: 0 } as unknown as DOMRect) : ({ top: 0, bottom: window.innerHeight } as unknown as DOMRect);
+    });
   }
 
   beforeEach(async () => {
     FakeIntersectionObserver.instances = [];
+    FakeResizeObserver.instances = [];
     vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    vi.stubGlobal('ResizeObserver', FakeResizeObserver);
     // jsdom reports a zero-height document, which would read as a page that needs no scrolling and
     // skip the end sentinel entirely.
     Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 50 });
@@ -238,29 +281,86 @@ describe('HealthMetricsL2ShellComponent', () => {
   });
 
   it('bounds the scrolling pane to what is left of the viewport, measuring the chrome below the row', async () => {
-    // jsdom lays out nothing, so the row's own bottom edge (pane.parentElement) is stubbed to land
-    // exactly at the viewport bottom — the stubbed document is 50px taller than that, which
-    // measurePanesHeight() reads as 50px of chrome (gate padding, layout padding, the footer) below
-    // the row, regardless of which column inside it is taller.
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: window.innerHeight } as unknown as DOMRect);
+    // jsdom lays out nothing, so the pane's own top edge and the row's bottom edge (pane.parentElement)
+    // are stubbed separately — the row lands exactly at the viewport bottom, and the stubbed document
+    // is 50px taller than that, which measurePanesHeight() reads as 50px of chrome (gate padding,
+    // layout padding, the footer) below the row, regardless of which column inside it is taller.
+    stubDistinctPaneRects();
     await resetup();
 
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
 
     expect(panes.className).toContain('lg:overflow-y-auto');
-    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - 50}px`);
+    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - PANE_TOP_PX - 50}px`);
   });
 
   it('clamps the pane to the minimum height when the chrome below the row exceeds the viewport', async () => {
-    // Same row-bottom stub as the test above, so the clamp is driven by the oversized offsetHeight
-    // below rather than by jsdom's default zero rects (which would clamp regardless of that value).
-    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ top: 0, bottom: window.innerHeight } as unknown as DOMRect);
+    // Same rect stubs as the test above, so the clamp is driven by the oversized offsetHeight below
+    // rather than by jsdom's default zero rects (which would clamp regardless of that value).
+    stubDistinctPaneRects();
     Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: window.innerHeight * 10 });
     await resetup();
 
     const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
 
     expect(panes.style.getPropertyValue('--l2-panes-height')).toBe('320px');
+  });
+
+  it('clears the pane height before re-measuring so a stale value cannot feed back into itself', async () => {
+    // The bug this guards: leaving the previous height in place while measuring lets a document
+    // already floored to the viewport by `min-h-screen` (because the old height made it fit) read
+    // back that same floor and land on the current height again instead of the real answer.
+    stubDistinctPaneRects();
+    await resetup();
+
+    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+    const removeProperty = vi.spyOn(panes.style, 'removeProperty');
+    const setProperty = vi.spyOn(panes.style, 'setProperty');
+
+    chrome.headerHeightPx.set(120);
+    fixture.detectChanges();
+
+    const removedBeforeSet = removeProperty.mock.invocationCallOrder[0] < setProperty.mock.invocationCallOrder[0];
+    expect(removeProperty).toHaveBeenCalledWith('--l2-panes-height');
+    expect(removedBeforeSet).toBe(true);
+    // The clear-then-set landed on the same answer as a fresh measurement, not on whatever the clear
+    // briefly exposed.
+    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - PANE_TOP_PX - 50}px`);
+  });
+
+  it('restores the scroll position after a re-measurement clears the pane height', async () => {
+    // An `auto`-height pane can momentarily stop overflowing while its height is cleared, which would
+    // otherwise clamp `scrollTop` to zero before the real height is written back.
+    stubDistinctPaneRects();
+    await resetup();
+
+    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+    Object.defineProperty(panes, 'scrollTop', { configurable: true, value: 42, writable: true });
+
+    chrome.headerHeightPx.set(120);
+    fixture.detectChanges();
+
+    expect(panes.scrollTop).toBe(42);
+  });
+
+  it('re-measures the pane when the document resizes after first paint', async () => {
+    stubDistinctPaneRects();
+    await resetup();
+
+    const panes = fixture.nativeElement.querySelector('[data-testid="health-metrics-test-page"]').lastElementChild as HTMLElement;
+    const spyBefore = spyObserver();
+
+    // Simulates the footer settling asynchronously, after the pane's first measurement.
+    Object.defineProperty(document.documentElement, 'offsetHeight', { configurable: true, value: window.innerHeight + 90 });
+    FakeResizeObserver.instances[0].trigger();
+    // The debounced subscriber runs on a real timer, so it needs a real wait rather than a fake-timer
+    // advance.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await flush();
+
+    expect(panes.style.getPropertyValue('--l2-panes-height')).toBe(`${window.innerHeight - PANE_TOP_PX - 90}px`);
+    // The scroll root didn't change, so the spy is left alone rather than rebuilt for nothing.
+    expect(spyObserver()).toBe(spyBefore);
   });
 
   it('observes each section heading below the measured sticky header', () => {
