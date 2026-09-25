@@ -131,6 +131,8 @@ Past meeting IDs are either a plain numeric ID (fallback after upcoming returns 
 
 **Location:** `apps/lfx-one/src/app/modules/meetings/meeting-join/meeting-join.component.ts`
 
+This component is no longer the `/meetings/:id` route target itself: the route loads `meeting-details-gate/`, which renders this page by default and the v2 tree only behind `MEETING_V2_ENABLED_FLAG`. Everything below still describes the page an anonymous visitor — and anyone the flag is off for — gets, and SSR renders it either way.
+
 Key signals and their gating:
 
 | Signal               | Type                            | Gate                                                                                                                                                                              |

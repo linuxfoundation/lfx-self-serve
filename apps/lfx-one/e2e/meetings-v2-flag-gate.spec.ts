@@ -4,7 +4,7 @@
 /**
  * Meetings v2 dark-launch gate E2E (#1451).
  *
- * `MEETING_V2_ENABLED_FLAG` is read at seven entry points, and every one of them has a unit spec
+ * `MEETING_V2_ENABLED_FLAG` is read at every meetings entry point, and every one of them has a unit spec
  * covering both branches. None of those specs renders the flag as a *user* meets it: they provide a
  * `FeatureFlagService` double, so a regression in the real service — a changed key, a default that
  * stops being `false`, an override that stops being read before LaunchDarkly resolves — leaves the
@@ -14,7 +14,9 @@
  * Create Meeting button, which is a navigating link to the pre-v2 create page with the flag off and
  * a dropdown trigger with it on. Both cases assert the shape that is present *and* that the other
  * branch's markup is absent, because the two buttons carry the same `data-testid` on purpose and a
- * presence-only assertion would pass against either one.
+ * presence-only assertion would pass against either one. Since #2873 it also pins the `/meetings/:id`
+ * page gate — the only reader an anonymous visitor can reach, and the only one that swaps a whole
+ * page rather than a control; its own describe block below carries the details.
  *
  * Prerequisites:
  * - Dev server reachable at the Playwright baseURL (default http://localhost:4200)
@@ -190,5 +192,84 @@ test.describe('Meetings v2 dark-launch gate', () => {
 
     // The panel is appended to `body`, so it is looked up on the page rather than under the trigger.
     await expect(page.getByTestId('meeting-create-advanced')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+  });
+});
+
+/**
+ * The public meeting page's own gate (#2873).
+ *
+ * `/meetings/:id` is the one flag reader that is a whole page rather than a control, and the only
+ * one an anonymous visitor can reach, so the branch it renders is asserted here through the real
+ * `FeatureFlagService` for the same reason the create button is.
+ *
+ * Client-side navigation rather than `page.goto('/meetings/<id>')`: a full navigation SSRs the route
+ * on the Express server, server-side fetches bypass `page.route`, and the pre-v2 page redirects to
+ * `/meetings/not-found` when the lookup fails — so a full navigation would serve the not-found page
+ * for *both* branches and assert nothing. The lookup is stubbed and held open instead of answered,
+ * which parks the pre-v2 page on its loading state so the branch marker can be read without racing
+ * the redirect that a resolved 404 triggers.
+ */
+test.describe('Meetings v2 dark-launch gate — /meetings/:id', () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  const MEETING_UID = 'm0000000-0000-0000-0000-00000000f001';
+
+  test.beforeEach(() => {
+    if (!process.env.TEST_USERNAME || !process.env.TEST_PASSWORD) {
+      test.skip(true, 'TEST_USERNAME / TEST_PASSWORD not configured — see global-setup.ts');
+    }
+  });
+
+  /** Boots the app with the flag pinned, holds the meeting lookup open, and SPA-navigates to the page. */
+  async function gotoMeetingDetails(page: Page, flagEnabled: boolean): Promise<() => void> {
+    let release = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+
+    await stubMeetingsV2Flag(page, flagEnabled);
+    await page.route('**/public/api/meetings/**', async (route) => {
+      await held;
+      await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'not found' }) });
+    });
+
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await expect(page).not.toHaveURL(/auth0\.com/);
+    await expect(page.getByTestId('sidebar')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+
+    await page.evaluate((url) => {
+      window.history.pushState({}, '', url);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, `/meetings/${MEETING_UID}`);
+
+    return release;
+  }
+
+  test('renders the pre-v2 meeting page while the flag is off', async ({ page }) => {
+    const release = await gotoMeetingDetails(page, false);
+
+    await expect(page.getByTestId('meeting-details-gate-v1')).toBeVisible({ timeout: PAGE_LOAD_TIMEOUT });
+    // Absent, not hidden — a v2 tree mounted alongside v1 would still run its own data flows.
+    await expect(page.getByTestId('meeting-details-gate-v2')).toHaveCount(0);
+
+    // Letting the stubbed lookup answer 404 sends the pre-v2 page to its own not-found route, which
+    // no other branch does — second proof that this branch is the one that ran.
+    release();
+    await expect(page).toHaveURL(/\/meetings\/not-found$/, { timeout: PAGE_LOAD_TIMEOUT });
+  });
+
+  test('renders the v2 meeting page once the flag is on', async ({ page }) => {
+    const release = await gotoMeetingDetails(page, true);
+
+    // Attached, not visible: the v2 placeholder is an empty element, so its wrapper has no box and
+    // toBeVisible() would time out even with the right branch rendered.
+    await expect(page.getByTestId('meeting-details-gate-v2')).toBeAttached({ timeout: PAGE_LOAD_TIMEOUT });
+    await expect(page.getByTestId('meeting-details-gate-v1')).toHaveCount(0);
+
+    // The pre-v2 page does mount for the one render before the gate's hydration latch flips, but it
+    // is destroyed at the latch and its in-flight lookup torn down with it — so releasing the held
+    // route cannot redirect this branch to not-found the way it does with the flag off.
+    release();
+    await expect(page).toHaveURL(new RegExp(`/meetings/${MEETING_UID}$`));
   });
 });
