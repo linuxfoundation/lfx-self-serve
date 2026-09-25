@@ -243,8 +243,8 @@ Placement decision trees ("where does my component go?", "do I need a new module
 >    tool and follow it: it tells you how to launch the reviewers. You run
 >    **one** review round of the whole branch and land **all accepted
 >    findings in exactly one fix commit** (none if there is nothing to fix).
->    Do not work from memory: **reload the skill before each step** — before
->    launching the reviewers and before the fix commit.
+>    Do not work from memory: **load the skill before launching the
+>    reviewers**.
 > 2. **Preflight.** Run the `Preflight` value below and make it pass. It is
 >    deterministic checks, not a review: fix what it reports in its own
 >    commit(s), as many as it takes, and rerun it — never the reviewers.
