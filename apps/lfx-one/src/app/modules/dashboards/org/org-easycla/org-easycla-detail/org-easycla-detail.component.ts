@@ -271,6 +271,12 @@ export class OrgEasyclaDetailComponent {
   private uncommittedSigningDialog: DynamicDialogRef | null = null;
 
   /**
+   * The designee write holding the Start lock. A context change releases the lock and clears this,
+   * so a late response from the old group must not touch a lock a newer flow may now hold.
+   */
+  private pendingDesigneeWrite: object | null = null;
+
+  /**
    * Set by the approval tab after it writes; `null` until then, so the row's own count is used.
    *
    * Keyed on the signature rather than held as a bare number: Angular reuses this component when
@@ -657,6 +663,10 @@ export class OrgEasyclaDetailComponent {
     this.contextChanged$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
       this.uncommittedSigningDialog?.close();
       this.designeeNotice.set(null);
+      if (this.pendingDesigneeWrite) {
+        this.pendingDesigneeWrite = null;
+        this.signingOpen.set(false);
+      }
     });
 
     // Drop a remembered value once the list row carries it. Until then it survives a project
@@ -1018,14 +1028,15 @@ export class OrgEasyclaDetailComponent {
 
   /** Yes: make the viewer the designee, then continue; a refusal leaves them on the overview with the reason. */
   private assignDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, next: OrgClaDesigneeNextStep): void {
+    const write = this.holdDesigneeWrite();
     this.claService.assignDesignee(orgUid, chosen.projectSfid).subscribe({
       next: () => {
         this.assignedPairs.update((pairs) => [...pairs, `${orgUid}::${chosen.projectSfid}`]);
-        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
         this.openChosenStep(orgUid, chosen, next);
       },
       error: (error: unknown) => {
-        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
         this.signingOpen.set(false);
         this.messageService.add({ severity: 'error', summary: 'Could not make you CLA Manager', detail: designeeRefusalCopy(error) });
       },
@@ -1044,9 +1055,10 @@ export class OrgEasyclaDetailComponent {
 
   /** No: name someone else. Either success is a notice on the overview; the viewer is granted nothing, so the flow ends here. */
   private nominateDesignee(orgUid: string, chosen: OrgClaGroupPickerResult, person: OrgClaIdentifyManagerResult): void {
+    const write = this.holdDesigneeWrite();
     this.claService.nominateDesignee(orgUid, { projectSfid: chosen.projectSfid, fullName: person.fullName, email: person.email }).subscribe({
       next: (response) => {
-        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
         this.signingOpen.set(false);
         this.designeeNotice.set(
           response.outcome === 'lf-login-required'
@@ -1055,11 +1067,24 @@ export class OrgEasyclaDetailComponent {
         );
       },
       error: (error: unknown) => {
-        if (this.detached || !this.signingContextHeld(orgUid, chosen)) return;
+        if (!this.releaseDesigneeWrite(write) || this.detached || !this.signingContextHeld(orgUid, chosen)) return;
         this.signingOpen.set(false);
         this.messageService.add({ severity: 'error', summary: 'Request not sent', detail: designeeRefusalCopy(error) });
       },
     });
+  }
+
+  private holdDesigneeWrite(): object {
+    const write = {};
+    this.pendingDesigneeWrite = write;
+    return write;
+  }
+
+  /** Whether this write still owns the Start lock, i.e. no context change released it meanwhile. */
+  private releaseDesigneeWrite(write: object): boolean {
+    if (this.pendingDesigneeWrite !== write) return false;
+    this.pendingDesigneeWrite = null;
+    return true;
   }
 
   private confirmThenHandOff(orgUid: string, chosen: OrgClaGroupPickerResult): void {

@@ -744,9 +744,15 @@ describe('OrgEasyclaDetailComponent', () => {
         expect(openedComponents()).toEqual([OrgEasyclaManagerQuestionDialogComponent]);
       });
 
-      it('lets a nomination finish after the page moves to another CLA group, without a notice there', async () => {
+      it('lets a nomination finish after the page moves to another CLA group, releasing Start there without a notice', async () => {
         const response = new Subject<{ outcome: 'assigned'; email: string }>();
-        const other = { ...notStarted, id: 'signature-uuid-elsewhere', claGroupId: ELSEWHERE_GROUP_ID, claGroupName: 'Elsewhere CLA' };
+        const other = {
+          ...notStarted,
+          id: 'signature-uuid-elsewhere',
+          claGroupId: ELSEWHERE_GROUP_ID,
+          claGroupName: 'Elsewhere CLA',
+          projects: [{ projectName: 'Driftwood', projectSfid: 'a09410000182dELSE' }],
+        };
         openDialog
           .mockReturnValueOnce(closingWith('no'))
           .mockReturnValueOnce(closingWith({ fullName: 'Pat Contributor', email: 'contributor@example.org' }))
@@ -758,6 +764,7 @@ describe('OrgEasyclaDetailComponent', () => {
 
         await moveToGroup(fixture, ELSEWHERE_GROUP_ID);
 
+        expect(byTestId(fixture, 'org-easycla-detail-start-cla')?.querySelector('button')?.disabled).toBe(false);
         expect(response.observed).toBe(true);
         response.next({ outcome: 'assigned', email: 'contributor@example.org' });
         response.complete();

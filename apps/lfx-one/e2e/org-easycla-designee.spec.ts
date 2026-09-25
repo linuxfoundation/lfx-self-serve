@@ -31,6 +31,10 @@ async function openQuestion(page: Page, stubWrites: (page: Page) => Promise<void
     NOT_STARTED.claGroupId,
     async (p) => {
       await fulfillJson(p, CLA_GROUPS_ROUTE, claGroupList([NOT_STARTED]));
+      // Aborted by default so an unexpected branch never reaches the real service; Playwright
+      // matches the most recently added route first, so each scenario's stub overrides its own.
+      await p.route(ASSIGN_ROUTE, (route) => route.abort());
+      await p.route(NOMINATE_ROUTE, (route) => route.abort());
       await stubWrites(p);
     },
     undefined,
